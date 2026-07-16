@@ -935,14 +935,14 @@ Spatial Rendering Improvements**.
 
 Current execution record:
 
-- `execution_state`: `NOT_STARTED`;
+- `execution_state`: `IN_PROGRESS`;
 - `evaluation_classification`: none;
 - branch: `phase-3a`;
 - branch base: `main-v2` at
-  `fb494cb31463dd0f562d7fef4e4548e3cf16850d`.
+  `bc2cf637bb8dc5d526a28271e1070efcff1e09d4`.
 
-Branch creation did not start implementation. Phase 3A may begin implementation
-after the milestone-execution-state clarification is merged.
+The first authorized implementation change has begun. No acceptance or
+validation conclusion is implied while this execution state remains active.
 
 It may implement deterministic, offline renderer work that fits existing Aurora
 contracts, beginning with VBAP geometry and focused spread/elevation or irregular

@@ -71,11 +71,10 @@ This is `BLOCKED_BY_HARDWARE`, not pass or failure evidence.
 **Phase 3A -- Deterministic Offline Spatial Rendering Improvements** is the
 first safe candidate when constrained to existing contracts.
 
-Current record: `execution_state=NOT_STARTED`,
+Current record: `execution_state=IN_PROGRESS`,
 `evaluation_classification=none`, branch `phase-3a`, based on `main-v2` at
-`fb494cb31463dd0f562d7fef4e4548e3cf16850d`. Creating the branch did not start
-implementation. The first authorized Phase 3A implementation commit changes the
-execution state to `IN_PROGRESS`.
+`bc2cf637bb8dc5d526a28271e1070efcff1e09d4`. Authorized implementation is
+underway; no acceptance or validation conclusion is implied.
 
 | Dependency | Decision |
 | --- | --- |

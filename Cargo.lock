@@ -265,6 +265,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-renderer-vbap"
+version = "0.1.0"
+dependencies = [
+ "aurora-core",
+ "aurora-renderer-api",
+]
+
+[[package]]
 name = "aurora-scene"
 version = "0.1.0"
 dependencies = [
