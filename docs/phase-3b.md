@@ -2,8 +2,8 @@
 
 ## Current State
 
-- `execution_state`: `READY_FOR_EVALUATION`
-- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`
 - branch: `phase-3b-horizontal-spread`
 - branch base: `main-v2` at
   `59e99f1ad2f89fd7fa03658b8a698d5dd9baf5b2`
@@ -139,6 +139,21 @@ The point path changed by approximately +0.31% for 5.1 and -3.41% for 7.1
 relative to the Phase 3A evaluation medians; no material point-source regression
 was observed. A complete workspace pass showed host-load variation in unrelated
 512-frame and ASRC benchmarks even though Phase 3B changes no such code.
+
+## Formal Evaluation
+
+- evaluation date: `2026-07-16`;
+- final implementation commit:
+  `7a3d7bd85d5498947415f19317b921886da9f6fe`;
+- evaluation evidence commit:
+  `04a37dca069e90c707954f88093fc1ba2858325b`;
+- result: every software, deterministic, documentation, allocation,
+  protected-contract, and host-observation criterion passed;
+- final classification: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`.
+
+The execution cycle is closed, but full acceptance remains open because the
+mandatory physical gates below have not run. No accepted tag is authorized. The
+detailed criterion record is in `docs/acceptance/phase-3b.md`.
 
 ## Exclusions And Stop Boundary
 

@@ -990,8 +990,8 @@ Source Spread and Irregular Layout Support**.
 
 Current execution record:
 
-- `execution_state`: `READY_FOR_EVALUATION`;
-- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`;
+- `execution_state`: `CLOSED`;
+- `evaluation_classification`: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`;
 - planned branch: `phase-3b-horizontal-spread`;
 - required base: `main-v2` after the governance amendment defining this scope.
 
@@ -1056,6 +1056,17 @@ implementation, required fixtures/tests, allocation audit, benchmarks, full
 validation, evaluation record, and an unmerged Phase 3B pull request. A required
 protected-contract change, unbounded memory, nondeterministic algorithm, Phase
 3A incompatibility, or architecture expansion stops the milestone.
+
+Phase 3B reached `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE` on 2026-07-16 after
+formal evaluation of implementation commit
+`7a3d7bd85d5498947415f19317b921886da9f6fe` and evidence commit
+`04a37dca069e90c707954f88093fc1ba2858325b`. All software, deterministic,
+documentation, allocation, and host-observation gates passed: 144 tests passed,
+5 hardware-only tests remained explicitly ignored, warmed-up spread rendering
+allocated zero times over 1,000 calls, and the irregular sweep checksum was
+`364977226e88876f`. Physical audible behavior, routing, endpoint behavior,
+real-path levels, and stability remain pending. See
+`docs/acceptance/phase-3b.md`.
 
 ---
 
@@ -1327,6 +1338,15 @@ Do not rewrite history. Record replaced decisions in ADRs.
   dependency matrix, execution/evaluation lifecycle, and stop boundary.
 - Reason: owner authorization for deterministic horizontal spread and irregular
   layout work that reuses Phase 3A without changing protected contracts.
+
+### Maintenance record: 2026-07-16 -- Phase 3B evaluation
+
+- Milestone: Phase 3B deterministic horizontal spread and irregular layouts.
+- Changed sections: Phase 3B execution record, evidence summary, final
+  classification, and acceptance-document reference.
+- Reason: all non-hardware gates passed formal review; required physical gates
+  remain open, so the milestone is conditionally accepted without an accepted
+  tag.
 
 ---
 

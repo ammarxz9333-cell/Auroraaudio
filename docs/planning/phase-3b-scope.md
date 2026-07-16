@@ -2,8 +2,8 @@
 
 ## Milestone Record
 
-- `execution_state`: `READY_FOR_EVALUATION`
-- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`
 - planned branch: `phase-3b-horizontal-spread`
 - required base: `main-v2` after this governance amendment merges
 - predecessor: Phase 3A, `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`

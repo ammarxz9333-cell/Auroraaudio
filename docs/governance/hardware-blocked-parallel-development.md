@@ -95,8 +95,8 @@ calibration, or any physical claim.
 
 The owner-authorized successor is **Phase 3B -- Deterministic Horizontal Source
 Spread and Irregular Layout Support**. Its current record is
-`execution_state=READY_FOR_EVALUATION`,
-`evaluation_classification=IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`, on
+`execution_state=CLOSED`,
+`evaluation_classification=CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`, on
 branch `phase-3b-horizontal-spread` based on the merged governance definition.
 
 It is parallel-safe because it extends the concrete Phase 3A VBAP crate without

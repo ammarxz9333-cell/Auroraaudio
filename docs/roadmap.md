@@ -47,8 +47,8 @@ must first restate its dependency matrix and receive scope approval.
 Support** is owner-authorized under Section 16.1 after its governance amendment
 merges.
 
-- `execution_state`: `READY_FOR_EVALUATION`
-- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`
 - planned branch: `phase-3b-horizontal-spread`
 - Phase 3A dependency: mandatory and unchanged
 - Phase 2 required for implementation or software evaluation: no
