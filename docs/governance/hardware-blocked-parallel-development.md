@@ -94,9 +94,9 @@ calibration, or any physical claim.
 ## Authorized successor: Phase 3B
 
 The owner-authorized successor is **Phase 3B -- Deterministic Horizontal Source
-Spread and Irregular Layout Support**. Its initial record is
-`execution_state=NOT_STARTED`, `evaluation_classification=none`, with planned
-branch `phase-3b-horizontal-spread` after this governance definition merges.
+Spread and Irregular Layout Support**. Its current record is
+`execution_state=IN_PROGRESS`, `evaluation_classification=none`, on branch
+`phase-3b-horizontal-spread` based on the merged governance definition.
 
 It is parallel-safe because it extends the concrete Phase 3A VBAP crate without
 changing the Aurora-owned renderer trait or any real-time, state, fault, device,

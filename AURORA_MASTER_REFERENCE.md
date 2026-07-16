@@ -990,7 +990,7 @@ Source Spread and Irregular Layout Support**.
 
 Current execution record:
 
-- `execution_state`: `NOT_STARTED`;
+- `execution_state`: `IN_PROGRESS`;
 - `evaluation_classification`: `none`;
 - planned branch: `phase-3b-horizontal-spread`;
 - required base: `main-v2` after the governance amendment defining this scope.
@@ -1048,8 +1048,8 @@ Permitted truth sources are `unit_test`, `deterministic_simulation`, and
 `host_api_observation`. `physical_measurement` remains unavailable until real
 hardware evidence exists. Benchmark timing is never physical latency.
 
-Execution starts as `NOT_STARTED`, moves to `IN_PROGRESS` only with the first
-authorized implementation commit, reaches `READY_FOR_EVALUATION` at the stated
+Execution started as `NOT_STARTED` and moved to `IN_PROGRESS` with the first
+authorized Phase 3B implementation commit. It reaches `READY_FOR_EVALUATION` at the stated
 stop boundary, and becomes `CLOSED` only after criterion-by-criterion review.
 The implementation stop boundary is the documented spread algorithm, bounded
 implementation, required fixtures/tests, allocation audit, benchmarks, full
