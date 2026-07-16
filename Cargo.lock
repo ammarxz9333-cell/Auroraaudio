@@ -270,6 +270,9 @@ version = "0.1.0"
 dependencies = [
  "aurora-core",
  "aurora-renderer-api",
+ "aurora-renderer-basic",
+ "aurora-scene",
+ "criterion",
 ]
 
 [[package]]
