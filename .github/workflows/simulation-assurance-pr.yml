@@ -1,0 +1,46 @@
+name: Simulation Assurance PR Smoke
+
+on:
+  pull_request:
+    branches:
+      - main-v2
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simulation-assurance-pr-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-assurance-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-assurance-
+            ${{ runner.os }}-cargo-
+      - name: Run 500-scenario deterministic smoke campaign
+        run: >-
+          cargo run --release -p aurora-simulation-assurance --
+          --level smoke --scenarios 500 --start-seed 0
+          --report output/simulation-assurance/pr-smoke.json
+      - name: Verify warmed-up callback and renderer allocation guards
+        run: >-
+          cargo test --workspace --all-features
+      - name: Upload bounded smoke report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulation-assurance-pr-smoke
+          path: output/simulation-assurance/**/*.json
+          if-no-files-found: error
