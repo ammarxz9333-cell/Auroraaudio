@@ -1064,8 +1064,9 @@ formal evaluation of implementation commit
 documentation, allocation, and host-observation gates passed: 144 tests passed,
 5 hardware-only tests remained explicitly ignored, warmed-up spread rendering
 allocated zero times over 1,000 calls, and the irregular sweep checksum was
-`0ef1fc03dfa5892e` after quantizing gains to the declared `1e-5` comparison
-tolerance. Physical audible behavior, routing, endpoint behavior,
+`0ef1fc03dfa5892e` on Windows and `6c25035a72424f0f` on Linux after quantizing
+gains to the declared `1e-5` comparison tolerance. Physical audible behavior,
+routing, endpoint behavior,
 real-path levels, and stability remain pending. See
 `docs/acceptance/phase-3b.md`.
 
