@@ -18,6 +18,16 @@ authoritative roadmap, classifications, and gates remain in
 The first technically safe candidate is **Phase 3A -- Deterministic Offline
 Spatial Rendering Improvements**. It has not started.
 
+- `execution_state`: `NOT_STARTED`
+- `evaluation_classification`: none
+- branch: `phase-3a`
+- branch base: `main-v2` at
+  `fb494cb31463dd0f562d7fef4e4548e3cf16850d`
+
+Branch creation alone did not start implementation. After the execution-state
+clarification is merged, the first authorized implementation commit changes the
+execution state to `IN_PROGRESS` without assigning an evaluation classification.
+
 | Gate | Current decision |
 | --- | --- |
 | Software-only criteria | VBAP geometry and bounded deterministic offline rendering using existing contracts |
