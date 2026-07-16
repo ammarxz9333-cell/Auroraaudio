@@ -67,7 +67,7 @@ are in `docs/planning/phase-3b-scope.md`.
 Testing** is authorized as a verification-only successor after its governance
 amendment merges.
 
-- `execution_state`: `NOT_STARTED`
+- `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: none
 - implementation branch: `test/simulation-assurance-campaign-1`
 - product features: none

@@ -1079,12 +1079,12 @@ It must not create a second simulator or add product behavior.
 
 Current execution record:
 
-- `execution_state`: `NOT_STARTED`;
+- `execution_state`: `IN_PROGRESS`;
 - `evaluation_classification`: none;
 - governance branch: `governance/define-simulation-assurance-campaign-1`;
-- planned implementation branch: `test/simulation-assurance-campaign-1`;
-- required implementation base: `main-v2` after this governance amendment is
-  reviewed and merged.
+- implementation branch: `test/simulation-assurance-campaign-1`;
+- implementation base: `main-v2` at
+  `1b28d514882d407446dac3a366ecd35841a2a95a`.
 
 Included scope is property-based and metamorphic verification, deterministic
 generated scenarios, bounded campaign sharding, reproducible failure records

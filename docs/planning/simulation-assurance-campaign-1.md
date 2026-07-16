@@ -4,11 +4,12 @@
 
 - Milestone: Simulation Assurance Campaign 1 -- Massive Deterministic Property
   and Stress Testing
-- `execution_state`: `NOT_STARTED`
+- `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: none
 - Governance branch: `governance/define-simulation-assurance-campaign-1`
-- Planned implementation branch: `test/simulation-assurance-campaign-1`
-- Required base: `main-v2` after this governance definition merges
+- Implementation branch: `test/simulation-assurance-campaign-1`
+- Implementation base: `main-v2` at
+  `1b28d514882d407446dac3a366ecd35841a2a95a`
 - Truth sources: `unit_test`, `deterministic_simulation`,
   `host_api_observation`
 
