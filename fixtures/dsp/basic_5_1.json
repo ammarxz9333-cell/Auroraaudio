@@ -1,0 +1,59 @@
+{
+  "channel_count": 6,
+  "sample_rate": 48000,
+  "chunk_size": 1024,
+  "channels": [
+    {
+      "channel": 0,
+      "gain_db": -3.0,
+      "delay_ms": 2.5
+    },
+    {
+      "channel": 1,
+      "gain_db": -3.0,
+      "delay_ms": 2.5,
+      "polarity_invert": true
+    },
+    {
+      "channel": 2,
+      "gain_db": -3.0,
+      "delay_ms": 2.5,
+      "parametric_eq": [
+        {
+          "frequency_hz": 1000.0,
+          "gain_db": 1.5,
+          "q": 0.707
+        }
+      ]
+    },
+    {
+      "channel": 3,
+      "gain_db": -3.0,
+      "delay_ms": 2.5,
+      "low_pass": {
+        "frequency_hz": 120.0,
+        "order": 2
+      }
+    },
+    {
+      "channel": 4,
+      "gain_db": -3.0,
+      "delay_ms": 2.5,
+      "polarity_invert": true,
+      "high_pass": {
+        "frequency_hz": 80.0,
+        "order": 2
+      }
+    },
+    {
+      "channel": 5,
+      "gain_db": -3.0,
+      "delay_ms": 2.5,
+      "polarity_invert": true,
+      "high_pass": {
+        "frequency_hz": 80.0,
+        "order": 2
+      }
+    }
+  ]
+}

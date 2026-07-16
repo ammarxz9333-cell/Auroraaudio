@@ -1,0 +1,36 @@
+[package]
+name = "aurora-cli"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[[bin]]
+name = "aurora-cli"
+path = "src/main.rs"
+bench = false
+
+[features]
+default = ["camilladsp", "realtime", "simulation"]
+camilladsp = ["dep:aurora-dsp-camilladsp", "aurora-dsp-camilladsp/camilladsp-process"]
+realtime = ["dep:aurora-realtime-audio-api", "dep:aurora-realtime-audio-cpal", "dep:aurora-realtime-engine"]
+simulation = ["dep:aurora-realtime-audio-sim", "dep:aurora-realtime-engine"]
+
+[dependencies]
+anyhow.workspace = true
+aurora-audio-io = { path = "../aurora-audio-io" }
+aurora-core = { path = "../aurora-core" }
+aurora-dsp-basic = { path = "../aurora-dsp-basic" }
+aurora-dsp-camilladsp = { path = "../aurora-dsp-camilladsp", optional = true }
+aurora-renderer-api = { path = "../aurora-renderer-api" }
+aurora-renderer-basic = { path = "../aurora-renderer-basic" }
+aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api", optional = true }
+aurora-realtime-audio-cpal = { path = "../aurora-realtime-audio-cpal", optional = true }
+aurora-realtime-audio-sim = { path = "../aurora-realtime-audio-sim", optional = true }
+aurora-realtime-engine = { path = "../aurora-realtime-engine", optional = true }
+aurora-scene = { path = "../aurora-scene" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+tracing.workspace = true

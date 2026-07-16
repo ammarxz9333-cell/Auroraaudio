@@ -1,0 +1,20 @@
+[
+  {
+    "at_milliseconds": 5000,
+    "action": "callback-error",
+    "duration_milliseconds": 1000,
+    "value": 1
+  },
+  {
+    "at_milliseconds": 15000,
+    "action": "missing-callbacks",
+    "duration_milliseconds": 750,
+    "value": 4
+  },
+  {
+    "at_milliseconds": 25000,
+    "action": "callback-error",
+    "duration_milliseconds": 1000,
+    "value": 2
+  }
+]

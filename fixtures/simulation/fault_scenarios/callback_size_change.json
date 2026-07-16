@@ -1,0 +1,14 @@
+[
+  {
+    "at_milliseconds": 10000,
+    "action": "callback-size-change",
+    "duration_milliseconds": 0,
+    "value": 1024
+  },
+  {
+    "at_milliseconds": 20000,
+    "action": "callback-burst",
+    "duration_milliseconds": 0,
+    "value": 8
+  }
+]

@@ -1,0 +1,469 @@
+//! Deterministic geometric renderer implementations.
+
+use aurora_core::{ChannelRole, Listener, Speaker, Vector3};
+use aurora_renderer_api::{
+    RenderObject, Renderer, RendererError, RendererScratch, RendererScratchSize, SpeakerGain,
+};
+
+const DISTANCE_EPSILON: f32 = 0.001;
+const COINCIDENT_EPSILON: f32 = 0.0001;
+const DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND: f32 = 343.0;
+
+/// Initial renderer modes planned for Phase 0.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BasicRendererMode {
+    /// Route the object entirely to the closest enabled speaker.
+    NearestSpeaker,
+    /// Weight all enabled speakers by inverse squared distance.
+    InverseDistance,
+    /// Weight the two closest enabled speakers with equal-power normalization.
+    EqualPowerAdjacent,
+}
+
+/// Minimal deterministic renderer using geometric speaker distances.
+#[derive(Debug, Clone)]
+pub struct BasicRenderer {
+    mode: BasicRendererMode,
+    layout: Vec<Speaker>,
+    sample_rate: u32,
+    block_size: usize,
+    max_objects: usize,
+    smoothing_alpha: f32,
+    previous_gains: Vec<f32>,
+    configured: bool,
+}
+
+/// Geometric delay alignment calculated for one speaker.
+#[derive(Debug, Clone, PartialEq)]
+pub struct GeometricDelay {
+    /// Speaker identifier.
+    pub speaker_id: String,
+    /// Speaker channel role.
+    pub channel_role: ChannelRole,
+    /// Distance from listener to speaker in meters.
+    pub distance_meters: f32,
+    /// Added delay in samples.
+    pub delay_samples: f32,
+    /// Added delay in milliseconds.
+    pub delay_milliseconds: f32,
+}
+
+impl BasicRenderer {
+    /// Creates a basic renderer using the selected mode.
+    pub fn new(mode: BasicRendererMode) -> Self {
+        Self {
+            mode,
+            layout: Vec::new(),
+            sample_rate: 48_000,
+            block_size: 256,
+            max_objects: 0,
+            smoothing_alpha: 1.0,
+            previous_gains: Vec::new(),
+            configured: false,
+        }
+    }
+
+    /// Sets block-to-block smoothing alpha, clamped to `0.0..=1.0`.
+    pub fn with_smoothing(mut self, smoothing_alpha: f32) -> Self {
+        self.smoothing_alpha = smoothing_alpha.clamp(0.0, 1.0);
+        self
+    }
+
+    fn render_object(
+        &mut self,
+        object_index: usize,
+        object: RenderObject,
+        output: &mut [SpeakerGain],
+        weights: &mut [f32],
+    ) -> Result<(), RendererError> {
+        match self.mode {
+            BasicRendererMode::NearestSpeaker => {
+                nearest_speaker_gains(&self.layout, object.position, weights)
+            }
+            BasicRendererMode::InverseDistance => {
+                inverse_distance_gains(&self.layout, object.position, weights)
+            }
+            BasicRendererMode::EqualPowerAdjacent => {
+                adjacent_speaker_gains(&self.layout, object.position, weights)
+            }
+        }
+
+        let speaker_count = self.layout.len();
+        let history_len = self.previous_gains.len();
+        for (speaker_index, ((speaker, weight), result)) in self
+            .layout
+            .iter()
+            .zip(weights.iter())
+            .zip(output.iter_mut())
+            .enumerate()
+        {
+            let target = *weight * db_to_gain(speaker.gain_db) * object.gain;
+            let history_index = object_index * speaker_count + speaker_index;
+            let previous_gain = self.previous_gains.get_mut(history_index).ok_or(
+                RendererError::OutputBufferSize {
+                    required: self.max_objects * speaker_count,
+                    actual: history_len,
+                },
+            )?;
+            let previous = *previous_gain;
+            let smoothed = previous + (target - previous) * self.smoothing_alpha;
+            *previous_gain = smoothed;
+            let distance = object.position.distance_to(speaker.position);
+            *result = SpeakerGain {
+                speaker_index,
+                gain: smoothed,
+                distance_meters: distance,
+                delay_samples: speaker.delay_samples
+                    + distance / DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND * self.sample_rate as f32,
+            };
+        }
+        Ok(())
+    }
+}
+
+/// Calculates speaker alignment delays relative to the farthest enabled speaker.
+pub fn calculate_geometric_delays(
+    speakers: &[Speaker],
+    listener: Listener,
+    sample_rate: u32,
+    speed_of_sound_meters_per_second: f32,
+) -> Vec<GeometricDelay> {
+    let max_distance = speakers
+        .iter()
+        .filter(|speaker| speaker.enabled)
+        .map(|speaker| speaker.position.distance_to(listener.position))
+        .fold(0.0_f32, f32::max);
+
+    speakers
+        .iter()
+        .map(|speaker| {
+            let distance_meters = speaker.position.distance_to(listener.position);
+            let delay_seconds = if speaker.enabled && speed_of_sound_meters_per_second > 0.0 {
+                (max_distance - distance_meters).max(0.0) / speed_of_sound_meters_per_second
+            } else {
+                0.0
+            };
+            GeometricDelay {
+                speaker_id: speaker.id.clone(),
+                channel_role: speaker.channel_role.clone(),
+                distance_meters,
+                delay_samples: delay_seconds * sample_rate as f32,
+                delay_milliseconds: delay_seconds * 1000.0,
+            }
+        })
+        .collect()
+}
+
+impl Renderer for BasicRenderer {
+    fn configure(
+        &mut self,
+        layout: Vec<Speaker>,
+        sample_rate: u32,
+        block_size: usize,
+        max_objects: usize,
+    ) -> Result<(), RendererError> {
+        if sample_rate == 0 || block_size == 0 || max_objects == 0 {
+            return Err(RendererError::InvalidConfiguration(
+                "sample rate, block size, and max objects must be greater than zero".to_owned(),
+            ));
+        }
+        let enabled_count = layout.iter().filter(|speaker| speaker.enabled).count();
+        if enabled_count == 0 {
+            return Err(RendererError::NoEnabledSpeakers);
+        }
+
+        self.layout.clear();
+        self.layout.reserve(enabled_count);
+        self.layout
+            .extend(layout.into_iter().filter(|speaker| speaker.enabled));
+        self.sample_rate = sample_rate;
+        self.block_size = block_size;
+        self.max_objects = max_objects;
+        self.previous_gains = vec![0.0; enabled_count * max_objects];
+        self.configured = true;
+        Ok(())
+    }
+
+    fn required_scratch_size(&self) -> Result<RendererScratchSize, RendererError> {
+        if !self.configured {
+            return Err(RendererError::NotConfigured);
+        }
+        Ok(RendererScratchSize {
+            float_count: self.layout.len(),
+        })
+    }
+
+    fn render_gains(
+        &mut self,
+        _listener: &Listener,
+        objects: &[RenderObject],
+        output_gains: &mut [SpeakerGain],
+        scratch: &mut RendererScratch,
+    ) -> Result<(), RendererError> {
+        if !self.configured {
+            return Err(RendererError::NotConfigured);
+        }
+        if objects.len() > self.max_objects {
+            return Err(RendererError::TooManyObjects {
+                maximum: self.max_objects,
+                actual: objects.len(),
+            });
+        }
+        let required = objects.len() * self.layout.len();
+        if output_gains.len() != required {
+            return Err(RendererError::OutputBufferSize {
+                required,
+                actual: output_gains.len(),
+            });
+        }
+        let available = scratch.floats_mut().len();
+        if available < self.layout.len() {
+            return Err(RendererError::ScratchBufferSize {
+                required: self.layout.len(),
+                actual: available,
+            });
+        }
+
+        let speaker_count = self.layout.len();
+        let weights = scratch.floats_mut().get_mut(..speaker_count).ok_or(
+            RendererError::ScratchBufferSize {
+                required: speaker_count,
+                actual: available,
+            },
+        )?;
+        for (object_index, (object, object_output)) in objects
+            .iter()
+            .copied()
+            .zip(output_gains.chunks_exact_mut(speaker_count))
+            .enumerate()
+        {
+            self.render_object(object_index, object, object_output, weights)?;
+        }
+        Ok(())
+    }
+
+    fn reset(&mut self) {
+        self.previous_gains.fill(0.0);
+    }
+
+    fn latency_frames(&self) -> usize {
+        let _ = self.block_size;
+        0
+    }
+
+    fn output_channel_count(&self) -> usize {
+        self.layout.len()
+    }
+}
+
+fn nearest_speaker_gains(speakers: &[Speaker], source: Vector3, weights: &mut [f32]) {
+    weights.fill(0.0);
+    let mut nearest_index = 0;
+    let mut nearest_distance = f32::INFINITY;
+    for (index, speaker) in speakers.iter().enumerate() {
+        let distance = source.distance_to(speaker.position);
+        if distance < nearest_distance {
+            nearest_distance = distance;
+            nearest_index = index;
+        }
+    }
+    if let Some(weight) = weights.get_mut(nearest_index) {
+        *weight = 1.0;
+    }
+}
+
+fn inverse_distance_gains(speakers: &[Speaker], source: Vector3, weights: &mut [f32]) {
+    weights.fill(0.0);
+    for (index, speaker) in speakers.iter().enumerate() {
+        let distance = source.distance_to(speaker.position);
+        if distance < COINCIDENT_EPSILON {
+            weights.fill(0.0);
+            if let Some(weight) = weights.get_mut(index) {
+                *weight = 1.0;
+            }
+            return;
+        }
+        if let Some(weight) = weights.get_mut(index) {
+            *weight = 1.0 / (distance + DISTANCE_EPSILON).powi(2);
+        }
+    }
+    normalize_power(weights);
+}
+
+fn adjacent_speaker_gains(speakers: &[Speaker], source: Vector3, weights: &mut [f32]) {
+    if speakers.len() <= 2 {
+        inverse_distance_gains(speakers, source, weights);
+        return;
+    }
+    weights.fill(0.0);
+    let mut first = (usize::MAX, f32::INFINITY);
+    let mut second = (usize::MAX, f32::INFINITY);
+    for (index, speaker) in speakers.iter().enumerate() {
+        let distance = source.distance_to(speaker.position);
+        if distance < first.1 {
+            second = first;
+            first = (index, distance);
+        } else if distance < second.1 {
+            second = (index, distance);
+        }
+    }
+    if let Some(weight) = weights.get_mut(first.0) {
+        *weight = 1.0 / (first.1 + DISTANCE_EPSILON).powi(2);
+    }
+    if let Some(weight) = weights.get_mut(second.0) {
+        *weight = 1.0 / (second.1 + DISTANCE_EPSILON).powi(2);
+    }
+    normalize_power(weights);
+}
+
+fn normalize_power(weights: &mut [f32]) {
+    let mut sum = 0.0_f32;
+    for weight in weights.iter() {
+        sum += *weight;
+    }
+    if sum <= f32::EPSILON || !sum.is_finite() {
+        weights.fill(0.0);
+        return;
+    }
+    for weight in weights {
+        *weight = (*weight / sum).sqrt();
+    }
+}
+
+fn db_to_gain(db: f32) -> f32 {
+    10.0_f32.powf(db / 20.0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn speaker(id: &str, role: ChannelRole, x: f32, y: f32) -> Speaker {
+        Speaker {
+            id: id.to_owned(),
+            label: id.to_owned(),
+            channel_role: role,
+            position: Vector3::new(x, y, 0.0),
+            orientation: Vector3::ZERO,
+            gain_db: 0.0,
+            delay_samples: 0.0,
+            enabled: true,
+        }
+    }
+
+    fn listener() -> Listener {
+        Listener {
+            position: Vector3::ZERO,
+            orientation: Vector3::new(0.0, 1.0, 0.0),
+            ear_height: 1.2,
+        }
+    }
+
+    fn renderer() -> (BasicRenderer, RendererScratch, Vec<SpeakerGain>) {
+        let mut renderer = BasicRenderer::new(BasicRendererMode::InverseDistance);
+        renderer
+            .configure(
+                vec![
+                    speaker("left", ChannelRole::FrontLeft, -1.0, 0.0),
+                    speaker("right", ChannelRole::FrontRight, 1.0, 0.0),
+                ],
+                48_000,
+                256,
+                1,
+            )
+            .unwrap();
+        let scratch = RendererScratch::new(renderer.required_scratch_size().unwrap());
+        (renderer, scratch, vec![SpeakerGain::default(); 2])
+    }
+
+    fn render_at(x: f32, y: f32) -> Vec<SpeakerGain> {
+        let (mut renderer, mut scratch, mut gains) = renderer();
+        renderer
+            .render_gains(
+                &listener(),
+                &[RenderObject {
+                    position: Vector3::new(x, y, 0.0),
+                    gain: 1.0,
+                }],
+                &mut gains,
+                &mut scratch,
+            )
+            .unwrap();
+        gains
+    }
+
+    #[test]
+    fn symmetric_stereo_center_position_has_equal_normalized_gain() {
+        let gains = render_at(0.0, 0.0);
+        assert!((gains[0].gain - gains[1].gain).abs() < 0.0001);
+        assert!((gains[0].gain - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn source_exactly_at_speaker_position_maps_to_that_speaker() {
+        let gains = render_at(-1.0, 0.0);
+        assert_eq!(gains[0].gain, 1.0);
+        assert_eq!(gains[1].gain, 0.0);
+    }
+
+    #[test]
+    fn source_at_listener_is_finite_and_normalized() {
+        let gains = render_at(0.0, 0.0);
+        let power = gains.iter().map(|gain| gain.gain.powi(2)).sum::<f32>();
+        assert!(gains.iter().all(|gain| gain.gain.is_finite()));
+        assert!((power - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn render_reuses_caller_owned_storage() {
+        let (mut renderer, mut scratch, mut gains) = renderer();
+        let gain_capacity = gains.capacity();
+        let scratch_capacity = scratch.float_capacity();
+        for step in 0..1_000 {
+            let angle = step as f32 * 0.01;
+            renderer
+                .render_gains(
+                    &listener(),
+                    &[RenderObject {
+                        position: Vector3::new(angle.cos(), angle.sin(), 0.0),
+                        gain: 1.0,
+                    }],
+                    &mut gains,
+                    &mut scratch,
+                )
+                .unwrap();
+        }
+        assert_eq!(gains.capacity(), gain_capacity);
+        assert_eq!(scratch.float_capacity(), scratch_capacity);
+    }
+
+    #[test]
+    fn zero_enabled_speakers_returns_structured_error() {
+        let mut disabled = speaker("left", ChannelRole::FrontLeft, -1.0, 0.0);
+        disabled.enabled = false;
+        let error = BasicRenderer::new(BasicRendererMode::InverseDistance)
+            .configure(vec![disabled], 48_000, 256, 1)
+            .unwrap_err();
+        assert_eq!(error, RendererError::NoEnabledSpeakers);
+    }
+
+    #[test]
+    fn geometric_delay_farthest_is_zero_and_nearer_is_fractional() {
+        let delays = calculate_geometric_delays(
+            &[
+                speaker("near", ChannelRole::FrontLeft, 1.0, 0.0),
+                speaker("far", ChannelRole::FrontRight, 2.0, 0.0),
+            ],
+            listener(),
+            48_000,
+            343.0,
+        );
+        assert_eq!(delays[1].delay_samples, 0.0);
+        assert!((delays[0].delay_samples - 48_000.0 / 343.0).abs() < 0.001);
+    }
+
+    #[test]
+    fn output_is_deterministic() {
+        assert_eq!(render_at(0.25, -0.5), render_at(0.25, -0.5));
+    }
+}

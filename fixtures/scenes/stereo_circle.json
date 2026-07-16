@@ -1,0 +1,44 @@
+{
+  "layout": "stereo",
+  "listener": {
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 1.0, "z": 0.0 },
+    "ear_height": 1.2
+  },
+  "speakers": [
+    {
+      "id": "left",
+      "label": "Left",
+      "channel_role": "front-left",
+      "position": { "x": -1.2, "y": 0.0, "z": 1.0 },
+      "orientation": { "x": 0.0, "y": 1.0, "z": 0.0 },
+      "gain_db": 0.0,
+      "delay_samples": 0.0,
+      "enabled": true
+    },
+    {
+      "id": "right",
+      "label": "Right",
+      "channel_role": "front-right",
+      "position": { "x": 1.2, "y": 0.0, "z": 1.0 },
+      "orientation": { "x": 0.0, "y": 1.0, "z": 0.0 },
+      "gain_db": 0.0,
+      "delay_samples": 0.0,
+      "enabled": true
+    }
+  ],
+  "object": {
+    "id": "moving-source",
+    "gain_db": -3.0,
+    "spread": 0.0
+  },
+  "trajectory": {
+    "type": "circle",
+    "center": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "radius": 1.0,
+    "z": 1.0,
+    "start_degrees": 0.0,
+    "revolutions_per_second": 0.5
+  },
+  "block_size": 256
+}

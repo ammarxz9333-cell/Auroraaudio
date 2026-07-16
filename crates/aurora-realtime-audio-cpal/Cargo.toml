@@ -1,0 +1,15 @@
+[package]
+name = "aurora-realtime-audio-cpal"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+bench = false
+
+[dependencies]
+aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api" }
+cpal.workspace = true
+thiserror.workspace = true

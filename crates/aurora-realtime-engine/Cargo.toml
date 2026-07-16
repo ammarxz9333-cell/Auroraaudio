@@ -1,0 +1,37 @@
+[package]
+name = "aurora-realtime-engine"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+bench = false
+
+[dependencies]
+aurora-core = { path = "../aurora-core" }
+aurora-dsp-basic = { path = "../aurora-dsp-basic" }
+aurora-renderer-api = { path = "../aurora-renderer-api" }
+aurora-renderer-basic = { path = "../aurora-renderer-basic" }
+aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api" }
+aurora-scene = { path = "../aurora-scene" }
+crossbeam-queue.workspace = true
+rubato.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+serde_json.workspace = true
+
+[[bench]]
+name = "performance"
+harness = false
+
+[[bench]]
+name = "baseline"
+harness = false
+
+[[bench]]
+name = "duplex_transport"
+harness = false

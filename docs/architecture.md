@@ -1,0 +1,85 @@
+# Architecture
+
+Aurora Phase 0 is an offline, format-independent spatial-audio prototype. The system operates on typed scene data, PCM-oriented audio blocks, speaker coordinates, timestamps, and metadata. Hardware capture, proprietary codec decoding, and network speaker transport are out of scope.
+
+## Workspace Layout
+
+- `aurora-core`: Shared data model for formats, vectors, speakers, listeners, objects, audio blocks, and scenes.
+- `aurora-renderer-api`: Stable renderer trait and renderer-facing errors.
+- `aurora-renderer-basic`: Deterministic inverse-distance renderer used by the first checkpoint.
+- `aurora-dsp-api`: DSP trait placeholder boundary.
+- `aurora-dsp-basic`: Future internal DSP implementation crate.
+- `aurora-audio-io`: Future WAV and offline audio IO crate.
+- `aurora-realtime-audio-api`: Backend-neutral local real-time audio traits.
+- `aurora-realtime-audio-cpal`: First local audio backend, isolated behind Aurora-owned API types.
+- `aurora-realtime-audio-sim`: Deterministic virtual backend and accelerated validation environment.
+- `aurora-realtime-engine`: Real-time block pipeline preserving renderer, channel-role, geometric-delay, and DSP boundaries.
+- `aurora-measurement`: Future measurement and synthetic impulse-response crate.
+- `aurora-scene`: JSON scene loading, validation, and trajectory sampling.
+- `aurora-cli`: Developer CLI for offline simulation and inspection.
+
+## Data Flow
+
+```text
+Scene + AudioFormat
+        |
+        v
+Renderer API -> caller-owned gains/scratch -> renderer implementation
+        |
+        v
+DSP API -> DSP implementation
+        |
+        v
+Audio IO
+```
+
+Real-time output replaces offline Audio IO with a backend callback:
+
+```text
+Audio backend callback -> real-time engine -> renderer -> DSP -> output backend
+```
+
+Milestone 0B adds offline mono WAV input, block-based rendering, and multichannel WAV output. The visualizer remains intentionally deferred.
+
+Milestone 0C adds explicit channel roles, canonical standard layout ordering, WAVE_FORMAT_EXTENSIBLE channel masks, and optional offline per-channel geometric delay processing.
+
+Milestone 0D adds adapter crates for CamillaDSP, IAMF/libiamf, truehdd, and Cavern. These are boundary crates only: no third-party source is copied into Aurora, no adapter is required by `aurora-core`, and all real third-party integration points remain disabled by default behind adapter-specific Cargo features.
+
+Milestone 0F adds a local real-time audio path using Aurora-owned traits and a CPAL-backed local backend. No HDMI/eARC, network audio, wireless speaker transport, GUI, or proprietary codec integration is included.
+
+## Renderer Boundary
+
+Renderers implement the `Renderer` trait from `aurora-renderer-api`. Configuration allocates fixed layout, object-history, output, and scratch capacity. Steady-state `render_gains` borrows compact numeric objects and writes flattened object-major, speaker-minor results into caller-owned buffers. Speaker identity is represented by configured index on the processing path. See ADR 0004.
+
+Codec decoding is not part of the renderer boundary.
+
+## DSP Boundary
+
+DSP engines implement a separate trait and operate after rendering. The CamillaDSP adapter remains isolated as an external process controlled by generated configuration and offline WAV file input/output.
+
+## WAV Channel Masks
+
+Aurora keeps `hound` for WAV reading. `hound` can write WAVE_FORMAT_EXTENSIBLE, but its writer derives the channel mask from the channel count rather than from semantic channel roles. That is insufficient for standard surround masks such as 5.1, 7.1, and 5.1.2, so `aurora-audio-io` writes a minimal WAVE_FORMAT_EXTENSIBLE float header itself for rendered outputs.
+
+Stereo, 5.1, and 7.1 use the standard Windows speaker-position bits. Aurora also writes a role-derived 5.1.2 mask using FL, FR, FC, LFE, SL, SR, TFL, and TFR bits, but WAVE_FORMAT_EXTENSIBLE does not fully describe object-based or up-firing speaker intent. Aurora therefore treats 5.1.2 WAV masks as channel-position metadata only; room geometry and up-firing semantics remain in the scene fixture.
+
+## Real-Time Audio
+
+The real-time callback exclusively owns the preallocated block engine and publishes numeric metrics through atomics. Control-thread status printing, device enumeration, configuration rebuilds, and speaker-identification confirmation stay outside the callback. The callback contains no Aurora logging, blocking locks, filesystem/process access, or steady-state allocation. See `docs/realtime-audio.md`, `docs/threading-model.md`, `docs/realtime-allocation-audit.md`, and `docs/device-support.md`.
+
+The hardware-independent duplex boundary uses a fixed-capacity contiguous SPSC
+frame ring between independently scheduled input and output callbacks. Drift
+observability and the Aurora-owned `DriftCompensator` strategy live in
+`aurora-realtime-engine`; CPAL types remain confined to the backend crate. See
+`docs/backend-timing.md`, `docs/duplex-audio.md`, and ADR 0005.
+
+The live duplex path places an Aurora-owned adaptive-resampler contract between
+the selected SPSC ring and `RealTimeEngine`. Rubato is private implementation
+detail. A PI controller adjusts one multichannel-coherent ratio; CPAL input and
+output streams remain independent. Device lifecycle is controlled by the state
+machine in ADR 0008.
+
+Simulation Sprint 1 adds an independent virtual backend with integer-tick input
+and output clock domains. It exercises format negotiation, callback scheduling,
+ring-fill drift control, deterministic recovery, virtual-loopback truth, and
+canonical routing without importing simulator types into shared domain APIs.

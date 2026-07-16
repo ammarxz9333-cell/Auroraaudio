@@ -1,0 +1,8 @@
+[
+  {
+    "at_milliseconds": 30000,
+    "action": "output-loss",
+    "duration_milliseconds": 5000,
+    "value": 0
+  }
+]

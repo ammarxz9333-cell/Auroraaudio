@@ -1,0 +1,8 @@
+[
+  {
+    "at_milliseconds": 15000,
+    "action": "input-callback-stall",
+    "duration_milliseconds": 500,
+    "value": 0
+  }
+]

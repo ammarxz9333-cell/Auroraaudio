@@ -1,0 +1,26 @@
+[package]
+name = "aurora-realtime-audio-sim"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[lib]
+bench = false
+
+[dependencies]
+aurora-core = { path = "../aurora-core" }
+aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api" }
+aurora-realtime-engine = { path = "../aurora-realtime-engine" }
+aurora-scene = { path = "../aurora-scene" }
+serde.workspace = true
+serde_json.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+criterion.workspace = true
+
+[[bench]]
+name = "simulation"
+harness = false
