@@ -16,16 +16,16 @@ authoritative roadmap, classifications, and gates remain in
 ## Hardware-Blocked Parallel Queue
 
 The first technically safe candidate is **Phase 3A -- Deterministic Offline
-Spatial Rendering Improvements**. Authorized implementation is underway.
+Spatial Rendering Improvements**. Implementation reached its review boundary.
 
-- `execution_state`: `IN_PROGRESS`
-- `evaluation_classification`: none
+- `execution_state`: `READY_FOR_EVALUATION`
+- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
 - branch: `phase-3a`
 - branch base: `main-v2` at
   `bc2cf637bb8dc5d526a28271e1070efcff1e09d4`
 
-No acceptance or validation conclusion is implied while implementation remains
-in progress.
+Pull-request review and all hardware-dependent gates remain open. This is not
+milestone acceptance.
 
 | Gate | Current decision |
 | --- | --- |
