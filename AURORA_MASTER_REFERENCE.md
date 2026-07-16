@@ -1059,7 +1059,7 @@ protected-contract change, unbounded memory, nondeterministic algorithm, Phase
 
 Phase 3B reached `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE` on 2026-07-16 after
 formal evaluation of implementation commit
-`7a3d7bd85d5498947415f19317b921886da9f6fe` and evidence commit
+`4dd7f30125cbbdeba4273b7a560085f6534c5232` and evidence commit
 `04a37dca069e90c707954f88093fc1ba2858325b`. All software, deterministic,
 documentation, allocation, and host-observation gates passed: 144 tests passed,
 5 hardware-only tests remained explicitly ignored, warmed-up spread rendering
