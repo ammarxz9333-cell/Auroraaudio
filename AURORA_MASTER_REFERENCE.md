@@ -1070,6 +1070,72 @@ routing, endpoint behavior,
 real-path levels, and stability remain pending. See
 `docs/acceptance/phase-3b.md`.
 
+### Authorized test-only milestone: Simulation Assurance Campaign 1
+
+The owner-authorized next milestone is **Simulation Assurance Campaign 1 --
+Massive Deterministic Property and Stress Testing**. It is a verification-only
+campaign over the accepted simulator and the existing Phase 3A/3B renderers.
+It must not create a second simulator or add product behavior.
+
+Current execution record:
+
+- `execution_state`: `NOT_STARTED`;
+- `evaluation_classification`: none;
+- governance branch: `governance/define-simulation-assurance-campaign-1`;
+- planned implementation branch: `test/simulation-assurance-campaign-1`;
+- required implementation base: `main-v2` after this governance amendment is
+  reviewed and merged.
+
+Included scope is property-based and metamorphic verification, deterministic
+generated scenarios, bounded campaign sharding, reproducible failure records
+and shrinking where practical, accelerated long-duration simulation, Phase
+3A/3B renderer invariants, and bounded PR, nightly, manual-deep, and
+manual-soak workflows. The existing `aurora-realtime-audio-sim` and renderer
+crates are the only execution engines.
+
+Campaign levels are 500--1,000 PR scenarios, 10,000 nightly scenarios,
+configurable 100,000-scenario manual deep runs, and representative accelerated
+24-hour, 7-day, and 30-day manual soak scenarios. Initial evidence must include
+1,000 smoke scenarios, 10,000 standard scenarios, the same fixed 1,000 seeds
+repeated three times, representative accelerated 24-hour runs, and every
+accepted legacy simulation fixture.
+
+Every generated scenario must carry a deterministic seed, stable scenario ID,
+bounded configuration, `truth_source=deterministic_simulation`, reproducible
+command, bounded report, and deterministic failure category. Required
+properties cover panic/deadlock/loop freedom, finite output, bounded memory,
+zero warmed-up callback and render allocations, valid transitions, target-
+qualified deterministic checksums, explicit fallback/fault observability,
+channel isolation, normalized renderer energy, spread-zero Phase 3A
+compatibility, layout-permutation equivalence, and allowed recovery terminal
+states.
+
+The milestone excludes renderer features, Phase 3C, elevation, HRTF,
+Ambisonics, hardware abstractions, physical acceptance, and changes to public
+traits or any other protected contract. It may not use physical terminology
+for campaign evidence or modify accepted Simulation Sprint 1 records or tags.
+
+Hardware dependency matrix:
+
+- software-only criteria: bounded deterministic generator, stable scenario
+  identity, reproducible reports, shrinking/replay, required invariants,
+  workflows, tests, and documentation;
+- deterministic-simulation criteria: all required campaign levels and initial
+  executions complete without an unresolved campaign defect;
+- host-observation criteria: bounded runtime and memory observations, labeled
+  only `host_api_observation`;
+- hardware-dependent criteria for this campaign: none;
+- Phase 2 required for implementation: no;
+- Phase 2 required for campaign acceptance: no;
+- effect on Phase 2: none; every physical gate remains open and required;
+- expected final classification after all campaign criteria pass: `ACCEPTED`.
+
+Permitted truth sources are `unit_test`, `deterministic_simulation`, and
+`host_api_observation`. The campaign cannot produce `physical_measurement`.
+Its stop boundary is a reviewed, unmerged implementation pull request after
+the initial executions, full validation, bounded artifact review, and formal
+campaign evaluation. No Phase 3C or later product milestone may begin.
+
 ---
 
 # 17. Simulation Sprint 1 requirements
@@ -1266,9 +1332,11 @@ The accepted milestone is:
 > **Simulation Sprint 1 — deterministic virtual audio hardware and full-system validation**
 
 It is frozen. Phase 2 physical hardware validation is open and incomplete.
-When Phase 2 is environmentally blocked, a dedicated later software milestone
-may proceed only under Section 16.1. No parallel milestone is authorized merely
-by naming it; its dependency matrix and scope require review first.
+Phase 3A and Phase 3B are conditionally accepted pending their physical gates.
+The authorized next action, after its governance amendment merges, is
+Simulation Assurance Campaign 1. It is test-only and must follow the matrix and
+stop boundary in Section 16.1 and
+`docs/planning/simulation-assurance-campaign-1.md`.
 
 The next agent must not:
 
@@ -1278,12 +1346,13 @@ The next agent must not:
 - add wireless;
 - add AI;
 - add a GUI;
-- add VBAP unless a separately reviewed Phase 3A scope under Section 16.1
-  authorizes it;
+- add or change renderer behavior;
+- start Phase 3C;
 - add physical latency claims.
 
-The simulator is complete and frozen. It must not be duplicated or used as a
-substitute for Phase 2 evidence.
+The simulator is complete and frozen. The campaign may exercise it but must not
+duplicate it, change its accepted record, or use it as a substitute for Phase 2
+evidence.
 
 ---
 
@@ -1349,6 +1418,16 @@ Do not rewrite history. Record replaced decisions in ADRs.
 - Reason: all non-hardware gates passed formal review; required physical gates
   remain open, so the milestone is conditionally accepted without an accepted
   tag.
+
+### Maintenance record: 2026-07-16 -- Simulation Assurance Campaign 1 scope
+
+- Milestone: test-only deterministic assurance campaign; implementation not
+  started.
+- Changed sections: hardware-blocked milestone authorization, dependency
+  matrix, campaign levels, truth sources, acceptance criteria, and stop
+  boundary.
+- Reason: authorize large reproducible software verification without creating
+  product features or substituting simulation for Phase 2 physical evidence.
 
 ---
 

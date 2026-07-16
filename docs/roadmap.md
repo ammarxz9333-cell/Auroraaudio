@@ -61,6 +61,26 @@ room behavior, calibration, hardware work, protected-contract changes, default
 changes, and later milestones. The complete dependency matrix and stop boundary
 are in `docs/planning/phase-3b-scope.md`.
 
+## Authorized Test Milestone: Simulation Assurance Campaign 1
+
+**Simulation Assurance Campaign 1 -- Massive Deterministic Property and Stress
+Testing** is authorized as a verification-only successor after its governance
+amendment merges.
+
+- `execution_state`: `NOT_STARTED`
+- `evaluation_classification`: none
+- implementation branch: `test/simulation-assurance-campaign-1`
+- product features: none
+- Phase 2 required for implementation or campaign acceptance: no
+- effect on Phase 2 physical gates: none; all remain open
+- expected classification after every campaign criterion passes: `ACCEPTED`
+
+The campaign reuses the accepted simulator and Phase 3A/3B renderers for
+bounded deterministic property, metamorphic, stress, replay, and accelerated
+soak testing. It cannot create another simulator, change protected contracts,
+start Phase 3C, or produce physical evidence. Its complete scope and execution
+levels are in `docs/planning/simulation-assurance-campaign-1.md`.
+
 ## Checkpoint 1: Architecture and Gain Simulation
 
 - Create architecture, roadmap, licensing, and agent guardrail documentation.
