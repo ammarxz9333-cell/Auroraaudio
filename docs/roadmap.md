@@ -1,5 +1,14 @@
 # Roadmap
 
+## Milestone Status
+
+- Phase 0 foundations: completed.
+- Simulation Sprint 1: **ACCEPTED and frozen on 2026-07-16**.
+- Phase 2 physical hardware validation: pending explicit approval; not started.
+
+The acceptance record is in `docs/acceptance/simulation-sprint-1.md`. The
+authoritative roadmap and gates remain in `AURORA_MASTER_REFERENCE.md`.
+
 ## Checkpoint 1: Architecture and Gain Simulation
 
 - Create architecture, roadmap, licensing, and agent guardrail documentation.
@@ -34,4 +43,3 @@
 
 - Build a minimal local UI showing the room, listener, speakers, draggable audio object, gain meters, current distance, delay, and renderer mode.
 - Ensure visualizer gains match the offline renderer.
-

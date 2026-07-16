@@ -3,7 +3,7 @@
 > **Status:** Living source of truth for Codex and any coding agent  
 > **Repository:** `D:\aurora-audio`  
 > **Primary language:** Rust  
-> **Last consolidated milestone:** Optimization Sprint 2B complete; simulation-first validation requested next.
+> **Last consolidated milestone:** Simulation Sprint 1 accepted and frozen on 2026-07-16; physical hardware validation remains pending.
 
 ---
 
@@ -659,7 +659,7 @@ Completed:
 - state machine.
 
 ## Phase 1 — Deterministic simulator
-Next priority.
+Accepted and frozen on 2026-07-16.
 
 Goals:
 
@@ -830,6 +830,43 @@ aurora simulate-output-validation
 
 All reports must label results as **simulated**.
 
+## 17.1 Simulation Sprint 1 — ACCEPTED
+
+- Acceptance date: `2026-07-16`
+- Accepted implementation commit: `cf7979b6c47d81387ab36d6e05b598d70cfe42cb`
+- Freeze tag: `simulation-sprint-1-accepted`
+- Tests: `112 passed`, `0 failed`, `5 explicitly ignored hardware-only tests`
+- Deterministic 24-hour checksum: `a39ef2203486cb2d`
+- Sample-pipeline checksum: `2cc43de3374b1db6`
+- 7.1 routing checksum: `1388dc3ba1e02b73`
+
+Acceptance commands:
+
+```powershell
+cargo fmt --all --check
+cargo clippy --workspace --all-targets --all-features -- -D warnings
+cargo test --workspace --all-features
+cargo bench --workspace
+cargo run -p aurora-cli --all-features -- simulate-duplex --profile usb-7-1 --duration-hours 24 --seed 12345 --report output\simulation\acceptance-usb-7-1-24h.json
+cargo run -p aurora-cli --all-features -- simulate-latency --profile usb-7-1 --loopback-delay-frames 777 --jitter-frames 3 --noise-db -60 --seed 42
+cargo run -p aurora-cli --all-features -- simulate-output-validation --profile usb-7-1 --layout 7.1 --report output\simulation\acceptance-validation-7-1.json
+```
+
+All six fixtures under `fixtures/simulation/fault_scenarios` were also run
+through `simulate-duplex`. Generated reports are under `output/simulation/` and
+are intentionally excluded from Git.
+
+Release benchmark summary at 48 kHz / 256 frames: full-block medians were
+`4.589 µs` (2 channels), `10.268 µs` (6), `13.090 µs` (8), and `18.599 µs`
+(12). The one-hour USB 7.1 virtual benchmark median was `67.858 ms`. Host power
+and thermal state caused variation between complete benchmark passes; no code
+benchmark regression was accepted.
+
+The accepted results are simulation facts only. The simulator does not validate
+host drivers, physical clock quality, DAC/ADC latency, analog behavior, USB
+scheduling, endpoint identity, or real unplug/replug behavior. Physical hardware
+validation remains pending and no physical latency was measured in this sprint.
+
 ---
 
 # 18. Standard report template for agents
@@ -916,9 +953,12 @@ Before doing any work:
 
 # 20. Immediate next action
 
-The next milestone is:
+The accepted milestone is:
 
 > **Simulation Sprint 1 — deterministic virtual audio hardware and full-system validation**
+
+It is frozen. Phase 2 physical hardware validation is pending explicit approval;
+no later milestone has been started by this acceptance procedure.
 
 The next agent must not:
 
@@ -955,6 +995,14 @@ Every update must include:
 - reason.
 
 Do not rewrite history. Record replaced decisions in ADRs.
+
+### Maintenance record: 2026-07-16
+
+- Milestone: Simulation Sprint 1 acceptance and freeze.
+- Changed sections: document status, current roadmap Phase 1, Simulation Sprint
+  1 acceptance record, and immediate next action.
+- Reason: formal independent acceptance completed with all required commands,
+  deterministic validations, fault scenarios, and implementation audit passing.
 
 ---
 
