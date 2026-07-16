@@ -983,6 +983,80 @@ benchmarks. Benchmark timing is `host_api_observation`, not a physical latency
 measurement. Physical 5.1/7.1 routing, endpoint behavior, stability, and audible
 conclusions remain pending under Phase 2. See `docs/acceptance/phase-3a.md`.
 
+### Authorized next parallel milestone: Phase 3B
+
+The owner-authorized next milestone is **Phase 3B -- Deterministic Horizontal
+Source Spread and Irregular Layout Support**.
+
+Current execution record:
+
+- `execution_state`: `NOT_STARTED`;
+- `evaluation_classification`: `none`;
+- planned branch: `phase-3b-horizontal-spread`;
+- required base: `main-v2` after the governance amendment defining this scope.
+
+Purpose and included scope:
+
+- extend the existing `aurora-renderer-vbap` crate rather than creating a
+  competing renderer;
+- add a documented normalized horizontal spread parameter over the finite,
+  inclusive domain `0.0..=1.0`;
+- preserve accepted Phase 3A point-source output at spread zero within a stated
+  floating-point tolerance;
+- distribute normalized energy deterministically to nearby eligible horizontal
+  speakers as spread increases;
+- support uneven, asymmetric, sparse, dense, and more-than-eight-speaker
+  horizontal layouts within configured caller-owned capacity;
+- make non-degenerate layout permutations equivalent after applying the same
+  output-channel permutation;
+- document deterministic handling of wraparound, exact hits, midpoint ties,
+  duplicate and near-duplicate angles, and degenerate one- or two-speaker
+  layouts.
+
+Phase 3B excludes elevation and 3D/triplet VBAP, HRTF or binaural rendering,
+Ambisonics/HOA, room simulation, reflections, reverberation, new distance or
+Doppler behavior, head tracking, listener orientation, hardware integration,
+calibration, physical validation, and every Phase 3C or later feature. It may
+not change the Aurora-owned `Renderer` trait, Basic renderer behavior, CLI or
+live defaults, callback ownership, state or fault semantics, device selection,
+or truth-source semantics.
+
+Hardware dependency matrix:
+
+- software-only gates: point-source compatibility, deterministic spread,
+  irregular-layout correctness, power normalization, finite output, stable
+  tie-breaking, layout-order independence, caller-owned bounded memory, zero
+  warmed-up allocations, public API documentation, protected-contract audit,
+  deterministic fixtures, and unit/integration tests;
+- deterministic simulation gates: repeated fixture reproducibility, canonical
+  and irregular scenarios, source sweeps across `-pi/+pi`, spread sweeps over
+  the complete domain, and deterministic checksums where suitable;
+- host-observation gates: representative offline renderer benchmarks and an
+  allocation audit, labeled only `host_api_observation`;
+- hardware-dependent gates: audible spread on independently identifiable
+  speakers, physical 5.1/7.1 routing, endpoint behavior, real-path level
+  consistency, and stability on physical hardware;
+- Phase 2 required for implementation: no;
+- Phase 2 required for software correctness evaluation: no;
+- Phase 2 required for final physical acceptance: yes;
+- Phase 3A dependency: mandatory; its point-source path and validation may not
+  regress;
+- expected classification after all non-hardware gates pass:
+  `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`.
+
+Permitted truth sources are `unit_test`, `deterministic_simulation`, and
+`host_api_observation`. `physical_measurement` remains unavailable until real
+hardware evidence exists. Benchmark timing is never physical latency.
+
+Execution starts as `NOT_STARTED`, moves to `IN_PROGRESS` only with the first
+authorized implementation commit, reaches `READY_FOR_EVALUATION` at the stated
+stop boundary, and becomes `CLOSED` only after criterion-by-criterion review.
+The implementation stop boundary is the documented spread algorithm, bounded
+implementation, required fixtures/tests, allocation audit, benchmarks, full
+validation, evaluation record, and an unmerged Phase 3B pull request. A required
+protected-contract change, unbounded memory, nondeterministic algorithm, Phase
+3A incompatibility, or architecture expansion stops the milestone.
+
 ---
 
 # 17. Simulation Sprint 1 requirements
@@ -1245,6 +1319,14 @@ Do not rewrite history. Record replaced decisions in ADRs.
   execution record, and standard report template.
 - Reason: separate implementation progress from evidence-based milestone
   evaluation and remove the pre-implementation classification ambiguity.
+
+### Maintenance record: 2026-07-16 -- Phase 3B scope authorization
+
+- Milestone: Phase 3B governance definition; implementation not started.
+- Changed sections: hardware-blocked parallel milestone authorization,
+  dependency matrix, execution/evaluation lifecycle, and stop boundary.
+- Reason: owner authorization for deterministic horizontal spread and irregular
+  layout work that reuses Phase 3A without changing protected contracts.
 
 ---
 

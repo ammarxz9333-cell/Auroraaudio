@@ -91,6 +91,21 @@ Stop before public trait changes, live default changes, channel-order changes,
 HRTF dependencies, codecs, HDMI, networking, wireless audio, GUI, AI, room
 calibration, or any physical claim.
 
+## Authorized successor: Phase 3B
+
+The owner-authorized successor is **Phase 3B -- Deterministic Horizontal Source
+Spread and Irregular Layout Support**. Its initial record is
+`execution_state=NOT_STARTED`, `evaluation_classification=none`, with planned
+branch `phase-3b-horizontal-spread` after this governance definition merges.
+
+It is parallel-safe because it extends the concrete Phase 3A VBAP crate without
+changing the Aurora-owned renderer trait or any real-time, state, fault, device,
+default, or reporting contract. Unit tests, deterministic fixture sweeps, and
+host observations can establish its software claims. Audible behavior, physical
+routing, endpoint behavior, level consistency, and hardware stability remain
+conditional on Phase 2. The mandatory matrix, criteria, and stop boundary are in
+`docs/planning/phase-3b-scope.md`.
+
 ## Git workflow
 
 - branch each parallel milestone from `main-v2`;
