@@ -107,6 +107,29 @@ routing, endpoint behavior, level consistency, and hardware stability remain
 conditional on Phase 2. The mandatory matrix, criteria, and stop boundary are in
 `docs/planning/phase-3b-scope.md`.
 
+## Authorized test-only successor
+
+**Simulation Assurance Campaign 1 -- Massive Deterministic Property and Stress
+Testing** is authorized only after its governance amendment merges. It reuses
+the existing accepted simulator and Phase 3A/3B renderers and adds no product
+feature or second simulator.
+
+| Dependency | Decision |
+| --- | --- |
+| Software-only criteria | Bounded deterministic generation, property/metamorphic invariants, replay, shrinking, reports, workflows, and documentation |
+| Simulation criteria | Required smoke, standard, repeated-seed, accelerated 24-hour, legacy-fixture, nightly, deep, and soak campaign levels |
+| Hardware criteria for the campaign | None |
+| Phase 2 required for implementation | No |
+| Phase 2 required for campaign acceptance | No |
+| Effect on Phase 2 | None; physical validation remains open and required |
+| Expected final classification | `ACCEPTED` only after every campaign software criterion passes |
+
+Campaign evidence may use only `unit_test`, `deterministic_simulation`, and
+`host_api_observation`. It cannot close a hardware gate or use
+`physical_measurement`. Protected contracts, accepted tags, and accepted
+Simulation Sprint 1 records remain immutable. The full definition is in
+`docs/planning/simulation-assurance-campaign-1.md`.
+
 ## Git workflow
 
 - branch each parallel milestone from `main-v2`;
