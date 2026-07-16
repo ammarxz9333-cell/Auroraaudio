@@ -16,7 +16,8 @@ Before code is written, a parallel milestone must record:
 
 | Field | Required content |
 | --- | --- |
-| Classification | One master-reference classification |
+| Execution state | One master-reference execution state |
+| Evaluation classification | `none` until required, then one master-reference classification |
 | Software criteria | Unit and offline integration behavior |
 | Simulation criteria | Deterministic virtual-backend behavior, if applicable |
 | Hardware criteria | Every physical result still required |
@@ -26,8 +27,12 @@ Before code is written, a parallel milestone must record:
 | Protected contracts | Traits and invariants that must remain unchanged |
 | Stop boundary | Explicitly excluded work and claims |
 
-Only `ACCEPTED` closes a milestone. Conditional or blocked classifications must
-remain visible in commits, pull requests, reports, and planning documents.
+Execution state and evaluation classification are separate fields. No
+classification is required while `execution_state=IN_PROGRESS`; a classification
+is mandatory at `READY_FOR_EVALUATION`, and `CLOSED` requires one. `IN_PROGRESS`
+is not acceptance. Only `ACCEPTED` fully closes a milestone as accepted;
+conditional or blocked classifications must remain visible in commits, pull
+requests, reports, and planning documents.
 
 ## Truth sources
 
@@ -65,6 +70,12 @@ This is `BLOCKED_BY_HARDWARE`, not pass or failure evidence.
 
 **Phase 3A -- Deterministic Offline Spatial Rendering Improvements** is the
 first safe candidate when constrained to existing contracts.
+
+Current record: `execution_state=NOT_STARTED`,
+`evaluation_classification=none`, branch `phase-3a`, based on `main-v2` at
+`fb494cb31463dd0f562d7fef4e4548e3cf16850d`. Creating the branch did not start
+implementation. The first authorized Phase 3A implementation commit changes the
+execution state to `IN_PROGRESS`.
 
 | Dependency | Decision |
 | --- | --- |

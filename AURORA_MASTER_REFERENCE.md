@@ -837,9 +837,32 @@ Parallel work must not duplicate `aurora-realtime-audio-sim` or modify the
 accepted Simulation Sprint 1 record. Physical validation remains on the open
 `phase-2-physical-hardware-validation` branch until its acceptance criteria pass.
 
-### Milestone classifications
+### Milestone execution states
 
-Every active milestone must use exactly one of these classifications:
+Execution state records where authorized work is in its lifecycle. It is a
+separate field from milestone evaluation classification and uses exactly one of
+these values:
+
+- `NOT_STARTED`: no implementation work has begun. Branch creation alone does
+  not necessarily count as implementation.
+- `IN_PROGRESS`: authorized milestone implementation is actively underway. No
+  acceptance or validation conclusion is implied, and the milestone has not yet
+  reached its evaluation boundary.
+- `READY_FOR_EVALUATION`: implementation has reached the authorized stop
+  boundary and the required checks and evidence are being evaluated. An
+  evaluation classification is mandatory in this state.
+- `CLOSED`: the current milestone execution cycle has received a terminal
+  evaluation classification and no further work is permitted except through an
+  approved follow-up or amendment. `CLOSED` does not by itself mean `ACCEPTED`.
+
+No evaluation classification is required while `execution_state` is
+`IN_PROGRESS`. `IN_PROGRESS` is not an acceptance classification.
+
+### Milestone evaluation classifications
+
+Evaluation classification records the conclusion supported by evidence, not
+the progress of implementation. When required, it must use exactly one of these
+values:
 
 - `ACCEPTED`: every required software, simulation, review, and hardware gate has
   passed. This is the only classification that fully closes a milestone.
@@ -855,8 +878,13 @@ Every active milestone must use exactly one of these classifications:
 - `REJECTED`: the implementation or evidence failed an applicable criterion or
   architecture review and cannot advance without a new reviewed change.
 
-Commits, pull requests, reports, and milestone documentation must state the
-current classification whenever it is not `ACCEPTED`.
+Execution state and evaluation classification must be recorded as different
+fields. Evaluation classification becomes mandatory when `execution_state` is
+`READY_FOR_EVALUATION`, and `execution_state=CLOSED` requires a terminal
+evaluation classification for the current execution cycle. Commits, pull
+requests, reports, and milestone documentation
+must state the current evaluation classification whenever one has been assigned
+and it is not `ACCEPTED`.
 
 ### Hardware dependency matrix
 
@@ -904,6 +932,17 @@ not approval for any contract change.
 
 The first technically safe later scope is **Phase 3A -- Deterministic Offline
 Spatial Rendering Improvements**.
+
+Current execution record:
+
+- `execution_state`: `NOT_STARTED`;
+- `evaluation_classification`: none;
+- branch: `phase-3a`;
+- branch base: `main-v2` at
+  `fb494cb31463dd0f562d7fef4e4548e3cf16850d`.
+
+Branch creation did not start implementation. Phase 3A may begin implementation
+after the milestone-execution-state clarification is merged.
 
 It may implement deterministic, offline renderer work that fits existing Aurora
 contracts, beginning with VBAP geometry and focused spread/elevation or irregular
@@ -1036,7 +1075,8 @@ Every agent must finish with this structure:
 
 ```text
 Milestone:
-Classification:
+Execution state:
+Evaluation classification:
 Scope completed:
 Scope intentionally not completed:
 
@@ -1186,6 +1226,14 @@ Do not rewrite history. Record replaced decisions in ADRs.
   and immediate next action.
 - Reason: permit controlled software-only progress while preserving every open
   physical validation requirement and the Simulation Sprint 1 freeze.
+
+### Maintenance record: 2026-07-16 -- milestone execution states
+
+- Milestone: governance clarification; no product milestone accepted.
+- Changed sections: hardware-blocked milestone lifecycle, Phase 3A current
+  execution record, and standard report template.
+- Reason: separate implementation progress from evidence-based milestone
+  evaluation and remove the pre-implementation classification ambiguity.
 
 ---
 
