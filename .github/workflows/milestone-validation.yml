@@ -1,0 +1,72 @@
+name: Milestone Validation
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: milestone-validation-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  simulation-acceptance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-milestone-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-milestone-
+            ${{ runner.os }}-cargo-
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - run: cargo test --workspace --all-features
+      - run: cargo bench --workspace
+      - name: Run deterministic 24-hour virtual USB 7.1 simulation
+        run: >-
+          cargo run -p aurora-cli --all-features -- simulate-duplex
+          --profile usb-7-1 --duration-hours 24 --seed 12345
+          --report output/simulation/manual-usb-7-1-24h.json
+      - name: Validate virtual loopback latency truth
+        run: >-
+          cargo run -p aurora-cli --all-features -- simulate-latency
+          --profile usb-7-1 --loopback-delay-frames 777
+          --jitter-frames 3 --noise-db -60 --seed 42
+      - name: Validate canonical 7.1 routing
+        run: >-
+          cargo run -p aurora-cli --all-features -- simulate-output-validation
+          --profile usb-7-1 --layout 7.1
+          --report output/simulation/manual-validation-7-1.json
+      - name: Run configured deterministic fault scenarios
+        shell: bash
+        run: |
+          set -euo pipefail
+          for fixture in fixtures/simulation/fault_scenarios/*.json; do
+            name="$(basename "${fixture}" .json)"
+            cargo run -p aurora-cli --all-features -- simulate-duplex \
+              --profile usb-7-1 \
+              --duration-hours 1 \
+              --seed 12345 \
+              --fault-script "${fixture}" \
+              --report "output/simulation/manual-fault-${name}.json"
+          done
+      - name: Upload simulation reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulation-validation-reports
+          path: output/simulation/*.json
+          if-no-files-found: warn
