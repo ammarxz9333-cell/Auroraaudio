@@ -254,7 +254,11 @@ fn irregular_source_and_spread_sweeps_have_stable_checksum() {
                     assert!(gain.gain.is_finite());
                     assert!((0.0_f32 * gain.gain).is_finite());
                     assert!((f32::MAX * gain.gain).is_finite());
-                    checksum ^= gain.gain.to_bits() as u64;
+                    // Quantize below the suite's numerical tolerance so the
+                    // checksum describes Aurora behavior, not platform libm
+                    // rounding differences in the generated source vectors.
+                    let quantized = (gain.gain * 100_000.0).round() as u32;
+                    checksum ^= quantized as u64;
                     checksum = checksum.wrapping_mul(0x0000_0100_0000_01b3);
                 }
             }
@@ -265,5 +269,5 @@ fn irregular_source_and_spread_sweeps_have_stable_checksum() {
     let first = sweep_checksum();
     let second = sweep_checksum();
     assert_eq!(first, second);
-    assert_eq!(first, 0x3649_7722_6e88_876f);
+    assert_eq!(first, 0x0ef1_fc03_dfa5_892e);
 }

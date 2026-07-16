@@ -86,6 +86,9 @@ only grows as `s` increases, and `s = 1` includes every valid horizontal speaker
 Repeated calls with identical IEEE-754 inputs, configuration, and history are
 bit deterministic on the same supported build target. Test tolerances are
 `1e-5` for gain comparison and `1e-4` for unit-power checks.
+Cross-platform fixture checksums quantize gains to `1e-5` before hashing so
+they describe renderer behavior within the declared tolerance rather than
+platform `libm` rounding in generated source vectors.
 
 ## Capacity And Safety
 
@@ -115,7 +118,7 @@ physical latency.
 - workspace tests: 144 passed, 0 failed, 5 explicitly ignored hardware-only
   tests;
 - Phase 3B renderer tests: 26 unit and 6 offline integration tests;
-- irregular source/spread sweep checksum: `364977226e88876f`;
+- quantized irregular source/spread sweep checksum: `0ef1fc03dfa5892e`;
 - deterministic fixture suite: three consecutive passing runs;
 - warmed-up spread rendering: 0 allocations over 1,000 calls on a 16-speaker
   layout;

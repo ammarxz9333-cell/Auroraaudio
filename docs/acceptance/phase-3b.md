@@ -38,7 +38,7 @@ commit without a self-referential placeholder.
 | Zero warmed-up allocation | PASS | 0 allocations over 1,000 spread renders on 16 speakers; `unit_test` |
 | Public API documentation | PASS | Strict Rustdoc with warnings denied; `build_validation` |
 | Protected contracts and defaults | PASS | No diff in API, Basic, CLI, realtime, simulator, or Cargo manifests; `code_review` |
-| Deterministic fixtures | PASS | Three repeated runs; checksum `364977226e88876f`; `deterministic_simulation` |
+| Deterministic fixtures | PASS | Three repeated runs; quantized checksum `0ef1fc03dfa5892e`; `deterministic_simulation` |
 | Host benchmark | PASS | Focused and workspace Criterion completed; `host_api_observation` |
 | Physical hardware gates | PENDING | No physical evidence was collected; `physical_measurement` unavailable |
 
@@ -64,8 +64,8 @@ The deterministic fixture command ran three consecutive times.
   tests.
 - Phase 3B coverage: 26 VBAP unit tests and 6 offline integration tests.
 - Warmed-up spread allocations: 0 over 1,000 calls.
-- Irregular sweep: 21 spread values by 721 source angles, repeated with checksum
-  `364977226e88876f`.
+- Irregular sweep: 21 spread values by 721 source angles, repeated with
+  cross-platform quantized checksum `0ef1fc03dfa5892e`.
 - Dependencies: none added.
 - Production unsafe: none added; allocation instrumentation remains test-only.
 
