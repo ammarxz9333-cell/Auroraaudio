@@ -41,6 +41,26 @@ exists.
 No implementation is authorized by this queue entry alone. A Phase 3A branch
 must first restate its dependency matrix and receive scope approval.
 
+## Authorized Parallel Milestone: Phase 3B
+
+**Phase 3B -- Deterministic Horizontal Source Spread and Irregular Layout
+Support** is owner-authorized under Section 16.1 after its governance amendment
+merges.
+
+- `execution_state`: `NOT_STARTED`
+- `evaluation_classification`: `none`
+- planned branch: `phase-3b-horizontal-spread`
+- Phase 3A dependency: mandatory and unchanged
+- Phase 2 required for implementation or software evaluation: no
+- Phase 2 required for final physical acceptance: yes
+
+The milestone adds a bounded concrete spread API to the existing VBAP crate,
+irregular horizontal-layout evidence, deterministic sweeps, allocation tests,
+and host benchmarks. It excludes elevation, 3D/triplet VBAP, HRTF, Ambisonics,
+room behavior, calibration, hardware work, protected-contract changes, default
+changes, and later milestones. The complete dependency matrix and stop boundary
+are in `docs/planning/phase-3b-scope.md`.
+
 ## Checkpoint 1: Architecture and Gain Simulation
 
 - Create architecture, roadmap, licensing, and agent guardrail documentation.
