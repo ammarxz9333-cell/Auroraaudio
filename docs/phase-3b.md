@@ -149,7 +149,7 @@ was observed. A complete workspace pass showed host-load variation in unrelated
 
 - evaluation date: `2026-07-16`;
 - final implementation commit:
-  `4dd7f30125cbbdeba4273b7a560085f6534c5232`;
+  `f95c91b1f4acef01ab5613286cb8797900c6f2e9`;
 - evaluation evidence commit:
   `04a37dca069e90c707954f88093fc1ba2858325b`;
 - result: every software, deterministic, documentation, allocation,
