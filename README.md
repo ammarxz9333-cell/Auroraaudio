@@ -4,6 +4,13 @@ Aurora is a Phase 0 prototype for an open, modular spatial-audio processing plat
 
 This checkpoint intentionally excludes HDMI/eARC capture, Dolby/DTS decoding, wireless speakers, hardware amplification, and visualizer work. The current implementation focuses on core data structures, a renderer trait, a deterministic inverse-distance renderer, offline WAV rendering, tests, and CLI commands for gain inspection and file rendering.
 
+## Repository Status
+
+`main-v2` is the canonical development branch. The earlier unrelated GitHub
+history remains archived without merging or rewriting. See
+[`docs/repository-history.md`](docs/repository-history.md) for the branch and
+acceptance boundaries.
+
 ## Build
 
 ```powershell
