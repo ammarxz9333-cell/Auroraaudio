@@ -183,6 +183,7 @@ enum StructuredProbe {
     UnsupportedSampleRate,
     NonFiniteSpeaker,
     RoutingCapacity,
+    UnsupportedClockMismatch,
     ExtremeFiniteRenderer,
 }
 
@@ -385,8 +386,8 @@ fn build_scenario(options: &CampaignOptions, ordinal: u64, seed: u64) -> Scenari
     };
     let id = format!("sac1-{ordinal:012x}-{seed:016x}");
     let reproducible_command = format!(
-        "cargo run --release -p aurora-simulation-assurance -- --level {} --replay-seed {seed} --replay-ordinal {ordinal} --report output/simulation-assurance/replay-{id}.json",
-        options.level.as_str()
+        "cargo run --release -p aurora-simulation-assurance -- --level {} --replay-seed {seed} --replay-ordinal {ordinal} --soak-hours {} --report output/simulation-assurance/replay-{id}.json",
+        options.level.as_str(), options.soak_hours
     );
     Scenario {
         id,
@@ -421,7 +422,8 @@ fn duplex_config(seed: u64, ordinal: u64, duration_seconds: u64) -> DuplexSimula
     let sample_rate = rates[(rng.next_u64() as usize) % rates.len()];
     let ppm_values = [-250, -100, -25, 0, 25, 100, 250];
     let input_ppm = ppm_values[(rng.next_u64() as usize) % ppm_values.len()];
-    let output_ppm = ppm_values[(rng.next_u64() as usize) % ppm_values.len()];
+    let relative_ppm = [-100, -25, 0, 25, 100][(rng.next_u64() as usize) % 5];
+    let output_ppm = (input_ppm + relative_ppm).clamp(-250, 250);
     let jitter = [0, 1, 3, 16, 96][(rng.next_u64() as usize) % 5];
     let faults = if ordinal % 5 == 0 && duration_seconds >= 2 {
         let mut values = vec![FaultEvent {
@@ -512,11 +514,12 @@ fn renderer_scenario(seed: u64, ordinal: u64) -> RendererScenario {
 }
 
 fn structured_probe(ordinal: u64) -> StructuredProbe {
-    match (ordinal / 4) % 5 {
+    match (ordinal / 4) % 6 {
         0 => StructuredProbe::InvalidSpread,
         1 => StructuredProbe::UnsupportedSampleRate,
         2 => StructuredProbe::NonFiniteSpeaker,
         3 => StructuredProbe::RoutingCapacity,
+        4 => StructuredProbe::UnsupportedClockMismatch,
         _ => StructuredProbe::ExtremeFiniteRenderer,
     }
 }
@@ -809,6 +812,17 @@ fn execute_probe(probe: StructuredProbe, seed: u64) -> Result<ScenarioEvidence, 
                 return failure(
                     FailureCategory::StructuredErrorMismatch,
                     "undersized routing endpoint was accepted",
+                );
+            }
+        }
+        StructuredProbe::UnsupportedClockMismatch => {
+            let mut config = duplex_config(seed, 0, 8 * 60 * 60);
+            config.input_ppm = Some(250);
+            config.output_ppm = Some(-250);
+            if run_duplex_simulation(&config).is_ok() {
+                return failure(
+                    FailureCategory::StructuredErrorMismatch,
+                    "unsupported prolonged clock mismatch was accepted",
                 );
             }
         }
@@ -1172,5 +1186,23 @@ mod tests {
         assert_eq!(report.resource_bounds.max_live_generated_scenarios, 1);
         assert_eq!(report.resource_bounds.retained_failure_limit, FAILURE_LIMIT);
         let _ = fs::remove_file(value.report_path);
+    }
+
+    #[test]
+    fn generated_valid_duplex_clock_mismatch_stays_supported() {
+        for ordinal in (0..1_000).step_by(4) {
+            let seed = scenario_seed(0, ordinal);
+            let config = duplex_config(seed, ordinal, 60);
+            let relative = config.input_ppm.unwrap() - config.output_ppm.unwrap();
+            assert!(
+                relative.abs() <= 250,
+                "ordinal={ordinal} relative={relative}"
+            );
+        }
+    }
+
+    #[test]
+    fn prolonged_unsupported_clock_mismatch_is_an_expected_probe() {
+        assert!(execute_probe(StructuredProbe::UnsupportedClockMismatch, 42).is_ok());
     }
 }
