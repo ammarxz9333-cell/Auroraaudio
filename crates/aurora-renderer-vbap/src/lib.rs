@@ -1303,6 +1303,69 @@ mod tests {
     }
 
     #[test]
+    fn spread_silence_and_extreme_finite_input_remain_bounded() {
+        let (mut renderer, mut scratch, mut gains) = renderer();
+        for object in [
+            RenderObject {
+                position: Vector3::new(0.0, 1.0, 0.0),
+                gain: 0.0,
+            },
+            RenderObject {
+                position: Vector3::new(f32::MAX, -f32::MAX, f32::MAX),
+                gain: f32::MAX,
+            },
+        ] {
+            renderer
+                .render_spread_gains(
+                    &listener(),
+                    &[SpreadRenderObject {
+                        object,
+                        spread: HorizontalSpread::MAXIMUM,
+                    }],
+                    &mut gains,
+                    &mut scratch,
+                )
+                .unwrap();
+            assert!(gains.iter().all(|gain| {
+                gain.gain.is_finite()
+                    && gain.distance_meters.is_finite()
+                    && gain.delay_samples.is_finite()
+            }));
+            if object.gain == 0.0 {
+                assert!(gains.iter().all(|gain| gain.gain == 0.0));
+            }
+        }
+    }
+
+    #[test]
+    fn spread_path_reuses_structured_output_shape_error() {
+        let (mut renderer, mut scratch, _) = renderer();
+        let mut gains = vec![SpeakerGain::default(); 3];
+        let error = renderer
+            .render_spread_gains(
+                &listener(),
+                &[SpreadRenderObject {
+                    object: RenderObject {
+                        position: Vector3::new(0.0, 1.0, 0.0),
+                        gain: 1.0,
+                    },
+                    spread: HorizontalSpread::new(0.5).unwrap(),
+                }],
+                &mut gains,
+                &mut scratch,
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            RendererError::OutputBufferSize {
+                required: 2,
+                actual: 3,
+            }
+        );
+    }
+
+    #[test]
     fn extreme_finite_runtime_state_remains_finite() {
         let (mut renderer, mut scratch, mut gains) = renderer();
         renderer
