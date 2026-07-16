@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use aurora_core::Vector3;
 use aurora_renderer_api::{RenderObject, Renderer, RendererScratch, SpeakerGain};
-use aurora_renderer_vbap::VbapRenderer;
+use aurora_renderer_vbap::{HorizontalSpread, SpreadRenderObject, VbapRenderer};
 use aurora_scene::{load_render_scene, RenderScene};
 
 fn fixture(name: &str) -> RenderScene {
@@ -36,6 +36,30 @@ fn render(
             &[RenderObject {
                 position,
                 gain: 1.0,
+            }],
+            gains,
+            scratch,
+        )
+        .unwrap();
+}
+
+fn render_spread(
+    renderer: &mut VbapRenderer,
+    scratch: &mut RendererScratch,
+    gains: &mut [SpeakerGain],
+    scene: &RenderScene,
+    position: Vector3,
+    spread: f32,
+) {
+    renderer
+        .render_spread_gains(
+            &scene.listener,
+            &[SpreadRenderObject {
+                object: RenderObject {
+                    position,
+                    gain: 1.0,
+                },
+                spread: HorizontalSpread::new(spread).unwrap(),
             }],
             gains,
             scratch,
@@ -138,4 +162,116 @@ fn full_circle_is_deterministic_finite_and_continuous() {
     assert_eq!(first.0, second.0);
     assert_eq!(first.1, second.1);
     assert!(first.1 < 0.02, "maximum gain-vector step was {}", first.1);
+}
+
+#[test]
+fn canonical_fixture_zero_spread_matches_phase_3a() {
+    for name in ["stereo_circle.json", "circle.json", "circle_7_1.json"] {
+        let scene = fixture(name);
+        let position = scene.trajectory.position_at_time(0.375);
+        let (mut point_renderer, mut point_scratch, mut point_gains) = configured_renderer(&scene);
+        let (mut spread_renderer, mut spread_scratch, mut spread_gains) =
+            configured_renderer(&scene);
+        render(
+            &mut point_renderer,
+            &mut point_scratch,
+            &mut point_gains,
+            &scene,
+            position,
+        );
+        render_spread(
+            &mut spread_renderer,
+            &mut spread_scratch,
+            &mut spread_gains,
+            &scene,
+            position,
+            0.0,
+        );
+        assert_eq!(spread_gains, point_gains);
+    }
+}
+
+#[test]
+fn irregular_fixture_order_only_permutes_spread_outputs() {
+    let scene = fixture("irregular_horizontal_10.json");
+    let mut reversed = scene.clone();
+    reversed.speakers.reverse();
+    let position = Vector3::new(-0.7, 0.9, 0.0);
+
+    let (mut first_renderer, mut first_scratch, mut first_gains) = configured_renderer(&scene);
+    let (mut second_renderer, mut second_scratch, mut second_gains) =
+        configured_renderer(&reversed);
+    render_spread(
+        &mut first_renderer,
+        &mut first_scratch,
+        &mut first_gains,
+        &scene,
+        position,
+        0.65,
+    );
+    render_spread(
+        &mut second_renderer,
+        &mut second_scratch,
+        &mut second_gains,
+        &reversed,
+        position,
+        0.65,
+    );
+
+    for (index, speaker) in scene.speakers.iter().enumerate() {
+        let reversed_index = reversed
+            .speakers
+            .iter()
+            .position(|candidate| candidate.id == speaker.id)
+            .unwrap();
+        assert!((first_gains[index].gain - second_gains[reversed_index].gain).abs() < 1.0e-5);
+    }
+}
+
+#[test]
+fn irregular_source_and_spread_sweeps_have_stable_checksum() {
+    fn sweep_checksum() -> u64 {
+        let scene = fixture("irregular_horizontal_10.json");
+        let (mut renderer, mut scratch, mut gains) = configured_renderer(&scene);
+        let mut checksum = 0xcbf2_9ce4_8422_2325_u64;
+
+        for spread_step in 0..=20 {
+            let spread = spread_step as f32 / 20.0;
+            for angle_step in 0..=720 {
+                let angle =
+                    -std::f32::consts::PI + std::f32::consts::TAU * angle_step as f32 / 720.0;
+                render_spread(
+                    &mut renderer,
+                    &mut scratch,
+                    &mut gains,
+                    &scene,
+                    Vector3::new(angle.cos(), angle.sin(), 0.0),
+                    spread,
+                );
+                let power = gains.iter().map(|gain| gain.gain.powi(2)).sum::<f32>();
+                assert!((power - 1.0).abs() < 0.0001);
+                for gain in &gains {
+                    assert!(gain.gain.is_finite());
+                    assert!((0.0_f32 * gain.gain).is_finite());
+                    assert!((f32::MAX * gain.gain).is_finite());
+                    // Quantize below the suite's numerical tolerance so the
+                    // checksum describes Aurora behavior, not platform libm
+                    // rounding differences in the generated source vectors.
+                    let quantized = (gain.gain * 100_000.0).round() as u32;
+                    checksum ^= quantized as u64;
+                    checksum = checksum.wrapping_mul(0x0000_0100_0000_01b3);
+                }
+            }
+        }
+        checksum
+    }
+
+    let first = sweep_checksum();
+    let second = sweep_checksum();
+    assert_eq!(first, second);
+    if cfg!(target_os = "windows") {
+        assert_eq!(first, 0x0ef1_fc03_dfa5_892e);
+    } else if cfg!(target_os = "linux") {
+        assert_eq!(first, 0x6c25_035a_7242_4f0f);
+    }
 }

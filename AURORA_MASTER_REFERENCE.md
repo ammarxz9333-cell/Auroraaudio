@@ -990,8 +990,8 @@ Source Spread and Irregular Layout Support**.
 
 Current execution record:
 
-- `execution_state`: `NOT_STARTED`;
-- `evaluation_classification`: `none`;
+- `execution_state`: `CLOSED`;
+- `evaluation_classification`: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`;
 - planned branch: `phase-3b-horizontal-spread`;
 - required base: `main-v2` after the governance amendment defining this scope.
 
@@ -1048,14 +1048,27 @@ Permitted truth sources are `unit_test`, `deterministic_simulation`, and
 `host_api_observation`. `physical_measurement` remains unavailable until real
 hardware evidence exists. Benchmark timing is never physical latency.
 
-Execution starts as `NOT_STARTED`, moves to `IN_PROGRESS` only with the first
-authorized implementation commit, reaches `READY_FOR_EVALUATION` at the stated
+Execution started as `NOT_STARTED` and moved to `IN_PROGRESS` with the first
+authorized Phase 3B implementation commit. It reaches `READY_FOR_EVALUATION` at the stated
 stop boundary, and becomes `CLOSED` only after criterion-by-criterion review.
 The implementation stop boundary is the documented spread algorithm, bounded
 implementation, required fixtures/tests, allocation audit, benchmarks, full
 validation, evaluation record, and an unmerged Phase 3B pull request. A required
 protected-contract change, unbounded memory, nondeterministic algorithm, Phase
 3A incompatibility, or architecture expansion stops the milestone.
+
+Phase 3B reached `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE` on 2026-07-16 after
+formal evaluation of implementation commit
+`f95c91b1f4acef01ab5613286cb8797900c6f2e9` and evidence commit
+`04a37dca069e90c707954f88093fc1ba2858325b`. All software, deterministic,
+documentation, allocation, and host-observation gates passed: 144 tests passed,
+5 hardware-only tests remained explicitly ignored, warmed-up spread rendering
+allocated zero times over 1,000 calls, and the irregular sweep checksum was
+`0ef1fc03dfa5892e` on Windows and `6c25035a72424f0f` on Linux after quantizing
+gains to the declared `1e-5` comparison tolerance. Physical audible behavior,
+routing, endpoint behavior,
+real-path levels, and stability remain pending. See
+`docs/acceptance/phase-3b.md`.
 
 ---
 
@@ -1327,6 +1340,15 @@ Do not rewrite history. Record replaced decisions in ADRs.
   dependency matrix, execution/evaluation lifecycle, and stop boundary.
 - Reason: owner authorization for deterministic horizontal spread and irregular
   layout work that reuses Phase 3A without changing protected contracts.
+
+### Maintenance record: 2026-07-16 -- Phase 3B evaluation
+
+- Milestone: Phase 3B deterministic horizontal spread and irregular layouts.
+- Changed sections: Phase 3B execution record, evidence summary, final
+  classification, and acceptance-document reference.
+- Reason: all non-hardware gates passed formal review; required physical gates
+  remain open, so the milestone is conditionally accepted without an accepted
+  tag.
 
 ---
 

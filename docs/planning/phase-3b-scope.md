@@ -2,14 +2,14 @@
 
 ## Milestone Record
 
-- `execution_state`: `NOT_STARTED`
-- `evaluation_classification`: `none`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`
 - planned branch: `phase-3b-horizontal-spread`
 - required base: `main-v2` after this governance amendment merges
 - predecessor: Phase 3A, `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`
 
-Branch creation alone does not start implementation. The record moves to
-`IN_PROGRESS` only with the first authorized implementation commit.
+Branch creation alone did not start implementation. The first authorized Phase
+3B implementation commit moved this record to `IN_PROGRESS`.
 
 ## Purpose And Included Scope
 
