@@ -935,15 +935,16 @@ Spatial Rendering Improvements**.
 
 Current execution record:
 
-- `execution_state`: `READY_FOR_EVALUATION`;
-- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`;
+- `execution_state`: `CLOSED`;
+- `evaluation_classification`: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`;
 - branch: `phase-3a`;
 - branch base: `main-v2` at
   `bc2cf637bb8dc5d526a28271e1070efcff1e09d4`.
 
-Implementation reached its authorized stop boundary. Software evidence and the
-remaining hardware gates are recorded in `docs/phase-3a.md`; pull-request review
-is pending and no acceptance is implied.
+Formal software evaluation passed on 2026-07-16. The execution cycle is closed,
+but the milestone remains conditionally open because the hardware gates recorded
+in `docs/phase-3a.md` have not run. This is not full acceptance, and no accepted
+tag is authorized.
 
 It may implement deterministic, offline renderer work that fits existing Aurora
 contracts, beginning with VBAP geometry and focused spread/elevation or irregular
@@ -972,6 +973,15 @@ After its implementation is complete, Phase 3A may use
 `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`. It may reach
 `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE` only after formal software and
 simulation review.
+
+Phase 3A reached `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE` on 2026-07-16 after
+formal software review of evaluated commit
+`501fb9eea3c19284d71bd9d9bfa21e664f6e5a55`. The review recorded 130 passing
+tests, 5 explicitly ignored hardware-only tests, zero warmed-up renderer
+allocations, successful formatting, Clippy, Rustdoc, Actionlint, and workspace
+benchmarks. Benchmark timing is `host_api_observation`, not a physical latency
+measurement. Physical 5.1/7.1 routing, endpoint behavior, stability, and audible
+conclusions remain pending under Phase 2. See `docs/acceptance/phase-3a.md`.
 
 ---
 

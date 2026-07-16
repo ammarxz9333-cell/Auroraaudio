@@ -2,14 +2,15 @@
 
 ## Current State
 
-- `execution_state`: `READY_FOR_EVALUATION`
-- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`
 - branch: `phase-3a`
 - branch base: `main-v2` at
   `bc2cf637bb8dc5d526a28271e1070efcff1e09d4`
 
-Implementation reached the authorized stop boundary. Pull-request review and
-hardware-dependent validation remain pending; this is not acceptance.
+Formal software evaluation passed on 2026-07-16. The current execution cycle is
+closed, but the milestone remains conditionally open because the physical gates
+below have not run. This is not full acceptance and creates no accepted tag.
 
 ## Authorized Scope
 
@@ -72,9 +73,11 @@ and WAV metadata are unchanged.
 
 Correctness and allocation evidence uses truth source `unit_test`.
 
-- 8 renderer unit tests cover stereo geometry, exact direction, listener
-  coincidence, silence, deterministic output, structured no-speaker failure,
-  unchanged capacities, and zero allocations over 1,000 warmed-up calls;
+- 15 renderer unit tests cover stereo geometry, exact direction, midpoint and
+  wraparound behavior, duplicate-angle tie-breaking, listener coincidence,
+  single-speaker and invalid-buffer cases, finite-input validation, extreme
+  finite values, silence, determinism, structured no-speaker failure, unchanged
+  capacities, and zero allocations over 1,000 warmed-up calls;
 - 3 offline fixture tests cover canonical indices, finite 5.1/7.1 output,
   scene-order independence, deterministic full-circle output, and smooth gain
   transitions;
@@ -89,14 +92,31 @@ host timer:
 
 | Renderer | Layout | Median estimate | 95% estimate interval | Block budget |
 | --- | --- | --- | --- | --- |
-| VBAP | 5.1 | 320.72 ns | 319.68--321.86 ns | 0.0060% |
-| Basic inverse distance | 5.1 | 67.95 ns | 67.76--68.13 ns | 0.0013% |
-| VBAP | 7.1 | 511.73 ns | 510.56--512.87 ns | 0.0096% |
-| Basic inverse distance | 7.1 | 84.25 ns | 84.06--84.45 ns | 0.0016% |
+| VBAP | 5.1 | 367.28 ns | 366.33--368.30 ns | 0.0069% |
+| Basic inverse distance | 5.1 | 65.83 ns | 65.70--65.96 ns | 0.0012% |
+| VBAP | 7.1 | 570.11 ns | 566.98--573.39 ns | 0.0107% |
+| Basic inverse distance | 7.1 | 82.90 ns | 82.73--83.09 ns | 0.0016% |
 
-VBAP was approximately 4.72 times the basic-renderer cost for 5.1 and 6.07 times
-for 7.1. These are host benchmark observations, not physical latency
+VBAP was approximately 5.58 times the basic-renderer cost for 5.1 and 6.88 times
+for 7.1. Finite-edge hardening increased the VBAP benchmark by approximately
+12% relative to the pre-evaluation baseline while remaining below 0.011% of the
+block budget. These are host benchmark observations, not physical latency
 measurements. Criterion did not report p95 or maximum latency for this run.
+
+## Formal Evaluation
+
+- evaluation date: `2026-07-16`;
+- submitted implementation commit:
+  `1d64cbd1030dda0ff464113110807f48031b6823`;
+- evaluated implementation and defect-fix commit:
+  `501fb9eea3c19284d71bd9d9bfa21e664f6e5a55`;
+- pull request: `#10`;
+- result: all software, review, documentation, allocation, and benchmark gates
+  passed; 130 tests passed and 5 hardware-only tests remained ignored;
+- final classification: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`.
+
+The detailed criterion record and commands are in
+`docs/acceptance/phase-3a.md`. No physical evidence was used.
 
 ## Pending Hardware Gates
 

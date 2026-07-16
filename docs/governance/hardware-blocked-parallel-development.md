@@ -71,11 +71,12 @@ This is `BLOCKED_BY_HARDWARE`, not pass or failure evidence.
 **Phase 3A -- Deterministic Offline Spatial Rendering Improvements** is the
 first safe candidate when constrained to existing contracts.
 
-Current record: `execution_state=READY_FOR_EVALUATION`,
-`evaluation_classification=IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`, branch
+Current record: `execution_state=CLOSED`,
+`evaluation_classification=CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`, branch
 `phase-3a`, based on `main-v2` at
 `bc2cf637bb8dc5d526a28271e1070efcff1e09d4`. Implementation reached its stop
-boundary, but review and hardware-dependent gates remain open.
+boundary and formal software review passed on 2026-07-16, but the
+hardware-dependent gates remain open.
 
 | Dependency | Decision |
 | --- | --- |
@@ -84,8 +85,7 @@ boundary, but review and hardware-dependent gates remain open.
 | Hardware criteria | Physical multichannel routing, endpoint behavior, stability, and audible/speaker-dependent conclusions |
 | Phase 2 required for implementation | No, for offline work using existing contracts |
 | Phase 2 required for final acceptance | Yes, for hardware-relevant claims and gates |
-| Classification after implementation completes | `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING` |
-| Possible reviewed classification | `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE` |
+| Final evaluated classification | `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE` |
 
 Stop before public trait changes, live default changes, channel-order changes,
 HRTF dependencies, codecs, HDMI, networking, wireless audio, GUI, AI, room
