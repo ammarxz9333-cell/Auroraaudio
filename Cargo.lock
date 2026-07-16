@@ -286,6 +286,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-simulation-assurance"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aurora-core",
+ "aurora-realtime-audio-sim",
+ "aurora-renderer-api",
+ "aurora-renderer-vbap",
+ "clap",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "autocfg"
 version = "1.5.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
