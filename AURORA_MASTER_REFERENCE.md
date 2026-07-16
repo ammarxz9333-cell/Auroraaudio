@@ -3,7 +3,7 @@
 > **Status:** Living source of truth for Codex and any coding agent  
 > **Repository:** `D:\aurora-audio`  
 > **Primary language:** Rust  
-> **Last consolidated milestone:** Simulation Sprint 1 accepted and frozen on 2026-07-16; physical hardware validation remains pending.
+> **Last consolidated milestone:** Simulation Sprint 1 accepted and frozen on 2026-07-16; Phase 2 physical hardware validation remains open and incomplete. Hardware-blocked parallel development is governed by Section 16.1.
 
 ---
 
@@ -409,6 +409,21 @@ Terms must be precise:
 
 Never interchange these labels.
 
+Every generated result and report must also identify exactly one truth source:
+
+- `unit_test` -- deterministic in-process verification without a virtual device;
+- `deterministic_simulation` -- deterministic modeled execution with explicit
+  simulated truth;
+- `virtual_audio_backend` -- execution through Aurora's software audio-device
+  backend, still simulated and not physical;
+- `host_api_observation` -- metadata or behavior observed through a host API
+  without an accepted physical signal path;
+- `physical_measurement` -- evidence captured from an explicitly documented
+  physical signal path.
+
+Only `physical_measurement` may be used as physical evidence. No other truth
+source may satisfy a physical acceptance gate or be relabeled as measured.
+
 ---
 
 # 9. Licensing and legal rules
@@ -681,6 +696,9 @@ Goals:
 ## Phase 2 — Physical hardware validation
 Only after simulator approval.
 
+Status: **OPEN and INCOMPLETE**. Phase 2 remains mandatory while parallel
+software work proceeds under Section 16.1.
+
 Goals:
 
 - real capture/output interface;
@@ -692,7 +710,9 @@ Goals:
 - driver-specific limitations.
 
 ## Phase 3 — Spatial rendering improvements
-Only after transport/backend validation.
+Software-only work may begin under Section 16.1 while Phase 2 is blocked.
+Hardware-relevant acceptance remains conditional until the applicable Phase 2
+evidence exists.
 
 Candidates:
 
@@ -771,6 +791,147 @@ The simulator cannot prove:
 - amplifier/speaker behavior.
 
 Those require Phase 2 hardware validation.
+
+## 16.1 Hardware-Blocked Parallel Development Policy
+
+This policy permits controlled software progress while required physical
+hardware is unavailable. It does not weaken, replace, postpone, or infer success
+for any physical acceptance criterion.
+
+### Phase 2 status and evidence boundary
+
+Phase 2 remains **OPEN and INCOMPLETE**. Physical hardware validation is
+mandatory. Simulation Sprint 1 is accepted and frozen, but it cannot satisfy or
+replace Phase 2.
+
+No acceptance for physical latency, physical channel routing, physical clock
+drift, USB scheduling or behavior, driver behavior, unplug/replug behavior, or
+analog loopback may be inferred from unit tests, deterministic simulation, a
+virtual backend, or host API observations.
+
+The current environmental blocker is:
+
+- no usable 2-channel input endpoint;
+- no physical loopback path;
+- no exact 6-channel or 8-channel output endpoint;
+- no independently identifiable multichannel physical paths.
+
+This blocker is environmental. It is not evidence that Phase 2 passed or failed.
+
+### Permission for parallel work
+
+A later software milestone may begin before Phase 2 closes only when all of the
+following are true:
+
+- implementation does not require unresolved physical evidence;
+- accepted real-time contracts remain unchanged unless separately approved;
+- deterministic unit, integration, and simulation tests can validate the
+  software behavior claimed by the milestone;
+- any acceptance depending on hardware remains explicitly conditional;
+- no fabricated, estimated, simulated, virtual, or host-observed value is
+  consumed as a hardware measurement;
+- the milestone has the dependency matrix required below;
+- work uses a dedicated branch and does not merge automatically into `main-v2`.
+
+Parallel work must not duplicate `aurora-realtime-audio-sim` or modify the
+accepted Simulation Sprint 1 record. Physical validation remains on the open
+`phase-2-physical-hardware-validation` branch until its acceptance criteria pass.
+
+### Milestone classifications
+
+Every active milestone must use exactly one of these classifications:
+
+- `ACCEPTED`: every required software, simulation, review, and hardware gate has
+  passed. This is the only classification that fully closes a milestone.
+- `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`: software and simulation criteria
+  have passed formal review, but identified hardware gates remain open. The
+  milestone may be integrated only with its limitations visible and remains open.
+- `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`: implementation is complete, but
+  one or more required validation or review gates have not passed. This is not
+  acceptance and does not authorize claims based on the pending evidence.
+- `BLOCKED_BY_HARDWARE`: required progress or validation cannot continue because
+  identified physical equipment or signal paths are unavailable. This is neither
+  a pass nor a failure.
+- `REJECTED`: the implementation or evidence failed an applicable criterion or
+  architecture review and cannot advance without a new reviewed change.
+
+Commits, pull requests, reports, and milestone documentation must state the
+current classification whenever it is not `ACCEPTED`.
+
+### Hardware dependency matrix
+
+Before implementation, every parallel milestone must publish a matrix with:
+
+- software-only acceptance criteria;
+- deterministic simulation acceptance criteria;
+- hardware-dependent acceptance criteria;
+- whether Phase 2 completion is a hard prerequisite for implementation;
+- whether Phase 2 completion is a hard prerequisite for final acceptance;
+- whether acceptance must remain conditional and why.
+
+Missing hardware criteria may not be deleted, weakened, or converted into
+simulation criteria. A milestone cannot move to `ACCEPTED` until every matrix
+entry required for final acceptance has passed with the stated truth source.
+
+### Contract protection
+
+Parallel development must not silently change:
+
+- Aurora-owned public traits;
+- callback or buffer ownership;
+- real-time allocation guarantees;
+- bounded-memory guarantees;
+- fault semantics;
+- state-machine semantics;
+- device-selection semantics;
+- report truth-source or latency semantics.
+
+Any such change requires a separate architecture amendment or accepted ADR,
+including focused compatibility tests and documentation. This policy itself is
+not approval for any contract change.
+
+### Git policy
+
+- `main-v2` remains the canonical integration branch.
+- `phase-2-physical-hardware-validation` remains open until physical acceptance.
+- each parallel milestone uses a dedicated branch from `main-v2`;
+- no branch merges automatically into `main-v2`;
+- accepted tags and accepted milestone records are immutable;
+- conditional milestones must be labeled clearly in commits, pull requests, and
+  documentation.
+
+### First parallel-safe recommendation
+
+The first technically safe later scope is **Phase 3A -- Deterministic Offline
+Spatial Rendering Improvements**.
+
+It may implement deterministic, offline renderer work that fits existing Aurora
+contracts, beginning with VBAP geometry and focused spread/elevation or irregular
+layout experiments. It may add fixtures, unit tests, offline integration tests,
+and release benchmarks. Phase 2 completion is not a hard prerequisite for this
+software implementation.
+
+The following remain conditional on Phase 2 or later explicit evidence:
+
+- physical 5.1/7.1 routing and channel identity;
+- live multichannel callback behavior on real endpoints;
+- physical driver stability, clock behavior, and long-run performance;
+- audible or speaker-dependent quality conclusions.
+
+Stop boundaries for Phase 3A:
+
+- no Aurora-owned public trait change without a separate ADR or amendment;
+- no channel-order, WAV-mask, callback-ownership, state, fault, or device change;
+- no replacement of the accepted renderer or enabling a new default silently;
+- no HRTF dependency, codec work, HDMI, networking, wireless audio, GUI, AI, or
+  calibration scope;
+- no physical claim and no `ACCEPTED` classification while required hardware
+  matrix entries remain open.
+
+After its implementation is complete, Phase 3A may use
+`IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`. It may reach
+`CONDITIONALLY_ACCEPTED_PENDING_HARDWARE` only after formal software and
+simulation review.
 
 ---
 
@@ -875,8 +1036,17 @@ Every agent must finish with this structure:
 
 ```text
 Milestone:
+Classification:
 Scope completed:
 Scope intentionally not completed:
+
+Hardware dependency matrix:
+- software-only criteria:
+- simulation criteria:
+- hardware-dependent criteria:
+- Phase 2 required for implementation:
+- Phase 2 required for final acceptance:
+- conditional acceptance required:
 
 Files changed:
 - ...
@@ -957,8 +1127,10 @@ The accepted milestone is:
 
 > **Simulation Sprint 1 — deterministic virtual audio hardware and full-system validation**
 
-It is frozen. Phase 2 physical hardware validation is pending explicit approval;
-no later milestone has been started by this acceptance procedure.
+It is frozen. Phase 2 physical hardware validation is open and incomplete.
+When Phase 2 is environmentally blocked, a dedicated later software milestone
+may proceed only under Section 16.1. No parallel milestone is authorized merely
+by naming it; its dependency matrix and scope require review first.
 
 The next agent must not:
 
@@ -968,10 +1140,12 @@ The next agent must not:
 - add wireless;
 - add AI;
 - add a GUI;
-- add VBAP;
+- add VBAP unless a separately reviewed Phase 3A scope under Section 16.1
+  authorizes it;
 - add physical latency claims.
 
-The simulator must be completed and reviewed first.
+The simulator is complete and frozen. It must not be duplicated or used as a
+substitute for Phase 2 evidence.
 
 ---
 
@@ -1003,6 +1177,15 @@ Do not rewrite history. Record replaced decisions in ADRs.
   1 acceptance record, and immediate next action.
 - Reason: formal independent acceptance completed with all required commands,
   deterministic validations, fault scenarios, and implementation audit passing.
+
+### Maintenance record: 2026-07-16 -- hardware-blocked parallel development
+
+- Milestone: roadmap governance amendment; no product milestone accepted.
+- Changed sections: document status, truth-source rules, roadmap Phase 2 and
+  Phase 3 gates, hardware-blocked parallel development policy, report template,
+  and immediate next action.
+- Reason: permit controlled software-only progress while preserving every open
+  physical validation requirement and the Simulation Sprint 1 freeze.
 
 ---
 
