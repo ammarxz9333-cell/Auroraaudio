@@ -1,17 +1,22 @@
 //! Deterministic two-dimensional vector-base amplitude panning.
 
-use std::f32::consts::{PI, TAU};
+use std::f64::consts::{PI, TAU};
 
 use aurora_core::{Listener, Speaker, Vector3};
 use aurora_renderer_api::{
     RenderObject, Renderer, RendererError, RendererScratch, RendererScratchSize, SpeakerGain,
 };
 
-const GEOMETRY_EPSILON: f32 = 1.0e-6;
-const ANGLE_EPSILON: f32 = 1.0e-5;
-const DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND: f32 = 343.0;
+const GEOMETRY_EPSILON: f64 = 1.0e-9;
+const ANGLE_EPSILON: f64 = 1.0e-8;
+const DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND: f64 = 343.0;
 
 /// Allocation-free horizontal-plane VBAP renderer.
+///
+/// Setup rejects non-finite enabled-speaker geometry and trims. Non-finite
+/// runtime listener or object state produces deterministic finite silence for
+/// that object without allocating. This explicit fallback preserves the
+/// renderer boundary, which has no callback-safe invalid-input error variant.
 #[derive(Debug, Clone)]
 pub struct VbapRenderer {
     layout: Vec<Speaker>,
@@ -44,8 +49,14 @@ impl VbapRenderer {
     }
 
     /// Sets block-to-block smoothing alpha, clamped to `0.0..=1.0`.
+    ///
+    /// A non-finite value selects the allocation-free default of `1.0`.
     pub fn with_smoothing(mut self, smoothing_alpha: f32) -> Self {
-        self.smoothing_alpha = smoothing_alpha.clamp(0.0, 1.0);
+        self.smoothing_alpha = if smoothing_alpha.is_finite() {
+            smoothing_alpha.clamp(0.0, 1.0)
+        } else {
+            1.0
+        };
         self
     }
 
@@ -57,7 +68,14 @@ impl VbapRenderer {
         output: &mut [SpeakerGain],
         weights: &mut [f32],
     ) -> Result<(), RendererError> {
-        vbap_weights(&self.layout, listener.position, object.position, weights);
+        let runtime_input_is_finite = vector_is_finite(listener.position)
+            && vector_is_finite(object.position)
+            && object.gain.is_finite();
+        if runtime_input_is_finite {
+            vbap_weights(&self.layout, listener.position, object.position, weights);
+        } else {
+            weights.fill(0.0);
+        }
 
         let speaker_count = self.layout.len();
         let history_len = self.previous_gains.len();
@@ -68,7 +86,11 @@ impl VbapRenderer {
             .zip(output.iter_mut())
             .enumerate()
         {
-            let target = *weight * db_to_gain(speaker.gain_db) * object.gain;
+            let target = if runtime_input_is_finite {
+                finite_f32(*weight as f64 * db_to_gain(speaker.gain_db) * object.gain as f64)
+            } else {
+                0.0
+            };
             let history_index = object_index * speaker_count + speaker_index;
             let previous_gain = self.previous_gains.get_mut(history_index).ok_or(
                 RendererError::OutputBufferSize {
@@ -76,15 +98,29 @@ impl VbapRenderer {
                     actual: history_len,
                 },
             )?;
-            let smoothed = *previous_gain + (target - *previous_gain) * self.smoothing_alpha;
+            let smoothed = if runtime_input_is_finite {
+                finite_f32(
+                    *previous_gain as f64
+                        + (target as f64 - *previous_gain as f64) * self.smoothing_alpha as f64,
+                )
+            } else {
+                0.0
+            };
             *previous_gain = smoothed;
-            let distance = object.position.distance_to(speaker.position);
+            let distance = if runtime_input_is_finite {
+                distance_f64(object.position, speaker.position)
+            } else {
+                0.0
+            };
             *result = SpeakerGain {
                 speaker_index,
                 gain: smoothed,
-                distance_meters: distance,
-                delay_samples: speaker.delay_samples
-                    + distance / DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND * self.sample_rate as f32,
+                distance_meters: finite_f32(distance),
+                delay_samples: finite_f32(
+                    speaker.delay_samples as f64
+                        + distance / DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND
+                            * self.sample_rate as f64,
+                ),
             };
         }
         Ok(())
@@ -108,6 +144,24 @@ impl Renderer for VbapRenderer {
         if enabled_count == 0 {
             return Err(RendererError::NoEnabledSpeakers);
         }
+        if layout
+            .iter()
+            .filter(|speaker| speaker.enabled)
+            .any(|speaker| {
+                !vector_is_finite(speaker.position)
+                    || !speaker.gain_db.is_finite()
+                    || !speaker.delay_samples.is_finite()
+            })
+        {
+            return Err(RendererError::InvalidConfiguration(
+                "enabled speaker positions, gains, and delays must be finite".to_owned(),
+            ));
+        }
+        let history_len = enabled_count.checked_mul(max_objects).ok_or_else(|| {
+            RendererError::InvalidConfiguration(
+                "enabled speaker and object capacity product is too large".to_owned(),
+            )
+        })?;
 
         self.layout.clear();
         self.layout.reserve(enabled_count);
@@ -116,7 +170,7 @@ impl Renderer for VbapRenderer {
         self.sample_rate = sample_rate;
         self.block_size = block_size;
         self.max_objects = max_objects;
-        self.previous_gains = vec![0.0; enabled_count * max_objects];
+        self.previous_gains = vec![0.0; history_len];
         self.configured = true;
         Ok(())
     }
@@ -146,7 +200,7 @@ impl Renderer for VbapRenderer {
                 actual: objects.len(),
             });
         }
-        let required = objects.len() * self.layout.len();
+        let required = objects.len().saturating_mul(self.layout.len());
         if output_gains.len() != required {
             return Err(RendererError::OutputBufferSize {
                 required,
@@ -195,8 +249,8 @@ impl Renderer for VbapRenderer {
 
 fn vbap_weights(speakers: &[Speaker], listener: Vector3, source: Vector3, weights: &mut [f32]) {
     weights.fill(0.0);
-    let source_x = source.x - listener.x;
-    let source_y = source.y - listener.y;
+    let source_x = source.x as f64 - listener.x as f64;
+    let source_y = source.y as f64 - listener.y as f64;
     let source_length = source_x.hypot(source_y);
     if source_length <= GEOMETRY_EPSILON {
         equal_power(weights);
@@ -204,7 +258,7 @@ fn vbap_weights(speakers: &[Speaker], listener: Vector3, source: Vector3, weight
     }
     let source_angle = source_y.atan2(source_x);
 
-    let mut best_pair = None::<(usize, usize, f32)>;
+    let mut best_pair = None::<(usize, usize, f64)>;
     for (first, first_speaker) in speakers.iter().enumerate() {
         let first_angle = speaker_angle(first_speaker, listener);
         let Some(first_angle) = first_angle else {
@@ -267,16 +321,16 @@ fn solve_pair(
     left_speaker: &Speaker,
     right_speaker: &Speaker,
     listener: Vector3,
-    source_x: f32,
-    source_y: f32,
+    source_x: f64,
+    source_y: f64,
     left: usize,
     right: usize,
     weights: &mut [f32],
 ) -> bool {
-    let left_x = left_speaker.position.x - listener.x;
-    let left_y = left_speaker.position.y - listener.y;
-    let right_x = right_speaker.position.x - listener.x;
-    let right_y = right_speaker.position.y - listener.y;
+    let left_x = left_speaker.position.x as f64 - listener.x as f64;
+    let left_y = left_speaker.position.y as f64 - listener.y as f64;
+    let right_x = right_speaker.position.x as f64 - listener.x as f64;
+    let right_y = right_speaker.position.y as f64 - listener.y as f64;
     let left_length = left_x.hypot(left_y);
     let right_length = right_x.hypot(right_y);
     if left_length <= GEOMETRY_EPSILON || right_length <= GEOMETRY_EPSILON {
@@ -297,10 +351,10 @@ fn solve_pair(
         return false;
     }
     if let Some(weight) = weights.get_mut(left) {
-        *weight = left_gain / norm;
+        *weight = (left_gain / norm) as f32;
     }
     if let Some(weight) = weights.get_mut(right) {
-        *weight = right_gain / norm;
+        *weight = (right_gain / norm) as f32;
     }
     true
 }
@@ -308,15 +362,15 @@ fn solve_pair(
 fn nearest_direction(
     speakers: &[Speaker],
     listener: Vector3,
-    source_x: f32,
-    source_y: f32,
+    source_x: f64,
+    source_y: f64,
     weights: &mut [f32],
 ) {
     let source_length = source_x.hypot(source_y);
-    let mut nearest = None::<(usize, f32)>;
+    let mut nearest = None::<(usize, f64)>;
     for (index, speaker) in speakers.iter().enumerate() {
-        let speaker_x = speaker.position.x - listener.x;
-        let speaker_y = speaker.position.y - listener.y;
+        let speaker_x = speaker.position.x as f64 - listener.x as f64;
+        let speaker_y = speaker.position.y as f64 - listener.y as f64;
         let length = speaker_x.hypot(speaker_y);
         if length <= GEOMETRY_EPSILON {
             continue;
@@ -340,18 +394,37 @@ fn equal_power(weights: &mut [f32]) {
     weights.fill(gain);
 }
 
-fn speaker_angle(speaker: &Speaker, listener: Vector3) -> Option<f32> {
-    let x = speaker.position.x - listener.x;
-    let y = speaker.position.y - listener.y;
+fn speaker_angle(speaker: &Speaker, listener: Vector3) -> Option<f64> {
+    let x = speaker.position.x as f64 - listener.x as f64;
+    let y = speaker.position.y as f64 - listener.y as f64;
     (x.hypot(y) > GEOMETRY_EPSILON).then(|| y.atan2(x))
 }
 
-fn positive_angle(angle: f32) -> f32 {
+fn positive_angle(angle: f64) -> f64 {
     angle.rem_euclid(TAU)
 }
 
-fn db_to_gain(db: f32) -> f32 {
-    10.0_f32.powf(db / 20.0)
+fn db_to_gain(db: f32) -> f64 {
+    10.0_f64.powf(db as f64 / 20.0)
+}
+
+fn vector_is_finite(vector: Vector3) -> bool {
+    vector.x.is_finite() && vector.y.is_finite() && vector.z.is_finite()
+}
+
+fn distance_f64(first: Vector3, second: Vector3) -> f64 {
+    let x = first.x as f64 - second.x as f64;
+    let y = first.y as f64 - second.y as f64;
+    let z = first.z as f64 - second.z as f64;
+    x.hypot(y).hypot(z)
+}
+
+fn finite_f32(value: f64) -> f32 {
+    if value.is_nan() {
+        0.0
+    } else {
+        value.clamp(-(f32::MAX as f64), f32::MAX as f64) as f32
+    }
 }
 
 #[cfg(test)]
@@ -463,6 +536,13 @@ mod tests {
         gains
     }
 
+    fn configured_renderer(layout: Vec<Speaker>) -> (VbapRenderer, RendererScratch) {
+        let mut renderer = VbapRenderer::new();
+        renderer.configure(layout, 48_000, 256, 1).unwrap();
+        let scratch = RendererScratch::new(renderer.required_scratch_size().unwrap());
+        (renderer, scratch)
+    }
+
     #[test]
     fn center_direction_has_equal_power_stereo_gains() {
         let gains = render_at(0.0, 1.0);
@@ -475,6 +555,95 @@ mod tests {
         let gains = render_at(-1.0, 1.0);
         assert!((gains[0].gain - 1.0).abs() < 0.0001);
         assert!(gains[1].gain.abs() < 0.0001);
+    }
+
+    #[test]
+    fn azimuth_wraparound_uses_the_enclosing_pair() {
+        let angle = 170.0_f32.to_radians();
+        let layout = vec![
+            speaker(
+                "upper",
+                ChannelRole::Custom("upper".to_owned()),
+                angle.cos(),
+                angle.sin(),
+            ),
+            speaker(
+                "lower",
+                ChannelRole::Custom("lower".to_owned()),
+                angle.cos(),
+                -angle.sin(),
+            ),
+        ];
+        let (mut renderer, mut scratch) = configured_renderer(layout);
+        let mut gains = vec![SpeakerGain::default(); 2];
+
+        renderer
+            .render_gains(
+                &listener(),
+                &[RenderObject {
+                    position: Vector3::new(-1.0, 0.0, 0.0),
+                    gain: 1.0,
+                }],
+                &mut gains,
+                &mut scratch,
+            )
+            .unwrap();
+
+        assert!((gains[0].gain - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.0001);
+        assert!((gains[1].gain - std::f32::consts::FRAC_1_SQRT_2).abs() < 0.0001);
+    }
+
+    #[test]
+    fn duplicate_angles_choose_the_first_speaker_deterministically() {
+        let layout = vec![
+            speaker("first", ChannelRole::Custom("first".to_owned()), 0.0, 1.0),
+            speaker(
+                "duplicate",
+                ChannelRole::Custom("duplicate".to_owned()),
+                0.0,
+                2.0,
+            ),
+            speaker("right", ChannelRole::Custom("right".to_owned()), 1.0, 0.0),
+        ];
+        let (mut renderer, mut scratch) = configured_renderer(layout);
+        let mut gains = vec![SpeakerGain::default(); 3];
+
+        renderer
+            .render_gains(
+                &listener(),
+                &[RenderObject {
+                    position: Vector3::new(0.0, 1.0, 0.0),
+                    gain: 1.0,
+                }],
+                &mut gains,
+                &mut scratch,
+            )
+            .unwrap();
+
+        assert!((gains[0].gain - 1.0).abs() < 0.0001);
+        assert!(gains[1].gain.abs() < 0.0001);
+        assert!(gains[2].gain.abs() < 0.0001);
+    }
+
+    #[test]
+    fn single_speaker_layout_routes_all_power_to_that_speaker() {
+        let layout = vec![speaker("only", ChannelRole::FrontCenter, 0.0, 1.0)];
+        let (mut renderer, mut scratch) = configured_renderer(layout);
+        let mut gains = vec![SpeakerGain::default(); 1];
+
+        renderer
+            .render_gains(
+                &listener(),
+                &[RenderObject {
+                    position: Vector3::new(1.0, -1.0, 0.0),
+                    gain: 1.0,
+                }],
+                &mut gains,
+                &mut scratch,
+            )
+            .unwrap();
+
+        assert_eq!(gains[0].gain, 1.0);
     }
 
     #[test]
@@ -500,6 +669,138 @@ mod tests {
             )
             .unwrap();
         assert!(gains.iter().all(|gain| gain.gain == 0.0));
+    }
+
+    #[test]
+    fn non_finite_enabled_speaker_configuration_is_rejected() {
+        let mut invalid_position = speaker("left", ChannelRole::FrontLeft, f32::NAN, 1.0);
+        let mut invalid_gain = speaker("left", ChannelRole::FrontLeft, -1.0, 1.0);
+        invalid_gain.gain_db = f32::INFINITY;
+        let mut invalid_delay = speaker("left", ChannelRole::FrontLeft, -1.0, 1.0);
+        invalid_delay.delay_samples = f32::NAN;
+
+        for layout in [
+            vec![invalid_position.clone()],
+            vec![invalid_gain],
+            vec![invalid_delay],
+        ] {
+            let error = VbapRenderer::new()
+                .configure(layout, 48_000, 256, 1)
+                .unwrap_err();
+            assert!(matches!(error, RendererError::InvalidConfiguration(_)));
+        }
+
+        invalid_position.enabled = false;
+        let error = VbapRenderer::new()
+            .configure(vec![invalid_position], 48_000, 256, 1)
+            .unwrap_err();
+        assert_eq!(error, RendererError::NoEnabledSpeakers);
+    }
+
+    #[test]
+    fn non_finite_runtime_state_produces_immediate_finite_silence() {
+        let (mut renderer, mut scratch, mut gains) = renderer();
+        renderer
+            .render_gains(
+                &listener(),
+                &[RenderObject {
+                    position: Vector3::new(0.0, 1.0, 0.0),
+                    gain: 1.0,
+                }],
+                &mut gains,
+                &mut scratch,
+            )
+            .unwrap();
+        assert!(gains.iter().any(|gain| gain.gain > 0.0));
+
+        let invalid_objects = [
+            RenderObject {
+                position: Vector3::new(f32::NAN, 1.0, 0.0),
+                gain: 1.0,
+            },
+            RenderObject {
+                position: Vector3::new(0.0, 1.0, 0.0),
+                gain: f32::INFINITY,
+            },
+        ];
+        for object in invalid_objects {
+            renderer
+                .render_gains(
+                    &listener(),
+                    std::slice::from_ref(&object),
+                    &mut gains,
+                    &mut scratch,
+                )
+                .unwrap();
+            assert!(gains.iter().all(|gain| {
+                gain.gain == 0.0
+                    && gain.gain.is_finite()
+                    && gain.distance_meters.is_finite()
+                    && gain.delay_samples.is_finite()
+            }));
+        }
+
+        let mut invalid_listener = listener();
+        invalid_listener.position.x = f32::NEG_INFINITY;
+        renderer
+            .render_gains(
+                &invalid_listener,
+                &[RenderObject {
+                    position: Vector3::new(0.0, 1.0, 0.0),
+                    gain: 1.0,
+                }],
+                &mut gains,
+                &mut scratch,
+            )
+            .unwrap();
+        assert!(gains.iter().all(|gain| gain.gain == 0.0));
+    }
+
+    #[test]
+    fn extreme_finite_runtime_state_remains_finite() {
+        let (mut renderer, mut scratch, mut gains) = renderer();
+        renderer
+            .render_gains(
+                &listener(),
+                &[RenderObject {
+                    position: Vector3::new(f32::MAX, -f32::MAX, f32::MAX),
+                    gain: f32::MAX,
+                }],
+                &mut gains,
+                &mut scratch,
+            )
+            .unwrap();
+
+        assert!(gains.iter().all(|gain| {
+            gain.gain.is_finite()
+                && gain.distance_meters.is_finite()
+                && gain.delay_samples.is_finite()
+        }));
+    }
+
+    #[test]
+    fn invalid_output_shape_returns_structured_error() {
+        let (mut renderer, mut scratch, _) = renderer();
+        let mut gains = vec![SpeakerGain::default(); 1];
+        let error = renderer
+            .render_gains(
+                &listener(),
+                &[RenderObject {
+                    position: Vector3::new(0.0, 1.0, 0.0),
+                    gain: 1.0,
+                }],
+                &mut gains,
+                &mut scratch,
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            RendererError::OutputBufferSize {
+                required: 2,
+                actual: 1,
+            }
+        );
     }
 
     #[test]
