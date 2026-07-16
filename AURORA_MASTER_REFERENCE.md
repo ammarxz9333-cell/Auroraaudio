@@ -990,8 +990,8 @@ Source Spread and Irregular Layout Support**.
 
 Current execution record:
 
-- `execution_state`: `IN_PROGRESS`;
-- `evaluation_classification`: `none`;
+- `execution_state`: `READY_FOR_EVALUATION`;
+- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`;
 - planned branch: `phase-3b-horizontal-spread`;
 - required base: `main-v2` after the governance amendment defining this scope.
 

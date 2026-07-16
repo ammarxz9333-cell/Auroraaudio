@@ -2,8 +2,8 @@
 
 ## Current State
 
-- `execution_state`: `IN_PROGRESS`
-- `evaluation_classification`: `none`
+- `execution_state`: `READY_FOR_EVALUATION`
+- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
 - branch: `phase-3b-horizontal-spread`
 - branch base: `main-v2` at
   `59e99f1ad2f89fd7fa03658b8a698d5dd9baf5b2`
@@ -109,6 +109,36 @@ Extreme finite object values cannot propagate NaN or infinity.
 
 No result in this milestone is a `physical_measurement`. Benchmark timing is not
 physical latency.
+
+## Evaluation Evidence
+
+- workspace tests: 144 passed, 0 failed, 5 explicitly ignored hardware-only
+  tests;
+- Phase 3B renderer tests: 26 unit and 6 offline integration tests;
+- irregular source/spread sweep checksum: `364977226e88876f`;
+- deterministic fixture suite: three consecutive passing runs;
+- warmed-up spread rendering: 0 allocations over 1,000 calls on a 16-speaker
+  layout;
+- formatting, all-target/all-feature Clippy, strict Rustdoc, Actionlint, and
+  workspace benchmarks: passed.
+
+Focused Criterion results at 48 kHz, 256 frames, and one object use truth source
+`host_api_observation`:
+
+| Scenario | Median estimate | Estimate interval | Block budget |
+| --- | --- | --- | --- |
+| Point 5.1 | 368.42 ns | 367.50--369.43 ns | 0.0069% |
+| Point 7.1 | 550.66 ns | 548.41--553.14 ns | 0.0103% |
+| Intermediate spread 5.1 | 1.0982 us | 1.0955--1.1012 us | 0.0206% |
+| Intermediate spread 7.1 | 1.6811 us | 1.6781--1.6841 us | 0.0315% |
+| Maximum spread irregular-10 | 2.7889 us | 2.7823--2.7962 us | 0.0523% |
+| Intermediate spread dense-16 | 6.8552 us | 6.8247--6.8884 us | 0.1285% |
+
+Criterion does not report p95 or maximum callback timing for these benchmarks.
+The point path changed by approximately +0.31% for 5.1 and -3.41% for 7.1
+relative to the Phase 3A evaluation medians; no material point-source regression
+was observed. A complete workspace pass showed host-load variation in unrelated
+512-frame and ASRC benchmarks even though Phase 3B changes no such code.
 
 ## Exclusions And Stop Boundary
 
