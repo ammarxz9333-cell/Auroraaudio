@@ -151,8 +151,16 @@ struct Scenario {
     id: String,
     seed: u64,
     ordinal: u64,
+    truth_source: &'static str,
+    expected_outcome: ExpectedOutcome,
     reproducible_command: String,
     kind: ScenarioKind,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ExpectedOutcome {
+    Pass,
+    StructuredRejection,
 }
 
 #[derive(Clone)]
@@ -234,6 +242,7 @@ pub fn run_campaign(options: &CampaignOptions) -> Result<CampaignReport> {
                 .map(|(seed, _)| seed)
                 .unwrap_or_else(|| scenario_seed(options.start_seed, ordinal));
             let scenario = build_scenario(options, ordinal, seed);
+            aggregate = hash_u64(aggregate, scenario.expected_outcome as u64);
             let result = catch_unwind(AssertUnwindSafe(|| execute_scenario(&scenario)));
             match result {
                 Ok(Ok(evidence)) => {
@@ -370,18 +379,35 @@ fn scenario_seed(start_seed: u64, ordinal: u64) -> u64 {
 }
 
 fn build_scenario(options: &CampaignOptions, ordinal: u64, seed: u64) -> Scenario {
-    let kind = if options.level == CampaignLevel::Soak {
-        ScenarioKind::Duplex(duplex_config(
-            seed,
-            ordinal.saturating_mul(4),
-            options.soak_hours.saturating_mul(3_600),
-        ))
+    let (kind, expected_outcome) = if options.level == CampaignLevel::Soak {
+        (
+            ScenarioKind::Duplex(duplex_config(
+                seed,
+                ordinal.saturating_mul(4),
+                options.soak_hours.saturating_mul(3_600),
+            )),
+            ExpectedOutcome::Pass,
+        )
     } else {
         match ordinal % 4 {
-            0 => ScenarioKind::Duplex(duplex_config(seed, ordinal, 2 + ordinal % 7)),
-            1 => routing_scenario(ordinal),
-            2 => ScenarioKind::Renderer(renderer_scenario(seed, ordinal)),
-            _ => ScenarioKind::Probe(structured_probe(ordinal)),
+            0 => (
+                ScenarioKind::Duplex(duplex_config(seed, ordinal, 2 + ordinal % 7)),
+                ExpectedOutcome::Pass,
+            ),
+            1 => (routing_scenario(ordinal), ExpectedOutcome::Pass),
+            2 => (
+                ScenarioKind::Renderer(renderer_scenario(seed, ordinal)),
+                ExpectedOutcome::Pass,
+            ),
+            _ => {
+                let probe = structured_probe(ordinal);
+                let expected = if matches!(probe, StructuredProbe::ExtremeFiniteRenderer) {
+                    ExpectedOutcome::Pass
+                } else {
+                    ExpectedOutcome::StructuredRejection
+                };
+                (ScenarioKind::Probe(probe), expected)
+            }
         }
     };
     let id = format!("sac1-{ordinal:012x}-{seed:016x}");
@@ -393,6 +419,8 @@ fn build_scenario(options: &CampaignOptions, ordinal: u64, seed: u64) -> Scenari
         id,
         seed,
         ordinal,
+        truth_source: TRUTH_SOURCE,
+        expected_outcome,
         reproducible_command,
         kind,
     }
@@ -884,6 +912,8 @@ fn execute_legacy_fixtures(
             id: format!("legacy-{}", fixture.trim_end_matches(".json")),
             seed,
             ordinal: 0xf000_0000 + index as u64,
+            truth_source: TRUTH_SOURCE,
+            expected_outcome: ExpectedOutcome::Pass,
             reproducible_command: format!(
                 "cargo run --release -p aurora-cli --all-features -- simulate-duplex --profile usb-7-1 --duration-hours 1 --seed {seed} --fault-script fixtures/simulation/fault_scenarios/{fixture} --report output/simulation-assurance/replay-legacy-{index}.json"
             ),
@@ -1026,7 +1056,7 @@ fn retain_failure(
         scenario_id: scenario.id.clone(),
         seed: scenario.seed,
         ordinal: scenario.ordinal,
-        truth_source: TRUTH_SOURCE,
+        truth_source: scenario.truth_source,
         category: failure.category,
         detail: failure.detail,
         bounded_event_window: scenario_window(scenario),
@@ -1155,6 +1185,8 @@ mod tests {
         let first = build_scenario(&value, 17, seed);
         let second = build_scenario(&value, 17, seed);
         assert_eq!(first.id, second.id);
+        assert_eq!(first.truth_source, TRUTH_SOURCE);
+        assert_eq!(first.expected_outcome, second.expected_outcome);
         assert_eq!(first.reproducible_command, second.reproducible_command);
     }
 
