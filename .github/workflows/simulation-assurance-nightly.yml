@@ -46,4 +46,3 @@ jobs:
           name: simulation-assurance-nightly-${{ matrix.shard }}
           path: output/simulation-assurance/**/*.json
           if-no-files-found: error
-

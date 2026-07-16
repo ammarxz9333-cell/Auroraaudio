@@ -106,6 +106,7 @@ pub struct DimensionCoverage {
     spread_steps: BTreeSet<u32>,
     fault_categories: BTreeSet<String>,
     geometry_categories: BTreeSet<String>,
+    angular_cases: BTreeSet<String>,
     buffer_fill_states: BTreeSet<String>,
 }
 
@@ -181,6 +182,7 @@ struct RendererScenario {
     source: Vector3,
     spread: HorizontalSpread,
     geometry: &'static str,
+    angular_case: &'static str,
     sample_rate: u32,
     block_size: usize,
 }
@@ -211,6 +213,7 @@ enum Dimension {
     Spread(u32),
     Fault(String),
     Geometry(String),
+    Angular(String),
     BufferFill(String),
 }
 
@@ -308,12 +311,14 @@ pub fn run_campaign(options: &CampaignOptions) -> Result<CampaignReport> {
         legacy_fixtures: legacy_per_repeat,
         verified_properties: vec![
             "no-panic",
+            "no-deadlock",
             "bounded-loop-count",
             "finite-output",
             "bounded-memory-model",
             "valid-state-transitions",
             "target-qualified-determinism",
             "structured-invalid-input-errors",
+            "no-silent-fallback",
             "explicit-fault-observability",
             "no-channel-leakage",
             "normalized-renderer-energy",
@@ -522,8 +527,17 @@ fn renderer_scenario(seed: u64, ordinal: u64) -> RendererScenario {
         5 => (irregular_layout(16, true), "near-duplicate"),
         _ => (duplicate_layout(), "duplicate"),
     };
-    let angle =
-        -std::f32::consts::PI + std::f32::consts::TAU * (rng.next_u64() % 14_400) as f32 / 14_400.0;
+    let (angle, angular_case) = match (ordinal / 28) % 5 {
+        0 => (
+            -std::f32::consts::PI
+                + std::f32::consts::TAU * (rng.next_u64() % 14_400) as f32 / 14_400.0,
+            "generated",
+        ),
+        1 => (std::f32::consts::PI - 1.0e-6, "wrap-positive"),
+        2 => (-std::f32::consts::PI + 1.0e-6, "wrap-negative"),
+        3 => (0.0, "exact-speaker"),
+        _ => (std::f32::consts::FRAC_PI_4, "intermediate"),
+    };
     let spread_step = (rng.next_u64() % 21) as u32;
     RendererScenario {
         layout,
@@ -536,6 +550,7 @@ fn renderer_scenario(seed: u64, ordinal: u64) -> RendererScenario {
         spread: HorizontalSpread::new(spread_step as f32 / 20.0)
             .expect("generated spread is bounded"),
         geometry,
+        angular_case,
         sample_rate: [44_100, 48_000, 96_000][(rng.next_u64() % 3) as usize],
         block_size: [64, 128, 256, 512][(rng.next_u64() % 4) as usize],
     }
@@ -746,6 +761,7 @@ fn execute_renderer(config: &RendererScenario) -> Result<ScenarioEvidence, Scena
             Dimension::Layout(config.geometry.to_owned()),
             Dimension::Spread((config.spread.value() * 20.0).round() as u32),
             Dimension::Geometry(config.geometry.to_owned()),
+            Dimension::Angular(config.angular_case.to_owned()),
         ],
     })
 }
@@ -865,6 +881,7 @@ fn execute_probe(probe: StructuredProbe, seed: u64) -> Result<ScenarioEvidence, 
                 source: Vector3::new(f32::MAX, f32::MAX, 0.0),
                 spread: HorizontalSpread::new(0.75).expect("constant spread is valid"),
                 geometry: "extreme-finite",
+                angular_case: "extreme-finite",
                 sample_rate: 96_000,
                 block_size: 512,
             };
@@ -1084,20 +1101,14 @@ fn write_report_and_failures(options: &CampaignOptions, report: &CampaignReport)
     }
     fs::write(&options.report_path, serde_json::to_vec_pretty(report)?)
         .context("write campaign report")?;
-    if !report.failures.is_empty() {
-        let failure_dir = options
-            .report_path
-            .parent()
-            .unwrap_or_else(|| Path::new("."))
-            .join("failures");
-        fs::create_dir_all(&failure_dir).context("create bounded failure directory")?;
-        for failure in &report.failures {
-            fs::write(
-                failure_dir.join(format!("{}.json", failure.scenario_id)),
-                serde_json::to_vec_pretty(failure)?,
-            )
-            .context("write bounded failure replay record")?;
+    let failure_path = options.report_path.with_extension("failures.json");
+    if report.failures.is_empty() {
+        if failure_path.is_file() {
+            fs::remove_file(failure_path).context("remove stale bounded failure report")?;
         }
+    } else {
+        fs::write(&failure_path, serde_json::to_vec_pretty(&report.failures)?)
+            .context("write bounded failure replay records")?;
     }
     Ok(())
 }
@@ -1140,6 +1151,9 @@ impl DimensionCoverage {
                 }
                 Dimension::Geometry(item) => {
                     self.geometry_categories.insert(item);
+                }
+                Dimension::Angular(item) => {
+                    self.angular_cases.insert(item);
                 }
                 Dimension::BufferFill(item) => {
                     self.buffer_fill_states.insert(item);
@@ -1231,6 +1245,17 @@ mod tests {
                 "ordinal={ordinal} relative={relative}"
             );
         }
+    }
+
+    #[test]
+    fn generated_renderer_scenarios_cover_angular_wraparound() {
+        let cases = (2..500)
+            .step_by(4)
+            .map(|ordinal| renderer_scenario(scenario_seed(0, ordinal), ordinal).angular_case)
+            .collect::<BTreeSet<_>>();
+        assert!(cases.contains("wrap-positive"));
+        assert!(cases.contains("wrap-negative"));
+        assert!(cases.contains("exact-speaker"));
     }
 
     #[test]

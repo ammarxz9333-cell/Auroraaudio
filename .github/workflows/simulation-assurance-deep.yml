@@ -56,4 +56,3 @@ jobs:
           name: simulation-assurance-deep-${{ matrix.shard }}
           path: output/simulation-assurance/**/*.json
           if-no-files-found: error
-

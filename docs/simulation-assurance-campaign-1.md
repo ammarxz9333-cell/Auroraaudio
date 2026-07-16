@@ -20,9 +20,9 @@ Every generated scenario has:
 - a deterministic outcome or failure category;
 - a bounded event window retained only on failure.
 
-Failure JSON is written under the selected report directory. Those generated
-files remain under ignored `output/`; confirmed defects should receive a small
-reviewed regression fixture rather than a large campaign dump.
+Failure JSON is written as one bounded sibling of the selected report. Those
+generated files remain under ignored `output/`; confirmed defects should
+receive a small reviewed regression fixture rather than a large campaign dump.
 
 ## Properties
 

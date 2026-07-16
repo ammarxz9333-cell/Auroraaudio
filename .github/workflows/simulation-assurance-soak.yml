@@ -60,4 +60,3 @@ jobs:
           name: simulation-assurance-soak-${{ inputs.hours }}h-${{ matrix.shard }}
           path: output/simulation-assurance/**/*.json
           if-no-files-found: error
-
