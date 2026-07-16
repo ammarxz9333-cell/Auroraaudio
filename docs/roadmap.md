@@ -15,18 +15,18 @@ authoritative roadmap, classifications, and gates remain in
 
 ## Hardware-Blocked Parallel Queue
 
-The first technically safe candidate is **Phase 3A -- Deterministic Offline
-Spatial Rendering Improvements**. It has not started.
+The first technically safe candidate was **Phase 3A -- Deterministic Offline
+Spatial Rendering Improvements**. Its software evaluation passed on 2026-07-16.
 
-- `execution_state`: `NOT_STARTED`
-- `evaluation_classification`: none
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`
 - branch: `phase-3a`
 - branch base: `main-v2` at
-  `fb494cb31463dd0f562d7fef4e4548e3cf16850d`
+  `bc2cf637bb8dc5d526a28271e1070efcff1e09d4`
 
-Branch creation alone did not start implementation. After the execution-state
-clarification is merged, the first authorized implementation commit changes the
-execution state to `IN_PROGRESS` without assigning an evaluation classification.
+The implementation and formal software review are complete. Hardware-dependent
+gates remain open, so this is not full milestone acceptance and no accepted tag
+exists.
 
 | Gate | Current decision |
 | --- | --- |
@@ -35,7 +35,7 @@ execution state to `IN_PROGRESS` without assigning an evaluation classification.
 | Hardware criteria | Physical 5.1/7.1 routing, endpoint behavior, stability, and audible conclusions remain pending |
 | Phase 2 required to implement | No, for the constrained offline scope |
 | Phase 2 required for final acceptance | Yes, wherever the result depends on physical hardware |
-| Classification after implementation completes | `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING` |
+| Final evaluated classification | `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE` |
 | Stop boundary | No protected contract changes, live defaults, HRTF dependency, codec, HDMI, network, wireless, GUI, AI, calibration, or physical claim |
 
 No implementation is authorized by this queue entry alone. A Phase 3A branch

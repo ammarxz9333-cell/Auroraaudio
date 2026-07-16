@@ -7,6 +7,7 @@ Aurora Phase 0 is an offline, format-independent spatial-audio prototype. The sy
 - `aurora-core`: Shared data model for formats, vectors, speakers, listeners, objects, audio blocks, and scenes.
 - `aurora-renderer-api`: Stable renderer trait and renderer-facing errors.
 - `aurora-renderer-basic`: Deterministic inverse-distance renderer used by the first checkpoint.
+- `aurora-renderer-vbap`: Optional deterministic horizontal-plane VBAP renderer implementing the existing renderer boundary.
 - `aurora-dsp-api`: DSP trait placeholder boundary.
 - `aurora-dsp-basic`: Future internal DSP implementation crate.
 - `aurora-audio-io`: Future WAV and offline audio IO crate.
