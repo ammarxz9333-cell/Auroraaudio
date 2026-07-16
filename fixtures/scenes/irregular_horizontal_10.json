@@ -1,0 +1,34 @@
+{
+  "layout": "custom",
+  "listener": {
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 1.0, "z": 0.0 },
+    "ear_height": 1.2
+  },
+  "speakers": [
+    { "id": "irregular-00", "label": "Irregular 00", "channel_role": "irregular-00", "position": { "x": 1.80, "y": 0.00, "z": 1.0 }, "orientation": { "x": -1.0, "y": 0.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "irregular-01", "label": "Irregular 01", "channel_role": "irregular-01", "position": { "x": 1.05, "y": 1.42, "z": 1.0 }, "orientation": { "x": -0.6, "y": -0.8, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "irregular-02", "label": "Irregular 02", "channel_role": "irregular-02", "position": { "x": 0.08, "y": 1.25, "z": 1.0 }, "orientation": { "x": 0.0, "y": -1.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "irregular-03", "label": "Irregular 03", "channel_role": "irregular-03", "position": { "x": -0.72, "y": 1.68, "z": 1.0 }, "orientation": { "x": 0.4, "y": -0.9, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "irregular-04", "label": "Irregular 04", "channel_role": "irregular-04", "position": { "x": -1.92, "y": 0.48, "z": 1.0 }, "orientation": { "x": 1.0, "y": -0.2, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "irregular-05", "label": "Irregular 05", "channel_role": "irregular-05", "position": { "x": -1.32, "y": -0.58, "z": 1.0 }, "orientation": { "x": 0.9, "y": 0.4, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "irregular-06", "label": "Irregular 06", "channel_role": "irregular-06", "position": { "x": -0.62, "y": -1.82, "z": 1.0 }, "orientation": { "x": 0.3, "y": 0.9, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "irregular-07", "label": "Irregular 07", "channel_role": "irregular-07", "position": { "x": 0.18, "y": -1.34, "z": 1.0 }, "orientation": { "x": -0.1, "y": 1.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "irregular-08", "label": "Irregular 08", "channel_role": "irregular-08", "position": { "x": 1.38, "y": -1.10, "z": 1.0 }, "orientation": { "x": -0.8, "y": 0.6, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "irregular-09", "label": "Irregular 09", "channel_role": "irregular-09", "position": { "x": 1.62, "y": -0.34, "z": 1.0 }, "orientation": { "x": -1.0, "y": 0.2, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true }
+  ],
+  "object": {
+    "id": "spread-source",
+    "gain_db": 0.0,
+    "spread": 0.5
+  },
+  "trajectory": {
+    "type": "circle",
+    "center": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "radius": 1.0,
+    "z": 0.0,
+    "start_degrees": -180.0,
+    "revolutions_per_second": 0.25
+  },
+  "block_size": 256
+}
