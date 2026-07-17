@@ -121,6 +121,16 @@ storage, connect an engine, or execute callbacks. Setup-derived capacities
 remain explicitly deferred. See ADR 0014 and
 `docs/planning/runtime-assembly-contracts-1.md`.
 
+ADR 0015 proposes a later immutable setup-planning description derived from
+`PreparedRuntimePlan`. After that governance amendment merges, Checkpoint C may
+describe canonical setup stages, acyclic dependencies, unresolved device
+intent, requested format intent, and renderer/DSP/backend setup intent inside
+`aurora-runtime-assembly`. `SetupPlanComplete` means only that the description
+is complete; it is not runtime, host, or physical readiness. Checkpoint C is
+currently `NOT_STARTED`, and no setup-planning implementation exists in the
+governance branch. Direct dependencies remain only `aurora-config` and
+`aurora-core`; construction and integration remain unauthorized.
+
 Diagnostics & Telemetry Framework 1 and Configuration & Preset System 1 are
 merged, accepted software-only control planes. Phase 2 remains open and
 incomplete. Phase 3A and Phase 3B remain
