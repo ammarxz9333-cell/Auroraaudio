@@ -85,6 +85,24 @@ Formal evaluation passed on 2026-07-16. This test-only acceptance changes no
 physical gate and authorizes no later product milestone. The evidence record is
 `docs/acceptance/simulation-assurance-campaign-1.md`.
 
+## Authorized Software Milestone: Diagnostics & Telemetry Framework 1
+
+**Diagnostics & Telemetry Framework 1** is owner-authorized as a software-only
+control-plane milestone.
+
+- `execution_state`: `IN_PROGRESS`
+- `evaluation_classification`: none
+- implementation branch: `feature/diagnostics-framework-1`
+- Phase 2 required for implementation or acceptance: no
+- hardware criteria: none
+- product audio behavior changes: none
+
+The milestone adds deterministic structured events, bounded control-thread
+logging, atomic callback metrics, snapshots, reports, tests, benchmarks, and
+documentation. It cannot change renderer/DSP behavior, protected contracts,
+accepted tags, or start Phase 3C. See
+`docs/planning/diagnostics-telemetry-framework-1.md`.
+
 ## Checkpoint 1: Architecture and Gain Simulation
 
 - Create architecture, roadmap, licensing, and agent guardrail documentation.
