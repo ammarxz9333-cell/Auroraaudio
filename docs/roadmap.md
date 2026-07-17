@@ -67,8 +67,8 @@ are in `docs/planning/phase-3b-scope.md`.
 Testing** is authorized as a verification-only successor after its governance
 amendment merges.
 
-- `execution_state`: `NOT_STARTED`
-- `evaluation_classification`: none
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `ACCEPTED`
 - implementation branch: `test/simulation-assurance-campaign-1`
 - product features: none
 - Phase 2 required for implementation or campaign acceptance: no
@@ -80,6 +80,10 @@ bounded deterministic property, metamorphic, stress, replay, and accelerated
 soak testing. It cannot create another simulator, change protected contracts,
 start Phase 3C, or produce physical evidence. Its complete scope and execution
 levels are in `docs/planning/simulation-assurance-campaign-1.md`.
+
+Formal evaluation passed on 2026-07-16. This test-only acceptance changes no
+physical gate and authorizes no later product milestone. The evidence record is
+`docs/acceptance/simulation-assurance-campaign-1.md`.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 

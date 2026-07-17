@@ -1,0 +1,58 @@
+name: Simulation Assurance Manual Deep
+
+on:
+  workflow_dispatch:
+    inputs:
+      scenarios:
+        description: Total deterministic scenarios across all eight shards
+        required: true
+        default: 100000
+        type: number
+      start_seed:
+        description: First deterministic campaign seed
+        required: true
+        default: 0
+        type: number
+
+permissions:
+  contents: read
+
+concurrency:
+  group: simulation-assurance-deep
+  cancel-in-progress: false
+
+jobs:
+  campaign:
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [0, 1, 2, 3, 4, 5, 6, 7]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-cargo-assurance-${{ hashFiles('**/Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-cargo-assurance-
+            ${{ runner.os }}-cargo-
+      - name: Run configurable deterministic deep shard
+        run: >-
+          cargo run --release -p aurora-simulation-assurance --
+          --level deep --scenarios ${{ inputs.scenarios }}
+          --start-seed ${{ inputs.start_seed }}
+          --shard-index ${{ matrix.shard }} --shard-count 8
+          --report output/simulation-assurance/deep-${{ matrix.shard }}.json
+      - name: Upload bounded deep report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: simulation-assurance-deep-${{ matrix.shard }}
+          path: output/simulation-assurance/**/*.json
+          if-no-files-found: error

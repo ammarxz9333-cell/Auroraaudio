@@ -1079,12 +1079,12 @@ It must not create a second simulator or add product behavior.
 
 Current execution record:
 
-- `execution_state`: `NOT_STARTED`;
-- `evaluation_classification`: none;
+- `execution_state`: `CLOSED`;
+- `evaluation_classification`: `ACCEPTED`;
 - governance branch: `governance/define-simulation-assurance-campaign-1`;
-- planned implementation branch: `test/simulation-assurance-campaign-1`;
-- required implementation base: `main-v2` after this governance amendment is
-  reviewed and merged.
+- implementation branch: `test/simulation-assurance-campaign-1`;
+- implementation base: `main-v2` at
+  `1b28d514882d407446dac3a366ecd35841a2a95a`.
 
 Included scope is property-based and metamorphic verification, deterministic
 generated scenarios, bounded campaign sharding, reproducible failure records
@@ -1135,6 +1135,15 @@ Permitted truth sources are `unit_test`, `deterministic_simulation`, and
 Its stop boundary is a reviewed, unmerged implementation pull request after
 the initial executions, full validation, bounded artifact review, and formal
 campaign evaluation. No Phase 3C or later product milestone may begin.
+
+Formal evaluation completed on `2026-07-16` against implementation commit
+`a04d009752622ffe30b3b2fa24043aaa56a11344`. All required campaign levels,
+initial executions, software gates, deterministic-simulation gates, bounded
+resource checks, and host-observation gates passed. The target-qualified
+Windows x86-64 checksums and complete evidence are recorded in
+`docs/acceptance/simulation-assurance-campaign-1.md`. This acceptance applies
+only to the test campaign. It does not alter Phase 2 or satisfy any physical
+gate of Phase 3A or Phase 3B.
 
 ---
 
@@ -1333,10 +1342,9 @@ The accepted milestone is:
 
 It is frozen. Phase 2 physical hardware validation is open and incomplete.
 Phase 3A and Phase 3B are conditionally accepted pending their physical gates.
-The authorized next action, after its governance amendment merges, is
-Simulation Assurance Campaign 1. It is test-only and must follow the matrix and
-stop boundary in Section 16.1 and
-`docs/planning/simulation-assurance-campaign-1.md`.
+Simulation Assurance Campaign 1 is accepted as a test-only milestone. No later
+product milestone is authorized by that acceptance. Phase 2 physical hardware
+validation remains the open hardware-dependent work.
 
 The next agent must not:
 
@@ -1428,6 +1436,15 @@ Do not rewrite history. Record replaced decisions in ADRs.
   boundary.
 - Reason: authorize large reproducible software verification without creating
   product features or substituting simulation for Phase 2 physical evidence.
+
+### Maintenance record: 2026-07-16 -- Simulation Assurance Campaign 1 evaluation
+
+- Milestone: test-only deterministic assurance campaign.
+- Changed sections: campaign execution record, evidence summary, final
+  classification, immediate next action, and acceptance-document reference.
+- Reason: every campaign software and deterministic-simulation criterion
+  passed; the campaign has no physical acceptance criterion and therefore
+  closes as `ACCEPTED` without changing any physical gate.
 
 ---
 

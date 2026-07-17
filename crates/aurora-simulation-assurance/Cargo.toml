@@ -1,0 +1,17 @@
+[package]
+name = "aurora-simulation-assurance"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+aurora-core = { path = "../aurora-core" }
+aurora-realtime-audio-sim = { path = "../aurora-realtime-audio-sim" }
+aurora-renderer-api = { path = "../aurora-renderer-api" }
+aurora-renderer-vbap = { path = "../aurora-renderer-vbap" }
+clap.workspace = true
+serde.workspace = true
+serde_json.workspace = true
