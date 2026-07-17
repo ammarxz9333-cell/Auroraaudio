@@ -19,6 +19,7 @@ members = [
     "crates/aurora-simulation-assurance",
     "crates/aurora-diagnostics",
     "crates/aurora-config",
+    "crates/aurora-runtime-assembly",
     "crates/aurora-realtime-engine",
     "crates/aurora-measurement",
     "crates/aurora-cli",

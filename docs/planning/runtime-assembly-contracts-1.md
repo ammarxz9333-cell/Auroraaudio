@@ -1,5 +1,19 @@
 # Runtime Assembly Contracts 1
 
+## Current implementation state
+
+- `authorization_state`: `AUTHORIZED`
+- `execution_state`: `IN_PROGRESS`
+- `evaluation_classification`: `NOT_EVALUATED`
+- `active_checkpoint`: `A`
+- implementation branch: `feature/runtime-assembly-contracts-1-checkpoint-a`
+- review state: proposed in Draft PR; open and unmerged
+
+Checkpoint A contains only the isolated immutable contract model, structured
+standard-library setup errors, focused invariant tests, and workspace/docs
+wiring. It does not contain a builder, configuration derivation, mapping,
+runtime construction, hardware access, or any Checkpoint B implementation.
+
 ## Governance record
 
 - Milestone class: `SOFTWARE_ONLY_CONTROL_PLANE`

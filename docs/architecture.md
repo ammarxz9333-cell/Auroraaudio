@@ -20,6 +20,7 @@ speaker transport are out of scope.
 - `aurora-realtime-audio-sim`: Deterministic virtual backend and accelerated validation environment.
 - `aurora-diagnostics`: Hardware-independent structured events, bounded control-thread logs, atomic callback metrics, snapshots, and reports.
 - `aurora-config`: Immutable versioned configuration intent, deterministic presets, bounded migration, and redacted snapshots.
+- `aurora-runtime-assembly`: Immutable Checkpoint A control-plane contracts for future runtime preparation; no configuration derivation or runtime construction exists yet.
 - `aurora-realtime-engine`: Real-time block pipeline preserving renderer, channel-role, geometric-delay, and DSP boundaries.
 - `aurora-measurement`: Synthetic-measurement scope scaffold; implemented synthetic latency and routing evidence lives in the simulator and real-time engine, and no accepted physical measurement capability exists.
 - `aurora-scene`: JSON scene loading, validation, and trajectory sampling.
@@ -107,6 +108,15 @@ Raw configuration is inert until wrapped by `ValidatedConfiguration`;
 serialization, preset materialization, migration, and redaction remain outside
 audio callbacks. Device values are selection intent only and never discovery or
 negotiation evidence. See `docs/configuration.md` and ADR 0013.
+
+Runtime Assembly Contracts 1 Checkpoint A adds an isolated passive contract
+crate depending directly only on `aurora-config` and `aurora-core`. Its values
+describe already-prepared format, renderer, routing, layout, DSP, device intent,
+and capacities through immutable read-only APIs. It does not derive from
+`ValidatedConfiguration`, resolve devices, construct renderers or DSP, allocate
+runtime storage, connect an engine, or execute callbacks. Setup-derived
+capacities remain explicitly deferred. See ADR 0014 and
+`docs/planning/runtime-assembly-contracts-1.md`.
 
 Diagnostics & Telemetry Framework 1 and Configuration & Preset System 1 are
 merged, accepted software-only control planes. Phase 2 remains open and
