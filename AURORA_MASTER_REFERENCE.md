@@ -1254,27 +1254,41 @@ acceptance record is
 acceptance changes no physical gate, protected audio contract, or runtime
 callback and introduces no physical claim.
 
-### Proposed software-only milestone: Runtime Assembly Contracts 1
+### Active software-only milestone: Runtime Assembly Contracts 1
 
-**Runtime Assembly Contracts 1** is authorized only after its governance
-amendment merges. It is a hardware-independent control-plane milestone that may
-derive an immutable, bounded, deterministic runtime preparation plan from
-`ValidatedConfiguration`.
+**Runtime Assembly Contracts 1** is an authorized hardware-independent
+control-plane milestone. Checkpoints A and B are complete. A new governance
+amendment proposes a deterministic descriptive setup-planning layer before the
+final evidence and architecture review.
 
 Current execution record:
 
-- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`;
-- `execution_state`: `NOT_STARTED`;
+- `authorization_state`: `AUTHORIZED`;
+- `execution_state`: `IN_PROGRESS`;
 - `evaluation_classification`: `NOT_EVALUATED`;
-- planned implementation crate: `aurora-runtime-assembly`;
+- `completed_checkpoint`: `B`;
+- `next_checkpoint`: `C`;
+- implementation crate: `aurora-runtime-assembly`;
 - expected final classification: `ACCEPTED`.
+
+Authoritative checkpoint sequence after ADR 0015 merges:
+
+- Checkpoint A: completed isolated contracts under ADR 0014;
+- Checkpoint B: completed deterministic derivation under ADR 0014;
+- Checkpoint C: deterministic descriptive setup planning under ADR 0015;
+- Checkpoint D: evidence, contract tests, public API documentation, and CI;
+- Checkpoint E: stop and architectural acceptance review.
+
+Until the ADR 0015 governance amendment merges, Checkpoint C remains
+unauthorized and `NOT_STARTED`.
 
 Hardware dependency matrix:
 
 - software-only criteria: immutable Aurora-owned contracts, deterministic
   renderer/routing/device intent derivation, explicit no-DSP state under the
   current schema, bounded capacities, checked arithmetic, structured setup
-  errors, tests, and documentation;
+  errors, and, after ADR 0015 merges, a deterministic descriptive setup-stage
+  and dependency plan, followed by tests and documentation;
 - deterministic-simulation criteria: none;
 - host-observation criteria: build and CI evidence only, with no device
   observation;
@@ -1283,7 +1297,7 @@ Hardware dependency matrix:
 - Phase 2 required for final acceptance: no;
 - effect on Phase 2: none; physical validation remains open and incomplete.
 
-The selected placement is a separate `aurora-runtime-assembly` crate depending
+The selected placement is the separate `aurora-runtime-assembly` crate depending
 directly only on `aurora-config` and `aurora-core`. It may not add device
 discovery or negotiation, stream opening, a running engine, thread/process or
 callback work, renderer/DSP implementation dependencies, diagnostics producer
@@ -1291,13 +1305,21 @@ wiring, product audio behavior changes, or physical claims. The current schema
 has no full DSP intent or maximum-object field; the plan must preserve those as
 explicit absent/deferred capacities and must not invent defaults.
 
-No implementation is authorized before this governance amendment merges.
-After merge, only an isolated implementation branch and pull request for this
-milestone is authorized. Renderer factory integration, live or simulated engine
-wiring, CLI inspection, diagnostics producer wiring, multichannel input
-redesign, Phase 2 changes, Phase 3C, and later milestones remain unauthorized.
+ADR 0015 proposes an immutable setup plan derived from `PreparedRuntimePlan`.
+It may describe canonical setup stages and dependencies, unresolved device
+intent, requested format intent, renderer/DSP/backend setup intent, and a
+non-observational `SetupPlanComplete` terminal stage. It contains no runtime
+objects and makes no execution, negotiation, readiness, host, or physical claim.
+
+Checkpoint C remains `NOT_STARTED` and unauthorized until the ADR 0015
+governance amendment merges. After merge, only an isolated Checkpoint C branch
+and pull request may implement that descriptive layer. Renderer factory
+integration, live or simulated engine wiring, CLI inspection, diagnostics
+producer wiring, multichannel input redesign, Phase 2 changes, Phase 3C, and
+later milestones remain unauthorized.
 The complete contract, dependency matrix, tests, non-goals, and stop boundary
-are recorded in `docs/planning/runtime-assembly-contracts-1.md` and ADR 0014.
+are recorded in `docs/planning/runtime-assembly-contracts-1.md`, ADR 0014, and
+ADR 0015.
 
 ---
 
@@ -1502,10 +1524,11 @@ Configuration & Preset System 1 is accepted as a software-only milestone. No
 acceptance authorizes Phase 3C or any later product milestone.
 Phase 2 physical hardware validation remains open and incomplete.
 
-Runtime Assembly Contracts 1 is a governance proposal with
-`execution_state: NOT_STARTED`. Its implementation becomes authorized only
-after this governance pull request merges and must use a new implementation
-branch. This proposal does not authorize Phase 3C or any integration milestone.
+Runtime Assembly Contracts 1 is `IN_PROGRESS` and `NOT_EVALUATED`; Checkpoints
+A and B are complete. Its proposed Checkpoint C setup-planning extension is
+`NOT_STARTED` and becomes authorized only after the ADR 0015 governance pull
+request merges. That proposal authorizes no runtime integration, Phase 2
+change, Phase 3C work, or physical claim.
 
 The next agent must not:
 
@@ -1657,6 +1680,15 @@ Do not rewrite history. Record replaced decisions in ADRs.
 - Reason: authorize a later deterministic setup-only plan from validated
   configuration without changing audio semantics, protected contracts,
   callbacks, device behavior, Phase 2, or physical evidence.
+
+### Maintenance record: 2026-07-18 -- Runtime setup-planning governance
+
+- Milestone: Runtime Assembly Contracts 1, with Checkpoints A and B complete.
+- Changed sections: execution record, remaining checkpoint authorization,
+  dependency boundary, immediate next action, and stop boundary references.
+- Reason: propose a deterministic descriptive setup-planning layer governed by
+  ADR 0015 before final evidence review, without implementing it or changing
+  runtime behavior, dependencies, Phase 2, Phase 3C, or physical evidence.
 
 ---
 

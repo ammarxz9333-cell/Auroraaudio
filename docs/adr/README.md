@@ -20,3 +20,4 @@ of rewriting history.
 | [0012](0012-control-thread-diagnostics.md) | Control-thread diagnostics |
 | [0013](0013-versioned-configuration-and-presets.md) | Versioned configuration and presets |
 | [0014](0014-runtime-assembly-boundary.md) | Runtime assembly boundary |
+| [0015](0015-deterministic-runtime-setup-planning.md) | Deterministic runtime setup planning boundary |
