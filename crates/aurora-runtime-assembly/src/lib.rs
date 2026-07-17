@@ -1,10 +1,9 @@
-//! Immutable control-plane contracts for a future Aurora runtime assembly step.
+//! Immutable control-plane contracts and deterministic runtime-plan derivation.
 //!
-//! Checkpoint A defines passive, Aurora-owned values only. It is control-plane
-//! code with no hardware access, device probing, renderer or DSP construction,
-//! real-time engine, or callback use. The values make no physical claim.
-//! Deterministic derivation from validated configuration is deferred to
-//! Checkpoint B; this crate currently only accepts already prepared components.
+//! Checkpoint B derives passive Aurora-owned values from an already validated
+//! configuration. This remains control-plane code with no I/O, hardware access,
+//! device probing, renderer or DSP construction, real-time engine, callback
+//! use, or physical claim.
 
 #![forbid(unsafe_code)]
 
@@ -12,6 +11,10 @@ use std::{collections::BTreeSet, error::Error, fmt};
 
 use aurora_config::{AmbiguityPolicy, BackendIntent, FormatFallbackPolicy, SampleFormatIntent};
 use aurora_core::{ChannelRole, StandardLayout, Vector3};
+
+mod derivation;
+
+pub use derivation::prepare_runtime_plan;
 
 /// Version of the runtime-plan contract defined by this crate.
 pub const RUNTIME_PLAN_CONTRACT_VERSION: u16 = 1;
@@ -169,7 +172,6 @@ impl PreparedAudioFormatIntent {
     ) -> Result<Self, RuntimePreparationError> {
         for (field, value) in [
             (CapacityField::SampleRate, sample_rate as usize),
-            (CapacityField::InputChannelCount, input_channel_count),
             (CapacityField::OutputChannelCount, output_channel_count),
             (CapacityField::CallbackFrameCount, callback_frames as usize),
         ] {
@@ -198,7 +200,7 @@ impl PreparedAudioFormatIntent {
         self.sample_format
     }
 
-    /// Returns the plan-known input channel count.
+    /// Returns the plan-known input identity count, which may be zero.
     pub fn input_channel_count(&self) -> usize {
         self.input_channel_count
     }
@@ -451,7 +453,9 @@ impl PreparedSpeaker {
         &self.channel_role
     }
 
-    /// Returns the normalized meter-space speaker position.
+    /// Returns the normalized, dimensionless speaker direction.
+    ///
+    /// No radius, distance, room coordinate, or physical presence is implied.
     pub fn position(&self) -> Vector3 {
         self.position
     }
@@ -640,9 +644,7 @@ impl RuntimeCapacityPlan {
         callback_frame_count: usize,
     ) -> Result<Self, RuntimePreparationError> {
         for (field, value) in [
-            (CapacityField::InputChannelCount, input_channel_count),
             (CapacityField::OutputChannelCount, output_channel_count),
-            (CapacityField::RouteCount, route_count),
             (CapacityField::SpeakerCount, speaker_count),
             (CapacityField::CallbackFrameCount, callback_frame_count),
         ] {
@@ -667,7 +669,7 @@ impl RuntimeCapacityPlan {
         })
     }
 
-    /// Returns the plan-known input channel count.
+    /// Returns the plan-known input identity count, which may be zero.
     pub fn input_channel_count(&self) -> usize {
         self.input_channel_count
     }
@@ -675,7 +677,7 @@ impl RuntimeCapacityPlan {
     pub fn output_channel_count(&self) -> usize {
         self.output_channel_count
     }
-    /// Returns the plan-known route count.
+    /// Returns the plan-known route count, which may be zero.
     pub fn route_count(&self) -> usize {
         self.route_count
     }
@@ -784,7 +786,7 @@ pub enum RuntimePreparationError {
     InternalInvariantViolation { invariant: RuntimeInvariant },
 }
 
-/// Fields whose plan-known capacities must be nonzero.
+/// Fields whose plan-known capacities may be reported as invalid.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CapacityField {
     /// Requested sample rate.
@@ -804,6 +806,8 @@ pub enum CapacityField {
 /// Capacity calculations that may report checked arithmetic overflow.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ArithmeticOperation {
+    /// Conversion of callback frame intent into the platform count type.
+    CallbackFrameConversion,
     /// Future frame-by-channel storage sizing.
     FrameChannelStorage,
 }
@@ -857,6 +861,12 @@ pub enum RuntimeInvariant {
     EmptyDeviceSelector,
     /// A device selector has neither a stable ID nor friendly name.
     MissingDeviceSelector,
+    /// The configured output count disagrees with the validated format intent.
+    AudioOutputCountMismatch,
+    /// Input selector direction disagrees with its configuration field.
+    InputDeviceDirectionMismatch,
+    /// Output selector direction disagrees with its configuration field.
+    OutputDeviceDirectionMismatch,
     /// Top-level components disagree with the capacity plan.
     ComponentCapacityMismatch,
 }
