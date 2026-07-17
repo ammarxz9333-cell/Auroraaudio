@@ -19,3 +19,4 @@ of rewriting history.
 | [0011](0011-simulation-truth-model.md) | Simulation truth model |
 | [0012](0012-control-thread-diagnostics.md) | Control-thread diagnostics |
 | [0013](0013-versioned-configuration-and-presets.md) | Versioned configuration and presets |
+| [0014](0014-runtime-assembly-boundary.md) | Runtime assembly boundary |

@@ -139,6 +139,27 @@ The evidence record is
 `docs/acceptance/configuration-preset-system-1.md`. The milestone is closed and
 accepted; its merge does not alter Phase 2 or authorize Phase 3C.
 
+## Proposed Software Milestone: Runtime Assembly Contracts 1
+
+**Runtime Assembly Contracts 1** is authorized only after its governance
+amendment merges as a hardware-independent control-plane milestone.
+
+- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`
+- `execution_state`: `NOT_STARTED`
+- `evaluation_classification`: `NOT_EVALUATED`
+- planned implementation crate: `aurora-runtime-assembly`
+- Phase 2 required for implementation or acceptance: no
+- hardware criteria: none
+- product audio behavior changes: none
+
+The future milestone may convert `ValidatedConfiguration` into an immutable,
+bounded, deterministic preparation plan. It may not probe or open devices,
+construct a running engine, touch callbacks, modify protected contracts, start
+Phase 3C, or make physical claims. No implementation is authorized before this
+governance amendment merges. The dependency matrix, checkpoints, tests, and
+stop boundary are in `docs/planning/runtime-assembly-contracts-1.md` and ADR
+0014.
+
 ## Checkpoint 1: Architecture and Gain Simulation
 
 - Create architecture, roadmap, licensing, and agent guardrail documentation.

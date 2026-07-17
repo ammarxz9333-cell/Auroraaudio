@@ -1254,6 +1254,51 @@ acceptance record is
 acceptance changes no physical gate, protected audio contract, or runtime
 callback and introduces no physical claim.
 
+### Proposed software-only milestone: Runtime Assembly Contracts 1
+
+**Runtime Assembly Contracts 1** is authorized only after its governance
+amendment merges. It is a hardware-independent control-plane milestone that may
+derive an immutable, bounded, deterministic runtime preparation plan from
+`ValidatedConfiguration`.
+
+Current execution record:
+
+- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`;
+- `execution_state`: `NOT_STARTED`;
+- `evaluation_classification`: `NOT_EVALUATED`;
+- planned implementation crate: `aurora-runtime-assembly`;
+- expected final classification: `ACCEPTED`.
+
+Hardware dependency matrix:
+
+- software-only criteria: immutable Aurora-owned contracts, deterministic
+  renderer/routing/device intent derivation, explicit no-DSP state under the
+  current schema, bounded capacities, checked arithmetic, structured setup
+  errors, tests, and documentation;
+- deterministic-simulation criteria: none;
+- host-observation criteria: build and CI evidence only, with no device
+  observation;
+- hardware-dependent criteria: none;
+- Phase 2 required for implementation: no;
+- Phase 2 required for final acceptance: no;
+- effect on Phase 2: none; physical validation remains open and incomplete.
+
+The selected placement is a separate `aurora-runtime-assembly` crate depending
+directly only on `aurora-config` and `aurora-core`. It may not add device
+discovery or negotiation, stream opening, a running engine, thread/process or
+callback work, renderer/DSP implementation dependencies, diagnostics producer
+wiring, product audio behavior changes, or physical claims. The current schema
+has no full DSP intent or maximum-object field; the plan must preserve those as
+explicit absent/deferred capacities and must not invent defaults.
+
+No implementation is authorized before this governance amendment merges.
+After merge, only an isolated implementation branch and pull request for this
+milestone is authorized. Renderer factory integration, live or simulated engine
+wiring, CLI inspection, diagnostics producer wiring, multichannel input
+redesign, Phase 2 changes, Phase 3C, and later milestones remain unauthorized.
+The complete contract, dependency matrix, tests, non-goals, and stop boundary
+are recorded in `docs/planning/runtime-assembly-contracts-1.md` and ADR 0014.
+
 ---
 
 # 17. Simulation Sprint 1 requirements
@@ -1457,6 +1502,11 @@ Configuration & Preset System 1 is accepted as a software-only milestone. No
 acceptance authorizes Phase 3C or any later product milestone.
 Phase 2 physical hardware validation remains open and incomplete.
 
+Runtime Assembly Contracts 1 is a governance proposal with
+`execution_state: NOT_STARTED`. Its implementation becomes authorized only
+after this governance pull request merges and must use a new implementation
+branch. This proposal does not authorize Phase 3C or any integration milestone.
+
 The next agent must not:
 
 - buy hardware;
@@ -1597,6 +1647,16 @@ Do not rewrite history. Record replaced decisions in ADRs.
   benchmark, documentation, and remote CI criteria passed; the milestone has no
   physical gate and closes as `ACCEPTED` without changing Phase 2 or authorizing
   Phase 3C.
+
+### Maintenance record: 2026-07-17 -- Runtime Assembly Contracts 1 scope
+
+- Milestone: software-only immutable runtime preparation contracts;
+  implementation not started.
+- Changed sections: hardware-blocked milestone authorization, dependency
+  direction, immediate next action, and stop boundary.
+- Reason: authorize a later deterministic setup-only plan from validated
+  configuration without changing audio semantics, protected contracts,
+  callbacks, device behavior, Phase 2, or physical evidence.
 
 ---
 
