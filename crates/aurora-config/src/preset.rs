@@ -190,6 +190,13 @@ impl PresetCollection {
             }
             let mut sibling_types = BTreeSet::new();
             for reference in &preset.extends {
+                if reference.trim().is_empty() || reference.len() > MAX_STRING_BYTES {
+                    return Err(preset_error(
+                        ErrorCode::InvalidString,
+                        "presets[].extends",
+                        "preset reference is empty or oversized",
+                    ));
+                }
                 let referenced = self
                     .presets
                     .iter()
@@ -213,14 +220,15 @@ impl PresetCollection {
         Ok(())
     }
 
-    /// Serializes the collection with presets, tags, and references sorted.
+    /// Serializes the collection with presets and tags sorted.
+    ///
+    /// Reference order is preserved because it defines overlay precedence.
     pub fn canonical_json(&self) -> Result<String, ConfigError> {
         self.validate()?;
         let mut canonical = self.clone();
         canonical.presets.sort_by(|a, b| a.id.cmp(&b.id));
         for preset in &mut canonical.presets {
             preset.tags.sort();
-            preset.extends.sort();
         }
         serde_json::to_string(&canonical).map_err(|_| {
             preset_error(

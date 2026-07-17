@@ -255,6 +255,9 @@ pub enum RendererConfiguration {
         /// Normalized spread in `0.0..=1.0`.
         spread: f32,
     },
+    /// Unknown serialized renderer type retained for structured rejection.
+    #[serde(other)]
+    Unsupported,
 }
 
 /// Bounded audio transport policy intent.

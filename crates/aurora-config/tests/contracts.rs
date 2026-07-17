@@ -153,7 +153,34 @@ fn unsupported_renderer_and_schema_are_rejected() {
         ValidatedConfiguration::from_json(json.as_bytes())
             .unwrap_err()
             .code,
-        ErrorCode::InvalidJson
+        ErrorCode::UnsupportedRenderer
+    );
+}
+
+#[test]
+fn routing_rejects_unknown_inactive_and_unassigned_input_channels() {
+    let mut unknown_inactive = stereo();
+    unknown_inactive
+        .routing
+        .inactive_outputs
+        .push("missing-output".to_owned());
+    assert_eq!(
+        ValidatedConfiguration::new(unknown_inactive)
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidRouting
+    );
+
+    let mut unassigned_input = stereo();
+    unassigned_input.routing.inputs.push(ChannelIdentity {
+        id: "extra-input".to_owned(),
+        label: "Extra".to_owned(),
+    });
+    assert_eq!(
+        ValidatedConfiguration::new(unassigned_input)
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidRouting
     );
 }
 
@@ -271,6 +298,8 @@ fn migration_succeeds_warns_and_rejects_ambiguous_input() {
 #[test]
 fn redaction_removes_identifiers_and_reports_truth_source() {
     let mut source = stereo();
+    source.routing.outputs[0].label = "Alice listening position".to_owned();
+    source.speaker_layout.speakers[0].label = "Alice left speaker".to_owned();
     source.output_device = Some(DeviceSelectionIntent {
         stable_id: Some("C:\\Users\\person\\device-id".to_owned()),
         friendly_name: Some("Personal speakers".to_owned()),
@@ -284,6 +313,7 @@ fn redaction_removes_identifiers_and_reports_truth_source() {
     let json = redacted.canonical_json().unwrap();
     assert!(!json.contains("person"));
     assert!(!json.contains("Personal speakers"));
+    assert!(!json.contains("Alice"));
     assert!(json.contains("[redacted]"));
     assert!(json.contains("unit_test"));
 }

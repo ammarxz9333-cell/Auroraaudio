@@ -33,6 +33,17 @@ impl RedactedConfiguration {
     ) -> Self {
         let mut configuration = source.config().clone();
         configuration.schema.generated_by = None;
+        for channel in configuration
+            .routing
+            .inputs
+            .iter_mut()
+            .chain(configuration.routing.outputs.iter_mut())
+        {
+            channel.label = "[redacted]".to_owned();
+        }
+        for speaker in &mut configuration.speaker_layout.speakers {
+            speaker.label = "[redacted]".to_owned();
+        }
         for device in [
             configuration.input_device.as_mut(),
             configuration.output_device.as_mut(),

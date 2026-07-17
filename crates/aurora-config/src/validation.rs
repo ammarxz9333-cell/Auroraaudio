@@ -149,6 +149,13 @@ fn strings(config: &AuroraConfiguration) -> Result<(), ConfigError> {
         fields.push(("routing.outputs[].id", channel.id.as_str()));
         fields.push(("routing.outputs[].label", channel.label.as_str()));
     }
+    for route in &config.routing.routes {
+        fields.push(("routing.routes[].input", route.input.as_str()));
+        fields.push(("routing.routes[].output", route.output.as_str()));
+    }
+    for output in &config.routing.inactive_outputs {
+        fields.push(("routing.inactive_outputs[]", output.as_str()));
+    }
     for speaker in &config.speaker_layout.speakers {
         fields.push(("speaker_layout.speakers[].id", speaker.id.as_str()));
         fields.push(("speaker_layout.speakers[].role", speaker.role.as_str()));
@@ -173,8 +180,14 @@ fn validate_devices(config: &AuroraConfiguration) -> Result<(), ConfigError> {
         ("output_device", config.output_device.as_ref()),
     ] {
         let Some(device) = device else { continue };
-        if device.stable_id.as_deref().map_or(true, str::is_empty)
-            && device.friendly_name.as_deref().map_or(true, str::is_empty)
+        if device
+            .stable_id
+            .as_deref()
+            .map_or(true, |value| value.trim().is_empty())
+            && device
+                .friendly_name
+                .as_deref()
+                .map_or(true, |value| value.trim().is_empty())
         {
             return Err(error(
                 ErrorCode::AmbiguousDeviceSelection,
@@ -198,7 +211,7 @@ fn validate_devices(config: &AuroraConfiguration) -> Result<(), ConfigError> {
             .into_iter()
             .flatten()
         {
-            if value.len() > MAX_STRING_BYTES {
+            if value.trim().is_empty() || value.len() > MAX_STRING_BYTES {
                 return Err(error(
                     ErrorCode::InvalidString,
                     path,
@@ -239,6 +252,11 @@ fn validate_routing(config: &AuroraConfiguration) -> Result<(), ConfigError> {
         routing.inactive_outputs.iter().map(String::as_str),
         "routing.inactive_outputs",
     )?;
+    if inactive.iter().any(|output| !outputs.contains(output)) {
+        return Err(routing_error(
+            "inactive output references an unknown channel",
+        ));
+    }
     let mut assigned_inputs = BTreeSet::new();
     let mut assigned_outputs = BTreeSet::new();
     for route in &routing.routes {
@@ -259,6 +277,9 @@ fn validate_routing(config: &AuroraConfiguration) -> Result<(), ConfigError> {
         .any(|output| !inactive.contains(output) && !assigned_outputs.contains(output))
     {
         return Err(routing_error("an active output has no assignment"));
+    }
+    if inputs.iter().any(|input| !assigned_inputs.contains(input)) {
+        return Err(routing_error("an input channel has no assignment"));
     }
     Ok(())
 }
@@ -331,6 +352,12 @@ fn validate_renderer(config: &AuroraConfiguration) -> Result<(), ConfigError> {
         {
             Ok(())
         }
+        RendererConfiguration::Unsupported => Err(error(
+            ErrorCode::UnsupportedRenderer,
+            "renderer.type",
+            ErrorCategory::Renderer,
+            "renderer type is unsupported",
+        )),
         _ => Err(error(
             ErrorCode::UnsupportedRenderer,
             "renderer",
