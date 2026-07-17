@@ -371,6 +371,62 @@ fn every_configuration_fixture_has_expected_validity() {
 }
 
 #[test]
+fn canonical_fixture_checksums_are_stable() {
+    let fixtures = [
+        (
+            "minimal-v1",
+            include_bytes!("../../../fixtures/config/minimal-v1.json").as_slice(),
+        ),
+        (
+            "stereo-basic-v1",
+            include_bytes!("../../../fixtures/config/stereo-basic-v1.json").as_slice(),
+        ),
+        (
+            "surround-5-1-v1",
+            include_bytes!("../../../fixtures/config/surround-5-1-v1.json").as_slice(),
+        ),
+        (
+            "surround-7-1-v1",
+            include_bytes!("../../../fixtures/config/surround-7-1-v1.json").as_slice(),
+        ),
+        (
+            "irregular-horizontal-v1",
+            include_bytes!("../../../fixtures/config/irregular-horizontal-v1.json").as_slice(),
+        ),
+        (
+            "phase-3a-point-source-v1",
+            include_bytes!("../../../fixtures/config/phase-3a-point-source-v1.json").as_slice(),
+        ),
+        (
+            "phase-3b-spread-v1",
+            include_bytes!("../../../fixtures/config/phase-3b-spread-v1.json").as_slice(),
+        ),
+    ];
+    let expected = [
+        0x1a6b2e19637f9f5d,
+        0xb7b6f1dd07c388be,
+        0x822a3581edb281b2,
+        0x7e53ae5665aa9ae5,
+        0x9945c96aacf7a909,
+        0x47d3f9620e0cd07d,
+        0xf8660a0d16cb490b,
+    ];
+    for ((name, fixture), expected) in fixtures.into_iter().zip(expected) {
+        let canonical = ValidatedConfiguration::from_json(fixture)
+            .unwrap()
+            .canonical_json()
+            .unwrap();
+        assert_eq!(fnv1a64(canonical.as_bytes()), expected, "{name}");
+    }
+}
+
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    bytes.iter().fold(0xcbf29ce484222325_u64, |hash, byte| {
+        (hash ^ u64::from(*byte)).wrapping_mul(0x100000001b3)
+    })
+}
+
+#[test]
 fn production_sources_forbid_unsafe_code() {
     let sources = [
         include_str!("../src/lib.rs"),
