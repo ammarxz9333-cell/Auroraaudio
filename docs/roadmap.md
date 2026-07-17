@@ -114,8 +114,8 @@ Phase 2 or authorize Phase 3C.
 **Configuration & Preset System 1** is owner-authorized as a software-only
 control-plane milestone after its governance amendment merges.
 
-- `execution_state`: `IN_PROGRESS`
-- `evaluation_classification`: none
+- `execution_state`: `READY_FOR_EVALUATION`
+- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
 - planned implementation branch: `feature/configuration-preset-system-1`
 - expected final classification: `ACCEPTED`
 - Phase 2 required for implementation or acceptance: no

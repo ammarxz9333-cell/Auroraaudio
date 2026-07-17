@@ -5,8 +5,8 @@
 - Milestone: Configuration & Preset System 1
 - Milestone kind: hardware-independent control-plane infrastructure
 - Planned implementation branch: `feature/configuration-preset-system-1`
-- `execution_state`: `IN_PROGRESS`
-- `evaluation_classification`: none until `READY_FOR_EVALUATION`
+- `execution_state`: `READY_FOR_EVALUATION`
+- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
 - Expected terminal classification: `ACCEPTED`
 - Phase 2 required for implementation: no
 - Phase 2 required for final acceptance: no
@@ -18,6 +18,13 @@ this definition is merged normally into `main-v2`.
 Governance PR `#16` passed CI and merged normally at
 `f8d2fb9eaa45fce2e9a2d9f05fa363ced5a4a531`. Implementation therefore began
 on the dedicated branch from that exact base.
+
+The implementation reached its stop boundary on 2026-07-17. Local format,
+Clippy, 182 workspace tests with five hardware-only tests ignored, strict
+Rustdoc, Actionlint, workspace benchmarks, repeated deterministic contracts,
+fixture checksums, migration, redaction, and immutable-read allocation checks
+passed. Final classification remains pending required pull-request CI and the
+criterion-by-criterion acceptance review.
 
 ## Purpose
 
