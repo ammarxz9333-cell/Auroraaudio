@@ -116,8 +116,10 @@ control-plane milestone after its governance amendment merges.
 
 - `execution_state`: `CLOSED`
 - `evaluation_classification`: `ACCEPTED`
-- planned implementation branch: `feature/configuration-preset-system-1`
-- expected final classification: `ACCEPTED`
+- implementation branch: `feature/configuration-preset-system-1`
+- implementation PR: `#17`, merged as
+  `384a603b917bceb104ee3ef2f90d4bb5ee18094b`
+- accepted tag: `configuration-preset-system-1-accepted`
 - Phase 2 required for implementation or acceptance: no
 - hardware criteria: none
 - product audio behavior changes: none
@@ -134,7 +136,8 @@ hot reload or UI. The complete dependency matrix and stop boundary are in
 Formal software-only evaluation passed on 2026-07-17. Local validation and
 required remote workflows passed with no protected-contract or physical gate.
 The evidence record is
-`docs/acceptance/configuration-preset-system-1.md`. PR `#17` remains unmerged.
+`docs/acceptance/configuration-preset-system-1.md`. The milestone is closed and
+accepted; its merge does not alter Phase 2 or authorize Phase 3C.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 

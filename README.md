@@ -38,6 +38,16 @@ cargo test --workspace --all-features
 cargo bench --workspace
 ```
 
+## Continuous Integration
+
+Linux stable is the main validation environment. Windows stable verifies
+cross-platform compilation and software-only tests, and a Linux job checks the
+declared Rust 1.78 MSRV explicitly. Stable jobs run formatting, all-target and
+all-feature Clippy, workspace tests, and strict public documentation checks;
+the MSRV job performs locked all-target/all-feature checks and tests. All CI
+results are software evidence only. Ignored hardware tests remain
+hardware-gated, and no CI result is a physical measurement.
+
 ## Run
 
 ```powershell

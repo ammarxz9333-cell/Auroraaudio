@@ -33,7 +33,7 @@ rust-version = "1.78"
 
 [workspace.dependencies]
 anyhow = "1"
-clap = { version = "4", features = ["derive"] }
+clap = { version = "=4.5.53", features = ["derive"] }
 cpal = "0.15"
 criterion = "0.5"
 crossbeam-queue = "0.3"
