@@ -131,16 +131,8 @@ pub struct PreparedTopologyPlan {
 
 impl PreparedTopologyPlan {
     /// Groups prepared routing and layout intent without performing mapping.
-    pub fn new(
-        routing: PreparedRoutingPlan,
-        layout: PreparedLayoutPlan,
-    ) -> Result<Self, RuntimePreparationError> {
-        if routing.outputs().len() != layout.speakers().len() {
-            return Err(RuntimePreparationError::IncompatibleRoutingIntent {
-                issue: RoutingIssue::OutputSpeakerCountMismatch,
-            });
-        }
-        Ok(Self { routing, layout })
+    pub fn new(routing: PreparedRoutingPlan, layout: PreparedLayoutPlan) -> Self {
+        Self { routing, layout }
     }
 
     /// Returns the routing descriptor.
@@ -408,22 +400,27 @@ pub enum PreparedLayoutKind {
     CustomHorizontal,
 }
 
-/// Immutable speaker identity, role, and normalized meter-space position.
+/// Immutable speaker identity, role, participation, and normalized position.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedSpeaker {
     id: String,
     label: String,
     channel_role: ChannelRole,
     position: Vector3,
+    active: bool,
 }
 
 impl PreparedSpeaker {
     /// Creates a speaker descriptor with finite geometry and nonempty identity.
+    ///
+    /// `active` means participation in the intended layout. It does not claim
+    /// that a physical speaker is present or available.
     pub fn new(
         id: impl Into<String>,
         label: impl Into<String>,
         channel_role: ChannelRole,
         position: Vector3,
+        active: bool,
     ) -> Result<Self, RuntimePreparationError> {
         if !position.x.is_finite() || !position.y.is_finite() || !position.z.is_finite() {
             return Err(RuntimePreparationError::InternalInvariantViolation {
@@ -435,6 +432,7 @@ impl PreparedSpeaker {
             label: nonempty(label.into(), RuntimeInvariant::EmptySpeakerLabel)?,
             channel_role,
             position,
+            active,
         })
     }
 
@@ -456,6 +454,13 @@ impl PreparedSpeaker {
     /// Returns the normalized meter-space speaker position.
     pub fn position(&self) -> Vector3 {
         self.position
+    }
+
+    /// Returns whether the speaker participates in the intended layout.
+    ///
+    /// This is configuration intent, not observed physical availability.
+    pub fn is_active(&self) -> bool {
+        self.active
     }
 }
 
@@ -674,7 +679,9 @@ impl RuntimeCapacityPlan {
     pub fn route_count(&self) -> usize {
         self.route_count
     }
-    /// Returns the plan-known speaker count.
+    /// Returns the total prepared speaker descriptor count.
+    ///
+    /// The count includes active and inactive speaker descriptors.
     pub fn speaker_count(&self) -> usize {
         self.speaker_count
     }
@@ -816,8 +823,6 @@ pub enum RoutingIssue {
     UnknownOutputReference,
     /// An inactive output references an unknown output identity.
     UnknownInactiveOutputReference,
-    /// Routing output and speaker counts disagree.
-    OutputSpeakerCountMismatch,
 }
 
 /// Adapter families constrained by accepted policy.
@@ -933,7 +938,18 @@ mod tests {
     }
 
     fn speaker(id: &str, role: ChannelRole, x: f32) -> PreparedSpeaker {
-        PreparedSpeaker::new(id, id.to_uppercase(), role, Vector3::new(x, 1.0, 0.0)).unwrap()
+        speaker_with_active(id, role, x, true)
+    }
+
+    fn speaker_with_active(id: &str, role: ChannelRole, x: f32, active: bool) -> PreparedSpeaker {
+        PreparedSpeaker::new(
+            id,
+            id.to_uppercase(),
+            role,
+            Vector3::new(x, 1.0, 0.0),
+            active,
+        )
+        .unwrap()
     }
 
     fn stereo_plan() -> PreparedRuntimePlan {
@@ -968,7 +984,7 @@ mod tests {
                 PreparedRendererPlan::point_source_horizontal_vbap(),
                 PreparedDspPlan::DeferredByCurrentSchema,
             ),
-            PreparedTopologyPlan::new(routing, layout).unwrap(),
+            PreparedTopologyPlan::new(routing, layout),
             PreparedDeviceIntent::new(None, None),
             RuntimeCapacityPlan::new(2, 2, 2, 2, 256).unwrap(),
         )
@@ -1159,5 +1175,114 @@ mod tests {
             PreparedDspPlan::None,
             PreparedDspPlan::DeferredByCurrentSchema
         );
+    }
+
+    #[test]
+    fn prepared_speaker_preserves_active_state() {
+        let active = speaker_with_active("active", ChannelRole::FrontLeft, -1.0, true);
+        let inactive = speaker_with_active("inactive", ChannelRole::FrontRight, 1.0, false);
+        assert!(active.is_active());
+        assert!(!inactive.is_active());
+    }
+
+    #[test]
+    fn layout_preserves_active_and_inactive_speakers_in_order() {
+        let layout = PreparedLayoutPlan::new(
+            PreparedLayoutKind::Standard(StandardLayout::Stereo),
+            vec![
+                speaker_with_active("inactive", ChannelRole::FrontRight, 1.0, false),
+                speaker_with_active("active", ChannelRole::FrontLeft, -1.0, true),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(layout.speakers()[0].id(), "inactive");
+        assert!(!layout.speakers()[0].is_active());
+        assert_eq!(layout.speakers()[1].id(), "active");
+        assert!(layout.speakers()[1].is_active());
+    }
+
+    #[test]
+    fn topology_allows_total_speaker_count_to_differ_from_output_count() {
+        let routing = PreparedRoutingPlan::new(
+            vec![identity("in")],
+            vec![identity("out")],
+            vec![route("in", "out")],
+            vec![],
+        )
+        .unwrap();
+        let layout = PreparedLayoutPlan::new(
+            PreparedLayoutKind::CustomHorizontal,
+            vec![
+                speaker_with_active("active", ChannelRole::FrontLeft, -1.0, true),
+                speaker_with_active("inactive", ChannelRole::FrontRight, 1.0, false),
+            ],
+        )
+        .unwrap();
+
+        let topology = PreparedTopologyPlan::new(routing, layout);
+        assert_eq!(topology.routing().outputs().len(), 1);
+        assert_eq!(topology.layout().speakers().len(), 2);
+    }
+
+    #[test]
+    fn top_level_capacity_still_matches_total_prepared_speaker_descriptor_count() {
+        let format = PreparedAudioFormatIntent::new(
+            48_000,
+            SampleFormatIntent::Float32,
+            1,
+            1,
+            256,
+            FormatFallbackPolicy::Reject,
+        )
+        .unwrap();
+        let routing = PreparedRoutingPlan::new(
+            vec![identity("in")],
+            vec![identity("out")],
+            vec![route("in", "out")],
+            vec![],
+        )
+        .unwrap();
+        let layout = PreparedLayoutPlan::new(
+            PreparedLayoutKind::CustomHorizontal,
+            vec![
+                speaker_with_active("active", ChannelRole::FrontLeft, -1.0, true),
+                speaker_with_active("inactive", ChannelRole::FrontRight, 1.0, false),
+            ],
+        )
+        .unwrap();
+        let plan = PreparedRuntimePlan::new(
+            RuntimePlanMetadata::new(1),
+            PreparedExecutionPlan::new(
+                format,
+                PreparedRendererPlan::basic_inverse_distance(),
+                PreparedDspPlan::None,
+            ),
+            PreparedTopologyPlan::new(routing, layout),
+            PreparedDeviceIntent::new(None, None),
+            RuntimeCapacityPlan::new(1, 1, 1, 2, 256).unwrap(),
+        )
+        .unwrap();
+
+        assert_eq!(plan.capacity().speaker_count(), 2);
+        assert_eq!(plan.topology().layout().speakers().len(), 2);
+    }
+
+    #[test]
+    fn no_silent_filtering_of_inactive_speakers() {
+        let layout = PreparedLayoutPlan::new(
+            PreparedLayoutKind::CustomHorizontal,
+            vec![
+                speaker_with_active("inactive-a", ChannelRole::FrontLeft, -1.0, false),
+                speaker_with_active("active", ChannelRole::FrontCenter, 0.0, true),
+                speaker_with_active("inactive-b", ChannelRole::FrontRight, 1.0, false),
+            ],
+        )
+        .unwrap();
+
+        assert_eq!(layout.speakers().len(), 3);
+        assert_eq!(layout.speakers()[0].id(), "inactive-a");
+        assert_eq!(layout.speakers()[1].id(), "active");
+        assert_eq!(layout.speakers()[2].id(), "inactive-b");
     }
 }
