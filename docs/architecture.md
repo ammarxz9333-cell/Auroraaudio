@@ -1,6 +1,10 @@
 # Architecture
 
-Aurora Phase 0 is an offline, format-independent spatial-audio prototype. The system operates on typed scene data, PCM-oriented audio blocks, speaker coordinates, timestamps, and metadata. Hardware capture, proprietary codec decoding, and network speaker transport are out of scope.
+Aurora is a format-independent spatial-audio system with implemented offline
+rendering, basic DSP, backend-neutral real-time contracts, deterministic
+simulation, and accepted diagnostics and configuration control planes. Physical
+hardware validation remains incomplete. Proprietary codec decoding and network
+speaker transport are out of scope.
 
 ## Workspace Layout
 
@@ -8,16 +12,16 @@ Aurora Phase 0 is an offline, format-independent spatial-audio prototype. The sy
 - `aurora-renderer-api`: Stable renderer trait and renderer-facing errors.
 - `aurora-renderer-basic`: Deterministic inverse-distance renderer used by the first checkpoint.
 - `aurora-renderer-vbap`: Optional deterministic horizontal-plane VBAP renderer implementing the existing renderer boundary.
-- `aurora-dsp-api`: DSP trait placeholder boundary.
-- `aurora-dsp-basic`: Future internal DSP implementation crate.
-- `aurora-audio-io`: Future WAV and offline audio IO crate.
+- `aurora-dsp-api`: Aurora-owned DSP processing boundary.
+- `aurora-dsp-basic`: Implemented basic offline DSP, including fractional per-channel delay.
+- `aurora-audio-io`: Implemented offline PCM/float WAV reading and multichannel WAVE_FORMAT_EXTENSIBLE output.
 - `aurora-realtime-audio-api`: Backend-neutral local real-time audio traits.
 - `aurora-realtime-audio-cpal`: First local audio backend, isolated behind Aurora-owned API types.
 - `aurora-realtime-audio-sim`: Deterministic virtual backend and accelerated validation environment.
 - `aurora-diagnostics`: Hardware-independent structured events, bounded control-thread logs, atomic callback metrics, snapshots, and reports.
 - `aurora-config`: Immutable versioned configuration intent, deterministic presets, bounded migration, and redacted snapshots.
 - `aurora-realtime-engine`: Real-time block pipeline preserving renderer, channel-role, geometric-delay, and DSP boundaries.
-- `aurora-measurement`: Future measurement and synthetic impulse-response crate.
+- `aurora-measurement`: Synthetic-measurement scope scaffold; implemented synthetic latency and routing evidence lives in the simulator and real-time engine, and no accepted physical measurement capability exists.
 - `aurora-scene`: JSON scene loading, validation, and trajectory sampling.
 - `aurora-cli`: Developer CLI for offline simulation and inspection.
 
@@ -47,6 +51,11 @@ Milestone 0B adds offline mono WAV input, block-based rendering, and multichanne
 Milestone 0C adds explicit channel roles, canonical standard layout ordering, WAVE_FORMAT_EXTENSIBLE channel masks, and optional offline per-channel geometric delay processing.
 
 Milestone 0D adds adapter crates for CamillaDSP, IAMF/libiamf, truehdd, and Cavern. These are boundary crates only: no third-party source is copied into Aurora, no adapter is required by `aurora-core`, and all real third-party integration points remain disabled by default behind adapter-specific Cargo features.
+
+The IAMF adapter is a non-production placeholder for a preferred open decoder
+path. The truehdd adapter is experimental, offline-only, and non-production.
+The Cavern adapter is disabled by default and policy-limited pending license
+review. None of these boundaries proves codec or renderer availability.
 
 Milestone 0F adds a local real-time audio path using Aurora-owned traits and a CPAL-backed local backend. No HDMI/eARC, network audio, wireless speaker transport, GUI, or proprietary codec integration is included.
 
@@ -98,3 +107,8 @@ Raw configuration is inert until wrapped by `ValidatedConfiguration`;
 serialization, preset materialization, migration, and redaction remain outside
 audio callbacks. Device values are selection intent only and never discovery or
 negotiation evidence. See `docs/configuration.md` and ADR 0013.
+
+Diagnostics & Telemetry Framework 1 and Configuration & Preset System 1 are
+merged, accepted software-only control planes. Phase 2 remains open and
+incomplete. Phase 3A and Phase 3B remain
+`CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`; no Phase 3C milestone has started.
