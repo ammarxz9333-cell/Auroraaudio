@@ -1196,6 +1196,52 @@ passed. The acceptance record is
 changes no physical gate and introduces no physical claim or callback producer
 wiring.
 
+### Authorized software-only milestone: Configuration & Preset System 1
+
+The owner-authorized next milestone is **Configuration & Preset System 1**, an
+independent hardware-free control-plane library for deterministic configuration
+intent and reusable presets.
+
+Current execution record:
+
+- `execution_state`: `NOT_STARTED`;
+- `evaluation_classification`: none;
+- planned implementation branch: `feature/configuration-preset-system-1`;
+- implementation base: `main-v2` after this governance amendment merges;
+- expected final classification: `ACCEPTED`.
+
+Hardware dependency matrix:
+
+- software-only criteria: immutable typed models, versioned schemas, bounded
+  validation, canonical serialization, structured errors, deterministic
+  presets, migrations, redaction, fixtures, tests, benchmarks, and docs;
+- deterministic criteria: byte-identical canonical fixtures and stable
+  simulation-profile/replay metadata representation without simulator changes;
+- host-observation criteria: benchmark and build-tool results labeled only
+  `host_api_observation`;
+- hardware-dependent criteria: none;
+- Phase 2 required for implementation: no;
+- Phase 2 required for final acceptance: no;
+- effect on Phase 2: none; physical validation remains open and required.
+
+Dependencies are the accepted Simulation Sprint 1 vocabulary, Phase 3A
+point-source renderer vocabulary, Phase 3B horizontal-spread vocabulary, and
+Diagnostics Framework 1 redaction policy. Conditional Phase 3A/3B status is not
+upgraded by referencing their configuration vocabulary.
+
+The milestone may define intent for engine operation, devices, formats,
+routing, horizontal speaker layouts, existing renderers, buffering,
+diagnostics, simulation, and presets. It may not probe hardware, assert device
+availability, activate elevation rendering, change renderer/DSP behavior,
+change a protected public contract, wire protected callbacks, implement runtime
+hot reload or UI, start Phase 3C, or make a physical claim. Configuration
+evidence may use milestone-local `unit_test`, `deterministic_serialization`, and
+`schema_validation` labels; these do not extend the runtime diagnostic truth
+source enum and map to `unit_test` when runtime diagnostics are emitted.
+
+Its complete scope, bounds, lifecycle, and stop boundary are recorded in
+`docs/planning/configuration-preset-system-1.md`.
+
 ---
 
 # 17. Simulation Sprint 1 requirements
@@ -1395,8 +1441,10 @@ It is frozen. Phase 2 physical hardware validation is open and incomplete.
 Phase 3A and Phase 3B are conditionally accepted pending their physical gates.
 Simulation Assurance Campaign 1 is accepted as a test-only milestone.
 Diagnostics & Telemetry Framework 1 is accepted as a software-only milestone.
-Neither acceptance authorizes Phase 3C or any later product milestone. Phase 2
-physical hardware validation remains open and incomplete.
+Configuration & Preset System 1 is authorized but remains `NOT_STARTED` until
+its governance amendment merges and its dedicated implementation branch is
+created. No acceptance authorizes Phase 3C or any later product milestone.
+Phase 2 physical hardware validation remains open and incomplete.
 
 The next agent must not:
 
@@ -1409,6 +1457,9 @@ The next agent must not:
 - add or change renderer behavior;
 - start Phase 3C;
 - add physical latency claims.
+
+The next permitted action after governance merge is only the bounded
+Configuration & Preset System 1 implementation defined above.
 
 The simulator is complete and frozen. The campaign may exercise it but must not
 duplicate it, change its accepted record, or use it as a substitute for Phase 2
@@ -1517,6 +1568,15 @@ Do not rewrite history. Record replaced decisions in ADRs.
   benchmark, and remote CI criteria passed; the milestone has no physical gate
   and therefore closes as `ACCEPTED` without changing Phase 2 or authorizing
   Phase 3C.
+
+### Maintenance record: 2026-07-17 -- Configuration & Preset System 1 scope
+
+- Milestone: software-only versioned configuration and preset infrastructure;
+  implementation not started.
+- Changed sections: hardware-blocked milestone authorization, dependency
+  matrix, truth-source mapping, immediate next action, and stop boundary.
+- Reason: authorize deterministic bounded control-plane configuration without
+  changing audio semantics, protected contracts, Phase 2, or physical evidence.
 
 ---
 
