@@ -28,7 +28,7 @@ resolver = "2"
 [workspace.package]
 edition = "2021"
 license = "MIT"
-repository = "https://example.invalid/aurora-audio"
+repository = "https://github.com/ammarxz9333-cell/Auroraaudio"
 rust-version = "1.78"
 
 [workspace.dependencies]

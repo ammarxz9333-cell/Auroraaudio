@@ -7,9 +7,21 @@
 # Editor and OS files
 /.vscode/
 /.idea/
+/.vs/
+/.fleet/
 *.swp
 *.swo
+*.suo
+*.user
+*.code-workspace
 *~
 .DS_Store
 Thumbs.db
 
+# Local environment and temporary files
+.env
+.env.*
+!.env.example
+*.tmp
+*.bak
+*.log

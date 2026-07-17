@@ -1,8 +1,14 @@
 # Aurora Spatial Audio Platform
 
-Aurora is a Phase 0 prototype for an open, modular spatial-audio processing platform.
+Aurora is an open, modular, hardware-independent spatial-audio processing
+platform written in Rust.
 
-This checkpoint intentionally excludes HDMI/eARC capture, Dolby/DTS decoding, wireless speakers, hardware amplification, and visualizer work. The current implementation focuses on core data structures, a renderer trait, a deterministic inverse-distance renderer, offline WAV rendering, tests, and CLI commands for gain inspection and file rendering.
+The repository includes offline multichannel rendering, Aurora-owned renderer
+and DSP boundaries, deterministic virtual audio validation, bounded real-time
+transport foundations, diagnostics, and versioned configuration. Physical
+hardware validation remains incomplete; simulated results are never presented
+as physical measurements. HDMI/eARC capture, proprietary codec support,
+wireless speakers, hardware amplification, and Phase 3C are not implemented.
 
 ## Repository Status
 
@@ -10,6 +16,18 @@ This checkpoint intentionally excludes HDMI/eARC capture, Dolby/DTS decoding, wi
 history remains archived without merging or rewriting. See
 [`docs/repository-history.md`](docs/repository-history.md) for the branch and
 acceptance boundaries.
+
+## Documentation
+
+- [Master project reference](AURORA_MASTER_REFERENCE.md)
+- [Architecture](docs/architecture.md)
+- [Roadmap](docs/roadmap.md)
+- [Governance](docs/governance/hardware-blocked-parallel-development.md)
+- [Acceptance records](docs/acceptance/)
+- [Architecture decision records](docs/adr/)
+- [Configuration](docs/configuration.md)
+- [Diagnostics](docs/diagnostics.md)
+- [Third-party licenses](THIRD_PARTY_LICENSES.md)
 
 ## Build
 
