@@ -5,14 +5,16 @@
 - `authorization_state`: `AUTHORIZED`
 - `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: `NOT_EVALUATED`
-- `active_checkpoint`: `A`
-- implementation branch: `feature/runtime-assembly-contracts-1-checkpoint-a`
-- review state: proposed in Draft PR; open and unmerged
+- `completed_checkpoint`: `A`
+- `active_checkpoint`: `B`
+- implementation branch: `feature/runtime-assembly-contracts-1-checkpoint-b`
+- review state: Checkpoint B implementation prepared for Draft PR; open and unmerged
 
-Checkpoint A contains only the isolated immutable contract model, structured
-standard-library setup errors, focused invariant tests, and workspace/docs
-wiring. It does not contain a builder, configuration derivation, mapping,
-runtime construction, hardware access, or any Checkpoint B implementation.
+Checkpoint A's isolated immutable contract model is merged. Checkpoint B adds
+one deterministic, fallible derivation entry point from
+`&ValidatedConfiguration`, focused mapping and determinism tests, and no
+runtime construction, hardware access, or subsystem integration. This does not
+start Checkpoint C or classify the milestone as accepted.
 
 ## Governance record
 
