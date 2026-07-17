@@ -142,28 +142,32 @@ accepted; its merge does not alter Phase 2 or authorize Phase 3C.
 ## Active Software Milestone: Runtime Assembly Contracts 1
 
 **Runtime Assembly Contracts 1** is an authorized hardware-independent
-control-plane milestone. Checkpoint A is merged; Checkpoint B is implemented on
-its dedicated branch and remains under review.
+control-plane milestone. Checkpoints A and B are merged. An ADR 0015 governance
+amendment proposes deterministic setup planning as the revised Checkpoint C.
 
 - `authorization_state`: `AUTHORIZED`
 - `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: `NOT_EVALUATED`
-- `completed_checkpoint`: `A`
-- `active_checkpoint`: `B`
-- implementation branch: `feature/runtime-assembly-contracts-1-checkpoint-b`
+- `completed_checkpoint`: `B`
+- `next_checkpoint`: `C`
+- Checkpoint C execution state: `NOT_STARTED`
+- governance branch: `docs/runtime-assembly-setup-planning-governance`
 - implementation crate: `aurora-runtime-assembly`
 - Phase 2 required for implementation or acceptance: no
 - hardware criteria: none
 - product audio behavior changes: none
 
 Checkpoint B deterministically derives the immutable plan from
-`&ValidatedConfiguration`, preserving normalized intent and returning
-structured preparation errors. It adds no runtime construction or integration.
-The milestone may not probe or open devices,
+`&ValidatedConfiguration`. Checkpoint C remains unauthorized until ADR 0015
+merges; the governance pull request contains no implementation. If authorized,
+C may add only immutable descriptive setup intent derived from
+`PreparedRuntimePlan`, with no runtime construction or integration. The
+milestone may not probe or open devices,
 construct a running engine, touch callbacks, modify protected contracts, start
 Phase 3C, or make physical claims. The dependency matrix, checkpoints, tests,
-and stop boundary are in `docs/planning/runtime-assembly-contracts-1.md` and ADR
-0014. The milestone is not accepted.
+and stop boundary are in `docs/planning/runtime-assembly-contracts-1.md` and
+ADRs 0014 and 0015. The milestone is `IN_PROGRESS`, `NOT_EVALUATED`, and not
+accepted.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 

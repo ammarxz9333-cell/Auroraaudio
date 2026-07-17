@@ -5,18 +5,19 @@
 - `authorization_state`: `AUTHORIZED`
 - `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: `NOT_EVALUATED`
-- `completed_checkpoint`: `A`
-- `active_checkpoint`: `B`
-- implementation branch: `feature/runtime-assembly-contracts-1-checkpoint-b`
-- review state: Checkpoint B implementation prepared for Draft PR; open and unmerged
+- `completed_checkpoint`: `B`
+- `next_checkpoint`: `C`
+- Checkpoint C execution state: `NOT_STARTED`
+- governance branch: `docs/runtime-assembly-setup-planning-governance`
+- review state: ADR 0015 governance amendment pending; open and unmerged
 
-Checkpoint A's isolated immutable contract model is merged. Checkpoint B adds
-one deterministic, fallible derivation entry point from
-`&ValidatedConfiguration`, focused mapping and determinism tests, and no
-runtime construction, hardware access, or subsystem integration. This does not
-start Checkpoint C or classify the milestone as accepted.
+Checkpoint A's isolated immutable contract model and Checkpoint B's
+deterministic derivation are merged. Checkpoint C proposes deterministic setup
+planning under ADR 0015, but remains unauthorized and unimplemented until that
+governance amendment merges. The milestone remains `IN_PROGRESS`,
+`NOT_EVALUATED`, and not accepted.
 
-## Governance record
+## Original governance record (ADR 0014)
 
 - Milestone class: `SOFTWARE_ONLY_CONTROL_PLANE`
 - `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`
@@ -26,8 +27,12 @@ start Checkpoint C or classify the milestone as accepted.
 - Implementation branch: a new branch created only after governance merge
 - Target final classification: `ACCEPTED`
 
-This specification authorizes a future bounded control-plane implementation.
-It is not an implementation record and authorizes no code before its merge.
+This records the original pre-implementation state. Its governance merge
+authorized Checkpoints A and B, which are now complete.
+
+ADR 0015 is a later governance extension. It preserves the completed A/B
+history under ADR 0014 and, after its own merge, authorizes only the revised
+Checkpoint C descriptive setup-planning layer.
 
 ## Purpose and flow
 
@@ -45,19 +50,21 @@ PreparedRuntimePlan
         +-- PreparedDeviceIntent
         +-- RuntimeCapacityPlan
         +-- RuntimePlanMetadata
+        |
+        v
+PreparedSetupPlan (authorized only after ADR 0015 merges)
 ```
 
-The proposed Aurora-owned entry point is:
+The existing Aurora-owned entry point is:
 
 ```text
 prepare_runtime_plan(&ValidatedConfiguration)
     -> Result<PreparedRuntimePlan, RuntimePreparationError>
 ```
 
-Exact Rust spelling may be refined in implementation review, but these
-semantics are binding. The builder accepts only the validated view, returns
-owned immutable values, exposes no third-party types, and performs no device,
-process, thread, callback, or physical work.
+The function accepts only the validated view, returns owned immutable values,
+exposes no third-party types, and performs no device, process, thread, callback,
+or physical work.
 
 ## Contract boundaries
 
@@ -69,9 +76,9 @@ conversion use checked arithmetic and reject overflow.
 The plan is control-plane data. All allocation occurs during setup. Future
 callback-facing state must be separately constructed with fixed capacities.
 Callbacks may not mutate the plan or perform serialization, string or map work,
-formatting, logging, filesystem access, process work, or allocation. This
-milestone does not claim that an implementation already exists or is
-zero-allocation.
+formatting, logging, filesystem access, process work, or allocation. The
+prepared-plan implementation exists, but neither ADR 0014 nor ADR 0015 claims
+that setup-plan implementation or runtime construction exists.
 
 ## Prepared plan content
 
@@ -204,13 +211,15 @@ The capacity contract has two levels:
   temporary storage, delay-processor storage, ASRC storage, and backend ring
   capacities.
 
-Setup-derived requirements are calculated only by a later integration layer
-after the relevant implementation has been configured. The plan exposes no
-concrete renderer scratch type or third-party capacity type.
+Setup planning may carry only plan-known values and bounded structural counts.
+Concrete setup-derived requirements remain calculated by a later separately
+authorized integration layer after the relevant implementation has been
+configured. Neither plan exposes a concrete renderer scratch type or
+third-party capacity type.
 
 ## Setup error model
 
-`RuntimePreparationError` will use structured categories with stable machine
+`RuntimePreparationError` uses structured categories with stable machine
 codes and optional control-thread detail:
 
 - unsupported renderer intent;
@@ -312,17 +321,42 @@ The default prohibited direct-dependency set is `aurora-renderer-api`,
 - derive available bounded capacities and preserve deferred capacities;
 - reject overflow and invariant violations.
 
-### Checkpoint C: evidence and documentation
+### Checkpoint C: deterministic setup planning
+
+- authorized only after the ADR 0015 governance amendment merges;
+- derive immutable descriptive setup intent from `PreparedRuntimePlan`;
+- describe canonical stages ending in non-observational `SetupPlanComplete`;
+- describe explicit acyclic dependencies for renderer, DSP, and backend intent;
+- preserve unresolved device and requested-format semantics;
+- add no runtime object, I/O, host observation, construction, or integration.
+
+Checkpoint C is currently `NOT_STARTED`. No implementation is permitted in the
+ADR 0015 governance pull request.
+
+### Checkpoint D: evidence and documentation
 
 - add unit and contract tests;
 - prove deterministic typed equality and canonical ordering;
 - cover invalid cases and document public APIs;
 - run Linux, Windows, MSRV, Clippy, tests, and rustdoc.
 
-### Checkpoint D: stop
+Checkpoint D cannot begin until Checkpoint C is merged and reviewed.
 
-No CLI command is authorized. Plan inspection, engine construction, renderer
-factory, diagnostics producer, and backend integration require new governance.
+### Checkpoint E: stop and architectural acceptance review
+
+Review the complete contract against ADRs 0014 and 0015 and the milestone
+acceptance criteria. No CLI command is authorized. Plan inspection, engine
+construction, renderer factory, diagnostics producer, and backend integration
+require new governance.
+
+## Checkpoint C contract tests
+
+The later Checkpoint C implementation must cover deterministic and repeated
+setup derivation, canonical stage and dependency ordering, acyclic dependency
+validation, unresolved device intent, requested rather than negotiated format
+semantics, renderer spread preservation, current DSP schema state, backend
+intent without handles, `SetupPlanComplete` ordering, and absence of runtime,
+host, or physical state. It must use no hardware tests.
 
 ## Required implementation tests
 
@@ -364,27 +398,34 @@ benchmark needs evidence of meaningful performance risk.
 
 ## Non-goals
 
-Excluded: RealTimeEngine wiring, CPAL streams, device enumeration/negotiation,
-physical validation or latency, callback changes, hot reload, runtime mutation,
-GUI, networking, wireless audio, HDMI/eARC, codecs, Dolby/DTS, IAMF decoding,
-room calibration, AI, multichannel input redesign, Phase 2 changes, Phase 3C,
-and accepted-tag changes.
+Excluded: renderer or DSP construction, renderer factories, RealTimeEngine
+wiring, backend selection or construction, CPAL streams, device discovery or
+enumeration, format negotiation, stream creation, simulator or diagnostics
+producer integration, CLI, serialization, hashing, fingerprints, maximum-object
+synthesis, threads/processes/callbacks, real-time execution, physical
+validation or latency claims, calibration, hot reload, runtime mutation, GUI,
+networking, wireless audio, HDMI/eARC, codecs, Dolby/DTS, IAMF decoding, room
+calibration, AI, multichannel input redesign, Phase 2 changes, Phase 3C, and
+accepted-tag changes.
 
 ## Acceptance criteria
 
-Implementation may be `ACCEPTED` only when architecture matches ADR 0014 with
-no cycle; `ValidatedConfiguration` is the sole entry point; the plan is
-immutable and deterministic; capacities are bounded and checked; errors are
-structured; no device I/O, callback wiring, process/thread work, or product
-audio behavior change exists; required tests/docs pass on Linux, Windows, and
-MSRV 1.78; and no physical claim is made.
+Implementation may be `ACCEPTED` only when architecture matches ADRs 0014 and
+0015 with no dependency cycle; `ValidatedConfiguration` remains the sole raw
+configuration entry point; prepared runtime and setup plans are immutable and
+deterministic; capacities are bounded and checked; errors are structured; no
+device I/O, callback wiring, process/thread work, runtime construction, or
+product audio behavior change exists; required tests/docs pass on Linux,
+Windows, and MSRV 1.78; and no physical claim is made.
 
 This pure software milestone has no physical gate. Acceptance does not alter
 Phase 2 or authorize Phase 3C.
 
 ## Stop boundary
 
-After governance merge, only Runtime Assembly Contracts 1 implementation is
-authorized on a new branch and PR. The agent must not continue into renderer
-factory integration, a virtual end-to-end harness, diagnostics producer wiring,
-multichannel routing redesign, Phase 2, Phase 3C, or any later milestone.
+After ADR 0015 merges, only Checkpoint C setup-planning implementation is
+authorized on a new branch and PR. Checkpoint D waits for C to merge and receive
+review. Checkpoint E is the final stop and architectural acceptance boundary.
+The agent must not continue into renderer factory integration, a virtual
+end-to-end harness, diagnostics producer wiring, multichannel routing redesign,
+Phase 2, Phase 3C, or any later milestone.
