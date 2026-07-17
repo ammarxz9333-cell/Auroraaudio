@@ -3,7 +3,10 @@
 > **Status:** Living source of truth for Codex and any coding agent  
 > **Repository:** `D:\aurora-audio`  
 > **Primary language:** Rust  
-> **Last consolidated milestone:** Simulation Sprint 1 accepted and frozen on 2026-07-16; Phase 2 physical hardware validation remains open and incomplete. Hardware-blocked parallel development is governed by Section 16.1.
+> **Last consolidated milestone:** Diagnostics & Telemetry Framework 1 accepted
+> on 2026-07-17 as a software-only milestone; Phase 2 physical hardware
+> validation remains open and incomplete. Hardware-blocked parallel development
+> is governed by Section 16.1.
 
 ---
 
@@ -1153,9 +1156,8 @@ logging, atomic callback metrics, diagnostic snapshots, and error reports.
 
 Current execution record:
 
-- `execution_state`: `READY_FOR_EVALUATION`;
-- `evaluation_classification`:
-  `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`;
+- `execution_state`: `CLOSED`;
+- `evaluation_classification`: `ACCEPTED`;
 - implementation branch: `feature/diagnostics-framework-1`;
 - implementation base: `main-v2` at
   `2a299d748afce842ed3b4816e34d6bc485851c40`.
@@ -1184,11 +1186,15 @@ or buffer ownership, state/fault/device semantics, accepted records or tags,
 or begin Phase 3C. Its full scope and stop boundary are recorded in
 `docs/planning/diagnostics-telemetry-framework-1.md` and ADR 0012.
 
-Local implementation validation passed on 2026-07-17: formatting, all-target
-all-feature Clippy, 160 workspace tests with five explicitly ignored hardware
-tests, all workspace benchmarks, `actionlint`, and warning-free workspace
-rustdoc. Pull-request review and remote CI remain pending. This record is not
-milestone acceptance and introduces no hardware claim.
+Formal evaluation passed on 2026-07-17 against implementation and defect-fix
+commit `d1da1b967a50bd42242e237f40b7f604e57b5652`. Formatting, all-target
+all-feature Clippy, 164 workspace tests with five explicitly ignored hardware
+tests, all workspace benchmarks, `actionlint`, warning-free workspace rustdoc,
+three repeated deterministic contract runs, and both required GitHub workflows
+passed. The acceptance record is
+`docs/acceptance/diagnostics-framework-1.md`. This software-only acceptance
+changes no physical gate and introduces no physical claim or callback producer
+wiring.
 
 ---
 
@@ -1387,11 +1393,10 @@ The accepted milestone is:
 
 It is frozen. Phase 2 physical hardware validation is open and incomplete.
 Phase 3A and Phase 3B are conditionally accepted pending their physical gates.
-Simulation Assurance Campaign 1 is accepted as a test-only milestone. No later
-product milestone is authorized by that acceptance. The separately
-owner-authorized software-only next action is Diagnostics & Telemetry Framework
-1 under Section 16.1. Phase 2 physical hardware validation remains open and
-incomplete.
+Simulation Assurance Campaign 1 is accepted as a test-only milestone.
+Diagnostics & Telemetry Framework 1 is accepted as a software-only milestone.
+Neither acceptance authorizes Phase 3C or any later product milestone. Phase 2
+physical hardware validation remains open and incomplete.
 
 The next agent must not:
 
@@ -1502,6 +1507,16 @@ Do not rewrite history. Record replaced decisions in ADRs.
   boundary.
 - Reason: authorize production diagnostics infrastructure without changing
   audio semantics, real-time contracts, Phase 2, or any physical evidence gate.
+
+### Maintenance record: 2026-07-17 -- Diagnostics & Telemetry Framework 1 evaluation
+
+- Milestone: software-only diagnostics and telemetry framework.
+- Changed sections: diagnostics execution record, evidence summary, final
+  classification, acceptance-document reference, and immediate next action.
+- Reason: all software, deterministic, documentation, allocation, review,
+  benchmark, and remote CI criteria passed; the milestone has no physical gate
+  and therefore closes as `ACCEPTED` without changing Phase 2 or authorizing
+  Phase 3C.
 
 ---
 

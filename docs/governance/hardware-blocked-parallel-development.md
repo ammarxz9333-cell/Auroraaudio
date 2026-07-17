@@ -138,6 +138,10 @@ milestone. Its callback boundary is fixed numeric atomics only; event creation,
 formatting, serialization, buffering, locks, and output are prohibited from
 callback-reachable code.
 
+Final record: `execution_state=CLOSED`,
+`evaluation_classification=ACCEPTED` on 2026-07-17. This software-only
+acceptance changes no Phase 2 gate and authorizes no later milestone.
+
 | Dependency | Decision |
 | --- | --- |
 | Software-only criteria | Deterministic structured events, bounded logs, metrics, snapshots, reports, tests, benchmarks, and documentation |

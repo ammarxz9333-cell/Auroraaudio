@@ -3,8 +3,8 @@
 ## Record
 
 - Milestone: Diagnostics & Telemetry Framework 1
-- `execution_state`: `READY_FOR_EVALUATION`
-- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `ACCEPTED`
 - Implementation branch: `feature/diagnostics-framework-1`
 - Implementation base: `main-v2` at
   `2a299d748afce842ed3b4816e34d6bc485851c40`
@@ -81,18 +81,20 @@ Completed on 2026-07-17:
 - `cargo fmt --all --check`: pass;
 - `cargo clippy --workspace --all-targets --all-features -- -D warnings`:
   pass;
-- `cargo test --workspace --all-features`: 160 passed, five hardware-only
+- `cargo test --workspace --all-features`: 164 passed, five hardware-only
   tests ignored;
 - `cargo bench --workspace`: pass;
 - `actionlint`: pass;
 - `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps`:
   pass.
 
-Diagnostics-specific tests: ten passed, including deterministic serialization,
+Diagnostics-specific tests: 14 passed, including deterministic serialization,
 schema validation, bounded retention, concurrency, and zero callback metric
-allocations. Host-observed benchmark estimates were approximately 27.8 ns for
-three atomic metric updates and 32.5 ns for one bounded control-log insertion.
+allocations. Host-observed benchmark estimates were approximately 27.560 ns for
+three atomic metric updates and 34.052 ns for one bounded control-log insertion.
 These timings are `host_api_observation`, not latency or physical evidence.
 
-Implementation is complete at the authorized stop boundary. Pull-request
-review and remote CI remain pending, so the milestone is not accepted.
+Formal evaluation completed on 2026-07-17 against
+`d1da1b967a50bd42242e237f40b7f604e57b5652`. Both required remote workflows
+passed after the allocation-audit harness was corrected for Linux. The complete
+criterion record is `docs/acceptance/diagnostics-framework-1.md`.
