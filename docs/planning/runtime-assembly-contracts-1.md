@@ -57,6 +57,36 @@ formatting, logging, filesystem access, process work, or allocation. This
 milestone does not claim that an implementation already exists or is
 zero-allocation.
 
+## Prepared plan content
+
+The plan may carry only semantic intent available from
+`ValidatedConfiguration`. Version 1 includes:
+
+- configuration schema version;
+- normalized sample-rate, sample-format, channel-count, and format-fallback
+  intent;
+- callback-frame intent;
+- stable input and output identities;
+- canonical output order, routing edges, and inactive outputs;
+- layout kind, speaker identities, canonical roles, and normalized geometry;
+- Basic, point-source VBAP, or horizontal-spread renderer selection intent;
+- requested device selectors and ambiguity policy;
+- known bounded counts and control-plane metadata.
+
+The following are not known from validated configuration and must not appear as
+facts in the prepared plan:
+
+- negotiated backend format or actual endpoint availability;
+- renderer implementation scratch size or physical channel availability;
+- actual callback size, device latency, or live engine state;
+- physical measurement or production ASRC behavior;
+- a final maximum object count;
+- a complete DSP execution plan.
+
+These values remain unavailable in the current schema, setup-time derived, or
+deferred to a separately authorized milestone. A future API that makes one of
+them mandatory must reject its absence instead of silently choosing a value.
+
 ## Renderer preparation
 
 | Validated renderer intent | Prepared description | Construction |
@@ -78,6 +108,10 @@ setup-time derivations and must not invent a default. Output-gain capacity will
 eventually be a checked product of output count and an explicit object limit.
 Renderer scratch is likewise an implementation-specific setup derivation after
 renderer construction, not a fabricated number in this plan.
+
+The known renderer output-gain width for one object equals the validated output
+channel count. Total output-gain storage remains deferred because object count
+is unavailable.
 
 ## Routing preparation
 
@@ -107,6 +141,8 @@ policy-limited external adapter intent, and reserved/unsupported intent. An
 unavailable adapter must produce setup rejection without fallback. This
 milestone adds no filter, coefficient, delay behavior, CamillaDSP type, or
 realtime claim; it neither launches CamillaDSP nor changes adapter integration.
+A future DSP Configuration milestone may therefore be required before a full
+DSP execution plan can be assembled.
 
 ## Device intent
 
@@ -143,6 +179,18 @@ format, confirm channels, open a stream, or change the device state machine.
 Absence of an accepted source is explicit, never represented by zero, an
 undocumented default, or host probing. Future materialization rejects invalid
 required capacities and arithmetic overflow before allocation.
+
+The capacity contract has two levels:
+
+- plan-known: input/output channel counts, routing-edge count, speaker count,
+  callback-frame intent, and per-object renderer output-gain width;
+- setup-derived: renderer scratch and history, implementation-specific
+  temporary storage, delay-processor storage, ASRC storage, and backend ring
+  capacities.
+
+Setup-derived requirements are calculated only by a later integration layer
+after the relevant implementation has been configured. The plan exposes no
+concrete renderer scratch type or third-party capacity type.
 
 ## Setup error model
 
@@ -208,6 +256,12 @@ implementations, real-time engine, backend APIs, CPAL, simulator, or CLI. No
 existing crate may depend back during this milestone. Later consumers require
 separate authorization and cannot create a cycle.
 
+The default prohibited direct-dependency set is `aurora-renderer-api`,
+`aurora-renderer-basic`, `aurora-renderer-vbap`, `aurora-dsp-api`,
+`aurora-dsp-basic`, `aurora-realtime-engine`, `aurora-realtime-audio-api`,
+`aurora-realtime-audio-cpal`, `aurora-realtime-audio-sim`,
+`aurora-diagnostics`, and `aurora-cli`.
+
 ## Dependency matrix
 
 | Crate | Assembly dependency | Why | May depend back now | Boundary types | Modified later |
@@ -257,7 +311,8 @@ factory, diagnostics producer, and backend integration require new governance.
 ## Required implementation tests
 
 - identical validated configuration produces an identical plan;
-- canonical routing order is independent of source vector order;
+- canonical input/output and routing order is independent of source vector
+  order;
 - Basic maps to inverse-distance intent;
 - point-source VBAP maps correctly;
 - horizontal-spread VBAP preserves validated spread;
@@ -267,7 +322,11 @@ factory, diagnostics producer, and backend integration require new governance.
 - device selector remains intent only;
 - capacity overflow is rejected;
 - maximum configured channel/routing bounds are accepted without growth;
+- missing future DSP detail remains explicit or is rejected without synthesis;
+- missing maximum object capacity is never silently defaulted;
 - no physical hardware, CPAL, or callback execution is required;
+- the crate graph has no real-time engine, renderer implementation, DSP
+  implementation, diagnostics, or CLI dependency;
 - no third-party type crosses the public boundary;
 - metadata and errors make no physical or host-observation claim.
 

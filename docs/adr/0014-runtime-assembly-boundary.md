@@ -41,6 +41,14 @@ routing, explicit no-DSP state under the current schema, requested device
 intent, bounded available capacities, explicit deferred capacities, and
 non-observational metadata. It exposes only Aurora-owned values.
 
+Plan-known values include schema version, normalized audio-format and callback
+intent, stable channel and speaker identities, canonical routes and output
+order, inactive outputs, layout and normalized geometry, renderer selection,
+device selectors, and bounded counts. Negotiated format, endpoint availability,
+physical channels, actual callback size, latency, live state, physical evidence,
+production ASRC behavior, complete DSP execution, and final object capacity are
+not configuration facts.
+
 Renderer/DSP object construction, engine wiring, device discovery and
 negotiation, stream opening, threads, processes, callbacks, and physical
 measurement are outside the boundary. Prepared device values are requests, not
@@ -55,6 +63,15 @@ Typed deterministic equality is required. Serialization and plan fingerprinting
 are deferred because no approved consumer or versioned canonical plan schema
 exists. No hashing dependency or new diagnostics truth-source variant is
 authorized.
+
+Capacity is intentionally two-level. Channel, route, speaker, callback-intent,
+and per-object output-gain width are plan-known. Renderer scratch/history,
+implementation temporaries, delay storage, ASRC storage, and backend rings are
+setup-derived by a later integration layer after concrete configuration. No
+concrete scratch type crosses this boundary. Because maximum object count is
+absent, total renderer gain capacity cannot be claimed. Because full DSP intent
+is absent, no DSP execution plan is synthesized; a future DSP Configuration
+milestone may be required.
 
 ## Options considered
 
