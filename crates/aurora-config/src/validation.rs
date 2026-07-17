@@ -317,6 +317,11 @@ fn validate_layout(config: &AuroraConfiguration) -> Result<(), ConfigError> {
         .filter(|speaker| speaker.active)
         .map(|speaker| speaker.role.as_str())
         .collect::<BTreeSet<_>>();
+    let active_speaker_count = layout
+        .speakers
+        .iter()
+        .filter(|speaker| speaker.active)
+        .count();
     let expected: &[&str] = match layout.kind {
         LayoutKind::Stereo => &["FL", "FR"],
         LayoutKind::Surround51 => &["FL", "FR", "FC", "LFE", "SL", "SR"],
@@ -324,7 +329,8 @@ fn validate_layout(config: &AuroraConfiguration) -> Result<(), ConfigError> {
         LayoutKind::CustomHorizontal => &[],
     };
     if !expected.is_empty()
-        && (active_roles.len() != expected.len()
+        && (active_speaker_count != expected.len()
+            || active_roles.len() != expected.len()
             || expected.iter().any(|role| !active_roles.contains(role)))
     {
         return Err(error(

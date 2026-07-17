@@ -74,6 +74,17 @@ pub fn migrate_v0_to_v1(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
             "only source version 0 can migrate to version 1",
         ));
     }
+    if schema
+        .get("minimum_reader_version")
+        .and_then(serde_json::Value::as_u64)
+        != Some(0)
+    {
+        return Err(migration_error(
+            ErrorCode::UnsupportedMigration,
+            "schema.minimum_reader_version",
+            "version 0 minimum reader metadata is missing or unsupported",
+        ));
+    }
     schema.insert(
         "schema_version".to_owned(),
         serde_json::Value::from(CURRENT_SCHEMA_VERSION),

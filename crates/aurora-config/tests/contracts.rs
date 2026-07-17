@@ -126,6 +126,17 @@ fn duplicate_ids_ambiguous_devices_and_invalid_routing_are_rejected() {
         ValidatedConfiguration::new(routing).unwrap_err().code,
         ErrorCode::InvalidRouting
     );
+
+    let mut duplicate_role = stereo();
+    let mut extra = duplicate_role.speaker_layout.speakers[0].clone();
+    extra.id = "speaker-fl-duplicate".to_owned();
+    duplicate_role.speaker_layout.speakers.push(extra);
+    assert_eq!(
+        ValidatedConfiguration::new(duplicate_role)
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidRouting
+    );
 }
 
 #[test]
@@ -154,6 +165,21 @@ fn unsupported_renderer_and_schema_are_rejected() {
             .unwrap_err()
             .code,
         ErrorCode::UnsupportedRenderer
+    );
+
+    let json = ValidatedConfiguration::new(stereo())
+        .unwrap()
+        .canonical_json()
+        .unwrap()
+        .replace(
+            "\"type\":\"basic\"",
+            "\"type\":\"basic\",\"elevation\":true",
+        );
+    assert_eq!(
+        ValidatedConfiguration::from_json(json.as_bytes())
+            .unwrap_err()
+            .code,
+        ErrorCode::InvalidJson
     );
 }
 
@@ -291,6 +317,27 @@ fn migration_succeeds_warns_and_rejects_ambiguous_input() {
     let invalid = br#"{"schema":{"schema_version":2}}"#;
     assert_eq!(
         migrate_v0_to_v1(invalid).unwrap_err().code,
+        ErrorCode::UnsupportedMigration
+    );
+
+    let missing_reader = String::from_utf8(source.to_vec())
+        .unwrap()
+        .replace("\"minimum_reader_version\":0,", "");
+    assert_eq!(
+        migrate_v0_to_v1(missing_reader.as_bytes())
+            .unwrap_err()
+            .code,
+        ErrorCode::UnsupportedMigration
+    );
+
+    let incompatible_reader = String::from_utf8(source.to_vec()).unwrap().replace(
+        "\"minimum_reader_version\":0",
+        "\"minimum_reader_version\":1",
+    );
+    assert_eq!(
+        migrate_v0_to_v1(incompatible_reader.as_bytes())
+            .unwrap_err()
+            .code,
         ErrorCode::UnsupportedMigration
     );
 }

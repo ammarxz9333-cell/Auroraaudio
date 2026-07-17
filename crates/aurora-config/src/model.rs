@@ -243,7 +243,7 @@ pub struct SpeakerLayoutConfiguration {
 }
 
 /// Existing renderer selection vocabulary.
-#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum RendererConfiguration {
     /// Existing Basic inverse-distance renderer.
@@ -256,8 +256,37 @@ pub enum RendererConfiguration {
         spread: f32,
     },
     /// Unknown serialized renderer type retained for structured rejection.
-    #[serde(other)]
     Unsupported,
+}
+
+impl<'de> Deserialize<'de> for RendererConfiguration {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
+        enum WireRendererConfiguration {
+            Basic {},
+            PointSourceVbap {},
+            HorizontalSpread {
+                spread: f32,
+            },
+            #[serde(other)]
+            Unsupported,
+        }
+
+        Ok(
+            match WireRendererConfiguration::deserialize(deserializer)? {
+                WireRendererConfiguration::Basic {} => Self::Basic,
+                WireRendererConfiguration::PointSourceVbap {} => Self::PointSourceVbap,
+                WireRendererConfiguration::HorizontalSpread { spread } => {
+                    Self::HorizontalSpread { spread }
+                }
+                WireRendererConfiguration::Unsupported => Self::Unsupported,
+            },
+        )
+    }
 }
 
 /// Bounded audio transport policy intent.
