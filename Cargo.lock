@@ -295,6 +295,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-runtime-assembly"
+version = "0.1.0"
+dependencies = [
+ "aurora-config",
+ "aurora-core",
+]
+
+[[package]]
 name = "aurora-scene"
 version = "0.1.0"
 dependencies = [
