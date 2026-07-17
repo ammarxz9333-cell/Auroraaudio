@@ -6,6 +6,31 @@ use serde::{Deserialize, Serialize};
 /// Schema version emitted by this diagnostics milestone.
 pub const DIAGNOSTIC_SCHEMA_VERSION: u16 = 1;
 
+/// Structured-field key required when a record claims physical measurement.
+pub const PHYSICAL_SIGNAL_PATH_FIELD: &str = "physical_signal_path";
+
+/// Reasons truth-source evidence is inconsistent with its classification.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum TruthSourceValidationError {
+    /// Physical measurement omitted a non-empty documented signal path.
+    MissingPhysicalSignalPath,
+    /// A nonphysical truth source included physical signal-path evidence.
+    UnexpectedPhysicalSignalPath,
+}
+
+/// Reasons an event fails schema validation.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum EventValidationError {
+    /// Event schema version is unsupported.
+    UnsupportedSchemaVersion,
+    /// Event component is empty or whitespace only.
+    MissingComponent,
+    /// A payload field name is empty or whitespace only.
+    EmptyPayloadKey,
+    /// Truth-source evidence is missing or inconsistent.
+    InvalidTruthSourceEvidence(TruthSourceValidationError),
+}
+
 /// Timestamp provenance for one event.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", content = "value", rename_all = "snake_case")]
@@ -142,6 +167,21 @@ impl DiagnosticEvent {
         self
     }
 
+    /// Validates schema version, required fields, and truth-source evidence.
+    pub fn validate(&self) -> Result<(), EventValidationError> {
+        if self.schema_version != DIAGNOSTIC_SCHEMA_VERSION {
+            return Err(EventValidationError::UnsupportedSchemaVersion);
+        }
+        if self.component.trim().is_empty() {
+            return Err(EventValidationError::MissingComponent);
+        }
+        if self.payload.keys().any(|key| key.trim().is_empty()) {
+            return Err(EventValidationError::EmptyPayloadKey);
+        }
+        validate_truth_source_evidence(self.truth_source, &self.payload)
+            .map_err(EventValidationError::InvalidTruthSourceEvidence)
+    }
+
     /// Serializes this event as deterministic compact JSON.
     pub fn to_json(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string(self)
@@ -180,5 +220,24 @@ impl DiagnosticEvent {
                     .saturating_add(value_bytes)
             },
         )
+    }
+}
+
+pub(crate) fn validate_truth_source_evidence(
+    truth_source: TruthSource,
+    fields: &BTreeMap<String, DiagnosticValue>,
+) -> Result<(), TruthSourceValidationError> {
+    let physical_path = fields.get(PHYSICAL_SIGNAL_PATH_FIELD);
+    match (truth_source, physical_path) {
+        (TruthSource::PhysicalMeasurement, Some(DiagnosticValue::Text(path)))
+            if !path.trim().is_empty() =>
+        {
+            Ok(())
+        }
+        (TruthSource::PhysicalMeasurement, _) => {
+            Err(TruthSourceValidationError::MissingPhysicalSignalPath)
+        }
+        (_, None) => Ok(()),
+        (_, Some(_)) => Err(TruthSourceValidationError::UnexpectedPhysicalSignalPath),
     }
 }

@@ -2,7 +2,11 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DiagnosticValue, MetricSnapshot, TruthSource};
+use crate::event::validate_truth_source_evidence;
+use crate::{
+    DiagnosticValue, MetricSnapshot, TruthSource, TruthSourceValidationError,
+    DIAGNOSTIC_SCHEMA_VERSION,
+};
 
 /// Reasons a snapshot fails schema validation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -17,6 +21,8 @@ pub enum SnapshotValidationError {
     MemoryExceedsCapacity,
     /// Build platform, version, or commit identity is empty.
     MissingBuildIdentity,
+    /// Truth-source evidence is missing or inconsistent.
+    InvalidTruthSourceEvidence(TruthSourceValidationError),
 }
 
 /// Build and platform identity included in a diagnostic snapshot.
@@ -87,7 +93,7 @@ pub struct DiagnosticSnapshot {
 impl DiagnosticSnapshot {
     /// Validates required fields and bounded-capacity invariants.
     pub fn validate(&self) -> Result<(), SnapshotValidationError> {
-        if self.schema_version != 1 {
+        if self.schema_version != DIAGNOSTIC_SCHEMA_VERSION {
             return Err(SnapshotValidationError::UnsupportedSchemaVersion);
         }
         if self.selected_renderer.is_empty() {
@@ -105,6 +111,8 @@ impl DiagnosticSnapshot {
         {
             return Err(SnapshotValidationError::MissingBuildIdentity);
         }
+        validate_truth_source_evidence(self.truth_source, &self.active_configuration)
+            .map_err(SnapshotValidationError::InvalidTruthSourceEvidence)?;
         Ok(())
     }
 

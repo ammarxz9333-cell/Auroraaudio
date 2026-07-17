@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{DiagnosticValue, TruthSource};
+use crate::event::validate_truth_source_evidence;
+use crate::{DiagnosticValue, TruthSource, TruthSourceValidationError, DIAGNOSTIC_SCHEMA_VERSION};
 
 /// Reasons a diagnostic report fails schema validation.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -17,6 +18,8 @@ pub enum ReportValidationError {
     MissingRecommendation,
     /// A deterministic simulation report omitted its seed.
     MissingSimulationSeed,
+    /// Truth-source evidence is missing or inconsistent.
+    InvalidTruthSourceEvidence(TruthSourceValidationError),
 }
 
 /// Stable high-level diagnostic failure categories.
@@ -76,7 +79,7 @@ pub struct DiagnosticReport {
 impl DiagnosticReport {
     /// Validates required report fields and simulation provenance.
     pub fn validate(&self) -> Result<(), ReportValidationError> {
-        if self.schema_version != 1 {
+        if self.schema_version != DIAGNOSTIC_SCHEMA_VERSION {
             return Err(ReportValidationError::UnsupportedSchemaVersion);
         }
         if self.root_component.is_empty() {
@@ -93,6 +96,8 @@ impl DiagnosticReport {
         {
             return Err(ReportValidationError::MissingSimulationSeed);
         }
+        validate_truth_source_evidence(self.truth_source, &self.context)
+            .map_err(ReportValidationError::InvalidTruthSourceEvidence)?;
         Ok(())
     }
 

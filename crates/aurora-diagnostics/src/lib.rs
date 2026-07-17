@@ -11,7 +11,10 @@ mod metrics;
 mod report;
 mod snapshot;
 
-pub use event::{DiagnosticEvent, DiagnosticValue, EventId, EventTimestamp, Severity, TruthSource};
+pub use event::{
+    DiagnosticEvent, DiagnosticValue, EventId, EventTimestamp, EventValidationError, Severity,
+    TruthSource, TruthSourceValidationError, DIAGNOSTIC_SCHEMA_VERSION, PHYSICAL_SIGNAL_PATH_FIELD,
+};
 pub use log::{
     DiagnosticLog, DiagnosticLogError, LogDisposition, SharedDiagnosticLog, DEFAULT_MAX_EVENT_BYTES,
 };

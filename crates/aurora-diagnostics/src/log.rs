@@ -20,6 +20,8 @@ pub enum LogDisposition {
     Filtered,
     /// Event exceeded the configured per-event byte ceiling.
     RejectedOversized,
+    /// Event failed schema or truth-source validation.
+    RejectedInvalid,
 }
 
 /// Failures returned by bounded diagnostic log operations.
@@ -57,6 +59,7 @@ pub struct DiagnosticLog {
     dropped_events: u64,
     filtered_events: u64,
     oversized_events: u64,
+    invalid_events: u64,
 }
 
 impl DiagnosticLog {
@@ -85,11 +88,16 @@ impl DiagnosticLog {
             dropped_events: 0,
             filtered_events: 0,
             oversized_events: 0,
+            invalid_events: 0,
         })
     }
 
     /// Retains an event if it passes the current severity filter.
     pub fn push(&mut self, event: DiagnosticEvent) -> LogDisposition {
+        if event.validate().is_err() {
+            self.invalid_events = self.invalid_events.saturating_add(1);
+            return LogDisposition::RejectedInvalid;
+        }
         if event.severity < self.minimum_severity {
             self.filtered_events = self.filtered_events.saturating_add(1);
             return LogDisposition::Filtered;
@@ -168,6 +176,12 @@ impl DiagnosticLog {
     #[must_use]
     pub const fn oversized_events(&self) -> u64 {
         self.oversized_events
+    }
+
+    /// Returns the number of events rejected by schema validation.
+    #[must_use]
+    pub const fn invalid_events(&self) -> u64 {
+        self.invalid_events
     }
 }
 

@@ -4,9 +4,10 @@ use std::thread;
 
 use aurora_diagnostics::{
     BuildInformation, DiagnosticEvent, DiagnosticLog, DiagnosticReport, DiagnosticSnapshot,
-    DiagnosticValue, EventId, EventTimestamp, FailureCategory, LogDisposition, MemorySummary,
-    MetricSnapshot, QueueStatus, RealtimeMetricCounters, ReportValidationError, Reproducibility,
-    RoutingEdge, Severity, SharedDiagnosticLog, SnapshotValidationError, TruthSource,
+    DiagnosticValue, EventId, EventTimestamp, EventValidationError, FailureCategory,
+    LogDisposition, MemorySummary, MetricSnapshot, QueueStatus, RealtimeMetricCounters,
+    ReportValidationError, Reproducibility, RoutingEdge, Severity, SharedDiagnosticLog,
+    SnapshotValidationError, TruthSource, TruthSourceValidationError, PHYSICAL_SIGNAL_PATH_FIELD,
 };
 
 fn event(sequence: u64, severity: Severity) -> DiagnosticEvent {
@@ -48,6 +49,83 @@ fn every_required_event_id_serializes() {
         let json = value.to_json().expect("event must serialize");
         let decoded: DiagnosticEvent = serde_json::from_str(&json).expect("event must parse");
         assert_eq!(decoded, value);
+        assert_eq!(decoded.validate(), Ok(()));
+    }
+}
+
+#[test]
+fn invalid_event_schema_and_unknown_enums_are_rejected() {
+    let mut invalid = event(1, Severity::Info);
+    invalid.schema_version = 2;
+    assert_eq!(
+        invalid.validate(),
+        Err(EventValidationError::UnsupportedSchemaVersion)
+    );
+
+    let unknown_event = event(1, Severity::Info)
+        .to_json()
+        .unwrap()
+        .replace("\"startup\"", "\"unknown_event\"");
+    assert!(serde_json::from_str::<DiagnosticEvent>(&unknown_event).is_err());
+
+    let unknown_truth = event(1, Severity::Info)
+        .to_json()
+        .unwrap()
+        .replace("\"unit_test\"", "\"invented_truth\"");
+    assert!(serde_json::from_str::<DiagnosticEvent>(&unknown_truth).is_err());
+}
+
+#[test]
+fn physical_truth_requires_a_documented_signal_path() {
+    let missing = DiagnosticEvent::new(
+        EventTimestamp::MonotonicNanoseconds(10),
+        "measurement",
+        Severity::Info,
+        EventId::CapabilityReport,
+        TruthSource::PhysicalMeasurement,
+    );
+    assert_eq!(
+        missing.validate(),
+        Err(EventValidationError::InvalidTruthSourceEvidence(
+            TruthSourceValidationError::MissingPhysicalSignalPath
+        ))
+    );
+
+    let physical = missing.with_field(
+        PHYSICAL_SIGNAL_PATH_FIELD,
+        DiagnosticValue::Text("output device -> cable -> input device".into()),
+    );
+    assert_eq!(physical.validate(), Ok(()));
+
+    let mislabeled = event(2, Severity::Info).with_field(
+        PHYSICAL_SIGNAL_PATH_FIELD,
+        DiagnosticValue::Text("not applicable".into()),
+    );
+    assert_eq!(
+        mislabeled.validate(),
+        Err(EventValidationError::InvalidTruthSourceEvidence(
+            TruthSourceValidationError::UnexpectedPhysicalSignalPath
+        ))
+    );
+}
+
+#[test]
+fn truth_sources_have_canonical_serialized_names() {
+    let cases = [
+        (TruthSource::UnitTest, "\"unit_test\""),
+        (
+            TruthSource::DeterministicSimulation,
+            "\"deterministic_simulation\"",
+        ),
+        (
+            TruthSource::VirtualAudioBackend,
+            "\"virtual_audio_backend\"",
+        ),
+        (TruthSource::HostApiObservation, "\"host_api_observation\""),
+        (TruthSource::PhysicalMeasurement, "\"physical_measurement\""),
+    ];
+    for (source, expected) in cases {
+        assert_eq!(serde_json::to_string(&source).unwrap(), expected);
     }
 }
 
@@ -106,6 +184,21 @@ fn bounded_log_rejects_oversized_payloads_observably() {
     assert_eq!(log.oversized_events(), 1);
     assert_eq!(log.events().len(), 0);
     assert_eq!(log.max_event_bytes(), 256);
+}
+
+#[test]
+fn bounded_log_rejects_invalid_events_observably() {
+    let mut log = DiagnosticLog::new(4, Severity::Trace).unwrap();
+    let invalid = DiagnosticEvent::new(
+        EventTimestamp::Logical(1),
+        "measurement",
+        Severity::Error,
+        EventId::CapabilityReport,
+        TruthSource::PhysicalMeasurement,
+    );
+    assert_eq!(log.push(invalid), LogDisposition::RejectedInvalid);
+    assert_eq!(log.invalid_events(), 1);
+    assert_eq!(log.events().len(), 0);
 }
 
 #[test]
@@ -216,6 +309,20 @@ fn snapshot_generation_is_valid_and_deterministic() {
         invalid.validate(),
         Err(SnapshotValidationError::QueueExceedsCapacity)
     );
+
+    let mut physical = snapshot.clone();
+    physical.truth_source = TruthSource::PhysicalMeasurement;
+    assert_eq!(
+        physical.validate(),
+        Err(SnapshotValidationError::InvalidTruthSourceEvidence(
+            TruthSourceValidationError::MissingPhysicalSignalPath
+        ))
+    );
+    physical.active_configuration.insert(
+        PHYSICAL_SIGNAL_PATH_FIELD.into(),
+        DiagnosticValue::Text("documented fixture path".into()),
+    );
+    assert_eq!(physical.validate(), Ok(()));
 }
 
 #[test]
@@ -248,6 +355,20 @@ fn report_contains_reproducibility_recommendation_and_truth_source() {
         invalid.validate(),
         Err(ReportValidationError::MissingSimulationSeed)
     );
+
+    let mut physical = report.clone();
+    physical.truth_source = TruthSource::PhysicalMeasurement;
+    assert_eq!(
+        physical.validate(),
+        Err(ReportValidationError::InvalidTruthSourceEvidence(
+            TruthSourceValidationError::MissingPhysicalSignalPath
+        ))
+    );
+    physical.context.insert(
+        PHYSICAL_SIGNAL_PATH_FIELD.into(),
+        DiagnosticValue::Text("documented fixture path".into()),
+    );
+    assert_eq!(physical.validate(), Ok(()));
 }
 
 #[test]

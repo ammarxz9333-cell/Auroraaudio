@@ -46,6 +46,10 @@ Severities are ordered `trace`, `debug`, `info`, `warning`, `error`, and
 `unit_test`, `deterministic_simulation`, `virtual_audio_backend`,
 `host_api_observation`, and `physical_measurement`. Only evidence captured from
 a documented physical signal path may use `physical_measurement`.
+Validation requires `physical_measurement` records to include a non-empty
+`physical_signal_path` structured field. The same field is rejected for every
+nonphysical truth source, preventing a record from silently upgrading its
+evidence classification. Unknown serialized enum values are rejected by Serde.
 
 ## Logging Policy
 
@@ -54,6 +58,8 @@ non-zero capacity. It also applies a configurable minimum severity and an
 explicit per-event retained-size ceiling. When full, the oldest event is
 evicted. Filtering, eviction, and oversized rejection return a
 `LogDisposition` and update separate counters; none is a hidden fallback.
+Events that fail schema or truth-source validation are likewise rejected and
+counted before filtering or retention.
 
 The default per-event estimate ceiling is 16 KiB. Callers may configure a
 different non-zero ceiling. The estimate includes string bytes and conservative
@@ -98,7 +104,7 @@ measurement without a captured physical loopback path.
 The memory summary describes declared and retained capacities; it is not an OS
 resident-set measurement. `validate` rejects unsupported schema versions,
 missing renderer/build identity, queue occupancy above capacity, and retained
-diagnostic bytes above capacity.
+diagnostic bytes above capacity. It also enforces truth-source evidence.
 
 ## Report Format
 
@@ -110,7 +116,12 @@ benchmark, recovery, and internal failures.
 
 `validate` enforces the schema and required text fields. A report whose truth
 source is `deterministic_simulation` must include its seed. Reports never infer
-or upgrade a truth source.
+or upgrade a truth source. Event validation likewise enforces the schema
+version, component, payload keys, and truth-source evidence.
+
+Framework 1 uses schema version `1`. Additive or incompatible schema changes
+require an explicit version increment, compatibility tests, and documentation;
+unknown versions and enum values are not accepted as version 1.
 
 ## Integration Policy
 
