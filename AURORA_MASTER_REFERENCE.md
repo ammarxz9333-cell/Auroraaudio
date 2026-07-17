@@ -1204,10 +1204,11 @@ intent and reusable presets.
 
 Current execution record:
 
-- `execution_state`: `NOT_STARTED`;
+- `execution_state`: `IN_PROGRESS`;
 - `evaluation_classification`: none;
 - planned implementation branch: `feature/configuration-preset-system-1`;
-- implementation base: `main-v2` after this governance amendment merges;
+- implementation base: `main-v2` at
+  `f8d2fb9eaa45fce2e9a2d9f05fa363ced5a4a531`;
 - expected final classification: `ACCEPTED`.
 
 Hardware dependency matrix:

@@ -5,7 +5,7 @@
 - Milestone: Configuration & Preset System 1
 - Milestone kind: hardware-independent control-plane infrastructure
 - Planned implementation branch: `feature/configuration-preset-system-1`
-- `execution_state`: `NOT_STARTED`
+- `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: none until `READY_FOR_EVALUATION`
 - Expected terminal classification: `ACCEPTED`
 - Phase 2 required for implementation: no
@@ -14,6 +14,10 @@
 
 Implementation may begin only after the governance-only pull request containing
 this definition is merged normally into `main-v2`.
+
+Governance PR `#16` passed CI and merged normally at
+`f8d2fb9eaa45fce2e9a2d9f05fa363ced5a4a531`. Implementation therefore began
+on the dedicated branch from that exact base.
 
 ## Purpose
 

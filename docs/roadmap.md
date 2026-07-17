@@ -114,13 +114,14 @@ Phase 2 or authorize Phase 3C.
 **Configuration & Preset System 1** is owner-authorized as a software-only
 control-plane milestone after its governance amendment merges.
 
-- `execution_state`: `NOT_STARTED`
+- `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: none
 - planned implementation branch: `feature/configuration-preset-system-1`
 - expected final classification: `ACCEPTED`
 - Phase 2 required for implementation or acceptance: no
 - hardware criteria: none
 - product audio behavior changes: none
+- governance merge: `f8d2fb9eaa45fce2e9a2d9f05fa363ced5a4a531`
 
 The milestone adds immutable versioned configuration, bounded validation,
 canonical serialization, deterministic presets, migrations, redaction,
