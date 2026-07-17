@@ -163,6 +163,10 @@ or accepted tag may change. The complete matrix and stop boundary are in
 amendment merges. It is an independent control-plane library for immutable,
 versioned configuration intent and bounded reusable presets.
 
+Final record: `execution_state=CLOSED`,
+`evaluation_classification=ACCEPTED` on 2026-07-17. This software-only
+acceptance changes no Phase 2 gate and authorizes no later milestone.
+
 | Dependency | Decision |
 | --- | --- |
 | Software-only criteria | Typed schemas, bounded validation, canonical serialization, presets, migrations, redaction, tests, benchmarks, and documentation |

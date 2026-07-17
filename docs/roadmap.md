@@ -114,8 +114,8 @@ Phase 2 or authorize Phase 3C.
 **Configuration & Preset System 1** is owner-authorized as a software-only
 control-plane milestone after its governance amendment merges.
 
-- `execution_state`: `READY_FOR_EVALUATION`
-- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `ACCEPTED`
 - planned implementation branch: `feature/configuration-preset-system-1`
 - expected final classification: `ACCEPTED`
 - Phase 2 required for implementation or acceptance: no
@@ -130,6 +130,11 @@ cannot probe or accept physical devices, change renderer/DSP behavior or
 protected contracts, wire protected callbacks, start Phase 3C, or add runtime
 hot reload or UI. The complete dependency matrix and stop boundary are in
 `docs/planning/configuration-preset-system-1.md`.
+
+Formal software-only evaluation passed on 2026-07-17. Local validation and
+required remote workflows passed with no protected-contract or physical gate.
+The evidence record is
+`docs/acceptance/configuration-preset-system-1.md`. PR `#17` remains unmerged.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 
