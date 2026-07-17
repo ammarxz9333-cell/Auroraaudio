@@ -3,7 +3,7 @@
 - Status: Accepted for Checkpoints A and B; extended by ADR 0015
 - Date: 2026-07-17
 - Milestone: Runtime Assembly Contracts 1
-- Execution state: `NOT_STARTED`
+- Execution state: `IN_PROGRESS`
 - Evaluation classification: `NOT_EVALUATED`
 
 > ADR 0014 continues to govern `PreparedRuntimePlan` and its deterministic
