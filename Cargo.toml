@@ -17,6 +17,7 @@ members = [
     "crates/aurora-realtime-audio-cpal",
     "crates/aurora-realtime-audio-sim",
     "crates/aurora-simulation-assurance",
+    "crates/aurora-diagnostics",
     "crates/aurora-realtime-engine",
     "crates/aurora-measurement",
     "crates/aurora-cli",

@@ -3,7 +3,10 @@
 > **Status:** Living source of truth for Codex and any coding agent  
 > **Repository:** `D:\aurora-audio`  
 > **Primary language:** Rust  
-> **Last consolidated milestone:** Simulation Sprint 1 accepted and frozen on 2026-07-16; Phase 2 physical hardware validation remains open and incomplete. Hardware-blocked parallel development is governed by Section 16.1.
+> **Last consolidated milestone:** Diagnostics & Telemetry Framework 1 accepted
+> on 2026-07-17 as a software-only milestone; Phase 2 physical hardware
+> validation remains open and incomplete. Hardware-blocked parallel development
+> is governed by Section 16.1.
 
 ---
 
@@ -1145,6 +1148,54 @@ Windows x86-64 checksums and complete evidence are recorded in
 only to the test campaign. It does not alter Phase 2 or satisfy any physical
 gate of Phase 3A or Phase 3B.
 
+### Authorized software-only milestone: Diagnostics & Telemetry Framework 1
+
+The owner-authorized next milestone is **Diagnostics & Telemetry Framework 1**,
+a hardware-independent control-plane framework for structured events, bounded
+logging, atomic callback metrics, diagnostic snapshots, and error reports.
+
+Current execution record:
+
+- `execution_state`: `CLOSED`;
+- `evaluation_classification`: `ACCEPTED`;
+- implementation branch: `feature/diagnostics-framework-1`;
+- implementation base: `main-v2` at
+  `2a299d748afce842ed3b4816e34d6bc485851c40`.
+
+Hardware dependency matrix:
+
+- software-only criteria: deterministic event/log/report serialization,
+  bounded storage, filtering, concurrent control-thread access, snapshot
+  validity, documented event taxonomy, and callback-safe numeric metrics;
+- deterministic-simulation criteria: deterministic simulation event and
+  throughput evidence using supplied logical timestamps and seeds;
+- host-observation criteria: benchmark statistics, platform/build metadata,
+  and memory-capacity summaries labeled `host_api_observation`;
+- hardware-dependent criteria: none for this framework;
+- Phase 2 required for implementation: no;
+- Phase 2 required for final acceptance: no;
+- effect on Phase 2: none; physical validation remains open and required;
+- expected final classification: `ACCEPTED` only after every software,
+  simulation, review, and documentation criterion passes.
+
+Protected contracts remain unchanged. Callback-reachable integration may only
+update fixed numeric atomics; event construction, formatting, serialization,
+locking, buffering, filesystem access, and output remain control-thread work.
+The milestone may not alter renderer/DSP algorithms, audio behavior, callback
+or buffer ownership, state/fault/device semantics, accepted records or tags,
+or begin Phase 3C. Its full scope and stop boundary are recorded in
+`docs/planning/diagnostics-telemetry-framework-1.md` and ADR 0012.
+
+Formal evaluation passed on 2026-07-17 against implementation and defect-fix
+commit `d1da1b967a50bd42242e237f40b7f604e57b5652`. Formatting, all-target
+all-feature Clippy, 164 workspace tests with five explicitly ignored hardware
+tests, all workspace benchmarks, `actionlint`, warning-free workspace rustdoc,
+three repeated deterministic contract runs, and both required GitHub workflows
+passed. The acceptance record is
+`docs/acceptance/diagnostics-framework-1.md`. This software-only acceptance
+changes no physical gate and introduces no physical claim or callback producer
+wiring.
+
 ---
 
 # 17. Simulation Sprint 1 requirements
@@ -1342,9 +1393,10 @@ The accepted milestone is:
 
 It is frozen. Phase 2 physical hardware validation is open and incomplete.
 Phase 3A and Phase 3B are conditionally accepted pending their physical gates.
-Simulation Assurance Campaign 1 is accepted as a test-only milestone. No later
-product milestone is authorized by that acceptance. Phase 2 physical hardware
-validation remains the open hardware-dependent work.
+Simulation Assurance Campaign 1 is accepted as a test-only milestone.
+Diagnostics & Telemetry Framework 1 is accepted as a software-only milestone.
+Neither acceptance authorizes Phase 3C or any later product milestone. Phase 2
+physical hardware validation remains open and incomplete.
 
 The next agent must not:
 
@@ -1445,6 +1497,26 @@ Do not rewrite history. Record replaced decisions in ADRs.
 - Reason: every campaign software and deterministic-simulation criterion
   passed; the campaign has no physical acceptance criterion and therefore
   closes as `ACCEPTED` without changing any physical gate.
+
+### Maintenance record: 2026-07-17 -- Diagnostics & Telemetry Framework 1 scope
+
+- Milestone: software-only diagnostics and telemetry framework; implementation
+  started only after this record.
+- Changed sections: hardware-blocked milestone authorization, dependency
+  matrix, callback diagnostics boundary, immediate next action, and stop
+  boundary.
+- Reason: authorize production diagnostics infrastructure without changing
+  audio semantics, real-time contracts, Phase 2, or any physical evidence gate.
+
+### Maintenance record: 2026-07-17 -- Diagnostics & Telemetry Framework 1 evaluation
+
+- Milestone: software-only diagnostics and telemetry framework.
+- Changed sections: diagnostics execution record, evidence summary, final
+  classification, acceptance-document reference, and immediate next action.
+- Reason: all software, deterministic, documentation, allocation, review,
+  benchmark, and remote CI criteria passed; the milestone has no physical gate
+  and therefore closes as `ACCEPTED` without changing Phase 2 or authorizing
+  Phase 3C.
 
 ---
 

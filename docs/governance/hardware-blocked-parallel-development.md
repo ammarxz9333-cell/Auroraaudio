@@ -130,6 +130,33 @@ Campaign evidence may use only `unit_test`, `deterministic_simulation`, and
 Simulation Sprint 1 records remain immutable. The full definition is in
 `docs/planning/simulation-assurance-campaign-1.md`.
 
+## Authorized software-only successor
+
+**Diagnostics & Telemetry Framework 1** is authorized on
+`feature/diagnostics-framework-1` as a hardware-independent control-plane
+milestone. Its callback boundary is fixed numeric atomics only; event creation,
+formatting, serialization, buffering, locks, and output are prohibited from
+callback-reachable code.
+
+Final record: `execution_state=CLOSED`,
+`evaluation_classification=ACCEPTED` on 2026-07-17. This software-only
+acceptance changes no Phase 2 gate and authorizes no later milestone.
+
+| Dependency | Decision |
+| --- | --- |
+| Software-only criteria | Deterministic structured events, bounded logs, metrics, snapshots, reports, tests, benchmarks, and documentation |
+| Simulation criteria | Logical-timestamp and deterministic-seed diagnostics over existing simulation facts |
+| Hardware criteria | None |
+| Phase 2 required for implementation | No |
+| Phase 2 required for acceptance | No |
+| Effect on Phase 2 | None; physical validation remains open and required |
+| Expected final classification | `ACCEPTED` only after all framework criteria pass |
+
+No existing public trait, callback ownership, renderer/DSP algorithm, state or
+fault semantic, device selection behavior, truth-source term, accepted record,
+or accepted tag may change. The complete matrix and stop boundary are in
+`docs/planning/diagnostics-telemetry-framework-1.md`.
+
 ## Git workflow
 
 - branch each parallel milestone from `main-v2`;

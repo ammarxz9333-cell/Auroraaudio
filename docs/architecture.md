@@ -14,6 +14,7 @@ Aurora Phase 0 is an offline, format-independent spatial-audio prototype. The sy
 - `aurora-realtime-audio-api`: Backend-neutral local real-time audio traits.
 - `aurora-realtime-audio-cpal`: First local audio backend, isolated behind Aurora-owned API types.
 - `aurora-realtime-audio-sim`: Deterministic virtual backend and accelerated validation environment.
+- `aurora-diagnostics`: Hardware-independent structured events, bounded control-thread logs, atomic callback metrics, snapshots, and reports.
 - `aurora-realtime-engine`: Real-time block pipeline preserving renderer, channel-role, geometric-delay, and DSP boundaries.
 - `aurora-measurement`: Future measurement and synthetic impulse-response crate.
 - `aurora-scene`: JSON scene loading, validation, and trajectory sampling.
@@ -84,3 +85,9 @@ Simulation Sprint 1 adds an independent virtual backend with integer-tick input
 and output clock domains. It exercises format negotiation, callback scheduling,
 ring-fill drift control, deterministic recovery, virtual-loopback truth, and
 canonical routing without importing simulator types into shared domain APIs.
+
+Diagnostics & Telemetry Framework 1 adds a separate control-plane crate. It
+does not depend on a renderer, DSP implementation, device backend, engine, or
+CLI. Protected audio APIs remain unchanged. Callback-reachable producers may
+update only fixed `AtomicU64` counters; event construction and all output remain
+control-thread responsibilities. See `docs/diagnostics.md` and ADR 0012.
