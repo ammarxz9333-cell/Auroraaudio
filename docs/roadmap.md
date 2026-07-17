@@ -90,8 +90,8 @@ physical gate and authorizes no later product milestone. The evidence record is
 **Diagnostics & Telemetry Framework 1** is owner-authorized as a software-only
 control-plane milestone.
 
-- `execution_state`: `IN_PROGRESS`
-- `evaluation_classification`: none
+- `execution_state`: `READY_FOR_EVALUATION`
+- `evaluation_classification`: `IMPLEMENTATION_COMPLETE_VALIDATION_PENDING`
 - implementation branch: `feature/diagnostics-framework-1`
 - Phase 2 required for implementation or acceptance: no
 - hardware criteria: none
@@ -102,6 +102,9 @@ logging, atomic callback metrics, snapshots, reports, tests, benchmarks, and
 documentation. It cannot change renderer/DSP behavior, protected contracts,
 accepted tags, or start Phase 3C. See
 `docs/planning/diagnostics-telemetry-framework-1.md`.
+
+Implementation and required local validation are complete. Pull-request review
+and remote CI remain pending; the milestone is not accepted.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 
