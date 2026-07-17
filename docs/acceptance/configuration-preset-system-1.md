@@ -9,8 +9,10 @@
 - Governance commit: `b6d57ab260bdcf8450bc06b89304850fa80045bc`
 - Governance PR: `#16`
 - Governance merge: `f8d2fb9eaa45fce2e9a2d9f05fa363ced5a4a531`
-- Evaluated implementation and evidence commit:
-  `106c9d03921cbea7506854cd2ec02e7861332a2b`
+- Implementation commit range: `1056285` through `14098fc`
+- Evaluated implementation and evidence commits:
+  `106c9d03921cbea7506854cd2ec02e7861332a2b` and final-review correction
+  `14098fc7419e71f08859d293eac6fcbbf8ed4539`
 - Implementation PR: `#17`
 - Acceptance record commit: the subsequent documentation commit containing
   this record, identified by Git and PR `#17`
@@ -67,7 +69,7 @@ additions. No result uses `physical_measurement`.
 | Protected contracts and audio behavior | PASS | No diff in renderer, DSP, backend, engine, API, CLI, or simulator implementation |
 | Documentation and public APIs | PASS | Architecture, ADR, schema/preset/migration/security docs and strict rustdoc |
 | Local quality gates | PASS | Format, all-target/all-feature Clippy, tests, rustdoc, Actionlint, benchmarks |
-| Remote required checks | PASS | CI run 53 and Simulation Assurance PR Smoke run 7 |
+| Remote required checks | PASS | Initial evaluation runs 53/7 and final-review correction runs CI 55 / Simulation Assurance PR Smoke 9 |
 | Hardware criteria | N/A | Milestone has none; no hardware validation performed |
 
 ## Commits
@@ -78,7 +80,10 @@ additions. No result uses `physical_measurement`.
   routing rejection, stronger redaction;
 - `ee5bd7c`: ADR, configuration docs, architecture, CI, lifecycle update;
 - `f06fc19`: pinned canonical fixture checksums;
-- `106c9d0`: evaluation readiness and local evidence.
+- `106c9d0`: evaluation readiness and local evidence;
+- `3402cfd`: acceptance record and closed milestone state;
+- `14098fc`: final-review correction for duplicate standard roles, migration
+  reader metadata, and strict renderer payload fields.
 
 ## Validation
 
@@ -123,12 +128,12 @@ Release Criterion host observations on the evaluation machine:
 
 | Operation | Median | Estimate interval |
 | --- | ---: | ---: |
-| minimal validation | 1.014 us | 1.012--1.016 us |
-| 16-speaker validation | 16.951 us | 16.898--17.009 us |
-| 16-speaker canonical serialization | 9.196 us | 9.176--9.218 us |
-| 16-speaker canonical deserialization | 18.190 us | 18.148--18.231 us |
-| preset materialization | 10.635 us | 10.610--10.663 us |
-| v0-to-v1 migration | 14.220 us | 14.192--14.248 us |
+| minimal validation | 1.022 us | 1.016--1.027 us |
+| 16-speaker validation | 17.487 us | 17.439--17.533 us |
+| 16-speaker canonical serialization | 9.470 us | 9.431--9.531 us |
+| 16-speaker canonical deserialization | 19.145 us | 18.998--19.315 us |
+| preset materialization | 11.011 us | 10.984--11.039 us |
+| v0-to-v1 migration | 14.228 us | 14.199--14.255 us |
 
 These are initial control-plane baselines. Criterion does not provide p95 or
 maximum for these cases. They are not callback or audio latency measurements.
