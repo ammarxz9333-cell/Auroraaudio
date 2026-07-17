@@ -159,6 +159,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-diagnostics"
+version = "0.1.0"
+dependencies = [
+ "criterion",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aurora-dsp-api"
 version = "0.1.0"
 dependencies = [
