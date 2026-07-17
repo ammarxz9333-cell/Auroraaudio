@@ -109,6 +109,27 @@ gate. The evidence record is
 `docs/acceptance/diagnostics-framework-1.md`. This acceptance does not alter
 Phase 2 or authorize Phase 3C.
 
+## Authorized Software Milestone: Configuration & Preset System 1
+
+**Configuration & Preset System 1** is owner-authorized as a software-only
+control-plane milestone after its governance amendment merges.
+
+- `execution_state`: `NOT_STARTED`
+- `evaluation_classification`: none
+- planned implementation branch: `feature/configuration-preset-system-1`
+- expected final classification: `ACCEPTED`
+- Phase 2 required for implementation or acceptance: no
+- hardware criteria: none
+- product audio behavior changes: none
+
+The milestone adds immutable versioned configuration, bounded validation,
+canonical serialization, deterministic presets, migrations, redaction,
+fixtures, tests, benchmarks, and documentation in an independent crate. It
+cannot probe or accept physical devices, change renderer/DSP behavior or
+protected contracts, wire protected callbacks, start Phase 3C, or add runtime
+hot reload or UI. The complete dependency matrix and stop boundary are in
+`docs/planning/configuration-preset-system-1.md`.
+
 ## Checkpoint 1: Architecture and Gain Simulation
 
 - Create architecture, roadmap, licensing, and agent guardrail documentation.

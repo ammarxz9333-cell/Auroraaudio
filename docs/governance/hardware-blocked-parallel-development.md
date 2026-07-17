@@ -157,6 +157,29 @@ fault semantic, device selection behavior, truth-source term, accepted record,
 or accepted tag may change. The complete matrix and stop boundary are in
 `docs/planning/diagnostics-telemetry-framework-1.md`.
 
+## Authorized software-only successor: Configuration & Preset System 1
+
+**Configuration & Preset System 1** is authorized only after its governance
+amendment merges. It is an independent control-plane library for immutable,
+versioned configuration intent and bounded reusable presets.
+
+| Dependency | Decision |
+| --- | --- |
+| Software-only criteria | Typed schemas, bounded validation, canonical serialization, presets, migrations, redaction, tests, benchmarks, and documentation |
+| Deterministic criteria | Byte-identical fixture serialization and replay metadata representation; no simulator changes |
+| Hardware criteria | None |
+| Phase 2 required for implementation | No |
+| Phase 2 required for acceptance | No |
+| Effect on Phase 2 | None; physical validation remains open and required |
+| Expected final classification | `ACCEPTED` only after every software criterion passes |
+
+Configuration is intent, never proof that a device exists or a format was
+negotiated. The crate remains CLI-independent and outside protected callbacks.
+No public trait, renderer/DSP behavior, device selection semantics, callback
+ownership, state/fault behavior, accepted record/tag, or runtime diagnostic
+truth-source vocabulary may change. The complete scope and stop boundary are in
+`docs/planning/configuration-preset-system-1.md`.
+
 ## Git workflow
 
 - branch each parallel milestone from `main-v2`;
