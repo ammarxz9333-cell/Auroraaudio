@@ -3,8 +3,8 @@
 > **Status:** Living source of truth for Codex and any coding agent  
 > **Repository:** `D:\aurora-audio`  
 > **Primary language:** Rust  
-> **Last consolidated milestone:** Diagnostics & Telemetry Framework 1 accepted
-> on 2026-07-17 as a software-only milestone; Phase 2 physical hardware
+> **Last consolidated milestone:** Configuration & Preset System 1 accepted on
+> 2026-07-17 as a software-only milestone; Phase 2 physical hardware
 > validation remains open and incomplete. Hardware-blocked parallel development
 > is governed by Section 16.1.
 
@@ -1204,10 +1204,11 @@ intent and reusable presets.
 
 Current execution record:
 
-- `execution_state`: `NOT_STARTED`;
-- `evaluation_classification`: none;
+- `execution_state`: `CLOSED`;
+- `evaluation_classification`: `ACCEPTED`;
 - planned implementation branch: `feature/configuration-preset-system-1`;
-- implementation base: `main-v2` after this governance amendment merges;
+- implementation base: `main-v2` at
+  `f8d2fb9eaa45fce2e9a2d9f05fa363ced5a4a531`;
 - expected final classification: `ACCEPTED`.
 
 Hardware dependency matrix:
@@ -1241,6 +1242,17 @@ source enum and map to `unit_test` when runtime diagnostics are emitted.
 
 Its complete scope, bounds, lifecycle, and stop boundary are recorded in
 `docs/planning/configuration-preset-system-1.md`.
+
+Formal evaluation passed on 2026-07-17 against implementation and evidence
+commit `106c9d03921cbea7506854cd2ec02e7861332a2b`. Formatting, all-target
+all-feature Clippy, 182 workspace tests with five explicitly ignored hardware
+tests, workspace benchmarks, Actionlint, warning-free workspace rustdoc, three
+repeated deterministic contract runs, canonical fixture checksums, immutable
+read allocation audit, and both required GitHub workflows passed. The
+acceptance record is
+`docs/acceptance/configuration-preset-system-1.md`. This software-only
+acceptance changes no physical gate, protected audio contract, or runtime
+callback and introduces no physical claim.
 
 ---
 
@@ -1441,9 +1453,8 @@ It is frozen. Phase 2 physical hardware validation is open and incomplete.
 Phase 3A and Phase 3B are conditionally accepted pending their physical gates.
 Simulation Assurance Campaign 1 is accepted as a test-only milestone.
 Diagnostics & Telemetry Framework 1 is accepted as a software-only milestone.
-Configuration & Preset System 1 is authorized but remains `NOT_STARTED` until
-its governance amendment merges and its dedicated implementation branch is
-created. No acceptance authorizes Phase 3C or any later product milestone.
+Configuration & Preset System 1 is accepted as a software-only milestone. No
+acceptance authorizes Phase 3C or any later product milestone.
 Phase 2 physical hardware validation remains open and incomplete.
 
 The next agent must not:
@@ -1458,8 +1469,7 @@ The next agent must not:
 - start Phase 3C;
 - add physical latency claims.
 
-The next permitted action after governance merge is only the bounded
-Configuration & Preset System 1 implementation defined above.
+No later milestone is authorized by this acceptance.
 
 The simulator is complete and frozen. The campaign may exercise it but must not
 duplicate it, change its accepted record, or use it as a substitute for Phase 2
@@ -1577,6 +1587,16 @@ Do not rewrite history. Record replaced decisions in ADRs.
   matrix, truth-source mapping, immediate next action, and stop boundary.
 - Reason: authorize deterministic bounded control-plane configuration without
   changing audio semantics, protected contracts, Phase 2, or physical evidence.
+
+### Maintenance record: 2026-07-17 -- Configuration & Preset System 1 evaluation
+
+- Milestone: software-only versioned configuration and preset infrastructure.
+- Changed sections: configuration execution record, evidence summary, final
+  classification, acceptance-document reference, and immediate next action.
+- Reason: all software, determinism, bounds, migration, redaction, review,
+  benchmark, documentation, and remote CI criteria passed; the milestone has no
+  physical gate and closes as `ACCEPTED` without changing Phase 2 or authorizing
+  Phase 3C.
 
 ---
 
