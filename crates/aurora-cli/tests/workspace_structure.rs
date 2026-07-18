@@ -70,3 +70,50 @@ fn active_manifests_do_not_depend_on_preserved_experiments() {
         }
     }
 }
+
+#[test]
+fn lower_layers_do_not_depend_on_application_or_evidence_layers() {
+    let root = repository_root();
+    let forbidden_by_prefix: &[(&str, &[&str])] = &[
+        (
+            "aurora-renderer-",
+            &["aurora-cli", "aurora-evaluation", "aurora-runtime-inspection"],
+        ),
+        (
+            "aurora-dsp-",
+            &["aurora-cli", "aurora-evaluation", "aurora-runtime-inspection"],
+        ),
+        (
+            "aurora-realtime-audio-",
+            &["aurora-cli", "aurora-evaluation", "aurora-runtime-inspection"],
+        ),
+        (
+            "aurora-decoder-",
+            &["aurora-cli", "aurora-evaluation", "aurora-runtime-inspection"],
+        ),
+    ];
+
+    for entry in fs::read_dir(root.join("crates")).expect("read crates directory") {
+        let entry = entry.expect("read crate entry");
+        let name = entry.file_name();
+        let name = name.to_string_lossy();
+        let Some((_, forbidden)) = forbidden_by_prefix
+            .iter()
+            .find(|(prefix, _)| name.starts_with(prefix))
+        else {
+            continue;
+        };
+        if ["aurora-renderer-cavern", "aurora-decoder-truehdd"].contains(&name.as_ref()) {
+            continue;
+        }
+        let manifest = entry.path().join("Cargo.toml");
+        let text = fs::read_to_string(&manifest).expect("read lower-layer manifest");
+        for forbidden_dependency in *forbidden {
+            assert!(
+                !text.contains(forbidden_dependency),
+                "lower-layer manifest {} must not depend on {forbidden_dependency}",
+                manifest.display()
+            );
+        }
+    }
+}
