@@ -120,7 +120,11 @@ are covered by tests.
 | Prohibited-scope and unsafe scans | PASS | No forbidden production capability or unsafe code |
 | Public-surface and vocabulary scans | PASS | Documented inspection-owned API; semantic exclusions preserved |
 | Relative Markdown-link validation | PASS | No broken relative link |
-| Remote Checkpoint D PR checks | NOT_APPLICABLE at record creation | No final Checkpoint D commit or PR existed yet; no remote success is claimed |
+| CI workflow run 102, `linux-stable` | PASS | GitHub reported `completed` with conclusion `success` |
+| CI workflow run 102, `windows-stable` | PASS | GitHub reported `completed` with conclusion `success` |
+| CI workflow run 102, `msrv-1-78` | PASS | GitHub reported `completed` with conclusion `success` |
+| Simulation Assurance PR Smoke workflow run 38, `smoke` | PASS | GitHub reported `completed` with conclusion `success` |
+| Overall remote Checkpoint D PR checks | PASS | Both required workflows and every reported job completed successfully |
 
 The benchmark command is regression evidence from the local host, not physical
 latency evidence. Criterion reported mostly no-change or improvement and flagged
@@ -195,8 +199,8 @@ requires the explicit `InspectionOptions::unredacted_local()` option.
 - Inspection describes prepared control-plane intent only; it cannot prove
   runtime readiness, endpoint support, health, routing, hardware behavior, or
   latency.
-- Final PR remote checks were not available when this record was authored and
-  must not be reported as passed unless GitHub later confirms them.
+- GitHub remote evidence is limited to CI workflow run 102 and Simulation
+  Assurance PR Smoke workflow run 38 for the accepted Checkpoint D commit.
 
 ## Terminal Decision
 
