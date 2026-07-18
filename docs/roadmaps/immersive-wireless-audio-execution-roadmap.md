@@ -1,5 +1,20 @@
 # Immersive Wireless Audio Execution Roadmap
 
+## Execution state
+
+- `program_state`: `PRODUCT_IMPLEMENTATION_ACTIVE`
+- `active_program`: `Immersive Audio Product Implementation 1`
+- `active_work_item`: GitHub issue `#43`, Checkpoint A
+- `next_work_item`: GitHub issue `#38`
+- `governance_mode`: maintenance only
+- `implementation_rule`: code, tests, artifacts, and reproducible commands are required
+
+Aurora is no longer using governance expansion as the primary development path. Existing accepted architectural contracts remain valid, but new ADRs, passive contract crates, inspection layers, and planning-only milestones are not the default next step. They may be added only when an implementation is blocked by a concrete architectural decision that cannot be resolved inside a reviewable code PR.
+
+The active priority is working product capability. The repository should now advance through small implementation PRs that produce executable code, automated tests, measurable artifacts, and honest limitations.
+
+The currently landed binaural code must first be stabilized and classified honestly under issue `#43`, Checkpoint A. It is a geometric ITD/ILD prototype, not a true HRTF renderer. After that correction, work proceeds to issue `#38`, the first offline 3D loudspeaker-rendering vertical slice.
+
 ## Product objective
 
 Aurora aims to become an open, low-cost immersive home-audio platform that can:
@@ -18,6 +33,7 @@ The repository currently contains:
 
 - a real-time local audio engine;
 - deterministic horizontal-plane 2D VBAP;
+- a geometric stereo ITD/ILD binaural prototype that still requires Checkpoint A correction and full validation;
 - local ASRC and drift-control components using Rubato;
 - simulation and assurance infrastructure;
 - decoder adapter boundaries, including an IAMF placeholder;
@@ -27,12 +43,23 @@ The following are not yet implemented and must not be described as complete:
 
 - production IAMF decoding;
 - 3D VBAP or another height-capable loudspeaker renderer;
-- HRTF/binaural rendering;
+- true HRTF convolution with measured HRIR data, elevation cues, and front/back cues;
 - packetized network audio transport;
 - network jitter buffering and packet-loss handling;
 - distributed clock synchronization across real devices;
 - Raspberry Pi receiver runtime;
 - end-to-end multiroom operation.
+
+## Development operating rules
+
+1. One active implementation slice per PR.
+2. Planning documents do not count as product delivery.
+3. A capability is not complete until it compiles and its required tests pass.
+4. Audible features require generated WAV evidence or another reproducible perceptual artifact.
+5. Network features require packet, synchronization, loss, and latency evidence.
+6. Simulation results must remain labeled as simulation and must not be presented as physical measurements.
+7. The project must not create a new governance milestone merely because an implementation task is complex.
+8. Existing governance work that does not unlock immediate product implementation may be closed, paused, or deferred.
 
 ## Delivery rule
 
@@ -44,6 +71,30 @@ A milestone is complete only when all four outputs exist:
 4. documentation that states limitations and reproducible commands.
 
 Design-only documents, empty crates, adapter placeholders, and passing interface tests do not count as product capability.
+
+## Active stabilization — Geometric binaural Checkpoint A
+
+### Scope
+
+Correct and validate the geometric ITD/ILD binaural prototype already landed in the repository.
+
+### Required work
+
+- rename the mode to `GeometricBinaural` or another technically honest name;
+- state explicitly that it is not HRTF and does not provide proven elevation or front/back discrimination;
+- validate stereo-layout requirements and finite normalized output;
+- reject negative, NaN, and infinite delay values with structured errors;
+- verify final partial-block buffer handling and repeated-render behavior;
+- run formatting, Clippy, workspace tests, strict rustdoc, and CI;
+- keep Checkpoints B-D of issue `#43` out of this PR.
+
+### Acceptance evidence
+
+- successful compilation and exact validation commands;
+- right/left ITD and ILD polarity tests;
+- near-zero-distance and invalid-layout tests;
+- documented dynamic-delay continuity limitation or a deterministic continuity result;
+- no HRTF, Dolby Atmos-like, elevation, or front/back claim.
 
 ## Milestone I1 — Offline 3D loudspeaker rendering
 
@@ -205,14 +256,15 @@ Use the same transport to distribute synchronized program audio to rooms while k
 
 The required order is:
 
-1. I1: offline 3D loudspeaker rendering;
-2. I2: binaural rendering and audible validation;
-3. N1: deterministic network simulation;
-4. I3: real IAMF decode integration, which may proceed in parallel after scene contracts stabilize;
-5. N2: real packet transport;
-6. N3: Linux/Raspberry Pi receiver runtime;
-7. M1: multiroom product behavior;
-8. physical hardware validation and cost selection.
+1. stabilize and honestly classify the landed geometric binaural prototype under issue `#43`, Checkpoint A;
+2. I1: offline 3D loudspeaker rendering under issue `#38`;
+3. I2: true HRTF rendering and audible validation;
+4. N1: deterministic network simulation;
+5. I3: real IAMF decode integration, which may proceed in parallel after scene contracts stabilize;
+6. N2: real packet transport;
+7. N3: Linux/Raspberry Pi receiver runtime;
+8. M1: multiroom product behavior;
+9. physical hardware validation and cost selection.
 
 ## Hardware purchasing gate
 
@@ -228,6 +280,10 @@ No hardware purchase recommendation is valid until Aurora can report:
 
 The first physical experiment should use the smallest configuration that can falsify the design: one coordinator, two receiver nodes, and two independent DAC clocks. A complete 5.1.2 purchase is not the first step.
 
+## Deferred governance work
+
+Runtime materialization, additional inspection layers, and other passive control-plane expansions are not the active product path. Existing merged contracts remain available, but unfinished governance work should not block renderer, HRTF, simulation, transport, receiver, or multiroom implementation. Any future governance change must identify the exact implementation blocker it resolves and must remain smaller than the implementation it enables.
+
 ## Non-goals for the next implementation sprint
 
 - licensed Dolby decoding;
@@ -235,15 +291,16 @@ The first physical experiment should use the smallest configuration that can fal
 - commercial certification claims;
 - a polished consumer UI;
 - a complete 5.1.2 hardware bill of materials based only on marketplace prices;
-- merging all milestones into one unreviewable change.
+- merging all milestones into one unreviewable change;
+- creating another planning-only milestone without an implementation blocker.
 
 ## Immediate next implementation slice
 
-The next code PR should implement only the first vertical slice of I1:
+The active code PR is issue `#43`, Checkpoint A only. After it is reviewed and merged, the next code PR must implement only the first vertical slice of I1:
 
 - a minimal 3D loudspeaker-triplet solver;
 - one 5.1.2 layout fixture;
 - canonical position tests;
 - a CLI command that exports a gain-trajectory JSON artifact.
 
-It must not include IAMF, networking, HRTF, or Raspberry Pi runtime changes in the same PR.
+It must not include IAMF, networking, true HRTF, or Raspberry Pi runtime changes in the same PR.
