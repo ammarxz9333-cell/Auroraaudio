@@ -1,0 +1,11 @@
+{
+  "schema_version": 1,
+  "scenario": "canonical-renderer-directions",
+  "probes": [
+    { "id": "front", "position": { "x": 0.0, "y": 2.0, "z": 1.2 } },
+    { "id": "right", "position": { "x": 2.0, "y": 0.0, "z": 1.2 } },
+    { "id": "rear", "position": { "x": 0.0, "y": -2.0, "z": 1.2 } },
+    { "id": "left", "position": { "x": -2.0, "y": 0.0, "z": 1.2 } },
+    { "id": "overhead", "position": { "x": 0.0, "y": 0.0, "z": 3.2 } }
+  ]
+}

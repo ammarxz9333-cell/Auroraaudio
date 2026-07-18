@@ -113,6 +113,7 @@ dependencies = [
  "aurora-core",
  "aurora-dsp-basic",
  "aurora-dsp-camilladsp",
+ "aurora-evaluation",
  "aurora-realtime-audio-api",
  "aurora-realtime-audio-cpal",
  "aurora-realtime-audio-sim",
@@ -201,6 +202,21 @@ dependencies = [
  "aurora-audio-io",
  "aurora-core",
  "aurora-dsp-api",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
+name = "aurora-evaluation"
+version = "0.1.0"
+dependencies = [
+ "aurora-core",
+ "aurora-dsp-basic",
+ "aurora-renderer-api",
+ "aurora-renderer-basic",
+ "aurora-scene",
+ "criterion",
  "serde",
  "serde_json",
  "thiserror",
