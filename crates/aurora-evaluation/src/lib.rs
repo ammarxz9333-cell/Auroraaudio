@@ -1,11 +1,15 @@
-//! Deterministic, control-thread evaluation for Aurora renderers.
+//! Control-thread evaluation for Aurora renderers.
 //!
 //! This crate consumes the accepted [`aurora_renderer_api::Renderer`] boundary
 //! without changing renderer or DSP behavior. It owns bounded evidence models,
-//! trajectory capture, validation thresholds, and host-observed processing-cost
-//! summaries. Filesystem access and artifact placement remain CLI concerns.
-//! Evaluation is not callback code and never represents host timing as physical
-//! latency or measurement.
+//! trajectory capture, deterministic validation, partial capacity accounting,
+//! and separately classified host-observed renderer-call timing. Filesystem
+//! access and artifact placement remain CLI concerns.
+//!
+//! Evaluation is not callback code. Host timing is advisory, excluded from the
+//! deterministic summary and required aggregate, and never represents physical
+//! latency. FNV-1a values are regression fingerprints, not cryptographic
+//! integrity digests.
 
 mod error;
 mod model;
