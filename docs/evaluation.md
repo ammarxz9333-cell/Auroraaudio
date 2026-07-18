@@ -139,4 +139,3 @@ schema and cross-machine comparison policy are accepted.
   require their separately authorized implementations.
 - No evaluation result is hardware validation, physical latency, or an audible
   quality claim.
-
