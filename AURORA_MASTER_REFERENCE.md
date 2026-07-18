@@ -3,11 +3,9 @@
 > **Status:** Living source of truth for Codex and any coding agent  
 > **Repository:** `D:\aurora-audio`  
 > **Primary language:** Rust  
-> **Last consolidated milestone:** Runtime Assembly Contracts 1 accepted on
+> **Last consolidated milestone:** Runtime Plan Inspection 1 accepted on
 > 2026-07-18 as a software-only milestone; Phase 2 physical hardware validation
-> remains open and incomplete. Runtime Plan Inspection 1 is the single active
-> software-only milestone; Checkpoints A, B, and C are complete and Checkpoint D
-> is the active next reviewed scope but has not started. Hardware-blocked
+> remains open and incomplete. No later milestone is authorized. Hardware-blocked
 > parallel development is governed by Section 16.1.
 
 ---
@@ -1330,7 +1328,7 @@ The complete contract, dependency matrix, tests, non-goals, and stop boundary
 are recorded in `docs/planning/runtime-assembly-contracts-1.md`, ADR 0014, and
 ADR 0015.
 
-### Active software-only milestone: Runtime Plan Inspection 1
+### Accepted software-only milestone: Runtime Plan Inspection 1
 
 Before governance PR `#29` merged, no implementation milestone was authorized.
 Phase 2 is open and blocked by missing hardware. Phase 3A and Phase 3B are
@@ -1343,8 +1341,9 @@ amendment merged normally through PR `#29` at
 `02deb93374b162d11b18b4010452254f3ecd1c18`. Its current record is:
 
 - `authorization_state`: `AUTHORIZED`;
-- `execution_state`: `IN_PROGRESS`;
-- `evaluation_classification`: none;
+- `milestone_status`: `COMPLETE`;
+- `execution_state`: `CLOSED`;
+- `evaluation_classification`: `ACCEPTED`;
 - governance branch: `governance/runtime-plan-inspection-1`;
 - Checkpoint A merge: PR `#30`,
   `b847344c8a64e2b605aead3b6cef8979f39b9916`;
@@ -1360,9 +1359,11 @@ amendment merged normally through PR `#29` at
   `c3bb059396185eed5155e1147eca5f35c8c15ac7`;
 - reconciliation branch:
   `docs/runtime-plan-inspection-checkpoint-c-reconciliation`;
-- active checkpoint: D; evaluation has not started;
-- completed checkpoints: A, B, and C;
-- Checkpoint D: active next reviewed scope, `NOT_STARTED`;
+- Checkpoint D branch: `docs/runtime-plan-inspection-1-checkpoint-d`;
+- acceptance record: `docs/acceptance/runtime-plan-inspection-1.md`;
+- active checkpoint: none;
+- completed checkpoints: A, B, C, and D;
+- Checkpoint D: `COMPLETE`;
 - milestone class: software-only control-plane inspection;
 - Phase 2 required for implementation: no;
 - Phase 2 required for acceptance: no;
@@ -1382,6 +1383,12 @@ structured bounded-output errors, and fixed deterministic inspection-owned
 conformance findings. Published formatter bounds are 262144 JSON bytes, 262144
 text bytes, nesting depth 8, and 256 total serialized collection entries. It
 added no prepared-plan serialization or modification.
+
+Checkpoint D completed the final validation, dependency/protected-contract,
+serialization-boundary, determinism, bounds, semantic-honesty, redaction,
+public-API, and prohibited-scope audits. Every mandatory acceptance criterion
+passed and the terminal decision is `ACCEPTED`. This is software-only evidence;
+no runtime, host, hardware, physical, readiness, or latency claim is made.
 
 Permitted direct Aurora dependency:
 
@@ -1611,12 +1618,11 @@ control-plane milestone; Checkpoints A, B, C, D, and E are complete. The
 acceptance authorizes no runtime integration, Phase 2 implementation, Phase 3C,
 or later milestone and makes no hardware, physical, or latency claim.
 
-Runtime Plan Inspection 1 is the single active software-only milestone. Its
-governance is merged, execution is `IN_PROGRESS`, and Checkpoints A, B, and C
-are `COMPLETE`. Checkpoint D is the active next reviewed scope, but its
-evaluation has not started. Work must proceed one
-reviewed checkpoint at a time from
-`docs/planning/runtime-plan-inspection-1.md`.
+Runtime Plan Inspection 1 is `CLOSED` and `ACCEPTED` as a software-only
+milestone; Checkpoints A, B, C, and D are complete. Its acceptance record is
+`docs/acceptance/runtime-plan-inspection-1.md`. No later software milestone is
+authorized. Phase 2 remains open and incomplete, and Phase 3C remains not
+started.
 
 The next agent must not:
 
@@ -1628,16 +1634,13 @@ The next agent must not:
 - add a GUI;
 - add or change renderer behavior;
 - start Phase 3C;
-- perform Runtime Plan Inspection 1 work beyond Checkpoint D;
+- start another milestone without reviewed governance;
 - serialize, mutate, reconstruct, hash, or fingerprint prepared plans;
 - construct or execute runtime resources under the inspection milestone;
 - add physical latency claims.
 
-No milestone other than Runtime Plan Inspection 1 is authorized. Checkpoint D
-may perform only final local/remote validation, dependency and protected-contract
-audits, prohibited-scope and public-API/documentation audits, criterion-by-
-criterion architectural evaluation, an `ACCEPTED` or `REJECTED` decision, and
-the final stop boundary. This reconciliation does not begin that evaluation.
+No new milestone is authorized. Runtime Plan Inspection 1 is complete and
+closed; further work requires separately reviewed governance.
 
 The simulator is complete and frozen. The campaign may exercise it but must not
 duplicate it, change its accepted record, or use it as a substitute for Phase 2
@@ -1877,6 +1880,18 @@ Do not rewrite history. Record replaced decisions in ADRs.
 - This reconciliation changes documentation only and does not evaluate or
   accept the milestone, create an acceptance record or tag, or change product
   behavior.
+
+### Maintenance record: 2026-07-18 -- Runtime Plan Inspection final evaluation
+
+- Milestone: Runtime Plan Inspection 1.
+- Checkpoint D completed final local validation and architectural evaluation of
+  the merged Checkpoints A-C implementation at
+  `0487a830df8bca0c479d39f69ea70597abfc7559`.
+- Every mandatory criterion passed; the milestone is `COMPLETE`, `CLOSED`, and
+  `ACCEPTED` as software-only control-plane inspection.
+- No code correction was required. No runtime executed, no hardware was
+  validated, no physical or latency claim is made, and no later milestone is
+  authorized.
 
 ---
 
