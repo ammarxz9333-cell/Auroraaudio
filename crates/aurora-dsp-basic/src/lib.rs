@@ -15,6 +15,12 @@ pub enum BasicDspError {
         delay_samples: f32,
         max_delay_samples: f32,
     },
+    /// Requested delay is not finite.
+    #[error("delay for channel {channel} must be finite, got {delay_samples}")]
+    DelayNotFinite { channel: usize, delay_samples: f32 },
+    /// Requested delay is negative.
+    #[error("delay for channel {channel} must be non-negative, got {delay_samples}")]
+    DelayNegative { channel: usize, delay_samples: f32 },
     /// Audio block channel count does not match the configured channel count.
     #[error("expected {expected} channels, got {actual}")]
     ChannelCount { expected: usize, actual: usize },
@@ -52,7 +58,7 @@ impl DelayProcessor {
         }
     }
 
-    /// Sets independent per-channel delays in samples.
+    /// Sets finite, non-negative per-channel delays in samples.
     pub fn set_delays(&mut self, delays_samples: Vec<f32>) -> Result<(), BasicDspError> {
         if delays_samples.len() != self.channel_count {
             return Err(BasicDspError::DelayChannelCount {
@@ -60,20 +66,12 @@ impl DelayProcessor {
                 actual: delays_samples.len(),
             });
         }
-        for delay_samples in &delays_samples {
-            if *delay_samples > self.max_delay_samples {
-                return Err(BasicDspError::DelayExceedsMaximum {
-                    delay_samples: *delay_samples,
-                    max_delay_samples: self.max_delay_samples,
-                });
-            }
-        }
-
+        self.validate_delays(&delays_samples)?;
         self.delays_samples = delays_samples;
         Ok(())
     }
 
-    /// Sets independent per-channel delays in samples from a slice without allocation.
+    /// Sets finite, non-negative per-channel delays from a slice without allocation.
     pub fn set_delays_slice(&mut self, delays_samples: &[f32]) -> Result<(), BasicDspError> {
         if delays_samples.len() != self.channel_count {
             return Err(BasicDspError::DelayChannelCount {
@@ -81,7 +79,25 @@ impl DelayProcessor {
                 actual: delays_samples.len(),
             });
         }
-        for &delay_samples in delays_samples {
+        self.validate_delays(delays_samples)?;
+        self.delays_samples.copy_from_slice(delays_samples);
+        Ok(())
+    }
+
+    fn validate_delays(&self, delays_samples: &[f32]) -> Result<(), BasicDspError> {
+        for (channel, &delay_samples) in delays_samples.iter().enumerate() {
+            if !delay_samples.is_finite() {
+                return Err(BasicDspError::DelayNotFinite {
+                    channel,
+                    delay_samples,
+                });
+            }
+            if delay_samples < 0.0 {
+                return Err(BasicDspError::DelayNegative {
+                    channel,
+                    delay_samples,
+                });
+            }
             if delay_samples > self.max_delay_samples {
                 return Err(BasicDspError::DelayExceedsMaximum {
                     delay_samples,
@@ -89,8 +105,6 @@ impl DelayProcessor {
                 });
             }
         }
-
-        self.delays_samples.copy_from_slice(delays_samples);
         Ok(())
     }
 
@@ -295,5 +309,48 @@ mod tests {
             output.iter().map(Vec::capacity).collect::<Vec<_>>(),
             capacities
         );
+    }
+
+    #[test]
+    fn delay_updates_reject_negative_non_finite_and_excessive_values() {
+        let mut delay = DelayProcessor::new(2, 8.0);
+
+        assert_eq!(
+            delay.set_delays_slice(&[0.0, -0.25]),
+            Err(BasicDspError::DelayNegative {
+                channel: 1,
+                delay_samples: -0.25,
+            })
+        );
+        for invalid in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            assert!(matches!(
+                delay.set_delays_slice(&[invalid, 0.0]),
+                Err(BasicDspError::DelayNotFinite { channel: 0, .. })
+            ));
+        }
+        assert_eq!(
+            delay.set_delays_slice(&[0.0, 8.25]),
+            Err(BasicDspError::DelayExceedsMaximum {
+                delay_samples: 8.25,
+                max_delay_samples: 8.0,
+            })
+        );
+    }
+
+    #[test]
+    fn owned_delay_update_uses_the_same_validation() {
+        let mut delay = DelayProcessor::new(1, 8.0);
+
+        assert_eq!(
+            delay.set_delays(vec![-1.0]),
+            Err(BasicDspError::DelayNegative {
+                channel: 0,
+                delay_samples: -1.0,
+            })
+        );
+        assert!(matches!(
+            delay.set_delays(vec![f32::NAN]),
+            Err(BasicDspError::DelayNotFinite { channel: 0, .. })
+        ));
     }
 }

@@ -66,6 +66,11 @@ Cavern, truehdd, and Resonance Audio are not active first-release dependencies.
 
 ## Capability honesty
 
-The landed geometric binaural implementation is not true HRTF and must not be described as Dolby Atmos-like, elevation-capable, or front/back accurate without supporting evidence.
+The landed `GeometricBinaural` implementation uses geometric ITD, geometric
+ILD, and per-ear geometric distance weighting followed by power normalization.
+It is not a true HRTF renderer and has no HRIR data, convolution, pinna cues, or
+elevation cues. It must not be described
+as Dolby Atmos-like, elevation-capable, or front/back accurate without
+supporting evidence.
 
 A capability is complete only when code, tests, artifacts, reproducible commands, limitations, licensing information, and CI evidence exist.

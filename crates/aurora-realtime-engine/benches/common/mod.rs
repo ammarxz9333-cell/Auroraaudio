@@ -1,5 +1,5 @@
 use aurora_core::{ChannelRole, Listener, Speaker, StandardLayout, Vector3};
-use aurora_realtime_engine::{RealTimeEngine, RealTimeEngineConfig, TestSignal};
+use aurora_realtime_engine::{BasicRendererMode, RealTimeEngine, RealTimeEngineConfig, TestSignal};
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
 
 pub fn standard_scene(layout: StandardLayout, block_size: usize) -> RenderScene {
@@ -36,6 +36,7 @@ pub fn engine(
             apply_geometric_delay: apply_delay,
             speed_of_sound: 343.0,
             test_signal: signal,
+            renderer_mode: BasicRendererMode::InverseDistance,
         },
         block_size,
     )

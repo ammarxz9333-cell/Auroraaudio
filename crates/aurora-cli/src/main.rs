@@ -31,6 +31,8 @@ use aurora_renderer_basic::{
 use aurora_scene::{load_render_scene, RenderScene};
 use clap::{Parser, Subcommand, ValueEnum};
 
+const CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES: f32 = 1_024.0;
+
 #[cfg(feature = "realtime")]
 mod realtime_commands;
 #[cfg(feature = "simulation")]
@@ -277,7 +279,11 @@ enum CliRendererMode {
     NearestSpeaker,
     InverseDistance,
     EqualPowerAdjacent,
-    Binaural,
+    /// Geometric ITD/ILD with per-ear geometric distance weighting followed by
+    /// power normalization; not HRTF, with no HRIR data, convolution, pinna
+    /// cues, or elevation cues.
+    #[value(alias = "binaural")]
+    GeometricBinaural,
 }
 
 impl From<CliRendererMode> for BasicRendererMode {
@@ -286,7 +292,7 @@ impl From<CliRendererMode> for BasicRendererMode {
             CliRendererMode::NearestSpeaker => Self::NearestSpeaker,
             CliRendererMode::InverseDistance => Self::InverseDistance,
             CliRendererMode::EqualPowerAdjacent => Self::EqualPowerAdjacent,
-            CliRendererMode::Binaural => Self::Binaural,
+            CliRendererMode::GeometricBinaural => Self::GeometricBinaural,
         }
     }
 }
@@ -1244,7 +1250,13 @@ fn render_offline(
         );
     }
 
-    let rendered = render_mono_to_scene(&scene, &input, apply_geometric_delay, speed_of_sound, renderer_mode)?;
+    let rendered = render_mono_to_scene(
+        &scene,
+        &input,
+        apply_geometric_delay,
+        speed_of_sound,
+        renderer_mode,
+    )?;
     if let Some(parent) = output_path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -1297,7 +1309,10 @@ fn render_mono_to_scene(
     let mut output_channels = vec![vec![0.0_f32; input.frame_count]; ordered_speakers.len()];
 
     // Initialize delay processor for block-by-block processing
-    let mut delay_processor = DelayProcessor::new(ordered_speakers.len(), 1024.0);
+    let mut delay_processor = DelayProcessor::new(
+        ordered_speakers.len(),
+        CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES,
+    );
     let mut delays_scratch = vec![0.0; ordered_speakers.len()];
 
     let mut block_in = vec![vec![0.0_f32; block_size]; ordered_speakers.len()];
@@ -1328,8 +1343,8 @@ fn render_mono_to_scene(
             }
         }
 
-        // Apply dynamic delay block-by-block if apply_geometric_delay or binaural
-        if apply_geometric_delay || renderer_mode == BasicRendererMode::Binaural {
+        // Apply dynamic delay block-by-block for speaker delay or geometric ITD.
+        if apply_geometric_delay || renderer_mode == BasicRendererMode::GeometricBinaural {
             for (i, gain) in gains.iter().enumerate() {
                 delays_scratch[i] = gain.delay_samples;
             }
@@ -1358,11 +1373,12 @@ fn render_mono_to_scene(
         input.format.sample_rate,
         speed_of_sound,
     );
-    let dsp_latency_frames = if apply_geometric_delay || renderer_mode == BasicRendererMode::Binaural {
-        delay_processor.latency_frames()
-    } else {
-        0
-    };
+    let dsp_latency_frames =
+        if apply_geometric_delay || renderer_mode == BasicRendererMode::GeometricBinaural {
+            delay_processor.latency_frames()
+        } else {
+            0
+        };
 
     Ok(RenderedAudio {
         channels: output_channels,
@@ -1513,8 +1529,14 @@ mod tests {
 
     #[test]
     fn render_output_channel_count_matches_scene_speakers() {
-        let rendered =
-            render_mono_to_scene(&test_scene(), &mono_input(vec![0.1; 64]), false, 343.0).unwrap();
+        let rendered = render_mono_to_scene(
+            &test_scene(),
+            &mono_input(vec![0.1; 64]),
+            false,
+            343.0,
+            BasicRendererMode::InverseDistance,
+        )
+        .unwrap();
 
         assert_eq!(rendered.channels.len(), 2);
         assert_eq!(
@@ -1529,16 +1551,36 @@ mod tests {
         let scene = test_scene();
         let input = mono_input((0..128).map(|frame| frame as f32 / 128.0).collect());
 
-        let first = render_mono_to_scene(&scene, &input, false, 343.0).unwrap();
-        let second = render_mono_to_scene(&scene, &input, false, 343.0).unwrap();
+        let first = render_mono_to_scene(
+            &scene,
+            &input,
+            false,
+            343.0,
+            BasicRendererMode::InverseDistance,
+        )
+        .unwrap();
+        let second = render_mono_to_scene(
+            &scene,
+            &input,
+            false,
+            343.0,
+            BasicRendererMode::InverseDistance,
+        )
+        .unwrap();
 
         assert_eq!(first, second);
     }
 
     #[test]
     fn render_output_has_no_nan_or_infinity_samples() {
-        let rendered =
-            render_mono_to_scene(&test_scene(), &mono_input(vec![0.25; 128]), true, 343.0).unwrap();
+        let rendered = render_mono_to_scene(
+            &test_scene(),
+            &mono_input(vec![0.25; 128]),
+            true,
+            343.0,
+            BasicRendererMode::InverseDistance,
+        )
+        .unwrap();
 
         assert!(rendered
             .channels
@@ -1549,8 +1591,14 @@ mod tests {
 
     #[test]
     fn silence_input_produces_silence_output() {
-        let rendered =
-            render_mono_to_scene(&test_scene(), &mono_input(vec![0.0; 128]), true, 343.0).unwrap();
+        let rendered = render_mono_to_scene(
+            &test_scene(),
+            &mono_input(vec![0.0; 128]),
+            true,
+            343.0,
+            BasicRendererMode::InverseDistance,
+        )
+        .unwrap();
 
         assert!(rendered
             .channels
@@ -1571,13 +1619,91 @@ mod tests {
         };
         scene.block_size = 16;
 
-        let rendered =
-            render_mono_to_scene(&scene, &mono_input(vec![0.5; 512]), false, 343.0).unwrap();
+        let rendered = render_mono_to_scene(
+            &scene,
+            &mono_input(vec![0.5; 512]),
+            false,
+            343.0,
+            BasicRendererMode::InverseDistance,
+        )
+        .unwrap();
 
         for channel in rendered.channels {
             for window in channel.windows(2) {
                 assert!((window[1] - window[0]).abs() < 0.25);
             }
         }
+    }
+
+    #[test]
+    fn geometric_binaural_cli_name_and_legacy_alias_parse_identically() {
+        for value in ["geometric-binaural", "binaural"] {
+            let cli = Cli::try_parse_from([
+                "aurora",
+                "render",
+                "--scene",
+                "scene.json",
+                "--input",
+                "input.wav",
+                "--output",
+                "output.wav",
+                "--renderer-mode",
+                value,
+            ])
+            .unwrap();
+            assert!(matches!(
+                cli.command,
+                Command::Render {
+                    renderer_mode: CliRendererMode::GeometricBinaural,
+                    ..
+                }
+            ));
+        }
+    }
+
+    #[test]
+    fn final_partial_block_does_not_copy_stale_samples() {
+        let mut samples = vec![1.0; 32];
+        samples.extend_from_slice(&[0.0; 5]);
+        let rendered = render_mono_to_scene(
+            &test_scene(),
+            &mono_input(samples),
+            false,
+            343.0,
+            BasicRendererMode::InverseDistance,
+        )
+        .unwrap();
+
+        assert!(rendered
+            .channels
+            .iter()
+            .all(|channel| channel[32..].iter().all(|sample| *sample == 0.0)));
+    }
+
+    #[test]
+    fn repeated_geometric_binaural_renders_do_not_retain_previous_samples() {
+        let scene = test_scene();
+        let _ = render_mono_to_scene(
+            &scene,
+            &mono_input(vec![1.0; 64]),
+            false,
+            343.0,
+            BasicRendererMode::GeometricBinaural,
+        )
+        .unwrap();
+        let silence = render_mono_to_scene(
+            &scene,
+            &mono_input(vec![0.0; 37]),
+            false,
+            343.0,
+            BasicRendererMode::GeometricBinaural,
+        )
+        .unwrap();
+
+        assert!(silence
+            .channels
+            .iter()
+            .flatten()
+            .all(|sample| *sample == 0.0));
     }
 }

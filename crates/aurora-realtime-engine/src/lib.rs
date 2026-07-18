@@ -9,6 +9,7 @@ mod latency;
 mod transport;
 
 pub use asrc::{AsrcError, AsrcProcessReport, AsynchronousResampler, RubatoAsrc};
+pub use aurora_renderer_basic::BasicRendererMode;
 pub use device_state::{
     DuplexStateEvent, DuplexStateMachine, DuplexStateTransitionError, DuplexStreamState,
 };
@@ -32,18 +33,18 @@ pub use latency::{
     LatencyMeasurementReport,
 };
 pub use transport::{TransportKind, TransportPrototype};
-pub use aurora_renderer_basic::BasicRendererMode;
 
 use std::time::{Duration, Instant};
 
 use aurora_core::{ChannelRole, StandardLayout, Vector3};
 use aurora_dsp_basic::{BasicDspError, DelayProcessor};
 use aurora_renderer_api::{RenderObject, Renderer, RendererError, RendererScratch, SpeakerGain};
-use aurora_renderer_basic::{calculate_geometric_delays, BasicRenderer, BasicRendererMode};
+use aurora_renderer_basic::{calculate_geometric_delays, BasicRenderer};
 use aurora_scene::RenderScene;
 use thiserror::Error;
 
 const TIMING_HISTOGRAM_BUCKETS: usize = 16;
+const CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES: f32 = 1_024.0;
 
 /// Test signal generated when no live input is used.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -333,8 +334,7 @@ impl RealTimeEngine {
             .iter()
             .map(|speaker| speaker.channel_role.clone())
             .collect::<Vec<_>>();
-        let mut renderer =
-            BasicRenderer::new(config.renderer_mode).with_smoothing(0.35);
+        let mut renderer = BasicRenderer::new(config.renderer_mode).with_smoothing(0.35);
         renderer.configure(
             ordered_speakers.clone(),
             config.sample_rate,
@@ -368,7 +368,12 @@ impl RealTimeEngine {
         } else {
             vec![0.0; ordered_speakers.len()]
         };
-        let max_delay = delays.iter().copied().fold(0.0_f32, f32::max).ceil() + 2.0;
+        let mut max_delay = delays.iter().copied().fold(0.0_f32, f32::max).ceil() + 2.0;
+        if config.apply_geometric_delay
+            || config.renderer_mode == BasicRendererMode::GeometricBinaural
+        {
+            max_delay = max_delay.max(CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES);
+        }
         let mut delay_processor = DelayProcessor::new(ordered_speakers.len(), max_delay);
         delay_processor.set_delays(delays)?;
         let dsp_latency_frames = delay_processor.latency_frames();
@@ -596,7 +601,9 @@ impl RealTimeEngine {
             )
             .map_err(|_| RealTimeFault::Renderer)?;
 
-        if self.config.apply_geometric_delay || self.config.renderer_mode == BasicRendererMode::Binaural {
+        if self.config.apply_geometric_delay
+            || self.config.renderer_mode == BasicRendererMode::GeometricBinaural
+        {
             for (i, gain) in self.gains.iter().enumerate() {
                 self.delays_scratch[i] = gain.delay_samples;
             }
@@ -775,6 +782,10 @@ mod tests {
         ALLOCATION_COUNT.with(Cell::get)
     }
 
+    fn record_process_status(all_blocks_processed: &mut bool, status: ProcessStatus) {
+        *all_blocks_processed &= status == ProcessStatus::Ok;
+    }
+
     #[test]
     fn ring_buffer_behavior_and_zero_capacity_are_safe() {
         let mut ring = RingBuffer::<u32>::new(2);
@@ -837,6 +848,46 @@ mod tests {
             }
         });
         assert_eq!(allocations, 0);
+    }
+
+    #[test]
+    fn geometric_binaural_processing_allocates_zero_times_after_startup() {
+        let mut config = config(TestSignal::RotatingSine, false);
+        config.renderer_mode = BasicRendererMode::GeometricBinaural;
+        let mut engine = RealTimeEngine::new(scene(), config, 64).unwrap();
+        let mut output = vec![0.0; 128];
+        for _ in 0..16 {
+            assert_eq!(
+                engine.process_interleaved(None, &mut output),
+                ProcessStatus::Ok
+            );
+        }
+
+        let mut all_blocks_processed = true;
+        let allocations = measured_allocations(|| {
+            for _ in 0..1_000 {
+                record_process_status(
+                    &mut all_blocks_processed,
+                    engine.process_interleaved(None, &mut output),
+                );
+            }
+        });
+
+        assert!(all_blocks_processed);
+        assert_eq!(allocations, 0);
+    }
+
+    #[test]
+    fn allocation_status_accumulator_rejects_any_process_fault() {
+        let mut all_blocks_processed = true;
+        record_process_status(&mut all_blocks_processed, ProcessStatus::Ok);
+        record_process_status(
+            &mut all_blocks_processed,
+            ProcessStatus::Fault(RealTimeFault::Renderer),
+        );
+        record_process_status(&mut all_blocks_processed, ProcessStatus::Ok);
+
+        assert!(!all_blocks_processed);
     }
 
     #[test]
