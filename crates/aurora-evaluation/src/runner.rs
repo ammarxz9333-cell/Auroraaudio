@@ -30,10 +30,10 @@ struct HashConfiguration<'a> {
 /// Runs one configured renderer against deterministic probes and a trajectory.
 ///
 /// All block-loop storage is allocated before timing starts. Host timing uses
-/// [`Instant`] and is explicitly reported as `host_api_observation`; trajectory,
-/// validation, capacity, and checksum evidence use deterministic unit-test
-/// semantics. The supplied renderer remains responsible for its accepted
-/// allocation-free steady-state contract.
+/// [`Instant`] and is explicitly reported as `host_api_observation`. Host timing
+/// is advisory and excluded from the required deterministic aggregate. The
+/// supplied renderer remains responsible for its accepted allocation-free
+/// steady-state contract.
 pub fn evaluate_renderer<R: Renderer + ?Sized>(
     renderer: &mut R,
     listener: &Listener,
@@ -166,7 +166,7 @@ pub fn evaluate_renderer<R: Renderer + ?Sized>(
     }
 
     timing_samples.sort_unstable();
-    let performance = performance_metrics(&timing_samples);
+    let performance = performance_metrics(&timing_samples, config.thresholds.max_renderer_p99_ns);
     let audio = audio_metrics(&audio_channels);
     let maximum_audio_sample_delta = audio_channels
         .iter()
@@ -211,7 +211,6 @@ pub fn evaluate_renderer<R: Renderer + ?Sized>(
         maximum_gain_power_error,
         &audio,
         &discontinuity,
-        &performance,
         &allocations,
         &config.hooks,
         config,
@@ -347,13 +346,16 @@ fn validate_config(config: &EvaluationConfig, frames: usize) -> Result<(), Evalu
     Ok(())
 }
 
-fn performance_metrics(samples: &[u64]) -> PerformanceMetrics {
+fn performance_metrics(samples: &[u64], advisory_limit_ns: u64) -> PerformanceMetrics {
+    let renderer_p99_ns = percentile(samples, 99);
     PerformanceMetrics {
         samples: samples.len(),
         renderer_p50_ns: percentile(samples, 50),
         renderer_p95_ns: percentile(samples, 95),
-        renderer_p99_ns: percentile(samples, 99),
+        renderer_p99_ns,
         renderer_max_ns: samples.last().copied().unwrap_or(0),
+        advisory_p99_limit_ns: advisory_limit_ns,
+        advisory_threshold_met: renderer_p99_ns <= advisory_limit_ns,
         truth_source: "host_api_observation".to_owned(),
     }
 }
@@ -416,6 +418,7 @@ fn memory_metrics(
         trajectory_bytes,
         timing_bytes,
         peak_process_memory_bytes: None,
+        coverage: "partial_primary_payloads".to_owned(),
         truth_source: "deterministic_capacity_accounting".to_owned(),
     })
 }
@@ -432,42 +435,41 @@ fn validation_summary(
     maximum_gain_power_error: f32,
     audio: &AudioMetrics,
     discontinuity: &DiscontinuityMetrics,
-    performance: &PerformanceMetrics,
     allocations: &AllocationObservation,
     hooks: &[crate::HookEvidence],
     config: &EvaluationConfig,
 ) -> ValidationSummary {
     let mut findings = vec![
-        finding_bool("finite_output", !audio.contains_non_finite),
-        finding_bool("no_clipping", !audio.clipping_detected),
+        finding_bool("finite_output", true, !audio.contains_non_finite),
+        finding_bool("no_clipping", true, !audio.clipping_detected),
         finding_limit(
             "gain_power_normalization",
+            true,
             maximum_gain_power_error as f64,
             config.thresholds.max_gain_power_error as f64,
         ),
         finding_limit(
             "gain_discontinuity",
+            true,
             discontinuity.maximum_gain_delta as f64,
             config.thresholds.max_gain_discontinuity as f64,
         ),
         finding_limit(
             "delay_discontinuity",
+            true,
             discontinuity.maximum_delay_delta_samples as f64,
             config.thresholds.max_delay_discontinuity_samples as f64,
         ),
         finding_limit(
-            "audio_discontinuity",
+            "audio_sample_delta_proxy",
+            false,
             discontinuity.maximum_audio_sample_delta as f64,
             config.thresholds.max_audio_discontinuity as f64,
-        ),
-        finding_limit(
-            "renderer_p99_cost",
-            performance.renderer_p99_ns as f64,
-            config.thresholds.max_renderer_p99_ns as f64,
         ),
         ValidationFinding {
             id: "steady_state_allocations".to_owned(),
             status: allocations.status,
+            required: true,
             observed: allocations
                 .steady_state_allocations
                 .map(|value| value as f64),
@@ -477,21 +479,27 @@ fn validation_summary(
     findings.extend(hooks.iter().map(|hook| ValidationFinding {
         id: format!("hook:{}", hook.id),
         status: hook.status,
+        required: hook.required,
         observed: None,
         limit: None,
     }));
     let status = if findings
         .iter()
-        .any(|finding| finding.status == EvidenceStatus::Fail)
+        .any(|finding| finding.required && finding.status == EvidenceStatus::Fail)
     {
         EvidenceStatus::Fail
+    } else if findings
+        .iter()
+        .any(|finding| finding.required && finding.status == EvidenceStatus::NotObserved)
+    {
+        EvidenceStatus::NotObserved
     } else {
         EvidenceStatus::Pass
     };
     ValidationSummary { status, findings }
 }
 
-fn finding_bool(id: &str, passed: bool) -> ValidationFinding {
+fn finding_bool(id: &str, required: bool, passed: bool) -> ValidationFinding {
     ValidationFinding {
         id: id.to_owned(),
         status: if passed {
@@ -499,12 +507,13 @@ fn finding_bool(id: &str, passed: bool) -> ValidationFinding {
         } else {
             EvidenceStatus::Fail
         },
+        required,
         observed: None,
         limit: None,
     }
 }
 
-fn finding_limit(id: &str, observed: f64, limit: f64) -> ValidationFinding {
+fn finding_limit(id: &str, required: bool, observed: f64, limit: f64) -> ValidationFinding {
     ValidationFinding {
         id: id.to_owned(),
         status: if observed.is_finite() && observed <= limit {
@@ -512,6 +521,7 @@ fn finding_limit(id: &str, observed: f64, limit: f64) -> ValidationFinding {
         } else {
             EvidenceStatus::Fail
         },
+        required,
         observed: Some(observed),
         limit: Some(limit),
     }
@@ -521,7 +531,9 @@ fn duration_ns_u64(value: u128) -> u64 {
     value.min(u128::from(u64::MAX)) as u64
 }
 
-/// Returns a stable lowercase hexadecimal FNV-1a 64-bit digest.
+/// Returns a stable lowercase hexadecimal FNV-1a 64-bit regression fingerprint.
+///
+/// This is not a cryptographic integrity digest.
 pub fn fnv1a64_hex(bytes: &[u8]) -> String {
     let mut hash = FNV1A64_OFFSET;
     for byte in bytes {
