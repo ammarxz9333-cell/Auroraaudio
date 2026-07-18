@@ -308,6 +308,8 @@ version = "0.1.0"
 dependencies = [
  "aurora-config",
  "aurora-runtime-assembly",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

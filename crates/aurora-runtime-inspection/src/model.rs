@@ -4,6 +4,7 @@ use aurora_runtime_assembly::{
     PreparedDeviceSelectorIntent, PreparedDspPlan, PreparedLayoutKind, PreparedRendererKind,
     PreparedRuntimePlan, PreparedSetupPlan, SetupDependency, SetupStage,
 };
+use serde::Serialize;
 
 use crate::{InspectionError, InspectionLimit, InspectionOptions, PlanRelationship};
 
@@ -27,7 +28,8 @@ pub const MAX_SETUP_STAGES: usize = 6;
 pub const MAX_SETUP_DEPENDENCIES: usize = 9;
 
 /// Whether sensitive requested identifiers were retained in a report.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RedactionState {
     /// Deterministic category markers replace sensitive values.
     Redacted,
@@ -40,7 +42,8 @@ pub enum RedactionState {
 /// Schema 1 reports only [`Self::Requested`], [`Self::Prepared`], and
 /// [`Self::Deferred`]. The remaining variants make category distinctions
 /// explicit for callers and must not be inferred by projection.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum InspectionFactSemantics {
     /// Requested, unresolved intent.
     Requested,
@@ -59,7 +62,8 @@ pub enum InspectionFactSemantics {
 }
 
 /// One deterministic finding about represented inspection facts.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum InspectionFinding {
     /// The report contains control-plane intent, not negotiated or observed state.
     ControlPlaneIntentOnly,
@@ -67,10 +71,24 @@ pub enum InspectionFinding {
     SetupCapacitiesDeferred,
     /// Sensitive identifiers were replaced while presence and structure remain.
     SensitiveIdentifiersRedacted,
+    /// Canonical setup dependency order is represented without reordering.
+    CanonicalSetupDependencyOrderRepresented,
+    /// Requested device selectors remain unresolved intent.
+    RequestedDeviceSelectionUnresolved,
+    /// One or more intentionally inactive output identities are represented.
+    InactiveOutputsPresent,
+    /// The accepted prepared plan explicitly contains no DSP graph.
+    DspAbsent,
+    /// DSP setup is explicitly deferred by the current accepted schema.
+    DspSetupDeferredByCurrentSchema,
+    /// One or more custom speaker roles are represented.
+    CustomSpeakerRolesPresent,
+    /// `SetupPlanComplete` describes plan completeness, not runtime readiness.
+    SetupPlanCompletionDescriptiveOnly,
 }
 
 /// Immutable inspection-owned report projected from paired prepared plans.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct InspectionReport {
     inspection_schema_version: u16,
     source_plan_schema_version: u16,
@@ -106,13 +124,7 @@ impl InspectionReport {
         } else {
             RedactionState::Redacted
         };
-        let mut findings = vec![
-            InspectionFinding::ControlPlaneIntentOnly,
-            InspectionFinding::SetupCapacitiesDeferred,
-        ];
-        if redaction == RedactionState::Redacted {
-            findings.push(InspectionFinding::SensitiveIdentifiersRedacted);
-        }
+        let findings = conformance_findings(&runtime, &setup, redaction);
         check_limit(InspectionLimit::Findings, findings.len(), MAX_FINDINGS)?;
         Ok(Self {
             inspection_schema_version: INSPECTION_SCHEMA_VERSION,
@@ -160,7 +172,7 @@ impl InspectionReport {
 }
 
 /// Projected prepared runtime facts.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RuntimePlanProjection {
     /// Prepared-plan metadata.
     pub metadata: MetadataProjection,
@@ -179,7 +191,7 @@ pub struct RuntimePlanProjection {
 }
 
 /// Runtime-plan provenance projected without timestamps or host evidence.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct MetadataProjection {
     /// Source configuration schema version.
     pub configuration_schema_version: u16,
@@ -190,7 +202,7 @@ pub struct MetadataProjection {
 }
 
 /// Requested, unnegotiated audio-format facts.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct AudioFormatProjection {
     /// Requested sample rate in hertz.
     pub requested_sample_rate: u32,
@@ -207,7 +219,7 @@ pub struct AudioFormatProjection {
 }
 
 /// Prepared renderer selection without a renderer instance.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RendererProjection {
     /// Prepared renderer family.
     pub kind: RendererKindProjection,
@@ -216,7 +228,8 @@ pub struct RendererProjection {
 }
 
 /// Inspection-owned renderer family vocabulary.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum RendererKindProjection {
     /// Basic inverse-distance intent.
     BasicInverseDistance,
@@ -227,7 +240,8 @@ pub enum RendererKindProjection {
 }
 
 /// Prepared DSP state supported by the accepted schema.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DspProjection {
     /// No DSP graph was requested.
     None,
@@ -236,7 +250,7 @@ pub enum DspProjection {
 }
 
 /// Prepared canonical routing and speaker layout.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TopologyProjection {
     /// Inputs in accepted canonical vector order.
     pub inputs: Vec<ChannelProjection>,
@@ -253,7 +267,7 @@ pub struct TopologyProjection {
 }
 
 /// Projected logical channel identity.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct ChannelProjection {
     /// Stable or deterministically redacted identity.
     pub id: String,
@@ -262,7 +276,7 @@ pub struct ChannelProjection {
 }
 
 /// Projected input-to-output route.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct RouteProjection {
     /// Referenced projected input identity.
     pub input_id: String,
@@ -271,7 +285,7 @@ pub struct RouteProjection {
 }
 
 /// Projected speaker descriptor.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct SpeakerProjection {
     /// Stable or deterministically redacted speaker identity.
     pub id: String,
@@ -290,7 +304,7 @@ pub struct SpeakerProjection {
 }
 
 /// Unresolved input and output device-selection intent.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DeviceIntentProjection {
     /// Requested input selector, if present.
     pub input: Option<DeviceSelectorProjection>,
@@ -299,7 +313,7 @@ pub struct DeviceIntentProjection {
 }
 
 /// One unresolved requested selector.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct DeviceSelectorProjection {
     /// Present stable identifier, retained or replaced by a category marker.
     pub stable_id: Option<String>,
@@ -312,7 +326,7 @@ pub struct DeviceSelectorProjection {
 }
 
 /// Known and explicitly setup-deferred capacity facts.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct CapacityProjection {
     /// Plan-known input count.
     pub input_channels: usize,
@@ -331,7 +345,8 @@ pub struct CapacityProjection {
 }
 
 /// A capacity whose value is absent until later setup.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum DeferredCapacityProjection {
     /// Renderer scratch.
     RendererScratch,
@@ -348,7 +363,7 @@ pub enum DeferredCapacityProjection {
 }
 
 /// Projected descriptive setup-plan facts.
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
 pub struct SetupPlanProjection {
     /// Setup stages in accepted fixed order.
     pub stages: Vec<SetupStageProjection>,
@@ -363,7 +378,8 @@ pub struct SetupPlanProjection {
 }
 
 /// Inspection-owned setup stage vocabulary.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
+#[serde(rename_all = "snake_case")]
 pub enum SetupStageProjection {
     /// Device-selection intent.
     DeviceSelectionIntent,
@@ -380,12 +396,67 @@ pub enum SetupStageProjection {
 }
 
 /// One projected fixed setup dependency.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize)]
 pub struct SetupDependencyProjection {
     /// Dependent stage.
     pub stage: SetupStageProjection,
     /// Required predecessor.
     pub depends_on: SetupStageProjection,
+}
+
+fn conformance_findings(
+    runtime: &RuntimePlanProjection,
+    setup: &SetupPlanProjection,
+    redaction: RedactionState,
+) -> Vec<InspectionFinding> {
+    let mut findings = vec![
+        InspectionFinding::ControlPlaneIntentOnly,
+        InspectionFinding::SetupCapacitiesDeferred,
+    ];
+    if redaction == RedactionState::Redacted {
+        findings.push(InspectionFinding::SensitiveIdentifiersRedacted);
+    }
+    findings.push(InspectionFinding::CanonicalSetupDependencyOrderRepresented);
+    if runtime.requested_devices.input.is_some() || runtime.requested_devices.output.is_some() {
+        findings.push(InspectionFinding::RequestedDeviceSelectionUnresolved);
+    }
+    if !runtime.prepared_topology.inactive_output_ids.is_empty() {
+        findings.push(InspectionFinding::InactiveOutputsPresent);
+    }
+    findings.push(match runtime.prepared_dsp {
+        DspProjection::None => InspectionFinding::DspAbsent,
+        DspProjection::DeferredByCurrentSchema => {
+            InspectionFinding::DspSetupDeferredByCurrentSchema
+        }
+    });
+    if runtime
+        .prepared_topology
+        .speakers
+        .iter()
+        .any(|speaker| !is_standard_channel_role(&speaker.channel_role))
+    {
+        findings.push(InspectionFinding::CustomSpeakerRolesPresent);
+    }
+    if setup.descriptive_plan_complete {
+        findings.push(InspectionFinding::SetupPlanCompletionDescriptiveOnly);
+    }
+    findings
+}
+
+fn is_standard_channel_role(role: &str) -> bool {
+    matches!(
+        role,
+        "front-left"
+            | "front-right"
+            | "front-center"
+            | "low-frequency-effects"
+            | "surround-left"
+            | "surround-right"
+            | "surround-back-left"
+            | "surround-back-right"
+            | "top-front-left"
+            | "top-front-right"
+    )
 }
 
 struct ProjectionContext {

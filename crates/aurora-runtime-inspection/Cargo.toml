@@ -8,6 +8,8 @@ rust-version.workspace = true
 
 [dependencies]
 aurora-runtime-assembly = { path = "../aurora-runtime-assembly" }
+serde.workspace = true
+serde_json.workspace = true
 
 [dev-dependencies]
 aurora-config = { path = "../aurora-config" }

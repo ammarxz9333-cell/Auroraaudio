@@ -12,19 +12,22 @@
   `02deb93374b162d11b18b4010452254f3ecd1c18`
 - Checkpoint A merge: PR `#30`,
   `b847344c8a64e2b605aead3b6cef8979f39b9916`
-- Implementation branch: `feature/runtime-plan-inspection-1-checkpoint-b`
+- Checkpoint B merge: PR `#31`,
+  `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`
+- Implementation branch: `feature/runtime-plan-inspection-1-checkpoint-c`
 - Required base: `main-v2` after the governance pull request merges normally
-- Active checkpoint: B
-- Completed checkpoints: A
-- Checkpoints C and D: `NOT_STARTED`
+- Active checkpoint: C
+- Completed checkpoints: A and B
+- Checkpoint D: `NOT_STARTED`
 - Expected terminal classification: `ACCEPTED`
 - Phase 2 required for implementation: no
 - Phase 2 required for acceptance: no
 - Hardware acceptance criteria: none
 
-The governance amendment and ADR 0016 merged normally. Checkpoint A merged
-through PR `#30`; Checkpoint B is the only active implementation scope.
-Checkpoints C and D remain `NOT_STARTED` until separately reviewed.
+The governance amendment and ADR 0016 merged normally. Checkpoints A and B
+merged through PRs `#30` and `#31`; Checkpoint C is the only active
+implementation scope. Checkpoint D remains `NOT_STARTED` until separately
+reviewed.
 
 ## Milestone Inventory And Selection
 
