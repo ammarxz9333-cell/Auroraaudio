@@ -4,19 +4,25 @@
 
 - Milestone: Runtime Plan Inspection 1
 - Milestone kind: software-only control-plane inspection
-- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`
-- `execution_state`: `NOT_STARTED`
+- `authorization_state`: `AUTHORIZED`
+- `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: none
 - Governance branch: `governance/runtime-plan-inspection-1`
-- Planned implementation branch: `feature/runtime-plan-inspection-1`
+- Governance merge: PR `#29`,
+  `02deb93374b162d11b18b4010452254f3ecd1c18`
+- Implementation branch: `feature/runtime-plan-inspection-1`
 - Required base: `main-v2` after the governance pull request merges normally
+- Active checkpoint: A
+- Completed checkpoints: none
+- Checkpoints B, C, and D: `NOT_STARTED`
 - Expected terminal classification: `ACCEPTED`
 - Phase 2 required for implementation: no
 - Phase 2 required for acceptance: no
 - Hardware acceptance criteria: none
 
-This document defines exactly one future implementation milestone. It does not
-authorize implementation before the governance amendment and ADR 0016 merge.
+The governance amendment and ADR 0016 merged normally. Checkpoint A is the only
+active implementation scope. Checkpoints B, C, and D remain unauthorized until
+their preceding checkpoint is merged and separately reviewed.
 
 ## Milestone Inventory And Selection
 
