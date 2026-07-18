@@ -1,15 +1,15 @@
 # ADR 0016: Read-Only Runtime Plan Inspection Boundary
 
-- Status: Accepted governance; implementation in progress
+- Status: Accepted
 - Date: 2026-07-18
 - Milestone: Runtime Plan Inspection 1
 - Authorization state: `AUTHORIZED`
-- Execution state: `IN_PROGRESS`
-- Evaluation classification: none
+- Execution state: `CLOSED`
+- Evaluation classification: `ACCEPTED`
 - Checkpoint A: `COMPLETE`
 - Checkpoint B: `COMPLETE`
 - Checkpoint C: `COMPLETE`
-- Checkpoint D: active next reviewed scope; evaluation `NOT_STARTED`
+- Checkpoint D: `COMPLETE`
 
 ## Context
 

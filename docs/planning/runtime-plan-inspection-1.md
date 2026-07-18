@@ -5,8 +5,9 @@
 - Milestone: Runtime Plan Inspection 1
 - Milestone kind: software-only control-plane inspection
 - `authorization_state`: `AUTHORIZED`
-- `execution_state`: `IN_PROGRESS`
-- `evaluation_classification`: none
+- `milestone_status`: `COMPLETE`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `ACCEPTED`
 - Governance branch: `governance/runtime-plan-inspection-1`
 - Governance merge: PR `#29`,
   `02deb93374b162d11b18b4010452254f3ecd1c18`
@@ -24,10 +25,12 @@
   `c3bb059396185eed5155e1147eca5f35c8c15ac7`
 - Reconciliation branch:
   `docs/runtime-plan-inspection-checkpoint-c-reconciliation`
+- Checkpoint D branch: `docs/runtime-plan-inspection-1-checkpoint-d`
+- Acceptance record: `docs/acceptance/runtime-plan-inspection-1.md`
 - Required base: `main-v2` after the governance pull request merges normally
-- Active checkpoint: D; evaluation has not started
-- Completed checkpoints: A, B, and C
-- Checkpoint D: active next reviewed scope, `NOT_STARTED`
+- Active checkpoint: none
+- Completed checkpoints: A, B, C, and D
+- Checkpoint D: `COMPLETE`
 - Expected terminal classification: `ACCEPTED`
 - Phase 2 required for implementation: no
 - Phase 2 required for acceptance: no
@@ -45,8 +48,9 @@ deterministic field/collection/enum/float representation, JSON escaping tests,
 structured bounded-output errors, and fixed deterministic inspection-owned
 findings. Its published bounds are 262144 JSON bytes, 262144 text bytes, nesting
 depth 8, and 256 total serialized collection entries. It did not serialize or
-modify prepared plans. Checkpoint D is the active next reviewed scope, but its
-evaluation has not started.
+modify prepared plans. Checkpoint D's final validation and criterion-by-
+criterion architectural evaluation found no blocking defect and classified the
+milestone `ACCEPTED`.
 
 ## Milestone Inventory And Selection
 

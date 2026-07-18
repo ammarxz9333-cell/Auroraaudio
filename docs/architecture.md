@@ -157,6 +157,8 @@ renderer, DSP, engine, backend, simulator, CPAL, CLI, filesystem, environment,
 host, or hardware dependency. Checkpoints A, B, and C are `COMPLETE`.
 Checkpoint C's deterministic bounded JSON/text formatting and inspection-owned
 conformance evidence merged through PR `#32` at
-`c3bb059396185eed5155e1147eca5f35c8c15ac7`. Checkpoint D is the active next
-reviewed scope, but final validation and architectural evaluation have not
-started. See `docs/runtime-plan-inspection.md`.
+`c3bb059396185eed5155e1147eca5f35c8c15ac7`. Checkpoint D's final validation and
+architectural evaluation accepted the software-only milestone on 2026-07-18.
+No runtime, hardware, readiness, physical, or latency claim was accepted. See
+`docs/runtime-plan-inspection.md` and
+`docs/acceptance/runtime-plan-inspection-1.md`.

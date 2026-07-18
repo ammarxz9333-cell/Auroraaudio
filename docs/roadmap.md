@@ -174,15 +174,16 @@ review found no blocking issue. The acceptance record is
 control-plane acceptance: no runtime executed, no hardware was validated, no
 physical claim was made, and no later milestone is authorized.
 
-## Active Software Milestone: Runtime Plan Inspection 1
+## Accepted Software Milestone: Runtime Plan Inspection 1
 
 **Runtime Plan Inspection 1** is the single active software-only control-plane
 milestone. Its governance amendment and ADR 0016 merged normally through PR
 `#29` at `02deb93374b162d11b18b4010452254f3ecd1c18`.
 
 - `authorization_state`: `AUTHORIZED`
-- `execution_state`: `IN_PROGRESS`
-- `evaluation_classification`: none
+- `milestone_status`: `COMPLETE`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `ACCEPTED`
 - governance branch: `governance/runtime-plan-inspection-1`
 - Checkpoint A merge: PR `#30`,
   `b847344c8a64e2b605aead3b6cef8979f39b9916`
@@ -198,9 +199,11 @@ milestone. Its governance amendment and ADR 0016 merged normally through PR
   `c3bb059396185eed5155e1147eca5f35c8c15ac7`
 - reconciliation branch:
   `docs/runtime-plan-inspection-checkpoint-c-reconciliation`
-- active checkpoint: D; evaluation has not started
-- completed checkpoints: A, B, and C
-- Checkpoint D: active next reviewed scope, `NOT_STARTED`
+- Checkpoint D branch: `docs/runtime-plan-inspection-1-checkpoint-d`
+- acceptance record: `docs/acceptance/runtime-plan-inspection-1.md`
+- active checkpoint: none
+- completed checkpoints: A, B, C, and D
+- Checkpoint D: `COMPLETE`
 - predecessor: Runtime Assembly Contracts 1, `ACCEPTED`
 - Phase 2 required for implementation or acceptance: no
 - hardware criteria: none
@@ -226,8 +229,9 @@ redaction, and explicit local unredacted options. Checkpoint C merged through PR
 inspection-owned values, exact redacted/unredacted outputs, stable field,
 collection, enum, float, and escaping behavior, structured output-bound errors,
 and fixed inspection-owned conformance findings without prepared-plan
-serialization or modification. Checkpoint D is the active next reviewed scope,
-but its final validation and architectural evaluation have not started.
+serialization or modification. Checkpoint D's final validation and
+criterion-by-criterion architectural evaluation found no blocking defect and
+accepted the software-only milestone. This acceptance authorizes no later work.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 

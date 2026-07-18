@@ -78,11 +78,11 @@ authorized.
 Checkpoint C merged through PR `#32` at
 `c3bb059396185eed5155e1147eca5f35c8c15ac7`; its implementation commit is
 `f946a5d5abf4f0088e6ebbb99058196770661b61`. Checkpoints A, B, and C are
-`COMPLETE`. Runtime Plan Inspection 1 remains `IN_PROGRESS` with no evaluation
-classification and is neither accepted nor closed.
+`COMPLETE`. Checkpoint D's final validation and architectural evaluation also
+completed on 2026-07-18. Runtime Plan Inspection 1 is `CLOSED` and `ACCEPTED` as
+a software-only milestone.
 
-Checkpoint D is the active next reviewed scope, but its evaluation has not
-started. It is limited to final local and remote validation, dependency and
-protected-contract audits, prohibited-scope and public-API/documentation audits,
-criterion-by-criterion architectural evaluation, an `ACCEPTED` or `REJECTED`
-decision, and the final stop boundary.
+The decision is recorded in
+`docs/acceptance/runtime-plan-inspection-1.md`. It accepts no runtime readiness,
+hardware validation, physical evidence, latency claim, Phase 2 change, Phase 3C
+work, or later milestone.
