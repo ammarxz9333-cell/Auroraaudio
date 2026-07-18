@@ -4,6 +4,22 @@
 //! validated configuration. This remains control-plane code with no I/O,
 //! hardware access, device probing, renderer, DSP, or backend construction,
 //! real-time engine, callback use, or physical claim.
+//!
+//! # Ownership and determinism
+//!
+//! All public values are Aurora-owned immutable control-plane descriptions.
+//! Derivation depends only on its explicit validated or prepared input; it does
+//! not inspect the environment, host, filesystem, clock, randomness, or global
+//! state. Equal semantic input therefore produces equal typed output or equal
+//! typed errors.
+//!
+//! # Requested intent is not runtime state
+//!
+//! Device selectors remain unresolved requests and audio formats remain
+//! requested rather than negotiated. `SetupPlanComplete` means only that the
+//! bounded immutable setup description contains every canonical stage and
+//! dependency. It does not mean setup executed, a runtime exists, a backend
+//! accepted a format, or any host or physical readiness was observed.
 
 #![forbid(unsafe_code)]
 
