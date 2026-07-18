@@ -2,9 +2,9 @@
 
 Aurora is an open, modular, hardware-independent spatial-audio processing platform written in Rust.
 
-The project is in **active product implementation**. The immediate work is to stabilize the landed geometric binaural prototype, establish common evaluation, performance, memory, ingestion, capability, and DSP-primitive foundations, implement offline 3D loudspeaker rendering, then build true HRTF, open IAMF input, synchronized IP transport, Linux receiver nodes, and multiroom behavior.
+The project is in **active product implementation**. The immediate work is to stabilize the landed geometric binaural prototype, establish common evaluation, performance, memory, ingestion, capability, and DSP-primitive foundations, implement offline 3D loudspeaker rendering, then build true HRTF, open IAMF input, synchronized IP transport, Linux receiver nodes, declarative graph reconciliation, and multiroom behavior.
 
-Aurora does not currently claim Dolby Atmos compatibility, true HRTF capability, height-capable loudspeaker rendering, production IAMF decoding, dynamically continuous moving-source delay, synchronized wireless speakers, or physical multiroom validation unless the corresponding acceptance evidence exists.
+Aurora does not currently claim Dolby Atmos compatibility, true HRTF capability, height-capable loudspeaker rendering, production IAMF decoding, dynamically continuous moving-source delay, hot-swappable realtime graphs, synchronized wireless speakers, or physical multiroom validation unless the corresponding acceptance evidence exists.
 
 ## Repository status
 
@@ -15,6 +15,7 @@ Start here:
 - [Current execution state](PROJECT_EXECUTION_STATE.md)
 - [Authoritative product execution roadmap](docs/roadmaps/immersive-wireless-audio-execution-roadmap.md)
 - [DSP primitives extraction plan](docs/roadmaps/dsp-primitives-extraction-plan.md)
+- [Declarative audio graph extraction plan](docs/roadmaps/declarative-audio-graph-extraction-plan.md)
 - [Master project reference](AURORA_MASTER_REFERENCE.md)
 - [Architecture](docs/architecture.md)
 - [Repository history](docs/repository-history.md)
@@ -34,11 +35,13 @@ Historical governance, ADRs, and acceptance records remain available, but they d
 9. operational out-of-process IAMF integration;
 10. CamillaDSP runtime hardening;
 11. deterministic network simulation and Tokio-based packet transport outside realtime callbacks;
-12. Linux receiver, optional PipeWire backend, and multiroom behavior;
-13. external Steam Audio and Snapcast comparisons;
-14. minimum physical validation and measurement-driven hardware selection.
+12. Linux receiver and optional PipeWire backend;
+13. issue `#51` — minimum Aurora-owned declarative graph compiler, differential reconciler, atomic generation swap, and safe root transitions before production dynamic routing;
+14. multiroom behavior and device-reconnect workflows;
+15. external Steam Audio and Snapcast comparisons;
+16. minimum physical validation and measurement-driven hardware selection.
 
-Issues `#48` and `#45` may proceed in parallel after issue `#44`, but each requires a separate PR. Issue `#50` follows the common evaluation foundation and must land before moving-source continuity is considered accepted.
+Issues `#48` and `#45` may proceed in parallel after issue `#44`, but each requires a separate PR. Issue `#50` follows the common evaluation foundation and must land before moving-source continuity is considered accepted. Issue `#51` is not on the immediate renderer critical path, but it must land before dynamic multiroom routing, device reconnect, or runtime DSP-chain replacement are considered production-ready.
 
 ## Build
 
@@ -53,7 +56,7 @@ cargo bench --workspace
 
 Linux stable is the main validation environment. Windows stable verifies cross-platform compilation and software-only tests, and a Linux job checks the declared Rust 1.78 MSRV explicitly. Stable jobs run formatting, all-target and all-feature Clippy, workspace tests, and strict public documentation checks; the MSRV job performs locked all-target/all-feature checks and tests.
 
-All CI results are software evidence only. Ignored hardware tests remain hardware-gated, and no CI result is a physical measurement. Future renderer, DSP, and transport PRs must publish deterministic artifacts and machine-readable performance evidence through issue `#44`.
+All CI results are software evidence only. Ignored hardware tests remain hardware-gated, and no CI result is a physical measurement. Future renderer, DSP, graph, and transport PRs must publish deterministic artifacts and machine-readable performance evidence through issue `#44`.
 
 ## Run
 
@@ -76,7 +79,7 @@ The `devices`, `realtime`, and `identify-speakers` commands exercise the local r
 
 - **Symphonia:** offline and streaming-file ingestion behind Aurora-owned PCM types; WAV, FLAC, and Ogg/Vorbis first.
 - **CPAL:** retained as the cross-platform realtime audio backend.
-- **Tokio:** control plane, discovery, socket orchestration, reconnect logic, and background services only; never required by renderer, DSP, or device callbacks.
+- **Tokio:** control plane, discovery, socket orchestration, reconnect logic, and background services only; never required by renderer, DSP, graph execution, or device callbacks.
 - **mio:** considered only if measured Tokio benchmarks fail requirements.
 - **Criterion:** benchmark and regression-evidence foundation.
 - **Bytehound or equivalent:** external Linux memory-profiling workflow.
@@ -94,6 +97,14 @@ The first required primitive is a preallocated fractional-delay line with explic
 Additional candidates are moving sum/average, peak and RMS envelope followers, attack-release smoothing, and simple differentiator utilities. Filters, FFT abstractions, pitch tracking, synthesis, granular effects, and music-production facilities are added only when a concrete product requirement exists.
 
 `q_io`, PortAudio, PortMidi, C++ objects, native ABI types, and raw pointers must not enter Aurora public APIs.
+
+## Declarative graph policy
+
+`elemaudio/elementary` is an architectural reference, not an Aurora runtime dependency. Aurora will implement a typed Rust graph model, compiler, validator, differential reconciler, and immutable runtime generations under Aurora-owned APIs.
+
+Graph construction, structural comparison, allocation, resource loading, validation, and retirement occur outside the audio callback. The callback may only consume a complete prevalidated runtime generation and switch generations at a block boundary. Parameter-only changes should preserve compatible node state; topology changes may use a bounded equal-power root crossfade.
+
+Aurora must not ship Elementary's JavaScript or C++ runtime, use hash identity without collision-safe verification, expose partially applied graph mutations, or allocate, lock, construct, or destroy graph nodes in the callback.
 
 ## Duplex and timing foundations
 
@@ -133,7 +144,7 @@ The `baseline` target prints median and p95 time per block, percentage of the 48
 
 ## Third-party and FFI policy
 
-Aurora keeps PCM contracts, scene representation, rendering policy, DSP primitives, evaluation, timing, transport, receiver behavior, and product orchestration under Aurora-owned interfaces.
+Aurora keeps PCM contracts, scene representation, rendering policy, DSP primitives, graph compilation, evaluation, timing, transport, receiver behavior, and product orchestration under Aurora-owned interfaces.
 
 Preferred optional integrations:
 
@@ -146,4 +157,4 @@ Preferred optional integrations:
 
 Unsafe/native code must remain inside small dedicated adapter crates. Raw pointers and native structs must not cross Aurora-owned public APIs.
 
-Cavern, truehdd, Resonance Audio, `cycfi/q`, `q_io`, PortAudio, and PortMidi are not active first-release runtime dependencies. See [Third-party adapters](docs/adapters.md) and [Third-party licenses](THIRD_PARTY_LICENSES.md).
+Cavern, truehdd, Resonance Audio, `cycfi/q`, `q_io`, Elementary's runtime, PortAudio, and PortMidi are not active first-release runtime dependencies. See [Third-party adapters](docs/adapters.md) and [Third-party licenses](THIRD_PARTY_LICENSES.md).
