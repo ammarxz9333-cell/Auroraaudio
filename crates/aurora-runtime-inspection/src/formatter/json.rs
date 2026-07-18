@@ -1,7 +1,7 @@
 //! JSON formatter contract boundary.
 
-/// Empty Checkpoint A marker for a future deterministic JSON formatter.
+/// Marker reserved for the future Checkpoint C deterministic JSON formatter.
 ///
-/// This type provides no formatting or serialization behavior in Checkpoint A.
+/// This type provides no formatting or serialization behavior in Checkpoint B.
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct JsonFormatter;

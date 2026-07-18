@@ -21,7 +21,7 @@ speaker transport are out of scope.
 - `aurora-diagnostics`: Hardware-independent structured events, bounded control-thread logs, atomic callback metrics, snapshots, and reports.
 - `aurora-config`: Immutable versioned configuration intent, deterministic presets, bounded migration, and redacted snapshots.
 - `aurora-runtime-assembly`: Immutable runtime preparation contracts plus deterministic Checkpoint B derivation from validated configuration; no runtime construction or integration.
-- `aurora-runtime-inspection`: Checkpoint A leaf crate containing empty inspection-owned contract and formatter markers; no plan access or formatting behavior.
+- `aurora-runtime-inspection`: leaf crate containing a bounded, versioned, redacted-by-default projection of prepared runtime/setup facts; formatter markers remain behavior-free through Checkpoint B.
 - `aurora-realtime-engine`: Real-time block pipeline preserving renderer, channel-role, geometric-delay, and DSP boundaries.
 - `aurora-measurement`: Synthetic-measurement scope scaffold; implemented synthetic latency and routing evidence lives in the simulator and real-time engine, and no accepted physical measurement capability exists.
 - `aurora-scene`: JSON scene loading, validation, and trajectory sampling.
@@ -154,7 +154,7 @@ dependency is `aurora-runtime-inspection --> aurora-runtime-assembly`.
 The projection is not plan serialization, runtime readiness, diagnostics
 producer wiring, or runtime construction. It adds no reverse dependency and no
 renderer, DSP, engine, backend, simulator, CPAL, CLI, filesystem, environment,
-host, or hardware dependency. Checkpoint A is `IN_PROGRESS` and contains only
-empty inspection-owned public markers and formatter module boundaries. Plan
-access, projection, redaction, JSON/text generation, and integration remain
-`NOT_STARTED` later-checkpoint work.
+host, or hardware dependency. Checkpoint A is `COMPLETE`; Checkpoint B is
+`IN_PROGRESS` and adds bounded projection and redaction only. JSON/text
+generation remains `NOT_STARTED` Checkpoint C work, and final evaluation
+remains `NOT_STARTED` Checkpoint D work.

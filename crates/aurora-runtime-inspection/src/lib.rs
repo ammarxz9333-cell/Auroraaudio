@@ -13,11 +13,11 @@
 //! engine, backend, simulator, diagnostics, CLI, host, or hardware dependency
 //! belongs here.
 //!
-//! # Checkpoint A stop boundary
+//! # Checkpoint B stop boundary
 //!
-//! Checkpoint A defines empty public contracts and module boundaries only. It
-//! performs no report projection, redaction, validation, JSON generation, text
-//! generation, plan access, runtime construction, or runtime execution.
+//! Checkpoint B projects borrowed prepared plans into bounded, immutable,
+//! redacted-by-default values. It performs no JSON generation, text generation,
+//! runtime construction, or runtime execution.
 //!
 //! # Forbidden behavior
 //!
@@ -34,35 +34,20 @@ pub mod formatter;
 pub mod model;
 pub mod options;
 
-pub use error::InspectionError;
+pub use error::{InspectionError, InspectionLimit, PlanRelationship};
 pub use formatter::{JsonFormatter, TextFormatter};
-pub use model::InspectionReport;
+pub use model::*;
 pub use options::InspectionOptions;
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        InspectionError, InspectionOptions, InspectionReport, JsonFormatter, TextFormatter,
-    };
+    use super::{JsonFormatter, TextFormatter};
 
-    fn assert_public_contract<T: Clone + Copy + core::fmt::Debug + Default + Eq>() {}
-    fn assert_leaf_value<T: Send + Sync + Unpin + 'static>() {}
+    fn assert_formatter_marker<T: Clone + Copy + core::fmt::Debug + Default + Eq>() {}
 
     #[test]
-    fn crate_and_public_api_compile() {
-        assert_public_contract::<InspectionReport>();
-        assert_public_contract::<InspectionOptions>();
-        assert_public_contract::<InspectionError>();
-        assert_leaf_value::<InspectionReport>();
-        assert_leaf_value::<InspectionOptions>();
-        assert_leaf_value::<InspectionError>();
-    }
-
-    #[test]
-    fn formatter_marker_traits_compile() {
-        assert_public_contract::<JsonFormatter>();
-        assert_public_contract::<TextFormatter>();
-        assert_leaf_value::<JsonFormatter>();
-        assert_leaf_value::<TextFormatter>();
+    fn checkpoint_a_formatter_markers_remain_behavior_free_values() {
+        assert_formatter_marker::<JsonFormatter>();
+        assert_formatter_marker::<TextFormatter>();
     }
 }
