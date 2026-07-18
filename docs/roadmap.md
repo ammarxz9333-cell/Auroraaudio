@@ -142,17 +142,19 @@ accepted; its merge does not alter Phase 2 or authorize Phase 3C.
 ## Active Software Milestone: Runtime Assembly Contracts 1
 
 **Runtime Assembly Contracts 1** is an authorized hardware-independent
-control-plane milestone. Checkpoints A, B, and C are merged. Checkpoint D is
-consolidating evidence and documentation for the later Checkpoint E review.
+control-plane milestone. Checkpoints A, B, C, and D are complete. Checkpoint E
+is the separate final architectural evaluation and has not started.
 
 - `authorization_state`: `AUTHORIZED`
 - `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: `NOT_EVALUATED`
-- `completed_checkpoint`: `C`
-- `active_checkpoint`: `D`
-- Checkpoint D execution state: `IN_PROGRESS`
+- `completed_checkpoint`: `D`
+- `next_checkpoint`: `E`
+- Checkpoint D execution state: `COMPLETE`
 - Checkpoint E execution state: `NOT_STARTED`
 - evidence branch: `docs/runtime-assembly-contracts-1-checkpoint-d`
+- Checkpoint D merge: PR `#26`,
+  `93f36464cac429bf7e25b257e894aab64a72e2d4`
 - implementation crate: `aurora-runtime-assembly`
 - Phase 2 required for implementation or acceptance: no
 - hardware criteria: none
@@ -165,8 +167,10 @@ executes a runtime subsystem. The milestone may not probe or open devices,
 construct a running engine, touch callbacks, modify protected contracts, start
 Phase 3C, or make physical claims. The dependency matrix, checkpoints, tests,
 and stop boundary are in `docs/planning/runtime-assembly-contracts-1.md` and
-ADRs 0014 and 0015. The milestone remains `IN_PROGRESS`, `NOT_EVALUATED`, and
-not accepted. Checkpoint E has not started.
+ADRs 0014 and 0015. Checkpoint D was marked `IN_PROGRESS` while PR `#26` was
+under review and is now reconciled to `COMPLETE` after merge. The milestone
+remains `IN_PROGRESS`, `NOT_EVALUATED`, and not accepted. Checkpoint E has not
+started.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 
