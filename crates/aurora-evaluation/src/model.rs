@@ -2,7 +2,7 @@ use aurora_core::Vector3;
 use serde::{Deserialize, Serialize};
 
 /// Current machine-readable evaluation schema.
-pub const EVALUATION_SCHEMA_VERSION: u16 = 1;
+pub const EVALUATION_SCHEMA_VERSION: u16 = 2;
 /// Maximum output channels retained by one evaluation.
 pub const MAX_CHANNELS: usize = 32;
 /// Maximum input frames retained by one evaluation.
@@ -36,19 +36,19 @@ pub struct EvaluationFixture {
     pub probes: Vec<ProbeDefinition>,
 }
 
-/// Pass/fail state used throughout machine-readable evidence.
+/// Evidence state used throughout machine-readable reports.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EvidenceStatus {
-    /// Criterion passed.
+    /// All required criteria represented by this status passed.
     Pass,
-    /// Criterion failed.
+    /// At least one required criterion failed.
     Fail,
-    /// Criterion was not observed by this run.
+    /// The criterion was not observed by this run.
     NotObserved,
 }
 
-/// Configurable thresholds that turn regressions into failed evaluations.
+/// Configurable thresholds used by deterministic checks and advisory host observations.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EvaluationThresholds {
     /// Maximum absolute error from unit gain power.
@@ -57,9 +57,11 @@ pub struct EvaluationThresholds {
     pub max_gain_discontinuity: f32,
     /// Maximum delay change in samples between adjacent blocks.
     pub max_delay_discontinuity_samples: f32,
-    /// Maximum adjacent rendered-sample delta.
+    /// Advisory maximum adjacent rendered-sample delta.
+    ///
+    /// This is a signal-slope proxy and is not a general click detector.
     pub max_audio_discontinuity: f32,
-    /// Maximum allowed p99 renderer processing cost in nanoseconds.
+    /// Advisory maximum host-observed `render_gains` p99 cost in nanoseconds.
     pub max_renderer_p99_ns: u64,
 }
 
@@ -90,7 +92,7 @@ pub struct EvaluationConfig {
     pub max_delay_samples: f32,
     /// Whether captured renderer delays are applied to the WAV output.
     pub apply_delays: bool,
-    /// Validation thresholds.
+    /// Validation and advisory thresholds.
     pub thresholds: EvaluationThresholds,
     /// Commit evaluated by this run.
     pub commit_sha: String,
@@ -111,7 +113,9 @@ pub struct RendererMetadata {
     pub renderer_id: String,
     /// Enabled output channel count.
     pub output_channels: usize,
-    /// Deterministic FNV-1a hash of canonical evaluation configuration JSON.
+    /// Deterministic FNV-1a regression fingerprint of canonical configuration JSON.
+    ///
+    /// This is not a cryptographic integrity digest.
     pub configuration_hash_fnv1a64: String,
 }
 
@@ -158,7 +162,7 @@ pub struct ProbeResult {
     pub delays_samples: Vec<f32>,
 }
 
-/// Maximum observed discontinuities from deterministic generated output.
+/// Maximum observed changes from deterministic generated output.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub struct DiscontinuityMetrics {
     /// Largest adjacent-block gain change.
@@ -166,6 +170,8 @@ pub struct DiscontinuityMetrics {
     /// Largest adjacent-block delay change in samples.
     pub maximum_delay_delta_samples: f32,
     /// Largest adjacent rendered-sample change.
+    ///
+    /// This is a signal-slope proxy, not proof of click-free output.
     pub maximum_audio_sample_delta: f32,
 }
 
@@ -182,31 +188,39 @@ pub struct AudioMetrics {
     pub contains_non_finite: bool,
     /// Whether any generated sample exceeded unit magnitude.
     pub clipping_detected: bool,
-    /// Deterministic FNV-1a checksum over planar `f32` bytes.
+    /// Deterministic FNV-1a regression fingerprint over planar `f32` bytes.
+    ///
+    /// This is not a cryptographic integrity digest.
     pub audio_checksum_fnv1a64: String,
 }
 
 /// Host-observed processing-cost percentiles.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct PerformanceMetrics {
-    /// Number of timed renderer calls.
+    /// Number of timed `render_gains` calls.
     pub samples: usize,
-    /// p50 renderer-call duration in nanoseconds.
+    /// p50 `render_gains` call duration in nanoseconds.
     pub renderer_p50_ns: u64,
-    /// p95 renderer-call duration in nanoseconds.
+    /// p95 `render_gains` call duration in nanoseconds.
     pub renderer_p95_ns: u64,
-    /// p99 renderer-call duration in nanoseconds.
+    /// p99 `render_gains` call duration in nanoseconds.
     pub renderer_p99_ns: u64,
-    /// Maximum renderer-call duration in nanoseconds.
+    /// Maximum `render_gains` call duration in nanoseconds.
     pub renderer_max_ns: u64,
+    /// Advisory p99 threshold supplied by the caller.
+    pub advisory_p99_limit_ns: u64,
+    /// Whether the host observation was within the advisory threshold.
+    pub advisory_threshold_met: bool,
     /// Explicit truth source; always `host_api_observation`.
     pub truth_source: String,
 }
 
-/// Bounded memory-accounting evidence.
+/// Bounded partial memory-capacity accounting evidence.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MemoryMetrics {
-    /// Deterministically accounted primary retained and processing payloads.
+    /// Accounted primary payload bytes.
+    ///
+    /// This is not process working set, allocator overhead, renderer state, or peak RSS.
     pub bounded_working_set_bytes: u64,
     /// Output audio allocation in bytes.
     pub output_audio_bytes: u64,
@@ -216,6 +230,8 @@ pub struct MemoryMetrics {
     pub timing_bytes: u64,
     /// Peak process-memory observation when supplied by an external profiler.
     pub peak_process_memory_bytes: Option<u64>,
+    /// Coverage classification; currently `partial_primary_payloads`.
+    pub coverage: String,
     /// Truth source; this is capacity accounting, not process RSS.
     pub truth_source: String,
 }
@@ -265,6 +281,8 @@ pub struct HookEvidence {
     pub category: HookCategory,
     /// Hook result.
     pub status: EvidenceStatus,
+    /// Whether this observation is required for aggregate PASS.
+    pub required: bool,
     /// Truth source for the supplied result.
     pub truth_source: String,
 }
@@ -274,8 +292,10 @@ pub struct HookEvidence {
 pub struct ValidationFinding {
     /// Stable finding identifier.
     pub id: String,
-    /// Pass/fail state.
+    /// Finding state.
     pub status: EvidenceStatus,
+    /// Whether this finding is required for aggregate PASS.
+    pub required: bool,
     /// Observed numeric value where applicable.
     pub observed: Option<f64>,
     /// Configured limit where applicable.
@@ -285,7 +305,10 @@ pub struct ValidationFinding {
 /// Aggregate validation result.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct ValidationSummary {
-    /// Overall status; any failed finding makes this fail.
+    /// Overall required-evidence status.
+    ///
+    /// `fail` means a required finding failed. `not_observed` means no required
+    /// finding failed but at least one required finding was not observed.
     pub status: EvidenceStatus,
     /// Canonically ordered findings.
     pub findings: Vec<ValidationFinding>,
@@ -304,13 +327,13 @@ pub struct EvaluationReport {
     pub audio: AudioMetrics,
     /// Reported/configured latency facts.
     pub latency: LatencyEvidence,
-    /// Host-observed processing cost.
+    /// Host-observed processing cost. Excluded from deterministic summaries.
     pub performance: PerformanceMetrics,
-    /// Deterministic capacity accounting.
+    /// Partial deterministic capacity accounting.
     pub memory: MemoryMetrics,
     /// Optional steady-state allocation observation.
     pub allocations: AllocationObservation,
-    /// Discontinuity metrics.
+    /// Deterministic change metrics.
     pub discontinuity: DiscontinuityMetrics,
     /// Fixed-direction probe results.
     pub probes: Vec<ProbeResult>,
@@ -318,17 +341,20 @@ pub struct EvaluationReport {
     pub trajectory: Vec<GainTrajectoryPoint>,
     /// Validation-hook evidence.
     pub hooks: Vec<HookEvidence>,
-    /// Threshold validation summary.
+    /// Required deterministic validation summary.
     pub validation: ValidationSummary,
 }
 
 impl EvaluationReport {
-    /// Serializes the complete report as stable pretty JSON.
+    /// Serializes the complete report as stable pretty JSON for one run.
+    ///
+    /// The complete report contains host timing and is therefore not byte-stable
+    /// across hosts or repeated runs.
     pub fn to_json_pretty(&self) -> Result<String, serde_json::Error> {
         serde_json::to_string_pretty(self)
     }
 
-    /// Returns a compact summary suitable for CI dashboards.
+    /// Returns a deterministic compact summary suitable for regression comparison.
     pub fn summary(&self) -> EvaluationSummary {
         EvaluationSummary {
             schema_version: self.schema_version,
@@ -336,35 +362,26 @@ impl EvaluationReport {
             configuration_hash_fnv1a64: self.renderer.configuration_hash_fnv1a64.clone(),
             audio_checksum_fnv1a64: self.audio.audio_checksum_fnv1a64.clone(),
             validation_status: self.validation.status,
-            renderer_p50_ns: self.performance.renderer_p50_ns,
-            renderer_p95_ns: self.performance.renderer_p95_ns,
-            renderer_p99_ns: self.performance.renderer_p99_ns,
-            bounded_working_set_bytes: self.memory.bounded_working_set_bytes,
+            accounted_primary_payload_bytes: self.memory.bounded_working_set_bytes,
         }
     }
 }
 
-/// Compact machine-readable evaluation summary.
+/// Compact deterministic machine-readable evaluation summary.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EvaluationSummary {
     /// Evaluation schema version.
     pub schema_version: u16,
     /// Stable renderer identifier.
     pub renderer_id: String,
-    /// Configuration hash.
+    /// Configuration regression fingerprint.
     pub configuration_hash_fnv1a64: String,
-    /// Rendered-audio checksum.
+    /// Rendered-audio regression fingerprint.
     pub audio_checksum_fnv1a64: String,
-    /// Overall validation status.
+    /// Overall required deterministic validation status.
     pub validation_status: EvidenceStatus,
-    /// Host-observed p50 cost.
-    pub renderer_p50_ns: u64,
-    /// Host-observed p95 cost.
-    pub renderer_p95_ns: u64,
-    /// Host-observed p99 cost.
-    pub renderer_p99_ns: u64,
-    /// Deterministically accounted primary working-set payload.
-    pub bounded_working_set_bytes: u64,
+    /// Deterministically accounted partial primary payload.
+    pub accounted_primary_payload_bytes: u64,
 }
 
 /// Complete report plus planar rendered audio for WAV artifact generation.
