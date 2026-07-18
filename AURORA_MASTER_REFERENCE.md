@@ -4,9 +4,11 @@
 > **Repository:** `D:\aurora-audio`  
 > **Primary language:** Rust  
 > **Last consolidated milestone:** Runtime Plan Inspection 1 accepted on
-> 2026-07-18 as a software-only milestone; Phase 2 physical hardware validation
-> remains open and incomplete. No later milestone is authorized. Hardware-blocked
-> parallel development is governed by Section 16.1.
+> 2026-07-18 as a software-only milestone. Runtime Materialization Contracts 1
+> is proposed and becomes authorized only after its governance amendment merges;
+> no implementation checkpoint is active. Phase 2 physical hardware validation
+> remains open and incomplete. Hardware-blocked parallel development is governed
+> by Section 16.1.
 
 ---
 
@@ -1336,7 +1338,7 @@ closed and conditionally accepted pending physical gates. Simulation Sprint 1,
 Simulation Assurance Campaign 1, Diagnostics & Telemetry Framework 1,
 Configuration & Preset System 1, and Runtime Assembly Contracts 1 are closed.
 
-The single active successor is **Runtime Plan Inspection 1**. Its governance
+The selected successor was **Runtime Plan Inspection 1**. Its governance
 amendment merged normally through PR `#29` at
 `02deb93374b162d11b18b4010452254f3ecd1c18`. Its current record is:
 
@@ -1409,6 +1411,94 @@ make a runtime, negotiated, physical, measured, or latency claim. Its objective,
 dependency matrix, checkpoints, acceptance criteria, validation, risks, and
 stop boundary are authoritative in ADR 0016 and
 `docs/planning/runtime-plan-inspection-1.md`.
+
+### Proposed software-only milestone: Runtime Materialization Contracts 1
+
+The repository audit after Runtime Plan Inspection 1 found no current owner for
+a passive, bounded description of the resource requirements that a future
+runtime constructor would need. Runtime assembly ends at prepared/setup intent;
+inspection is read-only; configuration, diagnostics, simulation, engines, and
+backends retain their accepted independent ownership.
+
+The next proposed milestone is **Runtime Materialization Contracts 1**. Its
+current lifecycle is:
+
+- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`;
+- `milestone_status`: `PROPOSED`;
+- `execution_state`: `NOT_STARTED`;
+- `evaluation_classification`: `NOT_EVALUATED`;
+- active checkpoint: none;
+- Checkpoint A: `NOT_STARTED`;
+- Checkpoint B: `NOT_STARTED`;
+- Checkpoint C: `NOT_STARTED`;
+- Checkpoint D: `NOT_STARTED`;
+- proposed crate: `aurora-runtime-materialization`;
+- Phase 2 required for implementation or acceptance: no;
+- hardware-dependent criteria: none.
+
+No implementation is authorized before the governance amendment merges. After
+merge, only Checkpoint A may begin on a separately reviewed implementation
+branch.
+
+The selected ownership and sole permitted Aurora production edge are:
+
+```text
+aurora-runtime-materialization --> aurora-runtime-assembly
+```
+
+No reverse dependency is authorized. The accepted
+`aurora-runtime-inspection` crate remains unchanged and does not depend on the
+new crate during this milestone. No direct configuration, core, diagnostics,
+renderer, DSP, engine, audio-backend, simulator, CPAL, CLI, scene, or audio-I/O
+dependency is authorized. Existing workspace Serde/JSON dependencies may be
+private Checkpoint C details for a separate materialization-owned inspection
+projection only; this governance change adds no dependency.
+
+The milestone may describe immutable aggregate resource responsibilities,
+canonical materialization-planning stages and dependencies, capability
+requirements, and explicit deferred requirements derived from borrowed,
+matching `PreparedRuntimePlan` and `PreparedSetupPlan` values. It must preserve
+the distinction among requested, prepared, materialization-planned, deferred,
+constructed, and active semantics. Constructed and active facts are unavailable
+and forbidden. `MaterializationPlanComplete` means descriptive completeness
+only, never readiness.
+
+Published schema-1 maxima are 32 aggregate resources, 6 stages, 64
+dependencies, 64 capability requirements, 32 deferred requirements, 256 bytes
+per string, 32768 total string bytes, 262144 bytes for either inspection output,
+256 serialized collection entries, and nesting depth 8. Checked arithmetic and
+structured errors are mandatory; no silent truncation, fallback, guessed
+capacity, or host-probed value is permitted.
+
+The four separately reviewed checkpoints are:
+
+- Checkpoint A: isolated crate, public marker/value contracts, and finite
+  constants only;
+- Checkpoint B: deterministic materialization-plan derivation and validation;
+- Checkpoint C: deterministic bounded materialization-owned inspection and
+  conformance evidence, if still justified at checkpoint review;
+- Checkpoint D: final local/remote validation and criterion-by-criterion
+  `ACCEPTED` or `REJECTED` decision.
+
+The milestone does not authorize device discovery/opening, format negotiation,
+endpoint provisioning, CPAL, renderer/DSP/backend/engine construction or
+execution, streams, callbacks, threads, processes, clocks, filesystem or
+environment access, diagnostics producer wiring, CLI/GUI, networking,
+multiroom, HDMI/eARC, wireless, fleet, OTA, mobile work, physical acoustic
+simulation, calibration, Phase 2, Phase 3C, prepared-plan
+serialization/reconstruction, runtime readiness, latency, hardware, or physical
+claims.
+
+The hardware dependency matrix contains software-only contract gates and
+build/CI host observations only. It has no deterministic-simulation or hardware
+acceptance gate and changes no Phase 2 requirement. ADR 0017 and
+`docs/planning/runtime-materialization-contracts-1.md` are authoritative for
+the objective, dependencies, checkpoints, criteria, validation, risks, and stop
+boundary.
+
+Physical Acoustic Simulator 1 / PR `#22` remains open, Draft, `PROPOSED`,
+`NOT_STARTED`, and on `HOLD`. It is unauthorized for implementation and must be
+decomposed into independently governed milestones before any implementation.
 
 ---
 
@@ -1620,9 +1710,17 @@ or later milestone and makes no hardware, physical, or latency claim.
 
 Runtime Plan Inspection 1 is `CLOSED` and `ACCEPTED` as a software-only
 milestone; Checkpoints A, B, C, and D are complete. Its acceptance record is
-`docs/acceptance/runtime-plan-inspection-1.md`. No later software milestone is
-authorized. Phase 2 remains open and incomplete, and Phase 3C remains not
-started.
+`docs/acceptance/runtime-plan-inspection-1.md`. Phase 2 remains open and
+incomplete, and Phase 3C remains not started.
+
+Runtime Materialization Contracts 1 is the next proposed software-only
+milestone. Its `authorization_state` is
+`AUTHORIZED_AFTER_GOVERNANCE_MERGE`, its `milestone_status` is `PROPOSED`, its
+`execution_state` is `NOT_STARTED`, and its `evaluation_classification` is
+`NOT_EVALUATED`. Checkpoints A-D are `NOT_STARTED`; no checkpoint is active.
+The immediate action is governance review. Only after this governance change
+merges may a new branch begin Checkpoint A's isolated crate and marker
+contracts.
 
 The next agent must not:
 
@@ -1634,13 +1732,17 @@ The next agent must not:
 - add a GUI;
 - add or change renderer behavior;
 - start Phase 3C;
-- start another milestone without reviewed governance;
+- implement Runtime Materialization Contracts 1 before its governance merge;
+- combine its checkpoints or begin beyond Checkpoint A automatically;
 - serialize, mutate, reconstruct, hash, or fingerprint prepared plans;
-- construct or execute runtime resources under the inspection milestone;
+- construct or execute runtime resources;
+- modify or implement Physical Acoustic Simulator 1 / PR `#22`;
 - add physical latency claims.
 
-No new milestone is authorized. Runtime Plan Inspection 1 is complete and
-closed; further work requires separately reviewed governance.
+This governance proposal contains no implementation. Physical Acoustic
+Simulator 1 remains on hold. No implementation checkpoint becomes active until
+the Runtime Materialization Contracts 1 governance change merges and a
+separate Checkpoint A change begins.
 
 The simulator is complete and frozen. The campaign may exercise it but must not
 duplicate it, change its accepted record, or use it as a substitute for Phase 2
@@ -1892,6 +1994,19 @@ Do not rewrite history. Record replaced decisions in ADRs.
 - No code correction was required. No runtime executed, no hardware was
   validated, no physical or latency claim is made, and no later milestone is
   authorized.
+
+### Maintenance record: 2026-07-18 -- Runtime Materialization Contracts 1 scope
+
+- Milestone: proposed software-only runtime materialization contracts;
+  implementation not started.
+- Changed sections: consolidated status, hardware-blocked successor queue,
+  proposed ownership/dependency boundary, immediate next action, roadmap, ADR
+  index, and architecture boundary.
+- Reason: Runtime Assembly Contracts 1 and Runtime Plan Inspection 1 are closed
+  and accepted, while no crate owns bounded passive future-resource requirement
+  planning. Define exactly one hardware-independent successor without resource
+  construction, runtime execution, protected-contract changes, Phase 2,
+  Phase 3C, Physical Acoustic Simulator 1, or physical/readiness/latency claims.
 
 ---
 

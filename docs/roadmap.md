@@ -176,9 +176,9 @@ physical claim was made, and no later milestone is authorized.
 
 ## Accepted Software Milestone: Runtime Plan Inspection 1
 
-**Runtime Plan Inspection 1** is the single active software-only control-plane
-milestone. Its governance amendment and ADR 0016 merged normally through PR
-`#29` at `02deb93374b162d11b18b4010452254f3ecd1c18`.
+**Runtime Plan Inspection 1** is a closed and accepted software-only
+control-plane milestone. Its governance amendment and ADR 0016 merged normally
+through PR `#29` at `02deb93374b162d11b18b4010452254f3ecd1c18`.
 
 - `authorization_state`: `AUTHORIZED`
 - `milestone_status`: `COMPLETE`
@@ -232,6 +232,44 @@ and fixed inspection-owned conformance findings without prepared-plan
 serialization or modification. Checkpoint D's final validation and
 criterion-by-criterion architectural evaluation found no blocking defect and
 accepted the software-only milestone. This acceptance authorizes no later work.
+
+## Proposed Software Milestone: Runtime Materialization Contracts 1
+
+**Runtime Materialization Contracts 1** is the next proposed software-only
+control-plane milestone. It is authorized only after its governance amendment
+merges normally.
+
+- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`
+- `milestone_status`: `PROPOSED`
+- `execution_state`: `NOT_STARTED`
+- `evaluation_classification`: `NOT_EVALUATED`
+- active checkpoint: none
+- Checkpoints A-D: `NOT_STARTED`
+- proposed crate: `aurora-runtime-materialization`
+- permitted Aurora dependency:
+  `aurora-runtime-materialization --> aurora-runtime-assembly`
+- Phase 2 required for implementation or acceptance: no
+- hardware criteria: none
+- product or runtime behavior changes in governance: none
+
+The milestone may define deterministic bounded contracts describing aggregate
+future resource responsibilities, canonical materialization-planning stages
+and dependencies, capability requirements, and explicit deferred requirements
+derived from borrowed accepted prepared plans. It may not construct a resource,
+resolve or open a device, negotiate a format, start a stream or engine, execute
+a callback, access a host or hardware, or claim runtime readiness.
+
+Each checkpoint is separately reviewed: A establishes the isolated crate and
+marker contracts; B adds deterministic derivation; C may add bounded
+materialization-owned inspection and conformance evidence; D performs final
+validation and architectural evaluation. No checkpoint is active before this
+governance change merges. The full dependency matrix, bounds, acceptance
+criteria, risks, and stop boundary are in
+`docs/planning/runtime-materialization-contracts-1.md` and ADR 0017.
+
+Physical Acoustic Simulator 1 in PR `#22` remains open, Draft, `PROPOSED`,
+`NOT_STARTED`, and on `HOLD`. It is not authorized for implementation and must
+be split into independently governed milestones before any implementation.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 

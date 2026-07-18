@@ -22,6 +22,7 @@ speaker transport are out of scope.
 - `aurora-config`: Immutable versioned configuration intent, deterministic presets, bounded migration, and redacted snapshots.
 - `aurora-runtime-assembly`: Immutable runtime preparation contracts plus deterministic Checkpoint B derivation from validated configuration; no runtime construction or integration.
 - `aurora-runtime-inspection`: leaf crate containing a bounded, versioned, redacted-by-default projection plus deterministic JSON/text formatting of inspection-owned facts.
+- `aurora-runtime-materialization`: proposed near-leaf owner for bounded passive runtime-resource requirement contracts; it does not exist until separately reviewed Checkpoint A implementation.
 - `aurora-realtime-engine`: Real-time block pipeline preserving renderer, channel-role, geometric-delay, and DSP boundaries.
 - `aurora-measurement`: Synthetic-measurement scope scaffold; implemented synthetic latency and routing evidence lives in the simulator and real-time engine, and no accepted physical measurement capability exists.
 - `aurora-scene`: JSON scene loading, validation, and trajectory sampling.
@@ -162,3 +163,17 @@ architectural evaluation accepted the software-only milestone on 2026-07-18.
 No runtime, hardware, readiness, physical, or latency claim was accepted. See
 `docs/runtime-plan-inspection.md` and
 `docs/acceptance/runtime-plan-inspection-1.md`.
+
+ADR 0017 proposes **Runtime Materialization Contracts 1** as the next
+software-only control-plane boundary. After the governance change merges, a
+new `aurora-runtime-materialization` crate may depend directly only on
+`aurora-runtime-assembly` and describe aggregate future resource
+responsibilities, capability requirements, explicit deferred requirements,
+and canonical materialization-planning dependencies.
+
+Materialization planning remains passive data derivation. It does not extend
+accepted setup planning, change Runtime Plan Inspection 1, construct a
+renderer, DSP processor, backend, stream, callback, or engine, access a host or
+device, or claim runtime readiness. Checkpoints A-D remain `NOT_STARTED` in
+this governance change. See ADR 0017 and
+`docs/planning/runtime-materialization-contracts-1.md`.

@@ -22,3 +22,4 @@ of rewriting history.
 | [0014](0014-runtime-assembly-boundary.md) | Runtime assembly boundary |
 | [0015](0015-deterministic-runtime-setup-planning.md) | Deterministic runtime setup planning boundary |
 | [0016](0016-runtime-plan-inspection-boundary.md) | Read-only runtime plan inspection boundary |
+| [0017](0017-runtime-materialization-contracts-boundary.md) | Runtime materialization contracts boundary |
