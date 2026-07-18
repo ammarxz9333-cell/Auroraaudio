@@ -186,10 +186,15 @@ milestone. Its governance amendment and ADR 0016 merged normally through PR
 - governance branch: `governance/runtime-plan-inspection-1`
 - Checkpoint A merge: PR `#30`,
   `b847344c8a64e2b605aead3b6cef8979f39b9916`
-- implementation branch: `feature/runtime-plan-inspection-1-checkpoint-b`
-- active checkpoint: B
-- completed checkpoints: A
-- Checkpoints C and D: `NOT_STARTED`
+- Checkpoint B implementation: PR `#31`, commit
+  `1e2b8aacc519aa9d9481a146abd167889a79bd51`
+- Checkpoint B merge commit:
+  `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`
+- reconciliation branch:
+  `docs/runtime-plan-inspection-checkpoint-b-reconciliation`
+- active checkpoint: C; implementation has not started
+- completed checkpoints: A and B
+- Checkpoint D: `NOT_STARTED`
 - predecessor: Runtime Assembly Contracts 1, `ACCEPTED`
 - Phase 2 required for implementation or acceptance: no
 - hardware criteria: none
@@ -206,10 +211,15 @@ before any runtime materialization, control API, or Phase 3C proposal. The
 complete objective, dependency matrix, exclusions, checkpoints, criteria,
 validation strategy, risks, and stop boundary are in
 `docs/planning/runtime-plan-inspection-1.md` and ADR 0016. This governance
-change contains no implementation. Checkpoint A established the isolated crate
-and merged through PR `#30`. Checkpoint B may add only bounded deterministic
-projection and redaction; formatting and serialization remain Checkpoint C,
-and final evaluation remains Checkpoint D.
+change contains no implementation. Checkpoint A established the isolated crate.
+Checkpoint B merged through PR `#31` and added the versioned inspection-owned
+projection from both prepared plan types, canonical source ordering, bounded
+validation, structured errors without silent truncation, default identifier
+redaction, and explicit local unredacted options. Checkpoint C is the active
+next scope but has not started; it may add only deterministic bounded JSON and
+human-readable formatting of inspection-owned values, stable ordering and
+escaping, and formatting/determinism tests. Final evaluation remains
+Checkpoint D.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 
