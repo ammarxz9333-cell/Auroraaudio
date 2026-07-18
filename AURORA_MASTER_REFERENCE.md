@@ -6,8 +6,8 @@
 > **Last consolidated milestone:** Runtime Assembly Contracts 1 accepted on
 > 2026-07-18 as a software-only milestone; Phase 2 physical hardware validation
 > remains open and incomplete. Runtime Plan Inspection 1 is the single active
-> software-only milestone; Checkpoints A and B are complete and Checkpoint C is
-> active and in progress. Hardware-blocked
+> software-only milestone; Checkpoints A, B, and C are complete and Checkpoint D
+> is the active next reviewed scope but has not started. Hardware-blocked
 > parallel development is governed by Section 16.1.
 
 ---
@@ -1354,10 +1354,15 @@ amendment merged normally through PR `#29` at
   `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`;
 - Checkpoint B reconciliation merge commit:
   `5c75c934e669b54ded1e5c2422cba80c6c0073b0`;
-- implementation branch: `feature/runtime-plan-inspection-1-checkpoint-c`;
-- active checkpoint: C; implementation is `IN_PROGRESS`;
-- completed checkpoints: A and B;
-- Checkpoint D: `NOT_STARTED`;
+- Checkpoint C implementation: PR `#32`, commit
+  `f946a5d5abf4f0088e6ebbb99058196770661b61`;
+- Checkpoint C merge commit:
+  `c3bb059396185eed5155e1147eca5f35c8c15ac7`;
+- reconciliation branch:
+  `docs/runtime-plan-inspection-checkpoint-c-reconciliation`;
+- active checkpoint: D; evaluation has not started;
+- completed checkpoints: A, B, and C;
+- Checkpoint D: active next reviewed scope, `NOT_STARTED`;
 - milestone class: software-only control-plane inspection;
 - Phase 2 required for implementation: no;
 - Phase 2 required for acceptance: no;
@@ -1369,10 +1374,14 @@ merged through PR `#30`. Checkpoint B merged through PR `#31` and delivered a
 versioned inspection-owned projection from `PreparedRuntimePlan` and
 `PreparedSetupPlan`, canonical source ordering, bounded validation, structured
 errors without silent truncation, default device/channel/speaker identifier
-redaction, and explicit local unredacted inspection options. Checkpoint C is now
-in progress and adds only deterministic bounded JSON and human-readable
-formatting of inspection-owned values, stable ordering and escaping,
-inspection-owned conformance findings, and formatting/determinism tests.
+redaction, and explicit local unredacted inspection options. Checkpoint C merged
+through PR `#32` and delivered deterministic compact JSON and human-readable
+formatting for inspection-owned reports, exact redacted and unredacted outputs,
+deterministic field/collection/enum/float representation, JSON escaping coverage,
+structured bounded-output errors, and fixed deterministic inspection-owned
+conformance findings. Published formatter bounds are 262144 JSON bytes, 262144
+text bytes, nesting depth 8, and 256 total serialized collection entries. It
+added no prepared-plan serialization or modification.
 
 Permitted direct Aurora dependency:
 
@@ -1603,9 +1612,9 @@ acceptance authorizes no runtime integration, Phase 2 implementation, Phase 3C,
 or later milestone and makes no hardware, physical, or latency claim.
 
 Runtime Plan Inspection 1 is the single active software-only milestone. Its
-governance is merged, execution is `IN_PROGRESS`, Checkpoints A and B are
-`COMPLETE`, and only Checkpoint C is active and `IN_PROGRESS`. Checkpoint D
-remains `NOT_STARTED`. Work must proceed one
+governance is merged, execution is `IN_PROGRESS`, and Checkpoints A, B, and C
+are `COMPLETE`. Checkpoint D is the active next reviewed scope, but its
+evaluation has not started. Work must proceed one
 reviewed checkpoint at a time from
 `docs/planning/runtime-plan-inspection-1.md`.
 
@@ -1619,13 +1628,16 @@ The next agent must not:
 - add a GUI;
 - add or change renderer behavior;
 - start Phase 3C;
-- implement Runtime Plan Inspection 1 beyond Checkpoint C;
+- perform Runtime Plan Inspection 1 work beyond Checkpoint D;
 - serialize, mutate, reconstruct, hash, or fingerprint prepared plans;
 - construct or execute runtime resources under the inspection milestone;
 - add physical latency claims.
 
-No milestone other than Runtime Plan Inspection 1 is authorized. Checkpoint C
-must stop at deterministic bounded formatting and conformance evidence.
+No milestone other than Runtime Plan Inspection 1 is authorized. Checkpoint D
+may perform only final local/remote validation, dependency and protected-contract
+audits, prohibited-scope and public-API/documentation audits, criterion-by-
+criterion architectural evaluation, an `ACCEPTED` or `REJECTED` decision, and
+the final stop boundary. This reconciliation does not begin that evaluation.
 
 The simulator is complete and frozen. The campaign may exercise it but must not
 duplicate it, change its accepted record, or use it as a substitute for Phase 2
@@ -1854,6 +1866,17 @@ Do not rewrite history. Record replaced decisions in ADRs.
   only deterministic bounded formatting and inspection-owned conformance
   evidence without plan serialization, integration, runtime execution,
   Checkpoint D evaluation, hardware work, or physical claims.
+
+### Maintenance record: 2026-07-18 -- Runtime Plan Inspection Checkpoint C reconciliation
+
+- Checkpoint C implementation commit
+  `f946a5d5abf4f0088e6ebbb99058196770661b61` merged through PR `#32` at merge
+  commit `c3bb059396185eed5155e1147eca5f35c8c15ac7`.
+- Checkpoint C is `COMPLETE`; Checkpoint D is the active next reviewed scope,
+  but its implementation and evaluation have not started.
+- This reconciliation changes documentation only and does not evaluate or
+  accept the milestone, create an acceptance record or tag, or change product
+  behavior.
 
 ---
 

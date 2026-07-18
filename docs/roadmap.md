@@ -192,10 +192,15 @@ milestone. Its governance amendment and ADR 0016 merged normally through PR
   `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`
 - Checkpoint B reconciliation merge commit:
   `5c75c934e669b54ded1e5c2422cba80c6c0073b0`
-- implementation branch: `feature/runtime-plan-inspection-1-checkpoint-c`
-- active checkpoint: C; implementation is `IN_PROGRESS`
-- completed checkpoints: A and B
-- Checkpoint D: `NOT_STARTED`
+- Checkpoint C implementation: PR `#32`, commit
+  `f946a5d5abf4f0088e6ebbb99058196770661b61`
+- Checkpoint C merge commit:
+  `c3bb059396185eed5155e1147eca5f35c8c15ac7`
+- reconciliation branch:
+  `docs/runtime-plan-inspection-checkpoint-c-reconciliation`
+- active checkpoint: D; evaluation has not started
+- completed checkpoints: A, B, and C
+- Checkpoint D: active next reviewed scope, `NOT_STARTED`
 - predecessor: Runtime Assembly Contracts 1, `ACCEPTED`
 - Phase 2 required for implementation or acceptance: no
 - hardware criteria: none
@@ -216,11 +221,13 @@ change contains no implementation. Checkpoint A established the isolated crate.
 Checkpoint B merged through PR `#31` and added the versioned inspection-owned
 projection from both prepared plan types, canonical source ordering, bounded
 validation, structured errors without silent truncation, default identifier
-redaction, and explicit local unredacted options. Checkpoint C is now in progress
-and adds only deterministic bounded JSON and human-readable formatting of
-inspection-owned values, stable ordering and escaping, inspection-owned
-conformance findings, and formatting/determinism tests. Final evaluation remains
-Checkpoint D.
+redaction, and explicit local unredacted options. Checkpoint C merged through PR
+`#32` and delivered deterministic bounded JSON and human-readable formatting of
+inspection-owned values, exact redacted/unredacted outputs, stable field,
+collection, enum, float, and escaping behavior, structured output-bound errors,
+and fixed inspection-owned conformance findings without prepared-plan
+serialization or modification. Checkpoint D is the active next reviewed scope,
+but its final validation and architectural evaluation have not started.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 
