@@ -184,10 +184,12 @@ milestone. Its governance amendment and ADR 0016 merged normally through PR
 - `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: none
 - governance branch: `governance/runtime-plan-inspection-1`
-- implementation branch: `feature/runtime-plan-inspection-1`
-- active checkpoint: A
-- completed checkpoints: none
-- Checkpoints B, C, and D: `NOT_STARTED`
+- Checkpoint A merge: PR `#30`,
+  `b847344c8a64e2b605aead3b6cef8979f39b9916`
+- implementation branch: `feature/runtime-plan-inspection-1-checkpoint-b`
+- active checkpoint: B
+- completed checkpoints: A
+- Checkpoints C and D: `NOT_STARTED`
 - predecessor: Runtime Assembly Contracts 1, `ACCEPTED`
 - Phase 2 required for implementation or acceptance: no
 - hardware criteria: none
@@ -204,9 +206,10 @@ before any runtime materialization, control API, or Phase 3C proposal. The
 complete objective, dependency matrix, exclusions, checkpoints, criteria,
 validation strategy, risks, and stop boundary are in
 `docs/planning/runtime-plan-inspection-1.md` and ADR 0016. This governance
-change contains no implementation. Checkpoint A may add only the isolated crate
-and empty documented contract markers; projection, redaction, formatting,
-serialization, and integration remain later checkpoints.
+change contains no implementation. Checkpoint A established the isolated crate
+and merged through PR `#30`. Checkpoint B may add only bounded deterministic
+projection and redaction; formatting and serialization remain Checkpoint C,
+and final evaluation remains Checkpoint D.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 
