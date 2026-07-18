@@ -67,8 +67,9 @@ Cavern, truehdd, and Resonance Audio are not active first-release dependencies.
 ## Capability honesty
 
 The landed `GeometricBinaural` implementation uses geometric ITD, geometric
-ILD, and simple distance attenuation. It is not a true HRTF renderer and has no
-HRIR data, convolution, pinna cues, or elevation cues. It must not be described
+ILD, and per-ear geometric distance weighting followed by power normalization.
+It is not a true HRTF renderer and has no HRIR data, convolution, pinna cues, or
+elevation cues. It must not be described
 as Dolby Atmos-like, elevation-capable, or front/back accurate without
 supporting evidence.
 

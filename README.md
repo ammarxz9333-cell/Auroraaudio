@@ -10,8 +10,9 @@ Aurora does not currently claim Dolby Atmos compatibility, true HRTF capability,
 
 `GeometricBinaural` is Aurora's lightweight two-channel headphone baseline. It
 uses geometric interaural time difference (ITD), geometric interaural level
-difference (ILD), and simple distance attenuation. It is **not an HRTF
-renderer**: it uses no HRIR data, convolution, pinna cues, or elevation cues.
+difference (ILD), and per-ear geometric distance weighting followed by power
+normalization. It is **not an HRTF renderer**: it uses no HRIR data,
+convolution, pinna cues, or elevation cues.
 
 The canonical CLI value is `--renderer-mode geometric-binaural`. The former
 `--renderer-mode binaural` spelling remains accepted as a deprecated alias for

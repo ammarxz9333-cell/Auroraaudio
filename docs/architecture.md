@@ -12,8 +12,9 @@ speaker transport are out of scope.
 - `aurora-renderer-api`: Stable renderer trait and renderer-facing errors.
 - `aurora-renderer-basic`: Deterministic basic geometric modes, including the
   `GeometricBinaural` two-channel baseline with geometric ITD, geometric ILD,
-  and simple distance attenuation. It is not an HRTF renderer and uses no HRIR
-  data, convolution, pinna cues, or elevation cues.
+  and per-ear geometric distance weighting followed by power normalization. It
+  is not an HRTF renderer and uses no HRIR data, convolution, pinna cues, or
+  elevation cues.
 - `aurora-renderer-vbap`: Optional deterministic horizontal-plane VBAP renderer implementing the existing renderer boundary.
 - `aurora-dsp-api`: Aurora-owned DSP processing boundary.
 - `aurora-dsp-basic`: Implemented basic offline DSP, including fractional per-channel delay.

@@ -70,8 +70,9 @@ Compilation alone, interface-only crates, placeholders, documents, or simulated 
 Deliver only:
 
 - use the canonical mode name `GeometricBinaural`;
-- state that it uses geometric ITD, geometric ILD, and simple distance
-  attenuation, and is not an HRTF renderer;
+- state that it uses geometric ITD, geometric ILD, and per-ear geometric
+  distance weighting followed by power normalization, and is not an HRTF
+  renderer;
 - state that it has no HRIR data, convolution, pinna cues, or elevation cues;
 - validate stereo layout, finite normalized gains, near-zero distance, and delay inputs;
 - verify partial-block and repeated-render behavior;

@@ -782,6 +782,10 @@ mod tests {
         ALLOCATION_COUNT.with(Cell::get)
     }
 
+    fn record_process_status(all_blocks_processed: &mut bool, status: ProcessStatus) {
+        *all_blocks_processed &= status == ProcessStatus::Ok;
+    }
+
     #[test]
     fn ring_buffer_behavior_and_zero_capacity_are_safe() {
         let mut ring = RingBuffer::<u32>::new(2);
@@ -853,16 +857,37 @@ mod tests {
         let mut engine = RealTimeEngine::new(scene(), config, 64).unwrap();
         let mut output = vec![0.0; 128];
         for _ in 0..16 {
-            let _ = engine.process_interleaved(None, &mut output);
+            assert_eq!(
+                engine.process_interleaved(None, &mut output),
+                ProcessStatus::Ok
+            );
         }
 
+        let mut all_blocks_processed = true;
         let allocations = measured_allocations(|| {
             for _ in 0..1_000 {
-                let _ = engine.process_interleaved(None, &mut output);
+                record_process_status(
+                    &mut all_blocks_processed,
+                    engine.process_interleaved(None, &mut output),
+                );
             }
         });
 
+        assert!(all_blocks_processed);
         assert_eq!(allocations, 0);
+    }
+
+    #[test]
+    fn allocation_status_accumulator_rejects_any_process_fault() {
+        let mut all_blocks_processed = true;
+        record_process_status(&mut all_blocks_processed, ProcessStatus::Ok);
+        record_process_status(
+            &mut all_blocks_processed,
+            ProcessStatus::Fault(RealTimeFault::Renderer),
+        );
+        record_process_status(&mut all_blocks_processed, ProcessStatus::Ok);
+
+        assert!(!all_blocks_processed);
     }
 
     #[test]

@@ -279,8 +279,9 @@ enum CliRendererMode {
     NearestSpeaker,
     InverseDistance,
     EqualPowerAdjacent,
-    /// Geometric ITD/ILD and simple distance attenuation only; not HRTF, with
-    /// no HRIR data, convolution, pinna cues, or elevation cues.
+    /// Geometric ITD/ILD with per-ear geometric distance weighting followed by
+    /// power normalization; not HRTF, with no HRIR data, convolution, pinna
+    /// cues, or elevation cues.
     #[value(alias = "binaural")]
     GeometricBinaural,
 }

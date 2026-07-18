@@ -21,18 +21,18 @@ pub enum BasicRendererMode {
     /// Lightweight geometric stereo rendering for headphones.
     ///
     /// This mode applies geometric interaural time difference (ITD), geometric
-    /// interaural level difference (ILD), and simple distance attenuation. It
-    /// is not an HRTF renderer and uses no HRIR data, convolution, pinna cues,
-    /// or elevation cues.
+    /// interaural level difference (ILD), and per-ear geometric distance
+    /// weighting followed by power normalization. It is not an HRTF renderer
+    /// and uses no HRIR data, convolution, pinna cues, or elevation cues.
     GeometricBinaural,
 }
 
 /// Minimal deterministic renderer using geometric distances.
 ///
 /// [`BasicRendererMode::GeometricBinaural`] adds geometric ITD, geometric ILD,
-/// and simple distance attenuation for two-channel headphone output. It is not
-/// an HRTF renderer and provides no HRIR data, convolution, pinna cues, or
-/// elevation cues.
+/// and per-ear geometric distance weighting followed by power normalization
+/// for two-channel headphone output. It is not an HRTF renderer and provides
+/// no HRIR data, convolution, pinna cues, or elevation cues.
 #[derive(Debug, Clone)]
 pub struct BasicRenderer {
     mode: BasicRendererMode,
@@ -145,8 +145,8 @@ impl BasicRenderer {
             };
 
             let head_shadow_factor = 0.4;
-            let ild_l = 1.0 - (sin_theta.max(0.0) * (1.0 - head_shadow_factor));
-            let ild_r = 1.0 - ((-sin_theta).max(0.0) * (1.0 - head_shadow_factor));
+            let ild_l = 1.0 - ((-sin_theta).max(0.0) * (1.0 - head_shadow_factor));
+            let ild_r = 1.0 - (sin_theta.max(0.0) * (1.0 - head_shadow_factor));
 
             weights[0] = weight_l * ild_l;
             weights[1] = weight_r * ild_r;
@@ -279,10 +279,29 @@ impl Renderer for BasicRenderer {
         if enabled_count == 0 {
             return Err(RendererError::NoEnabledSpeakers);
         }
-        if self.mode == BasicRendererMode::GeometricBinaural && enabled_count != 2 {
-            return Err(RendererError::InvalidConfiguration(
-                "geometric binaural mode requires exactly two enabled output channels".to_owned(),
-            ));
+        if self.mode == BasicRendererMode::GeometricBinaural {
+            let mut enabled_roles = layout
+                .iter()
+                .filter(|speaker| speaker.enabled)
+                .map(|speaker| &speaker.channel_role);
+            let has_canonical_stereo_order = matches!(
+                (
+                    enabled_roles.next(),
+                    enabled_roles.next(),
+                    enabled_roles.next()
+                ),
+                (
+                    Some(ChannelRole::FrontLeft),
+                    Some(ChannelRole::FrontRight),
+                    None
+                )
+            );
+            if !has_canonical_stereo_order {
+                return Err(RendererError::InvalidConfiguration(
+                    "geometric binaural mode requires enabled output channels in canonical order [FrontLeft, FrontRight]"
+                        .to_owned(),
+                ));
+            }
         }
 
         self.layout.clear();
@@ -623,15 +642,30 @@ mod tests {
     }
 
     #[test]
-    fn lateral_sources_have_opposite_mirrored_ild_polarity() {
+    fn lateral_sources_have_correct_mirrored_ild_polarity() {
         let right = render_geometric_binaural(Vector3::new(5.0, 0.0, 1.2));
         let left = render_geometric_binaural(Vector3::new(-5.0, 0.0, 1.2));
 
-        let right_ild = right[1].gain - right[0].gain;
-        let left_ild = left[1].gain - left[0].gain;
-        assert!(right_ild * left_ild < 0.0);
+        assert!(right[1].gain > right[0].gain);
+        assert!(left[0].gain > left[1].gain);
         assert!((right[0].gain - left[1].gain).abs() < 0.0001);
         assert!((right[1].gain - left[0].gain).abs() < 0.0001);
+    }
+
+    #[test]
+    fn geometric_distance_weighting_is_relative_without_absolute_rolloff() {
+        let near_center = render_geometric_binaural(Vector3::new(0.0, 1.0, 1.2));
+        let far_center = render_geometric_binaural(Vector3::new(0.0, 10.0, 1.2));
+        let lateral = render_geometric_binaural(Vector3::new(5.0, 0.0, 1.2));
+
+        for gains in [&near_center, &far_center, &lateral] {
+            let power = gains.iter().map(|gain| gain.gain.powi(2)).sum::<f32>();
+            assert!(gains.iter().all(|gain| gain.gain.is_finite()));
+            assert!((power - 1.0).abs() < 0.0001);
+        }
+        assert!((near_center[0].gain - far_center[0].gain).abs() < 0.0001);
+        assert!((near_center[1].gain - far_center[1].gain).abs() < 0.0001);
+        assert!(lateral[1].gain > lateral[0].gain);
     }
 
     #[test]
@@ -678,23 +712,86 @@ mod tests {
         assert!((power - 1.0).abs() < 0.0001);
     }
 
-    #[test]
-    fn geometric_binaural_rejects_non_stereo_layout_during_configuration() {
+    fn assert_invalid_geometric_binaural_layout(layout: Vec<Speaker>) {
         let error = BasicRenderer::new(BasicRendererMode::GeometricBinaural)
+            .configure(layout, 48_000, 256, 1)
+            .unwrap_err();
+        assert_eq!(
+            error,
+            RendererError::InvalidConfiguration(
+                "geometric binaural mode requires enabled output channels in canonical order [FrontLeft, FrontRight]"
+                    .to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn geometric_binaural_accepts_canonical_stereo_layout() {
+        let mut renderer = BasicRenderer::new(BasicRendererMode::GeometricBinaural);
+        renderer
             .configure(
-                vec![speaker("center", ChannelRole::FrontCenter, 0.0, 1.0)],
+                vec![
+                    speaker("left", ChannelRole::FrontLeft, -0.0875, 0.0),
+                    speaker("right", ChannelRole::FrontRight, 0.0875, 0.0),
+                ],
                 48_000,
                 256,
                 1,
             )
-            .unwrap_err();
+            .unwrap();
+    }
 
-        assert_eq!(
-            error,
-            RendererError::InvalidConfiguration(
-                "geometric binaural mode requires exactly two enabled output channels".to_owned()
-            )
-        );
+    #[test]
+    fn geometric_binaural_rejects_mono_layout() {
+        assert_invalid_geometric_binaural_layout(vec![speaker(
+            "left",
+            ChannelRole::FrontLeft,
+            -0.0875,
+            0.0,
+        )]);
+    }
+
+    #[test]
+    fn geometric_binaural_rejects_more_than_two_enabled_channels() {
+        assert_invalid_geometric_binaural_layout(vec![
+            speaker("left", ChannelRole::FrontLeft, -0.0875, 0.0),
+            speaker("right", ChannelRole::FrontRight, 0.0875, 0.0),
+            speaker("center", ChannelRole::FrontCenter, 0.0, 0.1),
+        ]);
+    }
+
+    #[test]
+    fn geometric_binaural_rejects_non_stereo_roles() {
+        assert_invalid_geometric_binaural_layout(vec![
+            speaker("center", ChannelRole::FrontCenter, -0.0875, 0.0),
+            speaker("lfe", ChannelRole::LowFrequencyEffects, 0.0875, 0.0),
+        ]);
+    }
+
+    #[test]
+    fn geometric_binaural_rejects_reversed_channel_order() {
+        assert_invalid_geometric_binaural_layout(vec![
+            speaker("right", ChannelRole::FrontRight, 0.0875, 0.0),
+            speaker("left", ChannelRole::FrontLeft, -0.0875, 0.0),
+        ]);
+    }
+
+    #[test]
+    fn geometric_binaural_rejects_duplicate_channel_roles() {
+        assert_invalid_geometric_binaural_layout(vec![
+            speaker("left-a", ChannelRole::FrontLeft, -0.0875, 0.0),
+            speaker("left-b", ChannelRole::FrontLeft, 0.0875, 0.0),
+        ]);
+    }
+
+    #[test]
+    fn geometric_binaural_rejects_disabled_required_channel() {
+        let mut left = speaker("left", ChannelRole::FrontLeft, -0.0875, 0.0);
+        left.enabled = false;
+        assert_invalid_geometric_binaural_layout(vec![
+            left,
+            speaker("right", ChannelRole::FrontRight, 0.0875, 0.0),
+        ]);
     }
 
     #[test]
