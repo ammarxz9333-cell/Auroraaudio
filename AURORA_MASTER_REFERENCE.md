@@ -1257,17 +1257,19 @@ callback and introduces no physical claim.
 ### Active software-only milestone: Runtime Assembly Contracts 1
 
 **Runtime Assembly Contracts 1** is an authorized hardware-independent
-control-plane milestone. Checkpoints A and B are complete. A new governance
-amendment proposes a deterministic descriptive setup-planning layer before the
-final evidence and architecture review.
+control-plane milestone. Checkpoints A, B, and C are complete. Checkpoint D is
+consolidating evidence and documentation before the final Checkpoint E
+architecture review.
 
 Current execution record:
 
 - `authorization_state`: `AUTHORIZED`;
 - `execution_state`: `IN_PROGRESS`;
 - `evaluation_classification`: `NOT_EVALUATED`;
-- `completed_checkpoint`: `B`;
-- `next_checkpoint`: `C`;
+- `completed_checkpoint`: `C`;
+- `active_checkpoint`: `D`;
+- Checkpoint D execution state: `IN_PROGRESS`;
+- Checkpoint E execution state: `NOT_STARTED`;
 - implementation crate: `aurora-runtime-assembly`;
 - expected final classification: `ACCEPTED`.
 
@@ -1279,8 +1281,8 @@ Authoritative checkpoint sequence after ADR 0015 merges:
 - Checkpoint D: evidence, contract tests, public API documentation, and CI;
 - Checkpoint E: stop and architectural acceptance review.
 
-Until the ADR 0015 governance amendment merges, Checkpoint C remains
-unauthorized and `NOT_STARTED`.
+Checkpoint C merged through PR `#25` at merge commit
+`dbf06a8d2f613086cccf3e6b43e8c7f714e00671`.
 
 Hardware dependency matrix:
 
@@ -1305,18 +1307,18 @@ wiring, product audio behavior changes, or physical claims. The current schema
 has no full DSP intent or maximum-object field; the plan must preserve those as
 explicit absent/deferred capacities and must not invent defaults.
 
-ADR 0015 proposes an immutable setup plan derived from `PreparedRuntimePlan`.
-It may describe canonical setup stages and dependencies, unresolved device
-intent, requested format intent, renderer/DSP/backend setup intent, and a
+ADR 0015 governs the immutable setup plan derived from `PreparedRuntimePlan`.
+It describes canonical setup stages and dependencies, unresolved device intent,
+requested format intent, renderer/DSP/backend setup intent, and a
 non-observational `SetupPlanComplete` terminal stage. It contains no runtime
 objects and makes no execution, negotiation, readiness, host, or physical claim.
 
-Checkpoint C remains `NOT_STARTED` and unauthorized until the ADR 0015
-governance amendment merges. After merge, only an isolated Checkpoint C branch
-and pull request may implement that descriptive layer. Renderer factory
-integration, live or simulated engine wiring, CLI inspection, diagnostics
-producer wiring, multichannel input redesign, Phase 2 changes, Phase 3C, and
-later milestones remain unauthorized.
+Checkpoint D may consolidate contract tests, public API documentation,
+dependency and prohibited-scope evidence, and CI validation only. Checkpoint E
+remains `NOT_STARTED`; no acceptance decision, renderer factory integration,
+live or simulated engine wiring, CLI inspection, diagnostics producer wiring,
+multichannel routing redesign, Phase 2 changes, Phase 3C, or later milestone is
+authorized.
 The complete contract, dependency matrix, tests, non-goals, and stop boundary
 are recorded in `docs/planning/runtime-assembly-contracts-1.md`, ADR 0014, and
 ADR 0015.
@@ -1525,10 +1527,10 @@ acceptance authorizes Phase 3C or any later product milestone.
 Phase 2 physical hardware validation remains open and incomplete.
 
 Runtime Assembly Contracts 1 is `IN_PROGRESS` and `NOT_EVALUATED`; Checkpoints
-A and B are complete. Its proposed Checkpoint C setup-planning extension is
-`NOT_STARTED` and becomes authorized only after the ADR 0015 governance pull
-request merges. That proposal authorizes no runtime integration, Phase 2
-change, Phase 3C work, or physical claim.
+A, B, and C are complete, Checkpoint D is active, and Checkpoint E is
+`NOT_STARTED`. Checkpoint D authorizes evidence and documentation only, with no
+runtime integration, Phase 2 change, Phase 3C work, acceptance decision, or
+physical claim.
 
 The next agent must not:
 
@@ -1689,6 +1691,15 @@ Do not rewrite history. Record replaced decisions in ADRs.
 - Reason: propose a deterministic descriptive setup-planning layer governed by
   ADR 0015 before final evidence review, without implementing it or changing
   runtime behavior, dependencies, Phase 2, Phase 3C, or physical evidence.
+
+### Maintenance record: 2026-07-18 -- Runtime Assembly Checkpoint D evidence
+
+- Milestone: Runtime Assembly Contracts 1, with Checkpoints A, B, and C merged.
+- Changed sections: execution record, active checkpoint, immediate next action,
+  and evidence boundary.
+- Reason: reconcile merged Checkpoint C and record Checkpoint D evidence work
+  without evaluating or accepting the milestone, starting Checkpoint E,
+  changing runtime behavior, or introducing a physical claim.
 
 ---
 

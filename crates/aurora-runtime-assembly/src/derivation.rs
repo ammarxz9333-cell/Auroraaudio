@@ -22,6 +22,12 @@ use crate::{
 /// `routing.outputs`. Accepted configuration validation guarantees that the
 /// latter equals `audio_format.channel_count`; the equality is checked as a
 /// runtime-assembly invariant rather than silently substituted.
+///
+/// # Errors
+///
+/// Returns [`RuntimePreparationError`] when validated intent cannot be
+/// represented or when defensive checks detect inconsistent prepared
+/// components, routing, capacities, selectors, renderer intent, or geometry.
 pub fn prepare_runtime_plan(
     configuration: &ValidatedConfiguration,
 ) -> Result<PreparedRuntimePlan, RuntimePreparationError> {

@@ -63,6 +63,13 @@ const CANONICAL_DEPENDENCIES: [SetupDependency; SETUP_DEPENDENCY_COUNT] = [
 /// This function copies bounded control-plane values only. It does not resolve
 /// devices, negotiate formats, construct components, perform I/O, or claim that
 /// any setup stage ran.
+///
+/// # Errors
+///
+/// Returns [`SetupPlanningError`] if defensive validation finds a noncanonical
+/// stage list, incomplete or cyclic dependency graph, or inconsistent prepared
+/// components. A valid [`PreparedRuntimePlan`] normally produces a valid setup
+/// plan.
 pub fn prepare_setup_plan(
     runtime_plan: &PreparedRuntimePlan,
 ) -> Result<PreparedSetupPlan, SetupPlanningError> {
@@ -89,6 +96,10 @@ pub fn prepare_setup_plan(
 }
 
 /// Immutable aggregate describing future setup intent without executing it.
+///
+/// Owned strings and vectors are bounded copies made on the setup thread. The
+/// stage and dependency graph itself has a fixed size. This value contains no
+/// handles, callbacks, trait objects, processes, streams, or live resources.
 #[derive(Clone, Debug, PartialEq)]
 pub struct PreparedSetupPlan {
     device_intent: PreparedDeviceIntent,
@@ -298,6 +309,9 @@ impl PreparedBackendSetupIntent {
 }
 
 /// Structured setup-planning failures detected without executing setup.
+///
+/// Errors describe local representation defects only. They do not report host,
+/// negotiation, runtime, callback, or physical failures.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum SetupPlanningError {
     /// A supplied descriptive plan violates a local setup invariant.

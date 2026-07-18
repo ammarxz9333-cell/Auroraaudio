@@ -5,17 +5,18 @@
 - `authorization_state`: `AUTHORIZED`
 - `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: `NOT_EVALUATED`
-- `completed_checkpoint`: `B`
-- `next_checkpoint`: `C`
-- Checkpoint C execution state: `NOT_STARTED`
-- governance branch: `docs/runtime-assembly-setup-planning-governance`
-- review state: ADR 0015 governance amendment pending; open and unmerged
+- `completed_checkpoint`: `C`
+- `active_checkpoint`: `D`
+- Checkpoint D execution state: `IN_PROGRESS`
+- Checkpoint E execution state: `NOT_STARTED`
+- evidence branch: `docs/runtime-assembly-contracts-1-checkpoint-d`
+- review state: Checkpoint D evidence in review on its dedicated branch; unmerged
 
-Checkpoint A's isolated immutable contract model and Checkpoint B's
-deterministic derivation are merged. Checkpoint C proposes deterministic setup
-planning under ADR 0015, but remains unauthorized and unimplemented until that
-governance amendment merges. The milestone remains `IN_PROGRESS`,
-`NOT_EVALUATED`, and not accepted.
+Checkpoint A's isolated immutable contract model, Checkpoint B's deterministic
+runtime-plan derivation, and Checkpoint C's deterministic setup planning are
+merged. Checkpoint D consolidates public contract tests, rustdoc, dependency
+and prohibited-scope evidence, and validation results. The milestone remains
+`IN_PROGRESS`, `NOT_EVALUATED`, and not accepted. Checkpoint E has not started.
 
 ## Original governance record (ADR 0014)
 
@@ -52,7 +53,7 @@ PreparedRuntimePlan
         +-- RuntimePlanMetadata
         |
         v
-PreparedSetupPlan (authorized only after ADR 0015 merges)
+PreparedSetupPlan
 ```
 
 The existing Aurora-owned entry point is:
@@ -330,8 +331,8 @@ The default prohibited direct-dependency set is `aurora-renderer-api`,
 - preserve unresolved device and requested-format semantics;
 - add no runtime object, I/O, host observation, construction, or integration.
 
-Checkpoint C is currently `NOT_STARTED`. No implementation is permitted in the
-ADR 0015 governance pull request.
+Checkpoint C is complete and merged in PR `#25` at merge commit
+`dbf06a8d2f613086cccf3e6b43e8c7f714e00671`.
 
 ### Checkpoint D: evidence and documentation
 
@@ -340,7 +341,10 @@ ADR 0015 governance pull request.
 - cover invalid cases and document public APIs;
 - run Linux, Windows, MSRV, Clippy, tests, and rustdoc.
 
-Checkpoint D cannot begin until Checkpoint C is merged and reviewed.
+Checkpoint D is `IN_PROGRESS` on
+`docs/runtime-assembly-contracts-1-checkpoint-d`. Its evidence record is
+`docs/evidence/runtime-assembly-contracts-1-checkpoint-d.md`. Remote PR checks
+remain pending until the Draft PR exists.
 
 ### Checkpoint E: stop and architectural acceptance review
 
@@ -348,6 +352,9 @@ Review the complete contract against ADRs 0014 and 0015 and the milestone
 acceptance criteria. No CLI command is authorized. Plan inspection, engine
 construction, renderer factory, diagnostics producer, and backend integration
 require new governance.
+
+Checkpoint E remains `NOT_STARTED`. Checkpoint D evidence does not evaluate or
+accept the milestone.
 
 ## Checkpoint C contract tests
 
@@ -423,9 +430,9 @@ Phase 2 or authorize Phase 3C.
 
 ## Stop boundary
 
-After ADR 0015 merges, only Checkpoint C setup-planning implementation is
-authorized on a new branch and PR. Checkpoint D waits for C to merge and receive
-review. Checkpoint E is the final stop and architectural acceptance boundary.
-The agent must not continue into renderer factory integration, a virtual
-end-to-end harness, diagnostics producer wiring, multichannel routing redesign,
-Phase 2, Phase 3C, or any later milestone.
+Checkpoint D must stop after evidence consolidation, contract tests, public API
+documentation, validation, and an unmerged Draft PR. Checkpoint E remains the
+separate final architectural acceptance boundary. The agent must not continue
+into that review, renderer factory integration, a virtual end-to-end harness,
+diagnostics producer wiring, multichannel routing redesign, Phase 2, Phase 3C,
+or any later milestone.
