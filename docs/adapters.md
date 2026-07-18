@@ -1,59 +1,50 @@
 # Third-Party Adapter Layer
 
-Milestone 0D creates adapter crates only. Aurora does not copy third-party source into the repository and does not link third-party decoder, renderer, or DSP code by default.
+Aurora keeps optional third-party integrations behind Aurora-owned interfaces. Adapter code is admitted only when it supports the active product path, has a concrete consumer, and has a reviewable licensing and deployment posture.
 
 ## Adapter Policy
 
-- Adapters implement Aurora-owned traits.
-- Third-party tools should run out-of-process where practical.
+- Adapters implement Aurora-owned traits; third-party types do not cross product boundaries.
+- External tools run out of process when that materially reduces unsafe, licensing, or lifecycle risk.
 - Adapter-specific Cargo features are disabled by default.
-- `aurora-core` must compile and test without any adapter crate.
-- Commercial use requires a separate license and patent review.
+- `aurora-core` and the production processing crates must compile without optional adapters.
+- Every adapter must have a concrete product consumer, bounded failure behavior, and explicit maturity classification.
+- Placeholder crates that only return `Unavailable` are not retained in the active workspace.
+- Commercial use requires separate license, patent, and redistribution review.
 
-## CamillaDSP
+## Active Adapters
+
+### CamillaDSP
 
 - Crate: `aurora-dsp-camilladsp`
-- Aurora trait: `aurora_dsp_api::DspEngine`
-- Cargo feature: `camilladsp-process`
-- Integration style: generated CamillaDSP YAML plus offline file processing through an external process.
-- Maturity: functional offline adapter.
-- Production readiness: not production-ready.
-- Commercial risk: medium; CamillaDSP licensing and deployment obligations must be reviewed before redistribution.
-- Source policy: do not fork or vendor CamillaDSP source.
+- Aurora boundary: DSP control and offline processing owned by Aurora.
+- Cargo feature: `camilladsp-process`.
+- Integration style: generated CamillaDSP configuration plus offline file processing through an external process.
+- Maturity: functional offline adapter, not production-ready.
+- Source policy: do not fork or vendor CamillaDSP source into Aurora.
 - Executable discovery order: explicit `--camilladsp-path`, `AURORA_CAMILLADSP_PATH`, then `PATH`.
-- Supported initial controls: channel count, sample rate, WAV input/output, per-channel gain, mute, polarity inversion, delay, high-pass, low-pass, and parametric EQ.
-- Process safety: invoked without shell concatenation, stdout/stderr captured, timeout enforced, output WAV validated.
-- Local validation: tested against CamillaDSP 4.1.3 using `WavFile` capture, `File` playback with `wav_header: true`, sample-based delays, and per-channel filter pipelines.
+- Process safety: no shell concatenation, bounded timeout, captured output, and output-WAV validation.
 
-## IAMF / libiamf
+### IAMF / libiamf
 
-- Crate: `aurora-decoder-iamf`
-- Aurora trait: `aurora_decoder_api::Decoder`
-- Cargo feature: `libiamf-process`
-- Integration style: preferred open immersive-audio decoder through an external libiamf-compatible process.
-- Maturity: preferred open adapter candidate.
-- Production readiness: not production-ready.
-- Commercial risk: medium; codec, patent, and distribution posture must be reviewed.
+- Crate: `aurora-decoder-iamf`.
+- Aurora boundary: `aurora_decoder_api::Decoder`.
+- Cargo feature: `libiamf-process`.
+- Integration style: future external libiamf-compatible process for open immersive input.
+- Maturity: planned adapter boundary; no production decoding claim.
 - Source policy: do not copy libiamf source into Aurora.
+- Product use requires codec, patent, distribution, and conformance review.
 
-## truehdd
+## Retired Experiments
 
-- Crate: `aurora-decoder-truehdd`
-- Aurora trait: `aurora_decoder_api::Decoder`
-- Cargo feature: `truehdd-process`
-- Integration style: experimental offline-only external process if ever enabled.
-- Maturity: experimental/offline-only.
-- Production readiness: not production-ready.
-- Commercial risk: high; must not be used for product behavior without legal review.
-- Source policy: do not copy truehdd source into Aurora.
+The former `aurora-decoder-truehdd` and `aurora-renderer-cavern` placeholder crates were removed from the active workspace and repository during the structural cleanup. They had no functional integration and only returned unavailable/disabled results. Keeping them as buildable crates falsely suggested product capability and increased maintenance surface.
 
-## Cavern
+Aurora does not retain placeholder packages for speculative proprietary integrations. A future integration may be reconsidered only through a new architecture decision that identifies:
 
-- Crate: `aurora-renderer-cavern`
-- Aurora trait: `aurora_renderer_api::Renderer`
-- Cargo feature: `cavern-process`
-- Integration style: disabled-by-default external/process adapter pending license review.
-- Maturity: blocked pending license review.
-- Production readiness: not production-ready.
-- Commercial risk: high until license and redistribution questions are resolved.
-- Source policy: do not copy Cavern source into Aurora.
+1. a concrete product requirement;
+2. a lawful and commercially acceptable licensing path;
+3. an Aurora-owned boundary;
+4. a functional implementation plan rather than an unavailable stub;
+5. deterministic software tests and, where relevant, physical validation gates.
+
+Removal of a placeholder does not erase repository history. Historical commits remain available through Git, but they are not part of the current architecture or product roadmap.
