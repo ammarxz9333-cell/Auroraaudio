@@ -1,9 +1,9 @@
 //! Immutable control-plane contracts and deterministic runtime-plan derivation.
 //!
-//! Checkpoint B derives passive Aurora-owned values from an already validated
-//! configuration. This remains control-plane code with no I/O, hardware access,
-//! device probing, renderer or DSP construction, real-time engine, callback
-//! use, or physical claim.
+//! Checkpoints B and C derive passive Aurora-owned values from an already
+//! validated configuration. This remains control-plane code with no I/O,
+//! hardware access, device probing, renderer, DSP, or backend construction,
+//! real-time engine, callback use, or physical claim.
 
 #![forbid(unsafe_code)]
 
@@ -13,8 +13,14 @@ use aurora_config::{AmbiguityPolicy, BackendIntent, FormatFallbackPolicy, Sample
 use aurora_core::{ChannelRole, StandardLayout, Vector3};
 
 mod derivation;
+mod setup;
 
 pub use derivation::prepare_runtime_plan;
+pub use setup::{
+    prepare_setup_plan, PreparedBackendSetupIntent, PreparedDspSetupIntent,
+    PreparedRendererSetupIntent, PreparedSetupPlan, SetupDependency, SetupPlanInvariant,
+    SetupPlanningError, SetupStage,
+};
 
 /// Version of the runtime-plan contract defined by this crate.
 pub const RUNTIME_PLAN_CONTRACT_VERSION: u16 = 1;
