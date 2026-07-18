@@ -298,6 +298,37 @@ fn json_field_collection_enum_and_float_order_is_exact() {
 }
 
 #[test]
+fn json_and_text_escaping_is_exact() {
+    let special = "quote\" slash/ backslash\\ newline\n tab\t control\u{0001} unicode-\u{03bb}";
+    let mut config = ValidatedConfiguration::from_json(STEREO)
+        .expect("fixture must validate")
+        .config()
+        .clone();
+    config.output_device = Some(DeviceSelectionIntent {
+        stable_id: Some("device/special".to_owned()),
+        friendly_name: Some(special.to_owned()),
+        backend: BackendIntent::Virtual,
+        direction: DeviceDirection::Output,
+        ambiguity_policy: AmbiguityPolicy::Reject,
+    });
+    let validated = ValidatedConfiguration::new(config).expect("modified fixture must validate");
+    let runtime = prepare_runtime_plan(&validated).expect("runtime derivation must succeed");
+    let setup = prepare_setup_plan(&runtime).expect("setup derivation must succeed");
+    let report = InspectionReport::project(&runtime, &setup, InspectionOptions::unredacted_local())
+        .expect("projection must succeed");
+
+    let escaped =
+        "\"quote\\\" slash/ backslash\\\\ newline\\n tab\\t control\\u0001 unicode-\u{03bb}\"";
+    let json = JsonFormatter::format(&report).expect("JSON formatting must succeed");
+    let text = TextFormatter::format(&report).expect("text formatting must succeed");
+
+    assert!(json.contains(&format!("\"friendly_name\":{escaped}")));
+    assert!(text.contains(&format!("output_device.friendly_name: {escaped}")));
+    assert!(json.contains("\"stable_id\":\"device/special\""));
+    assert!(!json.contains("device\\/special"));
+}
+
+#[test]
 fn text_sections_and_truth_wording_are_exact() {
     let text = TextFormatter::format(&report(InspectionOptions::default())).unwrap();
     let sections = [
