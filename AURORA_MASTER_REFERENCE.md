@@ -121,6 +121,9 @@ The following are implemented and verified:
 - Deterministic block rendering.
 - Clipping detection.
 - Scene-order-independent standard layouts.
+- `GeometricBinaural` two-channel baseline using geometric ITD, geometric ILD,
+  and simple distance attenuation. It is not an HRTF renderer and uses no HRIR
+  data, convolution, pinna cues, or elevation cues.
 
 ### Channel model
 Canonical Aurora order:
@@ -2007,6 +2010,15 @@ Do not rewrite history. Record replaced decisions in ADRs.
   planning. Define exactly one hardware-independent successor without resource
   construction, runtime execution, protected-contract changes, Phase 2,
   Phase 3C, Physical Acoustic Simulator 1, or physical/readiness/latency claims.
+
+### Maintenance record: 2026-07-18 -- Geometric binaural classification
+
+- Milestone: Issue `#43`, Checkpoint A; implementation remains under review.
+- Changed sections: implemented offline-rendering inventory and terminology.
+- Reason: classify the landed two-channel prototype honestly as geometric ITD,
+  geometric ILD, and simple distance attenuation, not HRTF. It has no HRIR
+  data, convolution, pinna cues, or elevation cues. No renderer mathematics,
+  HRTF implementation, hardware behavior, or physical claim is added.
 
 ---
 

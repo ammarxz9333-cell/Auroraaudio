@@ -63,14 +63,16 @@ Compilation alone, interface-only crates, placeholders, documents, or simulated 
 
 ## 5. Clean execution sequence
 
-### Phase 0 — Stabilize the landed binaural prototype
+### Phase 0 — Stabilize the landed geometric binaural prototype
 
 **Issue:** `#43`, Checkpoint A
 
 Deliver only:
 
-- rename the current mode to `GeometricBinaural` or another technically accurate name;
-- state that it is geometric ITD/ILD, not HRTF;
+- use the canonical mode name `GeometricBinaural`;
+- state that it uses geometric ITD, geometric ILD, and simple distance
+  attenuation, and is not an HRTF renderer;
+- state that it has no HRIR data, convolution, pinna cues, or elevation cues;
 - validate stereo layout, finite normalized gains, near-zero distance, and delay inputs;
 - verify partial-block and repeated-render behavior;
 - document dynamic-delay continuity limitations;

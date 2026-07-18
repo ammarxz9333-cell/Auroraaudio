@@ -9,7 +9,7 @@ const DISTANCE_EPSILON: f32 = 0.001;
 const COINCIDENT_EPSILON: f32 = 0.0001;
 const DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND: f32 = 343.0;
 
-/// Initial renderer modes planned for Phase 0.
+/// Basic deterministic geometric renderer modes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BasicRendererMode {
     /// Route the object entirely to the closest enabled speaker.
@@ -18,11 +18,21 @@ pub enum BasicRendererMode {
     InverseDistance,
     /// Weight the two closest enabled speakers with equal-power normalization.
     EqualPowerAdjacent,
-    /// Binaural headphones rendering using ITD and ILD.
-    Binaural,
+    /// Lightweight geometric stereo rendering for headphones.
+    ///
+    /// This mode applies geometric interaural time difference (ITD), geometric
+    /// interaural level difference (ILD), and simple distance attenuation. It
+    /// is not an HRTF renderer and uses no HRIR data, convolution, pinna cues,
+    /// or elevation cues.
+    GeometricBinaural,
 }
 
-/// Minimal deterministic renderer using geometric speaker distances.
+/// Minimal deterministic renderer using geometric distances.
+///
+/// [`BasicRendererMode::GeometricBinaural`] adds geometric ITD, geometric ILD,
+/// and simple distance attenuation for two-channel headphone output. It is not
+/// an HRTF renderer and provides no HRIR data, convolution, pinna cues, or
+/// elevation cues.
 #[derive(Debug, Clone)]
 pub struct BasicRenderer {
     mode: BasicRendererMode,
@@ -79,12 +89,7 @@ impl BasicRenderer {
         output: &mut [SpeakerGain],
         weights: &mut [f32],
     ) -> Result<(), RendererError> {
-        if self.mode == BasicRendererMode::Binaural {
-            if self.layout.len() != 2 {
-                return Err(RendererError::InvalidConfiguration(
-                    "Binaural mode requires exactly 2 layout speakers (stereo/headphones)".to_owned(),
-                ));
-            }
+        if self.mode == BasicRendererMode::GeometricBinaural {
             let forward = listener.orientation;
             let right = Vector3::new(forward.y, -forward.x, 0.0);
             let right_len = right.length();
@@ -99,8 +104,17 @@ impl BasicRenderer {
                 listener.position.y,
                 listener.position.z + listener.ear_height,
             );
-            let left_ear = head_center - right_normalized * head_radius;
-            let right_ear = head_center + right_normalized * head_radius;
+            let ear_offset = Vector3::new(
+                right_normalized.x * head_radius,
+                right_normalized.y * head_radius,
+                0.0,
+            );
+            let left_ear = head_center - ear_offset;
+            let right_ear = Vector3::new(
+                head_center.x + ear_offset.x,
+                head_center.y + ear_offset.y,
+                head_center.z + ear_offset.z,
+            );
 
             let dist_l = object.position.distance_to(left_ear);
             let dist_r = object.position.distance_to(right_ear);
@@ -112,11 +126,16 @@ impl BasicRenderer {
             let to_source_2d = Vector3::new(to_source.x, to_source.y, 0.0);
             let to_source_len = to_source_2d.length();
             let sin_theta = if to_source_len > 0.0001 {
-                let to_source_dir = Vector3::new(to_source_2d.x / to_source_len, to_source_2d.y / to_source_len, 0.0);
+                let to_source_dir = Vector3::new(
+                    to_source_2d.x / to_source_len,
+                    to_source_2d.y / to_source_len,
+                    0.0,
+                );
                 let forward_2d = Vector3::new(forward.x, forward.y, 0.0);
                 let forward_len = forward_2d.length();
                 if forward_len > 0.0001 {
-                    let forward_dir = Vector3::new(forward_2d.x / forward_len, forward_2d.y / forward_len, 0.0);
+                    let forward_dir =
+                        Vector3::new(forward_2d.x / forward_len, forward_2d.y / forward_len, 0.0);
                     forward_dir.x * to_source_dir.y - forward_dir.y * to_source_dir.x
                 } else {
                     0.0
@@ -136,7 +155,7 @@ impl BasicRenderer {
             let target_l = weights[0] * db_to_gain(self.layout[0].gain_db) * object.gain;
             let target_r = weights[1] * db_to_gain(self.layout[1].gain_db) * object.gain;
 
-            let history_index_l = object_index * 2 + 0;
+            let history_index_l = object_index * 2;
             let history_index_r = object_index * 2 + 1;
 
             let previous_l = &mut self.previous_gains[history_index_l];
@@ -151,13 +170,15 @@ impl BasicRenderer {
                 speaker_index: 0,
                 gain: smoothed_l,
                 distance_meters: dist_l,
-                delay_samples: dist_l / DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND * self.sample_rate as f32,
+                delay_samples: dist_l / DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND
+                    * self.sample_rate as f32,
             };
             output[1] = SpeakerGain {
                 speaker_index: 1,
                 gain: smoothed_r,
                 distance_meters: dist_r,
-                delay_samples: dist_r / DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND * self.sample_rate as f32,
+                delay_samples: dist_r / DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND
+                    * self.sample_rate as f32,
             };
             return Ok(());
         }
@@ -172,7 +193,7 @@ impl BasicRenderer {
             BasicRendererMode::EqualPowerAdjacent => {
                 adjacent_speaker_gains(&self.layout, object.position, weights)
             }
-            BasicRendererMode::Binaural => unreachable!(),
+            BasicRendererMode::GeometricBinaural => unreachable!(),
         }
 
         let speaker_count = self.layout.len();
@@ -257,6 +278,11 @@ impl Renderer for BasicRenderer {
         let enabled_count = layout.iter().filter(|speaker| speaker.enabled).count();
         if enabled_count == 0 {
             return Err(RendererError::NoEnabledSpeakers);
+        }
+        if self.mode == BasicRendererMode::GeometricBinaural && enabled_count != 2 {
+            return Err(RendererError::InvalidConfiguration(
+                "geometric binaural mode requires exactly two enabled output channels".to_owned(),
+            ));
         }
 
         self.layout.clear();
@@ -554,9 +580,8 @@ mod tests {
         assert_eq!(render_at(0.25, -0.5), render_at(0.25, -0.5));
     }
 
-    #[test]
-    fn binaural_rendering_calculates_correct_itd_and_ild() {
-        let mut renderer = BasicRenderer::new(BasicRendererMode::Binaural);
+    fn geometric_binaural_renderer() -> (BasicRenderer, RendererScratch, Vec<SpeakerGain>) {
+        let mut renderer = BasicRenderer::new(BasicRendererMode::GeometricBinaural);
         renderer
             .configure(
                 vec![
@@ -569,31 +594,133 @@ mod tests {
             )
             .unwrap();
         let scratch = RendererScratch::new(renderer.required_scratch_size().unwrap());
-        let mut gains = vec![SpeakerGain::default(); 2];
-        let mut scratch_mut = scratch;
+        (renderer, scratch, vec![SpeakerGain::default(); 2])
+    }
 
-        let listener = Listener {
-            position: Vector3::ZERO,
-            orientation: Vector3::new(0.0, 1.0, 0.0),
-            ear_height: 1.2,
-        };
+    fn render_geometric_binaural(position: Vector3) -> Vec<SpeakerGain> {
+        let (mut renderer, mut scratch, mut gains) = geometric_binaural_renderer();
         let object = RenderObject {
-            position: Vector3::new(5.0, 0.0, 1.2),
+            position,
             gain: 1.0,
         };
-
         renderer
-            .render_gains(&listener, &[object], &mut gains, &mut scratch_mut)
+            .render_gains(&listener(), &[object], &mut gains, &mut scratch)
             .unwrap();
+        gains
+    }
 
-        // Right ear should have higher gain due to head shadow (ILD)
-        assert!(gains[1].gain > gains[0].gain);
+    #[test]
+    fn right_and_left_sources_have_opposite_itd_polarity() {
+        let right = render_geometric_binaural(Vector3::new(5.0, 0.0, 1.2));
+        let left = render_geometric_binaural(Vector3::new(-5.0, 0.0, 1.2));
 
-        // Right ear is closer, so it should have shorter delay than Left ear (ITD)
-        assert!(gains[1].delay_samples < gains[0].delay_samples);
+        assert!(right[1].delay_samples < right[0].delay_samples);
+        assert!(left[0].delay_samples < left[1].delay_samples);
+        let right_difference = right[0].delay_samples - right[1].delay_samples;
+        let left_difference = left[1].delay_samples - left[0].delay_samples;
+        assert!((right_difference - 24.489).abs() < 0.1);
+        assert!((left_difference - 24.489).abs() < 0.1);
+    }
 
-        // Delay difference should be approx 24.5 samples (0.175m / 343m/s * 48000Hz)
-        let delay_diff = gains[0].delay_samples - gains[1].delay_samples;
-        assert!((delay_diff - 24.489).abs() < 0.1);
+    #[test]
+    fn lateral_sources_have_opposite_mirrored_ild_polarity() {
+        let right = render_geometric_binaural(Vector3::new(5.0, 0.0, 1.2));
+        let left = render_geometric_binaural(Vector3::new(-5.0, 0.0, 1.2));
+
+        let right_ild = right[1].gain - right[0].gain;
+        let left_ild = left[1].gain - left[0].gain;
+        assert!(right_ild * left_ild < 0.0);
+        assert!((right[0].gain - left[1].gain).abs() < 0.0001);
+        assert!((right[1].gain - left[0].gain).abs() < 0.0001);
+    }
+
+    #[test]
+    fn geometric_binaural_output_is_finite_and_power_normalized() {
+        for position in [
+            Vector3::new(-5.0, 0.0, 1.2),
+            Vector3::new(0.0, 5.0, 1.2),
+            Vector3::new(5.0, 0.0, 1.2),
+        ] {
+            let gains = render_geometric_binaural(position);
+            let power = gains.iter().map(|gain| gain.gain.powi(2)).sum::<f32>();
+            assert!(gains.iter().all(|gain| {
+                gain.gain.is_finite()
+                    && gain.distance_meters.is_finite()
+                    && gain.delay_samples.is_finite()
+            }));
+            assert!((power - 1.0).abs() < 0.0001);
+        }
+    }
+
+    #[test]
+    fn source_at_head_center_is_finite_symmetric_and_normalized() {
+        let gains = render_geometric_binaural(Vector3::new(0.0, 0.0, 1.2));
+        let power = gains.iter().map(|gain| gain.gain.powi(2)).sum::<f32>();
+
+        assert!(gains.iter().all(|gain| gain.gain.is_finite()));
+        assert!((gains[0].gain - gains[1].gain).abs() < 0.0001);
+        assert!((gains[0].delay_samples - gains[1].delay_samples).abs() < 0.0001);
+        assert!((power - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn source_at_ear_position_remains_finite_and_normalized() {
+        let gains = render_geometric_binaural(Vector3::new(0.0875, 0.0, 1.2));
+        let power = gains.iter().map(|gain| gain.gain.powi(2)).sum::<f32>();
+
+        assert!(gains.iter().all(|gain| {
+            gain.gain.is_finite()
+                && gain.distance_meters.is_finite()
+                && gain.delay_samples.is_finite()
+        }));
+        assert_eq!(gains[1].distance_meters, 0.0);
+        assert_eq!(gains[1].delay_samples, 0.0);
+        assert!((power - 1.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn geometric_binaural_rejects_non_stereo_layout_during_configuration() {
+        let error = BasicRenderer::new(BasicRendererMode::GeometricBinaural)
+            .configure(
+                vec![speaker("center", ChannelRole::FrontCenter, 0.0, 1.0)],
+                48_000,
+                256,
+                1,
+            )
+            .unwrap_err();
+
+        assert_eq!(
+            error,
+            RendererError::InvalidConfiguration(
+                "geometric binaural mode requires exactly two enabled output channels".to_owned()
+            )
+        );
+    }
+
+    #[test]
+    fn moving_source_geometric_delays_change_continuously() {
+        let (mut renderer, mut scratch, mut gains) = geometric_binaural_renderer();
+        let mut previous: Option<[f32; 2]> = None;
+        for step in 0..=360 {
+            let angle = step as f32 * std::f32::consts::TAU / 360.0;
+            renderer
+                .render_gains(
+                    &listener(),
+                    &[RenderObject {
+                        position: Vector3::new(angle.cos() * 2.0, angle.sin() * 2.0, 1.2),
+                        gain: 1.0,
+                    }],
+                    &mut gains,
+                    &mut scratch,
+                )
+                .unwrap();
+            let current = [gains[0].delay_samples, gains[1].delay_samples];
+            if let Some(previous) = previous {
+                for channel in 0..2 {
+                    assert!((current[channel] - previous[channel]).abs() < 0.5);
+                }
+            }
+            previous = Some(current);
+        }
     }
 }

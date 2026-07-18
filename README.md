@@ -6,6 +6,34 @@ The project is now in **active product implementation**. The immediate work is t
 
 Aurora does not currently claim Dolby Atmos compatibility, true HRTF capability, height-capable loudspeaker rendering, production IAMF decoding, synchronized wireless speakers, or physical multiroom validation unless the corresponding acceptance evidence exists.
 
+## Geometric binaural baseline
+
+`GeometricBinaural` is Aurora's lightweight two-channel headphone baseline. It
+uses geometric interaural time difference (ITD), geometric interaural level
+difference (ILD), and simple distance attenuation. It is **not an HRTF
+renderer**: it uses no HRIR data, convolution, pinna cues, or elevation cues.
+
+The canonical CLI value is `--renderer-mode geometric-binaural`. The former
+`--renderer-mode binaural` spelling remains accepted as a deprecated alias for
+command compatibility. The Rust enum variant is intentionally renamed from
+`BasicRendererMode::Binaural` to
+`BasicRendererMode::GeometricBinaural`; downstream Rust callers must update.
+
+```powershell
+cargo run -p aurora-cli -- render `
+  --scene fixtures\scenes\geometric_binaural_circle.json `
+  --input fixtures\audio\mono_sweep.wav `
+  --output output\geometric_binaural_circle.wav `
+  --renderer-mode geometric-binaural
+```
+
+Geometric delays are recalculated once per block and applied directly to the
+existing fractional delay line. Checkpoint A verifies that the geometric delay
+trajectory is continuous, but it does not add crossfading or interpolation
+between block updates and does not claim click-free moving-source output. The
+current dynamic delay capacity remains the existing explicit `1024` samples;
+deriving it from future scene/runtime bounds belongs to Checkpoint B.
+
 ## Repository status
 
 `main-v2` is the canonical development branch. The earlier unrelated GitHub history remains archived without merging or rewriting.
