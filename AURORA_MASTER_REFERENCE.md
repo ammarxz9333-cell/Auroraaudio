@@ -6,7 +6,8 @@
 > **Last consolidated milestone:** Runtime Assembly Contracts 1 accepted on
 > 2026-07-18 as a software-only milestone; Phase 2 physical hardware validation
 > remains open and incomplete. Runtime Plan Inspection 1 is the single active
-> software-only milestone; Checkpoints A and B are complete and Checkpoint C is active. Hardware-blocked
+> software-only milestone; Checkpoints A and B are complete and Checkpoint C is
+> active and in progress. Hardware-blocked
 > parallel development is governed by Section 16.1.
 
 ---
@@ -1347,10 +1348,14 @@ amendment merged normally through PR `#29` at
 - governance branch: `governance/runtime-plan-inspection-1`;
 - Checkpoint A merge: PR `#30`,
   `b847344c8a64e2b605aead3b6cef8979f39b9916`;
-- Checkpoint B merge: PR `#31`,
+- Checkpoint B implementation: PR `#31`, commit
+  `1e2b8aacc519aa9d9481a146abd167889a79bd51`;
+- Checkpoint B merge commit:
   `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`;
+- Checkpoint B reconciliation merge commit:
+  `5c75c934e669b54ded1e5c2422cba80c6c0073b0`;
 - implementation branch: `feature/runtime-plan-inspection-1-checkpoint-c`;
-- active checkpoint: C;
+- active checkpoint: C; implementation is `IN_PROGRESS`;
 - completed checkpoints: A and B;
 - Checkpoint D: `NOT_STARTED`;
 - milestone class: software-only control-plane inspection;
@@ -1359,10 +1364,15 @@ amendment merged normally through PR `#29` at
 - hardware-dependent criteria: none;
 - expected terminal classification: `ACCEPTED`.
 
-Checkpoint A created the separate `aurora-runtime-inspection` leaf crate.
-Checkpoint B added bounded projection and redaction; both merged through PRs
-`#30` and `#31`. Checkpoint C may format inspection-owned reports as bounded
-deterministic JSON and human-readable text and add fixed conformance findings.
+Checkpoint A created the separate `aurora-runtime-inspection` leaf crate and
+merged through PR `#30`. Checkpoint B merged through PR `#31` and delivered a
+versioned inspection-owned projection from `PreparedRuntimePlan` and
+`PreparedSetupPlan`, canonical source ordering, bounded validation, structured
+errors without silent truncation, default device/channel/speaker identifier
+redaction, and explicit local unredacted inspection options. Checkpoint C is now
+in progress and adds only deterministic bounded JSON and human-readable
+formatting of inspection-owned values, stable ordering and escaping,
+inspection-owned conformance findings, and formatting/determinism tests.
 
 Permitted direct Aurora dependency:
 
@@ -1594,7 +1604,8 @@ or later milestone and makes no hardware, physical, or latency claim.
 
 Runtime Plan Inspection 1 is the single active software-only milestone. Its
 governance is merged, execution is `IN_PROGRESS`, Checkpoints A and B are
-`COMPLETE`, and only Checkpoint C is active. Checkpoint D remains `NOT_STARTED`. Work must proceed one
+`COMPLETE`, and only Checkpoint C is active and `IN_PROGRESS`. Checkpoint D
+remains `NOT_STARTED`. Work must proceed one
 reviewed checkpoint at a time from
 `docs/planning/runtime-plan-inspection-1.md`.
 
@@ -1817,6 +1828,21 @@ Do not rewrite history. Record replaced decisions in ADRs.
   formatting, serialization, integration, runtime execution, hardware work,
   protected-contract changes, or later-checkpoint work.
 
+### Maintenance record: 2026-07-18 -- Runtime Plan Inspection Checkpoint B reconciliation
+
+- Checkpoint B implementation commit
+  `1e2b8aacc519aa9d9481a146abd167889a79bd51` merged through PR `#31` at merge
+  commit `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`.
+- Checkpoint B is `COMPLETE`; Checkpoint C is the active next reviewed scope but
+  its implementation has not started, and Checkpoint D remains `NOT_STARTED`.
+- This reconciliation changes documentation only. It records the merged
+  versioned projection, canonical ordering, bounded validation, structured
+  errors, no-truncation behavior, default identifier redaction, and explicit
+  local unredacted options without adding formatting or product behavior.
+- Physical Acoustic Simulator 1 / PR `#22` remains open, Draft, `PROPOSED`,
+  `NOT_STARTED`, and on `HOLD`. It is not authorized for implementation and
+  must be split into independently governed milestones before implementation.
+
 ### Maintenance record: 2026-07-18 -- Runtime Plan Inspection Checkpoint C
 
 - Milestone: Runtime Plan Inspection 1; Checkpoints A and B are complete and
@@ -1824,10 +1850,10 @@ Do not rewrite history. Record replaced decisions in ADRs.
 - Changed sections: consolidated status, active milestone record, immediate
   next action, roadmap lifecycle, architecture boundary, and inspection-format
   documentation.
-- Reason: Checkpoint B merged through PR `#31`; authorize only deterministic
-  bounded formatting and inspection-owned conformance evidence without plan
-  serialization, integration, runtime execution, Checkpoint D evaluation,
-  hardware work, or physical claims.
+- Reason: after Checkpoint B reconciliation merged through PR `#33`, implement
+  only deterministic bounded formatting and inspection-owned conformance
+  evidence without plan serialization, integration, runtime execution,
+  Checkpoint D evaluation, hardware work, or physical claims.
 
 ---
 
