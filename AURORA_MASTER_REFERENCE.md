@@ -6,7 +6,8 @@
 > **Last consolidated milestone:** Runtime Assembly Contracts 1 accepted on
 > 2026-07-18 as a software-only milestone; Phase 2 physical hardware validation
 > remains open and incomplete. Runtime Plan Inspection 1 is the single active
-> software-only milestone; Checkpoint A is complete and Checkpoint B is active. Hardware-blocked
+> software-only milestone; Checkpoints A and B are complete and Checkpoint C is
+> the active next scope but has not started. Hardware-blocked
 > parallel development is governed by Section 16.1.
 
 ---
@@ -1347,10 +1348,15 @@ amendment merged normally through PR `#29` at
 - governance branch: `governance/runtime-plan-inspection-1`;
 - Checkpoint A merge: PR `#30`,
   `b847344c8a64e2b605aead3b6cef8979f39b9916`;
-- implementation branch: `feature/runtime-plan-inspection-1-checkpoint-b`;
-- active checkpoint: B;
-- completed checkpoints: A;
-- Checkpoints C and D: `NOT_STARTED`;
+- Checkpoint B implementation: PR `#31`, commit
+  `1e2b8aacc519aa9d9481a146abd167889a79bd51`;
+- Checkpoint B merge commit:
+  `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`;
+- reconciliation branch:
+  `docs/runtime-plan-inspection-checkpoint-b-reconciliation`;
+- active checkpoint: C; implementation has not started;
+- completed checkpoints: A and B;
+- Checkpoint D: `NOT_STARTED`;
 - milestone class: software-only control-plane inspection;
 - Phase 2 required for implementation: no;
 - Phase 2 required for acceptance: no;
@@ -1358,9 +1364,14 @@ amendment merged normally through PR `#29` at
 - expected terminal classification: `ACCEPTED`.
 
 Checkpoint A created the separate `aurora-runtime-inspection` leaf crate and
-merged through PR `#30`. Checkpoint B may project and redact accepted prepared
-plan facts into bounded inspection-owned values. JSON and human-readable output
-remain separately reviewed Checkpoint C behavior.
+merged through PR `#30`. Checkpoint B merged through PR `#31` and delivered a
+versioned inspection-owned projection from `PreparedRuntimePlan` and
+`PreparedSetupPlan`, canonical source ordering, bounded validation, structured
+errors without silent truncation, default device/channel/speaker identifier
+redaction, and explicit local unredacted inspection options. Checkpoint C is the
+active next reviewed scope but has not started. It may add only deterministic,
+bounded JSON and human-readable formatting of inspection-owned values, stable
+ordering and escaping, and formatting/determinism tests.
 
 Permitted direct Aurora dependency:
 
@@ -1591,8 +1602,9 @@ acceptance authorizes no runtime integration, Phase 2 implementation, Phase 3C,
 or later milestone and makes no hardware, physical, or latency claim.
 
 Runtime Plan Inspection 1 is the single active software-only milestone. Its
-governance is merged, execution is `IN_PROGRESS`, Checkpoint A is `COMPLETE`,
-and only Checkpoint B is active. Checkpoints C and D remain `NOT_STARTED`. Work must proceed one
+governance is merged, execution is `IN_PROGRESS`, Checkpoints A and B are
+`COMPLETE`, and Checkpoint C is the active next reviewed scope but has not
+started. Checkpoint D remains `NOT_STARTED`. Work must proceed one
 reviewed checkpoint at a time from
 `docs/planning/runtime-plan-inspection-1.md`.
 
@@ -1606,13 +1618,14 @@ The next agent must not:
 - add a GUI;
 - add or change renderer behavior;
 - start Phase 3C;
-- implement Runtime Plan Inspection 1 beyond Checkpoint B;
+- implement Runtime Plan Inspection 1 beyond Checkpoint C;
 - serialize, mutate, reconstruct, hash, or fingerprint prepared plans;
 - construct or execute runtime resources under the inspection milestone;
 - add physical latency claims.
 
-No milestone other than Runtime Plan Inspection 1 is authorized. Checkpoint B
-must stop at bounded deterministic projection and redaction evidence.
+No milestone other than Runtime Plan Inspection 1 is authorized. The next
+implementation may cover only separately reviewed Checkpoint C formatting and
+determinism scope; this reconciliation does not begin that implementation.
 
 The simulator is complete and frozen. The campaign may exercise it but must not
 duplicate it, change its accepted record, or use it as a substitute for Phase 2
@@ -1814,6 +1827,21 @@ Do not rewrite history. Record replaced decisions in ADRs.
   crate and empty public contract markers without plan access, projection,
   formatting, serialization, integration, runtime execution, hardware work,
   protected-contract changes, or later-checkpoint work.
+
+### Maintenance record: 2026-07-18 -- Runtime Plan Inspection Checkpoint B reconciliation
+
+- Checkpoint B implementation commit
+  `1e2b8aacc519aa9d9481a146abd167889a79bd51` merged through PR `#31` at merge
+  commit `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`.
+- Checkpoint B is `COMPLETE`; Checkpoint C is the active next reviewed scope but
+  its implementation has not started, and Checkpoint D remains `NOT_STARTED`.
+- This reconciliation changes documentation only. It records the merged
+  versioned projection, canonical ordering, bounded validation, structured
+  errors, no-truncation behavior, default identifier redaction, and explicit
+  local unredacted options without adding formatting or product behavior.
+- Physical Acoustic Simulator 1 / PR `#22` remains open, Draft, `PROPOSED`,
+  `NOT_STARTED`, and on `HOLD`. It is not authorized for implementation and
+  must be split into independently governed milestones before implementation.
 
 ---
 

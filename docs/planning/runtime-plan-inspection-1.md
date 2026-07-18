@@ -12,19 +12,29 @@
   `02deb93374b162d11b18b4010452254f3ecd1c18`
 - Checkpoint A merge: PR `#30`,
   `b847344c8a64e2b605aead3b6cef8979f39b9916`
-- Implementation branch: `feature/runtime-plan-inspection-1-checkpoint-b`
+- Checkpoint B implementation: PR `#31`, commit
+  `1e2b8aacc519aa9d9481a146abd167889a79bd51`
+- Checkpoint B merge commit:
+  `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`
+- Reconciliation branch:
+  `docs/runtime-plan-inspection-checkpoint-b-reconciliation`
 - Required base: `main-v2` after the governance pull request merges normally
-- Active checkpoint: B
-- Completed checkpoints: A
-- Checkpoints C and D: `NOT_STARTED`
+- Active checkpoint: C; implementation has not started
+- Completed checkpoints: A and B
+- Checkpoint D: `NOT_STARTED`
 - Expected terminal classification: `ACCEPTED`
 - Phase 2 required for implementation: no
 - Phase 2 required for acceptance: no
 - Hardware acceptance criteria: none
 
 The governance amendment and ADR 0016 merged normally. Checkpoint A merged
-through PR `#30`; Checkpoint B is the only active implementation scope.
-Checkpoints C and D remain `NOT_STARTED` until separately reviewed.
+through PR `#30`. Checkpoint B merged through PR `#31` and delivered the
+versioned inspection-owned projection from `PreparedRuntimePlan` and
+`PreparedSetupPlan`, canonical source ordering, bounded validation, structured
+errors without silent truncation, default device/channel/speaker identifier
+redaction, and explicit local unredacted inspection options. Checkpoint C is the
+active next reviewed scope but has not started. Checkpoint D remains
+`NOT_STARTED` until separately reviewed.
 
 ## Milestone Inventory And Selection
 
