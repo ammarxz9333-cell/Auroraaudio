@@ -14,6 +14,10 @@ use aurora_dsp_basic::DelayProcessor;
 use aurora_dsp_camilladsp::{
     discover_camilladsp, inspect_processed_wav, process_offline_wav, AuroraDspConfig,
 };
+use aurora_evaluation::{
+    evaluate_renderer, EvaluationConfig, EvaluationFixture, EvaluationReport, EvaluationThresholds,
+    EvidenceStatus,
+};
 #[cfg(feature = "realtime")]
 use aurora_realtime_audio_api::{
     AudioDeviceDirection, AudioOutputBackend, RealTimeAudioConfig, RealTimeSampleFormat,
@@ -30,6 +34,7 @@ use aurora_renderer_basic::{
 };
 use aurora_scene::{load_render_scene, RenderScene};
 use clap::{Parser, Subcommand, ValueEnum};
+use serde::Serialize;
 
 const CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES: f32 = 1_024.0;
 
@@ -78,6 +83,33 @@ enum Command {
         speed_of_sound: f32,
         #[arg(long, value_enum, default_value_t = CliRendererMode::InverseDistance)]
         renderer_mode: CliRendererMode,
+    },
+    /// Evaluate existing renderers and write deterministic engineering artifacts.
+    EvaluateRenderer {
+        /// Scene whose trajectory and output layout are evaluated.
+        #[arg(long)]
+        scene: PathBuf,
+        /// Mono WAV used to generate the rendered artifact.
+        #[arg(long)]
+        input: PathBuf,
+        /// Directory that receives one artifact set per renderer.
+        #[arg(long)]
+        output_dir: PathBuf,
+        /// Canonical fixed-direction probe fixture.
+        #[arg(
+            long,
+            default_value = "fixtures/evaluation/canonical_renderer_cases.json"
+        )]
+        fixture: PathBuf,
+        /// Existing renderer or canonical pair to evaluate.
+        #[arg(long, value_enum, default_value_t = EvaluationRendererSelection::All)]
+        renderer: EvaluationRendererSelection,
+        /// Exact commit under evaluation; resolved from Git when omitted.
+        #[arg(long)]
+        commit_sha: Option<String>,
+        /// Maximum accepted host-observed renderer p99 in nanoseconds.
+        #[arg(long, default_value_t = 5_000_000)]
+        max_renderer_p99_ns: u64,
     },
     /// Process an offline multichannel WAV through an external DSP engine.
     Process {
@@ -286,6 +318,29 @@ enum CliRendererMode {
     GeometricBinaural,
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum)]
+enum EvaluationRendererSelection {
+    All,
+    GeometricBinaural,
+    InverseDistance,
+}
+
+impl EvaluationRendererSelection {
+    fn modes(self) -> &'static [BasicRendererMode] {
+        const ALL: &[BasicRendererMode] = &[
+            BasicRendererMode::GeometricBinaural,
+            BasicRendererMode::InverseDistance,
+        ];
+        const GEOMETRIC: &[BasicRendererMode] = &[BasicRendererMode::GeometricBinaural];
+        const INVERSE: &[BasicRendererMode] = &[BasicRendererMode::InverseDistance];
+        match self {
+            Self::All => ALL,
+            Self::GeometricBinaural => GEOMETRIC,
+            Self::InverseDistance => INVERSE,
+        }
+    }
+}
+
 impl From<CliRendererMode> for BasicRendererMode {
     fn from(value: CliRendererMode) -> Self {
         match value {
@@ -338,6 +393,50 @@ struct ProcessOptions<'a> {
     speed_of_sound: f32,
 }
 
+#[derive(Debug, Clone, Copy)]
+struct EvaluateRendererOptions<'a> {
+    scene_path: &'a Path,
+    input_path: &'a Path,
+    output_dir: &'a Path,
+    fixture_path: &'a Path,
+    selection: EvaluationRendererSelection,
+    commit_sha: Option<&'a str>,
+    max_renderer_p99_ns: u64,
+}
+
+#[derive(Serialize)]
+struct GainArtifactPoint {
+    block_index: usize,
+    frame_index: usize,
+    channel_index: usize,
+    gain: f32,
+}
+
+#[derive(Serialize)]
+struct DelayArtifactPoint {
+    block_index: usize,
+    frame_index: usize,
+    channel_index: usize,
+    delay_samples: f32,
+}
+
+#[derive(Serialize)]
+struct EvaluationManifest<'a> {
+    schema_version: u16,
+    renderer: &'a aurora_evaluation::RendererMetadata,
+    provenance: &'a aurora_evaluation::Provenance,
+    latency: &'a aurora_evaluation::LatencyEvidence,
+    audio_checksum_fnv1a64: &'a str,
+    artifacts: &'static [&'static str],
+}
+
+#[derive(Serialize)]
+struct PerformanceArtifact<'a> {
+    performance: &'a aurora_evaluation::PerformanceMetrics,
+    memory: &'a aurora_evaluation::MemoryMetrics,
+    allocations: &'a aurora_evaluation::AllocationObservation,
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
 
@@ -368,6 +467,23 @@ fn main() -> Result<()> {
             print_render_report(&report);
             Ok(())
         }
+        Command::EvaluateRenderer {
+            scene,
+            input,
+            output_dir,
+            fixture,
+            renderer,
+            commit_sha,
+            max_renderer_p99_ns,
+        } => evaluate_renderers(EvaluateRendererOptions {
+            scene_path: &scene,
+            input_path: &input,
+            output_dir: &output_dir,
+            fixture_path: &fixture,
+            selection: renderer,
+            commit_sha: commit_sha.as_deref(),
+            max_renderer_p99_ns,
+        }),
         Command::Process {
             engine,
             input,
@@ -1233,6 +1349,216 @@ fn print_gains(layout: LayoutName, steps: usize, radius: f32) -> Result<()> {
     Ok(())
 }
 
+fn evaluate_renderers(options: EvaluateRendererOptions<'_>) -> Result<()> {
+    let scene = load_render_scene(options.scene_path).context("load evaluation scene")?;
+    let input = read_wav(options.input_path).context("read evaluation input wav")?;
+    if input.format.channel_count != 1 {
+        bail!(
+            "renderer evaluation expects mono WAV input, got {} channels",
+            input.format.channel_count
+        );
+    }
+    let fixture_json = std::fs::read_to_string(options.fixture_path)
+        .context("read renderer evaluation fixture")?;
+    let fixture: EvaluationFixture =
+        serde_json::from_str(&fixture_json).context("parse renderer evaluation fixture")?;
+    if fixture.schema_version != aurora_evaluation::EVALUATION_SCHEMA_VERSION {
+        bail!(
+            "unsupported evaluation fixture schema {}, expected {}",
+            fixture.schema_version,
+            aurora_evaluation::EVALUATION_SCHEMA_VERSION
+        );
+    }
+    let commit_sha = match options.commit_sha {
+        Some(value) if !value.is_empty() => value.to_owned(),
+        _ => resolve_git_commit()?,
+    };
+    let ordered_speakers = scene
+        .ordered_speakers()?
+        .into_iter()
+        .filter(|speaker| speaker.enabled)
+        .collect::<Vec<_>>();
+    let channel_roles = ordered_speakers
+        .iter()
+        .map(|speaker| speaker.channel_role.clone())
+        .collect::<Vec<_>>();
+    let mut failed = false;
+
+    for &mode in options.selection.modes() {
+        let renderer_id = evaluation_renderer_id(mode);
+        let command = format!(
+            "aurora evaluate-renderer --scene {} --input {} --output-dir {} --fixture {} --renderer {} --commit-sha {} --max-renderer-p99-ns {}",
+            quote_argument(options.scene_path),
+            quote_argument(options.input_path),
+            quote_argument(options.output_dir),
+            quote_argument(options.fixture_path),
+            renderer_id,
+            commit_sha,
+            options.max_renderer_p99_ns,
+        );
+        let mut renderer = BasicRenderer::new(mode).with_smoothing(1.0);
+        renderer.configure(
+            ordered_speakers.clone(),
+            input.format.sample_rate,
+            scene.block_size,
+            1,
+        )?;
+        let config = EvaluationConfig {
+            renderer_id: renderer_id.to_owned(),
+            scenario_id: fixture.scenario.clone(),
+            sample_rate: input.format.sample_rate,
+            block_size: scene.block_size,
+            max_delay_samples: CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES,
+            apply_delays: true,
+            thresholds: EvaluationThresholds {
+                max_renderer_p99_ns: options.max_renderer_p99_ns,
+                ..EvaluationThresholds::default()
+            },
+            commit_sha: commit_sha.clone(),
+            command,
+            probes: fixture.probes.clone(),
+            hooks: Vec::new(),
+            steady_state_allocations: None,
+        };
+        let bundle = evaluate_renderer(
+            &mut renderer,
+            &scene.listener,
+            &scene.trajectory,
+            &input.channels[0],
+            &config,
+        )?;
+        let renderer_dir = options.output_dir.join(renderer_id);
+        write_evaluation_artifacts(
+            &renderer_dir,
+            input.format.sample_rate,
+            &channel_roles,
+            &bundle.report,
+            &bundle.audio_channels,
+        )?;
+        println!(
+            "renderer={} status={:?} checksum={} p50_ns={} p95_ns={} p99_ns={} artifacts={}",
+            renderer_id,
+            bundle.report.validation.status,
+            bundle.report.audio.audio_checksum_fnv1a64,
+            bundle.report.performance.renderer_p50_ns,
+            bundle.report.performance.renderer_p95_ns,
+            bundle.report.performance.renderer_p99_ns,
+            renderer_dir.display(),
+        );
+        failed |= bundle.report.validation.status == EvidenceStatus::Fail;
+    }
+
+    if failed {
+        bail!("one or more renderer evaluations failed configured thresholds");
+    }
+    Ok(())
+}
+
+fn write_evaluation_artifacts(
+    directory: &Path,
+    sample_rate: u32,
+    channel_roles: &[ChannelRole],
+    report: &EvaluationReport,
+    audio_channels: &[Vec<f32>],
+) -> Result<()> {
+    std::fs::create_dir_all(directory).context("create evaluation artifact directory")?;
+    write_wav_f32_with_channel_roles(
+        directory.join("rendered.wav"),
+        sample_rate,
+        audio_channels,
+        channel_roles,
+    )
+    .context("write evaluation WAV artifact")?;
+
+    let gains = report
+        .trajectory
+        .iter()
+        .map(|point| GainArtifactPoint {
+            block_index: point.block_index,
+            frame_index: point.frame_index,
+            channel_index: point.channel_index,
+            gain: point.gain,
+        })
+        .collect::<Vec<_>>();
+    let delays = report
+        .trajectory
+        .iter()
+        .map(|point| DelayArtifactPoint {
+            block_index: point.block_index,
+            frame_index: point.frame_index,
+            channel_index: point.channel_index,
+            delay_samples: point.delay_samples,
+        })
+        .collect::<Vec<_>>();
+    let manifest = EvaluationManifest {
+        schema_version: report.schema_version,
+        renderer: &report.renderer,
+        provenance: &report.provenance,
+        latency: &report.latency,
+        audio_checksum_fnv1a64: &report.audio.audio_checksum_fnv1a64,
+        artifacts: &[
+            "rendered.wav",
+            "summary.json",
+            "detail.json",
+            "manifest.json",
+            "gains.json",
+            "delays.json",
+            "discontinuity.json",
+            "performance.json",
+            "validation.json",
+        ],
+    };
+    let performance = PerformanceArtifact {
+        performance: &report.performance,
+        memory: &report.memory,
+        allocations: &report.allocations,
+    };
+
+    write_json(directory.join("summary.json"), &report.summary())?;
+    write_json(directory.join("detail.json"), report)?;
+    write_json(directory.join("manifest.json"), &manifest)?;
+    write_json(directory.join("gains.json"), &gains)?;
+    write_json(directory.join("delays.json"), &delays)?;
+    write_json(directory.join("discontinuity.json"), &report.discontinuity)?;
+    write_json(directory.join("performance.json"), &performance)?;
+    write_json(directory.join("validation.json"), &report.validation)?;
+    Ok(())
+}
+
+fn write_json(path: PathBuf, value: &impl Serialize) -> Result<()> {
+    let json = serde_json::to_string_pretty(value).context("serialize evaluation artifact")?;
+    std::fs::write(path, format!("{json}\n")).context("write evaluation JSON artifact")
+}
+
+fn evaluation_renderer_id(mode: BasicRendererMode) -> &'static str {
+    match mode {
+        BasicRendererMode::GeometricBinaural => "geometric-binaural",
+        BasicRendererMode::InverseDistance => "inverse-distance",
+        BasicRendererMode::NearestSpeaker => "nearest-speaker",
+        BasicRendererMode::EqualPowerAdjacent => "equal-power-adjacent",
+    }
+}
+
+fn resolve_git_commit() -> Result<String> {
+    let output = std::process::Command::new("git")
+        .args(["rev-parse", "HEAD"])
+        .output()
+        .context("run git rev-parse for evaluation provenance")?;
+    if !output.status.success() {
+        bail!("git rev-parse HEAD failed; pass --commit-sha explicitly");
+    }
+    let value = String::from_utf8(output.stdout).context("decode git commit SHA")?;
+    let value = value.trim();
+    if value.is_empty() {
+        bail!("git returned an empty commit SHA; pass --commit-sha explicitly");
+    }
+    Ok(value.to_owned())
+}
+
+fn quote_argument(path: &Path) -> String {
+    format!("\"{}\"", path.display())
+}
+
 fn render_offline(
     scene_path: &Path,
     input_path: &Path,
@@ -1659,6 +1985,33 @@ mod tests {
                 }
             ));
         }
+    }
+
+    #[test]
+    fn evaluation_command_parses_canonical_artifact_inputs() {
+        let cli = Cli::try_parse_from([
+            "aurora",
+            "evaluate-renderer",
+            "--scene",
+            "scene.json",
+            "--input",
+            "input.wav",
+            "--output-dir",
+            "evaluation",
+            "--renderer",
+            "all",
+            "--commit-sha",
+            "0123456789abcdef",
+        ])
+        .unwrap();
+
+        assert!(matches!(
+            cli.command,
+            Command::EvaluateRenderer {
+                renderer: EvaluationRendererSelection::All,
+                ..
+            }
+        ));
     }
 
     #[test]

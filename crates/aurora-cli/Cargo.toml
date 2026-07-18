@@ -23,6 +23,7 @@ aurora-audio-io = { path = "../aurora-audio-io" }
 aurora-core = { path = "../aurora-core" }
 aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-dsp-camilladsp = { path = "../aurora-dsp-camilladsp", optional = true }
+aurora-evaluation = { path = "../aurora-evaluation" }
 aurora-renderer-api = { path = "../aurora-renderer-api" }
 aurora-renderer-basic = { path = "../aurora-renderer-basic" }
 aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api", optional = true }

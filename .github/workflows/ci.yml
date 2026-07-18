@@ -47,11 +47,28 @@ jobs:
         run: cargo test -p aurora-config --test contracts
       - name: Verify immutable configuration read allocation guard
         run: cargo test -p aurora-config --test immutable_reads
+      - name: Verify evaluation schemas, bounds, and deterministic evidence
+        run: cargo test -p aurora-evaluation --test contracts
       - run: cargo test --workspace --all-features
       - name: Verify public API documentation
         env:
           RUSTDOCFLAGS: -D warnings
         run: cargo doc --workspace --all-features --no-deps
+      - name: Generate canonical renderer evaluation artifacts
+        run: >-
+          cargo run -p aurora-cli -- evaluate-renderer
+          --scene fixtures/scenes/geometric_binaural_circle.json
+          --input fixtures/audio/mono_sweep.wav
+          --output-dir target/evaluation-artifacts
+          --renderer all
+          --commit-sha "${GITHUB_SHA}"
+      - name: Upload renderer evaluation artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderer-evaluation-${{ github.sha }}
+          path: target/evaluation-artifacts
+          if-no-files-found: error
+          retention-days: 14
 
   windows-stable:
     runs-on: windows-latest
