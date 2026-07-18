@@ -18,11 +18,16 @@
   `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`
 - Checkpoint B reconciliation merge commit:
   `5c75c934e669b54ded1e5c2422cba80c6c0073b0`
-- Implementation branch: `feature/runtime-plan-inspection-1-checkpoint-c`
+- Checkpoint C implementation: PR `#32`, commit
+  `f946a5d5abf4f0088e6ebbb99058196770661b61`
+- Checkpoint C merge commit:
+  `c3bb059396185eed5155e1147eca5f35c8c15ac7`
+- Reconciliation branch:
+  `docs/runtime-plan-inspection-checkpoint-c-reconciliation`
 - Required base: `main-v2` after the governance pull request merges normally
-- Active checkpoint: C; implementation is `IN_PROGRESS`
-- Completed checkpoints: A and B
-- Checkpoint D: `NOT_STARTED`
+- Active checkpoint: D; evaluation has not started
+- Completed checkpoints: A, B, and C
+- Checkpoint D: active next reviewed scope, `NOT_STARTED`
 - Expected terminal classification: `ACCEPTED`
 - Phase 2 required for implementation: no
 - Phase 2 required for acceptance: no
@@ -33,9 +38,15 @@ through PR `#30`. Checkpoint B merged through PR `#31` and delivered the
 versioned inspection-owned projection from `PreparedRuntimePlan` and
 `PreparedSetupPlan`, canonical source ordering, bounded validation, structured
 errors without silent truncation, default device/channel/speaker identifier
-redaction, and explicit local unredacted inspection options. Checkpoint C is the
-only active implementation scope. Checkpoint D remains `NOT_STARTED` until
-separately reviewed.
+redaction, and explicit local unredacted inspection options. Checkpoint C merged
+through PR `#32` and delivered deterministic compact JSON and human-readable
+formatting for inspection-owned reports, exact redacted/unredacted outputs,
+deterministic field/collection/enum/float representation, JSON escaping tests,
+structured bounded-output errors, and fixed deterministic inspection-owned
+findings. Its published bounds are 262144 JSON bytes, 262144 text bytes, nesting
+depth 8, and 256 total serialized collection entries. It did not serialize or
+modify prepared plans. Checkpoint D is the active next reviewed scope, but its
+evaluation has not started.
 
 ## Milestone Inventory And Selection
 

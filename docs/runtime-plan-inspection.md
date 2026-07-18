@@ -72,3 +72,17 @@ plan completeness, not runtime readiness. Formatting adds no negotiated,
 observed, simulated, measured, runtime-ready, latency, health, endpoint, or
 physical evidence. Phase 2 remains open and incomplete, and Phase 3C is not
 authorized.
+
+## Milestone Lifecycle
+
+Checkpoint C merged through PR `#32` at
+`c3bb059396185eed5155e1147eca5f35c8c15ac7`; its implementation commit is
+`f946a5d5abf4f0088e6ebbb99058196770661b61`. Checkpoints A, B, and C are
+`COMPLETE`. Runtime Plan Inspection 1 remains `IN_PROGRESS` with no evaluation
+classification and is neither accepted nor closed.
+
+Checkpoint D is the active next reviewed scope, but its evaluation has not
+started. It is limited to final local and remote validation, dependency and
+protected-contract audits, prohibited-scope and public-API/documentation audits,
+criterion-by-criterion architectural evaluation, an `ACCEPTED` or `REJECTED`
+decision, and the final stop boundary.

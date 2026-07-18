@@ -154,7 +154,9 @@ dependency is `aurora-runtime-inspection --> aurora-runtime-assembly`.
 The projection is not plan serialization, runtime readiness, diagnostics
 producer wiring, or runtime construction. It adds no reverse dependency and no
 renderer, DSP, engine, backend, simulator, CPAL, CLI, filesystem, environment,
-host, or hardware dependency. Checkpoints A and B are `COMPLETE`; Checkpoint C
-is `IN_PROGRESS` and adds deterministic bounded JSON/text formatting plus
-inspection-owned conformance evidence only. Final evaluation remains
-`NOT_STARTED` Checkpoint D work. See `docs/runtime-plan-inspection.md`.
+host, or hardware dependency. Checkpoints A, B, and C are `COMPLETE`.
+Checkpoint C's deterministic bounded JSON/text formatting and inspection-owned
+conformance evidence merged through PR `#32` at
+`c3bb059396185eed5155e1147eca5f35c8c15ac7`. Checkpoint D is the active next
+reviewed scope, but final validation and architectural evaluation have not
+started. See `docs/runtime-plan-inspection.md`.
