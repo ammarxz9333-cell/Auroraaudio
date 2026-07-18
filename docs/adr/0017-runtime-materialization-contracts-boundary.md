@@ -1,13 +1,18 @@
 # ADR 0017: Runtime Materialization Contracts Boundary
 
-- Status: Proposed; authorized after governance merge
+- Status: Accepted governance boundary; Checkpoint A active
 - Date: 2026-07-18
 - Milestone: Runtime Materialization Contracts 1
-- Authorization state: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`
-- Milestone status: `PROPOSED`
-- Execution state: `NOT_STARTED`
+- Authorization state: `AUTHORIZED`
+- Milestone status: `IN_PROGRESS`
+- Execution state: `IN_PROGRESS`
 - Evaluation classification: `NOT_EVALUATED`
-- Checkpoints A-D: `NOT_STARTED`
+- Checkpoint A: `IN_PROGRESS`
+- Checkpoints B-D: `NOT_STARTED`
+- Governance PR: `#36`
+- Governance source commit: `ac04160f7defcb229f38d9df75d7ba7c3f2e0208`
+- Governance merge commit: `69cc2e28f8664e724e7677c8be699db84b509d45`
+- Active implementation branch: `feature/runtime-materialization-contracts-1-checkpoint-a`
 
 The complete checkpoint specification, dependency matrix, limits, criteria,
 and validation strategy are in the

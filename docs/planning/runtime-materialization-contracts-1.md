@@ -4,14 +4,18 @@
 
 - Milestone: Runtime Materialization Contracts 1
 - Milestone kind: software-only control-plane contracts
-- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`
-- `milestone_status`: `PROPOSED`
-- `execution_state`: `NOT_STARTED`
+- `authorization_state`: `AUTHORIZED`
+- `milestone_status`: `IN_PROGRESS`
+- `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: `NOT_EVALUATED`
 - Governance branch: `governance/runtime-materialization-contracts-1`
-- Required base: `main-v2` after this governance pull request merges normally
-- Active checkpoint: none
-- Checkpoint A: `NOT_STARTED`
+- Governance PR: `#36`
+- Governance source commit: `ac04160f7defcb229f38d9df75d7ba7c3f2e0208`
+- Governance merge commit: `69cc2e28f8664e724e7677c8be699db84b509d45`
+- Implementation branch: `feature/runtime-materialization-contracts-1-checkpoint-a`
+- Required base: `main-v2` at the governance merge commit
+- Active checkpoint: A
+- Checkpoint A: `IN_PROGRESS`
 - Checkpoint B: `NOT_STARTED`
 - Checkpoint C: `NOT_STARTED`
 - Checkpoint D: `NOT_STARTED`
@@ -20,9 +24,9 @@
 - Phase 2 required for acceptance: no
 - Hardware acceptance criteria: none
 
-No implementation checkpoint is active before this governance change merges.
-The first implementation commit after a reviewed merge moves execution to
-`IN_PROGRESS`; branch creation alone does not.
+The governance change merged through PR `#36`. Checkpoint A is now the only
+active implementation scope. It remains `IN_PROGRESS` until separately
+reviewed and merged; Checkpoints B-D remain `NOT_STARTED`.
 
 Governance basis: [ADR 0017](../adr/0017-runtime-materialization-contracts-boundary.md),
 the accepted [runtime assembly](../acceptance/runtime-assembly-contracts-1.md)

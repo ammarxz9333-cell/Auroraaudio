@@ -233,19 +233,21 @@ serialization or modification. Checkpoint D's final validation and
 criterion-by-criterion architectural evaluation found no blocking defect and
 accepted the software-only milestone. This acceptance authorizes no later work.
 
-## Proposed Software Milestone: Runtime Materialization Contracts 1
+## Active Software Milestone: Runtime Materialization Contracts 1
 
-**Runtime Materialization Contracts 1** is the next proposed software-only
-control-plane milestone. It is authorized only after its governance amendment
-merges normally.
+**Runtime Materialization Contracts 1** is the active software-only
+control-plane milestone. Its governance amendment merged through PR `#36` at
+`69cc2e28f8664e724e7677c8be699db84b509d45`.
 
-- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`
-- `milestone_status`: `PROPOSED`
-- `execution_state`: `NOT_STARTED`
+- `authorization_state`: `AUTHORIZED`
+- `milestone_status`: `IN_PROGRESS`
+- `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: `NOT_EVALUATED`
-- active checkpoint: none
-- Checkpoints A-D: `NOT_STARTED`
-- proposed crate: `aurora-runtime-materialization`
+- active checkpoint: A
+- Checkpoint A: `IN_PROGRESS`
+- Checkpoints B-D: `NOT_STARTED`
+- implementation branch: `feature/runtime-materialization-contracts-1-checkpoint-a`
+- crate: `aurora-runtime-materialization`
 - permitted Aurora dependency:
   `aurora-runtime-materialization --> aurora-runtime-assembly`
 - Phase 2 required for implementation or acceptance: no
@@ -262,9 +264,9 @@ a callback, access a host or hardware, or claim runtime readiness.
 Each checkpoint is separately reviewed: A establishes the isolated crate and
 marker contracts; B adds deterministic derivation; C may add bounded
 materialization-owned inspection and conformance evidence; D performs final
-validation and architectural evaluation. No checkpoint is active before this
-governance change merges. The full dependency matrix, bounds, acceptance
-criteria, risks, and stop boundary are in
+validation and architectural evaluation. Only Checkpoint A is active; it is
+not complete in this implementation branch. The full dependency matrix,
+bounds, acceptance criteria, risks, and stop boundary are in
 `docs/planning/runtime-materialization-contracts-1.md` and ADR 0017.
 
 Physical Acoustic Simulator 1 in PR `#22` remains open, Draft, `PROPOSED`,

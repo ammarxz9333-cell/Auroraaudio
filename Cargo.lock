@@ -313,6 +313,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-runtime-materialization"
+version = "0.1.0"
+dependencies = [
+ "aurora-runtime-assembly",
+]
+
+[[package]]
 name = "aurora-scene"
 version = "0.1.0"
 dependencies = [

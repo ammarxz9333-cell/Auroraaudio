@@ -5,8 +5,8 @@
 > **Primary language:** Rust  
 > **Last consolidated milestone:** Runtime Plan Inspection 1 accepted on
 > 2026-07-18 as a software-only milestone. Runtime Materialization Contracts 1
-> is proposed and becomes authorized only after its governance amendment merges;
-> no implementation checkpoint is active. Phase 2 physical hardware validation
+> is `AUTHORIZED` and `IN_PROGRESS`; Checkpoint A is the only active checkpoint.
+> Phase 2 physical hardware validation
 > remains open and incomplete. Hardware-blocked parallel development is governed
 > by Section 16.1.
 
@@ -1412,7 +1412,7 @@ dependency matrix, checkpoints, acceptance criteria, validation, risks, and
 stop boundary are authoritative in ADR 0016 and
 `docs/planning/runtime-plan-inspection-1.md`.
 
-### Proposed software-only milestone: Runtime Materialization Contracts 1
+### Active software-only milestone: Runtime Materialization Contracts 1
 
 The repository audit after Runtime Plan Inspection 1 found no current owner for
 a passive, bounded description of the resource requirements that a future
@@ -1420,25 +1420,29 @@ runtime constructor would need. Runtime assembly ends at prepared/setup intent;
 inspection is read-only; configuration, diagnostics, simulation, engines, and
 backends retain their accepted independent ownership.
 
-The next proposed milestone is **Runtime Materialization Contracts 1**. Its
+The active milestone is **Runtime Materialization Contracts 1**. Its
 current lifecycle is:
 
-- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`;
-- `milestone_status`: `PROPOSED`;
-- `execution_state`: `NOT_STARTED`;
+- `authorization_state`: `AUTHORIZED`;
+- `milestone_status`: `IN_PROGRESS`;
+- `execution_state`: `IN_PROGRESS`;
 - `evaluation_classification`: `NOT_EVALUATED`;
-- active checkpoint: none;
-- Checkpoint A: `NOT_STARTED`;
+- active checkpoint: A;
+- Checkpoint A: `IN_PROGRESS`;
 - Checkpoint B: `NOT_STARTED`;
 - Checkpoint C: `NOT_STARTED`;
 - Checkpoint D: `NOT_STARTED`;
-- proposed crate: `aurora-runtime-materialization`;
+- governance PR: `#36`;
+- governance source commit: `ac04160f7defcb229f38d9df75d7ba7c3f2e0208`;
+- governance merge commit: `69cc2e28f8664e724e7677c8be699db84b509d45`;
+- implementation branch: `feature/runtime-materialization-contracts-1-checkpoint-a`;
+- crate: `aurora-runtime-materialization`;
 - Phase 2 required for implementation or acceptance: no;
 - hardware-dependent criteria: none.
 
-No implementation is authorized before the governance amendment merges. After
-merge, only Checkpoint A may begin on a separately reviewed implementation
-branch.
+The governance amendment merged normally. Only Checkpoint A is active on its
+separately reviewed implementation branch; it is not complete, and no later
+checkpoint is authorized by this work.
 
 The selected ownership and sole permitted Aurora production edge are:
 
@@ -1713,14 +1717,13 @@ milestone; Checkpoints A, B, C, and D are complete. Its acceptance record is
 `docs/acceptance/runtime-plan-inspection-1.md`. Phase 2 remains open and
 incomplete, and Phase 3C remains not started.
 
-Runtime Materialization Contracts 1 is the next proposed software-only
-milestone. Its `authorization_state` is
-`AUTHORIZED_AFTER_GOVERNANCE_MERGE`, its `milestone_status` is `PROPOSED`, its
-`execution_state` is `NOT_STARTED`, and its `evaluation_classification` is
-`NOT_EVALUATED`. Checkpoints A-D are `NOT_STARTED`; no checkpoint is active.
-The immediate action is governance review. Only after this governance change
-merges may a new branch begin Checkpoint A's isolated crate and marker
-contracts.
+Runtime Materialization Contracts 1 is the active software-only milestone. Its
+`authorization_state` is `AUTHORIZED`, its `milestone_status` and
+`execution_state` are `IN_PROGRESS`, and its `evaluation_classification` is
+`NOT_EVALUATED`. Checkpoint A is `IN_PROGRESS`; Checkpoints B-D are
+`NOT_STARTED`. Governance PR `#36` merged at
+`69cc2e28f8664e724e7677c8be699db84b509d45`; the immediate action is the
+separately reviewed Checkpoint A crate and marker-contract implementation.
 
 The next agent must not:
 
@@ -1732,17 +1735,16 @@ The next agent must not:
 - add a GUI;
 - add or change renderer behavior;
 - start Phase 3C;
-- implement Runtime Materialization Contracts 1 before its governance merge;
+- implement beyond Runtime Materialization Contracts 1 Checkpoint A;
 - combine its checkpoints or begin beyond Checkpoint A automatically;
 - serialize, mutate, reconstruct, hash, or fingerprint prepared plans;
 - construct or execute runtime resources;
 - modify or implement Physical Acoustic Simulator 1 / PR `#22`;
 - add physical latency claims.
 
-This governance proposal contains no implementation. Physical Acoustic
-Simulator 1 remains on hold. No implementation checkpoint becomes active until
-the Runtime Materialization Contracts 1 governance change merges and a
-separate Checkpoint A change begins.
+Physical Acoustic Simulator 1 remains on hold. Runtime Materialization
+Contracts 1 Checkpoint A is the only active implementation scope; Checkpoints
+B-D remain `NOT_STARTED`.
 
 The simulator is complete and frozen. The campaign may exercise it but must not
 duplicate it, change its accepted record, or use it as a substitute for Phase 2
@@ -2007,6 +2009,19 @@ Do not rewrite history. Record replaced decisions in ADRs.
   planning. Define exactly one hardware-independent successor without resource
   construction, runtime execution, protected-contract changes, Phase 2,
   Phase 3C, Physical Acoustic Simulator 1, or physical/readiness/latency claims.
+
+### Maintenance record: 2026-07-18 -- Runtime Materialization Checkpoint A activation
+
+- Governance PR `#36`, source commit
+  `ac04160f7defcb229f38d9df75d7ba7c3f2e0208`, merged normally at
+  `69cc2e28f8664e724e7677c8be699db84b509d45`.
+- Runtime Materialization Contracts 1 is `AUTHORIZED`, `IN_PROGRESS`, and
+  `NOT_EVALUATED`. Checkpoint A is `IN_PROGRESS`; Checkpoints B-D remain
+  `NOT_STARTED`.
+- The active branch is
+  `feature/runtime-materialization-contracts-1-checkpoint-a`. This record does
+  not complete Checkpoint A, authorize Checkpoint B, construct a runtime
+  resource, or make a hardware, physical, readiness, or latency claim.
 
 ---
 
