@@ -7,6 +7,7 @@ Aurora is in **active product implementation**.
 - Active program: `Immersive Audio Product Implementation 1`
 - Active work item: issue `#43`, Checkpoint A
 - Next work items: issues `#44`, `#48`, `#45`, `#50`, then `#38`
+- Deferred but mandatory before production dynamic routing: issue `#51`
 - Default development mode: implementation PRs
 - Governance mode: maintenance only
 
@@ -16,6 +17,7 @@ The authoritative execution sources are:
 
 - `docs/roadmaps/immersive-wireless-audio-execution-roadmap.md`
 - `docs/roadmaps/dsp-primitives-extraction-plan.md`
+- `docs/roadmaps/declarative-audio-graph-extraction-plan.md`
 
 Historical governance documents remain records of earlier decisions. They do not override these files or select the next implementation task.
 
@@ -34,11 +36,12 @@ Historical governance documents remain records of earlier decisions. They do not
 11. build the deterministic network simulator.
 12. implement packetized IP audio using Tokio outside realtime boundaries.
 13. add the Linux receiver and optional PipeWire backend.
-14. add multiroom behavior.
-15. compare against Steam Audio and Snapcast as external references.
-16. perform minimum physical validation and select hardware from measurements.
+14. `#51` — implement the minimum Aurora-owned declarative graph compiler, differential reconciler, and atomic generation publication needed by real dynamic-routing consumers.
+15. add production multiroom behavior and device-reconnect routing on top of the accepted graph model.
+16. compare against Steam Audio and Snapcast as external references.
+17. perform minimum physical validation and select hardware from measurements.
 
-Issues `#48` and `#45` may proceed alongside each other after `#44`, but each must use a separate PR. Issue `#50` starts only after the evaluation runner exists and must land before moving-source delay continuity is claimed complete.
+Issues `#48` and `#45` may proceed alongside each other after `#44`, but each must use a separate PR. Issue `#50` starts only after the evaluation runner exists and must land before moving-source delay continuity is claimed complete. Issue `#51` must not delay the renderer critical path, but it must land before production multiroom routing, runtime device replacement, or complex dynamic DSP-chain reconfiguration is called complete.
 
 ## Required contributor behavior
 
@@ -52,10 +55,11 @@ Contributors and coding agents must:
 6. keep third-party engines optional and behind Aurora-owned interfaces;
 7. document dataset, patent, codec-feature, FFI, derivation, attribution, and redistribution boundaries;
 8. keep unsafe/native code inside small reviewed adapter crates;
-9. keep decoding, async runtimes, locks, filesystem access, and heavy logging outside audio callbacks;
+9. keep decoding, async runtimes, locks, filesystem access, graph reconciliation, hashing, resource destruction, and heavy logging outside audio callbacks;
 10. avoid adding planning-only architecture unless a concrete implementation blocker requires it;
-11. never combine HRTF, IAMF, networking, receiver, and multiroom work in one PR;
-12. compare any proposed DSP replacement against the existing Aurora implementation before adoption.
+11. never combine HRTF, IAMF, networking, receiver, graph-engine, and multiroom work in one PR;
+12. compare any proposed DSP replacement against the existing Aurora implementation before adoption;
+13. publish runtime graph changes only as complete validated generations at audio block boundaries.
 
 ## Rust foundation policy
 
@@ -81,9 +85,22 @@ Contributors and coding agents must:
 - Synthesizers, granular effects, oscillators, pitch tracking, noise gates, and music-effects facilities remain deferred unless a product issue requires them.
 - Do not add `q_io`, PortAudio, PortMidi, C++ types, or raw pointers to Aurora public APIs.
 
+## Declarative graph extraction policy
+
+- `elemaudio/elementary` is an architecture reference, not an Aurora runtime dependency.
+- Aurora will implement a typed immutable Rust graph model only when a concrete dynamic-routing consumer exists.
+- Logical node identity, structural identity, runtime parameter state, and graph generation identity must remain separate.
+- Structural hashes are optimizations only and must be collision-safe through canonical equality or equivalent stable keys.
+- Parameter-only changes should preserve node state and avoid graph rebuilds where valid.
+- Graph validation, reconciliation, allocation, initialization, hashing, and retirement occur outside realtime.
+- The callback receives only complete immutable runtime snapshots and observes either generation N or generation N+1.
+- Publication occurs at block boundaries through a bounded control path.
+- Root crossfades are measured for discontinuity, CPU overlap, peak memory, and transition latency.
+- Do not add JavaScript, Elementary's C++ runtime, a visual modular synthesizer, or a general plugin-host scope to the first product release.
+
 ## Integration policy
 
-Aurora-owned components remain responsible for scene representation, PCM contracts, rendering policy, DSP primitives, evaluation, timing, transport, receiver behavior, and product orchestration.
+Aurora-owned components remain responsible for scene representation, PCM contracts, rendering policy, DSP primitives, graph description and compilation, evaluation, timing, transport, receiver behavior, and product orchestration.
 
 Preferred third-party roles:
 
@@ -94,7 +111,7 @@ Preferred third-party roles:
 - Steam Audio: external HRTF and room-simulation comparison;
 - Snapcast: external multiroom synchronization comparison.
 
-Cavern, truehdd, Resonance Audio, Rodio, PortAudio, PortMidi, and `cycfi/q` are not active first-release runtime dependencies.
+Cavern, truehdd, Resonance Audio, Rodio, PortAudio, PortMidi, `cycfi/q`, and Elementary are not active first-release runtime dependencies.
 
 ## Capability honesty
 
