@@ -128,8 +128,11 @@ renderer/DSP/backend setup intent inside `aurora-runtime-assembly`.
 `SetupPlanComplete` means only that the description is complete; it is not
 runtime, host, or physical readiness. Direct dependencies remain only
 `aurora-config` and `aurora-core`; construction and integration remain
-unauthorized. Checkpoint D is consolidating contract evidence and documentation
-before the separate Checkpoint E architectural acceptance review.
+unauthorized. Checkpoint D's contract evidence and documentation are complete
+and merged through PR `#26` at
+`93f36464cac429bf7e25b257e894aab64a72e2d4`. Checkpoint E remains the separate
+final architectural acceptance review and is `NOT_STARTED`; the milestone is
+still `IN_PROGRESS` and `NOT_EVALUATED`.
 
 Diagnostics & Telemetry Framework 1 and Configuration & Preset System 1 are
 merged, accepted software-only control planes. Phase 2 remains open and

@@ -1257,18 +1257,17 @@ callback and introduces no physical claim.
 ### Active software-only milestone: Runtime Assembly Contracts 1
 
 **Runtime Assembly Contracts 1** is an authorized hardware-independent
-control-plane milestone. Checkpoints A, B, and C are complete. Checkpoint D is
-consolidating evidence and documentation before the final Checkpoint E
-architecture review.
+control-plane milestone. Checkpoints A, B, C, and D are complete. Checkpoint E
+is the separate final architecture review and has not started.
 
 Current execution record:
 
 - `authorization_state`: `AUTHORIZED`;
 - `execution_state`: `IN_PROGRESS`;
 - `evaluation_classification`: `NOT_EVALUATED`;
-- `completed_checkpoint`: `C`;
-- `active_checkpoint`: `D`;
-- Checkpoint D execution state: `IN_PROGRESS`;
+- `completed_checkpoint`: `D`;
+- `next_checkpoint`: `E`;
+- Checkpoint D execution state: `COMPLETE`;
 - Checkpoint E execution state: `NOT_STARTED`;
 - implementation crate: `aurora-runtime-assembly`;
 - expected final classification: `ACCEPTED`.
@@ -1283,6 +1282,8 @@ Authoritative checkpoint sequence after ADR 0015 merges:
 
 Checkpoint C merged through PR `#25` at merge commit
 `dbf06a8d2f613086cccf3e6b43e8c7f714e00671`.
+Checkpoint D merged through PR `#26` at merge commit
+`93f36464cac429bf7e25b257e894aab64a72e2d4`.
 
 Hardware dependency matrix:
 
@@ -1313,12 +1314,13 @@ requested format intent, renderer/DSP/backend setup intent, and a
 non-observational `SetupPlanComplete` terminal stage. It contains no runtime
 objects and makes no execution, negotiation, readiness, host, or physical claim.
 
-Checkpoint D may consolidate contract tests, public API documentation,
-dependency and prohibited-scope evidence, and CI validation only. Checkpoint E
-remains `NOT_STARTED`; no acceptance decision, renderer factory integration,
-live or simulated engine wiring, CLI inspection, diagnostics producer wiring,
-multichannel routing redesign, Phase 2 changes, Phase 3C, or later milestone is
-authorized.
+Checkpoint D's contract tests, public API documentation, dependency and
+prohibited-scope evidence, and validation are complete. It was marked
+`IN_PROGRESS` while PR `#26` was under review and is reconciled to `COMPLETE`
+following merge. Checkpoint E remains `NOT_STARTED`; no acceptance decision,
+renderer factory integration, live or simulated engine wiring, CLI inspection,
+diagnostics producer wiring, multichannel routing redesign, Phase 2 changes,
+Phase 3C, or later milestone is authorized.
 The complete contract, dependency matrix, tests, non-goals, and stop boundary
 are recorded in `docs/planning/runtime-assembly-contracts-1.md`, ADR 0014, and
 ADR 0015.
@@ -1527,9 +1529,9 @@ acceptance authorizes Phase 3C or any later product milestone.
 Phase 2 physical hardware validation remains open and incomplete.
 
 Runtime Assembly Contracts 1 is `IN_PROGRESS` and `NOT_EVALUATED`; Checkpoints
-A, B, and C are complete, Checkpoint D is active, and Checkpoint E is
-`NOT_STARTED`. Checkpoint D authorizes evidence and documentation only, with no
-runtime integration, Phase 2 change, Phase 3C work, acceptance decision, or
+A, B, C, and D are complete, and Checkpoint E is `NOT_STARTED`. This
+post-merge status reconciliation is not an acceptance decision and authorizes
+no runtime integration, Phase 2 change, Phase 3C work, later milestone, or
 physical claim.
 
 The next agent must not:
@@ -1700,6 +1702,17 @@ Do not rewrite history. Record replaced decisions in ADRs.
 - Reason: reconcile merged Checkpoint C and record Checkpoint D evidence work
   without evaluating or accepting the milestone, starting Checkpoint E,
   changing runtime behavior, or introducing a physical claim.
+
+### Maintenance record: 2026-07-18 -- Checkpoint D post-merge status
+
+- Milestone: Runtime Assembly Contracts 1; milestone remains `IN_PROGRESS` and
+  `NOT_EVALUATED`.
+- Changed sections: Checkpoint completion record, immediate next action, and
+  post-merge evidence status.
+- Reason: PR `#26` merged at
+  `93f36464cac429bf7e25b257e894aab64a72e2d4`; reconcile Checkpoint D from its
+  review-time `IN_PROGRESS` state to `COMPLETE` while leaving Checkpoint E
+  `NOT_STARTED` and making no acceptance, runtime, or physical claim.
 
 ---
 

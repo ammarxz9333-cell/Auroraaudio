@@ -6,8 +6,8 @@
 - Authorization state: `AUTHORIZED`
 - Execution state: `IN_PROGRESS`
 - Evaluation classification: `NOT_EVALUATED`
-- Completed checkpoints: A, B, C
-- Active checkpoint: D
+- Completed checkpoints: A, B, C, D
+- Checkpoint D: `COMPLETE`
 - Checkpoint E: `NOT_STARTED`
 - Evidence date: `2026-07-18`
 - Branch: `docs/runtime-assembly-contracts-1-checkpoint-d`
@@ -24,6 +24,12 @@ record and makes no runtime, host, hardware, latency, or physical claim.
 | Checkpoint B derivation | #23 | `687f64c526a9671316a6bdc713301d63c45cb8a0` | `2a45322e05476801d77705cd26f5be5479eeac35` |
 | ADR 0015 authorization | #24 | `51f803f2c0079e640c0af1a62e357686e371ebbe` | `766bf50f482ba12d2b701581d19453f866fba612` |
 | Checkpoint C setup plan | #25 | `fc4d3fccf5adbee9638b7d214cd8baa6aacc1ecf` | `dbf06a8d2f613086cccf3e6b43e8c7f714e00671` |
+| Checkpoint D evidence | #26 | `b2c08a4767c26de1bcd4b911a0d941a24317a1aa` | `93f36464cac429bf7e25b257e894aab64a72e2d4` |
+
+Checkpoint D was marked `IN_PROGRESS` while PR `#26` was under review.
+Following its merge, the checkpoint status is reconciled to `COMPLETE`.
+Runtime Assembly Contracts 1 remains `IN_PROGRESS` and `NOT_EVALUATED`, and
+Checkpoint E remains the separate final architectural evaluation.
 
 ADRs [0014](../adr/0014-runtime-assembly-boundary.md) and
 [0015](../adr/0015-deterministic-runtime-setup-planning.md) remain historical
@@ -112,11 +118,12 @@ Local results on Windows:
 - dependency-boundary and prohibited-import scans: PASS;
 - `git diff --check`: PASS.
 
-The exact Checkpoint D commit is recorded in the Draft PR. Remote Linux,
-Windows, MSRV, and Simulation Assurance PR Smoke results are pending until that
-PR runs; they are evidence inputs, not acceptance. Existing CI targets Linux
-stable, Windows stable, and Rust 1.78. The local results above are build and
-unit-test evidence only and do not observe a device or physical path.
+The exact Checkpoint D reviewed head and merge commit are recorded above.
+Remote checks were outside the local evidence available when this document was
+first prepared; this post-merge reconciliation does not invent or restate their
+results. Existing CI targets Linux stable, Windows stable, and Rust 1.78. The
+local results above are build and unit-test evidence only and do not observe a
+device or physical path.
 
 ## Scope Audit
 
@@ -133,8 +140,6 @@ changed.
 
 ## Remaining Evidence
 
-- required Draft PR checks on Linux stable, Windows stable, and Rust 1.78;
-- Simulation Assurance PR Smoke result;
 - Checkpoint E's separate criterion-by-criterion architectural review.
 
 Runtime Assembly Contracts 1 remains `IN_PROGRESS` and `NOT_EVALUATED`.

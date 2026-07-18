@@ -5,18 +5,20 @@
 - `authorization_state`: `AUTHORIZED`
 - `execution_state`: `IN_PROGRESS`
 - `evaluation_classification`: `NOT_EVALUATED`
-- `completed_checkpoint`: `C`
-- `active_checkpoint`: `D`
-- Checkpoint D execution state: `IN_PROGRESS`
+- `completed_checkpoint`: `D`
+- `next_checkpoint`: `E`
+- Checkpoint D execution state: `COMPLETE`
 - Checkpoint E execution state: `NOT_STARTED`
 - evidence branch: `docs/runtime-assembly-contracts-1-checkpoint-d`
-- review state: Checkpoint D evidence in review on its dedicated branch; unmerged
+- review state: Checkpoint D merged through PR `#26` at
+  `93f36464cac429bf7e25b257e894aab64a72e2d4`
 
 Checkpoint A's isolated immutable contract model, Checkpoint B's deterministic
 runtime-plan derivation, and Checkpoint C's deterministic setup planning are
-merged. Checkpoint D consolidates public contract tests, rustdoc, dependency
-and prohibited-scope evidence, and validation results. The milestone remains
-`IN_PROGRESS`, `NOT_EVALUATED`, and not accepted. Checkpoint E has not started.
+merged. Checkpoint D's public contract tests, rustdoc, dependency and
+prohibited-scope evidence, and validation results are also merged. The
+milestone remains `IN_PROGRESS`, `NOT_EVALUATED`, and not accepted. Checkpoint
+E has not started.
 
 ## Original governance record (ADR 0014)
 
@@ -341,10 +343,13 @@ Checkpoint C is complete and merged in PR `#25` at merge commit
 - cover invalid cases and document public APIs;
 - run Linux, Windows, MSRV, Clippy, tests, and rustdoc.
 
-Checkpoint D is `IN_PROGRESS` on
-`docs/runtime-assembly-contracts-1-checkpoint-d`. Its evidence record is
-`docs/evidence/runtime-assembly-contracts-1-checkpoint-d.md`. Remote PR checks
-remain pending until the Draft PR exists.
+Checkpoint D is complete and merged in PR `#26` at merge commit
+`93f36464cac429bf7e25b257e894aab64a72e2d4`. Its evidence record is
+`docs/evidence/runtime-assembly-contracts-1-checkpoint-d.md`.
+
+Checkpoint D was marked `IN_PROGRESS` while PR `#26` was under review.
+Following that PR's merge, this status is reconciled to `COMPLETE`. Checkpoint
+E remains the separate final architectural evaluation.
 
 ### Checkpoint E: stop and architectural acceptance review
 
@@ -430,9 +435,9 @@ Phase 2 or authorize Phase 3C.
 
 ## Stop boundary
 
-Checkpoint D must stop after evidence consolidation, contract tests, public API
-documentation, validation, and an unmerged Draft PR. Checkpoint E remains the
-separate final architectural acceptance boundary. The agent must not continue
-into that review, renderer factory integration, a virtual end-to-end harness,
-diagnostics producer wiring, multichannel routing redesign, Phase 2, Phase 3C,
-or any later milestone.
+Checkpoint D stopped after evidence consolidation, contract tests, public API
+documentation, validation, and its merged review. Checkpoint E remains the
+separate final architectural acceptance boundary and is `NOT_STARTED`. No
+status reconciliation may continue into that review, renderer factory
+integration, a virtual end-to-end harness, diagnostics producer wiring,
+multichannel routing redesign, Phase 2, Phase 3C, or any later milestone.
