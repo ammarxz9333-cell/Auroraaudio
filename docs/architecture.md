@@ -130,9 +130,13 @@ runtime, host, or physical readiness. Direct dependencies remain only
 `aurora-config` and `aurora-core`; construction and integration remain
 unauthorized. Checkpoint D's contract evidence and documentation are complete
 and merged through PR `#26` at
-`93f36464cac429bf7e25b257e894aab64a72e2d4`. Checkpoint E remains the separate
-final architectural acceptance review and is `NOT_STARTED`; the milestone is
-still `IN_PROGRESS` and `NOT_EVALUATED`.
+`93f36464cac429bf7e25b257e894aab64a72e2d4`. Checkpoint E's separate final
+architectural review accepted Runtime Assembly Contracts 1 on 2026-07-18. This
+software-only result accepts immutable descriptive contracts and deterministic
+derivation only. It does not assert runtime readiness, execute or construct a
+renderer, DSP, backend, stream, callback, or engine, validate hardware, make a
+physical claim, or authorize Phase 2, Phase 3C, or a later milestone. See
+`docs/acceptance/runtime-assembly-contracts-1.md`.
 
 Diagnostics & Telemetry Framework 1 and Configuration & Preset System 1 are
 merged, accepted software-only control planes. Phase 2 remains open and

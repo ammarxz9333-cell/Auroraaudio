@@ -1254,21 +1254,21 @@ acceptance record is
 acceptance changes no physical gate, protected audio contract, or runtime
 callback and introduces no physical claim.
 
-### Active software-only milestone: Runtime Assembly Contracts 1
+### Accepted software-only milestone: Runtime Assembly Contracts 1
 
 **Runtime Assembly Contracts 1** is an authorized hardware-independent
-control-plane milestone. Checkpoints A, B, C, and D are complete. Checkpoint E
-is the separate final architecture review and has not started.
+control-plane milestone. Checkpoints A, B, C, D, and E are complete. The final
+architectural evaluation accepted the milestone on 2026-07-18.
 
 Current execution record:
 
 - `authorization_state`: `AUTHORIZED`;
-- `execution_state`: `IN_PROGRESS`;
-- `evaluation_classification`: `NOT_EVALUATED`;
-- `completed_checkpoint`: `D`;
-- `next_checkpoint`: `E`;
+- `milestone_status`: `COMPLETE`;
+- `execution_state`: `CLOSED`;
+- `evaluation_classification`: `ACCEPTED`;
+- `completed_checkpoint`: `E`;
 - Checkpoint D execution state: `COMPLETE`;
-- Checkpoint E execution state: `NOT_STARTED`;
+- Checkpoint E execution state: `COMPLETE`;
 - implementation crate: `aurora-runtime-assembly`;
 - expected final classification: `ACCEPTED`.
 
@@ -1315,12 +1315,15 @@ non-observational `SetupPlanComplete` terminal stage. It contains no runtime
 objects and makes no execution, negotiation, readiness, host, or physical claim.
 
 Checkpoint D's contract tests, public API documentation, dependency and
-prohibited-scope evidence, and validation are complete. It was marked
-`IN_PROGRESS` while PR `#26` was under review and is reconciled to `COMPLETE`
-following merge. Checkpoint E remains `NOT_STARTED`; no acceptance decision,
-renderer factory integration, live or simulated engine wiring, CLI inspection,
-diagnostics producer wiring, multichannel routing redesign, Phase 2 changes,
-Phase 3C, or later milestone is authorized.
+prohibited-scope evidence, and validation are complete. Checkpoint E's final
+criterion-by-criterion architectural review found no blocking issue. The
+acceptance record is `docs/acceptance/runtime-assembly-contracts-1.md`.
+
+This is software-only control-plane acceptance. No runtime subsystem executed;
+no renderer, DSP, backend, stream, callback, or engine was constructed; no
+hardware was validated; and no physical or latency claim is made. The
+acceptance does not authorize Phase 2 implementation, Phase 3C, or any later
+milestone.
 The complete contract, dependency matrix, tests, non-goals, and stop boundary
 are recorded in `docs/planning/runtime-assembly-contracts-1.md`, ADR 0014, and
 ADR 0015.
@@ -1528,11 +1531,10 @@ Configuration & Preset System 1 is accepted as a software-only milestone. No
 acceptance authorizes Phase 3C or any later product milestone.
 Phase 2 physical hardware validation remains open and incomplete.
 
-Runtime Assembly Contracts 1 is `IN_PROGRESS` and `NOT_EVALUATED`; Checkpoints
-A, B, C, and D are complete, and Checkpoint E is `NOT_STARTED`. This
-post-merge status reconciliation is not an acceptance decision and authorizes
-no runtime integration, Phase 2 change, Phase 3C work, later milestone, or
-physical claim.
+Runtime Assembly Contracts 1 is `CLOSED` and `ACCEPTED` as a software-only
+control-plane milestone; Checkpoints A, B, C, D, and E are complete. The
+acceptance authorizes no runtime integration, Phase 2 implementation, Phase 3C,
+or later milestone and makes no hardware, physical, or latency claim.
 
 The next agent must not:
 
@@ -1713,6 +1715,16 @@ Do not rewrite history. Record replaced decisions in ADRs.
   `93f36464cac429bf7e25b257e894aab64a72e2d4`; reconcile Checkpoint D from its
   review-time `IN_PROGRESS` state to `COMPLETE` while leaving Checkpoint E
   `NOT_STARTED` and making no acceptance, runtime, or physical claim.
+
+### Maintenance record: 2026-07-18 -- Runtime Assembly final evaluation
+
+- Milestone: Runtime Assembly Contracts 1.
+- Changed sections: execution record, evaluation classification, completed
+  checkpoints, immediate next action, and acceptance-document reference.
+- Reason: Checkpoint E reviewed the complete merged implementation and evidence
+  against ADRs 0014 and 0015 with no blocking finding. Close as `ACCEPTED`
+  software-only control-plane work without runtime execution, hardware
+  validation, physical claims, or later-milestone authorization.
 
 ---
 
