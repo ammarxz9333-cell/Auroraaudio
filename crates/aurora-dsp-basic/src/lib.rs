@@ -73,6 +73,27 @@ impl DelayProcessor {
         Ok(())
     }
 
+    /// Sets independent per-channel delays in samples from a slice without allocation.
+    pub fn set_delays_slice(&mut self, delays_samples: &[f32]) -> Result<(), BasicDspError> {
+        if delays_samples.len() != self.channel_count {
+            return Err(BasicDspError::DelayChannelCount {
+                expected: self.channel_count,
+                actual: delays_samples.len(),
+            });
+        }
+        for &delay_samples in delays_samples {
+            if delay_samples > self.max_delay_samples {
+                return Err(BasicDspError::DelayExceedsMaximum {
+                    delay_samples,
+                    max_delay_samples: self.max_delay_samples,
+                });
+            }
+        }
+
+        self.delays_samples.copy_from_slice(delays_samples);
+        Ok(())
+    }
+
     /// Processes a planar audio block and returns delayed output.
     pub fn process_block(&mut self, input: &[Vec<f32>]) -> Result<Vec<Vec<f32>>, BasicDspError> {
         let frame_count = input.first().map_or(0, Vec::len);

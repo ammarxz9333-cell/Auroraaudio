@@ -20,7 +20,7 @@ use aurora_realtime_engine::{
     create_adaptive_duplex_bridge, estimate_repeated_latency, generate_measurement_sequence,
     AdaptiveDuplexFault, DriftControllerConfig, DuplexBridgeConfig, DuplexFaultPolicy,
     DuplexHealth, DuplexStateEvent, DuplexStateMachine, DuplexStreamState, ProcessStatus,
-    RealTimeEngine, RealTimeEngineConfig, RubatoAsrc, TestSignal,
+    RealTimeEngine, RealTimeEngineConfig, RubatoAsrc, TestSignal, BasicRendererMode,
 };
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
 use serde::Serialize;
@@ -169,6 +169,7 @@ fn run_duplex_once(options: &DuplexOptions) -> Result<(DuplexSummary, bool)> {
             apply_geometric_delay: false,
             speed_of_sound: 343.0,
             test_signal: TestSignal::None,
+            renderer_mode: BasicRendererMode::InverseDistance,
         },
         options.block_size,
     )?;

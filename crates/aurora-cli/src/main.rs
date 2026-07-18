@@ -74,6 +74,8 @@ enum Command {
         apply_geometric_delay: bool,
         #[arg(long, default_value_t = 343.0)]
         speed_of_sound: f32,
+        #[arg(long, value_enum, default_value_t = CliRendererMode::InverseDistance)]
+        renderer_mode: CliRendererMode,
     },
     /// Process an offline multichannel WAV through an external DSP engine.
     Process {
@@ -118,6 +120,8 @@ enum Command {
         test_signal: CliTestSignal,
         #[arg(long, default_value_t = 600)]
         duration_seconds: u64,
+        #[arg(long, value_enum, default_value_t = CliRendererMode::InverseDistance)]
+        renderer_mode: CliRendererMode,
     },
     /// Run independent input/output streams through adaptive duplex resampling.
     Duplex {
@@ -268,6 +272,25 @@ impl From<CliTestSignal> for TestSignal {
     }
 }
 
+#[derive(Debug, Clone, Copy, ValueEnum, PartialEq, Eq)]
+enum CliRendererMode {
+    NearestSpeaker,
+    InverseDistance,
+    EqualPowerAdjacent,
+    Binaural,
+}
+
+impl From<CliRendererMode> for BasicRendererMode {
+    fn from(value: CliRendererMode) -> Self {
+        match value {
+            CliRendererMode::NearestSpeaker => Self::NearestSpeaker,
+            CliRendererMode::InverseDistance => Self::InverseDistance,
+            CliRendererMode::EqualPowerAdjacent => Self::EqualPowerAdjacent,
+            CliRendererMode::Binaural => Self::Binaural,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum IdentifyLayout {
     Stereo,
@@ -326,6 +349,7 @@ fn main() -> Result<()> {
             output,
             apply_geometric_delay,
             speed_of_sound,
+            renderer_mode,
         } => {
             let report = render_offline(
                 &scene,
@@ -333,6 +357,7 @@ fn main() -> Result<()> {
                 &output,
                 apply_geometric_delay,
                 speed_of_sound,
+                renderer_mode.into(),
             )?;
             print_render_report(&report);
             Ok(())
@@ -372,6 +397,7 @@ fn main() -> Result<()> {
             speed_of_sound,
             test_signal,
             duration_seconds,
+            renderer_mode,
         } => run_realtime(
             input_device,
             output_device,
@@ -382,6 +408,7 @@ fn main() -> Result<()> {
             speed_of_sound,
             test_signal,
             duration_seconds,
+            renderer_mode.into(),
         ),
         Command::Duplex {
             input_device,
@@ -558,6 +585,7 @@ fn run_realtime(
     speed_of_sound: f32,
     test_signal: CliTestSignal,
     duration_seconds: u64,
+    renderer_mode: BasicRendererMode,
 ) -> Result<()> {
     let scene = load_render_scene(scene_path).context("load scene")?;
     let output_channels = scene.ordered_speakers()?.len();
@@ -582,6 +610,7 @@ fn run_realtime(
         apply_geometric_delay,
         speed_of_sound,
         test_signal: test_signal.into(),
+        renderer_mode,
     };
     let mut engine =
         RealTimeEngine::new(scene, engine_config, block_size).context("create real-time engine")?;
@@ -1204,6 +1233,7 @@ fn render_offline(
     output_path: &Path,
     apply_geometric_delay: bool,
     speed_of_sound: f32,
+    renderer_mode: BasicRendererMode,
 ) -> Result<OfflineRenderReport> {
     let scene = load_render_scene(scene_path).context("load scene")?;
     let input = read_wav(input_path).context("read input wav")?;
@@ -1214,7 +1244,7 @@ fn render_offline(
         );
     }
 
-    let rendered = render_mono_to_scene(&scene, &input, apply_geometric_delay, speed_of_sound)?;
+    let rendered = render_mono_to_scene(&scene, &input, apply_geometric_delay, speed_of_sound, renderer_mode)?;
     if let Some(parent) = output_path
         .parent()
         .filter(|parent| !parent.as_os_str().is_empty())
@@ -1245,6 +1275,7 @@ fn render_mono_to_scene(
     input: &WavData,
     apply_geometric_delay: bool,
     speed_of_sound: f32,
+    renderer_mode: BasicRendererMode,
 ) -> Result<RenderedAudio> {
     let block_size = scene.block_size;
     let ordered_speakers = scene.ordered_speakers()?;
@@ -1252,7 +1283,7 @@ fn render_mono_to_scene(
         .iter()
         .map(|speaker| speaker.channel_role.clone())
         .collect::<Vec<_>>();
-    let mut renderer = BasicRenderer::new(BasicRendererMode::InverseDistance).with_smoothing(0.35);
+    let mut renderer = BasicRenderer::new(renderer_mode).with_smoothing(0.35);
     renderer.configure(
         ordered_speakers.clone(),
         input.format.sample_rate,
@@ -1265,8 +1296,17 @@ fn render_mono_to_scene(
     let input_mono = &input.channels[0];
     let mut output_channels = vec![vec![0.0_f32; input.frame_count]; ordered_speakers.len()];
 
+    // Initialize delay processor for block-by-block processing
+    let mut delay_processor = DelayProcessor::new(ordered_speakers.len(), 1024.0);
+    let mut delays_scratch = vec![0.0; ordered_speakers.len()];
+
+    let mut block_in = vec![vec![0.0_f32; block_size]; ordered_speakers.len()];
+    let mut block_out = vec![vec![0.0_f32; block_size]; ordered_speakers.len()];
+
     for block_start in (0..input.frame_count).step_by(block_size) {
         let block_end = (block_start + block_size).min(input.frame_count);
+        let current_block_len = block_end - block_start;
+
         let block_midpoint = (block_start + block_end) / 2;
         let time_seconds = block_midpoint as f64 / f64::from(input.format.sample_rate);
         let scene_object = scene.object_at_time(time_seconds);
@@ -1281,10 +1321,33 @@ fn render_mono_to_scene(
             &mut scratch,
         )?;
 
-        for frame in block_start..block_end {
-            let mono_sample = input_mono[frame];
-            for (channel_index, gain) in gains.iter().enumerate() {
-                output_channels[channel_index][frame] = mono_sample * gain.gain;
+        // Fill input block buffer with mono samples multiplied by spatial gains
+        for (channel_index, gain) in gains.iter().enumerate() {
+            for (i, frame) in (block_start..block_end).enumerate() {
+                block_in[channel_index][i] = input_mono[frame] * gain.gain;
+            }
+        }
+
+        // Apply dynamic delay block-by-block if apply_geometric_delay or binaural
+        if apply_geometric_delay || renderer_mode == BasicRendererMode::Binaural {
+            for (i, gain) in gains.iter().enumerate() {
+                delays_scratch[i] = gain.delay_samples;
+            }
+            delay_processor.set_delays_slice(&delays_scratch)?;
+            delay_processor.process_block_into(&block_in, &mut block_out, current_block_len)?;
+
+            // Copy back delayed samples
+            for channel_index in 0..ordered_speakers.len() {
+                for (i, frame) in (block_start..block_end).enumerate() {
+                    output_channels[channel_index][frame] = block_out[channel_index][i];
+                }
+            }
+        } else {
+            // Copy back undelayed samples
+            for channel_index in 0..ordered_speakers.len() {
+                for (i, frame) in (block_start..block_end).enumerate() {
+                    output_channels[channel_index][frame] = block_in[channel_index][i];
+                }
             }
         }
     }
@@ -1295,18 +1358,11 @@ fn render_mono_to_scene(
         input.format.sample_rate,
         speed_of_sound,
     );
-    let mut dsp_latency_frames = 0;
-    if apply_geometric_delay {
-        let delays = channel_reports
-            .iter()
-            .map(|report| report.delay_samples)
-            .collect::<Vec<_>>();
-        let max_delay = delays.iter().copied().fold(0.0_f32, f32::max).ceil() + 2.0;
-        let mut delay_processor = DelayProcessor::new(output_channels.len(), max_delay);
-        delay_processor.set_delays(delays)?;
-        output_channels = delay_processor.process_block(&output_channels)?;
-        dsp_latency_frames = delay_processor.latency_frames();
-    }
+    let dsp_latency_frames = if apply_geometric_delay || renderer_mode == BasicRendererMode::Binaural {
+        delay_processor.latency_frames()
+    } else {
+        0
+    };
 
     Ok(RenderedAudio {
         channels: output_channels,

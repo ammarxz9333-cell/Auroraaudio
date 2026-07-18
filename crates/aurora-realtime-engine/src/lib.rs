@@ -32,6 +32,7 @@ pub use latency::{
     LatencyMeasurementReport,
 };
 pub use transport::{TransportKind, TransportPrototype};
+pub use aurora_renderer_basic::BasicRendererMode;
 
 use std::time::{Duration, Instant};
 
@@ -76,6 +77,8 @@ pub struct RealTimeEngineConfig {
     pub speed_of_sound: f32,
     /// Test signal mode.
     pub test_signal: TestSignal,
+    /// Renderer mode to use.
+    pub renderer_mode: BasicRendererMode,
 }
 
 /// Per-channel delay report for real-time status.
@@ -291,6 +294,7 @@ pub struct RealTimeEngine {
     planar: Vec<Vec<f32>>,
     delayed: Vec<Vec<f32>>,
     gains: Vec<SpeakerGain>,
+    delays_scratch: Vec<f32>,
     renderer_scratch: RendererScratch,
     delay_processor: DelayProcessor,
     metrics: RealTimeMetrics,
@@ -330,7 +334,7 @@ impl RealTimeEngine {
             .map(|speaker| speaker.channel_role.clone())
             .collect::<Vec<_>>();
         let mut renderer =
-            BasicRenderer::new(BasicRendererMode::InverseDistance).with_smoothing(0.35);
+            BasicRenderer::new(config.renderer_mode).with_smoothing(0.35);
         renderer.configure(
             ordered_speakers.clone(),
             config.sample_rate,
@@ -388,6 +392,7 @@ impl RealTimeEngine {
             planar: vec![vec![0.0; config.block_size]; channel_count],
             delayed: vec![vec![0.0; config.block_size]; channel_count],
             gains: vec![SpeakerGain::default(); channel_count],
+            delays_scratch: vec![0.0; channel_count],
             renderer_scratch,
             delay_processor,
             output_roles,
@@ -590,6 +595,15 @@ impl RealTimeEngine {
                 &mut self.renderer_scratch,
             )
             .map_err(|_| RealTimeFault::Renderer)?;
+
+        if self.config.apply_geometric_delay || self.config.renderer_mode == BasicRendererMode::Binaural {
+            for (i, gain) in self.gains.iter().enumerate() {
+                self.delays_scratch[i] = gain.delay_samples;
+            }
+            self.delay_processor
+                .set_delays_slice(&self.delays_scratch)
+                .map_err(|_| RealTimeFault::Dsp)?;
+        }
 
         for channel in &mut self.planar {
             channel
@@ -951,6 +965,7 @@ mod tests {
                 apply_geometric_delay: false,
                 speed_of_sound: 343.0,
                 test_signal: TestSignal::None,
+                renderer_mode: BasicRendererMode::InverseDistance,
             },
             64,
         )
@@ -1041,6 +1056,7 @@ mod tests {
             apply_geometric_delay: apply_delay,
             speed_of_sound: 343.0,
             test_signal,
+            renderer_mode: BasicRendererMode::InverseDistance,
         }
     }
 

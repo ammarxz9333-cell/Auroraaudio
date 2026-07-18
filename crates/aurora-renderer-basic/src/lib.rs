@@ -18,6 +18,8 @@ pub enum BasicRendererMode {
     InverseDistance,
     /// Weight the two closest enabled speakers with equal-power normalization.
     EqualPowerAdjacent,
+    /// Binaural headphones rendering using ITD and ILD.
+    Binaural,
 }
 
 /// Minimal deterministic renderer using geometric speaker distances.
@@ -72,10 +74,94 @@ impl BasicRenderer {
     fn render_object(
         &mut self,
         object_index: usize,
+        listener: &Listener,
         object: RenderObject,
         output: &mut [SpeakerGain],
         weights: &mut [f32],
     ) -> Result<(), RendererError> {
+        if self.mode == BasicRendererMode::Binaural {
+            if self.layout.len() != 2 {
+                return Err(RendererError::InvalidConfiguration(
+                    "Binaural mode requires exactly 2 layout speakers (stereo/headphones)".to_owned(),
+                ));
+            }
+            let forward = listener.orientation;
+            let right = Vector3::new(forward.y, -forward.x, 0.0);
+            let right_len = right.length();
+            let right_normalized = if right_len > 0.0001 {
+                Vector3::new(right.x / right_len, right.y / right_len, 0.0)
+            } else {
+                Vector3::new(1.0, 0.0, 0.0)
+            };
+            let head_radius = 0.0875;
+            let head_center = Vector3::new(
+                listener.position.x,
+                listener.position.y,
+                listener.position.z + listener.ear_height,
+            );
+            let left_ear = head_center - right_normalized * head_radius;
+            let right_ear = head_center + right_normalized * head_radius;
+
+            let dist_l = object.position.distance_to(left_ear);
+            let dist_r = object.position.distance_to(right_ear);
+
+            let weight_l = 1.0 / (dist_l + DISTANCE_EPSILON).powi(2);
+            let weight_r = 1.0 / (dist_r + DISTANCE_EPSILON).powi(2);
+
+            let to_source = object.position - head_center;
+            let to_source_2d = Vector3::new(to_source.x, to_source.y, 0.0);
+            let to_source_len = to_source_2d.length();
+            let sin_theta = if to_source_len > 0.0001 {
+                let to_source_dir = Vector3::new(to_source_2d.x / to_source_len, to_source_2d.y / to_source_len, 0.0);
+                let forward_2d = Vector3::new(forward.x, forward.y, 0.0);
+                let forward_len = forward_2d.length();
+                if forward_len > 0.0001 {
+                    let forward_dir = Vector3::new(forward_2d.x / forward_len, forward_2d.y / forward_len, 0.0);
+                    forward_dir.x * to_source_dir.y - forward_dir.y * to_source_dir.x
+                } else {
+                    0.0
+                }
+            } else {
+                0.0
+            };
+
+            let head_shadow_factor = 0.4;
+            let ild_l = 1.0 - (sin_theta.max(0.0) * (1.0 - head_shadow_factor));
+            let ild_r = 1.0 - ((-sin_theta).max(0.0) * (1.0 - head_shadow_factor));
+
+            weights[0] = weight_l * ild_l;
+            weights[1] = weight_r * ild_r;
+            normalize_power(weights);
+
+            let target_l = weights[0] * db_to_gain(self.layout[0].gain_db) * object.gain;
+            let target_r = weights[1] * db_to_gain(self.layout[1].gain_db) * object.gain;
+
+            let history_index_l = object_index * 2 + 0;
+            let history_index_r = object_index * 2 + 1;
+
+            let previous_l = &mut self.previous_gains[history_index_l];
+            let smoothed_l = *previous_l + (target_l - *previous_l) * self.smoothing_alpha;
+            *previous_l = smoothed_l;
+
+            let previous_r = &mut self.previous_gains[history_index_r];
+            let smoothed_r = *previous_r + (target_r - *previous_r) * self.smoothing_alpha;
+            *previous_r = smoothed_r;
+
+            output[0] = SpeakerGain {
+                speaker_index: 0,
+                gain: smoothed_l,
+                distance_meters: dist_l,
+                delay_samples: dist_l / DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND * self.sample_rate as f32,
+            };
+            output[1] = SpeakerGain {
+                speaker_index: 1,
+                gain: smoothed_r,
+                distance_meters: dist_r,
+                delay_samples: dist_r / DEFAULT_SPEED_OF_SOUND_METERS_PER_SECOND * self.sample_rate as f32,
+            };
+            return Ok(());
+        }
+
         match self.mode {
             BasicRendererMode::NearestSpeaker => {
                 nearest_speaker_gains(&self.layout, object.position, weights)
@@ -86,6 +172,7 @@ impl BasicRenderer {
             BasicRendererMode::EqualPowerAdjacent => {
                 adjacent_speaker_gains(&self.layout, object.position, weights)
             }
+            BasicRendererMode::Binaural => unreachable!(),
         }
 
         let speaker_count = self.layout.len();
@@ -195,7 +282,7 @@ impl Renderer for BasicRenderer {
 
     fn render_gains(
         &mut self,
-        _listener: &Listener,
+        listener: &Listener,
         objects: &[RenderObject],
         output_gains: &mut [SpeakerGain],
         scratch: &mut RendererScratch,
@@ -237,7 +324,7 @@ impl Renderer for BasicRenderer {
             .zip(output_gains.chunks_exact_mut(speaker_count))
             .enumerate()
         {
-            self.render_object(object_index, object, object_output, weights)?;
+            self.render_object(object_index, listener, object, object_output, weights)?;
         }
         Ok(())
     }
@@ -465,5 +552,48 @@ mod tests {
     #[test]
     fn output_is_deterministic() {
         assert_eq!(render_at(0.25, -0.5), render_at(0.25, -0.5));
+    }
+
+    #[test]
+    fn binaural_rendering_calculates_correct_itd_and_ild() {
+        let mut renderer = BasicRenderer::new(BasicRendererMode::Binaural);
+        renderer
+            .configure(
+                vec![
+                    speaker("left", ChannelRole::FrontLeft, -0.0875, 0.0),
+                    speaker("right", ChannelRole::FrontRight, 0.0875, 0.0),
+                ],
+                48_000,
+                256,
+                1,
+            )
+            .unwrap();
+        let scratch = RendererScratch::new(renderer.required_scratch_size().unwrap());
+        let mut gains = vec![SpeakerGain::default(); 2];
+        let mut scratch_mut = scratch;
+
+        let listener = Listener {
+            position: Vector3::ZERO,
+            orientation: Vector3::new(0.0, 1.0, 0.0),
+            ear_height: 1.2,
+        };
+        let object = RenderObject {
+            position: Vector3::new(5.0, 0.0, 1.2),
+            gain: 1.0,
+        };
+
+        renderer
+            .render_gains(&listener, &[object], &mut gains, &mut scratch_mut)
+            .unwrap();
+
+        // Right ear should have higher gain due to head shadow (ILD)
+        assert!(gains[1].gain > gains[0].gain);
+
+        // Right ear is closer, so it should have shorter delay than Left ear (ITD)
+        assert!(gains[1].delay_samples < gains[0].delay_samples);
+
+        // Delay difference should be approx 24.5 samples (0.175m / 343m/s * 48000Hz)
+        let delay_diff = gains[0].delay_samples - gains[1].delay_samples;
+        assert!((delay_diff - 24.489).abs() < 0.1);
     }
 }

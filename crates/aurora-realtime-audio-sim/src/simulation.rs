@@ -5,7 +5,7 @@ use aurora_realtime_audio_api::{AudioDeviceDirection, AudioStreamFault};
 use aurora_realtime_engine::{
     create_adaptive_duplex_bridge, DriftController, DriftControllerConfig, DriftControllerFault,
     DuplexBridgeConfig, DuplexFaultPolicy, DuplexStateEvent, DuplexStateMachine, ProcessStatus,
-    RealTimeEngine, RealTimeEngineConfig, RubatoAsrc, TestSignal,
+    RealTimeEngine, RealTimeEngineConfig, RubatoAsrc, TestSignal, BasicRendererMode,
 };
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
 use serde::{Deserialize, Serialize};
@@ -529,6 +529,7 @@ fn run_sample_pipeline_probe(
             apply_geometric_delay: false,
             speed_of_sound: 343.0,
             test_signal: TestSignal::None,
+            renderer_mode: BasicRendererMode::InverseDistance,
         },
         device_latency_frames,
     )
