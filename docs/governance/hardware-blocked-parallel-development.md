@@ -184,6 +184,36 @@ ownership, state/fault behavior, accepted record/tag, or runtime diagnostic
 truth-source vocabulary may change. The complete scope and stop boundary are in
 `docs/planning/configuration-preset-system-1.md`.
 
+## Proposed next software-only successor: Runtime Plan Inspection 1
+
+No implementation milestone is currently authorized: Phase 2 is blocked by
+hardware; Phase 3A and Phase 3B are closed and conditionally accepted pending
+physical gates; the simulator, assurance campaign, diagnostics, configuration,
+and runtime-assembly contract milestones are closed.
+
+**Runtime Plan Inspection 1** becomes authorized only after its governance
+amendment and ADR 0016 merge normally. It is a read-only control-plane consumer
+of the accepted prepared runtime and setup plans.
+
+| Dependency | Decision |
+| --- | --- |
+| Software-only criteria | Versioned bounded projection, deterministic formatting, redaction, terminology, errors, tests, and documentation |
+| Deterministic simulation criteria | None; no simulator executes or changes |
+| Host observation criteria | Build, CI, and optional setup-thread benchmark evidence only |
+| Hardware criteria | None |
+| Phase 2 required for implementation | No |
+| Phase 2 required for acceptance | No |
+| Effect on Phase 2 | None; every physical gate remains open |
+| Expected final classification | `ACCEPTED` after all software criteria and review pass |
+
+The proposed crate may depend only on `aurora-runtime-assembly` among Aurora
+crates and may use existing Serde dependencies privately. It may not modify or
+serialize accepted plan types, reconstruct plans, access a host, construct or
+execute runtime resources, add diagnostics producer or CLI integration, create
+a fingerprint, change a protected contract, or enter Phase 2 or Phase 3C. The
+complete scope and stop boundary are in
+`docs/planning/runtime-plan-inspection-1.md`.
+
 ## Git workflow
 
 - branch each parallel milestone from `main-v2`;

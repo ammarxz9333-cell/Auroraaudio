@@ -174,6 +174,35 @@ review found no blocking issue. The acceptance record is
 control-plane acceptance: no runtime executed, no hardware was validated, no
 physical claim was made, and no later milestone is authorized.
 
+## Proposed Next Software Milestone: Runtime Plan Inspection 1
+
+**Runtime Plan Inspection 1** is the single proposed next software-only
+control-plane milestone. It becomes authorized only after its governance
+amendment and ADR 0016 merge normally into `main-v2`.
+
+- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`
+- `execution_state`: `NOT_STARTED`
+- `evaluation_classification`: none
+- governance branch: `governance/runtime-plan-inspection-1`
+- planned implementation branch: `feature/runtime-plan-inspection-1`
+- predecessor: Runtime Assembly Contracts 1, `ACCEPTED`
+- Phase 2 required for implementation or acceptance: no
+- hardware criteria: none
+
+The milestone may add a separate read-only inspection crate that projects the
+accepted prepared runtime and setup plans into its own versioned, bounded,
+redacted-by-default schema with deterministic JSON and human formatting. It may
+not modify or serialize the accepted plan types, construct or execute runtime
+resources, probe hosts, add CLI or diagnostics producer integration, or change
+any protected contract.
+
+This roadmap insertion comes after the accepted runtime-assembly contracts and
+before any runtime materialization, control API, or Phase 3C proposal. The
+complete objective, dependency matrix, exclusions, checkpoints, criteria,
+validation strategy, risks, and stop boundary are in
+`docs/planning/runtime-plan-inspection-1.md` and ADR 0016. This governance
+change itself contains no implementation.
+
 ## Checkpoint 1: Architecture and Gain Simulation
 
 - Create architecture, roadmap, licensing, and agent guardrail documentation.
