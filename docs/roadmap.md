@@ -139,19 +139,19 @@ The evidence record is
 `docs/acceptance/configuration-preset-system-1.md`. The milestone is closed and
 accepted; its merge does not alter Phase 2 or authorize Phase 3C.
 
-## Active Software Milestone: Runtime Assembly Contracts 1
+## Accepted Software Milestone: Runtime Assembly Contracts 1
 
 **Runtime Assembly Contracts 1** is an authorized hardware-independent
-control-plane milestone. Checkpoints A, B, C, and D are complete. Checkpoint E
-is the separate final architectural evaluation and has not started.
+control-plane milestone. Checkpoints A, B, C, D, and E are complete, and the
+final architectural evaluation accepted the milestone on 2026-07-18.
 
 - `authorization_state`: `AUTHORIZED`
-- `execution_state`: `IN_PROGRESS`
-- `evaluation_classification`: `NOT_EVALUATED`
-- `completed_checkpoint`: `D`
-- `next_checkpoint`: `E`
+- `milestone_status`: `COMPLETE`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `ACCEPTED`
+- `completed_checkpoint`: `E`
 - Checkpoint D execution state: `COMPLETE`
-- Checkpoint E execution state: `NOT_STARTED`
+- Checkpoint E execution state: `COMPLETE`
 - evidence branch: `docs/runtime-assembly-contracts-1-checkpoint-d`
 - Checkpoint D merge: PR `#26`,
   `93f36464cac429bf7e25b257e894aab64a72e2d4`
@@ -168,9 +168,11 @@ construct a running engine, touch callbacks, modify protected contracts, start
 Phase 3C, or make physical claims. The dependency matrix, checkpoints, tests,
 and stop boundary are in `docs/planning/runtime-assembly-contracts-1.md` and
 ADRs 0014 and 0015. Checkpoint D was marked `IN_PROGRESS` while PR `#26` was
-under review and is now reconciled to `COMPLETE` after merge. The milestone
-remains `IN_PROGRESS`, `NOT_EVALUATED`, and not accepted. Checkpoint E has not
-started.
+under review and was reconciled to `COMPLETE` after merge. Checkpoint E's final
+review found no blocking issue. The acceptance record is
+`docs/acceptance/runtime-assembly-contracts-1.md`. This is software-only
+control-plane acceptance: no runtime executed, no hardware was validated, no
+physical claim was made, and no later milestone is authorized.
 
 ## Checkpoint 1: Architecture and Gain Simulation
 

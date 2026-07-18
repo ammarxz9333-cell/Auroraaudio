@@ -3,22 +3,25 @@
 ## Current implementation state
 
 - `authorization_state`: `AUTHORIZED`
-- `execution_state`: `IN_PROGRESS`
-- `evaluation_classification`: `NOT_EVALUATED`
-- `completed_checkpoint`: `D`
-- `next_checkpoint`: `E`
+- `milestone_status`: `COMPLETE`
+- `execution_state`: `CLOSED`
+- `evaluation_classification`: `ACCEPTED`
+- `completed_checkpoint`: `E`
 - Checkpoint D execution state: `COMPLETE`
-- Checkpoint E execution state: `NOT_STARTED`
+- Checkpoint E execution state: `COMPLETE`
 - evidence branch: `docs/runtime-assembly-contracts-1-checkpoint-d`
 - review state: Checkpoint D merged through PR `#26` at
   `93f36464cac429bf7e25b257e894aab64a72e2d4`
+- acceptance record: `docs/acceptance/runtime-assembly-contracts-1.md`
 
 Checkpoint A's isolated immutable contract model, Checkpoint B's deterministic
 runtime-plan derivation, and Checkpoint C's deterministic setup planning are
 merged. Checkpoint D's public contract tests, rustdoc, dependency and
 prohibited-scope evidence, and validation results are also merged. The
-milestone remains `IN_PROGRESS`, `NOT_EVALUATED`, and not accepted. Checkpoint
-E has not started.
+Checkpoint E's final architectural review found no blocking issue. The
+milestone is `CLOSED` and `ACCEPTED` as a software-only control-plane milestone.
+This classification makes no runtime, hardware, or physical claim and
+authorizes no later milestone.
 
 ## Original governance record (ADR 0014)
 
@@ -358,8 +361,8 @@ acceptance criteria. No CLI command is authorized. Plan inspection, engine
 construction, renderer factory, diagnostics producer, and backend integration
 require new governance.
 
-Checkpoint E remains `NOT_STARTED`. Checkpoint D evidence does not evaluate or
-accept the milestone.
+Checkpoint E is complete. Its criterion-by-criterion review and final decision
+are recorded in `docs/acceptance/runtime-assembly-contracts-1.md`.
 
 ## Checkpoint C contract tests
 
@@ -436,8 +439,8 @@ Phase 2 or authorize Phase 3C.
 ## Stop boundary
 
 Checkpoint D stopped after evidence consolidation, contract tests, public API
-documentation, validation, and its merged review. Checkpoint E remains the
-separate final architectural acceptance boundary and is `NOT_STARTED`. No
-status reconciliation may continue into that review, renderer factory
-integration, a virtual end-to-end harness, diagnostics producer wiring,
-multichannel routing redesign, Phase 2, Phase 3C, or any later milestone.
+documentation, validation, and its merged review. Checkpoint E completed the
+separate final architectural acceptance review and closed this milestone. The
+acceptance authorizes no renderer factory integration, virtual end-to-end
+harness, diagnostics producer wiring, multichannel routing redesign, Phase 2,
+Phase 3C, or any later milestone.
