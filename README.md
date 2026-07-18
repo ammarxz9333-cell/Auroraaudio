@@ -49,10 +49,31 @@ Start here:
 
 Historical governance, ADRs, and acceptance records remain available, but they do not override the active product execution sequence.
 
+## Unified renderer evaluation
+
+Issue `#44` adds one Aurora-owned evaluation path for existing renderers. The
+command below evaluates both `GeometricBinaural` and the basic inverse-distance
+loudspeaker renderer without changing their mathematics:
+
+```powershell
+cargo run -p aurora-cli -- evaluate-renderer `
+  --scene fixtures\scenes\geometric_binaural_circle.json `
+  --input fixtures\audio\mono_sweep.wav `
+  --output-dir output\evaluation `
+  --renderer all
+```
+
+Each renderer directory contains `rendered.wav`, a complete detail report,
+compact summary, provenance manifest, gain and delay trajectories,
+discontinuity metrics, host-observed performance percentiles, deterministic
+buffer-capacity accounting, and validation results. See
+[Renderer evaluation](docs/evaluation.md) for schemas, truth labels, thresholds,
+CI usage, and memory-profiling limits.
+
 ## Active sequence
 
-1. issue `#43`, Checkpoint A — stabilize geometric binaural;
-2. issue `#44` — unified evaluation and artifact runner;
+1. issue `#43`, Checkpoint A — merged geometric binaural stabilization;
+2. issue `#44` — active unified evaluation and artifact runner;
 3. issue `#45` — capability registry and CLI;
 4. issue `#38` — offline 3D loudspeaker rendering;
 5. issue `#46` — SOFA/HRIR backend;

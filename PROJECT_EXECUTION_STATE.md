@@ -5,8 +5,10 @@
 Aurora is in **active product implementation**.
 
 - Active program: `Immersive Audio Product Implementation 1`
-- Active work item: issue `#43`, Checkpoint A
-- Next work items: issues `#44`, `#45`, then `#38`
+- Completed work item: issue `#43`, Checkpoint A, merged through PR `#57` at
+  `44e3df84cb2082f079e83622f8e950cc66da1b8a`
+- Active work item: issue `#44`
+- Next work items: issues `#45`, then `#38`
 - Default development mode: implementation PRs
 - Governance mode: maintenance only
 
@@ -20,8 +22,8 @@ Historical governance documents remain records of earlier decisions. They do not
 
 ## Current dependency chain
 
-1. `#43A` — stabilize and honestly classify geometric binaural.
-2. `#44` — add the unified renderer evaluation and artifact runner.
+1. `#43A` — complete; stabilize and honestly classify geometric binaural.
+2. `#44` — active; add the unified renderer evaluation and artifact runner.
 3. `#45` — add the capability registry and CLI.
 4. `#38` — implement offline 3D loudspeaker rendering.
 5. `#46` — integrate the SOFA/HRIR data backend.

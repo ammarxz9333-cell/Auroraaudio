@@ -4,8 +4,10 @@
 
 - `program_state`: `PRODUCT_IMPLEMENTATION_ACTIVE`
 - `active_program`: `Immersive Audio Product Implementation 1`
-- `active_work_item`: issue `#43`, Checkpoint A
-- `next_work_item`: issue `#44`
+- `completed_work_item`: issue `#43`, Checkpoint A, PR `#57`, merge
+  `44e3df84cb2082f079e83622f8e950cc66da1b8a`
+- `active_work_item`: issue `#44`
+- `next_work_item`: issue `#45`
 - `governance_mode`: maintenance only
 - `default_delivery_unit`: one reviewable implementation PR
 
@@ -306,4 +308,6 @@ The following are not active product priorities:
 
 ## 8. Immediate action
 
-The active PR must implement issue `#43`, Checkpoint A only. After merge, execute issues `#44` and `#45`, then issue `#38`. No agent should skip directly to HRTF, IAMF, networking, or hardware procurement unless the earlier acceptance gates are complete.
+The active PR must implement issue `#44` only. After merge, execute issue `#45`,
+then issue `#38`. No agent should start Issue `#43` Checkpoint B, HRTF, IAMF,
+networking, or hardware procurement in this work.

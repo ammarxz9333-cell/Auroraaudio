@@ -4,11 +4,12 @@
 > **Repository:** `D:\aurora-audio`  
 > **Primary language:** Rust  
 > **Last consolidated milestone:** Runtime Plan Inspection 1 accepted on
-> 2026-07-18 as a software-only milestone. Runtime Materialization Contracts 1
-> is proposed and becomes authorized only after its governance amendment merges;
-> no implementation checkpoint is active. Phase 2 physical hardware validation
-> remains open and incomplete. Hardware-blocked parallel development is governed
-> by Section 16.1.
+> 2026-07-18 as a software-only milestone. Product implementation issue `#43`,
+> Checkpoint A merged through PR `#57`; issue `#44` is the active software-only
+> product-evidence work item. Runtime Materialization Contracts 1 remains a
+> separate proposal with no active implementation checkpoint. Phase 2 physical
+> hardware validation remains open and incomplete. Hardware-blocked parallel
+> development is governed by Section 16.1.
 
 ---
 
@@ -1695,6 +1696,13 @@ Before doing any work:
 
 # 20. Immediate next action
 
+The active product implementation work item is Issue `#44`, the unified
+renderer evaluation and artifact runner. It may add Aurora-owned offline and CI
+evaluation infrastructure but may not modify renderer mathematics, DSP
+algorithms, realtime behavior, hardware code, or Issue `#43` Checkpoint B.
+Issue `#43` Checkpoint A merged through PR `#57` at
+`44e3df84cb2082f079e83622f8e950cc66da1b8a`.
+
 The accepted milestone is:
 
 > **Simulation Sprint 1 — deterministic virtual audio hardware and full-system validation**
@@ -2021,6 +2029,15 @@ Do not rewrite history. Record replaced decisions in ADRs.
   normalization, not HRTF. It has no HRIR data, convolution, pinna cues, or
   elevation cues. No renderer mathematics,
   HRTF implementation, hardware behavior, or physical claim is added.
+
+### Maintenance record: 2026-07-18 -- Unified evaluation implementation
+
+- Milestone: Issue `#44`; implementation is active and remains under review.
+- Changed sections: consolidated status, immediate next action, and
+  product-evidence documentation.
+- Reason: PR `#57` merged Checkpoint A, so the authorized product sequence moves
+  to one renderer-agnostic evaluation and CI-artifact path without changing
+  renderer, DSP, realtime, transport, hardware, or physical behavior.
 
 ---
 

@@ -27,10 +27,14 @@ speaker transport are out of scope.
 - `aurora-runtime-assembly`: Immutable runtime preparation contracts plus deterministic Checkpoint B derivation from validated configuration; no runtime construction or integration.
 - `aurora-runtime-inspection`: leaf crate containing a bounded, versioned, redacted-by-default projection plus deterministic JSON/text formatting of inspection-owned facts.
 - `aurora-runtime-materialization`: proposed near-leaf owner for bounded passive runtime-resource requirement contracts; it does not exist until separately reviewed Checkpoint A implementation.
+- `aurora-evaluation`: Renderer-agnostic control-thread harness for bounded
+  trajectory capture, deterministic checksums, threshold validation,
+  host-observed processing-cost percentiles, and machine-readable evidence.
 - `aurora-realtime-engine`: Real-time block pipeline preserving renderer, channel-role, geometric-delay, and DSP boundaries.
 - `aurora-measurement`: Synthetic-measurement scope scaffold; implemented synthetic latency and routing evidence lives in the simulator and real-time engine, and no accepted physical measurement capability exists.
 - `aurora-scene`: JSON scene loading, validation, and trajectory sampling.
-- `aurora-cli`: Developer CLI for offline simulation and inspection.
+- `aurora-cli`: Developer CLI for offline rendering, evaluation, simulation,
+  and inspection.
 
 ## Data Flow
 
