@@ -21,6 +21,7 @@ speaker transport are out of scope.
 - `aurora-diagnostics`: Hardware-independent structured events, bounded control-thread logs, atomic callback metrics, snapshots, and reports.
 - `aurora-config`: Immutable versioned configuration intent, deterministic presets, bounded migration, and redacted snapshots.
 - `aurora-runtime-assembly`: Immutable runtime preparation contracts plus deterministic Checkpoint B derivation from validated configuration; no runtime construction or integration.
+- `aurora-runtime-inspection`: Checkpoint A leaf crate containing empty inspection-owned contract and formatter markers; no plan access or formatting behavior.
 - `aurora-realtime-engine`: Real-time block pipeline preserving renderer, channel-role, geometric-delay, and DSP boundaries.
 - `aurora-measurement`: Synthetic-measurement scope scaffold; implemented synthetic latency and routing evidence lives in the simulator and real-time engine, and no accepted physical measurement capability exists.
 - `aurora-scene`: JSON scene loading, validation, and trajectory sampling.
@@ -143,8 +144,8 @@ merged, accepted software-only control planes. Phase 2 remains open and
 incomplete. Phase 3A and Phase 3B remain
 `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`; no Phase 3C milestone has started.
 
-ADR 0016 proposes **Runtime Plan Inspection 1** as the next software-only
-control-plane boundary. After governance merge only, a separate
+ADR 0016 authorizes **Runtime Plan Inspection 1** as a software-only
+control-plane boundary after its governance merge. A separate
 `aurora-runtime-inspection` leaf crate may read the accepted public accessors on
 prepared runtime and setup plans and produce its own versioned, bounded,
 redacted-by-default inspection projection. The only permitted Aurora crate
@@ -153,5 +154,7 @@ dependency is `aurora-runtime-inspection --> aurora-runtime-assembly`.
 The projection is not plan serialization, runtime readiness, diagnostics
 producer wiring, or runtime construction. It adds no reverse dependency and no
 renderer, DSP, engine, backend, simulator, CPAL, CLI, filesystem, environment,
-host, or hardware dependency. Until ADR 0016 merges, implementation remains
-`NOT_STARTED` and unauthorized.
+host, or hardware dependency. Checkpoint A is `IN_PROGRESS` and contains only
+empty inspection-owned public markers and formatter module boundaries. Plan
+access, projection, redaction, JSON/text generation, and integration remain
+`NOT_STARTED` later-checkpoint work.

@@ -303,6 +303,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-runtime-inspection"
+version = "0.1.0"
+dependencies = [
+ "aurora-runtime-assembly",
+]
+
+[[package]]
 name = "aurora-scene"
 version = "0.1.0"
 dependencies = [

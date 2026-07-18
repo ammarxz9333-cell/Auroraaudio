@@ -5,10 +5,9 @@
 > **Primary language:** Rust  
 > **Last consolidated milestone:** Runtime Assembly Contracts 1 accepted on
 > 2026-07-18 as a software-only milestone; Phase 2 physical hardware validation
-> remains open and incomplete. Runtime Plan Inspection 1 is the single proposed
-> next software-only milestone and is authorized only after its governance
-> amendment merges. Hardware-blocked parallel development is governed by
-> Section 16.1.
+> remains open and incomplete. Runtime Plan Inspection 1 is the single active
+> software-only milestone; only Checkpoint A is in progress. Hardware-blocked
+> parallel development is governed by Section 16.1.
 
 ---
 
@@ -1330,33 +1329,37 @@ The complete contract, dependency matrix, tests, non-goals, and stop boundary
 are recorded in `docs/planning/runtime-assembly-contracts-1.md`, ADR 0014, and
 ADR 0015.
 
-### Proposed next software-only milestone: Runtime Plan Inspection 1
+### Active software-only milestone: Runtime Plan Inspection 1
 
-No implementation milestone is currently authorized. Phase 2 is open and
-blocked by missing hardware. Phase 3A and Phase 3B are closed and conditionally
-accepted pending physical gates. Simulation Sprint 1, Simulation Assurance
-Campaign 1, Diagnostics & Telemetry Framework 1, Configuration & Preset System
-1, and Runtime Assembly Contracts 1 are closed.
+Before governance PR `#29` merged, no implementation milestone was authorized.
+Phase 2 is open and blocked by missing hardware. Phase 3A and Phase 3B are
+closed and conditionally accepted pending physical gates. Simulation Sprint 1,
+Simulation Assurance Campaign 1, Diagnostics & Telemetry Framework 1,
+Configuration & Preset System 1, and Runtime Assembly Contracts 1 are closed.
 
-The single proposed successor is **Runtime Plan Inspection 1**. Its governance
-record is:
+The single active successor is **Runtime Plan Inspection 1**. Its governance
+amendment merged normally through PR `#29` at
+`02deb93374b162d11b18b4010452254f3ecd1c18`. Its current record is:
 
-- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`;
-- `execution_state`: `NOT_STARTED`;
+- `authorization_state`: `AUTHORIZED`;
+- `execution_state`: `IN_PROGRESS`;
 - `evaluation_classification`: none;
 - governance branch: `governance/runtime-plan-inspection-1`;
-- planned implementation branch: `feature/runtime-plan-inspection-1`;
+- implementation branch: `feature/runtime-plan-inspection-1`;
+- active checkpoint: A;
+- completed checkpoints: none;
+- Checkpoints B, C, and D: `NOT_STARTED`;
 - milestone class: software-only control-plane inspection;
 - Phase 2 required for implementation: no;
 - Phase 2 required for acceptance: no;
 - hardware-dependent criteria: none;
 - expected terminal classification: `ACCEPTED`.
 
-After ADR 0016 and the governance amendment merge normally, the milestone may
-create only a separate `aurora-runtime-inspection` leaf crate. It may project
-borrowed accepted prepared runtime and setup plans into its own versioned,
-bounded, redacted-by-default inspection schema and provide deterministic JSON
-and human-readable formatting for that schema.
+Checkpoint A may create only a separate `aurora-runtime-inspection` leaf crate
+with empty inspection-owned model, option, error, and formatter marker types.
+It may not access a prepared plan, project or redact data, or generate JSON or
+human-readable text. Those behaviors remain separately reviewed Checkpoints B
+and C.
 
 Permitted direct Aurora dependency:
 
@@ -1586,11 +1589,11 @@ control-plane milestone; Checkpoints A, B, C, D, and E are complete. The
 acceptance authorizes no runtime integration, Phase 2 implementation, Phase 3C,
 or later milestone and makes no hardware, physical, or latency claim.
 
-Runtime Plan Inspection 1 is the single proposed next software-only milestone.
-It remains `NOT_STARTED` and no implementation is authorized until ADR 0016 and
-its governance amendment merge normally. After merge, work may begin only on a
-dedicated implementation branch and must proceed one reviewed checkpoint at a
-time from `docs/planning/runtime-plan-inspection-1.md`.
+Runtime Plan Inspection 1 is the single active software-only milestone. Its
+governance is merged, execution is `IN_PROGRESS`, and only Checkpoint A is
+active. Checkpoints B, C, and D remain `NOT_STARTED`. Work must proceed one
+reviewed checkpoint at a time from
+`docs/planning/runtime-plan-inspection-1.md`.
 
 The next agent must not:
 
@@ -1602,13 +1605,13 @@ The next agent must not:
 - add a GUI;
 - add or change renderer behavior;
 - start Phase 3C;
-- implement Runtime Plan Inspection 1 before governance merge;
+- implement Runtime Plan Inspection 1 beyond Checkpoint A;
 - serialize, mutate, reconstruct, hash, or fingerprint prepared plans;
 - construct or execute runtime resources under the inspection milestone;
 - add physical latency claims.
 
-No milestone other than Runtime Plan Inspection 1 is proposed or authorized by
-this amendment. This governance branch contains documentation only.
+No milestone other than Runtime Plan Inspection 1 is authorized. Checkpoint A
+must stop at the empty crate architecture and compile-only contract evidence.
 
 The simulator is complete and frozen. The campaign may exercise it but must not
 duplicate it, change its accepted record, or use it as a substitute for Phase 2
@@ -1798,6 +1801,18 @@ Do not rewrite history. Record replaced decisions in ADRs.
   consumer of accepted prepared plans without changing protected contracts,
   constructing runtime resources, accessing hardware, or authorizing Phase 2,
   Phase 3C, or any additional milestone.
+
+### Maintenance record: 2026-07-18 -- Runtime Plan Inspection Checkpoint A
+
+- Milestone: Runtime Plan Inspection 1; execution moves to `IN_PROGRESS` with
+  Checkpoint A only.
+- Changed sections: consolidated status, active milestone record, immediate
+  next action, roadmap lifecycle, architecture workspace inventory, and
+  Checkpoint A implementation record.
+- Reason: governance PR `#29` merged normally; authorize the isolated leaf
+  crate and empty public contract markers without plan access, projection,
+  formatting, serialization, integration, runtime execution, hardware work,
+  protected-contract changes, or later-checkpoint work.
 
 ---
 
