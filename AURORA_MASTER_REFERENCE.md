@@ -3,10 +3,12 @@
 > **Status:** Living source of truth for Codex and any coding agent  
 > **Repository:** `D:\aurora-audio`  
 > **Primary language:** Rust  
-> **Last consolidated milestone:** Configuration & Preset System 1 accepted on
-> 2026-07-17 as a software-only milestone; Phase 2 physical hardware
-> validation remains open and incomplete. Hardware-blocked parallel development
-> is governed by Section 16.1.
+> **Last consolidated milestone:** Runtime Assembly Contracts 1 accepted on
+> 2026-07-18 as a software-only milestone; Phase 2 physical hardware validation
+> remains open and incomplete. Runtime Plan Inspection 1 is the single proposed
+> next software-only milestone and is authorized only after its governance
+> amendment merges. Hardware-blocked parallel development is governed by
+> Section 16.1.
 
 ---
 
@@ -1328,6 +1330,54 @@ The complete contract, dependency matrix, tests, non-goals, and stop boundary
 are recorded in `docs/planning/runtime-assembly-contracts-1.md`, ADR 0014, and
 ADR 0015.
 
+### Proposed next software-only milestone: Runtime Plan Inspection 1
+
+No implementation milestone is currently authorized. Phase 2 is open and
+blocked by missing hardware. Phase 3A and Phase 3B are closed and conditionally
+accepted pending physical gates. Simulation Sprint 1, Simulation Assurance
+Campaign 1, Diagnostics & Telemetry Framework 1, Configuration & Preset System
+1, and Runtime Assembly Contracts 1 are closed.
+
+The single proposed successor is **Runtime Plan Inspection 1**. Its governance
+record is:
+
+- `authorization_state`: `AUTHORIZED_AFTER_GOVERNANCE_MERGE`;
+- `execution_state`: `NOT_STARTED`;
+- `evaluation_classification`: none;
+- governance branch: `governance/runtime-plan-inspection-1`;
+- planned implementation branch: `feature/runtime-plan-inspection-1`;
+- milestone class: software-only control-plane inspection;
+- Phase 2 required for implementation: no;
+- Phase 2 required for acceptance: no;
+- hardware-dependent criteria: none;
+- expected terminal classification: `ACCEPTED`.
+
+After ADR 0016 and the governance amendment merge normally, the milestone may
+create only a separate `aurora-runtime-inspection` leaf crate. It may project
+borrowed accepted prepared runtime and setup plans into its own versioned,
+bounded, redacted-by-default inspection schema and provide deterministic JSON
+and human-readable formatting for that schema.
+
+Permitted direct Aurora dependency:
+
+```text
+aurora-runtime-inspection --> aurora-runtime-assembly
+```
+
+Existing workspace Serde dependencies may be private implementation details.
+No reverse dependency or direct configuration, diagnostics, renderer, DSP,
+engine, backend, simulator, CPAL, CLI, scene, or audio-I/O dependency is
+authorized.
+
+The milestone may not modify or serialize accepted prepared-plan types,
+deserialize or reconstruct plans, create hashes or fingerprints, access a host
+or filesystem, construct or execute runtime resources, wire diagnostics, add a
+CLI or control API, change a protected contract, start Phase 2 or Phase 3C, or
+make a runtime, negotiated, physical, measured, or latency claim. Its objective,
+dependency matrix, checkpoints, acceptance criteria, validation, risks, and
+stop boundary are authoritative in ADR 0016 and
+`docs/planning/runtime-plan-inspection-1.md`.
+
 ---
 
 # 17. Simulation Sprint 1 requirements
@@ -1536,6 +1586,12 @@ control-plane milestone; Checkpoints A, B, C, D, and E are complete. The
 acceptance authorizes no runtime integration, Phase 2 implementation, Phase 3C,
 or later milestone and makes no hardware, physical, or latency claim.
 
+Runtime Plan Inspection 1 is the single proposed next software-only milestone.
+It remains `NOT_STARTED` and no implementation is authorized until ADR 0016 and
+its governance amendment merge normally. After merge, work may begin only on a
+dedicated implementation branch and must proceed one reviewed checkpoint at a
+time from `docs/planning/runtime-plan-inspection-1.md`.
+
 The next agent must not:
 
 - buy hardware;
@@ -1546,9 +1602,13 @@ The next agent must not:
 - add a GUI;
 - add or change renderer behavior;
 - start Phase 3C;
+- implement Runtime Plan Inspection 1 before governance merge;
+- serialize, mutate, reconstruct, hash, or fingerprint prepared plans;
+- construct or execute runtime resources under the inspection milestone;
 - add physical latency claims.
 
-No later milestone is authorized by this acceptance.
+No milestone other than Runtime Plan Inspection 1 is proposed or authorized by
+this amendment. This governance branch contains documentation only.
 
 The simulator is complete and frozen. The campaign may exercise it but must not
 duplicate it, change its accepted record, or use it as a substitute for Phase 2
@@ -1725,6 +1785,19 @@ Do not rewrite history. Record replaced decisions in ADRs.
   against ADRs 0014 and 0015 with no blocking finding. Close as `ACCEPTED`
   software-only control-plane work without runtime execution, hardware
   validation, physical claims, or later-milestone authorization.
+
+### Maintenance record: 2026-07-18 -- Runtime Plan Inspection 1 scope
+
+- Milestone: proposed software-only read-only runtime plan inspection; no
+  implementation started.
+- Changed sections: consolidated status, hardware-blocked successor queue,
+  proposed milestone authorization, immediate next action, roadmap, ADR index,
+  and architecture boundary.
+- Reason: every previously authorized implementation milestone is closed or
+  blocked by physical hardware. Define exactly one bounded deterministic
+  consumer of accepted prepared plans without changing protected contracts,
+  constructing runtime resources, accessing hardware, or authorizing Phase 2,
+  Phase 3C, or any additional milestone.
 
 ---
 

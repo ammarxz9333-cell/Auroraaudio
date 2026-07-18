@@ -21,3 +21,4 @@ of rewriting history.
 | [0013](0013-versioned-configuration-and-presets.md) | Versioned configuration and presets |
 | [0014](0014-runtime-assembly-boundary.md) | Runtime assembly boundary |
 | [0015](0015-deterministic-runtime-setup-planning.md) | Deterministic runtime setup planning boundary |
+| [0016](0016-runtime-plan-inspection-boundary.md) | Read-only runtime plan inspection boundary |

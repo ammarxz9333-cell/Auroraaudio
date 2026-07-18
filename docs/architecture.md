@@ -142,3 +142,16 @@ Diagnostics & Telemetry Framework 1 and Configuration & Preset System 1 are
 merged, accepted software-only control planes. Phase 2 remains open and
 incomplete. Phase 3A and Phase 3B remain
 `CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`; no Phase 3C milestone has started.
+
+ADR 0016 proposes **Runtime Plan Inspection 1** as the next software-only
+control-plane boundary. After governance merge only, a separate
+`aurora-runtime-inspection` leaf crate may read the accepted public accessors on
+prepared runtime and setup plans and produce its own versioned, bounded,
+redacted-by-default inspection projection. The only permitted Aurora crate
+dependency is `aurora-runtime-inspection --> aurora-runtime-assembly`.
+
+The projection is not plan serialization, runtime readiness, diagnostics
+producer wiring, or runtime construction. It adds no reverse dependency and no
+renderer, DSP, engine, backend, simulator, CPAL, CLI, filesystem, environment,
+host, or hardware dependency. Until ADR 0016 merges, implementation remains
+`NOT_STARTED` and unauthorized.
