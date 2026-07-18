@@ -24,7 +24,19 @@ members = [
     "crates/aurora-measurement",
     "crates/aurora-cli",
 ]
+exclude = [
+    "crates/aurora-renderer-cavern",
+    "crates/aurora-decoder-truehdd",
+]
 resolver = "2"
+
+[workspace.metadata.aurora]
+active_component_policy = "Only workspace members are active product components. Excluded crates remain preserved source and require a separately reviewed reactivation decision."
+legacy_preservation_policy = "Do not delete excluded crates until dependency, documentation, licensing, migration, and replacement audits are complete and recorded."
+legacy_components = [
+    "crates/aurora-renderer-cavern",
+    "crates/aurora-decoder-truehdd",
+]
 
 [workspace.package]
 edition = "2021"
