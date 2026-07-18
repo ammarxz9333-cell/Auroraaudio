@@ -1,0 +1,90 @@
+Aurora Runtime Plan Inspection
+inspection_schema_version: 1
+source_plan_schema_version: 1
+redaction_state: unredacted_local
+represented_semantics: requested, prepared, deferred
+evidence_disclaimer: no negotiated, observed, simulated, measured, runtime-ready, latency, or physical evidence
+
+[requested]
+audio.sample_rate_hz: 48000
+audio.sample_format: "Float32"
+audio.input_channels: 2
+audio.output_channels: 2
+audio.callback_frames: 256
+audio.fallback_policy: "Reject"
+input_device.present: true
+input_device.stable_id: "local-input-id"
+input_device.friendly_name: "Local Input"
+input_device.backend: "Cpal"
+input_device.ambiguity_policy: "RequireStableIdentifier"
+output_device.present: true
+output_device.stable_id: "local-output-id"
+output_device.friendly_name: "Local Output"
+output_device.backend: "Virtual"
+output_device.ambiguity_policy: "Reject"
+
+[prepared]
+metadata.configuration_schema_version: 1
+metadata.contract_version: 1
+metadata.evidence: "DeterministicControlPlaneIntent"
+renderer.kind: basic_inverse_distance
+renderer.horizontal_spread: absent
+dsp.state: none
+topology.layout_kind: "Standard(Stereo)"
+topology.inputs:
+  - id="in-fl" label="FL"
+  - id="in-fr" label="FR"
+topology.outputs:
+  - id="out-fl" label="FL"
+  - id="out-fr" label="FR"
+topology.routes:
+  - input_id="in-fl" output_id="out-fl"
+  - input_id="in-fr" output_id="out-fr"
+topology.inactive_output_ids:
+topology.speakers:
+  - id="speaker-fl" label="Front Left" role="front-left" position=[-0.5,0.8660254,0.0] active=true
+  - id="speaker-fr" label="Front Right" role="front-right" position=[0.5,0.8660254,0.0] active=true
+capacities.input_channels: 2
+capacities.output_channels: 2
+capacities.routes: 2
+capacities.speakers: 2
+capacities.callback_frames: 256
+capacities.renderer_output_gain_width: 2
+
+[deferred]
+- renderer_scratch
+- renderer_history
+- implementation_temporary
+- delay_processor
+- asrc
+- backend_ring
+
+[setup]
+requested_input_backend: "Cpal"
+requested_output_backend: "Virtual"
+stages:
+  - device_selection_intent
+  - requested_format_planning
+  - renderer_preparation_intent
+  - dsp_preparation_intent
+  - backend_preparation_intent
+  - setup_plan_complete
+dependencies:
+  - renderer_preparation_intent <- requested_format_planning
+  - dsp_preparation_intent <- requested_format_planning
+  - backend_preparation_intent <- device_selection_intent
+  - backend_preparation_intent <- requested_format_planning
+  - setup_plan_complete <- device_selection_intent
+  - setup_plan_complete <- requested_format_planning
+  - setup_plan_complete <- renderer_preparation_intent
+  - setup_plan_complete <- dsp_preparation_intent
+  - setup_plan_complete <- backend_preparation_intent
+descriptive_plan_complete: true
+
+[findings]
+- control_plane_intent_only
+- setup_capacities_deferred
+- canonical_setup_dependency_order_represented
+- requested_device_selection_unresolved
+- dsp_absent
+- setup_plan_completion_descriptive_only

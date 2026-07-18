@@ -190,9 +190,10 @@ milestone. Its governance amendment and ADR 0016 merged normally through PR
   `1e2b8aacc519aa9d9481a146abd167889a79bd51`
 - Checkpoint B merge commit:
   `6c28ab826a40e84d3fcdbc07999a0414dce1b1ca`
-- reconciliation branch:
-  `docs/runtime-plan-inspection-checkpoint-b-reconciliation`
-- active checkpoint: C; implementation has not started
+- Checkpoint B reconciliation merge commit:
+  `5c75c934e669b54ded1e5c2422cba80c6c0073b0`
+- implementation branch: `feature/runtime-plan-inspection-1-checkpoint-c`
+- active checkpoint: C; implementation is `IN_PROGRESS`
 - completed checkpoints: A and B
 - Checkpoint D: `NOT_STARTED`
 - predecessor: Runtime Assembly Contracts 1, `ACCEPTED`
@@ -215,10 +216,10 @@ change contains no implementation. Checkpoint A established the isolated crate.
 Checkpoint B merged through PR `#31` and added the versioned inspection-owned
 projection from both prepared plan types, canonical source ordering, bounded
 validation, structured errors without silent truncation, default identifier
-redaction, and explicit local unredacted options. Checkpoint C is the active
-next scope but has not started; it may add only deterministic bounded JSON and
-human-readable formatting of inspection-owned values, stable ordering and
-escaping, and formatting/determinism tests. Final evaluation remains
+redaction, and explicit local unredacted options. Checkpoint C is now in progress
+and adds only deterministic bounded JSON and human-readable formatting of
+inspection-owned values, stable ordering and escaping, inspection-owned
+conformance findings, and formatting/determinism tests. Final evaluation remains
 Checkpoint D.
 
 ## Checkpoint 1: Architecture and Gain Simulation

@@ -13,10 +13,10 @@
 //! engine, backend, simulator, diagnostics, CLI, host, or hardware dependency
 //! belongs here.
 //!
-//! # Checkpoint B stop boundary
+//! # Checkpoint C stop boundary
 //!
-//! Checkpoint B projects borrowed prepared plans into bounded, immutable,
-//! redacted-by-default values. It performs no JSON generation, text generation,
+//! Checkpoint C formats bounded, immutable, redacted-by-default projections as
+//! deterministic JSON or text. It performs no deserialization, persistence,
 //! runtime construction, or runtime execution.
 //!
 //! # Forbidden behavior
@@ -34,8 +34,14 @@ pub mod formatter;
 pub mod model;
 pub mod options;
 
-pub use error::{InspectionError, InspectionLimit, PlanRelationship};
-pub use formatter::{JsonFormatter, TextFormatter};
+pub use error::{
+    InspectionError, InspectionFloatField, InspectionLimit, InspectionOutputFormat,
+    PlanRelationship,
+};
+pub use formatter::{
+    JsonFormatter, TextFormatter, MAX_JSON_BYTES, MAX_NESTING_DEPTH,
+    MAX_SERIALIZED_COLLECTION_ENTRIES, MAX_TEXT_BYTES,
+};
 pub use model::*;
 pub use options::InspectionOptions;
 
@@ -43,11 +49,11 @@ pub use options::InspectionOptions;
 mod tests {
     use super::{JsonFormatter, TextFormatter};
 
-    fn assert_formatter_marker<T: Clone + Copy + core::fmt::Debug + Default + Eq>() {}
+    fn assert_formatter_value<T: Clone + Copy + core::fmt::Debug + Default + Eq>() {}
 
     #[test]
-    fn checkpoint_a_formatter_markers_remain_behavior_free_values() {
-        assert_formatter_marker::<JsonFormatter>();
-        assert_formatter_marker::<TextFormatter>();
+    fn formatter_types_remain_stateless_values() {
+        assert_formatter_value::<JsonFormatter>();
+        assert_formatter_value::<TextFormatter>();
     }
 }

@@ -8,7 +8,7 @@
 - Evaluation classification: none
 - Checkpoint A: `COMPLETE`
 - Checkpoint B: `COMPLETE`
-- Checkpoint C: active next scope; implementation not started
+- Checkpoint C: `IN_PROGRESS`
 - Checkpoint D: `NOT_STARTED`
 
 ## Context

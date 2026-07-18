@@ -1,0 +1,91 @@
+Aurora Runtime Plan Inspection
+inspection_schema_version: 1
+source_plan_schema_version: 1
+redaction_state: redacted
+represented_semantics: requested, prepared, deferred
+evidence_disclaimer: no negotiated, observed, simulated, measured, runtime-ready, latency, or physical evidence
+
+[requested]
+audio.sample_rate_hz: 48000
+audio.sample_format: "Float32"
+audio.input_channels: 2
+audio.output_channels: 2
+audio.callback_frames: 256
+audio.fallback_policy: "Reject"
+input_device.present: true
+input_device.stable_id: "<redacted:input-device-stable-id>"
+input_device.friendly_name: "<redacted:input-device-friendly-name>"
+input_device.backend: "Cpal"
+input_device.ambiguity_policy: "RequireStableIdentifier"
+output_device.present: true
+output_device.stable_id: "<redacted:output-device-stable-id>"
+output_device.friendly_name: "<redacted:output-device-friendly-name>"
+output_device.backend: "Virtual"
+output_device.ambiguity_policy: "Reject"
+
+[prepared]
+metadata.configuration_schema_version: 1
+metadata.contract_version: 1
+metadata.evidence: "DeterministicControlPlaneIntent"
+renderer.kind: basic_inverse_distance
+renderer.horizontal_spread: absent
+dsp.state: none
+topology.layout_kind: "Standard(Stereo)"
+topology.inputs:
+  - id="<redacted:input-channel-id:0>" label="<redacted:input-channel-label:0>"
+  - id="<redacted:input-channel-id:1>" label="<redacted:input-channel-label:1>"
+topology.outputs:
+  - id="<redacted:output-channel-id:0>" label="<redacted:output-channel-label:0>"
+  - id="<redacted:output-channel-id:1>" label="<redacted:output-channel-label:1>"
+topology.routes:
+  - input_id="<redacted:input-channel-id:0>" output_id="<redacted:output-channel-id:0>"
+  - input_id="<redacted:input-channel-id:1>" output_id="<redacted:output-channel-id:1>"
+topology.inactive_output_ids:
+topology.speakers:
+  - id="<redacted:speaker-id:0>" label="<redacted:speaker-label:0>" role="front-left" position=[-0.5,0.8660254,0.0] active=true
+  - id="<redacted:speaker-id:1>" label="<redacted:speaker-label:1>" role="front-right" position=[0.5,0.8660254,0.0] active=true
+capacities.input_channels: 2
+capacities.output_channels: 2
+capacities.routes: 2
+capacities.speakers: 2
+capacities.callback_frames: 256
+capacities.renderer_output_gain_width: 2
+
+[deferred]
+- renderer_scratch
+- renderer_history
+- implementation_temporary
+- delay_processor
+- asrc
+- backend_ring
+
+[setup]
+requested_input_backend: "Cpal"
+requested_output_backend: "Virtual"
+stages:
+  - device_selection_intent
+  - requested_format_planning
+  - renderer_preparation_intent
+  - dsp_preparation_intent
+  - backend_preparation_intent
+  - setup_plan_complete
+dependencies:
+  - renderer_preparation_intent <- requested_format_planning
+  - dsp_preparation_intent <- requested_format_planning
+  - backend_preparation_intent <- device_selection_intent
+  - backend_preparation_intent <- requested_format_planning
+  - setup_plan_complete <- device_selection_intent
+  - setup_plan_complete <- requested_format_planning
+  - setup_plan_complete <- renderer_preparation_intent
+  - setup_plan_complete <- dsp_preparation_intent
+  - setup_plan_complete <- backend_preparation_intent
+descriptive_plan_complete: true
+
+[findings]
+- control_plane_intent_only
+- setup_capacities_deferred
+- sensitive_identifiers_redacted
+- canonical_setup_dependency_order_represented
+- requested_device_selection_unresolved
+- dsp_absent
+- setup_plan_completion_descriptive_only
