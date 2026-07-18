@@ -1,187 +1,164 @@
-# Architecture
+# Aurora Architecture
 
-Aurora is a format-independent spatial-audio system with implemented offline
-rendering, basic DSP, backend-neutral real-time contracts, deterministic
-simulation, and accepted diagnostics and configuration control planes. Physical
-hardware validation remains incomplete. Proprietary codec decoding and network
-speaker transport are out of scope.
+Aurora is a Rust spatial-audio platform organized around explicit realtime boundaries, Aurora-owned interfaces, deterministic offline evaluation, and hardware-gated physical claims.
 
-## Workspace Layout
+This document describes the current active architecture. Historical milestones, superseded adapters, and acceptance records belong in `docs/acceptance/`, `docs/adr/`, and Git history; they must not redefine the active product structure.
 
-- `aurora-core`: Shared data model for formats, vectors, speakers, listeners, objects, audio blocks, and scenes.
-- `aurora-renderer-api`: Stable renderer trait and renderer-facing errors.
-- `aurora-renderer-basic`: Deterministic basic geometric modes, including the
-  `GeometricBinaural` two-channel baseline with geometric ITD, geometric ILD,
-  and per-ear geometric distance weighting followed by power normalization. It
-  is not an HRTF renderer and uses no HRIR data, convolution, pinna cues, or
-  elevation cues.
-- `aurora-renderer-vbap`: Optional deterministic horizontal-plane VBAP renderer implementing the existing renderer boundary.
-- `aurora-dsp-api`: Aurora-owned DSP processing boundary.
-- `aurora-dsp-basic`: Implemented basic offline DSP, including fractional per-channel delay.
-- `aurora-audio-io`: Implemented offline PCM/float WAV reading and multichannel WAVE_FORMAT_EXTENSIBLE output.
-- `aurora-realtime-audio-api`: Backend-neutral local real-time audio traits.
-- `aurora-realtime-audio-cpal`: First local audio backend, isolated behind Aurora-owned API types.
-- `aurora-realtime-audio-sim`: Deterministic virtual backend and accelerated validation environment.
-- `aurora-diagnostics`: Hardware-independent structured events, bounded control-thread logs, atomic callback metrics, snapshots, and reports.
-- `aurora-config`: Immutable versioned configuration intent, deterministic presets, bounded migration, and redacted snapshots.
-- `aurora-runtime-assembly`: Immutable runtime preparation contracts plus deterministic Checkpoint B derivation from validated configuration; no runtime construction or integration.
-- `aurora-runtime-inspection`: leaf crate containing a bounded, versioned, redacted-by-default projection plus deterministic JSON/text formatting of inspection-owned facts.
-- `aurora-runtime-materialization`: proposed near-leaf owner for bounded passive runtime-resource requirement contracts; it does not exist until separately reviewed Checkpoint A implementation.
-- `aurora-evaluation`: Renderer-agnostic control-thread harness for bounded
-  trajectory capture, deterministic checksums, threshold validation,
-  host-observed processing-cost percentiles, and machine-readable evidence.
-- `aurora-realtime-engine`: Real-time block pipeline preserving renderer, channel-role, geometric-delay, and DSP boundaries.
-- `aurora-measurement`: Synthetic-measurement scope scaffold; implemented synthetic latency and routing evidence lives in the simulator and real-time engine, and no accepted physical measurement capability exists.
-- `aurora-scene`: JSON scene loading, validation, and trajectory sampling.
-- `aurora-cli`: Developer CLI for offline rendering, evaluation, simulation,
-  and inspection.
+## Architectural principles
 
-## Data Flow
+1. Audio callbacks perform bounded numeric work only.
+2. Renderer, DSP, backend, configuration, evaluation, and diagnostics responsibilities remain separated.
+3. Control-plane code may allocate, serialize, inspect, and perform filesystem or process work; callback code may not.
+4. Simulation evidence, host observations, and physical measurements are distinct evidence classes.
+5. A crate exists only when it owns a durable production responsibility. Temporary milestones do not justify permanent layers.
+6. The active product path takes precedence over superseded experiments and inactive adapters.
+
+## Active workspace layers
+
+### Domain
+
+- `aurora-core`: shared numeric and audio-domain values.
+- `aurora-scene`: scene loading, validation, and trajectory sampling.
+- `aurora-config`: immutable versioned product intent and preset materialization.
+
+Domain crates must not depend on renderer implementations, DSP implementations, backends, CLI, evaluation, or diagnostics.
+
+### Rendering
+
+- `aurora-renderer-api`: Aurora-owned renderer contract.
+- `aurora-renderer-basic`: basic deterministic renderers, including `GeometricBinaural`.
+- `aurora-renderer-vbap`: horizontal VBAP implementation.
+
+`GeometricBinaural` is a geometric ITD/ILD baseline. It is not HRTF and provides no HRIR convolution, pinna model, reliable elevation cues, or individualized listener model.
+
+Renderer implementations may depend on domain and renderer-interface crates. They must not depend on the CLI, backend implementations, evaluation, diagnostics formatting, or filesystem code.
+
+### DSP
+
+- `aurora-dsp-api`: Aurora-owned DSP contract.
+- `aurora-dsp-basic`: in-process DSP primitives, including fractional delay.
+- `aurora-dsp-camilladsp`: isolated control-thread adapter for optional offline external processing.
+
+DSP processing follows rendering. External-process control is never callback work.
+
+### Audio I/O and realtime
+
+- `aurora-audio-io`: offline WAV ingestion and multichannel WAV output.
+- `aurora-realtime-audio-api`: backend-neutral stream and device contracts.
+- `aurora-realtime-audio-cpal`: CPAL backend adapter.
+- `aurora-realtime-audio-sim`: deterministic virtual audio backend.
+- `aurora-realtime-engine`: preallocated realtime block pipeline and drift-control integration.
+
+CPAL and other backend-native types remain inside backend adapter crates. The realtime engine consumes Aurora-owned contracts only.
+
+### Control plane and evidence
+
+- `aurora-diagnostics`: bounded control-thread diagnostics and atomic callback metrics.
+- `aurora-runtime-assembly`: deterministic preparation descriptions derived from validated configuration.
+- `aurora-runtime-inspection`: read-only projection of prepared descriptions.
+- `aurora-evaluation`: offline renderer evidence and host-observation collection.
+- `aurora-simulation-assurance`: deterministic stress and replay campaigns.
+- `aurora-measurement`: reserved physical-measurement boundary; no physical capability is claimed until hardware gates pass.
+
+These crates must not be mistaken for an operating runtime. Preparation and inspection descriptions are data; they do not construct streams, renderers, DSP processors, or devices.
+
+### Application
+
+- `aurora-cli`: developer-facing application composition and commands.
+
+The CLI may depend on implementation crates. No production crate may depend on the CLI.
+
+## Canonical data flows
+
+### Offline rendering
 
 ```text
-Scene + AudioFormat
-        |
-        v
-Renderer API -> caller-owned gains/scratch -> renderer implementation
-        |
-        v
-DSP API -> DSP implementation
-        |
-        v
-Audio IO
+validated scene + decoded mono PCM
+        -> configured renderer
+        -> caller-owned gains and scratch
+        -> DSP processing
+        -> multichannel PCM/WAV
 ```
 
-Real-time output replaces offline Audio IO with a backend callback:
+### Realtime output
 
 ```text
-Audio backend callback -> real-time engine -> renderer -> DSP -> output backend
+backend callback
+        -> preallocated realtime engine
+        -> renderer
+        -> DSP
+        -> backend output buffer
 ```
 
-Milestone 0B adds offline mono WAV input, block-based rendering, and multichannel WAV output. The visualizer remains intentionally deferred.
+### Evaluation
 
-Milestone 0C adds explicit channel roles, canonical standard layout ordering, WAVE_FORMAT_EXTENSIBLE channel masks, and optional offline per-channel geometric delay processing.
+```text
+canonical fixture + scene + PCM
+        -> configured renderer
+        -> deterministic evidence
+        -> optional host observations
+        -> bounded artifacts
+```
 
-Milestone 0D adds adapter crates for CamillaDSP, IAMF/libiamf, truehdd, and Cavern. These are boundary crates only: no third-party source is copied into Aurora, no adapter is required by `aurora-core`, and all real third-party integration points remain disabled by default behind adapter-specific Cargo features.
+Host timing never changes deterministic correctness status. Missing required evidence cannot be reported as `pass`.
 
-The IAMF adapter is a non-production placeholder for a preferred open decoder
-path. The truehdd adapter is experimental, offline-only, and non-production.
-The Cavern adapter is disabled by default and policy-limited pending license
-review. None of these boundaries proves codec or renderer availability.
+## Callback contract
 
-Milestone 0F adds a local real-time audio path using Aurora-owned traits and a CPAL-backed local backend. No HDMI/eARC, network audio, wireless speaker transport, GUI, or proprietary codec integration is included.
+Callback-reachable code must not perform:
 
-## Renderer Boundary
+- heap allocation or reallocation;
+- filesystem or process access;
+- logging, formatting, JSON, or string construction;
+- blocking locks or sleeps;
+- device enumeration or configuration rebuilding;
+- unbounded loops or collections.
 
-Renderers implement the `Renderer` trait from `aurora-renderer-api`. Configuration allocates fixed layout, object-history, output, and scratch capacity. Steady-state `render_gains` borrows compact numeric objects and writes flattened object-major, speaker-minor results into caller-owned buffers. Speaker identity is represented by configured index on the processing path. See ADR 0004.
+Control-thread configuration creates all renderer, DSP, ring, scratch, and block capacities before stream start. Runtime state changes require a separately reviewed bounded handoff design.
 
-Codec decoding is not part of the renderer boundary.
+## Dependency direction
 
-## DSP Boundary
+The intended direction is:
 
-DSP engines implement a separate trait and operate after rendering. The CamillaDSP adapter remains isolated as an external process controlled by generated configuration and offline WAV file input/output.
+```text
+core / scene / config
+        -> APIs
+        -> implementations
+        -> realtime engine or offline orchestration
+        -> CLI
 
-## WAV Channel Masks
+evaluation and diagnostics consume public boundaries;
+production processing crates never depend back on them.
+```
 
-Aurora keeps `hound` for WAV reading. `hound` can write WAVE_FORMAT_EXTENSIBLE, but its writer derives the channel mask from the channel count rather than from semantic channel roles. That is insufficient for standard surround masks such as 5.1, 7.1, and 5.1.2, so `aurora-audio-io` writes a minimal WAVE_FORMAT_EXTENSIBLE float header itself for rendered outputs.
+Reverse dependencies from domain or processing crates into CLI, evaluation, report formatting, or backend-native crates are architectural defects.
 
-Stereo, 5.1, and 7.1 use the standard Windows speaker-position bits. Aurora also writes a role-derived 5.1.2 mask using FL, FR, FC, LFE, SL, SR, TFL, and TFR bits, but WAVE_FORMAT_EXTENSIBLE does not fully describe object-based or up-firing speaker intent. Aurora therefore treats 5.1.2 WAV masks as channel-position metadata only; room geometry and up-firing semantics remain in the scene fixture.
+## Active versus legacy code
 
-## Real-Time Audio
+The active workspace excludes the superseded `aurora-renderer-cavern` and `aurora-decoder-truehdd` experiments. Their directories may remain temporarily for historical extraction, but they are not built, tested, advertised, or eligible for product integration. They should be deleted once any still-useful design notes are migrated to neutral documentation.
 
-The real-time callback exclusively owns the preallocated block engine and publishes numeric metrics through atomics. Control-thread status printing, device enumeration, configuration rebuilds, and speaker-identification confirmation stay outside the callback. The callback contains no Aurora logging, blocking locks, filesystem/process access, or steady-state allocation. See `docs/realtime-audio.md`, `docs/threading-model.md`, `docs/realtime-allocation-audit.md`, and `docs/device-support.md`.
+The IAMF crate is an isolated placeholder boundary until separately authorized decoder integration exists. It must not advertise production decoding capability.
 
-The hardware-independent duplex boundary uses a fixed-capacity contiguous SPSC
-frame ring between independently scheduled input and output callbacks. Drift
-observability and the Aurora-owned `DriftCompensator` strategy live in
-`aurora-realtime-engine`; CPAL types remain confined to the backend crate. See
-`docs/backend-timing.md`, `docs/duplex-audio.md`, and ADR 0005.
+## Known structural gaps
 
-The live duplex path places an Aurora-owned adaptive-resampler contract between
-the selected SPSC ring and `RealTimeEngine`. Rubato is private implementation
-detail. A PI controller adjusts one multichannel-coherent ratio; CPAL input and
-output streams remain independent. Device lifecycle is controlled by the state
-machine in ADR 0008.
+The following are intentional product gaps, not completed capabilities:
 
-Simulation Sprint 1 adds an independent virtual backend with integer-tick input
-and output clock domains. It exercises format negotiation, callback scheduling,
-ring-fill drift control, deterministic recovery, virtual-loopback truth, and
-canonical routing without importing simulator types into shared domain APIs.
+- block-continuous moving-source delay interpolation;
+- true SOFA/HRIR-backed HRTF rendering;
+- complete offline 3D loudspeaker vertical slice;
+- construction from prepared runtime descriptions into real objects;
+- packetized network audio and receiver synchronization;
+- physical multichannel routing and latency validation.
 
-Diagnostics & Telemetry Framework 1 adds a separate control-plane crate. It
-does not depend on a renderer, DSP implementation, device backend, engine, or
-CLI. Protected audio APIs remain unchanged. Callback-reachable producers may
-update only fixed `AtomicU64` counters; event construction and all output remain
-control-thread responsibilities. See `docs/diagnostics.md` and ADR 0012.
+New work should close these gaps rather than add another passive governance or inspection layer.
 
-Configuration & Preset System 1 adds another independent control-plane crate.
-Raw configuration is inert until wrapped by `ValidatedConfiguration`;
-serialization, preset materialization, migration, and redaction remain outside
-audio callbacks. Device values are selection intent only and never discovery or
-negotiation evidence. See `docs/configuration.md` and ADR 0013.
+## Change policy
 
-Runtime Assembly Contracts 1 Checkpoint B adds deterministic, fallible
-derivation from `&ValidatedConfiguration` to the immutable Checkpoint A model.
-The crate still depends directly only on `aurora-config` and `aurora-core`.
-Derivation preserves normalized routing and speaker order, inactive state,
-unresolved device-selection intent, explicit no-DSP state, and validated
-renderer intent. Speaker azimuth becomes a dimensionless horizontal unit
-direction; it is not a room coordinate, distance, or physical measurement.
-The crate does not resolve devices, construct renderers or DSP, allocate runtime
-storage, connect an engine, or execute callbacks. Setup-derived capacities
-remain explicitly deferred. See ADR 0014 and
-`docs/planning/runtime-assembly-contracts-1.md`.
+A structural refactor is justified when it removes duplicated ownership, reverse dependencies, inactive product paths, or monolithic application responsibilities. Renaming or moving stable code only for appearance is not sufficient.
 
-ADR 0015 governs the merged immutable setup-planning description derived from
-`PreparedRuntimePlan`. Checkpoint C describes canonical setup stages, acyclic
-dependencies, unresolved device intent, requested format intent, and
-renderer/DSP/backend setup intent inside `aurora-runtime-assembly`.
-`SetupPlanComplete` means only that the description is complete; it is not
-runtime, host, or physical readiness. Direct dependencies remain only
-`aurora-config` and `aurora-core`; construction and integration remain
-unauthorized. Checkpoint D's contract evidence and documentation are complete
-and merged through PR `#26` at
-`93f36464cac429bf7e25b257e894aab64a72e2d4`. Checkpoint E's separate final
-architectural review accepted Runtime Assembly Contracts 1 on 2026-07-18. This
-software-only result accepts immutable descriptive contracts and deterministic
-derivation only. It does not assert runtime readiness, execute or construct a
-renderer, DSP, backend, stream, callback, or engine, validate hardware, make a
-physical claim, or authorize Phase 2, Phase 3C, or a later milestone. See
-`docs/acceptance/runtime-assembly-contracts-1.md`.
+Each structural change must:
 
-Diagnostics & Telemetry Framework 1 and Configuration & Preset System 1 are
-merged, accepted software-only control planes. Phase 2 remains open and
-incomplete. Phase 3A and Phase 3B remain
-`CONDITIONALLY_ACCEPTED_PENDING_HARDWARE`; no Phase 3C milestone has started.
-
-ADR 0016 authorizes **Runtime Plan Inspection 1** as a software-only
-control-plane boundary after its governance merge. A separate
-`aurora-runtime-inspection` leaf crate may read the accepted public accessors on
-prepared runtime and setup plans and produce its own versioned, bounded,
-redacted-by-default inspection projection. The only permitted Aurora crate
-dependency is `aurora-runtime-inspection --> aurora-runtime-assembly`.
-
-The projection is not plan serialization, runtime readiness, diagnostics
-producer wiring, or runtime construction. It adds no reverse dependency and no
-renderer, DSP, engine, backend, simulator, CPAL, CLI, filesystem, environment,
-host, or hardware dependency. Checkpoints A, B, and C are `COMPLETE`.
-Checkpoint C's deterministic bounded JSON/text formatting and inspection-owned
-conformance evidence merged through PR `#32` at
-`c3bb059396185eed5155e1147eca5f35c8c15ac7`. Checkpoint D's final validation and
-architectural evaluation accepted the software-only milestone on 2026-07-18.
-No runtime, hardware, readiness, physical, or latency claim was accepted. See
-`docs/runtime-plan-inspection.md` and
-`docs/acceptance/runtime-plan-inspection-1.md`.
-
-ADR 0017 proposes **Runtime Materialization Contracts 1** as the next
-software-only control-plane boundary. After the governance change merges, a
-new `aurora-runtime-materialization` crate may depend directly only on
-`aurora-runtime-assembly` and describe aggregate future resource
-responsibilities, capability requirements, explicit deferred requirements,
-and canonical materialization-planning dependencies.
-
-Materialization planning remains passive data derivation. It does not extend
-accepted setup planning, change Runtime Plan Inspection 1, construct a
-renderer, DSP processor, backend, stream, callback, or engine, access a host or
-device, or claim runtime readiness. Checkpoints A-D remain `NOT_STARTED` in
-this governance change. See ADR 0017 and
-`docs/planning/runtime-materialization-contracts-1.md`.
+1. state the ownership problem;
+2. preserve or deliberately version public behavior;
+3. add dependency or contract tests where applicable;
+4. pass Linux, Windows, and MSRV validation;
+5. avoid combining unrelated DSP behavior changes with file movement.
