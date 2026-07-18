@@ -116,7 +116,40 @@ fn deterministic_evidence_and_audio_repeat_exactly() {
     assert_eq!(first.report.discontinuity, second.report.discontinuity);
     assert_eq!(first.report.probes, second.report.probes);
     assert_eq!(first.report.trajectory, second.report.trajectory);
+    assert_eq!(first.report.summary(), second.report.summary());
     assert_eq!(first.report.validation.status, EvidenceStatus::Pass);
+}
+
+#[test]
+fn deterministic_summary_excludes_host_timing() {
+    let input = input();
+    let first = evaluate_renderer(
+        &mut renderer(),
+        &listener(),
+        &trajectory(),
+        &input,
+        &config(),
+    )
+    .unwrap();
+    let second = evaluate_renderer(
+        &mut renderer(),
+        &listener(),
+        &trajectory(),
+        &input,
+        &config(),
+    )
+    .unwrap();
+
+    assert_eq!(first.report.summary(), second.report.summary());
+    let summary_json = serde_json::to_string(&first.report.summary()).unwrap();
+    assert!(!summary_json.contains("renderer_p50_ns"));
+    assert!(!summary_json.contains("renderer_p95_ns"));
+    assert!(!summary_json.contains("renderer_p99_ns"));
+    assert!(first.report.performance.samples > 0);
+    assert_eq!(
+        first.report.performance.truth_source,
+        "host_api_observation"
+    );
 }
 
 #[test]
@@ -149,13 +182,14 @@ fn canonical_probes_and_circular_motion_are_finite() {
 }
 
 #[test]
-fn threshold_and_transport_hook_failures_fail_the_run() {
+fn threshold_and_required_transport_hook_failures_fail_the_run() {
     let mut config = config();
     config.thresholds.max_gain_discontinuity = 0.0;
     config.hooks.push(HookEvidence {
         id: "transport-ring-ordering".to_owned(),
         category: HookCategory::Transport,
         status: EvidenceStatus::Fail,
+        required: true,
         truth_source: "unit_test".to_owned(),
     });
 
@@ -170,12 +204,37 @@ fn threshold_and_transport_hook_failures_fail_the_run() {
 
     assert_eq!(bundle.report.validation.status, EvidenceStatus::Fail);
     assert!(bundle.report.validation.findings.iter().any(|finding| {
-        finding.id == "hook:transport-ring-ordering" && finding.status == EvidenceStatus::Fail
+        finding.id == "hook:transport-ring-ordering"
+            && finding.required
+            && finding.status == EvidenceStatus::Fail
     }));
 }
 
 #[test]
-fn missing_allocation_observation_is_explicit_not_fabricated() {
+fn optional_hook_does_not_control_required_aggregate() {
+    let mut config = config();
+    config.hooks.push(HookEvidence {
+        id: "optional-observation".to_owned(),
+        category: HookCategory::Compatibility,
+        status: EvidenceStatus::NotObserved,
+        required: false,
+        truth_source: "unit_test".to_owned(),
+    });
+
+    let bundle = evaluate_renderer(
+        &mut renderer(),
+        &listener(),
+        &trajectory(),
+        &input(),
+        &config,
+    )
+    .unwrap();
+
+    assert_eq!(bundle.report.validation.status, EvidenceStatus::Pass);
+}
+
+#[test]
+fn missing_required_allocation_observation_makes_run_incomplete() {
     let mut config = config();
     config.steady_state_allocations = None;
     let bundle = evaluate_renderer(
@@ -192,10 +251,14 @@ fn missing_allocation_observation_is_explicit_not_fabricated() {
         EvidenceStatus::NotObserved
     );
     assert_eq!(bundle.report.allocations.steady_state_allocations, None);
+    assert_eq!(
+        bundle.report.validation.status,
+        EvidenceStatus::NotObserved
+    );
 }
 
 #[test]
-fn capacity_accounting_is_bounded_and_machine_readable() {
+fn capacity_accounting_is_partial_bounded_and_machine_readable() {
     let bundle = evaluate_renderer(
         &mut renderer(),
         &listener(),
@@ -207,8 +270,53 @@ fn capacity_accounting_is_bounded_and_machine_readable() {
     let json = bundle.report.to_json_pretty().unwrap();
 
     assert!(bundle.report.memory.bounded_working_set_bytes < 1_000_000);
+    assert_eq!(bundle.report.memory.coverage, "partial_primary_payloads");
     assert!(json.contains("\"truth_source\": \"deterministic_capacity_accounting\""));
     assert!(json.contains("\"renderer_p99_ns\""));
+}
+
+#[test]
+fn host_timing_threshold_is_advisory_only() {
+    let mut config = config();
+    config.thresholds.max_renderer_p99_ns = 1;
+    let bundle = evaluate_renderer(
+        &mut renderer(),
+        &listener(),
+        &trajectory(),
+        &input(),
+        &config,
+    )
+    .unwrap();
+
+    assert!(!bundle.report.performance.advisory_threshold_met);
+    assert_eq!(bundle.report.validation.status, EvidenceStatus::Pass);
+    assert!(!bundle
+        .report
+        .validation
+        .findings
+        .iter()
+        .any(|finding| finding.id == "renderer_p99_cost"));
+}
+
+#[test]
+fn audio_sample_delta_is_an_optional_proxy() {
+    let bundle = evaluate_renderer(
+        &mut renderer(),
+        &listener(),
+        &trajectory(),
+        &input(),
+        &config(),
+    )
+    .unwrap();
+    let finding = bundle
+        .report
+        .validation
+        .findings
+        .iter()
+        .find(|finding| finding.id == "audio_sample_delta_proxy")
+        .unwrap();
+
+    assert!(!finding.required);
 }
 
 #[test]
