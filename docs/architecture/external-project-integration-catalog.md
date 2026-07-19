@@ -57,6 +57,7 @@ Third-party types stop at their adapter boundary. File parsing, process control,
 | discovery | mDNS/DNS-SD implementation selected later | EVALUATE | replaceable discovery adapter | receiver/service discovery without embedding topology assumptions in Core |
 | AirPlay receiver | Shairport Sync | OPTIONAL EXTERNAL SERVICE | separate process, never canonical transport | mature AirPlay timing and source integration |
 | Spotify Connect source | librespot | OPTIONAL EXTERNAL SERVICE | separate source process feeding Aurora PCM | avoids implementing proprietary service behavior in Aurora Core |
+| low-cost stereo network endpoint hardware | Sonocotta ESParagus Media Center | HARDWARE / FIRMWARE REFERENCE; EVALUATE | isolated Aurora endpoint experiment using the open ESP32 hardware as-is or through a separately reviewed receiver adapter | ready-made ESP32, DAC/amplifier, Wi-Fi/Bluetooth and optional Ethernet designs reduce endpoint hardware bring-up work |
 | broad media pipeline and test ingestion | GStreamer | DEVELOPMENT / EDGE ADAPTER | external pipeline or isolated adapter when required | device, container, RTP and diagnostic pipeline coverage |
 | resampling | rubato | RETAIN | direct Rust dependency behind Aurora resampler contract | high-quality synchronous/asynchronous resampling primitives |
 | FFT | RustFFT | RETAIN | direct Rust dependency behind Aurora DSP/math contracts | avoids custom FFT implementation |
@@ -121,6 +122,21 @@ Aurora must preserve raw measurements, microphone calibration identity, sample r
 
 ODAS and Acoular are candidates for experiments, not proof of automatic speaker geometry. Speaker discovery requires Aurora to emit a known signal from one endpoint at a time, associate the measurement with the commanded endpoint, estimate direction/time-of-flight with calibrated synchronized microphones, reject ambiguous reflections, and report uncertainty. Manual confirmation remains mandatory until physical evidence proves reliability.
 
+### Low-cost endpoint hardware boundary
+
+The Sonocotta ESParagus Media Center is an open ESP32 hardware and firmware family suitable for evaluation as a low-cost stereo endpoint reference. Its published variants provide either line-level stereo output, a small integrated stereo amplifier, or a higher-power stereo Class-D amplifier with Ethernet. The supplied firmware is based on `squeezelite-esp32` and supports ordinary streaming-source and smart-home use cases.
+
+For Aurora, ESParagus is not an eARC, HDMI, LPCM 5.1/7.1, object-audio, or cinema-rendering solution. It must not be presented as a finished Aurora receiver. Any experiment must preserve these boundaries:
+
+- Aurora remains responsible for endpoint identity, assignment, clock and latency observations, capability reporting, synchronization evidence, health, reconnect behavior and safe degradation;
+- the endpoint is initially stereo-only and may be evaluated for multiroom music or a single two-channel output role, not as proof of wireless-surround suitability;
+- upstream firmware protocols and configuration models remain outside Aurora Core and require an isolated adapter or a deliberately replaced firmware image;
+- hardware schematics, PCB files, firmware dependencies, component availability, security/update behavior and all license obligations require a pinned-version review before reuse or distribution;
+- synchronization accuracy, jitter tolerance, buffer bounds, startup latency, reconnect time, Wi-Fi interference behavior, Ethernet behavior where available, DAC/amplifier noise and thermal limits require physical measurement;
+- adoption must include a bypass/replacement path so Aurora is not coupled to one ESP32 board family.
+
+A successful ESParagus experiment may reduce the cost and schedule of Aurora endpoint prototyping. It does not alter the hardware gate for HDMI/eARC acquisition or the evidence required for cinema-grade distributed playback.
+
 ### Rendering adoption boundary
 
 External renderers first serve as differential oracles against Aurora fixtures. They do not enter the realtime product path before:
@@ -163,7 +179,7 @@ Therefore Aurora must model HDMI/eARC as a hardware-gated input adapter. The fir
 7. implement artifact-based calibration using existing measurement/filter tools before inventing new filter design;
 8. evaluate ODAS/Acoular only in simulation and controlled microphone-array experiments;
 9. qualify Linux CEC independently from HDMI/eARC audio capture;
-10. specify transport requirements, then compare Aurora-owned transport, Roc and black-box Snapcast behavior;
+10. specify transport and endpoint requirements, then compare Aurora-owned transport, Roc, black-box Snapcast behavior and an isolated ESParagus stereo endpoint experiment;
 11. perform physical receiver and multiroom validation only after deterministic simulation gates pass.
 
 ## Per-project adoption checklist
