@@ -154,9 +154,9 @@ impl S32HighWordAdapter {
 }
 
 fn find_sync(buffer: &[u8]) -> Option<usize> {
-    buffer.windows(4).position(|window| {
-        window[0..2] == PA_LE && window[2..4] == PB_LE
-    })
+    buffer
+        .windows(4)
+        .position(|window| window[0..2] == PA_LE && window[2..4] == PB_LE)
 }
 
 fn retain_sync_straddle(buffer: &mut Vec<u8>) {
