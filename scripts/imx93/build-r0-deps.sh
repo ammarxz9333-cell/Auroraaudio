@@ -8,11 +8,13 @@ DEPS_ROOT="${AURORA_DEPS_ROOT:-$HOME/aurora-deps}"
 for cmd in git cargo rustc pkg-config; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
-if ! pkg-config --exists libpipewire-0.3; then
-  echo 'missing PipeWire development package (pkg-config: libpipewire-0.3)' >&2
-  echo 'Debian/Ubuntu: sudo apt install libpipewire-0.3-dev pkg-config' >&2
-  exit 2
-fi
+for pc in libpipewire-0.3 alsa; do
+  if ! pkg-config --exists "$pc"; then
+    echo "missing development package visible to pkg-config: $pc" >&2
+    echo 'Debian/Ubuntu: sudo apt install libpipewire-0.3-dev libasound2-dev pkg-config' >&2
+    exit 2
+  fi
+done
 
 mkdir -p "$DEPS_ROOT"
 
@@ -34,7 +36,7 @@ checkout_repo() {
 }
 
 # Harletty's bridge has path dependencies on a sibling checkout named Omniphony,
-# so keep these two repositories as siblings under DEPS_ROOT.
+# so keep these repositories as siblings under DEPS_ROOT.
 checkout_repo https://github.com/mgth/Omniphony.git \
   "$DEPS_ROOT/Omniphony" "$OMNIPHONY_COMMIT"
 checkout_repo https://github.com/harletty/harletty-bridge.git \

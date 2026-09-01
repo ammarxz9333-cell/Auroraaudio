@@ -25,10 +25,13 @@ jobs:
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install PipeWire build dependencies
+      - name: Install audio build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libpipewire-0.3-dev pkg-config
+          sudo apt-get install --yes libpipewire-0.3-dev libasound2-dev pkg-config
+
+      - name: Check R0 shell syntax
+        run: bash -n scripts/imx93/*.sh
 
       - name: Build Aurora IEC61937 extractor
         run: cargo build --release -p aurora-audio-io --bin aurora-iec61937-extract
