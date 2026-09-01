@@ -1,0 +1,20 @@
+[Unit]
+Description=Aurora i.MX93 R0 eARC JOC to 7.1.4 pipeline
+After=pipewire.service sound.target
+Wants=sound.target
+
+[Service]
+Type=simple
+EnvironmentFile=-/etc/aurora/r0.env
+WorkingDirectory=/opt/aurora
+ExecStart=/opt/aurora/scripts/imx93/run-live-714.sh
+Restart=on-failure
+RestartSec=2
+Nice=-10
+LimitRTPRIO=80
+
+# Amplifier mute/unmute is deliberately NOT automated here until the physical
+# KAB9 control polarity and fail-safe hardware path pass G7.
+
+[Install]
+WantedBy=multi-user.target
