@@ -1,0 +1,60 @@
+name: i.MX93 R0 software integration
+
+on:
+  pull_request:
+    branches: [main-v2]
+    paths:
+      - '.github/workflows/imx93-r0-integration.yml'
+      - 'crates/aurora-audio-io/**'
+      - 'platforms/imx93/**'
+      - 'scripts/imx93/**'
+      - 'docs/imx93-r0/**'
+  workflow_dispatch:
+
+concurrency:
+  group: imx93-r0-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  joc-to-714:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install PipeWire build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libpipewire-0.3-dev pkg-config
+
+      - name: Build Aurora IEC61937 extractor
+        run: cargo build --release -p aurora-audio-io --bin aurora-iec61937-extract
+
+      - name: Build pinned Harletty and Omniphony
+        env:
+          AURORA_DEPS_ROOT: ${{ runner.temp }}/aurora-deps
+        run: ./scripts/imx93/build-r0-deps.sh
+
+      - name: Real JOC bridge/render integration
+        env:
+          AURORA_DEPS_ROOT: ${{ runner.temp }}/aurora-deps
+        run: ./scripts/imx93/validate-joc-714.sh
+
+      - name: Verify R0 layout contract
+        run: |
+          python3 - <<'PY'
+          import pathlib
+          p = pathlib.Path('platforms/imx93/layouts/aurora-7.1.4.yaml')
+          text = p.read_text()
+          names = []
+          for line in text.splitlines():
+              stripped = line.strip()
+              if stripped.startswith('- name:'):
+                  names.append(stripped.split(':', 1)[1].strip().strip('"'))
+          expected = ['FL','FR','C','LFE','BL','BR','SL','SR','TFL','TFR','TRL','TRR']
+          assert names == expected, (names, expected)
+          print('PASS layout order:', ','.join(names))
+          PY

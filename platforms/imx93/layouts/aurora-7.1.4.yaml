@@ -1,0 +1,93 @@
+# Aurora R0 7.1.4 layout.
+#
+# Order is a contract: it is reused by the PipeWire sink and CHANNEL_MAP.md.
+# `TRL`/`TRR` are used instead of Omniphony's stock `TBL`/`TBR` spellings
+# because PipeWire SPA channel positions use TRL/TRR. Omniphony resolves TRL
+# as the same Top-Back-Left semantic label, so object/bed semantics are kept.
+name: "Aurora R0 7.1.4"
+radius_m: 1
+speakers:
+  - name: "FL"
+    coord_mode: "cartesian"
+    x: -1.0
+    y: 1.0
+    z: 0.0
+    spatialize: true
+    delay_ms: 0
+  - name: "FR"
+    coord_mode: "cartesian"
+    x: 1.0
+    y: 1.0
+    z: 0.0
+    spatialize: true
+    delay_ms: 0
+  - name: "C"
+    coord_mode: "cartesian"
+    x: 0.0
+    y: 1.0
+    z: 0.0
+    spatialize: true
+    delay_ms: 0
+  - name: "LFE"
+    coord_mode: "cartesian"
+    x: 1.0
+    y: 1.0
+    z: -1.0
+    spatialize: false
+    delay_ms: 0
+  - name: "BL"
+    coord_mode: "cartesian"
+    x: -1.0
+    y: -1.0
+    z: 0.0
+    spatialize: true
+    delay_ms: 0
+  - name: "BR"
+    coord_mode: "cartesian"
+    x: 1.0
+    y: -1.0
+    z: 0.0
+    spatialize: true
+    delay_ms: 0
+  - name: "SL"
+    coord_mode: "cartesian"
+    x: -1.0
+    y: 0.0
+    z: 0.0
+    spatialize: true
+    delay_ms: 0
+  - name: "SR"
+    coord_mode: "cartesian"
+    x: 1.0
+    y: 0.0
+    z: 0.0
+    spatialize: true
+    delay_ms: 0
+  - name: "TFL"
+    coord_mode: "cartesian"
+    x: -1.0
+    y: 1.0
+    z: 1.0
+    spatialize: true
+    delay_ms: 0
+  - name: "TFR"
+    coord_mode: "cartesian"
+    x: 1.0
+    y: 1.0
+    z: 1.0
+    spatialize: true
+    delay_ms: 0
+  - name: "TRL"
+    coord_mode: "cartesian"
+    x: -1.0
+    y: -1.0
+    z: 1.0
+    spatialize: true
+    delay_ms: 0
+  - name: "TRR"
+    coord_mode: "cartesian"
+    x: 1.0
+    y: -1.0
+    z: 1.0
+    spatialize: true
+    delay_ms: 0

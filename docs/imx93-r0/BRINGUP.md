@@ -1,10 +1,8 @@
 # Aurora i.MX93 R0 Bring-up
 
-This procedure is intentionally ordered so a bad clock, channel map or analog gain setting is found before power amplifiers can damage a speaker.
+This procedure is ordered so software/interface mistakes are found before power amplifiers can damage a speaker.
 
-## 0. Build the existing Aurora workspace
-
-On a development machine:
+## 0. Validate Aurora itself
 
 ```bash
 cargo fmt --all --check
@@ -13,54 +11,99 @@ cargo test --workspace --all-features
 cargo build --release -p aurora-audio-io --bin aurora-iec61937-extract
 ```
 
-The R0 extractor is part of the existing `aurora-audio-io` package, so no new dependency or lockfile update is required.
+The IEC61937 extractor is part of `aurora-audio-io` and is covered by the normal Aurora workspace CI.
 
-## 1. Build pinned Harletty and Omniphony
+## 1. Build and pin Harletty + Omniphony
+
+Install the PipeWire development headers first, then:
 
 ```bash
 ./scripts/imx93/build-r0-deps.sh
 ```
 
-The script checks out the exact R0 commits. Do not benchmark a different upstream HEAD and label the result as R0 evidence.
+The script verifies the exact R0 Git HEADs and the expected artifacts. Do not benchmark another upstream HEAD and label it R0.
 
-## 2. Kernel / device-tree preparation
+## 2. Run the cross-project JOC integration gate
 
-Start from the byteENGINE i.MX93 BSP device tree and apply the requirements in:
+Before touching i.MX93 hardware:
 
-```text
-platforms/imx93/device-tree/README.md
+```bash
+./scripts/imx93/validate-joc-714.sh
 ```
 
-At minimum Linux must expose:
+This uses Harletty's committed real one-second E-AC-3 JOC fixture and exercises:
 
-- a capture PCM backed by SAI1 RX, 2 channels, S32_LE, 192 kHz, externally clocked;
-- a playback PCM backed by SAI3 and the two AK4458 codecs, supporting 16 channels / 32-bit TDM at 48 kHz.
+```text
+raw E-AC-3 JOC
+-> Omniphony stdin Raw transport
+-> pinned Harletty bridge
+-> pinned Omniphony VBAP
+-> Aurora 7.1.4 layout
+-> 12ch float32 output
+```
 
-Do not use `plughw` for the encoded input.
+The same gate runs in `.github/workflows/imx93-r0-integration.yml`.
 
-## 3. Input electrical test — no amplifiers
+## 3. Kernel / device-tree preparation
+
+Apply `platforms/imx93/device-tree/README.md` to the exact byteENGINE/NXP i.MX93 BSP.
+
+Linux must expose:
+
+```text
+hw:AuroraEARC,0   capture  S32_LE / 2ch / 192 kHz / external SAI1 clocks
+hw:AuroraTDM16,0 playback S32_LE / 16ch / 48 kHz / SAI3 TDM512
+```
+
+Use direct `hw:` for encoded input; never `plughw`/software conversion before IEC61937 extraction.
+
+## 4. Install the user PipeWire/runtime layer
+
+With the repository installed at `/opt/aurora` and pinned dependencies at `/opt/aurora-deps` (or matching installer overrides):
+
+```bash
+./scripts/imx93/deploy-r0-user.sh
+```
+
+This installs:
+
+- `aurora_tdm`: a 16ch S32LE/48k PipeWire sink backed by `hw:AuroraTDM16,0`;
+- the per-user Aurora environment;
+- a systemd **user** unit sharing the same PipeWire/WirePlumber graph as Omniphony.
+
+It deliberately does not enable/start Aurora.
+
+## 5. Doctor — amplifiers hard-muted
 
 Keep both KAB9 boards unpowered or hard-muted.
-
-Check:
 
 ```bash
 ./scripts/imx93/doctor.sh
 ```
 
-With an oscilloscope verify, after eARC negotiation:
+Doctor checks binaries/pins/layout, ALSA inventory, PipeWire node presence and capture-open behavior.
 
-```text
-SiI9437 BCLK → translator → SAI1_RX_BCLK
-SiI9437 WS   → translator → SAI1_RX_SYNC
-SiI9437 SD0  → translator → SAI1_RX_DATA00
+Only while amplifiers are physically hard-muted, also test the 16ch hardware PCM with digital zero:
+
+```bash
+AURORA_PROBE_PLAYBACK=1 ./scripts/imx93/doctor.sh
 ```
 
-For DD+ the reference hardware measured a 192 kHz stereo carrier. With 32-bit stereo framing expect BCLK around 12.288 MHz. Measure instead of assuming.
+## 6. Input electrical test
 
-## 4. Capture E-AC-3 from the TV
+With an oscilloscope verify after eARC negotiation:
 
-Set the TV's digital/eARC audio mode to pass-through / bitstream as appropriate for that TV. Play a known Atmos title.
+```text
+SiI9437 BCLK -> translator -> SAI1_RX_BCLK
+SiI9437 WS   -> translator -> SAI1_RX_SYNC
+SiI9437 SD0  -> translator -> SAI1_RX_DATA00
+```
+
+The DD+ reference path uses a nominal 192 kHz stereo carrier. With 32-bit stereo slots the expected BCLK is about 12.288 MHz; measure it rather than assuming it.
+
+## 7. Capture real Netflix E-AC-3/JOC
+
+Put the TV in eARC pass-through/bitstream mode and play a known Atmos title:
 
 ```bash
 AURORA_EARC_DEVICE=hw:AuroraEARC,0 \
@@ -68,105 +111,84 @@ AURORA_CAPTURE_SECONDS=15 \
 ./scripts/imx93/capture-joc.sh
 ```
 
-The script creates:
+Artifacts:
 
 ```text
 *.s32le    raw SAI capture
-*.eac3     IEC61937 wrapper removed
-*.info.txt Harletty stream report
-*.sha256   exact artifact hashes
+*.eac3     IEC61937 removed
+*.info.txt Harletty report
+*.sha256   hashes
 ```
 
-Required G3 evidence in the info report:
+G3 requires actual `JOC: yes` / OAMD-object evidence. `Pc=0x15` alone proves only E-AC-3.
 
-```text
-Codec : EAC3 (Dolby Digital Plus)
-JOC   : yes
-```
+## 8. i.MX93 real-time performance gate
 
-`Pc=0x15` alone is not enough; it only proves E-AC-3.
+Use the captured JOC file. Record exact module/BSP/kernel, CPU governor, temperature and clocks. Run at least 30 minutes and require the acceptance margin specified in `VALIDATION_GATES.md` with no deadline/xrun failure.
 
-## 5. Performance gate
+GitHub/x86 integration success is compatibility evidence, not an A55 performance benchmark.
 
-Use the exact captured `.eac3` file, not a synthetic stream.
+## 9. DAC-only TDM identification
 
-Example measurement:
-
-```bash
-/usr/bin/time -v "$AURORA_HARLETTY_CLI" \
-  --codec eac3 --loglevel error decode capture.eac3
-```
-
-Calculate:
-
-```text
-RTF = (user CPU seconds + system CPU seconds attributable to decode/render as defined by the test) / audio duration seconds
-```
-
-For the appliance gate, collect a 30-minute run and require average RTF below 0.80 with no deadline failure. Keep the CPU governor and thermal conditions in the report.
-
-## 6. DAC-only TDM test
-
-Do not start object decoding yet. Configure SAI3 for:
+Still keep amplifiers hard-muted. Configure/play:
 
 ```text
 48 kHz
+S32_LE
 16 channels
-32-bit slots
-TDM512
+16 x 32-bit slots = TDM512
 ```
 
-Configure both AK4458 devices for the same PCM format and the documented two-device TDM512 daisy chain.
+Use one active slot at a time. Verify the measured analog output against `CHANNEL_MAP.md`:
 
-Generate a 16-channel test where only one slot is active at a time. Confirm:
+```text
+slots 1..8   -> AK4458 #1
+slots 9..16  -> AK4458 #2
+```
 
-- slots 1..8 appear at AK4458 #1 outputs;
-- slots 9..16 appear at AK4458 #2 outputs;
-- no output appears on two DAC channels simultaneously;
-- clocks remain phase-stable over a 10-minute run.
+Upstream Linux/NXP software explicitly supports dual-AK4458 16ch TDM and the AK4458 driver enables daisy-chain mode for >8ch DSP_B/TDM streams, but the exact i.MX93 clock/pin realization remains a physical G6 test.
 
-Only after this test should the analog stage be connected to the power amps.
+## 10. Analog/KAB9 safety gate
 
-## 7. Analog gain and KAB9 test
+Using dummy loads or safe test speakers:
 
-Use dummy loads / safe test speakers first.
+- measure DAC full-scale and common-mode;
+- freeze analog attenuation/buffer values;
+- confirm mute polarity and power-on default;
+- check DC, idle noise, clipping and thermal behavior;
+- validate any PBTL sub mode independently.
 
-Measure the DAC output and amplifier input at low software level. Determine the analog attenuation needed so a full-scale digital error cannot grossly overdrive the selected KAB9 gain setting.
+Do not allow the software service to control amplifier unmute until this gate passes.
 
-Then identify all twelve channels individually at low level.
+## 11. Live 7.1.4
 
-## 8. Live 7.1.4 pipeline
-
-After G1–G7 are satisfied:
+After G1-G7:
 
 ```bash
-AURORA_EARC_DEVICE=hw:AuroraEARC,0 \
-AURORA_OUTPUT_DEVICE=aurora_tdm \
+systemctl --user enable --now aurora-r0.service
+```
+
+or interactively:
+
+```bash
 ./scripts/imx93/run-live-714.sh
 ```
 
-This path is:
+Runtime path:
 
 ```text
 arecord SAI1
-→ Aurora IEC61937 extractor
-→ raw E-AC-3 JOC
-→ orender + Harletty bridge
-→ Omniphony 7.1.4
-→ PipeWire playback device for SAI3/AK4458
+-> Aurora IEC61937 extractor
+-> raw E-AC-3 JOC
+-> Omniphony Raw stdin
+-> Harletty JOC/OAMD
+-> Omniphony 7.1.4
+-> PipeWire aurora_tdm
+-> SAI3/dual AK4458 TDM16
 ```
 
-## 9. Final soak
+`run-live-714.sh` fails closed if the exact `aurora_tdm` node is missing; it will not silently fall back to a stereo sink.
 
-Record:
+## 12. Final two-hour soak
 
-- title/source/TV model and TV audio setting;
-- all commit hashes;
-- BSP/kernel version;
-- CPU temperatures and clock;
-- ALSA/PipeWire xruns;
-- Harletty/renderer errors;
-- channel identity before and after run;
-- measured audio/video offset.
-
-Run for two hours. If it passes, write the acceptance artifact required by `VALIDATION_GATES.md`.
+Record source/title/TV settings, all Git/BSP/kernel versions, CPU thermals/clocks, PipeWire/ALSA xruns, renderer/decoder errors, channel identity before/after, and measured A/V offset. Write the acceptance artifact defined by `VALIDATION_GATES.md`.
