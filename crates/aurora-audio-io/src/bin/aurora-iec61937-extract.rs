@@ -91,8 +91,6 @@ fn parse_args() -> (Width, CodecFilter) {
 }
 
 fn usage_and_exit() -> ! {
-    eprintln!(
-        "Usage: aurora-iec61937-extract [--width s32|s16] [--codec eac3|ac3|dts|all]"
-    );
+    eprintln!("Usage: aurora-iec61937-extract [--width s32|s16] [--codec eac3|ac3|dts|all]");
     std::process::exit(2);
 }
