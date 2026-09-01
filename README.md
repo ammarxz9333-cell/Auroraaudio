@@ -4,7 +4,7 @@ Aurora R0 is a **private DIY 7.1.4 home-theater audio appliance**. The selected 
 
 This branch is the hardware-integration branch: `aurora-imx93-r0`. The older `main-v2` software platform and its tests are retained as the software foundation and historical reference; the old N100/STM32H753, Raspberry Pi, CM5, MCHStreamer and ADAU1466 chains are no longer the selected R0 hardware architecture.
 
-> **Capability rule:** a component can be selected because its interfaces are documented, but Aurora does not call the full appliance proven until the matching physical validation gate has passed. In particular, Netflix DD+ JOC preservation, Harletty real-time performance on the exact i.MX93 module, and native 12-channel playback remain hardware gates until measured.
+> **Capability rule:** a component can be selected because its interfaces are documented, but Aurora does not call the full appliance proven until the matching physical validation gate has passed. In particular, Netflix DD+ JOC preservation, Harletty real-time performance on the exact i.MX93 module, and native 16-channel TDM playback remain hardware gates until measured.
 
 ## Selected R0 architecture
 
@@ -28,7 +28,7 @@ byteENGINE i.MX93 OSM-S
   ├─ aurora-iec61937-extract: IEC 61937 → raw E-AC-3
   ├─ Harletty bridge: E-AC-3 JOC → PCM + OAMD
   ├─ Omniphony: objects/OAMD → 7.1.4 speaker render
-  └─ SAI3 TX master: 48 kHz / 32-bit / TDM512 / 16 slots
+  └─ SAI3 TX master: 48 kHz / S32_LE / TDM512 / 16 slots
             │
             ▼
 SN74AXC4T245 1.8 V → 3.3 V
@@ -54,10 +54,16 @@ AK4458 #2 ──TDMO1──> AK4458 #1
 - Lattice SiI9437 is an eARC receiver intended for soundbar/AVR use and exposes S/PDIF / multichannel I2S audio outputs.
 - A real Lindy 38368 / SiI9437 system has already been measured carrying E-AC-3 as IEC 61937 at a 192 kHz carrier on the I2S tap.
 - byteENGINE i.MX93 OSM-S exposes SAI1 RX pins suitable for the eARC tap and a separate SAI3 TX path for native multichannel output.
-- AK4458 explicitly supports TDM512 and daisy chaining two devices for 16-channel playback from one serial data stream.
+- upstream Linux/NXP contains an explicit dual-AK4458 16-channel TDM path; the codec driver supports DSP_B/TDM/S32_LE and daisy-chain operation above eight channels.
 - Two KAB9 boards provide enough differential-input amplifier channels for 7.1.4 while leaving reserve channels.
 
-See [`docs/imx93-r0/ARCHITECTURE.md`](docs/imx93-r0/ARCHITECTURE.md) and [`docs/imx93-r0/HARDWARE.md`](docs/imx93-r0/HARDWARE.md) for the engineering detail.
+Engineering references:
+
+- [`docs/imx93-r0/ARCHITECTURE.md`](docs/imx93-r0/ARCHITECTURE.md)
+- [`docs/imx93-r0/SOFTWARE_AUDIT.md`](docs/imx93-r0/SOFTWARE_AUDIT.md)
+- [`docs/imx93-r0/CHANNEL_MAP.md`](docs/imx93-r0/CHANNEL_MAP.md)
+- [`docs/imx93-r0/HARDWARE.md`](docs/imx93-r0/HARDWARE.md)
+- [`docs/imx93-r0/BRINGUP.md`](docs/imx93-r0/BRINGUP.md)
 
 ## Evidence status
 
@@ -65,27 +71,42 @@ See [`docs/imx93-r0/ARCHITECTURE.md`](docs/imx93-r0/ARCHITECTURE.md) and [`docs/
 | --- | --- |
 | TV eARC → SiI9437 / Lindy | externally hardware-validated |
 | SiI9437 → IEC 61937 E-AC-3 @ 192 kHz | externally hardware-validated |
-| Aurora IEC 61937 deframer | implemented with deterministic unit tests on this branch |
-| Harletty E-AC-3 JOC decode | implemented upstream; current R0 pin is `4ccedec` |
-| Omniphony 7.1.4 speaker render | implemented upstream; current R0 pin is `44acc87` |
+| Aurora IEC 61937 deframer | implemented + deterministic workspace tests |
+| raw E-AC-3 stdin → Harletty bridge | code-audited against pinned Omniphony/Harletty |
+| Harletty E-AC-3 JOC decode | implemented upstream; R0 pin `4ccedec` |
+| Omniphony 7.1.4 speaker render | implemented upstream; R0 pin `44acc87` |
+| real Harletty-JOC → Omniphony-7.1.4 compatibility | dedicated R0 GitHub integration workflow |
+| PipeWire 7.1.4 → 16ch TDM sink contract | implemented in `platforms/imx93` |
+| Linux dual AK4458 / 16ch TDM software model | explicitly supported upstream |
 | i.MX93 SAI1 physical eARC capture | **R0 hardware gate** |
 | Netflix Atmos title → JOC detected on i.MX93 capture | **R0 hardware gate** |
 | Harletty worst-case JOC real-time on i.MX93 A55 | **R0 performance gate** |
-| i.MX93 SAI3 → dual AK4458 TDM512 | **R0 hardware gate** |
-| 12-channel DAC → KAB9 → speakers | **R0 hardware/analog gate** |
+| i.MX93 SAI3 → dual AK4458 TDM512 | **R0 hardware/BSP gate** |
+| DAC → KAB9 analog safety | **R0 hardware/analog gate** |
 | full Netflix → 7.1.4 continuous playback | **final R0 acceptance gate** |
 
 The gate definitions are in [`docs/imx93-r0/VALIDATION_GATES.md`](docs/imx93-r0/VALIDATION_GATES.md).
 
+## Software verification
+
+Aurora's normal CI verifies the workspace on Linux stable, Windows stable and Rust 1.78 MSRV. The R0 branch adds a second integration layer:
+
+```bash
+./scripts/imx93/build-r0-deps.sh
+./scripts/imx93/validate-joc-714.sh
+```
+
+The integration test uses Harletty's committed real E-AC-3 JOC fixture and sends it through the actual pinned Harletty bridge + pinned Omniphony renderer + Aurora 7.1.4 layout, then validates the resulting 12-channel float stream. See `SOFTWARE_AUDIT.md` for exact scope and limitations.
+
 ## New R0 software ingress
 
-The existing `aurora-audio-io` package now also contains the R0 IEC 61937 extractor binary:
+Build:
 
 ```bash
 cargo build --release -p aurora-audio-io --bin aurora-iec61937-extract
 ```
 
-For the SiI9437 I2S tap representation:
+Capture/unwrap example:
 
 ```bash
 arecord -D hw:AuroraEARC,0 -f S32_LE -c 2 -r 192000 -t raw \
@@ -93,44 +114,45 @@ arecord -D hw:AuroraEARC,0 -f S32_LE -c 2 -r 192000 -t raw \
   > capture.eac3
 ```
 
-The extractor understands the important DD+ detail that IEC 61937 data type `0x15` expresses `Pd` in **bytes**, while AC-3/DTS use a bit count. It also strips the unused lower half of each SiI9437 S32 sample and restores native E-AC-3 byte order.
+The extractor handles the critical E-AC-3 IEC61937 rule that data type `0x15` expresses `Pd` in **bytes**, while AC-3/DTS use a bit count. It also extracts the useful high word from the SiI9437 S32 capture representation and restores native E-AC-3 byte order.
+
+## Runtime deployment
+
+The selected Linux runtime is a per-user PipeWire graph, not a root/system PipeWire session.
+
+```bash
+./scripts/imx93/deploy-r0-user.sh
+./scripts/imx93/doctor.sh
+```
+
+Deployment installs the canonical `aurora_tdm` 16-channel PipeWire sink, Aurora environment file and systemd **user** service. It deliberately does not start Aurora until the physical safety gates are complete.
+
+Canonical logical order:
+
+```text
+FL FR C LFE BL BR SL SR TFL TFR TRL TRR
+```
+
+The physical TDM bus remains 16 channels; the final four slots are reserves. See `CHANNEL_MAP.md`.
 
 ## Third-party runtime pins
-
-R0 deliberately pins known source states rather than silently following upstream changes:
 
 ```text
 Harletty bridge : 4ccedec804de3b29c02fb2a69575c2f49bf2fb37
 Omniphony       : 44acc87a9cbf4b5ac8f474f51d87851d2c642550
 ```
 
-These are source dependencies for the private appliance and are not vendored into Aurora. See [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
+`build-r0-deps.sh` verifies the exact Git HEADs and expected build artifacts. These are source dependencies for the private appliance and are not vendored into Aurora. See [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md).
 
 ## Bring-up order
 
-Do not connect speakers and try Netflix first. R0 is validated in layers:
-
-1. software IEC 61937 tests;
-2. SAI1 clock/data capture with the amplifier muted;
-3. capture and identify `Pa/Pb/Pc=0x15`;
-4. prove the captured elementary stream contains JOC/object metadata;
-5. benchmark Harletty on the exact i.MX93 hardware;
-6. validate 16-slot TDM512 into the two AK4458 DACs with test tones;
-7. validate channel order, level and mute sequencing into the KAB9 boards;
-8. only then perform continuous Netflix → 7.1.4 playback and lip-sync measurements.
-
-Detailed commands are in [`docs/imx93-r0/BRINGUP.md`](docs/imx93-r0/BRINGUP.md).
-
-## Existing Aurora software
-
-The repository still contains the prior Rust scene, renderer, DSP, real-time, simulation, diagnostics and CLI work. It is useful for test infrastructure and future Aurora-owned DSP/control, but it must not be confused with evidence for the selected third-party JOC renderer path.
-
-```bash
-cargo fmt --all --check
-cargo clippy --workspace --all-targets --all-features -- -D warnings
-cargo test --workspace --all-features
-```
-
-## Scope
-
-R0 is for one private, non-commercial DIY system. It is not described as Dolby-certified, HDMI-certified, or a commercial Atmos product. If the project later changes scope to distribution or sale, codec/patent/trademark, GPL redistribution and product-compliance obligations must be reviewed separately.
+1. Aurora workspace CI + IEC61937 tests.
+2. Real JOC → Harletty → Omniphony 7.1.4 software integration gate.
+3. i.MX93 device tree and stable ALSA IDs.
+4. user PipeWire `aurora_tdm` deployment.
+5. SAI1 electrical/capture validation with amplifiers hard-muted.
+6. real Netflix capture proving JOC/OAMD survives.
+7. i.MX93 real-time A55/thermal benchmark.
+8. SAI3 16-slot TDM512 + dual-AK4458 channel identification.
+9. analog/KAB9 gain, mute and noise safety.
+10. two-hour live Netflix → 7.1.4 soak + A/V sync measurement.
