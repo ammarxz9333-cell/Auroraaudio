@@ -14,6 +14,8 @@ Reference configuration used by R0 planning:
 
 Pin assignments below are taken from byteENGINE IMX93 OSM-S datasheet **v2.1 (2024-12-06)**. Verify the exact ordered module revision before PCB fabrication.
 
+The canonical logical/TDM/DAC channel order is maintained separately in [`CHANNEL_MAP.md`](CHANNEL_MAP.md). That file overrides any informal wiring description elsewhere.
+
 ## 2. eARC ingress
 
 ### SiI9437 prototype taps
@@ -73,13 +75,14 @@ Playback framing target:
 
 ```text
 sample rate:   48,000 Hz
+PCM format:    S32_LE
 slots:         16
 slot width:    32 bits
 BCLK:          24.576 MHz (512fs)
-serial format: AK4458-compatible TDM512
+serial format: DSP_B / AK4458 TDM512
 ```
 
-MCLK frequency is intentionally left as a BSP/hardware configuration item until the AK4458 clock table is checked against the exact selected DIF/DFS mode. Do not hard-code an MCLK ratio from an unrelated reference design.
+The upstream NXP `fsl,imx-audio-card` AK4458 TDM path explicitly models the 16-channel/TDM512 case and selects an AK4458 MCLK relationship of **1024fs**, i.e. **49.152 MHz at 48 kHz**. This is the R0 software target. G6 still must prove that the exact byteENGINE/NXP i.MX93 BSP clock tree can synthesize that MCLK and the 24.576 MHz BCLK on the selected SAI3 pads without drift or xruns.
 
 ### 1.8 V → 3.3 V translation
 
@@ -112,9 +115,16 @@ i.MX93 DATA ─────────────> SDTI1  AK4458 #2
                                                        └─ local DAC: first 8 channels
 ```
 
-Both DACs use TDM512 and identical serial data format. Daisy-chain mode must be enabled as documented by AKM. Keep configuration access available on the carrier; do not rely on inaccessible strap-only configuration until bring-up is complete.
+Both DACs use the same DSP_B/TDM512 serial framing. Linux's AK4458 codec driver supports S32_LE, TDM slot configuration and enables daisy-chain mode for DSP_B/TDM playback above eight channels. This is strong software support, but G6 must still measure the actual physical split and all sixteen analog outputs.
 
-The AK4458 is an 8-channel differential-output DAC with 115 dB-class S/N specification and explicitly advertises TDM/daisy-chain use for multichannel applications.
+The intended R0 split is:
+
+```text
+TDM slots 1..8   -> AK4458 #1 DAC1..DAC8
+TDM slots 9..16  -> AK4458 #2 DAC1..DAC8
+```
+
+Do not wire the power amplifiers permanently until the one-slot-at-a-time G6 test confirms that exact physical mapping.
 
 ## 5. Analog interface
 
@@ -136,29 +146,31 @@ Initial target: choose analog attenuation so 0 dBFS cannot overdrive the KAB9 at
 
 Two **WONDOM KAB9 / AA-KA32473** boards provide sixteen BTL amplifier channels total. Each board is specified as 8 × 50 W class-D and supports per-chip BTL/PBTL reconfiguration.
 
-Recommended assignment:
+To preserve the canonical DAC order during R0 bring-up, use:
 
 ### KAB9-A
 
-- FL
-- FR
-- C
-- SL
-- SR
-- BL
-- BR
-- one reserve/test channel
+1. FL
+2. FR
+3. C
+4. LFE power channel only if a passive-sub arrangement is selected; otherwise leave this amplifier channel unused and take LFE at line level
+5. BL
+6. BR
+7. SL
+8. SR
 
 ### KAB9-B
 
-- Top Front Left
-- Top Front Right
-- Top Rear Left
-- Top Rear Right
-- subwoofer on PBTL if a passive sub is used
-- remaining channels reserve
+1. TFL
+2. TFR
+3. TRL
+4. TRR
+5. reserve
+6. reserve
+7. reserve
+8. reserve
 
-For a powered subwoofer, keep the LFE path at line level and leave the corresponding KAB9 channels unused or available for future expansion.
+For a powered subwoofer, route the DAC LFE output through the line-level analog stage to the powered sub and leave KAB9-A channel 4 unused. If PBTL is later selected for a passive sub, validate that power-stage mode separately; it must not change the logical, PipeWire, TDM or DAC channel order.
 
 ## 7. Power tree
 
@@ -181,20 +193,21 @@ Do not power high-current class-D stages through the compute-module rail. Star/s
 1. Hold both KAB9 boards muted/shutdown.
 2. Start i.MX93 and configure SAI3.
 3. Keep AK4458 devices in reset/power-down until clocks and control are valid.
-4. Configure TDM512/daisy chain and channel format.
+4. Configure DSP_B/TDM512/daisy chain and channel format.
 5. Generate a zero PCM stream and verify DAC lock.
-6. Start renderer route.
+6. Start the exact `aurora_tdm` renderer route.
 7. Ramp software gain from silence.
-8. Release KAB9 mute last.
+8. Release KAB9 mute last only after G7 has frozen a fail-safe mute implementation.
 
-Shutdown runs the reverse sequence; loss of decoder/render/output clock asserts amp mute first.
+Shutdown runs the reverse sequence; loss of decoder/render/output clock must assert amp mute before stopping clocks/software.
 
 ## 9. Hardware gates before PCB freeze
 
 - scope SiI9437 → translator → SAI1 clock/data edges;
 - prove bit-exact IEC burst capture on i.MX93;
-- validate SAI3 TDM512 clocking and all 16 test-tone slots;
-- verify AK4458 MCLK requirements and Linux clock tree on the selected BSP;
+- validate SAI3 48 kHz / S32_LE / 16ch TDM512 and the 49.152 MHz MCLK target;
+- identify all sixteen dual-AK4458 analog outputs independently;
 - characterize differential DAC-to-KAB9 gain and DC/common-mode behavior;
+- validate any powered-sub/PBTL choice without altering the canonical channel contract;
 - measure idle noise with class-D power stages running;
 - run thermal test at representative multichannel power.
