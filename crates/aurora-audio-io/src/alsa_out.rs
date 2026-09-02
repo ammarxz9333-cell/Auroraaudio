@@ -1,13 +1,14 @@
-//! Deterministic output-side primitives for the Aurora R1 direct-ALSA path.
+//! Deterministic output-side DSP primitives for the Aurora R1 direct-ALSA path.
 //!
 //! The live R1 contract is fixed at 48 kHz with twelve rendered speaker
 //! channels (`FL FR C LFE BL BR SL SR TFL TFR TRL TRR`) packed into a
 //! sixteen-slot TDM stream. Slots 13..16 are deliberately zeroed.
 //!
-//! This module is platform-independent so the channel contract, sample
-//! conversion, adaptive clock controller and fractional resampler can be
-//! validated in the normal workspace CI. The Linux ALSA device wrapper lives
-//! in the `aurora-alsa-out` binary.
+//! This module contains no ALSA calls. It can therefore be tested on every CI
+//! platform while the Linux-specific PCM wrapper remains isolated in
+//! `alsa_pcm.rs`.
+
+use std::f64::consts::PI;
 
 /// Number of rendered channels produced by Omniphony for Aurora R1.
 pub const RENDER_CHANNELS: usize = 12;
@@ -16,47 +17,92 @@ pub const TDM_CHANNELS: usize = 16;
 /// Fixed Aurora R1 output sample rate.
 pub const OUTPUT_SAMPLE_RATE: u32 = 48_000;
 
+const RESAMPLER_TAPS: usize = 32;
+const RESAMPLER_PHASES: usize = 2_048;
+const RESAMPLER_CENTER: usize = RESAMPLER_TAPS / 2 - 1;
+const RESAMPLER_RADIUS: f64 = RESAMPLER_TAPS as f64 / 2.0;
+
 /// One interleaved logical 7.1.4 sample frame.
 pub type Frame12 = [f32; RENDER_CHANNELS];
 
-/// PI controller used to keep the software queue centred while the upstream
-/// media clock and the DAC clock differ by a small number of ppm.
+/// Smoothed PI controller used to keep the rendered-audio queue centred while
+/// the eARC media clock and DAC clock differ by a small number of ppm.
+///
+/// The controller deliberately filters block-level queue jitter, applies
+/// anti-windup at the ppm clamp and slew-limits correction changes. The latter
+/// prevents a producer block boundary or xrun recovery from turning into an
+/// abrupt resampling-ratio step.
 #[derive(Debug, Clone)]
 pub struct AdaptiveClockController {
     target_frames: usize,
     max_ppm: f64,
     kp_ppm: f64,
     ki_ppm_per_second: f64,
+    filter_tau_seconds: f64,
+    max_slew_ppm_per_second: f64,
+    filtered_error: f64,
     integral_error_seconds: f64,
+    last_ppm: f64,
 }
 
 impl AdaptiveClockController {
     /// Creates a controller targeting `target_frames` queued source frames.
-    ///
-    /// `max_ppm` is a hard safety clamp on the resampling correction. The
-    /// defaults used by the binary are intentionally conservative because the
-    /// eARC source and DAC clocks should differ only by oscillator tolerance.
     pub fn new(target_frames: usize, max_ppm: f64) -> Self {
         Self {
             target_frames: target_frames.max(1),
             max_ppm: max_ppm.abs().max(1.0),
-            kp_ppm: 1_200.0,
-            ki_ppm_per_second: 120.0,
+            kp_ppm: 900.0,
+            ki_ppm_per_second: 100.0,
+            filter_tau_seconds: 0.25,
+            max_slew_ppm_per_second: 400.0,
+            filtered_error: 0.0,
             integral_error_seconds: 0.0,
+            last_ppm: 0.0,
         }
     }
 
-    /// Updates the controller and returns the source-consumption correction in
-    /// parts per million. Positive ppm means consume source frames faster.
+    /// Updates the controller and returns source-consumption correction in ppm.
+    /// Positive ppm means consume source frames faster.
     pub fn update(&mut self, queued_frames: usize, interval_seconds: f64) -> f64 {
+        let dt = interval_seconds.clamp(0.0, 0.1);
+        if dt == 0.0 {
+            return self.last_ppm;
+        }
+
         let target = self.target_frames as f64;
-        let normalized_error = (queued_frames as f64 - target) / target;
-        let dt = interval_seconds.max(0.0);
-        self.integral_error_seconds =
-            (self.integral_error_seconds + normalized_error * dt).clamp(-2.0, 2.0);
-        let ppm =
-            self.kp_ppm * normalized_error + self.ki_ppm_per_second * self.integral_error_seconds;
-        ppm.clamp(-self.max_ppm, self.max_ppm)
+        let raw_error = (queued_frames as f64 - target) / target;
+        let alpha = dt / (self.filter_tau_seconds + dt);
+        self.filtered_error += alpha * (raw_error - self.filtered_error);
+
+        let candidate_integral =
+            (self.integral_error_seconds + self.filtered_error * dt).clamp(-2.0, 2.0);
+        let candidate_unclamped =
+            self.kp_ppm * self.filtered_error + self.ki_ppm_per_second * candidate_integral;
+
+        // Integrate while unsaturated, or while the current error would drive a
+        // saturated controller back toward the valid range. This prevents a
+        // long queue excursion from leaving stale integral state behind.
+        let can_integrate = candidate_unclamped.abs() <= self.max_ppm
+            || (candidate_unclamped > self.max_ppm && self.filtered_error < 0.0)
+            || (candidate_unclamped < -self.max_ppm && self.filtered_error > 0.0);
+        if can_integrate {
+            self.integral_error_seconds = candidate_integral;
+        }
+
+        let target_ppm = (self.kp_ppm * self.filtered_error
+            + self.ki_ppm_per_second * self.integral_error_seconds)
+            .clamp(-self.max_ppm, self.max_ppm);
+        let max_delta = self.max_slew_ppm_per_second * dt;
+        self.last_ppm += (target_ppm - self.last_ppm).clamp(-max_delta, max_delta);
+        self.last_ppm = self.last_ppm.clamp(-self.max_ppm, self.max_ppm);
+        self.last_ppm
+    }
+
+    /// Discards timing history after an ALSA recovery discontinuity.
+    pub fn reset_after_discontinuity(&mut self) {
+        self.filtered_error = 0.0;
+        self.integral_error_seconds = 0.0;
+        self.last_ppm = 0.0;
     }
 
     /// Converts a ppm correction to the source-frame step used by the
@@ -65,86 +111,127 @@ impl AdaptiveClockController {
         1.0 + ppm * 1.0e-6
     }
 
-    /// Returns the configured queue target.
     pub fn target_frames(&self) -> usize {
         self.target_frames
     }
 }
 
-/// Streaming four-point cubic interpolator for twelve-channel PCM.
+/// 32-tap, 2048-phase windowed-sinc fractional resampler for twelve-channel PCM.
 ///
-/// At the tiny correction ratios used for clock matching this avoids the
-/// obvious high-frequency droop of linear interpolation without requiring a
-/// large FFT/sinc state or another runtime dependency. It is not intended for
-/// large sample-rate conversions.
+/// Aurora only needs tiny continuous clock corrections (normally hundreds of
+/// ppm, never arbitrary sample-rate conversion). A Catmull-Rom/cubic
+/// interpolator is cheap but introduces unacceptable high-frequency error when
+/// its fractional phase sweeps through a movie soundtrack. This implementation
+/// uses a precomputed Lanczos-windowed sinc kernel, adding only ~18.4 million
+/// multiply-accumulates/second for all twelve channels at 48 kHz while keeping
+/// the audio hot path allocation-free after construction.
 #[derive(Debug, Clone)]
-pub struct CubicResampler12 {
-    frames: [Frame12; 4],
+pub struct BandlimitedResampler12 {
+    frames: [Frame12; RESAMPLER_TAPS],
+    kernels: Box<[[f32; RESAMPLER_TAPS]]>,
+    head: usize,
     phase: f64,
     primed: bool,
 }
 
-impl Default for CubicResampler12 {
+impl Default for BandlimitedResampler12 {
     fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl BandlimitedResampler12 {
+    pub fn new() -> Self {
         Self {
-            frames: [[0.0; RENDER_CHANNELS]; 4],
+            frames: [[0.0; RENDER_CHANNELS]; RESAMPLER_TAPS],
+            kernels: build_resampler_kernels(),
+            head: 0,
             phase: 0.0,
             primed: false,
         }
     }
-}
 
-impl CubicResampler12 {
-    /// Primes the interpolator from a source callback.
-    ///
-    /// The first source frame is duplicated as the pre-roll sample so the
-    /// first rendered frame corresponds to the first real source frame.
+    /// Primes the interpolation window. Historical samples before the start of
+    /// the stream are extended with the first real frame; the future half of
+    /// the sinc window is filled from the source callback.
     pub fn prime<F, E>(&mut self, next: &mut F) -> Result<(), E>
     where
         F: FnMut() -> Result<Frame12, E>,
     {
         let first = next()?;
-        self.frames[0] = first;
-        self.frames[1] = first;
-        self.frames[2] = next()?;
-        self.frames[3] = next()?;
+        for slot in &mut self.frames[..=RESAMPLER_CENTER] {
+            *slot = first;
+        }
+        for slot in &mut self.frames[RESAMPLER_CENTER + 1..] {
+            *slot = next()?;
+        }
+        self.head = 0;
         self.phase = 0.0;
         self.primed = true;
         Ok(())
     }
 
     /// Produces one output frame and advances through source frames according
-    /// to `source_step` (normally very close to `1.0`).
+    /// to `source_step` (normally within +/-300 ppm of 1.0).
     pub fn render<F, E>(&mut self, source_step: f64, next: &mut F) -> Result<Frame12, E>
     where
         F: FnMut() -> Result<Frame12, E>,
     {
-        debug_assert!(self.primed, "CubicResampler12 must be primed first");
-        let t = self.phase as f32;
-        let t2 = t * t;
-        let t3 = t2 * t;
+        debug_assert!(self.primed, "BandlimitedResampler12 must be primed first");
+        let kernel_index = ((self.phase * RESAMPLER_PHASES as f64).round() as usize)
+            .min(RESAMPLER_PHASES);
+        let kernel = &self.kernels[kernel_index];
         let mut out = [0.0_f32; RENDER_CHANNELS];
-        for (channel, output_sample) in out.iter_mut().enumerate() {
-            let p0 = self.frames[0][channel];
-            let p1 = self.frames[1][channel];
-            let p2 = self.frames[2][channel];
-            let p3 = self.frames[3][channel];
-            *output_sample = 0.5
-                * ((2.0 * p1)
-                    + (-p0 + p2) * t
-                    + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
-                    + (-p0 + 3.0 * p1 - 3.0 * p2 + p3) * t3);
+
+        for (logical_tap, coefficient) in kernel.iter().copied().enumerate() {
+            let frame = &self.frames[(self.head + logical_tap) % RESAMPLER_TAPS];
+            for (output_sample, input_sample) in out.iter_mut().zip(frame.iter()) {
+                *output_sample += *input_sample * coefficient;
+            }
         }
 
         self.phase += source_step.clamp(0.999, 1.001);
         while self.phase >= 1.0 {
-            self.frames[0] = self.frames[1];
-            self.frames[1] = self.frames[2];
-            self.frames[2] = self.frames[3];
-            self.frames[3] = next()?;
+            let recycled_slot = self.head;
+            self.head = (self.head + 1) % RESAMPLER_TAPS;
+            self.frames[recycled_slot] = next()?;
             self.phase -= 1.0;
         }
         Ok(out)
+    }
+}
+
+fn build_resampler_kernels() -> Box<[[f32; RESAMPLER_TAPS]]> {
+    let mut kernels = vec![[0.0_f32; RESAMPLER_TAPS]; RESAMPLER_PHASES + 1];
+    for (phase_index, kernel) in kernels.iter_mut().enumerate() {
+        let fraction = phase_index as f64 / RESAMPLER_PHASES as f64;
+        let mut sum = 0.0_f64;
+        for (tap, coefficient) in kernel.iter_mut().enumerate() {
+            let offset = tap as f64 - RESAMPLER_CENTER as f64 - fraction;
+            let value = if offset.abs() < RESAMPLER_RADIUS {
+                sinc_pi(offset) * sinc_pi(offset / RESAMPLER_RADIUS)
+            } else {
+                0.0
+            };
+            *coefficient = value as f32;
+            sum += value;
+        }
+
+        // Every phase has a non-zero DC response; normalize it to exactly one
+        // so constant signals remain constant while the fractional phase moves.
+        let normalization = 1.0 / sum;
+        for coefficient in kernel.iter_mut() {
+            *coefficient = (f64::from(*coefficient) * normalization) as f32;
+        }
+    }
+    kernels.into_boxed_slice()
+}
+
+fn sinc_pi(x: f64) -> f64 {
+    if x.abs() < 1.0e-12 {
+        1.0
+    } else {
+        (PI * x).sin() / (PI * x)
     }
 }
 
@@ -173,7 +260,6 @@ pub fn f32_to_s32(sample: f32) -> i32 {
     (f64::from(sample) * 2_147_483_648.0).round() as i32
 }
 
-/// Converts decibels to a linear gain multiplier.
 pub fn db_to_linear(db: f32) -> f32 {
     10.0_f32.powf(db / 20.0)
 }
@@ -189,8 +275,8 @@ mod tests {
             *sample = index as f32 / 32.0;
         }
         let packed = pack_frame_s32(&frame, 1.0);
-        for index in 0..RENDER_CHANNELS {
-            assert_eq!(packed[index], f32_to_s32(frame[index]));
+        for (index, sample) in frame.iter().enumerate() {
+            assert_eq!(packed[index], f32_to_s32(*sample));
         }
         assert_eq!(&packed[RENDER_CHANNELS..], &[0, 0, 0, 0]);
     }
@@ -206,22 +292,45 @@ mod tests {
     }
 
     #[test]
-    fn controller_sign_and_clamp_are_correct() {
-        let mut controller = AdaptiveClockController::new(4_800, 300.0);
-        assert!(controller.update(7_200, 0.01) > 0.0);
-        assert!(controller.update(2_400, 0.01) < 0.0);
-        assert!(controller.update(100_000, 0.01) <= 300.0);
-        assert!(controller.update(0, 0.01) >= -300.0);
+    fn controller_sign_slew_and_clamp_are_correct() {
+        let mut high = AdaptiveClockController::new(4_800, 300.0);
+        let first_high = high.update(7_200, 0.01);
+        assert!(first_high > 0.0 && first_high <= 4.01);
+        for _ in 0..2_000 {
+            high.update(100_000, 0.01);
+        }
+        assert!(high.last_ppm <= 300.0);
+        assert!(high.last_ppm > 250.0);
+
+        let mut low = AdaptiveClockController::new(4_800, 300.0);
+        assert!(low.update(2_400, 0.01) < 0.0);
+        for _ in 0..2_000 {
+            low.update(0, 0.01);
+        }
+        assert!(low.last_ppm >= -300.0);
+        assert!(low.last_ppm < -250.0);
     }
 
     #[test]
-    fn controller_is_near_zero_at_target() {
+    fn controller_reset_discards_recovery_history() {
         let mut controller = AdaptiveClockController::new(4_800, 300.0);
-        assert!(controller.update(4_800, 0.01).abs() < 1.0e-9);
+        for _ in 0..200 {
+            controller.update(7_200, 0.01);
+        }
+        assert!(controller.last_ppm > 0.0);
+        controller.reset_after_discontinuity();
+        assert_eq!(controller.last_ppm, 0.0);
+        assert_eq!(controller.integral_error_seconds, 0.0);
     }
 
     #[test]
-    fn cubic_resampler_at_unity_reproduces_source_sequence() {
+    fn controller_is_zero_at_target_from_clean_state() {
+        let mut controller = AdaptiveClockController::new(4_800, 300.0);
+        assert!(controller.update(4_800, 0.01).abs() < 1.0e-12);
+    }
+
+    #[test]
+    fn bandlimited_resampler_at_unity_reproduces_source_sequence() {
         let mut index = 0usize;
         let mut next = || -> Result<Frame12, ()> {
             let mut frame = [0.0; RENDER_CHANNELS];
@@ -229,25 +338,51 @@ mod tests {
             index += 1;
             Ok(frame)
         };
-        let mut resampler = CubicResampler12::default();
+        let mut resampler = BandlimitedResampler12::new();
         resampler.prime(&mut next).unwrap();
-        for expected in 0..16 {
+        for expected in 0..64 {
             let frame = resampler.render(1.0, &mut next).unwrap();
-            assert!((frame[0] - expected as f32).abs() < 1.0e-5);
+            assert!((frame[0] - expected as f32).abs() < 1.0e-4);
         }
     }
 
     #[test]
-    fn cubic_resampler_keeps_constant_signal_constant_during_ppm_correction() {
+    fn bandlimited_resampler_keeps_constant_signal_constant() {
         let mut next = || -> Result<Frame12, ()> { Ok([0.25; RENDER_CHANNELS]) };
-        let mut resampler = CubicResampler12::default();
+        let mut resampler = BandlimitedResampler12::new();
         resampler.prime(&mut next).unwrap();
         for step in [0.9997, 1.0, 1.0003] {
             for _ in 0..2_000 {
                 let frame = resampler.render(step, &mut next).unwrap();
-                assert!(frame.iter().all(|sample| (*sample - 0.25).abs() < 1.0e-6));
+                assert!(frame.iter().all(|sample| (*sample - 0.25).abs() < 2.0e-6));
             }
         }
+    }
+
+    #[test]
+    fn bandlimited_resampler_preserves_18khz_during_max_clock_correction() {
+        let frequency_hz = 18_000.0_f64;
+        let omega = 2.0 * PI * frequency_hz / f64::from(OUTPUT_SAMPLE_RATE);
+        let step = 1.0003_f64;
+        let mut source_index = 0usize;
+        let mut next = || -> Result<Frame12, ()> {
+            let mut frame = [0.0; RENDER_CHANNELS];
+            frame[0] = (omega * source_index as f64).sin() as f32;
+            source_index += 1;
+            Ok(frame)
+        };
+        let mut resampler = BandlimitedResampler12::new();
+        resampler.prime(&mut next).unwrap();
+
+        let mut max_error = 0.0_f64;
+        for output_index in 0..8_000usize {
+            let frame = resampler.render(step, &mut next).unwrap();
+            if output_index > 64 {
+                let expected = (omega * output_index as f64 * step).sin();
+                max_error = max_error.max((f64::from(frame[0]) - expected).abs());
+            }
+        }
+        assert!(max_error < 0.004, "18 kHz max interpolation error {max_error}");
     }
 
     #[test]
