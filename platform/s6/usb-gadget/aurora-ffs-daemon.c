@@ -3,7 +3,6 @@
 #include <linux/usb/ch9.h>
 #include <linux/usb/functionfs.h>
 
-#include <endian.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <poll.h>
@@ -18,31 +17,17 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include "aurora_usb_stream_v1.h"
+#include "aurora_usb_v1.h"
+
 #define FFS_DIR "/dev/ffs-aurora"
 #define EP0_PATH FFS_DIR "/ep0"
 #define EP1_PATH FFS_DIR "/ep1"
 #define EP2_PATH FFS_DIR "/ep2"
 #define RUN_DIR "/run/aurora"
 #define BRIDGE_SOCKET RUN_DIR "/usb-bridge.sock"
-
-#define AURORA_MAGIC "AUR0"
-#define AURORA_VERSION 1u
-#define AURORA_HEADER_LEN 32u
-#define AURORA_KIND_ERROR 6u
-#define AURORA_KIND_PING 7u
-#define AURORA_KIND_PONG 8u
-#define MAX_FRAME (256u * 1024u)
-
-struct aurora_header_wire {
-    uint8_t magic[4];
-    uint16_t version;
-    uint16_t kind;
-    uint32_t flags;
-    uint32_t sequence;
-    uint64_t pts_48k;
-    uint32_t payload_len;
-    uint32_t aux;
-} __attribute__((packed));
+#define USB_READ_CHUNK (64u * 1024u)
+#define USB_WRITE_TIMEOUT_MS 100
 
 struct ffs_desc_blob {
     struct usb_functionfs_descs_head_v2 header;
@@ -58,6 +43,11 @@ struct ffs_desc_blob {
     struct usb_endpoint_descriptor_no_audio hs_in;
 } __attribute__((packed));
 
+struct frame_dispatch_ctx {
+    int backend_fd;
+    int ep_in;
+};
+
 static volatile sig_atomic_t stop_requested;
 static uint32_t tx_sequence;
 
@@ -67,6 +57,22 @@ static void on_signal(int signo)
     stop_requested = 1;
 }
 
+static int wait_writable(int fd)
+{
+    struct pollfd p = { .fd = fd, .events = POLLOUT };
+    for (;;) {
+        int rc = poll(&p, 1, USB_WRITE_TIMEOUT_MS);
+        if (rc > 0)
+            return (p.revents & POLLOUT) ? 0 : -1;
+        if (rc == 0) {
+            errno = ETIMEDOUT;
+            return -1;
+        }
+        if (errno != EINTR)
+            return -1;
+    }
+}
+
 static int write_all(int fd, const void *buf, size_t len)
 {
     const uint8_t *p = buf;
@@ -74,6 +80,8 @@ static int write_all(int fd, const void *buf, size_t len)
         ssize_t n = write(fd, p, len);
         if (n < 0) {
             if (errno == EINTR)
+                continue;
+            if ((errno == EAGAIN || errno == EWOULDBLOCK) && wait_writable(fd) == 0)
                 continue;
             return -1;
         }
@@ -97,7 +105,7 @@ static void fill_interface(struct usb_interface_descriptor *d)
     d->bNumEndpoints = 2;
     d->bInterfaceClass = USB_CLASS_VENDOR_SPEC;
     d->bInterfaceSubClass = 0x41; /* 'A' - Aurora private protocol */
-    d->bInterfaceProtocol = 1;
+    d->bInterfaceProtocol = AURORA_USB_VERSION;
     d->iInterface = 1;
 }
 
@@ -196,50 +204,73 @@ static int make_bridge_listener(void)
     return fd;
 }
 
-static int validate_frame(const uint8_t *buf, size_t len, uint16_t *kind)
+static int validate_complete_frame(const uint8_t *buf, size_t len, uint16_t *kind)
 {
-    if (len < AURORA_HEADER_LEN)
+    if (len < AURORA_USB_HEADER_LEN)
+        return -1;
+    if (aurora_usb_read_le32(buf) != AURORA_USB_MAGIC_U32)
+        return -1;
+    if (aurora_usb_read_le16(buf + 4) != AURORA_USB_VERSION)
         return -1;
 
-    const struct aurora_header_wire *h = (const void *)buf;
-    if (memcmp(h->magic, AURORA_MAGIC, 4) != 0)
+    uint32_t payload_len = aurora_usb_read_le32(buf + 24);
+    if (payload_len > AURORA_USB_MAX_FRAME - AURORA_USB_HEADER_LEN)
         return -1;
-    if (le16toh(h->version) != AURORA_VERSION)
-        return -1;
-
-    uint32_t payload_len = le32toh(h->payload_len);
-    if ((size_t)payload_len != len - AURORA_HEADER_LEN)
+    if ((size_t)payload_len + AURORA_USB_HEADER_LEN != len)
         return -1;
 
     if (kind)
-        *kind = le16toh(h->kind);
+        *kind = aurora_usb_read_le16(buf + 6);
     return 0;
 }
 
 static int send_control_frame(int ep_in, uint16_t kind,
                               const void *payload, uint32_t payload_len)
 {
-    if (payload_len > MAX_FRAME - AURORA_HEADER_LEN) {
+    if (payload_len > AURORA_USB_MAX_FRAME - AURORA_USB_HEADER_LEN) {
         errno = EMSGSIZE;
         return -1;
     }
 
-    uint8_t *frame = calloc(1, AURORA_HEADER_LEN + payload_len);
+    const size_t total = AURORA_USB_HEADER_LEN + (size_t)payload_len;
+    uint8_t *frame = calloc(1, total);
     if (!frame)
         return -1;
 
-    struct aurora_header_wire *h = (void *)frame;
-    memcpy(h->magic, AURORA_MAGIC, 4);
-    h->version = htole16(AURORA_VERSION);
-    h->kind = htole16(kind);
-    h->sequence = htole32(tx_sequence++);
-    h->payload_len = htole32(payload_len);
+    aurora_usb_write_le32(frame + 0, AURORA_USB_MAGIC_U32);
+    aurora_usb_write_le16(frame + 4, AURORA_USB_VERSION);
+    aurora_usb_write_le16(frame + 6, kind);
+    aurora_usb_write_le32(frame + 12, tx_sequence++);
+    aurora_usb_write_le32(frame + 24, payload_len);
     if (payload_len)
-        memcpy(frame + AURORA_HEADER_LEN, payload, payload_len);
+        memcpy(frame + AURORA_USB_HEADER_LEN, payload, payload_len);
 
-    const int rc = write_all(ep_in, frame, AURORA_HEADER_LEN + payload_len);
+    const int rc = write_all(ep_in, frame, total);
     free(frame);
     return rc;
+}
+
+static int dispatch_usb_frame(void *opaque, const uint8_t *frame, size_t len)
+{
+    struct frame_dispatch_ctx *ctx = opaque;
+    uint16_t kind = 0;
+    if (validate_complete_frame(frame, len, &kind) < 0)
+        return -1;
+
+    if (kind == AURORA_USB_PING)
+        return send_control_frame(ctx->ep_in, AURORA_USB_PONG, NULL, 0);
+
+    if (ctx->backend_fd < 0) {
+        static const char offline[] = "backend-offline";
+        (void)send_control_frame(ctx->ep_in, AURORA_USB_ERROR,
+                                 offline, (uint32_t)(sizeof(offline) - 1));
+        return 0;
+    }
+
+    ssize_t sent = send(ctx->backend_fd, frame, len, MSG_NOSIGNAL);
+    if (sent != (ssize_t)len)
+        return -1;
+    return 0;
 }
 
 static void close_endpoint(int *fd)
@@ -266,7 +297,8 @@ static int open_stream_endpoints(int *ep_out, int *ep_in)
     return 0;
 }
 
-static void handle_ep0_events(int ep0, int *enabled, int *ep_out, int *ep_in)
+static void handle_ep0_events(int ep0, int *enabled, int *ep_out, int *ep_in,
+                              struct aurora_usb_stream_v1 *stream)
 {
     struct usb_functionfs_event events[8];
     ssize_t n = read(ep0, events, sizeof(events));
@@ -278,6 +310,8 @@ static void handle_ep0_events(int ep0, int *enabled, int *ep_out, int *ep_in)
         switch (events[i].type) {
         case FUNCTIONFS_ENABLE:
             if (open_stream_endpoints(ep_out, ep_in) == 0) {
+                aurora_usb_stream_v1_reset(stream);
+                tx_sequence = 0;
                 *enabled = 1;
                 fprintf(stderr, "aurora-ffs: USB enabled\n");
             } else {
@@ -287,13 +321,13 @@ static void handle_ep0_events(int ep0, int *enabled, int *ep_out, int *ep_in)
         case FUNCTIONFS_DISABLE:
         case FUNCTIONFS_UNBIND:
             *enabled = 0;
+            aurora_usb_stream_v1_reset(stream);
             close_endpoint(ep_out);
             close_endpoint(ep_in);
             fprintf(stderr, "aurora-ffs: USB disabled\n");
             break;
         case FUNCTIONFS_SETUP:
-            /* Aurora defines no class/vendor control requests in v1. The
-             * realtime protocol is carried exclusively over bulk endpoints. */
+            /* Protocol v1 defines no class/vendor ep0 request. */
             break;
         default:
             break;
@@ -329,13 +363,22 @@ int main(void)
     int ep_out = -1;
     int ep_in = -1;
     int usb_enabled = 0;
-    uint8_t *frame = malloc(MAX_FRAME);
-    if (!frame) {
-        perror("aurora-ffs: frame buffer");
+
+    uint8_t *frame = malloc(AURORA_USB_MAX_FRAME);
+    uint8_t *stream_storage = malloc(AURORA_USB_MAX_FRAME);
+    uint8_t *usb_chunk = malloc(USB_READ_CHUNK);
+    if (!frame || !stream_storage || !usb_chunk) {
+        perror("aurora-ffs: buffers");
+        free(frame);
+        free(stream_storage);
+        free(usb_chunk);
         close(listen_fd);
         close(ep0);
         return 1;
     }
+
+    struct aurora_usb_stream_v1 stream;
+    aurora_usb_stream_v1_init(&stream, stream_storage, AURORA_USB_MAX_FRAME);
 
     fprintf(stderr, "aurora-ffs: registered; backend socket %s\n", BRIDGE_SOCKET);
 
@@ -355,7 +398,7 @@ int main(void)
         }
 
         if (p[0].revents & POLLIN)
-            handle_ep0_events(ep0, &usb_enabled, &ep_out, &ep_in);
+            handle_ep0_events(ep0, &usb_enabled, &ep_out, &ep_in, &stream);
 
         if (p[1].revents & POLLIN) {
             int fd = accept4(listen_fd, NULL, NULL, SOCK_CLOEXEC | SOCK_NONBLOCK);
@@ -367,38 +410,38 @@ int main(void)
         }
 
         if (usb_enabled && ep_out >= 0 && (p[2].revents & POLLIN)) {
-            ssize_t n = read(ep_out, frame, MAX_FRAME);
+            ssize_t n = read(ep_out, usb_chunk, USB_READ_CHUNK);
             if (n > 0) {
-                uint16_t kind = 0;
-                if (validate_frame(frame, (size_t)n, &kind) < 0) {
-                    static const char bad[] = "malformed-frame";
-                    (void)send_control_frame(ep_in, AURORA_KIND_ERROR,
+                struct frame_dispatch_ctx ctx = {
+                    .backend_fd = backend_fd,
+                    .ep_in = ep_in,
+                };
+                int feed_rc = aurora_usb_stream_v1_feed(
+                    &stream, usb_chunk, (size_t)n, dispatch_usb_frame, &ctx);
+                if (feed_rc != AURORA_USB_STREAM_OK) {
+                    static const char bad[] = "usb-stream-framing-error";
+                    aurora_usb_stream_v1_reset(&stream);
+                    (void)send_control_frame(ep_in, AURORA_USB_ERROR,
                                              bad, (uint32_t)(sizeof(bad) - 1));
-                } else if (kind == AURORA_KIND_PING) {
-                    (void)send_control_frame(ep_in, AURORA_KIND_PONG, NULL, 0);
-                } else if (backend_fd >= 0) {
-                    ssize_t sent = send(backend_fd, frame, (size_t)n, MSG_NOSIGNAL);
-                    if (sent != n) {
+                    if (feed_rc == AURORA_USB_STREAM_ERR_CALLBACK && backend_fd >= 0) {
                         close_endpoint(&backend_fd);
-                        fprintf(stderr, "aurora-ffs: backend disconnected during send\n");
+                        fprintf(stderr, "aurora-ffs: backend disconnected during USB dispatch\n");
                     }
-                } else {
-                    static const char offline[] = "backend-offline";
-                    (void)send_control_frame(ep_in, AURORA_KIND_ERROR,
-                                             offline,
-                                             (uint32_t)(sizeof(offline) - 1));
                 }
             }
         }
 
         if (backend_fd >= 0 && (p[3].revents & (POLLIN | POLLHUP | POLLERR))) {
             if (p[3].revents & POLLIN) {
-                ssize_t n = recv(backend_fd, frame, MAX_FRAME, 0);
+                ssize_t n = recv(backend_fd, frame, AURORA_USB_MAX_FRAME, 0);
                 if (n > 0 && usb_enabled && ep_in >= 0) {
-                    if (validate_frame(frame, (size_t)n, NULL) == 0) {
-                        if (write_all(ep_in, frame, (size_t)n) < 0 &&
-                            errno != EAGAIN && errno != EWOULDBLOCK) {
+                    if (validate_complete_frame(frame, (size_t)n, NULL) == 0) {
+                        if (write_all(ep_in, frame, (size_t)n) < 0) {
                             perror("aurora-ffs: ep2 write");
+                            usb_enabled = 0;
+                            close_endpoint(&ep_out);
+                            close_endpoint(&ep_in);
+                            aurora_usb_stream_v1_reset(&stream);
                         }
                     }
                 } else if (n == 0) {
@@ -411,6 +454,8 @@ int main(void)
     }
 
     free(frame);
+    free(stream_storage);
+    free(usb_chunk);
     close_endpoint(&backend_fd);
     close_endpoint(&ep_out);
     close_endpoint(&ep_in);
