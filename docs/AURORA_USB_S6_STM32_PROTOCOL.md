@@ -22,6 +22,8 @@ Use one vendor-specific FunctionFS interface.
 
 High-Speed bulk max packet size: 512 bytes. Application transfers SHOULD be submitted as multi-packet buffers rather than one USB packet at a time.
 
+**Transfer invariant:** one complete Aurora application frame (32-byte header + declared payload) is submitted as one USB bulk transfer. A transfer may span many 512-byte USB packets. The version-1 maximum application frame is 256 KiB. Codec framing remains defined by the Aurora payload contract, not by individual 512-byte USB packets.
+
 No USB Audio Class dependency is required for the Aurora realtime path.
 
 ## Framing
@@ -70,7 +72,7 @@ Unknown flag bits MUST be ignored on receive and preserved only when explicitly 
 
 ### ENCODED_IEC61937
 
-The payload is complete IEC61937 data as captured by the STM32-side input path. Aurora must not assume every USB transfer equals one codec frame; framing is defined by this Aurora header.
+The payload is complete IEC61937 data as captured by the STM32-side input path. Aurora must not infer framing from individual 512-byte USB packets; the application transfer and this Aurora header delimit the message.
 
 `aux = 0` for protocol version 1.
 
@@ -132,6 +134,12 @@ The STM32 must not enable speaker outputs until CONFIG is accepted and an ACK is
 - On PCM underrun, STM32 outputs silence, sets an xrun counter, and sends a CLOCK_REPORT with `XRUN_RECOVERY`.
 - On render overrun, S6 drops no partial PCM frame. It reports ERROR and restarts at a period boundary.
 - Amplifier mute is the safe state for protocol-version mismatch, layout mismatch, repeated malformed headers, or loss of CONFIG state.
+
+## Local S6 handoff
+
+`aurora-ffs-daemon` owns FunctionFS and exposes `/run/aurora/usb-bridge.sock` as a Unix `SOCK_SEQPACKET` socket. One socket message equals one Aurora application frame, preserving frame boundaries between USB and the audio backend. Only one backend is active at a time; a new backend connection replaces the old one.
+
+If no backend is attached, non-PING traffic receives an `ERROR` frame and the STM32 remains muted. `PING`/`PONG` is handled directly by the FunctionFS daemon so transport health can be tested before Harletty/Omniphony are running.
 
 ## Bandwidth budget
 
