@@ -11,9 +11,11 @@ on:
       - 'crates/aurora-audio-io/src/orender_host.rs'
       - 'crates/aurora-audio-io/src/bin/aurora-appliance.rs'
       - 'crates/aurora-audio-io/src/bin/aurora-orender-probe.rs'
+      - 'crates/aurora-audio-io/src/bin/aurora-joc-e2e-probe.rs'
       - 'tests/fixtures/liborender_stub.c'
       - 'scripts/imx93/build-r2-deps.sh'
       - 'scripts/imx93/run-r2-appliance.sh'
+      - 'platforms/imx93/layouts/aurora-7.1.4.yaml'
       - 'platforms/imx93/systemd/aurora-r2.service'
       - 'platforms/imx93/systemd/aurora-r2.env.example'
   workflow_dispatch:
@@ -66,6 +68,28 @@ jobs:
             echo 'R2 runtime must remain a single direct-ALSA appliance process' >&2
             exit 1
           fi
+
+  real-joc-e2e:
+    needs: linux-stable
+    runs-on: ubuntu-24.04
+    env:
+      AURORA_DEPS_ROOT: /tmp/aurora-deps
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev pkg-config
+      - name: Build pinned real Harletty and liborender
+        run: scripts/imx93/build-r2-deps.sh
+      - name: Real IEC61937 JOC to 7.1.4 render
+        run: |
+          cargo run --locked -p aurora-audio-io --bin aurora-joc-e2e-probe -- \
+            "$AURORA_DEPS_ROOT/Omniphony/omniphony-renderer/target/release/liborender.so" \
+            "$AURORA_DEPS_ROOT/harletty-bridge/target/release/libharletty_bridge.so" \
+            "$GITHUB_WORKSPACE/platforms/imx93/layouts/aurora-7.1.4.yaml" \
+            "$AURORA_DEPS_ROOT/harletty-bridge/harletty/tests/fixtures/joc_atmos_1s.eac3"
 
   msrv-1-78:
     runs-on: ubuntu-24.04
