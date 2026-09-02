@@ -19,7 +19,7 @@ fn main() {
 
 #[cfg(target_os = "linux")]
 fn run() -> Result<(), String> {
-    use iec61937::{BurstParser, CodecFilter, s32_samples_to_iec_words};
+    use iec61937::{s32_samples_to_iec_words, BurstParser, CodecFilter};
     use orender_host::{OrenderHost, OrenderHostConfig};
     use std::env;
     use std::fs;
@@ -74,9 +74,8 @@ fn run() -> Result<(), String> {
                     return;
                 }
                 if data_type != 0x15 {
-                    callback_error = Some(format!(
-                        "unexpected IEC61937 data type 0x{data_type:02x}"
-                    ));
+                    callback_error =
+                        Some(format!("unexpected IEC61937 data type 0x{data_type:02x}"));
                     return;
                 }
                 if payload != *access_unit {
@@ -87,7 +86,8 @@ fn run() -> Result<(), String> {
                 parsed_bursts += 1;
                 let result = host.process_raw(payload, |samples, frames| {
                     if samples.len() != frames.saturating_mul(12) {
-                        callback_error = Some("renderer output is not 12-channel aligned".to_owned());
+                        callback_error =
+                            Some("renderer output is not 12-channel aligned".to_owned());
                         return;
                     }
                     render_callbacks += 1;
@@ -95,9 +95,8 @@ fn run() -> Result<(), String> {
                     for frame in samples.chunks_exact(12) {
                         for (channel, sample) in frame.iter().copied().enumerate() {
                             if !sample.is_finite() {
-                                callback_error = Some(format!(
-                                    "non-finite PCM on channel {channel}"
-                                ));
+                                callback_error =
+                                    Some(format!("non-finite PCM on channel {channel}"));
                                 return;
                             }
                             peak = peak.max(sample.abs());
@@ -206,11 +205,11 @@ fn wrap_eac3_as_s32_iec61937(access_unit: &[u8]) -> Result<Vec<i32>, String> {
     let mut carrier = Vec::with_capacity(burst.len() / 2 + 32);
     // A little zero spacing exercises preamble search without pretending to
     // model the physical IEC repetition period in this software-only fixture.
-    carrier.extend(std::iter::repeat_n(0_i32, 17));
+    carrier.extend(std::iter::repeat(0_i32).take(17));
     for word in burst.chunks_exact(2) {
         let high_word = u32::from(u16::from_le_bytes([word[0], word[1]])) << 16;
         carrier.push(high_word as i32);
     }
-    carrier.extend(std::iter::repeat_n(0_i32, 13));
+    carrier.extend(std::iter::repeat(0_i32).take(13));
     Ok(carrier)
 }
