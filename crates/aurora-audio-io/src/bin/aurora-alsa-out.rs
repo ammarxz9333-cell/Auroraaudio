@@ -512,8 +512,7 @@ mod linux {
         })?;
         let queue_frames = config.queue_frames();
         let target_frames = config.target_frames();
-        let block_capacity =
-            ((queue_frames + SOURCE_BLOCK_FRAMES - 1) / SOURCE_BLOCK_FRAMES).max(2);
+        let block_capacity = queue_frames.div_ceil(SOURCE_BLOCK_FRAMES).max(2);
         let (sender, receiver) = mpsc::sync_channel::<SourcePacket>(block_capacity);
         let buffered_frames = Arc::new(AtomicUsize::new(0));
         let source_finished = Arc::new(AtomicBool::new(false));
