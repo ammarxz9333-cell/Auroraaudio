@@ -1,0 +1,24 @@
+[Unit]
+Description=Aurora i.MX93 R1 eARC JOC to 7.1.4 direct ALSA pipeline
+After=sound.target
+Wants=sound.target
+ConditionPathExists=/opt/aurora/scripts/imx93/run-live-714-alsa.sh
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/aurora/r1.env
+WorkingDirectory=/opt/aurora
+ExecStart=/opt/aurora/scripts/imx93/run-live-714-alsa.sh
+Restart=on-failure
+RestartSec=2
+
+# R1 deliberately has no PipeWire/WirePlumber dependency. The process owns the
+# selected ALSA hw PCM directly. Keep this as a USER unit so device permissions
+# follow the dedicated appliance account and no privileged audio daemon is
+# required.
+#
+# Hardware amplifier mute/unmute remains outside this service until G7 proves
+# the physical fail-safe polarity and startup/shutdown sequence.
+
+[Install]
+WantedBy=default.target
