@@ -43,12 +43,15 @@ jobs:
             platform/s6/usb-gadget/aurora-ffs-daemon.c \
             protocol/aurora_usb_stream_v1.c \
             -o /tmp/aurora-ffs-daemon
-      - name: Compile portable STM32 transport core
+      - name: Test portable STM32 transport state machine
         run: |
-          if [ -f firmware/stm32h753/src/aurora_transport.c ]; then
-            cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol -Ifirmware/stm32h753/include \
-              -c firmware/stm32h753/src/aurora_transport.c -o /tmp/aurora_transport.o
-          fi
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Iprotocol -Ifirmware/stm32h753/include \
+            protocol/aurora_usb_stream_v1.c \
+            firmware/stm32h753/src/aurora_transport.c \
+            firmware/stm32h753/test/test_aurora_transport.c \
+            -o /tmp/test-aurora-stm32-transport
+          /tmp/test-aurora-stm32-transport
       - name: Check S6 shell script syntax
         shell: bash
         run: |
