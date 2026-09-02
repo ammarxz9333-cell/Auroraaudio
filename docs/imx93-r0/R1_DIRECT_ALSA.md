@@ -168,7 +168,7 @@ software PCM queue
 + snd_pcm_delay() ALSA/DMA queued frames
 ```
 
-The latest total is sampled at a low rate and published using the existing `/tmp/omniphony_delay` sign convention. Filesystem I/O occurs on a dedicated telemetry thread; the audio thread only updates an atomic value. A stale delay file is removed at reporter startup and normal shutdown.
+The latest total is sampled at a low rate and handed to a dedicated `aurora-av-delay` telemetry thread through an atomic value. The reporter writes the existing `/tmp/omniphony_delay` sign convention outside the audio thread, rate-limits write-error logging, removes a stale file at startup, and removes it again on normal shutdown.
 
 Target hardware must still verify that `snd_pcm_delay()` on the selected i.MX93 BSP accounts for the relevant DMA/device queue accurately enough for long-form A/V sync.
 
@@ -217,6 +217,10 @@ R1 remains Draft until the actual i.MX93 carrier proves all of the following:
 ## Deferred target-only tuning
 
 Realtime scheduling (`SCHED_FIFO`/priority changes), CPU affinity and memory locking are intentionally **not** enabled in the generic R1 core yet. Their correct values depend on the i.MX93 BSP, IRQ/DMA topology, service capabilities and measured scheduling pressure. They should be introduced only if target traces show a need, then validated against starvation and service-restart behavior.
+
+## Software-core stabilization point
+
+The current R1 software core intentionally stops here until target measurements exist. Further generic complexity is not automatically an improvement. The next engineering work should be measurement-driven: actual i.MX93 CPU budget, ALSA/DMA latency semantics, xrun traces, TDM slot verification and analog output quality.
 
 ## R0 fallback
 
