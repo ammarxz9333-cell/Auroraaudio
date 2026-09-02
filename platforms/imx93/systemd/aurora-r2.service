@@ -1,0 +1,21 @@
+[Unit]
+Description=Aurora i.MX93 R2 single-process eARC JOC appliance
+After=sound.target
+Wants=sound.target
+ConditionPathExists=/opt/aurora/scripts/imx93/run-r2-appliance.sh
+
+[Service]
+Type=simple
+EnvironmentFile=-%h/.config/aurora/r2.env
+WorkingDirectory=/opt/aurora
+ExecStart=/opt/aurora/scripts/imx93/run-r2-appliance.sh
+Restart=on-failure
+RestartSec=2
+TimeoutStopSec=5
+
+# R2 owns both ALSA hardware PCMs directly and has no PipeWire/WirePlumber or
+# shell-pipeline dependency. Amplifier unmute remains outside this unit until
+# the G7 hardware fail-safe GPIO/polarity sequence is validated physically.
+
+[Install]
+WantedBy=default.target
