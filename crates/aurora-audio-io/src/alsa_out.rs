@@ -54,8 +54,8 @@ impl AdaptiveClockController {
         let dt = interval_seconds.max(0.0);
         self.integral_error_seconds =
             (self.integral_error_seconds + normalized_error * dt).clamp(-2.0, 2.0);
-        let ppm = self.kp_ppm * normalized_error
-            + self.ki_ppm_per_second * self.integral_error_seconds;
+        let ppm =
+            self.kp_ppm * normalized_error + self.ki_ppm_per_second * self.integral_error_seconds;
         ppm.clamp(-self.max_ppm, self.max_ppm)
     }
 
