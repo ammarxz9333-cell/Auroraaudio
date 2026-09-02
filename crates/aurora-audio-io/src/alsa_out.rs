@@ -376,10 +376,16 @@ mod tests {
     fn bandlimited_resampler_preserves_top_octave_at_max_clock_correction() {
         for step in [0.9997_f64, 1.0003_f64] {
             let error_18k = max_sine_error(18_000.0, step);
-            assert!(error_18k < 0.004, "18 kHz step={step} max error {error_18k}");
+            assert!(
+                error_18k < 0.004,
+                "18 kHz step={step} max error {error_18k}"
+            );
 
             let error_20k = max_sine_error(20_000.0, step);
-            assert!(error_20k < 0.015, "20 kHz step={step} max error {error_20k}");
+            assert!(
+                error_20k < 0.015,
+                "20 kHz step={step} max error {error_20k}"
+            );
         }
     }
 
