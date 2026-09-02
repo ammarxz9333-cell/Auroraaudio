@@ -28,10 +28,11 @@ checkout_repo() {
 checkout_repo https://github.com/mgth/Omniphony.git "$DEPS_ROOT/Omniphony" "$OMNIPHONY_COMMIT"
 checkout_repo https://github.com/harletty/harletty-bridge.git "$DEPS_ROOT/harletty-bridge" "$HARLETTY_COMMIT"
 
+# R2 never runs the offline Harletty CLI. Build only the decoder bridge that
+# liborender loads at runtime; build_bridge.sh itself targets harletty-bridge.
 (
   cd "$DEPS_ROOT/harletty-bridge"
-  cargo build --release -p harletty
-  ./build_bridge.sh
+  bash ./build_bridge.sh
 )
 
 # R2 embeds the headless engine through its stable C ABI. Do NOT build orender
