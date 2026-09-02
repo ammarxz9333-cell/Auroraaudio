@@ -124,12 +124,12 @@ impl CubicResampler12 {
         let t2 = t * t;
         let t3 = t2 * t;
         let mut out = [0.0_f32; RENDER_CHANNELS];
-        for channel in 0..RENDER_CHANNELS {
+        for (channel, output_sample) in out.iter_mut().enumerate() {
             let p0 = self.frames[0][channel];
             let p1 = self.frames[1][channel];
             let p2 = self.frames[2][channel];
             let p3 = self.frames[3][channel];
-            out[channel] = 0.5
+            *output_sample = 0.5
                 * ((2.0 * p1)
                     + (-p0 + p2) * t
                     + (2.0 * p0 - 5.0 * p1 + 4.0 * p2 - p3) * t2
