@@ -22,8 +22,8 @@ mod linux {
     use std::time::{Duration, Instant};
 
     use super::alsa_out::{
-        AdaptiveClockController, BandlimitedResampler12, Frame12, OUTPUT_SAMPLE_RATE,
-        RENDER_CHANNELS, TDM_CHANNELS, db_to_linear, pack_frame_s32,
+        db_to_linear, pack_frame_s32, AdaptiveClockController, BandlimitedResampler12, Frame12,
+        OUTPUT_SAMPLE_RATE, RENDER_CHANNELS, TDM_CHANNELS,
     };
     use super::alsa_pcm::{AlsaPlayback, AlsaPlaybackConfig};
 
@@ -87,7 +87,8 @@ mod linux {
                         cfg.startup_timeout_ms = parse_value(&mut args, "--startup-timeout-ms")?;
                     }
                     "--latency-file" => {
-                        cfg.latency_file = Some(PathBuf::from(next_value(&mut args, "--latency-file")?));
+                        cfg.latency_file =
+                            Some(PathBuf::from(next_value(&mut args, "--latency-file")?));
                     }
                     "--no-latency-file" => cfg.latency_file = None,
                     "--stats" => cfg.stats = true,
@@ -180,10 +181,6 @@ mod linux {
         (ms * OUTPUT_SAMPLE_RATE as usize) / 1_000
     }
 
-    /// Fixed-capacity SPSC PCM queue. Storage is allocated once at startup;
-    /// producer blocks are copied into the ring and the playback thread drains
-    /// them into a fixed local block, avoiding allocator activity in steady
-    /// state.
     struct FrameQueue {
         state: Mutex<QueueState>,
         not_empty: Condvar,
@@ -415,7 +412,11 @@ mod linux {
         }
     }
 
-    fn wait_for_prime(queue: &FrameQueue, target_frames: usize, timeout: Duration) -> Result<(), String> {
+    fn wait_for_prime(
+        queue: &FrameQueue,
+        target_frames: usize,
+        timeout: Duration,
+    ) -> Result<(), String> {
         let started = Instant::now();
         loop {
             let available = queue.buffered_frames();
@@ -454,11 +455,7 @@ mod linux {
             }
         }
 
-        fn maybe_publish(
-            &mut self,
-            queued_frames: usize,
-            playback: &AlsaPlayback,
-        ) -> Option<f64> {
+        fn maybe_publish(&mut self, queued_frames: usize, playback: &AlsaPlayback) -> Option<f64> {
             if self.last_publish.elapsed() < LATENCY_PUBLISH_INTERVAL {
                 return self.last_total_ms;
             }
@@ -478,9 +475,6 @@ mod linux {
             self.last_total_ms = Some(total_ms);
 
             if let Some(path) = self.path.as_ref() {
-                // Match Omniphony's existing delay-file sign convention: a
-                // positive audio-chain latency is published as negative seconds
-                // so the video side delays itself by the corresponding amount.
                 let delay_seconds = -(total_ms / 1_000.0);
                 if let Err(error) = fs::write(path, format!("{delay_seconds:.6}\n")) {
                     eprintln!(
