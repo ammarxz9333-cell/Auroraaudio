@@ -152,7 +152,10 @@ impl S32HighWordAdapter {
 /// reached the required capacity.
 pub fn s32_samples_to_iec_words(samples: &[i32], out: &mut Vec<u8>) {
     out.clear();
-    out.reserve(samples.len().saturating_mul(2).saturating_sub(out.capacity()));
+    let required = samples.len().saturating_mul(2);
+    if out.capacity() < required {
+        out.reserve(required);
+    }
     for sample in samples {
         let bytes = sample.to_le_bytes();
         out.extend_from_slice(&bytes[2..4]);
@@ -235,6 +238,16 @@ mod tests {
         let mut words = Vec::new();
         s32_samples_to_iec_words(&samples, &mut words);
         assert_eq!(words, [0x72, 0xF8, 0x1F, 0x4E]);
+    }
+
+    #[test]
+    fn aligned_s32_helper_reuses_capacity() {
+        let samples = [0_i32; 64];
+        let mut words = Vec::with_capacity(128);
+        let capacity = words.capacity();
+        s32_samples_to_iec_words(&samples, &mut words);
+        assert_eq!(words.len(), 128);
+        assert_eq!(words.capacity(), capacity);
     }
 
     #[test]
