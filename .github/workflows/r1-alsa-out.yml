@@ -1,0 +1,68 @@
+name: R1 direct ALSA output
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/r1-alsa-out.yml'
+      - 'crates/aurora-audio-io/src/alsa_out.rs'
+      - 'crates/aurora-audio-io/src/bin/aurora-alsa-out.rs'
+      - 'scripts/imx93/run-live-714-alsa.sh'
+      - 'docs/imx93-r0/R1_DIRECT_ALSA.md'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r1-alsa-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-stable:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install ALSA development files
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Build direct ALSA binary
+        run: cargo build --locked -p aurora-audio-io --bin aurora-alsa-out
+      - name: Clippy direct ALSA binary
+        run: cargo clippy --locked -p aurora-audio-io --bin aurora-alsa-out -- -D warnings
+      - name: Unit tests including R1 output primitives
+        run: cargo test --locked -p aurora-audio-io --bin aurora-alsa-out
+      - name: Help smoke test
+        run: cargo run --locked -p aurora-audio-io --bin aurora-alsa-out -- --help
+      - name: Shell syntax
+        run: |
+          if test -f scripts/imx93/run-live-714-alsa.sh; then
+            bash -n scripts/imx93/run-live-714-alsa.sh
+          fi
+
+  msrv-1-78:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.78.0
+      - name: Install ALSA development files
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev
+      - name: Check MSRV
+        run: cargo check --locked -p aurora-audio-io --bin aurora-alsa-out
+      - name: Test MSRV
+        run: cargo test --locked -p aurora-audio-io --bin aurora-alsa-out
+
+  non-linux-compile:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Ensure cfg isolation compiles on Windows
+        run: cargo check --locked -p aurora-audio-io --bin aurora-alsa-out
