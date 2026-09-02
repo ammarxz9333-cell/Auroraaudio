@@ -346,7 +346,10 @@ impl Drop for Library {
 }
 
 fn symbol_name(name: &[u8]) -> String {
-    let end = name.iter().position(|byte| *byte == 0).unwrap_or(name.len());
+    let end = name
+        .iter()
+        .position(|byte| *byte == 0)
+        .unwrap_or(name.len());
     String::from_utf8_lossy(&name[..end]).into_owned()
 }
 
@@ -358,7 +361,9 @@ fn dl_error() -> String {
         "unknown dynamic loader error".to_owned()
     } else {
         // SAFETY: non-null result is NUL-terminated static storage.
-        unsafe { CStr::from_ptr(raw) }.to_string_lossy().into_owned()
+        unsafe { CStr::from_ptr(raw) }
+            .to_string_lossy()
+            .into_owned()
     }
 }
 
