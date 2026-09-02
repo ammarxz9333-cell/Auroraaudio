@@ -188,6 +188,8 @@ The hardened R1 code revision with the separate A/V telemetry thread passed dedi
 - Rust 1.78 MSRV check and tests;
 - Windows compile proving Linux-only FFI is correctly cfg-isolated.
 
+Documentation-only revisions after that green software run do not change the output implementation.
+
 This proves the software contracts exercised by CI. It does **not** prove the i.MX93 SAI3 driver, actual TDM electrical stream, DAC slot order or analog audio performance.
 
 ## Fail-closed rules
