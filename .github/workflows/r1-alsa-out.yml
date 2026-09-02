@@ -42,6 +42,31 @@ jobs:
         run: cargo test --locked -p aurora-audio-io --bin aurora-alsa-out
       - name: Help smoke test
         run: cargo run --locked -p aurora-audio-io --bin aurora-alsa-out -- --help
+      - name: Direct ALSA runtime smoke on null PCM
+        shell: bash
+        run: |
+          set +e
+          python3 - <<'PY' | target/debug/aurora-alsa-out \
+            --device null \
+            --queue-ms 40 \
+            --target-ms 20 \
+            --source-timeout-ms 100 \
+            --startup-timeout-ms 2000 \
+            --gain-db -6 \
+            2>/tmp/aurora-r1-null.log
+          import struct
+          import sys
+          frame = struct.pack('<12f', 0.125, -0.125, 0.0625, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0)
+          for _ in range(12_000):
+              sys.stdout.buffer.write(frame)
+          PY
+          rc=$?
+          set -e
+          cat /tmp/aurora-r1-null.log
+          grep -F 'direct ALSA active device=null format=S32_LE rate=48000 channels=16' /tmp/aurora-r1-null.log
+          # Finite stdin must eventually fail closed on EOF; success here means
+          # the runtime opened ALSA and then incorrectly ignored source loss.
+          test "$rc" -ne 0
       - name: Shell syntax
         run: |
           bash -n scripts/imx93/run-live-714-alsa.sh
