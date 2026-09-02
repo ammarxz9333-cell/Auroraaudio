@@ -61,7 +61,8 @@ jobs:
           bash -n scripts/imx93/run-r2-appliance.sh
       - name: R2 no-PipeWire contract
         run: |
-          if grep -Eqi 'pipewire|wireplumber|arecord|orender .*--output' scripts/imx93/run-r2-appliance.sh platforms/imx93/systemd/aurora-r2.service; then
+          active_lines="$({ grep -Ev '^[[:space:]]*(#|$)' scripts/imx93/run-r2-appliance.sh; grep -Ev '^[[:space:]]*(#|$)' platforms/imx93/systemd/aurora-r2.service; } || true)"
+          if printf '%s\n' "$active_lines" | grep -Eqi 'pipewire|wireplumber|arecord|orender .*--output'; then
             echo 'R2 runtime must remain a single direct-ALSA appliance process' >&2
             exit 1
           fi
