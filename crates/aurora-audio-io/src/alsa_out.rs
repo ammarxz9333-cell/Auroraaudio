@@ -21,6 +21,10 @@ const RESAMPLER_TAPS: usize = 32;
 const RESAMPLER_PHASES: usize = 2_048;
 const RESAMPLER_CENTER: usize = RESAMPLER_TAPS / 2 - 1;
 const RESAMPLER_RADIUS: f64 = RESAMPLER_TAPS as f64 / 2.0;
+/// Minimum source frames required to prime the 32-tap interpolation window.
+pub const RESAMPLER_PRIME_FRAMES: usize = RESAMPLER_TAPS / 2 + 1;
+/// Future frames retained by the resampler and therefore part of output latency.
+pub const RESAMPLER_LOOKAHEAD_FRAMES: usize = RESAMPLER_TAPS - RESAMPLER_CENTER - 1;
 
 /// One interleaved logical 7.1.4 sample frame.
 pub type Frame12 = [f32; RENDER_CHANNELS];
@@ -79,9 +83,6 @@ impl AdaptiveClockController {
         let candidate_unclamped =
             self.kp_ppm * self.filtered_error + self.ki_ppm_per_second * candidate_integral;
 
-        // Integrate while unsaturated, or while the current error would drive a
-        // saturated controller back toward the valid range. This prevents a
-        // long queue excursion from leaving stale integral state behind.
         let can_integrate = candidate_unclamped.abs() <= self.max_ppm
             || (candidate_unclamped > self.max_ppm && self.filtered_error < 0.0)
             || (candidate_unclamped < -self.max_ppm && self.filtered_error > 0.0);
@@ -105,8 +106,6 @@ impl AdaptiveClockController {
         self.last_ppm = 0.0;
     }
 
-    /// Converts a ppm correction to the source-frame step used by the
-    /// fractional resampler.
     pub fn step_from_ppm(ppm: f64) -> f64 {
         1.0 + ppm * 1.0e-6
     }
@@ -118,14 +117,10 @@ impl AdaptiveClockController {
 
 /// 32-tap, 2048-phase windowed-sinc fractional resampler for twelve-channel PCM.
 ///
-/// Aurora only needs tiny continuous clock corrections (normally hundreds of
-/// ppm, never arbitrary sample-rate conversion). A Catmull-Rom/cubic
-/// interpolator is cheap but introduces unacceptable high-frequency error when
-/// its fractional phase sweeps through a movie soundtrack. This implementation
-/// uses a precomputed Lanczos-windowed sinc kernel, adding only ~18.4 million
-/// multiply-accumulates/second for all twelve channels at 48 kHz while keeping
-/// the audio hot path allocation-free after construction.
-#[derive(Debug, Clone)]
+/// Aurora only needs tiny continuous clock corrections. The precomputed
+/// Lanczos-windowed sinc table keeps the steady-state hot path allocation-free
+/// while avoiding the severe high-frequency interpolation error of cubic DSP.
+#[derive(Debug)]
 pub struct BandlimitedResampler12 {
     frames: [Frame12; RESAMPLER_TAPS],
     kernels: Box<[[f32; RESAMPLER_TAPS]]>,
@@ -151,9 +146,6 @@ impl BandlimitedResampler12 {
         }
     }
 
-    /// Primes the interpolation window. Historical samples before the start of
-    /// the stream are extended with the first real frame; the future half of
-    /// the sinc window is filled from the source callback.
     pub fn prime<F, E>(&mut self, next: &mut F) -> Result<(), E>
     where
         F: FnMut() -> Result<Frame12, E>,
@@ -171,8 +163,6 @@ impl BandlimitedResampler12 {
         Ok(())
     }
 
-    /// Produces one output frame and advances through source frames according
-    /// to `source_step` (normally within +/-300 ppm of 1.0).
     pub fn render<F, E>(&mut self, source_step: f64, next: &mut F) -> Result<Frame12, E>
     where
         F: FnMut() -> Result<Frame12, E>,
@@ -217,8 +207,6 @@ fn build_resampler_kernels() -> Box<[[f32; RESAMPLER_TAPS]]> {
             sum += value;
         }
 
-        // Every phase has a non-zero DC response; normalize it to exactly one
-        // so constant signals remain constant while the fractional phase moves.
         let normalization = 1.0 / sum;
         for coefficient in kernel.iter_mut() {
             *coefficient = (f64::from(*coefficient) * normalization) as f32;
@@ -235,8 +223,6 @@ fn sinc_pi(x: f64) -> f64 {
     }
 }
 
-/// Packs one logical 12-channel frame into the canonical sixteen TDM slots and
-/// converts it to signed 32-bit PCM. The final four slots are always zero.
 pub fn pack_frame_s32(frame: &Frame12, linear_gain: f32) -> [i32; TDM_CHANNELS] {
     let mut out = [0_i32; TDM_CHANNELS];
     for (dst, sample) in out[..RENDER_CHANNELS].iter_mut().zip(frame.iter()) {
@@ -245,8 +231,6 @@ pub fn pack_frame_s32(frame: &Frame12, linear_gain: f32) -> [i32; TDM_CHANNELS] 
     out
 }
 
-/// Converts a floating-point PCM sample to full-scale signed 32-bit PCM with
-/// explicit saturation and well-defined endpoint handling.
 pub fn f32_to_s32(sample: f32) -> i32 {
     if !sample.is_finite() {
         return 0;
@@ -267,6 +251,12 @@ pub fn db_to_linear(db: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn resampler_contract_is_self_consistent() {
+        assert_eq!(RESAMPLER_PRIME_FRAMES, 17);
+        assert_eq!(RESAMPLER_LOOKAHEAD_FRAMES, 16);
+    }
 
     #[test]
     fn pack_contract_preserves_first_twelve_and_zeros_reserve_slots() {
@@ -359,11 +349,8 @@ mod tests {
         }
     }
 
-    #[test]
-    fn bandlimited_resampler_preserves_18khz_during_max_clock_correction() {
-        let frequency_hz = 18_000.0_f64;
+    fn max_sine_error(frequency_hz: f64, step: f64) -> f64 {
         let omega = 2.0 * PI * frequency_hz / f64::from(OUTPUT_SAMPLE_RATE);
-        let step = 1.0003_f64;
         let mut source_index = 0usize;
         let mut next = || -> Result<Frame12, ()> {
             let mut frame = [0.0; RENDER_CHANNELS];
@@ -382,10 +369,18 @@ mod tests {
                 max_error = max_error.max((f64::from(frame[0]) - expected).abs());
             }
         }
-        assert!(
-            max_error < 0.004,
-            "18 kHz max interpolation error {max_error}"
-        );
+        max_error
+    }
+
+    #[test]
+    fn bandlimited_resampler_preserves_top_octave_at_max_clock_correction() {
+        for step in [0.9997_f64, 1.0003_f64] {
+            let error_18k = max_sine_error(18_000.0, step);
+            assert!(error_18k < 0.004, "18 kHz step={step} max error {error_18k}");
+
+            let error_20k = max_sine_error(20_000.0, step);
+            assert!(error_20k < 0.015, "20 kHz step={step} max error {error_20k}");
+        }
     }
 
     #[test]
