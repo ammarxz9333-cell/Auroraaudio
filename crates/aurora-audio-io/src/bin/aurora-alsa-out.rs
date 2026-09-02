@@ -16,7 +16,7 @@ mod linux {
     use std::fs;
     use std::io::{self, Read};
     use std::path::PathBuf;
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
     use std::sync::{Arc, Condvar, Mutex};
     use std::thread;
     use std::time::{Duration, Instant};
@@ -29,7 +29,9 @@ mod linux {
     use super::alsa_pcm::{AlsaPlayback, AlsaPlaybackConfig};
 
     const SOURCE_BLOCK_FRAMES: usize = 256;
-    const LATENCY_PUBLISH_INTERVAL: Duration = Duration::from_millis(250);
+    const LATENCY_PROBE_INTERVAL: Duration = Duration::from_millis(250);
+    const LATENCY_REPORT_INTERVAL: Duration = Duration::from_millis(250);
+    const LATENCY_UNSET_BITS: u64 = u64::MAX;
 
     #[derive(Debug, Clone)]
     struct Config {
@@ -439,26 +441,95 @@ mod linux {
         }
     }
 
-    struct LatencyPublisher {
-        path: Option<PathBuf>,
-        last_publish: Instant,
+    struct LatencyFileReporter {
+        latest_total_ms_bits: Arc<AtomicU64>,
+        stop: Arc<AtomicBool>,
+        handle: Option<thread::JoinHandle<()>>,
+    }
+
+    impl LatencyFileReporter {
+        fn spawn(path: PathBuf) -> io::Result<Self> {
+            match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+
+            let latest_total_ms_bits = Arc::new(AtomicU64::new(LATENCY_UNSET_BITS));
+            let stop = Arc::new(AtomicBool::new(false));
+            let worker_latest = Arc::clone(&latest_total_ms_bits);
+            let worker_stop = Arc::clone(&stop);
+            let handle = thread::Builder::new()
+                .name("aurora-av-delay".to_owned())
+                .spawn(move || {
+                    let mut last_written_bits = LATENCY_UNSET_BITS;
+                    let mut last_error_log = Instant::now() - Duration::from_secs(5);
+                    while !worker_stop.load(Ordering::Acquire) {
+                        let bits = worker_latest.load(Ordering::Acquire);
+                        if bits != LATENCY_UNSET_BITS && bits != last_written_bits {
+                            let total_ms = f64::from_bits(bits);
+                            let delay_seconds = -(total_ms / 1_000.0);
+                            match fs::write(&path, format!("{delay_seconds:.6}\n")) {
+                                Ok(()) => last_written_bits = bits,
+                                Err(error) => {
+                                    if last_error_log.elapsed() >= Duration::from_secs(5) {
+                                        eprintln!(
+                                            "aurora-alsa-out: could not publish A/V delay to {}: {error}",
+                                            path.display()
+                                        );
+                                        last_error_log = Instant::now();
+                                    }
+                                }
+                            }
+                        }
+                        thread::sleep(LATENCY_REPORT_INTERVAL);
+                    }
+                    let _ = fs::remove_file(&path);
+                })?;
+
+            Ok(Self {
+                latest_total_ms_bits,
+                stop,
+                handle: Some(handle),
+            })
+        }
+
+        fn publish(&self, total_ms: f64) {
+            self.latest_total_ms_bits
+                .store(total_ms.to_bits(), Ordering::Release);
+        }
+    }
+
+    impl Drop for LatencyFileReporter {
+        fn drop(&mut self) {
+            self.stop.store(true, Ordering::Release);
+            if let Some(handle) = self.handle.take() {
+                let _ = handle.join();
+            }
+        }
+    }
+
+    struct LatencyProbe {
+        reporter: Option<LatencyFileReporter>,
+        last_probe: Instant,
         last_total_ms: Option<f64>,
     }
 
-    impl LatencyPublisher {
-        fn new(path: Option<PathBuf>) -> Self {
-            Self {
-                path,
-                last_publish: Instant::now() - LATENCY_PUBLISH_INTERVAL,
+    impl LatencyProbe {
+        fn new(path: Option<PathBuf>) -> io::Result<Self> {
+            let reporter = path.map(LatencyFileReporter::spawn).transpose()?;
+            Ok(Self {
+                reporter,
+                last_probe: Instant::now() - LATENCY_PROBE_INTERVAL,
                 last_total_ms: None,
-            }
+            })
         }
 
-        fn maybe_publish(&mut self, queued_frames: usize, playback: &AlsaPlayback) -> Option<f64> {
-            if self.last_publish.elapsed() < LATENCY_PUBLISH_INTERVAL {
+        fn maybe_sample(&mut self, queued_frames: usize, playback: &AlsaPlayback) -> Option<f64> {
+            if self.last_probe.elapsed() < LATENCY_PROBE_INTERVAL {
                 return self.last_total_ms;
             }
-            self.last_publish = Instant::now();
+            self.last_probe = Instant::now();
 
             let alsa_frames = match playback.delay_frames() {
                 Ok(frames) => frames,
@@ -472,15 +543,8 @@ mod linux {
                 .saturating_add(alsa_frames);
             let total_ms = total_frames as f64 * 1_000.0 / f64::from(OUTPUT_SAMPLE_RATE);
             self.last_total_ms = Some(total_ms);
-
-            if let Some(path) = self.path.as_ref() {
-                let delay_seconds = -(total_ms / 1_000.0);
-                if let Err(error) = fs::write(path, format!("{delay_seconds:.6}\n")) {
-                    eprintln!(
-                        "aurora-alsa-out: could not publish A/V delay to {}: {error}",
-                        path.display()
-                    );
-                }
+            if let Some(reporter) = self.reporter.as_ref() {
+                reporter.publish(total_ms);
             }
             Some(total_ms)
         }
@@ -525,7 +589,7 @@ mod linux {
         let mut controller = AdaptiveClockController::new(target_frames, config.max_ppm);
         let gain = db_to_linear(config.gain_db);
         let mut output = vec![0_i32; period_frames * TDM_CHANNELS];
-        let mut latency = LatencyPublisher::new(config.latency_file.clone());
+        let mut latency = LatencyProbe::new(config.latency_file.clone())?;
         let mut last_total_latency_ms = None;
         let mut last_stats = Instant::now();
         let mut periods_written = 0_u64;
@@ -570,7 +634,7 @@ mod linux {
             periods_written = periods_written.saturating_add(1);
 
             let queued_now = queue.buffered_frames();
-            if let Some(total_ms) = latency.maybe_publish(queued_now, &playback) {
+            if let Some(total_ms) = latency.maybe_sample(queued_now, &playback) {
                 last_total_latency_ms = Some(total_ms);
             }
 
