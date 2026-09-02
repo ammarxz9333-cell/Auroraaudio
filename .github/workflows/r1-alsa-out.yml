@@ -7,6 +7,9 @@ on:
       - 'crates/aurora-audio-io/src/alsa_out.rs'
       - 'crates/aurora-audio-io/src/bin/aurora-alsa-out.rs'
       - 'scripts/imx93/run-live-714-alsa.sh'
+      - 'scripts/imx93/deploy-r1-user.sh'
+      - 'platforms/imx93/systemd/aurora-r1.service'
+      - 'platforms/imx93/systemd/aurora-r1.env.example'
       - 'docs/imx93-r0/R1_DIRECT_ALSA.md'
   workflow_dispatch:
 
@@ -41,8 +44,14 @@ jobs:
         run: cargo run --locked -p aurora-audio-io --bin aurora-alsa-out -- --help
       - name: Shell syntax
         run: |
-          if test -f scripts/imx93/run-live-714-alsa.sh; then
-            bash -n scripts/imx93/run-live-714-alsa.sh
+          bash -n scripts/imx93/run-live-714-alsa.sh
+          bash -n scripts/imx93/deploy-r1-user.sh
+      - name: Systemd unit contract
+        run: |
+          grep -F 'ExecStart=/opt/aurora/scripts/imx93/run-live-714-alsa.sh' platforms/imx93/systemd/aurora-r1.service
+          if grep -Eiq 'pipewire|wireplumber' platforms/imx93/systemd/aurora-r1.service; then
+            echo 'R1 service must not depend on PipeWire/WirePlumber' >&2
+            exit 1
           fi
 
   msrv-1-78:
