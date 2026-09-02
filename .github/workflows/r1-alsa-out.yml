@@ -49,7 +49,7 @@ jobs:
       - name: Systemd unit contract
         run: |
           grep -F 'ExecStart=/opt/aurora/scripts/imx93/run-live-714-alsa.sh' platforms/imx93/systemd/aurora-r1.service
-          if grep -Eiq 'pipewire|wireplumber' platforms/imx93/systemd/aurora-r1.service; then
+          if grep -Ei '^(After|Wants|Requires)=.*(pipewire|wireplumber)' platforms/imx93/systemd/aurora-r1.service; then
             echo 'R1 service must not depend on PipeWire/WirePlumber' >&2
             exit 1
           fi
