@@ -82,7 +82,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes libasound2-dev pkg-config
       - name: Build pinned real Harletty and liborender
-        run: scripts/imx93/build-r2-deps.sh
+        run: bash scripts/imx93/build-r2-deps.sh
       - name: Real IEC61937 JOC to 7.1.4 render
         run: |
           cargo run --locked -p aurora-audio-io --bin aurora-joc-e2e-probe -- \
