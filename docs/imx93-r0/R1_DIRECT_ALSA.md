@@ -96,7 +96,7 @@ lookahead:         16 frames
 
 The kernels are precomputed once at startup. The steady-state interpolator is allocation-free.
 
-CI quality gates currently exercise constant-signal preservation plus 18 kHz and 20 kHz sine interpolation at both -300 ppm and +300 ppm. These software tests passed. They are not a substitute for analog THD+N/FFT measurements through the real i.MX93 -> SAI3 -> AK4458 path.
+CI quality gates exercise constant-signal preservation plus 18 kHz and 20 kHz sine interpolation at both -300 ppm and +300 ppm. These software tests pass. They are not a substitute for analog THD+N/FFT measurements through the real i.MX93 -> SAI3 -> AK4458 path.
 
 ## ALSA ownership
 
@@ -174,12 +174,12 @@ Target hardware must still verify that `snd_pcm_delay()` on the selected i.MX93 
 
 ## CI evidence
 
-The hardened R1 software path has passed the dedicated CI matrix with:
+The hardened R1 code revision with the separate A/V telemetry thread passed dedicated CI run #24 end-to-end. The matrix covered:
 
 - Linux `cargo fmt`;
 - Linux build and direct `libasound` link;
 - strict Clippy with warnings denied;
-- R1 unit tests, including the upper-band ±300 ppm resampler gates;
+- R1 unit tests, including 18 kHz and 20 kHz at both ±300 ppm;
 - `--help` binary smoke;
 - actual runtime open/write against ALSA `null` as 48 kHz / 16ch / S32_LE;
 - finite-source fail-closed behavior;
@@ -213,6 +213,10 @@ R1 remains Draft until the actual i.MX93 carrier proves all of the following:
 7. A/V sync remains bounded over at least a two-hour movie/soak run.
 8. CPU load on the i.MX93 leaves adequate realtime margin alongside Harletty/JOC + Omniphony rendering.
 9. G7 amplifier mute/gain safety is physically validated before normal speaker unmute.
+
+## Deferred target-only tuning
+
+Realtime scheduling (`SCHED_FIFO`/priority changes), CPU affinity and memory locking are intentionally **not** enabled in the generic R1 core yet. Their correct values depend on the i.MX93 BSP, IRQ/DMA topology, service capabilities and measured scheduling pressure. They should be introduced only if target traces show a need, then validated against starvation and service-restart behavior.
 
 ## R0 fallback
 
