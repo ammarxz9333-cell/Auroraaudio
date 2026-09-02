@@ -23,13 +23,12 @@ mod linux {
 
     use super::alsa_out::{
         db_to_linear, pack_frame_s32, AdaptiveClockController, BandlimitedResampler12, Frame12,
-        OUTPUT_SAMPLE_RATE, RENDER_CHANNELS, TDM_CHANNELS,
+        OUTPUT_SAMPLE_RATE, RENDER_CHANNELS, RESAMPLER_LOOKAHEAD_FRAMES, RESAMPLER_PRIME_FRAMES,
+        TDM_CHANNELS,
     };
     use super::alsa_pcm::{AlsaPlayback, AlsaPlaybackConfig};
 
     const SOURCE_BLOCK_FRAMES: usize = 256;
-    const MIN_RESAMPLER_PRIME_FRAMES: usize = 17;
-    const RESAMPLER_LOOKAHEAD_FRAMES: usize = 16;
     const LATENCY_PUBLISH_INTERVAL: Duration = Duration::from_millis(250);
 
     #[derive(Debug, Clone)]
@@ -424,7 +423,7 @@ mod linux {
                 return Ok(());
             }
             if queue.is_closed() {
-                if available >= MIN_RESAMPLER_PRIME_FRAMES {
+                if available >= RESAMPLER_PRIME_FRAMES {
                     return Ok(());
                 }
                 return Err(format!(
