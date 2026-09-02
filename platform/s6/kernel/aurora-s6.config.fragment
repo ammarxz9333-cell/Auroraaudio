@@ -5,19 +5,27 @@
 CONFIG_ARM64=y
 CONFIG_PREEMPT=y
 CONFIG_HIGH_RES_TIMERS=y
-CONFIG_HZ_1000=y
+# Keep the validated zeroflte HZ=250 baseline for first hardware bring-up.
+# High-resolution timers provide realtime deadlines without quadrupling the
+# periodic scheduler tick/thermal overhead on Exynos7420.
+CONFIG_HZ_250=y
 CONFIG_CPU_FREQ=y
 CONFIG_CPU_FREQ_GOV_PERFORMANCE=y
 
-# Exynos7420 USB controller and custom Aurora transport prerequisites.
+# Exynos7420 USB controller and Aurora FunctionFS transport prerequisites.
 CONFIG_USB=y
 CONFIG_USB_DWC3=y
 CONFIG_USB_DWC3_DUAL_ROLE=y
 CONFIG_USB_GADGET=y
 CONFIG_USB_LIBCOMPOSITE=y
 CONFIG_USB_FUNCTIONFS=y
+CONFIG_USB_FUNCTIONFS_GENERIC=y
+# FunctionFS and Samsung's Android composite gadget are mutually exclusive in
+# this 3.10 gadget-driver choice. Aurora owns the USB function instead.
+# CONFIG_USB_G_ANDROID is not set
 
-# Required for the touchscreen/UI appliance runtime.
+# Rootfs handoff and appliance runtime.
+CONFIG_DEVTMPFS=y
 CONFIG_INPUT=y
 CONFIG_INPUT_EVDEV=y
 CONFIG_FB=y
