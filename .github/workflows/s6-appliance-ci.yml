@@ -7,11 +7,15 @@ on:
       - agent/aurora-s6-appliance-bootstrap
     paths:
       - "platform/s6/**"
+      - "protocol/**"
+      - "firmware/stm32h753/**"
       - "crates/aurora-usb-protocol/**"
       - ".github/workflows/s6-appliance-ci.yml"
   pull_request:
     paths:
       - "platform/s6/**"
+      - "protocol/**"
+      - "firmware/stm32h753/**"
       - "crates/aurora-usb-protocol/**"
       - ".github/workflows/s6-appliance-ci.yml"
 
@@ -24,13 +28,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.78.0
-      - name: Test Aurora USB wire protocol
+      - name: Test Aurora USB Rust wire protocol
         run: cargo test --locked --manifest-path crates/aurora-usb-protocol/Cargo.toml
+      - name: Test shared C streaming parser
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+            protocol/aurora_usb_stream_v1.c \
+            protocol/test_aurora_usb_stream_v1.c \
+            -o /tmp/test-aurora-usb-stream
+          /tmp/test-aurora-usb-stream
       - name: Compile FunctionFS bridge with warnings as errors
         run: |
-          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror \
+          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
             platform/s6/usb-gadget/aurora-ffs-daemon.c \
+            protocol/aurora_usb_stream_v1.c \
             -o /tmp/aurora-ffs-daemon
+      - name: Compile portable STM32 transport core
+        run: |
+          if [ -f firmware/stm32h753/src/aurora_transport.c ]; then
+            cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol -Ifirmware/stm32h753/include \
+              -c firmware/stm32h753/src/aurora_transport.c -o /tmp/aurora_transport.o
+          fi
       - name: Check S6 shell script syntax
         shell: bash
         run: |
@@ -38,10 +56,10 @@ jobs:
           for f in platform/s6/scripts/*.sh platform/s6/initramfs/init; do
             bash -n "$f"
           done
-      - name: Verify protocol constants agree across implementations
+      - name: Verify protocol version agrees across implementations
         shell: bash
         run: |
           set -euo pipefail
-          grep -q '#define AURORA_VERSION 1u' platform/s6/usb-gadget/aurora-ffs-daemon.c
+          grep -q '#define AURORA_USB_VERSION 1u' protocol/aurora_usb_v1.h
           grep -q 'pub const VERSION: u16 = 1;' crates/aurora-usb-protocol/src/lib.rs
           grep -q 'protocol_version = 1' docs/AURORA_USB_S6_STM32_PROTOCOL.md
