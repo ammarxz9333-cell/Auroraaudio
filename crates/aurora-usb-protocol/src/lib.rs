@@ -6,6 +6,8 @@ pub const HEADER_LEN: usize = 32;
 pub const SAMPLE_RATE_HZ: u32 = 48_000;
 pub const DEFAULT_PERIOD_FRAMES: u16 = 256;
 pub const DEFAULT_CHANNELS_7_1_4: u16 = 12;
+pub const PCM_FORMAT_S32LE: u16 = 1;
+pub const LAYOUT_ID_7_1_4: u16 = 1;
 
 pub const FLAG_PTS_VALID: u32 = 1 << 0;
 pub const FLAG_DISCONTINUITY: u32 = 1 << 1;
@@ -166,6 +168,72 @@ impl ClockReport {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct ConfigV1 {
+    pub sample_rate: u32,
+    pub period_frames: u16,
+    pub channels: u16,
+    pub pcm_format: u16,
+    pub layout_id: u16,
+    pub layout_hash: [u8; 32],
+}
+
+impl ConfigV1 {
+    pub const LEN: usize = 48;
+
+    pub const fn initial_7_1_4(layout_hash: [u8; 32]) -> Self {
+        Self {
+            sample_rate: SAMPLE_RATE_HZ,
+            period_frames: DEFAULT_PERIOD_FRAMES,
+            channels: DEFAULT_CHANNELS_7_1_4,
+            pcm_format: PCM_FORMAT_S32LE,
+            layout_id: LAYOUT_ID_7_1_4,
+            layout_hash,
+        }
+    }
+
+    pub fn encode(self) -> [u8; Self::LEN] {
+        let mut out = [0_u8; Self::LEN];
+        out[0..4].copy_from_slice(&self.sample_rate.to_le_bytes());
+        out[4..6].copy_from_slice(&self.period_frames.to_le_bytes());
+        out[6..8].copy_from_slice(&self.channels.to_le_bytes());
+        out[8..10].copy_from_slice(&self.pcm_format.to_le_bytes());
+        out[10..12].copy_from_slice(&self.layout_id.to_le_bytes());
+        // bytes 12..16 are reserved and remain zero in protocol v1.
+        out[16..48].copy_from_slice(&self.layout_hash);
+        out
+    }
+
+    pub fn decode(bytes: &[u8]) -> Result<Self, ProtocolError> {
+        if bytes.len() != Self::LEN {
+            return Err(ProtocolError::BadConfigLength(bytes.len()));
+        }
+        if bytes[12..16] != [0, 0, 0, 0] {
+            return Err(ProtocolError::NonZeroConfigReserved);
+        }
+        Ok(Self {
+            sample_rate: u32::from_le_bytes(bytes[0..4].try_into().expect("fixed slice")),
+            period_frames: u16::from_le_bytes(bytes[4..6].try_into().expect("fixed slice")),
+            channels: u16::from_le_bytes(bytes[6..8].try_into().expect("fixed slice")),
+            pcm_format: u16::from_le_bytes(bytes[8..10].try_into().expect("fixed slice")),
+            layout_id: u16::from_le_bytes(bytes[10..12].try_into().expect("fixed slice")),
+            layout_hash: bytes[16..48].try_into().expect("fixed slice"),
+        })
+    }
+
+    pub fn validate_initial_7_1_4(self) -> Result<(), ProtocolError> {
+        if self.sample_rate != SAMPLE_RATE_HZ
+            || self.period_frames != DEFAULT_PERIOD_FRAMES
+            || self.channels != DEFAULT_CHANNELS_7_1_4
+            || self.pcm_format != PCM_FORMAT_S32LE
+            || self.layout_id != LAYOUT_ID_7_1_4
+        {
+            return Err(ProtocolError::UnsupportedConfig);
+        }
+        Ok(())
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ProtocolError {
     ShortHeader(usize),
     BadMagic,
@@ -175,6 +243,9 @@ pub enum ProtocolError {
     InvalidPcmShape { channels: u16, frames: u16 },
     PcmPayloadLength { declared: u32, expected: u32 },
     BadClockReportLength(usize),
+    BadConfigLength(usize),
+    NonZeroConfigReserved,
+    UnsupportedConfig,
 }
 
 impl core::fmt::Display for ProtocolError {
@@ -192,6 +263,9 @@ impl core::fmt::Display for ProtocolError {
                 write!(f, "PCM payload length {declared} != expected {expected}")
             }
             Self::BadClockReportLength(n) => write!(f, "bad CLOCK_REPORT length {n}"),
+            Self::BadConfigLength(n) => write!(f, "bad CONFIG length {n}"),
+            Self::NonZeroConfigReserved => write!(f, "CONFIG reserved bytes must be zero"),
+            Self::UnsupportedConfig => write!(f, "unsupported Aurora USB CONFIG"),
         }
     }
 }
@@ -242,5 +316,24 @@ mod tests {
             capture_flags: 3,
         };
         assert_eq!(ClockReport::decode(&c.encode()).unwrap(), c);
+    }
+
+    #[test]
+    fn config_roundtrip_and_baseline_validation() {
+        let hash = [0xa5; 32];
+        let config = ConfigV1::initial_7_1_4(hash);
+        let decoded = ConfigV1::decode(&config.encode()).unwrap();
+        assert_eq!(decoded, config);
+        decoded.validate_initial_7_1_4().unwrap();
+    }
+
+    #[test]
+    fn config_rejects_reserved_bytes() {
+        let mut bytes = ConfigV1::initial_7_1_4([0; 32]).encode();
+        bytes[12] = 1;
+        assert!(matches!(
+            ConfigV1::decode(&bytes),
+            Err(ProtocolError::NonZeroConfigReserved)
+        ));
     }
 }
