@@ -72,8 +72,10 @@ jobs:
   real-joc-e2e:
     needs: linux-stable
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     env:
       AURORA_DEPS_ROOT: /tmp/aurora-deps
+      AURORA_DEPS_PROFILE: debug
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -86,8 +88,8 @@ jobs:
       - name: Real IEC61937 JOC to 7.1.4 render
         run: |
           cargo run --locked -p aurora-audio-io --bin aurora-joc-e2e-probe -- \
-            "$AURORA_DEPS_ROOT/Omniphony/omniphony-renderer/target/release/liborender.so" \
-            "$AURORA_DEPS_ROOT/harletty-bridge/target/release/libharletty_bridge.so" \
+            "$AURORA_DEPS_ROOT/Omniphony/omniphony-renderer/target/debug/liborender.so" \
+            "$AURORA_DEPS_ROOT/harletty-bridge/target/debug/libharletty_bridge.so" \
             "$GITHUB_WORKSPACE/platforms/imx93/layouts/aurora-7.1.4.yaml" \
             "$AURORA_DEPS_ROOT/harletty-bridge/harletty/tests/fixtures/joc_atmos_1s.eac3"
 
