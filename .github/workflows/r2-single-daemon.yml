@@ -12,6 +12,7 @@ on:
       - 'crates/aurora-audio-io/src/bin/aurora-appliance.rs'
       - 'crates/aurora-audio-io/src/bin/aurora-orender-probe.rs'
       - 'crates/aurora-audio-io/src/bin/aurora-joc-e2e-probe.rs'
+      - 'crates/aurora-audio-io/src/bin/aurora-height-bed-probe.rs'
       - 'tests/fixtures/liborender_stub.c'
       - 'scripts/imx93/build-r2-deps.sh'
       - 'scripts/imx93/run-r2-appliance.sh'
@@ -85,13 +86,23 @@ jobs:
           sudo apt-get install --yes libasound2-dev pkg-config
       - name: Build pinned real Harletty and liborender
         run: bash scripts/imx93/build-r2-deps.sh
-      - name: Real IEC61937 JOC to 7.1.4 render
+      - name: Build official Omniphony reference bridge
+        run: |
+          cd "$AURORA_DEPS_ROOT/Omniphony/omniphony-renderer"
+          cargo build -p reference_bridge
+      - name: Real IEC61937 JOC object render
         run: |
           cargo run --locked -p aurora-audio-io --bin aurora-joc-e2e-probe -- \
             "$AURORA_DEPS_ROOT/Omniphony/omniphony-renderer/target/debug/liborender.so" \
             "$AURORA_DEPS_ROOT/harletty-bridge/target/debug/libharletty_bridge.so" \
             "$GITHUB_WORKSPACE/platforms/imx93/layouts/aurora-7.1.4.yaml" \
             "$AURORA_DEPS_ROOT/harletty-bridge/harletty/tests/fixtures/joc_atmos_1s.eac3"
+      - name: Real 7.1.4 height output render
+        run: |
+          cargo run --locked -p aurora-audio-io --bin aurora-height-bed-probe -- \
+            "$AURORA_DEPS_ROOT/Omniphony/omniphony-renderer/target/debug/liborender.so" \
+            "$AURORA_DEPS_ROOT/Omniphony/omniphony-renderer/target/debug/libreference_bridge.so" \
+            "$GITHUB_WORKSPACE/platforms/imx93/layouts/aurora-7.1.4.yaml"
 
   msrv-1-78:
     runs-on: ubuntu-24.04
