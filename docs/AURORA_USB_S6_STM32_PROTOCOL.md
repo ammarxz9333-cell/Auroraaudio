@@ -17,14 +17,14 @@ Use one vendor-specific FunctionFS interface.
 
 | Endpoint | USB direction | Type | Purpose |
 |---|---|---|---|
-| EP1 OUT | STM32 → S6 | Bulk HS | encoded IEC61937/E-AC-3 JOC input, clock reports, control |
-| EP2 IN | S6 → STM32 | Bulk HS | rendered multichannel PCM, acknowledgements, diagnostics |
+| EP1 OUT | STM32 → S6 | Bulk HS | encoded IEC61937/E-AC-3 JOC input, clock reports, ACK/error/control |
+| EP2 IN | S6 → STM32 | Bulk HS | rendered multichannel PCM, CONFIG and control |
 
-High-Speed bulk max packet size: 512 bytes. Application transfers SHOULD be submitted as multi-packet buffers rather than one USB packet at a time.
+High-Speed bulk max packet size is 512 bytes. This is a USB packet size, **not** an Aurora application-frame boundary.
 
-**Transfer invariant:** one complete Aurora application frame (32-byte header + declared payload) is submitted as one USB bulk transfer. A transfer may span many 512-byte USB packets. The version-1 maximum application frame is 256 KiB. Codec framing remains defined by the Aurora payload contract, not by individual 512-byte USB packets.
+**Framing rule:** both peers treat USB Bulk as a byte stream. Reads may split one Aurora frame or coalesce several frames. The receiver reconstructs frames from the fixed 32-byte header and `payload_len`. Protocol v1 limits one complete Aurora frame to 256 KiB.
 
-No USB Audio Class dependency is required for the Aurora realtime path.
+No USB Audio Class dependency is required for the realtime path.
 
 ## Framing
 
@@ -42,7 +42,7 @@ Offset  Size  Field
 28      4     aux
 ```
 
-`pts_48k` uses the STM32 48 kHz sample-clock domain whenever `PTS_VALID` is set. It is a sample counter, not wall-clock time.
+`pts_48k` is a sample counter in the STM32 48 kHz clock domain when `PTS_VALID` is set. It is not wall-clock time.
 
 ### Kinds
 
@@ -66,22 +66,24 @@ bit 2  END_OF_STREAM
 bit 3  XRUN_RECOVERY
 ```
 
-Unknown flag bits MUST be ignored on receive and preserved only when explicitly forwarded.
-
 ## Payload contracts
 
 ### ENCODED_IEC61937
 
-The payload is complete IEC61937 data as captured by the STM32-side input path. Aurora must not infer framing from individual 512-byte USB packets; the application transfer and this Aurora header delimit the message.
+Direction: STM32 → S6.
 
-`aux = 0` for protocol version 1.
+Payload is IEC61937 data captured by the STM32-side input path. Application framing comes from the Aurora header, never from individual 512-byte USB packets.
+
+`aux = 0` in protocol v1.
 
 ### PCM_S32LE
 
+Direction: S6 → STM32.
+
 - interleaved signed little-endian 32-bit samples;
-- nominal sample rate: 48,000 Hz;
-- initial production layout target: 7.1.4 = 12 channels;
-- one sample occupies four bytes even when source precision is lower.
+- sample rate: 48,000 Hz;
+- initial layout: 7.1.4 = 12 channels;
+- one sample occupies four bytes.
 
 `aux` packs:
 
@@ -90,74 +92,104 @@ bits 31..16  channel_count
 bits 15..0   frame_count
 ```
 
-Initial realtime period: **256 frames**. A 12-channel period is therefore 12,288 payload bytes. This is deliberately much larger than one 512-byte USB packet.
-
-Channel order is fixed by the active Aurora speaker-layout manifest; both peers must reject a configuration hash mismatch before enabling amplifiers.
+Initial realtime period is **256 frames**. One 12-channel period is therefore 12,288 payload bytes and 12,320 bytes including the Aurora header.
 
 ### CLOCK_REPORT
 
-STM32 sends clock reports periodically so the S6 can correct long-term drift without making the phone the hardware audio clock master.
+Direction: STM32 → S6.
 
-Version-1 payload, little endian:
+Version-1 payload is exactly 24 bytes:
 
 ```text
-u64 sink_sample_counter
-u64 source_sample_counter
-u32 queued_playback_frames
-u32 capture_flags
+Offset  Size  Field
+0       8     sink_sample_counter
+8       8     source_sample_counter
+16      4     queued_playback_frames
+20      4     capture_flags
 ```
 
-The S6 renderer/DSP may use adaptive resampling against `sink_sample_counter`. A clock discontinuity must set `DISCONTINUITY`.
+The S6 can use `sink_sample_counter` for adaptive drift correction. A playback underrun sets `XRUN_RECOVERY` and returns the STM32 to a muted recovery state.
 
 ### CONFIG
 
-Control payloads are UTF-8 JSON in version 1. Required startup fields:
+Direction: S6 → STM32.
 
-```json
-{
-  "sample_rate": 48000,
-  "period_frames": 256,
-  "pcm_format": "s32le",
-  "channels": 12,
-  "layout": "7.1.4",
-  "layout_hash": "..."
-}
+CONFIG is deliberately fixed binary rather than JSON so the MCU can validate it deterministically with no dynamic parser or heap allocation.
+
+Version-1 payload is exactly 48 bytes:
+
+```text
+Offset  Size  Field
+0       4     sample_rate = 48000
+4       2     period_frames = 256
+6       2     channels = 12
+8       2     pcm_format = 1 (S32LE)
+10      2     layout_id = 1 (7.1.4)
+12      4     reserved = 0
+16      32    layout_hash = raw SHA-256 of canonical channel-layout manifest
 ```
 
-The STM32 must not enable speaker outputs until CONFIG is accepted and an ACK is received.
+Startup handshake:
+
+1. S6 sends CONFIG while STM32 amplifier outputs are muted.
+2. STM32 checks all numeric fields and the expected layout hash.
+3. Valid CONFIG → STM32 sends ACK(CONFIG) and enters `ARMED_MUTED`.
+4. S6 may then send PCM.
+5. STM32 unmutes only after it has accepted and queued the first valid PCM period.
+6. Any mismatch stays fail-closed/muted.
+
+### ACK / ERROR
+
+Protocol-v1 STM32 ACK and ERROR payloads are four bytes:
+
+```text
+ACK:
+u16 acknowledged_kind
+u16 status = 0
+
+ERROR:
+u16 offending_kind
+u16 error_code
+```
+
+The Linux bridge may also emit short UTF-8 diagnostic ERROR payloads during early transport bring-up; the production backend must not rely on human-readable text for state transitions.
 
 ## Sequencing and recovery
 
 - `sequence` increments independently per USB direction and wraps as u32.
-- A sequence gap is diagnostic; it does not by itself define codec packet loss.
-- On USB reset, both directions restart with sequence 0 and require CONFIG negotiation again.
-- On PCM underrun, STM32 outputs silence, sets an xrun counter, and sends a CLOCK_REPORT with `XRUN_RECOVERY`.
-- On render overrun, S6 drops no partial PCM frame. It reports ERROR and restarts at a period boundary.
-- Amplifier mute is the safe state for protocol-version mismatch, layout mismatch, repeated malformed headers, or loss of CONFIG state.
+- USB reset/disconnect clears CONFIG state and returns STM32 to muted `WAIT_CONFIG`.
+- A malformed stream resets the reassembler and leaves outputs muted.
+- On PCM underrun, STM32 outputs silence, mutes, increments its xrun counter and sends an XRUN clock report.
+- On a `DISCONTINUITY` PCM period, STM32 mutes before re-queueing and only unmutes after the valid period is accepted.
+- Protocol/layout mismatch never enables amplifier output.
 
 ## Local S6 handoff
 
-`aurora-ffs-daemon` owns FunctionFS and exposes `/run/aurora/usb-bridge.sock` as a Unix `SOCK_SEQPACKET` socket. One socket message equals one Aurora application frame, preserving frame boundaries between USB and the audio backend. Only one backend is active at a time; a new backend connection replaces the old one.
+`aurora-ffs-daemon` owns FunctionFS and exposes `/run/aurora/usb-bridge.sock` as Unix `SOCK_SEQPACKET`.
 
-If no backend is attached, non-PING traffic receives an `ERROR` frame and the STM32 remains muted. `PING`/`PONG` is handled directly by the FunctionFS daemon so transport health can be tested before Harletty/Omniphony are running.
+The USB side is byte-stream reassembled first; one local socket message then equals exactly one complete Aurora frame. This isolates Harletty/Omniphony/Aurora DSP from USB reset and packet-fragment details.
+
+PING/PONG is handled directly by the FunctionFS daemon, so basic transport health can be tested before the audio backend starts.
 
 ## Bandwidth budget
 
-7.1.4 PCM at 48 kHz / s32le:
+7.1.4 PCM at 48 kHz / S32LE:
 
 ```text
-48,000 frames/s × 12 ch × 4 B = 2,304,000 B/s ≈ 18.4 Mbit/s
+48,000 × 12 × 4 = 2,304,000 B/s ≈ 18.4 Mbit/s
 ```
 
-This is far below USB 2.0 High-Speed raw capacity; remaining validation is latency/jitter/CPU behavior, not nominal bandwidth.
+Nominal bandwidth is therefore not the limiting issue on USB 2.0 High-Speed. Validation focuses on latency, scheduling, buffering, drift, resets and thermals.
 
 ## Validation gates
 
-The transport is not called production-ready until all pass on physical hardware:
+The transport is not production-ready until physical hardware passes:
 
-1. STM32H753 + ULPI enumerates the S6 FunctionFS gadget repeatedly after cold boot and USB reset.
-2. 8-hour bidirectional soak with sequence checking and no malformed frames.
-3. 12-channel 48 kHz PCM with zero audible underruns under sustained S6 decode/render load.
-4. Clock-drift correction remains bounded without periodic buffer growth/shrink.
-5. Cable unplug/replug returns to mute → CONFIG → stream without reboot.
-6. Thermal test on S6 confirms no sustained throttling causes xruns.
+1. STM32H753 + ULPI repeatedly enumerates the S6 FunctionFS gadget after cold boot/reset.
+2. PING/PONG works before the audio backend starts.
+3. CONFIG mismatch always leaves amplifiers muted.
+4. 8-hour bidirectional soak shows no framing/sequence corruption.
+5. 12-channel 48 kHz playback has no USB-induced underruns under sustained decode/render load.
+6. Clock-drift correction remains bounded without periodic buffer growth/shrink.
+7. Cable unplug/replug returns through mute → CONFIG → stream without reboot.
+8. Thermal load on S6 does not create sustained xruns.
