@@ -5,6 +5,7 @@ on:
     paths:
       - '.github/workflows/r1-alsa-out.yml'
       - 'crates/aurora-audio-io/src/alsa_out.rs'
+      - 'crates/aurora-audio-io/src/alsa_pcm.rs'
       - 'crates/aurora-audio-io/src/bin/aurora-alsa-out.rs'
       - 'scripts/imx93/run-live-714-alsa.sh'
       - 'scripts/imx93/deploy-r1-user.sh'
