@@ -10,6 +10,8 @@ on:
       - 'crates/aurora-audio-io/src/iec61937.rs'
       - 'crates/aurora-audio-io/src/orender_host.rs'
       - 'crates/aurora-audio-io/src/bin/aurora-appliance.rs'
+      - 'crates/aurora-audio-io/src/bin/aurora-orender-probe.rs'
+      - 'tests/fixtures/liborender_stub.c'
       - 'scripts/imx93/build-r2-deps.sh'
       - 'scripts/imx93/run-r2-appliance.sh'
       - 'platforms/imx93/systemd/aurora-r2.service'
@@ -45,6 +47,14 @@ jobs:
         run: cargo test --locked -p aurora-audio-io --bin aurora-appliance
       - name: Help smoke
         run: cargo run --locked -p aurora-audio-io --bin aurora-appliance -- --help
+      - name: liborender stable ABI runtime smoke
+        run: |
+          cc -shared -fPIC -O2 tests/fixtures/liborender_stub.c -o /tmp/liborender_stub.so
+          touch /tmp/aurora-bridge-placeholder.so /tmp/aurora-layout-placeholder.yaml
+          cargo run --locked -p aurora-audio-io --bin aurora-orender-probe -- \
+            /tmp/liborender_stub.so \
+            /tmp/aurora-bridge-placeholder.so \
+            /tmp/aurora-layout-placeholder.yaml
       - name: Shell syntax
         run: |
           bash -n scripts/imx93/build-r2-deps.sh
