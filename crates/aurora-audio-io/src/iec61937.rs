@@ -4,9 +4,6 @@
 //! Vibesbox SiI9437 eARC tap: the live eARC capture is S32_LE with the 16-bit
 //! IEC 61937 word in the upper half of each sample; E-AC-3 uses data type 0x15
 //! and its Pd length code is expressed in bytes rather than bits.
-//!
-//! VibesboxSRC is MIT licensed. This module is an Aurora-owned Rust implementation
-//! of the documented framing rules; it does not copy the Vibesbox Python source.
 
 const PA_LE: [u8; 2] = [0x72, 0xF8];
 const PB_LE: [u8; 2] = [0x1F, 0x4E];
@@ -21,18 +18,13 @@ pub const DATA_TYPE_MAT: u8 = 0x16;
 /// Codec filter applied to decoded IEC 61937 bursts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodecFilter {
-    /// Emit only AC-3 bursts.
     Ac3,
-    /// Emit only E-AC-3 bursts. This is Aurora R0's Netflix/streaming mode.
     Eac3,
-    /// Emit IEC 61937 DTS core type I/II/III bursts.
     Dts,
-    /// Emit every well-formed burst, including data types not decoded by Aurora R0.
     All,
 }
 
 impl CodecFilter {
-    /// Returns true when this filter accepts `data_type`.
     pub fn accepts(self, data_type: u8) -> bool {
         match self {
             Self::Ac3 => data_type == DATA_TYPE_AC3,
@@ -46,9 +38,7 @@ impl CodecFilter {
 /// One complete IEC 61937 burst after wrapper removal and 16-bit word byte swapping.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Burst {
-    /// IEC 61937 data type from the low five bits of Pc.
     pub data_type: u8,
-    /// Elementary-stream payload in native codec byte order.
     pub payload: Vec<u8>,
 }
 
@@ -60,7 +50,6 @@ pub struct BurstParser {
 }
 
 impl BurstParser {
-    /// Creates a parser that emits only bursts selected by `filter`.
     pub fn new(filter: CodecFilter) -> Self {
         Self {
             filter,
@@ -68,13 +57,29 @@ impl BurstParser {
         }
     }
 
-    /// Adds captured IEC 61937 words and returns every complete accepted burst.
-    ///
-    /// Input may end at any byte boundary. Partial headers and payloads are retained
-    /// until the next call.
+    /// Compatibility API used by the standalone extractor.
     pub fn push(&mut self, input: &[u8]) -> Vec<Burst> {
-        self.buffer.extend_from_slice(input);
         let mut bursts = Vec::new();
+        self.push_each(input, |data_type, payload| {
+            bursts.push(Burst {
+                data_type,
+                payload: payload.to_vec(),
+            });
+        });
+        bursts
+    }
+
+    /// Adds IEC words and invokes `emit` for each complete accepted burst.
+    ///
+    /// The payload slice is borrowed from the parser's reusable internal buffer
+    /// and is valid only for the duration of the callback. This is the R2
+    /// appliance hot path: it avoids allocating/copying one payload Vec per
+    /// E-AC-3 burst before passing the bytes to liborender.
+    pub fn push_each<F>(&mut self, input: &[u8], mut emit: F)
+    where
+        F: FnMut(u8, &[u8]),
+    {
+        self.buffer.extend_from_slice(input);
 
         loop {
             let Some(sync_offset) = find_sync(&self.buffer) else {
@@ -103,24 +108,18 @@ impl BurstParser {
             }
 
             if payload_bytes % 2 == 0 && self.filter.accepts(data_type) {
-                let mut payload = self.buffer[8..total].to_vec();
-                for word in payload.chunks_exact_mut(2) {
+                for word in self.buffer[8..total].chunks_exact_mut(2) {
                     word.swap(0, 1);
                 }
-                bursts.push(Burst { data_type, payload });
+                emit(data_type, &self.buffer[8..total]);
             }
 
             self.buffer.drain(..total);
         }
-
-        bursts
     }
 }
 
-/// Converts the IEC 61937 Pd length code to payload bytes.
-///
-/// E-AC-3 (0x15) and MAT/TrueHD (0x16) encode Pd in bytes. AC-3, DTS core and
-/// ordinary IEC 61937 burst types encode it in bits.
+/// Converts IEC 61937 Pd to payload bytes.
 pub fn payload_length_bytes(data_type: u8, pd: u16) -> usize {
     if matches!(data_type, DATA_TYPE_EAC3 | DATA_TYPE_MAT) {
         usize::from(pd)
@@ -129,18 +128,13 @@ pub fn payload_length_bytes(data_type: u8, pd: u16) -> usize {
     }
 }
 
-/// Streaming adaptor for the SiI9437 eARC tap's S32_LE capture representation.
-///
-/// The useful 16-bit IEC word is carried in bytes 2..3 of each 32-bit little-endian
-/// sample. The lower half is discarded. Partial 32-bit samples are preserved across
-/// calls so a short read cannot shift the word phase.
+/// Streaming adaptor for byte-oriented S32_LE input.
 #[derive(Debug, Default)]
 pub struct S32HighWordAdapter {
     tail: Vec<u8>,
 }
 
 impl S32HighWordAdapter {
-    /// Adds raw S32_LE bytes and returns the corresponding S16_LE IEC word stream.
     pub fn push(&mut self, raw: &[u8]) -> Vec<u8> {
         self.tail.extend_from_slice(raw);
         let usable = self.tail.len() - (self.tail.len() % 4);
@@ -150,6 +144,18 @@ impl S32HighWordAdapter {
         }
         self.tail.drain(..usable);
         words
+    }
+}
+
+/// Extract the upper 16-bit IEC words from an aligned ALSA S32_LE capture into
+/// a caller-owned reusable byte buffer. No allocation occurs after `out` has
+/// reached the required capacity.
+pub fn s32_samples_to_iec_words(samples: &[i32], out: &mut Vec<u8>) {
+    out.clear();
+    out.reserve(samples.len().saturating_mul(2).saturating_sub(out.capacity()));
+    for sample in samples {
+        let bytes = sample.to_le_bytes();
+        out.extend_from_slice(&bytes[2..4]);
     }
 }
 
@@ -176,12 +182,23 @@ mod tests {
         let native = vec![0x0B, 0x77, 0x12, 0x34, 0xAB, 0xCD, 0xEF, 0x01];
         let captured = make_burst(DATA_TYPE_EAC3, &native);
         let mut parser = BurstParser::new(CodecFilter::Eac3);
-
         let bursts = parser.push(&captured);
-
         assert_eq!(bursts.len(), 1);
         assert_eq!(bursts[0].data_type, DATA_TYPE_EAC3);
         assert_eq!(bursts[0].payload, native);
+    }
+
+    #[test]
+    fn zero_copy_callback_emits_native_payload() {
+        let native = vec![0x0B, 0x77, 0x12, 0x34, 0x55, 0x66];
+        let captured = make_burst(DATA_TYPE_EAC3, &native);
+        let mut parser = BurstParser::new(CodecFilter::Eac3);
+        let mut seen = Vec::new();
+        parser.push_each(&captured, |data_type, payload| {
+            assert_eq!(data_type, DATA_TYPE_EAC3);
+            seen.extend_from_slice(payload);
+        });
+        assert_eq!(seen, native);
     }
 
     #[test]
@@ -190,11 +207,9 @@ mod tests {
         let captured = make_burst(DATA_TYPE_EAC3, &native);
         let mut parser = BurstParser::new(CodecFilter::Eac3);
         let mut out = Vec::new();
-
         for byte in captured {
             out.extend(parser.push(&[byte]));
         }
-
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].payload, native);
     }
@@ -208,12 +223,18 @@ mod tests {
         }
         let mut adapter = S32HighWordAdapter::default();
         let mut recovered = Vec::new();
-
         for chunk in raw.chunks(3) {
             recovered.extend(adapter.push(chunk));
         }
-
         assert_eq!(recovered, words);
+    }
+
+    #[test]
+    fn aligned_s32_helper_uses_high_word_only() {
+        let samples = [0xF872_1234_u32 as i32, 0x4E1F_ABCD_u32 as i32];
+        let mut words = Vec::new();
+        s32_samples_to_iec_words(&samples, &mut words);
+        assert_eq!(words, [0x72, 0xF8, 0x1F, 0x4E]);
     }
 
     #[test]
@@ -226,7 +247,6 @@ mod tests {
         let native = vec![0x0B, 0x77, 0x12, 0x34];
         let captured = make_burst(DATA_TYPE_AC3, &native);
         let mut parser = BurstParser::new(CodecFilter::Eac3);
-
         assert!(parser.push(&captured).is_empty());
     }
 
