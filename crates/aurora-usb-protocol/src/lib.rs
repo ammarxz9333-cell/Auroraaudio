@@ -28,7 +28,7 @@ pub enum Kind {
 impl TryFrom<u16> for Kind {
     type Error = ProtocolError;
 
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
+    fn try_from(value: u16) -> Result<Self, ProtocolError> {
         match value {
             1 => Ok(Self::EncodedIec61937),
             2 => Ok(Self::PcmS32Le),
