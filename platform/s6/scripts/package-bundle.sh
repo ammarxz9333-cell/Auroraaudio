@@ -20,7 +20,9 @@ for f in "$BOOT" "$SYSTEM" \
          "$ROOT/docs/AURORA_FINAL_PRODUCT_ACCEPTANCE.md" \
          "$ROOT/docs/AURORA_MUSIC_HUB_PRODUCT_CONTRACT.md" \
          "$ROOT/docs/AURORA_PRODUCT_FOUNDATIONS_CONTRACT.md" \
-         "$ROOT/docs/acceptance/AURORA_PRODUCT_FOUNDATIONS_ACCEPTANCE.md"; do
+         "$ROOT/docs/acceptance/AURORA_PRODUCT_FOUNDATIONS_ACCEPTANCE.md" \
+         "$ROOT/docs/AURORA_SYSTEM_ARCHITECTURE_HARDENING_CONTRACT.md" \
+         "$ROOT/docs/acceptance/AURORA_SYSTEM_ARCHITECTURE_HARDENING_ACCEPTANCE.md"; do
     [ -f "$f" ] || fail "missing prerequisite: $f"
 done
 
@@ -48,6 +50,8 @@ install -m 0644 "$ROOT/docs/AURORA_FINAL_PRODUCT_ACCEPTANCE.md" "$STAGE/docs/AUR
 install -m 0644 "$ROOT/docs/AURORA_MUSIC_HUB_PRODUCT_CONTRACT.md" "$STAGE/docs/AURORA_MUSIC_HUB_PRODUCT_CONTRACT.md"
 install -m 0644 "$ROOT/docs/AURORA_PRODUCT_FOUNDATIONS_CONTRACT.md" "$STAGE/docs/AURORA_PRODUCT_FOUNDATIONS_CONTRACT.md"
 install -m 0644 "$ROOT/docs/acceptance/AURORA_PRODUCT_FOUNDATIONS_ACCEPTANCE.md" "$STAGE/docs/AURORA_PRODUCT_FOUNDATIONS_ACCEPTANCE.md"
+install -m 0644 "$ROOT/docs/AURORA_SYSTEM_ARCHITECTURE_HARDENING_CONTRACT.md" "$STAGE/docs/AURORA_SYSTEM_ARCHITECTURE_HARDENING_CONTRACT.md"
+install -m 0644 "$ROOT/docs/acceptance/AURORA_SYSTEM_ARCHITECTURE_HARDENING_ACCEPTANCE.md" "$STAGE/docs/AURORA_SYSTEM_ARCHITECTURE_HARDENING_ACCEPTANCE.md"
 [ -f "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" ] && \
     install -m 0644 "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" "$STAGE/docs/"
 
@@ -66,10 +70,11 @@ build-script-only, staged third-party, and physical-hardware states are kept
 separate on purpose.
 
 Product requirements bundled with every image include the plugin contract,
-final product acceptance contract, Aurora Music Hub contract, and the mandatory
-product foundations for safe rollback, plugin lifecycle, Home Assistant/MQTT,
-unified diagnostics/self-healing, and the capability registry. These files are
-part of the release truth and must match shipped capabilities.
+final product acceptance contract, Aurora Music Hub contract, mandatory product
+foundations, and mandatory system-architecture hardening: versioned Event Bus,
+hardware abstraction, thermal/resource budgeting, Safe/Recovery Mode, and
+built-in test/benchmark/soak mode. These files are part of the release truth and
+must match shipped capabilities.
 
 DO NOT FLASH this bundle merely because it built successfully.
 Physical validation gates in docs/FLASH_GATES.md must be completed first.
