@@ -1,0 +1,48 @@
+#!/bin/busybox.static sh
+set -eu
+
+BB=/bin/busybox.static
+PATH=/bin:/sbin:/usr/bin:/usr/sbin
+export PATH
+
+$BB mkdir -p /proc /sys /dev /newroot
+$BB mount -t proc proc /proc
+$BB mount -t sysfs sysfs /sys
+$BB mount -t devtmpfs devtmpfs /dev
+
+# Device nodes can arrive after the UFS controller finishes probing.
+SYSTEM=/dev/block/platform/15570000.ufs/by-name/SYSTEM
+tries=0
+while [ ! -b "$SYSTEM" ] && [ "$tries" -lt 100 ]; do
+    $BB sleep 0.05
+    tries=$((tries + 1))
+done
+
+if [ ! -b "$SYSTEM" ]; then
+    echo "AuroraOS-S6 initramfs: SYSTEM block device not found" >&2
+    exec $BB sh
+fi
+
+# Mount the Alpine appliance root. During bring-up we use rw so OpenRC can
+# establish runtime state; the production read-only/overlay policy is deferred
+# until physical boot/storage validation.
+if ! $BB mount -t ext4 -o rw,noatime "$SYSTEM" /newroot; then
+    echo "AuroraOS-S6 initramfs: failed to mount SYSTEM as ext4" >&2
+    exec $BB sh
+fi
+
+[ -x /newroot/sbin/init ] || {
+    echo "AuroraOS-S6 initramfs: /sbin/init missing from Alpine SYSTEM image" >&2
+    exec $BB sh
+}
+
+# Carry the already-mounted kernel pseudo filesystems into the real root.
+$BB mkdir -p /newroot/proc /newroot/sys /newroot/dev
+$BB mount --move /proc /newroot/proc
+$BB mount --move /sys /newroot/sys
+$BB mount --move /dev /newroot/dev
+
+# USERDATA is intentionally not formatted or mounted here. Provisioning must
+# never destroy an existing user's data implicitly. Aurora can initialize it
+# later only through an explicit destructive provisioning action.
+exec $BB switch_root /newroot /sbin/init
