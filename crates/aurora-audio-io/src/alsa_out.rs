@@ -178,8 +178,8 @@ impl BandlimitedResampler12 {
         F: FnMut() -> Result<Frame12, E>,
     {
         debug_assert!(self.primed, "BandlimitedResampler12 must be primed first");
-        let kernel_index = ((self.phase * RESAMPLER_PHASES as f64).round() as usize)
-            .min(RESAMPLER_PHASES);
+        let kernel_index =
+            ((self.phase * RESAMPLER_PHASES as f64).round() as usize).min(RESAMPLER_PHASES);
         let kernel = &self.kernels[kernel_index];
         let mut out = [0.0_f32; RENDER_CHANNELS];
 
@@ -382,7 +382,10 @@ mod tests {
                 max_error = max_error.max((f64::from(frame[0]) - expected).abs());
             }
         }
-        assert!(max_error < 0.004, "18 kHz max interpolation error {max_error}");
+        assert!(
+            max_error < 0.004,
+            "18 kHz max interpolation error {max_error}"
+        );
     }
 
     #[test]
