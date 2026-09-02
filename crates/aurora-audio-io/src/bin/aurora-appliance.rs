@@ -4,6 +4,10 @@ mod alsa_capture;
 mod alsa_out;
 #[path = "../alsa_pcm.rs"]
 mod alsa_pcm;
+// This shared module also serves the standalone extractor binary. R2 only uses
+// its E-AC-3 zero-copy path, so compatibility-only items are intentionally not
+// referenced by this binary.
+#[allow(dead_code)]
 #[path = "../iec61937.rs"]
 mod iec61937;
 #[path = "../orender_host.rs"]
@@ -442,7 +446,12 @@ mod linux {
                     return;
                 }
                 engine_latency.store(renderer.output_latency_samples(), Ordering::Release);
-                object_count.store(u64::from(renderer.object_count()), Ordering::Release);
+                let objects = if renderer.has_objects() {
+                    u64::from(renderer.object_count())
+                } else {
+                    0
+                };
+                object_count.store(objects, Ordering::Release);
                 bursts = bursts.saturating_add(1);
             });
             if let Some(error) = callback_error {
@@ -490,7 +499,7 @@ mod linux {
         let queue = Arc::new(FrameQueue::new(config.queue_frames()));
         let engine_latency = Arc::new(AtomicU64::new(LATENCY_UNSET));
         let object_count = Arc::new(AtomicU64::new(0));
-        let ingress_handle = spawn_ingress(
+        let _ingress_handle = spawn_ingress(
             Arc::clone(&queue),
             config.clone(),
             Arc::clone(&engine_latency),
@@ -582,12 +591,6 @@ mod linux {
                 );
                 last_stats = Instant::now();
             }
-        }
-
-        #[allow(unreachable_code)]
-        {
-            let _ = ingress_handle.join();
-            Ok(())
         }
     }
 }
