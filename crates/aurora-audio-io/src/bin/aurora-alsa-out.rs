@@ -68,9 +68,7 @@ mod linux {
             while let Some(arg) = args.next() {
                 match arg.as_str() {
                     "--device" => cfg.device = next_value(&mut args, "--device")?,
-                    "--period" => {
-                        cfg.period_frames = parse_value(&mut args, "--period")?;
-                    }
+                    "--period" => cfg.period_frames = parse_value(&mut args, "--period")?,
                     "--buffer-periods" => {
                         cfg.buffer_periods = parse_value(&mut args, "--buffer-periods")?;
                     }
@@ -107,7 +105,9 @@ mod linux {
                 return Err("--queue-ms must be at least 20".to_owned());
             }
             if self.target_ms == 0 || self.target_ms >= self.queue_ms {
-                return Err("--target-ms must be greater than 0 and smaller than --queue-ms".to_owned());
+                return Err(
+                    "--target-ms must be greater than 0 and smaller than --queue-ms".to_owned(),
+                );
             }
             if !(1.0..=1_000.0).contains(&self.max_ppm) {
                 return Err("--max-ppm must be in 1..=1000".to_owned());
@@ -192,6 +192,7 @@ mod linux {
                     self.buffered_frames.fetch_sub(1, Ordering::AcqRel);
                     return Ok(frame);
                 }
+
                 self.current.clear();
                 self.index = 0;
                 match self.receiver.recv_timeout(self.timeout) {
@@ -245,6 +246,7 @@ mod linux {
         let mut input = stdin.lock();
         let frame_bytes = RENDER_CHANNELS * std::mem::size_of::<f32>();
         let mut bytes = vec![0_u8; SOURCE_BLOCK_FRAMES * frame_bytes];
+
         loop {
             let mut filled = 0usize;
             while filled < bytes.len() {
@@ -255,6 +257,7 @@ mod linux {
                     Err(error) => return Err(format!("stdin read failed: {error}")),
                 }
             }
+
             if filled == 0 {
                 return Ok(());
             }
@@ -315,14 +318,7 @@ mod linux {
                 .map_err(|_| "ALSA device name contains NUL".to_owned())?;
             let mut pcm = ptr::null_mut();
             alsa_check(
-                unsafe {
-                    snd_pcm_open(
-                        &mut pcm,
-                        device.as_ptr(),
-                        SND_PCM_STREAM_PLAYBACK,
-                        0,
-                    )
-                },
+                unsafe { snd_pcm_open(&mut pcm, device.as_ptr(), SND_PCM_STREAM_PLAYBACK, 0) },
                 "snd_pcm_open",
             )?;
 
@@ -339,11 +335,7 @@ mod linux {
                 )?;
                 alsa_check(
                     unsafe {
-                        snd_pcm_hw_params_set_access(
-                            pcm,
-                            params.0,
-                            SND_PCM_ACCESS_RW_INTERLEAVED,
-                        )
+                        snd_pcm_hw_params_set_access(pcm, params.0, SND_PCM_ACCESS_RW_INTERLEAVED)
                     },
                     "set RW_INTERLEAVED",
                 )?;
@@ -358,20 +350,16 @@ mod linux {
                     "set S32_LE",
                 )?;
                 alsa_check(
-                    unsafe {
-                        snd_pcm_hw_params_set_channels(pcm, params.0, TDM_CHANNELS as c_int)
-                    },
+                    unsafe { snd_pcm_hw_params_set_channels(pcm, params.0, TDM_CHANNELS as u32) },
                     "set 16 channels",
                 )?;
                 alsa_check(
-                    unsafe {
-                        snd_pcm_hw_params_set_rate(pcm, params.0, OUTPUT_SAMPLE_RATE, 0)
-                    },
+                    unsafe { snd_pcm_hw_params_set_rate(pcm, params.0, OUTPUT_SAMPLE_RATE, 0) },
                     "set 48000 Hz",
                 )?;
 
                 let mut period = config.period_frames as c_ulong;
-                let mut direction = 0_c_int;
+                let mut direction: c_int = 0;
                 alsa_check(
                     unsafe {
                         snd_pcm_hw_params_set_period_size_near(
@@ -410,6 +398,7 @@ mod linux {
                     config.period_frames, period_frames
                 );
             }
+
             Ok(Self {
                 pcm,
                 channels: TDM_CHANNELS,
@@ -423,6 +412,7 @@ mod linux {
             if samples.len() % self.channels != 0 {
                 return Err("internal error: ALSA write is not frame-aligned".to_owned());
             }
+
             let total_frames = samples.len() / self.channels;
             let mut frame_offset = 0usize;
             while frame_offset < total_frames {
@@ -435,6 +425,7 @@ mod linux {
                         remaining as c_ulong,
                     )
                 };
+
                 if result > 0 {
                     frame_offset += result as usize;
                     continue;
@@ -442,6 +433,7 @@ mod linux {
                 if result == 0 {
                     return Err("ALSA write returned zero frames".to_owned());
                 }
+
                 let error_code = result as c_int;
                 let recovered = unsafe { snd_pcm_recover(self.pcm, error_code, 1) };
                 if recovered < 0 {
@@ -454,12 +446,6 @@ mod linux {
                 self.xruns += 1;
             }
             Ok(())
-        }
-
-        fn drain(&mut self) {
-            unsafe {
-                snd_pcm_drain(self.pcm);
-            }
         }
     }
 
@@ -526,12 +512,12 @@ mod linux {
         })?;
         let queue_frames = config.queue_frames();
         let target_frames = config.target_frames();
-        let block_capacity = ((queue_frames + SOURCE_BLOCK_FRAMES - 1) / SOURCE_BLOCK_FRAMES)
-            .max(2);
+        let block_capacity =
+            ((queue_frames + SOURCE_BLOCK_FRAMES - 1) / SOURCE_BLOCK_FRAMES).max(2);
         let (sender, receiver) = mpsc::sync_channel::<SourcePacket>(block_capacity);
         let buffered_frames = Arc::new(AtomicUsize::new(0));
         let source_finished = Arc::new(AtomicBool::new(false));
-        let reader_handle = spawn_source_reader(
+        let _reader_handle = spawn_source_reader(
             sender,
             Arc::clone(&buffered_frames),
             Arc::clone(&source_finished),
@@ -592,24 +578,17 @@ mod linux {
             periods_written += 1;
 
             if config.stats && last_stats.elapsed() >= Duration::from_secs(1) {
+                let queued_now = buffered_frames.load(Ordering::Acquire);
                 eprintln!(
                     "aurora-alsa-out: queued={}f ({:.1}ms) correction={:+.2}ppm xruns={} periods={}",
-                    buffered_frames.load(Ordering::Acquire),
-                    buffered_frames.load(Ordering::Acquire) as f64 * 1_000.0
-                        / f64::from(OUTPUT_SAMPLE_RATE),
+                    queued_now,
+                    queued_now as f64 * 1_000.0 / f64::from(OUTPUT_SAMPLE_RATE),
                     ppm,
                     playback.xruns,
                     periods_written
                 );
                 last_stats = Instant::now();
             }
-        }
-
-        #[allow(unreachable_code)]
-        {
-            playback.drain();
-            let _ = reader_handle.join();
-            Ok(())
         }
     }
 
@@ -623,7 +602,6 @@ mod linux {
         ) -> c_int;
         fn snd_pcm_close(pcm: *mut c_void) -> c_int;
         fn snd_pcm_prepare(pcm: *mut c_void) -> c_int;
-        fn snd_pcm_drain(pcm: *mut c_void) -> c_int;
         fn snd_pcm_writei(pcm: *mut c_void, buffer: *const c_void, frames: c_ulong) -> c_long;
         fn snd_pcm_recover(pcm: *mut c_void, error: c_int, silent: c_int) -> c_int;
         fn snd_pcm_hw_params_malloc(params: *mut *mut c_void) -> c_int;
@@ -642,7 +620,7 @@ mod linux {
         fn snd_pcm_hw_params_set_channels(
             pcm: *mut c_void,
             params: *mut c_void,
-            channels: c_int,
+            channels: u32,
         ) -> c_int;
         fn snd_pcm_hw_params_set_rate(
             pcm: *mut c_void,
