@@ -13,7 +13,9 @@ fail() { echo "package-bundle: $*" >&2; exit 1; }
 for cmd in tar zstd sha256sum stat; do command -v "$cmd" >/dev/null 2>&1 || fail "missing tool: $cmd"; done
 for f in "$BOOT" "$SYSTEM" \
          "$OUT/BOOT-IMAGE-MANIFEST.txt" "$OUT/SYSTEM-IMAGE-MANIFEST.txt" \
-         "$OUT/BUILD-MANIFEST.txt"; do
+         "$OUT/BUILD-MANIFEST.txt" \
+         "$ROOT/platform/s6/FLASH_GATES.md" \
+         "$ROOT/platform/s6/COMPONENT_STATUS.md"; do
     [ -f "$f" ] || fail "missing prerequisite: $f"
 done
 
@@ -25,7 +27,7 @@ SYSTEM_SIZE="$(stat -c '%s' "$SYSTEM")"
 [ "$SYSTEM_SIZE" -le "$SYSTEM_LIMIT" ] || fail "system image exceeds physical SYSTEM partition"
 
 rm -rf "$STAGE"
-mkdir -p "$STAGE/manifests"
+mkdir -p "$STAGE/manifests" "$STAGE/docs"
 install -m 0644 "$BOOT" "$STAGE/aurora-s6-boot.img"
 install -m 0644 "$SYSTEM" "$STAGE/AuroraOS-S6-system.ext4"
 install -m 0644 "$OUT/BOOT-IMAGE-MANIFEST.txt" "$STAGE/manifests/"
@@ -34,6 +36,10 @@ install -m 0644 "$OUT/BUILD-MANIFEST.txt" "$STAGE/manifests/"
 [ -f "$OUT/kernel/KERNEL-COMMIT.txt" ] && install -m 0644 "$OUT/kernel/KERNEL-COMMIT.txt" "$STAGE/manifests/"
 [ -f "$OUT/kernel/DT-IMAGE-MANIFEST.txt" ] && install -m 0644 "$OUT/kernel/DT-IMAGE-MANIFEST.txt" "$STAGE/manifests/"
 [ -f "$OUT/tools/SAMSUNG-BOOT-TOOLS-MANIFEST.txt" ] && install -m 0644 "$OUT/tools/SAMSUNG-BOOT-TOOLS-MANIFEST.txt" "$STAGE/manifests/"
+install -m 0644 "$ROOT/platform/s6/FLASH_GATES.md" "$STAGE/docs/FLASH_GATES.md"
+install -m 0644 "$ROOT/platform/s6/COMPONENT_STATUS.md" "$STAGE/docs/COMPONENT_STATUS.md"
+[ -f "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" ] && \
+    install -m 0644 "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" "$STAGE/docs/"
 
 cat > "$STAGE/README-FIRST.txt" <<'EOF'
 AuroraOS-S6 bring-up bundle
@@ -45,8 +51,12 @@ This archive intentionally contains the BOOT and SYSTEM partition images as
 separate files even though delivery is one .tar.zst bundle. The Galaxy S6
 bootloader does not consume a single monolithic disk image for both partitions.
 
+READ docs/COMPONENT_STATUS.md before interpreting this archive. Host-tested,
+build-script-only, staged third-party, and physical-hardware states are kept
+separate on purpose.
+
 DO NOT FLASH this bundle merely because it built successfully.
-Physical validation gates in platform/s6/FLASH_GATES.md must be completed first.
+Physical validation gates in docs/FLASH_GATES.md must be completed first.
 In particular, no automatic Odin/Heimdall flashing command is embedded here.
 
 The SYSTEM image may contain firmware copied from the owner's own stock Galaxy
@@ -62,7 +72,7 @@ EOF
 
 (
     cd "$STAGE"
-    sha256sum aurora-s6-boot.img AuroraOS-S6-system.ext4 manifests/* > SHA256SUMS
+    sha256sum aurora-s6-boot.img AuroraOS-S6-system.ext4 manifests/* docs/* > SHA256SUMS
 )
 
 rm -f "$BUNDLE" "$BUNDLE.sha256"
