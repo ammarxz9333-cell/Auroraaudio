@@ -70,8 +70,11 @@ mod linux {
             Self {
                 capture_device: "hw:AuroraEARC,0".to_owned(),
                 playback_device: "hw:AuroraTDM16,0".to_owned(),
-                liborender: "/opt/aurora-deps/Omniphony/omniphony-renderer/target/release/liborender.so".to_owned(),
-                bridge: "/opt/aurora-deps/harletty-bridge/target/release/libharletty_bridge.so".to_owned(),
+                liborender:
+                    "/opt/aurora-deps/Omniphony/omniphony-renderer/target/release/liborender.so"
+                        .to_owned(),
+                bridge: "/opt/aurora-deps/harletty-bridge/target/release/libharletty_bridge.so"
+                    .to_owned(),
                 layout: "/opt/aurora/platforms/imx93/layouts/aurora-7.1.4.yaml".to_owned(),
                 omniphony_config: None,
                 capture_period: DEFAULT_CAPTURE_PERIOD,
@@ -110,7 +113,9 @@ mod linux {
                     "--gain-db" => cfg.gain_db = parse(&mut args, &arg)?,
                     "--source-timeout-ms" => cfg.source_timeout_ms = parse(&mut args, &arg)?,
                     "--startup-timeout-ms" => cfg.startup_timeout_ms = parse(&mut args, &arg)?,
-                    "--latency-file" => cfg.latency_file = Some(PathBuf::from(next(&mut args, &arg)?)),
+                    "--latency-file" => {
+                        cfg.latency_file = Some(PathBuf::from(next(&mut args, &arg)?))
+                    }
                     "--no-latency-file" => cfg.latency_file = None,
                     "--stats" => cfg.stats = true,
                     "-h" | "--help" => {
@@ -176,7 +181,8 @@ mod linux {
     where
         I: Iterator<Item = String>,
     {
-        args.next().ok_or_else(|| format!("missing value for {name}"))
+        args.next()
+            .ok_or_else(|| format!("missing value for {name}"))
     }
 
     fn parse<I, T>(args: &mut I, name: &str) -> Result<T, String>
@@ -236,7 +242,10 @@ mod linux {
             }
             let mut source = samples.chunks_exact(RENDER_CHANNELS);
             while source.len() > 0 {
-                let mut state = self.state.lock().map_err(|_| "PCM queue poisoned".to_owned())?;
+                let mut state = self
+                    .state
+                    .lock()
+                    .map_err(|_| "PCM queue poisoned".to_owned())?;
                 while state.len == state.frames.len() && !state.closed {
                     state = self
                         .not_full
@@ -274,10 +283,16 @@ mod linux {
                     if let Some(error) = state.error.as_deref() {
                         return Err(io::Error::new(io::ErrorKind::InvalidData, error));
                     }
-                    return Err(io::Error::new(io::ErrorKind::UnexpectedEof, "producer ended"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "producer ended",
+                    ));
                 }
                 if wait.timed_out() {
-                    return Err(io::Error::new(io::ErrorKind::TimedOut, "producer timed out"));
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "producer timed out",
+                    ));
                 }
             }
             let count = state.len.min(out.len());
@@ -340,7 +355,9 @@ mod linux {
                 return Ok(());
             }
             if queue.closed.load(Ordering::Acquire) {
-                return Err(format!("producer stopped during startup at {buffered} frames"));
+                return Err(format!(
+                    "producer stopped during startup at {buffered} frames"
+                ));
             }
             if start.elapsed() >= timeout {
                 return Err(format!("startup prime timeout: {buffered}/{target} frames"));
@@ -409,7 +426,8 @@ mod linux {
                     return;
                 }
                 if data_type != 0x15 {
-                    callback_error = Some(format!("unexpected IEC61937 data type 0x{data_type:02x}"));
+                    callback_error =
+                        Some(format!("unexpected IEC61937 data type 0x{data_type:02x}"));
                     return;
                 }
                 let render_result = renderer.process_raw(payload, |samples, _frames| {
@@ -467,7 +485,8 @@ mod linux {
     }
 
     pub fn run() -> Result<(), Box<dyn Error>> {
-        let config = Config::parse().map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
+        let config =
+            Config::parse().map_err(|error| io::Error::new(io::ErrorKind::InvalidInput, error))?;
         let queue = Arc::new(FrameQueue::new(config.queue_frames()));
         let engine_latency = Arc::new(AtomicU64::new(LATENCY_UNSET));
         let object_count = Arc::new(AtomicU64::new(0));
@@ -532,7 +551,9 @@ mod linux {
                 let frame = resampler.render(source_step, &mut next_frame)?;
                 output.extend_from_slice(&pack_frame_s32(&frame, gain));
             }
-            let recovered = playback.write_interleaved(&output).map_err(io::Error::other)?;
+            let recovered = playback
+                .write_interleaved(&output)
+                .map_err(io::Error::other)?;
             if recovered {
                 controller.reset_after_discontinuity();
             }
@@ -542,7 +563,8 @@ mod linux {
             if last_latency.elapsed() >= Duration::from_millis(250) {
                 let engine = engine_latency.load(Ordering::Acquire);
                 if engine != LATENCY_UNSET {
-                    latency_ms = publish_latency(&config.latency_file, queue.buffered(), &playback, engine);
+                    latency_ms =
+                        publish_latency(&config.latency_file, queue.buffered(), &playback, engine);
                 }
                 last_latency = Instant::now();
             }
