@@ -1,0 +1,47 @@
+name: S6 Appliance CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - agent/aurora-s6-appliance-bootstrap
+    paths:
+      - "platform/s6/**"
+      - "crates/aurora-usb-protocol/**"
+      - ".github/workflows/s6-appliance-ci.yml"
+  pull_request:
+    paths:
+      - "platform/s6/**"
+      - "crates/aurora-usb-protocol/**"
+      - ".github/workflows/s6-appliance-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  host-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.78.0
+      - name: Test Aurora USB wire protocol
+        run: cargo test --locked --manifest-path crates/aurora-usb-protocol/Cargo.toml
+      - name: Compile FunctionFS bridge with warnings as errors
+        run: |
+          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror \
+            platform/s6/usb-gadget/aurora-ffs-daemon.c \
+            -o /tmp/aurora-ffs-daemon
+      - name: Check S6 shell script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in platform/s6/scripts/*.sh platform/s6/initramfs/init; do
+            bash -n "$f"
+          done
+      - name: Verify protocol constants agree across implementations
+        shell: bash
+        run: |
+          set -euo pipefail
+          grep -q '#define AURORA_VERSION 1u' platform/s6/usb-gadget/aurora-ffs-daemon.c
+          grep -q 'pub const VERSION: u16 = 1;' crates/aurora-usb-protocol/src/lib.rs
+          grep -q 'protocol_version = 1' docs/AURORA_USB_S6_STM32_PROTOCOL.md
