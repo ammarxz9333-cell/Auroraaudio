@@ -1,0 +1,33 @@
+# AuroraOS-S6 kernel fragment
+# Apply to the validated Exynos7420/zeroflte defconfig and verify every symbol
+# exists in the selected downstream kernel before producing a flash image.
+
+CONFIG_ARM64=y
+CONFIG_PREEMPT=y
+CONFIG_HIGH_RES_TIMERS=y
+CONFIG_HZ_1000=y
+CONFIG_CPU_FREQ=y
+CONFIG_CPU_FREQ_GOV_PERFORMANCE=y
+
+# Exynos7420 USB controller and custom Aurora transport prerequisites.
+CONFIG_USB=y
+CONFIG_USB_DWC3=y
+CONFIG_USB_DWC3_DUAL_ROLE=y
+CONFIG_USB_GADGET=y
+CONFIG_USB_LIBCOMPOSITE=y
+CONFIG_USB_FUNCTIONFS=y
+
+# Required for the touchscreen/UI appliance runtime.
+CONFIG_INPUT=y
+CONFIG_INPUT_EVDEV=y
+CONFIG_FB=y
+
+# Networking required by Alpine control services and 5 GHz rear-speaker transport.
+CONFIG_NET=y
+CONFIG_INET=y
+CONFIG_WLAN=y
+
+# Diagnostics retained during bring-up.
+CONFIG_DEBUG_FS=y
+CONFIG_PROC_FS=y
+CONFIG_SYSFS=y
