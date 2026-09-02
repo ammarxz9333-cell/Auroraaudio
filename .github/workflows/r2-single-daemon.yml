@@ -1,0 +1,79 @@
+name: R2 single-process appliance
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/r2-single-daemon.yml'
+      - 'crates/aurora-audio-io/src/alsa_capture.rs'
+      - 'crates/aurora-audio-io/src/alsa_out.rs'
+      - 'crates/aurora-audio-io/src/alsa_pcm.rs'
+      - 'crates/aurora-audio-io/src/iec61937.rs'
+      - 'crates/aurora-audio-io/src/orender_host.rs'
+      - 'crates/aurora-audio-io/src/bin/aurora-appliance.rs'
+      - 'scripts/imx93/build-r2-deps.sh'
+      - 'scripts/imx93/run-r2-appliance.sh'
+      - 'platforms/imx93/systemd/aurora-r2.service'
+      - 'platforms/imx93/systemd/aurora-r2.env.example'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: r2-appliance-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  linux-stable:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install ALSA development files
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev
+      - name: Format
+        run: cargo fmt --all --check
+      - name: Build appliance
+        run: cargo build --locked -p aurora-audio-io --bin aurora-appliance
+      - name: Strict Clippy
+        run: cargo clippy --locked -p aurora-audio-io --bin aurora-appliance -- -D warnings
+      - name: Appliance module tests
+        run: cargo test --locked -p aurora-audio-io --bin aurora-appliance
+      - name: Help smoke
+        run: cargo run --locked -p aurora-audio-io --bin aurora-appliance -- --help
+      - name: Shell syntax
+        run: |
+          bash -n scripts/imx93/build-r2-deps.sh
+          bash -n scripts/imx93/run-r2-appliance.sh
+      - name: R2 no-PipeWire contract
+        run: |
+          if grep -Eqi 'pipewire|wireplumber|arecord|orender .*--output' scripts/imx93/run-r2-appliance.sh platforms/imx93/systemd/aurora-r2.service; then
+            echo 'R2 runtime must remain a single direct-ALSA appliance process' >&2
+            exit 1
+          fi
+
+  msrv-1-78:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.78.0
+      - name: Install ALSA development files
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev
+      - name: Check MSRV
+        run: cargo check --locked -p aurora-audio-io --bin aurora-appliance
+      - name: Test MSRV
+        run: cargo test --locked -p aurora-audio-io --bin aurora-appliance
+
+  non-linux-compile:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Ensure Linux-only modules are cfg-isolated
+        run: cargo check --locked -p aurora-audio-io --bin aurora-appliance
