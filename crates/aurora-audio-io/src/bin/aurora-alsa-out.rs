@@ -1,5 +1,7 @@
 #[path = "../alsa_out.rs"]
 mod alsa_out;
+#[path = "../alsa_pcm.rs"]
+mod alsa_pcm;
 
 #[cfg(not(target_os = "linux"))]
 fn main() {
@@ -11,24 +13,24 @@ fn main() {
 mod linux {
     use std::env;
     use std::error::Error;
-    use std::ffi::{CStr, CString};
+    use std::fs;
     use std::io::{self, Read};
-    use std::os::raw::{c_char, c_int, c_long, c_ulong, c_void};
-    use std::ptr;
+    use std::path::PathBuf;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
-    use std::sync::Arc;
+    use std::sync::{Arc, Condvar, Mutex};
     use std::thread;
     use std::time::{Duration, Instant};
 
     use super::alsa_out::{
-        db_to_linear, pack_frame_s32, AdaptiveClockController, CubicResampler12, Frame12,
-        OUTPUT_SAMPLE_RATE, RENDER_CHANNELS, TDM_CHANNELS,
+        AdaptiveClockController, BandlimitedResampler12, Frame12, OUTPUT_SAMPLE_RATE,
+        RENDER_CHANNELS, TDM_CHANNELS, db_to_linear, pack_frame_s32,
     };
+    use super::alsa_pcm::{AlsaPlayback, AlsaPlaybackConfig};
 
     const SOURCE_BLOCK_FRAMES: usize = 256;
-    const SND_PCM_STREAM_PLAYBACK: c_int = 0;
-    const SND_PCM_ACCESS_RW_INTERLEAVED: c_int = 3;
+    const MIN_RESAMPLER_PRIME_FRAMES: usize = 17;
+    const RESAMPLER_LOOKAHEAD_FRAMES: usize = 16;
+    const LATENCY_PUBLISH_INTERVAL: Duration = Duration::from_millis(250);
 
     #[derive(Debug, Clone)]
     struct Config {
@@ -41,6 +43,7 @@ mod linux {
         gain_db: f32,
         source_timeout_ms: u64,
         startup_timeout_ms: u64,
+        latency_file: Option<PathBuf>,
         stats: bool,
     }
 
@@ -56,6 +59,7 @@ mod linux {
                 gain_db: -3.0,
                 source_timeout_ms: 500,
                 startup_timeout_ms: 5_000,
+                latency_file: Some(env::temp_dir().join("omniphony_delay")),
                 stats: false,
             }
         }
@@ -82,6 +86,10 @@ mod linux {
                     "--startup-timeout-ms" => {
                         cfg.startup_timeout_ms = parse_value(&mut args, "--startup-timeout-ms")?;
                     }
+                    "--latency-file" => {
+                        cfg.latency_file = Some(PathBuf::from(next_value(&mut args, "--latency-file")?));
+                    }
+                    "--no-latency-file" => cfg.latency_file = None,
                     "--stats" => cfg.stats = true,
                     "-h" | "--help" => {
                         print_help();
@@ -137,12 +145,15 @@ mod linux {
                --period FRAMES            ALSA period (default 256)\n\
                --buffer-periods N         ALSA buffer periods (default 4)\n\
                --queue-ms MS              bounded source queue (default 200)\n\
-               --target-ms MS             PI controller queue target (default 80)\n\
+               --target-ms MS             clock-control queue target (default 80)\n\
                --max-ppm PPM              max clock correction (default 300)\n\
                --gain-db DB               output headroom (default -3.0)\n\
                --source-timeout-ms MS     fail-closed source timeout (default 500)\n\
                --startup-timeout-ms MS    source priming timeout (default 5000)\n\
-               --stats                    print 1 Hz queue/ppm/xrun telemetry"
+               --latency-file PATH        publish negative A/V delay seconds\n\
+                                         (default /tmp/omniphony_delay)\n\
+               --no-latency-file          disable A/V delay publication\n\
+               --stats                    print 1 Hz queue/ppm/recovery telemetry"
         );
     }
 
@@ -169,83 +180,202 @@ mod linux {
         (ms * OUTPUT_SAMPLE_RATE as usize) / 1_000
     }
 
-    enum SourcePacket {
-        Data(Vec<Frame12>),
-        Error(String),
-        Eof,
+    /// Fixed-capacity SPSC PCM queue. Storage is allocated once at startup;
+    /// producer blocks are copied into the ring and the playback thread drains
+    /// them into a fixed local block, avoiding allocator activity in steady
+    /// state.
+    struct FrameQueue {
+        state: Mutex<QueueState>,
+        not_empty: Condvar,
+        not_full: Condvar,
+        buffered_frames: AtomicUsize,
+        closed: AtomicBool,
+    }
+
+    struct QueueState {
+        frames: Vec<Frame12>,
+        read_index: usize,
+        write_index: usize,
+        len: usize,
+        error: Option<String>,
+        closed: bool,
+    }
+
+    impl FrameQueue {
+        fn new(capacity_frames: usize) -> Self {
+            let capacity_frames = capacity_frames.max(SOURCE_BLOCK_FRAMES * 2);
+            Self {
+                state: Mutex::new(QueueState {
+                    frames: vec![[0.0; RENDER_CHANNELS]; capacity_frames],
+                    read_index: 0,
+                    write_index: 0,
+                    len: 0,
+                    error: None,
+                    closed: false,
+                }),
+                not_empty: Condvar::new(),
+                not_full: Condvar::new(),
+                buffered_frames: AtomicUsize::new(0),
+                closed: AtomicBool::new(false),
+            }
+        }
+
+        fn push_frames(&self, frames: &[Frame12]) -> Result<(), String> {
+            let mut source_offset = 0usize;
+            while source_offset < frames.len() {
+                let mut state = self
+                    .state
+                    .lock()
+                    .map_err(|_| "PCM queue mutex poisoned".to_owned())?;
+                while state.len == state.frames.len() && !state.closed {
+                    state = self
+                        .not_full
+                        .wait(state)
+                        .map_err(|_| "PCM queue mutex poisoned while waiting".to_owned())?;
+                }
+                if state.closed {
+                    return Err("PCM queue closed".to_owned());
+                }
+
+                let capacity = state.frames.len();
+                let writable = (capacity - state.len).min(frames.len() - source_offset);
+                let first = writable.min(capacity - state.write_index);
+                let write_index = state.write_index;
+                state.frames[write_index..write_index + first]
+                    .copy_from_slice(&frames[source_offset..source_offset + first]);
+                state.write_index = (write_index + first) % capacity;
+                state.len += first;
+                source_offset += first;
+
+                let second = writable - first;
+                if second > 0 {
+                    let write_index = state.write_index;
+                    state.frames[write_index..write_index + second]
+                        .copy_from_slice(&frames[source_offset..source_offset + second]);
+                    state.write_index = (write_index + second) % capacity;
+                    state.len += second;
+                    source_offset += second;
+                }
+
+                self.buffered_frames.fetch_add(writable, Ordering::Release);
+                drop(state);
+                self.not_empty.notify_one();
+            }
+            Ok(())
+        }
+
+        fn pop_block(&self, destination: &mut [Frame12], timeout: Duration) -> io::Result<usize> {
+            let state = self
+                .state
+                .lock()
+                .map_err(|_| io::Error::other("PCM queue mutex poisoned"))?;
+            let (mut state, wait_result) = self
+                .not_empty
+                .wait_timeout_while(state, timeout, |state| state.len == 0 && !state.closed)
+                .map_err(|_| io::Error::other("PCM queue mutex poisoned while waiting"))?;
+
+            if state.len == 0 {
+                if state.closed {
+                    if let Some(message) = state.error.as_deref() {
+                        return Err(io::Error::new(io::ErrorKind::InvalidData, message));
+                    }
+                    return Err(io::Error::new(
+                        io::ErrorKind::UnexpectedEof,
+                        "Omniphony PCM stream ended",
+                    ));
+                }
+                if wait_result.timed_out() {
+                    return Err(io::Error::new(
+                        io::ErrorKind::TimedOut,
+                        "Omniphony PCM source timed out",
+                    ));
+                }
+            }
+
+            let capacity = state.frames.len();
+            let readable = state.len.min(destination.len());
+            let first = readable.min(capacity - state.read_index);
+            destination[..first]
+                .copy_from_slice(&state.frames[state.read_index..state.read_index + first]);
+            state.read_index = (state.read_index + first) % capacity;
+            state.len -= first;
+
+            let second = readable - first;
+            if second > 0 {
+                destination[first..first + second]
+                    .copy_from_slice(&state.frames[state.read_index..state.read_index + second]);
+                state.read_index = (state.read_index + second) % capacity;
+                state.len -= second;
+            }
+
+            drop(state);
+            self.not_full.notify_one();
+            Ok(readable)
+        }
+
+        fn mark_frame_consumed(&self) {
+            let previous = self.buffered_frames.fetch_sub(1, Ordering::AcqRel);
+            debug_assert!(previous > 0, "PCM queue accounting underflow");
+        }
+
+        fn buffered_frames(&self) -> usize {
+            self.buffered_frames.load(Ordering::Acquire)
+        }
+
+        fn is_closed(&self) -> bool {
+            self.closed.load(Ordering::Acquire)
+        }
+
+        fn close(&self, error: Option<String>) {
+            if let Ok(mut state) = self.state.lock() {
+                if !state.closed {
+                    state.error = error;
+                    state.closed = true;
+                }
+            }
+            self.closed.store(true, Ordering::Release);
+            self.not_empty.notify_all();
+            self.not_full.notify_all();
+        }
     }
 
     struct SourceReader {
-        receiver: Receiver<SourcePacket>,
-        buffered_frames: Arc<AtomicUsize>,
-        current: Vec<Frame12>,
+        queue: Arc<FrameQueue>,
+        current: [Frame12; SOURCE_BLOCK_FRAMES],
+        len: usize,
         index: usize,
         timeout: Duration,
     }
 
     impl SourceReader {
         fn next_frame(&mut self) -> Result<Frame12, io::Error> {
-            loop {
-                if self.index < self.current.len() {
-                    let frame = self.current[self.index];
-                    self.index += 1;
-                    self.buffered_frames.fetch_sub(1, Ordering::AcqRel);
-                    return Ok(frame);
-                }
-
-                self.current.clear();
+            if self.index >= self.len {
+                self.len = self.queue.pop_block(&mut self.current, self.timeout)?;
                 self.index = 0;
-                match self.receiver.recv_timeout(self.timeout) {
-                    Ok(SourcePacket::Data(frames)) => self.current = frames,
-                    Ok(SourcePacket::Error(message)) => {
-                        return Err(io::Error::new(io::ErrorKind::InvalidData, message));
-                    }
-                    Ok(SourcePacket::Eof) => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::UnexpectedEof,
-                            "Omniphony PCM stream ended",
-                        ));
-                    }
-                    Err(RecvTimeoutError::Timeout) => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::TimedOut,
-                            "Omniphony PCM source timed out",
-                        ));
-                    }
-                    Err(RecvTimeoutError::Disconnected) => {
-                        return Err(io::Error::new(
-                            io::ErrorKind::BrokenPipe,
-                            "Omniphony PCM source disconnected",
-                        ));
-                    }
-                }
             }
+            let frame = self.current[self.index];
+            self.index += 1;
+            self.queue.mark_frame_consumed();
+            Ok(frame)
         }
     }
 
-    fn spawn_source_reader(
-        sender: SyncSender<SourcePacket>,
-        buffered_frames: Arc<AtomicUsize>,
-        finished: Arc<AtomicBool>,
-    ) -> thread::JoinHandle<()> {
+    fn spawn_source_reader(queue: Arc<FrameQueue>) -> thread::JoinHandle<()> {
         thread::spawn(move || {
-            let result = read_stdin_blocks(&sender, &buffered_frames);
-            if let Err(message) = result {
-                let _ = sender.send(SourcePacket::Error(message));
+            let result = read_stdin_blocks(&queue);
+            match result {
+                Ok(()) => queue.close(None),
+                Err(message) => queue.close(Some(message)),
             }
-            let _ = sender.send(SourcePacket::Eof);
-            finished.store(true, Ordering::Release);
         })
     }
 
-    fn read_stdin_blocks(
-        sender: &SyncSender<SourcePacket>,
-        buffered_frames: &AtomicUsize,
-    ) -> Result<(), String> {
+    fn read_stdin_blocks(queue: &FrameQueue) -> Result<(), String> {
         let stdin = io::stdin();
         let mut input = stdin.lock();
         let frame_bytes = RENDER_CHANNELS * std::mem::size_of::<f32>();
         let mut bytes = vec![0_u8; SOURCE_BLOCK_FRAMES * frame_bytes];
+        let mut frames = [[0.0_f32; RENDER_CHANNELS]; SOURCE_BLOCK_FRAMES];
 
         loop {
             let mut filled = 0usize;
@@ -257,7 +387,6 @@ mod linux {
                     Err(error) => return Err(format!("stdin read failed: {error}")),
                 }
             }
-
             if filled == 0 {
                 return Ok(());
             }
@@ -268,229 +397,33 @@ mod linux {
             }
 
             let frame_count = filled / frame_bytes;
-            let mut frames = Vec::with_capacity(frame_count);
-            for raw_frame in bytes[..filled].chunks_exact(frame_bytes) {
-                let mut frame = [0.0_f32; RENDER_CHANNELS];
+            for (frame_index, raw_frame) in bytes[..filled].chunks_exact(frame_bytes).enumerate() {
                 for (channel, raw_sample) in raw_frame.chunks_exact(4).enumerate() {
-                    frame[channel] = f32::from_le_bytes([
+                    frames[frame_index][channel] = f32::from_le_bytes([
                         raw_sample[0],
                         raw_sample[1],
                         raw_sample[2],
                         raw_sample[3],
                     ]);
                 }
-                frames.push(frame);
             }
+            queue.push_frames(&frames[..frame_count])?;
 
-            buffered_frames.fetch_add(frames.len(), Ordering::AcqRel);
-            let sent_len = frames.len();
-            if sender.send(SourcePacket::Data(frames)).is_err() {
-                buffered_frames.fetch_sub(sent_len, Ordering::AcqRel);
-                return Ok(());
-            }
             if filled < bytes.len() {
                 return Ok(());
             }
         }
     }
 
-    struct HwParams(*mut c_void);
-
-    impl Drop for HwParams {
-        fn drop(&mut self) {
-            if !self.0.is_null() {
-                unsafe { snd_pcm_hw_params_free(self.0) };
-            }
-        }
-    }
-
-    struct AlsaPlayback {
-        pcm: *mut c_void,
-        channels: usize,
-        xruns: u64,
-        period_frames: usize,
-        buffer_frames: usize,
-    }
-
-    impl AlsaPlayback {
-        fn open(config: &Config) -> Result<Self, String> {
-            let device = CString::new(config.device.as_str())
-                .map_err(|_| "ALSA device name contains NUL".to_owned())?;
-            let mut pcm = ptr::null_mut();
-            alsa_check(
-                unsafe { snd_pcm_open(&mut pcm, device.as_ptr(), SND_PCM_STREAM_PLAYBACK, 0) },
-                "snd_pcm_open",
-            )?;
-
-            let setup = (|| -> Result<(usize, usize), String> {
-                let mut raw_params = ptr::null_mut();
-                alsa_check(
-                    unsafe { snd_pcm_hw_params_malloc(&mut raw_params) },
-                    "snd_pcm_hw_params_malloc",
-                )?;
-                let params = HwParams(raw_params);
-                alsa_check(
-                    unsafe { snd_pcm_hw_params_any(pcm, params.0) },
-                    "snd_pcm_hw_params_any",
-                )?;
-                alsa_check(
-                    unsafe {
-                        snd_pcm_hw_params_set_access(pcm, params.0, SND_PCM_ACCESS_RW_INTERLEAVED)
-                    },
-                    "set RW_INTERLEAVED",
-                )?;
-
-                let format_name = CString::new("S32_LE").expect("static format name");
-                let format = unsafe { snd_pcm_format_value(format_name.as_ptr()) };
-                if format < 0 {
-                    return Err("ALSA does not recognize S32_LE".to_owned());
-                }
-                alsa_check(
-                    unsafe { snd_pcm_hw_params_set_format(pcm, params.0, format) },
-                    "set S32_LE",
-                )?;
-                alsa_check(
-                    unsafe { snd_pcm_hw_params_set_channels(pcm, params.0, TDM_CHANNELS as u32) },
-                    "set 16 channels",
-                )?;
-                alsa_check(
-                    unsafe { snd_pcm_hw_params_set_rate(pcm, params.0, OUTPUT_SAMPLE_RATE, 0) },
-                    "set 48000 Hz",
-                )?;
-
-                let mut period = config.period_frames as c_ulong;
-                let mut direction: c_int = 0;
-                alsa_check(
-                    unsafe {
-                        snd_pcm_hw_params_set_period_size_near(
-                            pcm,
-                            params.0,
-                            &mut period,
-                            &mut direction,
-                        )
-                    },
-                    "set ALSA period",
-                )?;
-                let mut buffer = period.saturating_mul(config.buffer_periods as c_ulong);
-                alsa_check(
-                    unsafe { snd_pcm_hw_params_set_buffer_size_near(pcm, params.0, &mut buffer) },
-                    "set ALSA buffer",
-                )?;
-                alsa_check(
-                    unsafe { snd_pcm_hw_params(pcm, params.0) },
-                    "apply ALSA hw params",
-                )?;
-                alsa_check(unsafe { snd_pcm_prepare(pcm) }, "prepare ALSA PCM")?;
-                Ok((period as usize, buffer as usize))
-            })();
-
-            let (period_frames, buffer_frames) = match setup {
-                Ok(values) => values,
-                Err(error) => {
-                    unsafe { snd_pcm_close(pcm) };
-                    return Err(error);
-                }
-            };
-
-            if period_frames != config.period_frames {
-                eprintln!(
-                    "aurora-alsa-out: ALSA adjusted period {} -> {} frames",
-                    config.period_frames, period_frames
-                );
-            }
-
-            Ok(Self {
-                pcm,
-                channels: TDM_CHANNELS,
-                xruns: 0,
-                period_frames,
-                buffer_frames,
-            })
-        }
-
-        fn write_interleaved(&mut self, samples: &[i32]) -> Result<(), String> {
-            if samples.len() % self.channels != 0 {
-                return Err("internal error: ALSA write is not frame-aligned".to_owned());
-            }
-
-            let total_frames = samples.len() / self.channels;
-            let mut frame_offset = 0usize;
-            while frame_offset < total_frames {
-                let sample_offset = frame_offset * self.channels;
-                let remaining = total_frames - frame_offset;
-                let result = unsafe {
-                    snd_pcm_writei(
-                        self.pcm,
-                        samples[sample_offset..].as_ptr().cast::<c_void>(),
-                        remaining as c_ulong,
-                    )
-                };
-
-                if result > 0 {
-                    frame_offset += result as usize;
-                    continue;
-                }
-                if result == 0 {
-                    return Err("ALSA write returned zero frames".to_owned());
-                }
-
-                let error_code = result as c_int;
-                let recovered = unsafe { snd_pcm_recover(self.pcm, error_code, 1) };
-                if recovered < 0 {
-                    return Err(format!(
-                        "ALSA write failed: {}; recovery failed: {}",
-                        alsa_error_text(error_code),
-                        alsa_error_text(recovered)
-                    ));
-                }
-                self.xruns += 1;
-            }
-            Ok(())
-        }
-    }
-
-    impl Drop for AlsaPlayback {
-        fn drop(&mut self) {
-            if !self.pcm.is_null() {
-                unsafe {
-                    snd_pcm_close(self.pcm);
-                }
-            }
-        }
-    }
-
-    fn alsa_check(code: c_int, operation: &str) -> Result<(), String> {
-        if code < 0 {
-            Err(format!("{operation}: {}", alsa_error_text(code)))
-        } else {
-            Ok(())
-        }
-    }
-
-    fn alsa_error_text(code: c_int) -> String {
-        let message = unsafe { snd_strerror(code) };
-        if message.is_null() {
-            return format!("ALSA error {code}");
-        }
-        unsafe { CStr::from_ptr(message) }
-            .to_string_lossy()
-            .into_owned()
-    }
-
-    fn wait_for_prime(
-        buffered_frames: &AtomicUsize,
-        finished: &AtomicBool,
-        target_frames: usize,
-        timeout: Duration,
-    ) -> Result<(), String> {
+    fn wait_for_prime(queue: &FrameQueue, target_frames: usize, timeout: Duration) -> Result<(), String> {
         let started = Instant::now();
         loop {
-            let available = buffered_frames.load(Ordering::Acquire);
+            let available = queue.buffered_frames();
             if available >= target_frames {
                 return Ok(());
             }
-            if finished.load(Ordering::Acquire) {
-                if available >= 3 {
+            if queue.is_closed() {
+                if available >= MIN_RESAMPLER_PRIME_FRAMES {
                     return Ok(());
                 }
                 return Err(format!(
@@ -506,141 +439,161 @@ mod linux {
         }
     }
 
+    struct LatencyPublisher {
+        path: Option<PathBuf>,
+        last_publish: Instant,
+        last_total_ms: Option<f64>,
+    }
+
+    impl LatencyPublisher {
+        fn new(path: Option<PathBuf>) -> Self {
+            Self {
+                path,
+                last_publish: Instant::now() - LATENCY_PUBLISH_INTERVAL,
+                last_total_ms: None,
+            }
+        }
+
+        fn maybe_publish(
+            &mut self,
+            queued_frames: usize,
+            playback: &AlsaPlayback,
+        ) -> Option<f64> {
+            if self.last_publish.elapsed() < LATENCY_PUBLISH_INTERVAL {
+                return self.last_total_ms;
+            }
+            self.last_publish = Instant::now();
+
+            let alsa_frames = match playback.delay_frames() {
+                Ok(frames) => frames,
+                Err(error) => {
+                    eprintln!("aurora-alsa-out: latency probe failed: {error}");
+                    return self.last_total_ms;
+                }
+            };
+            let total_frames = queued_frames
+                .saturating_add(RESAMPLER_LOOKAHEAD_FRAMES)
+                .saturating_add(alsa_frames);
+            let total_ms = total_frames as f64 * 1_000.0 / f64::from(OUTPUT_SAMPLE_RATE);
+            self.last_total_ms = Some(total_ms);
+
+            if let Some(path) = self.path.as_ref() {
+                // Match Omniphony's existing delay-file sign convention: a
+                // positive audio-chain latency is published as negative seconds
+                // so the video side delays itself by the corresponding amount.
+                let delay_seconds = -(total_ms / 1_000.0);
+                if let Err(error) = fs::write(path, format!("{delay_seconds:.6}\n")) {
+                    eprintln!(
+                        "aurora-alsa-out: could not publish A/V delay to {}: {error}",
+                        path.display()
+                    );
+                }
+            }
+            Some(total_ms)
+        }
+    }
+
     pub fn run() -> Result<(), Box<dyn Error>> {
         let config = Config::parse().map_err(|error| {
             io::Error::new(io::ErrorKind::InvalidInput, format!("{error}; use --help"))
         })?;
         let queue_frames = config.queue_frames();
         let target_frames = config.target_frames();
-        let block_capacity = queue_frames.div_ceil(SOURCE_BLOCK_FRAMES).max(2);
-        let (sender, receiver) = mpsc::sync_channel::<SourcePacket>(block_capacity);
-        let buffered_frames = Arc::new(AtomicUsize::new(0));
-        let source_finished = Arc::new(AtomicBool::new(false));
-        let _reader_handle = spawn_source_reader(
-            sender,
-            Arc::clone(&buffered_frames),
-            Arc::clone(&source_finished),
-        );
+        let queue = Arc::new(FrameQueue::new(queue_frames));
+        let _reader_handle = spawn_source_reader(Arc::clone(&queue));
 
         wait_for_prime(
-            &buffered_frames,
-            &source_finished,
+            &queue,
             target_frames,
             Duration::from_millis(config.startup_timeout_ms),
         )?;
 
         let mut source = SourceReader {
-            receiver,
-            buffered_frames: Arc::clone(&buffered_frames),
-            current: Vec::new(),
+            queue: Arc::clone(&queue),
+            current: [[0.0; RENDER_CHANNELS]; SOURCE_BLOCK_FRAMES],
+            len: 0,
             index: 0,
             timeout: Duration::from_millis(config.source_timeout_ms),
         };
         let mut next = || source.next_frame();
-        let mut resampler = CubicResampler12::default();
+        let mut resampler = BandlimitedResampler12::new();
         resampler.prime(&mut next)?;
 
-        let mut playback = AlsaPlayback::open(&config).map_err(io::Error::other)?;
-        let period_frames = playback.period_frames;
+        let mut playback = AlsaPlayback::open(&AlsaPlaybackConfig {
+            device: config.device.clone(),
+            sample_rate: OUTPUT_SAMPLE_RATE,
+            channels: TDM_CHANNELS,
+            period_frames: config.period_frames,
+            buffer_periods: config.buffer_periods,
+        })
+        .map_err(io::Error::other)?;
+        let period_frames = playback.period_frames();
         let interval_seconds = period_frames as f64 / f64::from(OUTPUT_SAMPLE_RATE);
         let mut controller = AdaptiveClockController::new(target_frames, config.max_ppm);
         let gain = db_to_linear(config.gain_db);
-        let mut output = Vec::<i32>::with_capacity(period_frames * TDM_CHANNELS);
+        let mut output = vec![0_i32; period_frames * TDM_CHANNELS];
+        let mut latency = LatencyPublisher::new(config.latency_file.clone());
+        let mut last_total_latency_ms = None;
         let mut last_stats = Instant::now();
         let mut periods_written = 0_u64;
 
+        if playback.period_frames() != config.period_frames {
+            eprintln!(
+                "aurora-alsa-out: ALSA adjusted period {} -> {} frames",
+                config.period_frames,
+                playback.period_frames()
+            );
+        }
         eprintln!(
             "aurora-alsa-out: direct ALSA active device={} format=S32_LE rate={} channels={} period={} buffer={} queue_target={}f gain={:.2}dB max_ppm={:.1}",
             config.device,
             OUTPUT_SAMPLE_RATE,
             TDM_CHANNELS,
-            playback.period_frames,
-            playback.buffer_frames,
+            playback.period_frames(),
+            playback.buffer_frames(),
             controller.target_frames(),
             config.gain_db,
             config.max_ppm
         );
 
         loop {
-            let queued = buffered_frames.load(Ordering::Acquire);
+            let queued = queue.buffered_frames();
             let ppm = controller.update(queued, interval_seconds);
             let source_step = AdaptiveClockController::step_from_ppm(ppm);
-            output.clear();
-            for _ in 0..period_frames {
+
+            for frame_index in 0..period_frames {
                 let frame = resampler.render(source_step, &mut next)?;
                 let packed = pack_frame_s32(&frame, gain);
-                output.extend_from_slice(&packed);
+                let start = frame_index * TDM_CHANNELS;
+                output[start..start + TDM_CHANNELS].copy_from_slice(&packed);
             }
-            playback
+
+            let recovered = playback
                 .write_interleaved(&output)
                 .map_err(io::Error::other)?;
-            periods_written += 1;
+            if recovered {
+                controller.reset_after_discontinuity();
+            }
+            periods_written = periods_written.saturating_add(1);
+
+            let queued_now = queue.buffered_frames();
+            if let Some(total_ms) = latency.maybe_publish(queued_now, &playback) {
+                last_total_latency_ms = Some(total_ms);
+            }
 
             if config.stats && last_stats.elapsed() >= Duration::from_secs(1) {
-                let queued_now = buffered_frames.load(Ordering::Acquire);
                 eprintln!(
-                    "aurora-alsa-out: queued={}f ({:.1}ms) correction={:+.2}ppm xruns={} periods={}",
+                    "aurora-alsa-out: queued={}f ({:.1}ms) total_latency={:.1}ms correction={:+.2}ppm recoveries={} periods={}",
                     queued_now,
                     queued_now as f64 * 1_000.0 / f64::from(OUTPUT_SAMPLE_RATE),
+                    last_total_latency_ms.unwrap_or_default(),
                     ppm,
-                    playback.xruns,
+                    playback.recoveries(),
                     periods_written
                 );
                 last_stats = Instant::now();
             }
         }
-    }
-
-    #[link(name = "asound")]
-    extern "C" {
-        fn snd_pcm_open(
-            pcm: *mut *mut c_void,
-            name: *const c_char,
-            stream: c_int,
-            mode: c_int,
-        ) -> c_int;
-        fn snd_pcm_close(pcm: *mut c_void) -> c_int;
-        fn snd_pcm_prepare(pcm: *mut c_void) -> c_int;
-        fn snd_pcm_writei(pcm: *mut c_void, buffer: *const c_void, frames: c_ulong) -> c_long;
-        fn snd_pcm_recover(pcm: *mut c_void, error: c_int, silent: c_int) -> c_int;
-        fn snd_pcm_hw_params_malloc(params: *mut *mut c_void) -> c_int;
-        fn snd_pcm_hw_params_free(params: *mut c_void);
-        fn snd_pcm_hw_params_any(pcm: *mut c_void, params: *mut c_void) -> c_int;
-        fn snd_pcm_hw_params_set_access(
-            pcm: *mut c_void,
-            params: *mut c_void,
-            access: c_int,
-        ) -> c_int;
-        fn snd_pcm_hw_params_set_format(
-            pcm: *mut c_void,
-            params: *mut c_void,
-            format: c_int,
-        ) -> c_int;
-        fn snd_pcm_hw_params_set_channels(
-            pcm: *mut c_void,
-            params: *mut c_void,
-            channels: u32,
-        ) -> c_int;
-        fn snd_pcm_hw_params_set_rate(
-            pcm: *mut c_void,
-            params: *mut c_void,
-            rate: u32,
-            direction: c_int,
-        ) -> c_int;
-        fn snd_pcm_hw_params_set_period_size_near(
-            pcm: *mut c_void,
-            params: *mut c_void,
-            frames: *mut c_ulong,
-            direction: *mut c_int,
-        ) -> c_int;
-        fn snd_pcm_hw_params_set_buffer_size_near(
-            pcm: *mut c_void,
-            params: *mut c_void,
-            frames: *mut c_ulong,
-        ) -> c_int;
-        fn snd_pcm_hw_params(pcm: *mut c_void, params: *mut c_void) -> c_int;
-        fn snd_pcm_format_value(name: *const c_char) -> c_int;
-        fn snd_strerror(error: c_int) -> *const c_char;
     }
 }
 
