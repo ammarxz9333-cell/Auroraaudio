@@ -16,9 +16,9 @@ for f in "$BOOT" "$SYSTEM" \
          "$OUT/BUILD-MANIFEST.txt" \
          "$ROOT/platform/s6/FLASH_GATES.md" \
          "$ROOT/platform/s6/COMPONENT_STATUS.md" \
-         "$ROOT/docs/product/AURORA_PLUGIN_SYSTEM.md" \
-         "$ROOT/docs/product/FINAL_PRODUCT_ACCEPTANCE.md" \
-         "$ROOT/docs/product/PLUGIN_IMPLEMENTATION_QUEUE.md"; do
+         "$ROOT/docs/AURORA_PLUGIN_SYSTEM.md" \
+         "$ROOT/docs/AURORA_FINAL_PRODUCT_ACCEPTANCE.md" \
+         "$ROOT/docs/AURORA_MUSIC_HUB_PRODUCT_CONTRACT.md"; do
     [ -f "$f" ] || fail "missing prerequisite: $f"
 done
 
@@ -41,9 +41,9 @@ install -m 0644 "$OUT/BUILD-MANIFEST.txt" "$STAGE/manifests/"
 [ -f "$OUT/tools/SAMSUNG-BOOT-TOOLS-MANIFEST.txt" ] && install -m 0644 "$OUT/tools/SAMSUNG-BOOT-TOOLS-MANIFEST.txt" "$STAGE/manifests/"
 install -m 0644 "$ROOT/platform/s6/FLASH_GATES.md" "$STAGE/docs/FLASH_GATES.md"
 install -m 0644 "$ROOT/platform/s6/COMPONENT_STATUS.md" "$STAGE/docs/COMPONENT_STATUS.md"
-install -m 0644 "$ROOT/docs/product/AURORA_PLUGIN_SYSTEM.md" "$STAGE/docs/AURORA_PLUGIN_SYSTEM.md"
-install -m 0644 "$ROOT/docs/product/FINAL_PRODUCT_ACCEPTANCE.md" "$STAGE/docs/FINAL_PRODUCT_ACCEPTANCE.md"
-install -m 0644 "$ROOT/docs/product/PLUGIN_IMPLEMENTATION_QUEUE.md" "$STAGE/docs/PLUGIN_IMPLEMENTATION_QUEUE.md"
+install -m 0644 "$ROOT/docs/AURORA_PLUGIN_SYSTEM.md" "$STAGE/docs/AURORA_PLUGIN_SYSTEM.md"
+install -m 0644 "$ROOT/docs/AURORA_FINAL_PRODUCT_ACCEPTANCE.md" "$STAGE/docs/AURORA_FINAL_PRODUCT_ACCEPTANCE.md"
+install -m 0644 "$ROOT/docs/AURORA_MUSIC_HUB_PRODUCT_CONTRACT.md" "$STAGE/docs/AURORA_MUSIC_HUB_PRODUCT_CONTRACT.md"
 [ -f "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" ] && \
     install -m 0644 "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" "$STAGE/docs/"
 
@@ -61,9 +61,9 @@ READ docs/COMPONENT_STATUS.md before interpreting this archive. Host-tested,
 build-script-only, staged third-party, and physical-hardware states are kept
 separate on purpose.
 
-READ docs/FINAL_PRODUCT_ACCEPTANCE.md for the release gate and
-AURORA_PLUGIN_SYSTEM.md for the extension model. These files are part of the
-product contract, not optional notes.
+Product requirements bundled with every image include the plugin contract,
+final product acceptance contract, and Aurora Music Hub contract. These files
+are part of the release truth and must match shipped capabilities.
 
 DO NOT FLASH this bundle merely because it built successfully.
 Physical validation gates in docs/FLASH_GATES.md must be completed first.
