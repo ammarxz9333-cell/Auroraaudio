@@ -31,10 +31,13 @@ mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/share/omniphony/layouts" "$OUT/navidrome" "
     cargo test --locked --manifest-path crates/aurora-usb-protocol/Cargo.toml
 )
 
-# Build the FunctionFS bridge natively for AuroraOS-S6. The Linux FunctionFS
-# ABI itself is supplied by the target kernel; no Android userspace is involved.
+# Build the FunctionFS bridge natively for AuroraOS-S6. The streaming parser is
+# shared with the STM32 firmware core so split/coalesced bulk reads follow one
+# implementation on both peers.
 "$CC" -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror \
+    -I"$ROOT/protocol" \
     "$ROOT/platform/s6/usb-gadget/aurora-ffs-daemon.c" \
+    "$ROOT/protocol/aurora_usb_stream_v1.c" \
     -o "$OUT/bin/aurora-ffs-daemon"
 
 # Aurora-owned Rust baseline. Exclude simulation and the external CamillaDSP process
