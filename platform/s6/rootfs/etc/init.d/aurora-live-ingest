@@ -1,0 +1,23 @@
+#!/sbin/openrc-run
+
+name="Aurora live immersive ingest"
+description="Live DD+ IEC61937 to Harletty/Omniphony 7.1.4 pipeline"
+command="/usr/local/sbin/aurora-live-ingest"
+command_background="yes"
+pidfile="/run/aurora/aurora-live-ingest.pid"
+output_log="/var/log/aurora/aurora-live-ingest.log"
+error_log="/var/log/aurora/aurora-live-ingest.log"
+
+ depend() {
+    need aurora-ffs
+    after localmount
+}
+
+start_pre() {
+    checkpath --directory --mode 0755 /run/aurora
+    checkpath --directory --mode 0755 /var/log/aurora
+    [ -x /usr/local/sbin/aurora-live-ingest ] || return 1
+    [ -x /opt/aurora/external/orender ] || return 1
+    [ -f /opt/aurora/external/libharletty_bridge.so ] || return 1
+    [ -f /etc/aurora/layouts/7.1.4.yaml ] || return 1
+}
