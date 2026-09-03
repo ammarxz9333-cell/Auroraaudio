@@ -115,6 +115,9 @@ def launch_broker(broker, mock_orender, socket_path, encoded):
     env = os.environ.copy()
     env["AURORA_USB_BRIDGE_SOCKET"] = str(socket_path)
     env["AURORA_ORENDER_BIN"] = str(mock_orender)
+    # This regression test isolates the broker/USB contract. The real
+    # postprocessor has its own Rust tests and a separate integration test.
+    env["AURORA_POSTPROCESS_BIN"] = "disabled"
     env["AURORA_MOCK_EXPECT_HEX"] = encoded.hex()
     env["AURORA_MOCK_SAMPLE"] = "0.25"
     return subprocess.Popen(
