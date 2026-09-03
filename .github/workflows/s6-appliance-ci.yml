@@ -67,8 +67,29 @@ jobs:
           test "$AURORA_REALTIME_MCU_HAL_STATUS" = not_implemented
           test "$AURORA_REALTIME_MCU_PHYSICAL_STATUS" = not_measured
 
+          # The S6 must remain powered while it is the active USB data device.
+          # Require a BC1.2 charging downstream port, not a 500 mA SDP-only PHY.
+          test "$AURORA_USB_PHY_INTERFACE" = ULPI
+          test "$AURORA_USB_PHY_BC_SPEC" = BC1.2
+          test "$AURORA_USB_PHY_PORT_MODE" = CDP
+          test "$AURORA_USB_PHY_CDP_CURRENT_MA" -ge 1500
+          test "$AURORA_USB_PHY_ULPI_CLOCK_HZ" = 60000000
+          test "$AURORA_USB_PHY_REFERENCE_HZ" = 24000000
+          test "$AURORA_USB_PHY_REFSEL" = 111
+          test "$AURORA_USB_PHY_RESET_ACTIVE_LOW" = 1
+          test "$AURORA_USB_PHY_VBUS_ENABLE_SIGNAL" = CPEN
+          test "$AURORA_USB_PHY_STATUS" = datasheet_verified
+
+          # VBUS is a protected power rail, not a raw 5 V GPIO-controlled feed.
+          test "$AURORA_USB_VBUS_TARGET_MA" -ge 1500
+          test "$AURORA_USB_VBUS_SWITCH_MAX_CONTINUOUS_MA" -ge "$AURORA_USB_VBUS_TARGET_MA"
+          test "$AURORA_USB_VBUS_SWITCH_ADJUSTABLE_ILIM" = 1
+          test "$AURORA_USB_VBUS_SWITCH_REVERSE_BLOCKING" = 1
+          test "$AURORA_USB_VBUS_SWITCH_FAULT_OUTPUT" = 1
+          test "$AURORA_USB_VBUS_STATUS" = datasheet_verified
+
           # The canonical pin map must not assign one MCU pin to two live roles.
-          duplicate_pins="$(env | sed -n 's/^AURORA_PIN_[^=]*=//p' | sort | uniq -d)"
+          duplicate_pins="$(sed -n 's/^AURORA_PIN_[^=]*=//p' config/aurora-hardware-target.env | sort | uniq -d)"
           test -z "$duplicate_pins" || {
             echo "duplicate realtime-MCU pin assignments:" >&2
             echo "$duplicate_pins" >&2
@@ -76,7 +97,7 @@ jobs:
           }
 
           # Current target proof uses the documented alternate functions for
-          # direct ULPI, SAI1-A capture and SAI4-A TDM output.
+          # direct ULPI, SAI capture and TDM output.
           for v in \
             AURORA_AF_ULPI_STP AURORA_AF_ULPI_DIR AURORA_AF_ULPI_NXT \
             AURORA_AF_ULPI_CLK AURORA_AF_ULPI_D0 AURORA_AF_ULPI_D1 \
@@ -182,7 +203,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in platform/s6/scripts/*.sh platform/s6/initramfs/init; do
+          for f in platform/s6/scripts/*.sh platform/s6/initramfs/init firmware/*.sh; do
             bash -n "$f"
           done
       - name: Verify protocol appliance and hardware-target contracts agree
