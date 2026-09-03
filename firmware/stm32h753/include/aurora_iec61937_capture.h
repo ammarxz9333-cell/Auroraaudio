@@ -4,6 +4,8 @@
 #include <stddef.h>
 #include <stdint.h>
 
+struct aurora_transport;
+
 /*
  * Normalize the HDMI/eARC receiver's left-justified S32 capture slots into the
  * protocol-v1 canonical S16_LE IEC61937 word stream.
@@ -27,5 +29,28 @@ int aurora_iec61937_capture_s32_high_words(const uint32_t *slots,
 int aurora_iec61937_capture_pts_48k(uint64_t carrier_frame_counter,
                                    uint32_t carrier_rate_hz,
                                    uint64_t *pts_48k);
+
+/*
+ * Portable DMA-block handoff used by the future STM32 HAL callback:
+ *
+ *   SAI/I2S S32 slots -> canonical S16_LE IEC61937 -> Aurora USB transport.
+ *
+ * The caller owns `scratch`; no allocation occurs. `slot_count` must contain
+ * complete stereo carrier frames (L,R pairs), so it must be even. The PTS is
+ * anchored to the first carrier frame represented by `slots`.
+ *
+ * This function intentionally does not parse Dolby payloads. Burst boundaries
+ * may be split across DMA blocks/Aurora USB frames; Omniphony's persistent
+ * IEC61937 parser on the S6 reassembles them.
+ */
+int aurora_iec61937_capture_forward_s32_high_words(
+    struct aurora_transport *transport,
+    const uint32_t *slots,
+    size_t slot_count,
+    uint64_t first_carrier_frame,
+    uint32_t carrier_rate_hz,
+    uint32_t flags,
+    uint8_t *scratch,
+    size_t scratch_capacity);
 
 #endif /* AURORA_IEC61937_CAPTURE_H */
