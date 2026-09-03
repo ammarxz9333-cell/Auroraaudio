@@ -201,11 +201,7 @@ impl LinkedLimiter {
 
     #[inline]
     fn process_frame(&mut self, frame: &mut [f32]) {
-        let peak = frame
-            .iter()
-            .copied()
-            .map(f32::abs)
-            .fold(0.0_f32, f32::max);
+        let peak = frame.iter().copied().map(f32::abs).fold(0.0_f32, f32::max);
         let requested = if peak > self.ceiling && peak > 0.0 {
             self.ceiling / peak
         } else {
@@ -302,8 +298,7 @@ impl SpeakerPostProcessor {
         let limiter_dbfs = env_f32("AURORA_LIMITER_DBFS", -1.0)?;
         let limiter_release_ms = env_f32("AURORA_LIMITER_RELEASE_MS", 50.0)?;
         let lipsync_ms = env_f32("AURORA_LIPSYNC_MS", 0.0)?.clamp(0.0, 500.0);
-        let lipsync_frames =
-            (lipsync_ms * SAMPLE_RATE as f32 / 1_000.0).round() as usize;
+        let lipsync_frames = (lipsync_ms * SAMPLE_RATE as f32 / 1_000.0).round() as usize;
         Self::new(
             bed_crossover_hz,
             height_crossover_hz,
@@ -391,22 +386,17 @@ impl SpeakerPostProcessor {
                 redirected_bass += low;
             }
 
-            let lfe_band = self
-                .lfe_low_2
-                .process(self.lfe_low_1.process(original_lfe))
-                * self.lfe_gain;
+            let lfe_band =
+                self.lfe_low_2.process(self.lfe_low_1.process(original_lfe)) * self.lfe_gain;
             let summed_sub = lfe_band + redirected_bass * self.redirected_bass_gain;
-            frame[LFE] = self
-                .sub_high_2
-                .process(self.sub_high_1.process(summed_sub));
+            frame[LFE] = self.sub_high_2.process(self.sub_high_1.process(summed_sub));
 
             let target = if self.muted || self.standby {
                 0.0
             } else {
                 self.headroom_gain * self.user_gain
             };
-            self.smoothed_master_gain +=
-                (target - self.smoothed_master_gain) * self.gain_alpha;
+            self.smoothed_master_gain += (target - self.smoothed_master_gain) * self.gain_alpha;
             for sample in frame.iter_mut() {
                 *sample *= self.smoothed_master_gain;
             }
@@ -544,9 +534,7 @@ fn apply_control_message(state: &ControlState, message: &[u8; CONTROL_MESSAGE_BY
                 .store((data0 as usize).min(MAX_LIPSYNC_FRAMES), Ordering::Release);
         }
         CTRL_MASTER_GAIN_MDB => {
-            state
-                .master_gain_mdb
-                .store(data0 as i64, Ordering::Release);
+            state.master_gain_mdb.store(data0 as i64, Ordering::Release);
         }
         CTRL_MUTE => state.muted.store(data0 != 0, Ordering::Release),
         CTRL_STANDBY => state.standby.store(data0 != 0, Ordering::Release),
@@ -578,7 +566,12 @@ fn read_exact_or_clean_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Re
     while read_total < buffer.len() {
         match reader.read(&mut buffer[read_total..]) {
             Ok(0) if read_total == 0 => return Ok(false),
-            Ok(0) => return Err(io::Error::new(ErrorKind::UnexpectedEof, "truncated raw-f32 block")),
+            Ok(0) => {
+                return Err(io::Error::new(
+                    ErrorKind::UnexpectedEof,
+                    "truncated raw-f32 block",
+                ))
+            }
             Ok(count) => read_total += count,
             Err(error) if error.kind() == ErrorKind::Interrupted => continue,
             Err(error) => return Err(error),
@@ -603,9 +596,7 @@ fn run() -> Result<()> {
 
     let state = Arc::new(ControlState::default());
     state.lipsync_frames.store(
-        (env_f32("AURORA_LIPSYNC_MS", 0.0)?.clamp(0.0, 500.0)
-            * SAMPLE_RATE as f32
-            / 1_000.0)
+        (env_f32("AURORA_LIPSYNC_MS", 0.0)?.clamp(0.0, 500.0) * SAMPLE_RATE as f32 / 1_000.0)
             .round() as usize,
         Ordering::Relaxed,
     );
@@ -737,8 +728,7 @@ mod tests {
     use super::*;
 
     fn processor() -> SpeakerPostProcessor {
-        SpeakerPostProcessor::new(80.0, 100.0, 120.0, 20.0, 0.0, 0.0, -3.0, -1.0, 50.0, 0)
-            .unwrap()
+        SpeakerPostProcessor::new(80.0, 100.0, 120.0, 20.0, 0.0, 0.0, -3.0, -1.0, 50.0, 0).unwrap()
     }
 
     #[test]
@@ -797,7 +787,9 @@ mod tests {
         for _ in 0..200 {
             post.process_block(&mut block);
             assert!(block.iter().all(|sample| sample.is_finite()));
-            assert!(block.iter().all(|sample| sample.abs() <= db_to_linear(-1.0) + 1.0e-6));
+            assert!(block
+                .iter()
+                .all(|sample| sample.abs() <= db_to_linear(-1.0) + 1.0e-6));
         }
     }
 
@@ -823,7 +815,8 @@ mod tests {
     #[test]
     fn asrc_keeps_all_channels_coherent_at_clock_correction() {
         let mut asrc = RubatoAsrc::default();
-        asrc.configure(SAMPLE_RATE, SAMPLE_RATE, CHANNELS, BLOCK_FRAMES).unwrap();
+        asrc.configure(SAMPLE_RATE, SAMPLE_RATE, CHANNELS, BLOCK_FRAMES)
+            .unwrap();
         asrc.set_ratio(0.999_9).unwrap();
         for _ in 0..8 {
             let required = asrc.required_input_frames();
