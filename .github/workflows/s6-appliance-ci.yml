@@ -40,6 +40,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
       - name: Validate pinned Omniphony low-latency stdout patch
         run: sh platform/s6/scripts/test-omniphony-low-latency-patch.sh
+      - name: Audit S6 runtime wiring and duplication
+        run: sh platform/s6/scripts/audit-runtime-wiring.sh
       - name: Test Aurora USB Rust wire protocol
         run: cargo test --locked --manifest-path crates/aurora-usb-protocol/Cargo.toml
       - name: Format build and test S6 Rust runtime features on MSRV
