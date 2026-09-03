@@ -11,6 +11,8 @@ ENVFILE="$ROOT/platform/s6/rootfs/etc/aurora/aurora.env"
 HW_TARGET="$ROOT/config/aurora-hardware-target.env"
 HW_HEADER_GENERATOR="$ROOT/firmware/generate-hardware-target-header.sh"
 PINMUX_PROOF="$ROOT/docs/AURORA_REALTIME_MCU_PINMUX_PROOF.md"
+USB_PROTOCOL_DOC="$ROOT/docs/AURORA_USB_S6_REALTIME_MCU_PROTOCOL.md"
+EARC_BRINGUP_DOC="$ROOT/docs/AURORA_EARC_REALTIME_MCU_PHYSICAL_BRINGUP.md"
 SERVICE="$INIT_DIR/aurora-live-ingest"
 FFS_SERVICE="$INIT_DIR/aurora-ffs"
 
@@ -41,6 +43,9 @@ for var in \
     AURORA_REALTIME_MCU_ROLE AURORA_REALTIME_MCU_VENDOR \
     AURORA_REALTIME_MCU_FAMILY AURORA_REALTIME_MCU_PART \
     AURORA_REALTIME_MCU_PACKAGE AURORA_REALTIME_MCU_SOURCE_DIR \
+    AURORA_REALTIME_MCU_VENDOR_STACK AURORA_REALTIME_MCU_VENDOR_STACK_VERSION \
+    AURORA_REALTIME_MCU_VENDOR_HAL_COMMIT AURORA_REALTIME_MCU_VENDOR_USB_HOST_COMMIT \
+    AURORA_REALTIME_MCU_VENDOR_DEVICE_COMMIT \
     AURORA_USB_PHY_PART AURORA_USB_VBUS_SWITCH_PART
  do
     eval "value=\${$var-}"
@@ -48,6 +53,7 @@ for var in \
  done
 
 [ "$AURORA_REALTIME_MCU_ROLE" = aurora-realtime-mcu ] || fail "unexpected realtime MCU role"
+[ "$AURORA_REALTIME_MCU_SOURCE_DIR" = firmware/realtime-mcu ] || fail "portable MCU source path must remain target-neutral"
 [ -d "$ROOT/$AURORA_REALTIME_MCU_SOURCE_DIR/include" ] || fail "MCU include directory missing"
 [ -d "$ROOT/$AURORA_REALTIME_MCU_SOURCE_DIR/src" ] || fail "MCU source directory missing"
 [ -d "$ROOT/$AURORA_REALTIME_MCU_SOURCE_DIR/test" ] || fail "MCU test directory missing"
@@ -66,6 +72,27 @@ for var in \
 [ "$AURORA_REALTIME_MCU_PHYSICAL_STATUS" = not_measured ] || fail "physical status changed without measured evidence"
 [ -n "$AURORA_REALTIME_MCU_PINMUX_PROOF" ] || fail "pinmux proof identifier missing"
 [ -f "$PINMUX_PROOF" ] || fail "pinmux proof document missing"
+[ -f "$USB_PROTOCOL_DOC" ] || fail "target-neutral USB protocol document missing"
+[ -f "$EARC_BRINGUP_DOC" ] || fail "target-neutral eARC bring-up document missing"
+
+# Old active MCU identifiers are forbidden. Historical/research material is not
+# rewritten, but current source/build/runtime/contracts may never depend on them.
+[ ! -e "$ROOT/firmware/stm32h753" ] || fail "legacy firmware/stm32h753 tree still exists"
+[ ! -e "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" ] || fail "legacy USB protocol filename still exists"
+[ ! -e "$ROOT/docs/AURORA_EARC_STM32_PHYSICAL_BRINGUP.md" ] || fail "legacy eARC bring-up filename still exists"
+for legacy in \
+    stm32h753 STM32H753 aurora_stm32_audio_app AURORA_STM32_ \
+    AURORA_STM32CUBE_ AURORA_USB_S6_STM32_PROTOCOL AURORA_EARC_STM32_PHYSICAL_BRINGUP
+ do
+    if grep -R -n -F --exclude-dir=.git -- "$legacy" \
+        "$ROOT/.github" "$ROOT/config" "$ROOT/firmware" \
+        "$ROOT/platform" "$ROOT/protocol" >/tmp/aurora-legacy-name-hit 2>/dev/null; then
+        cat /tmp/aurora-legacy-name-hit >&2
+        rm -f /tmp/aurora-legacy-name-hit
+        fail "legacy active MCU identifier remains: $legacy"
+    fi
+ done
+rm -f /tmp/aurora-legacy-name-hit
 
 # USB data + power contract for the S6 gadget.
 [ "$AURORA_USB_PHY_INTERFACE" = ULPI ] || fail "USB PHY interface drift"
@@ -144,8 +171,7 @@ for macro in \
 for file in \
     "$LIVE" "$POST" "$BUILD" "$ASSEMBLE" "$SERVICE" "$FFS_SERVICE" \
     "$ROOT/.github/workflows/s6-appliance-ci.yml" \
-    "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" \
-    "$ROOT/docs/AURORA_EARC_STM32_PHYSICAL_BRINGUP.md" \
+    "$USB_PROTOCOL_DOC" "$EARC_BRINGUP_DOC" \
     "$ROOT/docs/AURORA_SYSTEM_ARCHITECTURE_HARDENING_CONTRACT.md" \
     "$PINMUX_PROOF"
  do
@@ -229,4 +255,4 @@ grep -Fq 'AURORA_SAMPLE_RATE=48000' "$ENVFILE" || fail "runtime sample-rate drif
 grep -Fq 'AURORA_BLOCK_FRAMES=40' "$ENVFILE" || fail "runtime block-size drift"
 grep -Fq 'AURORA_LAYOUT=7.1.4' "$ENVFILE" || fail "runtime layout drift"
 
-echo "audit-runtime-wiring: PASS single hardware manifest, generated HAL constants, unique pin map, protected USB power/data path, single renderer/DSP/ASRC chain, canonical runtime config"
+echo "audit-runtime-wiring: PASS single hardware manifest, no legacy active MCU names, generated HAL constants, unique pin map, protected USB power/data path, single renderer/DSP/ASRC chain, canonical runtime config"
