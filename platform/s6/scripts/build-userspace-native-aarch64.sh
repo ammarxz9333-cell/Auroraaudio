@@ -72,8 +72,8 @@ fi
 
     # Aurora's live path consumes raw-f32 on stdout. Upstream v0.5.2 uses a
     # generic 64 KiB BufWriter, which can hide ~28.4 ms at 48 kHz / 12 ch.
-    # Apply a version-pinned patch that caps raw stdout buffering to one
-    # 256-frame period (~5.33 ms). Never silently build without it.
+    # Apply a version-pinned patch that aligns the writer buffer with one
+    # 40-frame render/transport quantum (~0.833 ms). Never silently build without it.
     [ "$OMNIPHONY_VERSION" = "v0.5.2" ] || \
         fail "Omniphony low-latency patch is pinned to v0.5.2, got $OMNIPHONY_VERSION"
     [ -f "$OMNIPHONY_PATCH" ] || fail "missing Omniphony patch: $OMNIPHONY_PATCH"
@@ -113,10 +113,11 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
     echo "architecture=aarch64"
     echo "aurora_commit=$(git -C "$ROOT" rev-parse HEAD)"
     echo "aurora_usb_protocol=1"
+    echo "aurora_usb_period_frames=40"
     echo "live_streaming_ingest=iec61937-direct-to-omniphony"
     echo "harletty=$HARLETTY_VERSION"
     echo "omniphony=$OMNIPHONY_VERSION"
-    echo "omniphony_patch=low-latency-raw-stdout-256-frames-v1"
+    echo "omniphony_patch=low-latency-raw-stdout-40-frames-v1"
     echo "navidrome=v$NAVIDROME_VERSION"
     echo "navidrome_sha256=$NAVIDROME_SHA256"
 } > "$OUT/BUILD-MANIFEST.txt"
