@@ -45,18 +45,21 @@ mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/share/omniphony/layouts" "$OUT/navidrome" "
 # IEC61937 itself. Complete encoded frames received from STM32 are forwarded as
 # a byte stream to Omniphony stdin; Omniphony v0.5.2 owns the streaming
 # IEC61937 parser and passes typed packets to the Harletty bridge. Rendered
-# 7.1.4 raw-f32 is converted to Aurora protocol PCM_S32LE periods for STM32.
+# 7.1.4 raw-f32 passes through the Aurora-owned postprocessor and is converted
+# to Aurora protocol PCM_S32LE periods for STM32.
 "$CC" -std=c11 -O2 -Wall -Wextra -Werror \
     -I"$ROOT/protocol" \
     "$ROOT/platform/s6/live-ingest/aurora-live-ingest.c" \
     -lm -o "$OUT/bin/aurora-live-ingest"
 
-# Aurora-owned Rust baseline. Exclude simulation and the external CamillaDSP process
-# from the appliance binary; realtime CPAL remains available for bring-up/testing.
+# Aurora-owned Rust baseline. Exclude simulation and the external CamillaDSP
+# process from the appliance binaries. The S6 postprocessor reuses Aurora's
+# existing Rubato ASRC and drift controller and remains outside Omniphony.
 (
     cd "$ROOT"
     cargo build --locked --release -j "$JOBS" -p aurora-cli --no-default-features --features realtime
     install -m 0755 target/release/aurora-cli "$OUT/bin/aurora-cli"
+    install -m 0755 target/release/aurora-s6-postprocess "$OUT/bin/aurora-s6-postprocess"
 )
 
 # Omniphony and Harletty must be sibling checkouts because the Harletty bridge
@@ -114,7 +117,11 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
     echo "aurora_commit=$(git -C "$ROOT" rev-parse HEAD)"
     echo "aurora_usb_protocol=1"
     echo "aurora_usb_period_frames=40"
-    echo "live_streaming_ingest=iec61937-direct-to-omniphony"
+    echo "live_streaming_ingest=iec61937-omniphony-postprocess-stm32"
+    echo "postprocessor=aurora-s6-postprocess"
+    echo "postprocessor_asrc=rubato-sinc-fixed-out"
+    echo "postprocessor_bass_management=lr4-configurable"
+    echo "postprocessor_limiter=linked-peak"
     echo "harletty=$HARLETTY_VERSION"
     echo "omniphony=$OMNIPHONY_VERSION"
     echo "omniphony_patch=low-latency-raw-stdout-40-frames-v1"
@@ -124,4 +131,5 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
 
 sha256sum "$OUT/bin/aurora-ffs-daemon" > "$OUT/bin/aurora-ffs-daemon.sha256"
 sha256sum "$OUT/bin/aurora-live-ingest" > "$OUT/bin/aurora-live-ingest.sha256"
+sha256sum "$OUT/bin/aurora-s6-postprocess" > "$OUT/bin/aurora-s6-postprocess.sha256"
 echo "Userspace staging complete: $OUT"
