@@ -15,7 +15,7 @@ use std::f32::consts::PI;
 use std::fs::File;
 use std::io::{self, ErrorKind, Read, Write};
 use std::os::fd::{FromRawFd, RawFd};
-use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -40,7 +40,6 @@ const CTRL_LIPSYNC_FRAMES: u16 = 3;
 const CTRL_MASTER_GAIN_MDB: u16 = 4;
 const CTRL_MUTE: u16 = 5;
 const CTRL_STANDBY: u16 = 6;
-const CTRL_SOURCE_FORMAT: u16 = 7;
 
 fn db_to_linear(db: f32) -> f32 {
     10.0_f32.powf(db / 20.0)
@@ -485,7 +484,6 @@ struct ControlState {
     sink_counter: AtomicU64,
     source_counter: AtomicU64,
     queued_playback_frames: AtomicUsize,
-    capture_flags: AtomicU32,
     lipsync_frames: AtomicUsize,
     master_gain_mdb: AtomicI64,
     muted: AtomicBool,
@@ -514,9 +512,8 @@ fn apply_control_message(state: &ControlState, message: &[u8; CONTROL_MESSAGE_BY
     let data0 = read_le64(&message[8..16]);
     let data1 = read_le64(&message[16..24]);
     let data2 = read_le32(&message[24..28]);
-    let flags = read_le32(&message[28..32]);
     match kind {
-        CTRL_RESET | CTRL_SOURCE_FORMAT => {
+        CTRL_RESET => {
             state.reset_epoch.fetch_add(1, Ordering::Release);
         }
         CTRL_CLOCK_REPORT => {
@@ -525,7 +522,6 @@ fn apply_control_message(state: &ControlState, message: &[u8; CONTROL_MESSAGE_BY
             state
                 .queued_playback_frames
                 .store(data2 as usize, Ordering::Relaxed);
-            state.capture_flags.store(flags, Ordering::Relaxed);
             state.clock_epoch.fetch_add(1, Ordering::Release);
         }
         CTRL_LIPSYNC_FRAMES => {
@@ -590,7 +586,7 @@ fn floats_to_bytes(samples: &[f32], output: &mut [u8]) {
 fn run() -> Result<()> {
     let control_fd = env_usize("AURORA_CONTROL_FD", 3)? as RawFd;
     let drift_target_frames = env_usize("AURORA_DRIFT_TARGET_FRAMES", 120)?;
-    if drift_target_frames < BLOCK_FRAMES || drift_target_frames > 4_096 {
+    if !(BLOCK_FRAMES..=4_096).contains(&drift_target_frames) {
         bail!("AURORA_DRIFT_TARGET_FRAMES must be between 40 and 4096");
     }
 
@@ -631,7 +627,8 @@ fn run() -> Result<()> {
     let mut muted = state.muted.load(Ordering::Acquire);
     let mut standby = state.standby.load(Ordering::Acquire);
     let mut elapsed_output_frames = BLOCK_FRAMES;
-    let mut last_queued_frames = drift_target_frames;
+    let mut last_sink_counter: Option<u64> = None;
+    let mut last_source_counter: Option<u64> = None;
 
     loop {
         if !read_exact_or_clean_eof(&mut stdin, &mut read_bytes)? {
@@ -653,7 +650,8 @@ fn run() -> Result<()> {
             drift.reset();
             post.reset();
             elapsed_output_frames = BLOCK_FRAMES;
-            last_queued_frames = drift_target_frames;
+            last_sink_counter = None;
+            last_source_counter = None;
             continue;
         }
 
@@ -681,10 +679,23 @@ fn run() -> Result<()> {
         let observed_clock_epoch = state.clock_epoch.load(Ordering::Acquire);
         if observed_clock_epoch != clock_epoch {
             clock_epoch = observed_clock_epoch;
+            let sink = state.sink_counter.load(Ordering::Relaxed);
+            let source = state.source_counter.load(Ordering::Relaxed);
+            let counters_regressed = matches!(last_sink_counter, Some(last) if sink < last)
+                || matches!(last_source_counter, Some(last) if source < last);
+            last_sink_counter = Some(sink);
+            last_source_counter = Some(source);
+            if counters_regressed {
+                queue.clear();
+                asrc.reset();
+                drift.reset();
+                post.reset();
+                elapsed_output_frames = BLOCK_FRAMES;
+                continue;
+            }
+
             let queued = state.queued_playback_frames.load(Ordering::Relaxed);
-            let trend = queued as i64 - last_queued_frames as i64;
-            last_queued_frames = queued;
-            let report = drift.update(queued, trend, elapsed_output_frames.max(1))?;
+            let report = drift.update(queued, 0, elapsed_output_frames.max(1))?;
             asrc.set_ratio(report.ratio)?;
             elapsed_output_frames = 0;
         }
@@ -808,7 +819,6 @@ mod tests {
         assert_eq!(state.sink_counter.load(Ordering::Relaxed), 123);
         assert_eq!(state.source_counter.load(Ordering::Relaxed), 456);
         assert_eq!(state.queued_playback_frames.load(Ordering::Relaxed), 80);
-        assert_eq!(state.capture_flags.load(Ordering::Relaxed), 7);
         assert_eq!(state.clock_epoch.load(Ordering::Acquire), 1);
     }
 
