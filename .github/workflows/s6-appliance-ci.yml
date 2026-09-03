@@ -45,8 +45,8 @@ jobs:
       - name: Format lint build and test S6 Rust runtime features on MSRV
         run: |
           cargo fmt --all --check
-          cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess -- -D warnings
-          cargo clippy --locked -p aurora-measurement --all-targets -- -D warnings
+          cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess --no-deps -- -D warnings
+          cargo clippy --locked -p aurora-measurement --all-targets --no-deps -- -D warnings
           cargo check --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
           cargo build --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
           cargo test --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
