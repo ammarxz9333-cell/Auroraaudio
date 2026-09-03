@@ -19,14 +19,12 @@ git apply --check "$PATCH"
 git apply "$PATCH"
 
 FILE="omniphony-renderer/audio_output/src/file_sink.rs"
-grep -q 'LOW_LATENCY_STDOUT_FRAMES: usize = 256' "$FILE"
-grep -q 'raw_stdout_buffer_capacity(channel_count)' "$FILE"
-grep -q 'destination == "-" && format == FileSinkFormat::RawF32' "$FILE"
+grep -Fq 'const BUF_CAPACITY: usize = 256 * 12 * 4;' "$FILE"
+! grep -Fq 'const BUF_CAPACITY: usize = 64 * 1024;' "$FILE"
 
-# file_sink.rs depends only on std, so compile its own unit tests directly. This
-# avoids pulling the full PipeWire/dependency graph while still compiling the
-# patched Rust and executing the 256-frame regression test.
+# The file sink is std-only. Compile and run all of its unit tests so the pinned
+# one-line latency patch cannot hide a Rust syntax/regression failure.
 rustc --edition=2021 --test "$FILE" -o "$TMP/file-sink-tests"
-"$TMP/file-sink-tests" raw_stdout_buffer_is_one_256_frame_period --exact
+"$TMP/file-sink-tests"
 
-echo "Omniphony v0.5.2 low-latency raw stdout patch test passed"
+echo "Omniphony v0.5.2 12-channel/256-frame output buffer patch test passed"
