@@ -114,7 +114,7 @@ bits 31..16  channel_count
 bits 15..0   frame_count
 ```
 
-Initial realtime period is **256 frames**. One 12-channel period is therefore 12,288 payload bytes and 12,320 bytes including the Aurora header.
+Initial realtime period is **40 frames**, matching the current Omniphony render quantum. One 12-channel period is therefore 1,920 payload bytes and 1,952 bytes including the Aurora header. At 48 kHz this period represents approximately **0.833 ms** of audio. This is a software transport quantum, not a claim of measured physical end-to-end latency.
 
 ### CLOCK_REPORT
 
@@ -143,7 +143,7 @@ Version-1 payload is exactly 48 bytes:
 ```text
 Offset  Size  Field
 0       4     sample_rate = 48000
-4       2     period_frames = 256
+4       2     period_frames = 40
 6       2     channels = 12
 8       2     pcm_format = 1 (S32LE)
 10      2     layout_id = 1 (7.1.4)
@@ -154,13 +154,13 @@ Offset  Size  Field
 The protocol-v1 canonical layout manifest is the exact UTF-8 byte sequence:
 
 ```text
-AURORA_LAYOUT_V1;id=1;rate=48000;format=S32LE;period=256;channels=FL,FR,C,LFE,BL,BR,SL,SR,TFL,TFR,TBL,TBR\n
+AURORA_LAYOUT_V1;id=1;rate=48000;format=S32LE;period=40;channels=FL,FR,C,LFE,BL,BR,SL,SR,TFL,TFR,TBL,TBR\n
 ```
 
 Its SHA-256 is fixed to:
 
 ```text
-40fb5d12fd76675aefb0344a8897145f0723981d20e205213b440e8bd3e127c0
+05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244
 ```
 
 Both S6 and STM32 must use these exact 32 raw hash bytes. A different channel order, period, sample format or spelling requires a new layout manifest/hash and must fail closed against protocol-v1 configuration expecting the value above.
@@ -198,7 +198,7 @@ The USB side is byte-stream reassembled first; one local socket message then equ
 
 PING/PONG is handled directly by the FunctionFS daemon, so basic transport health can be tested before the audio backend starts.
 
-For live immersive input, `aurora-live-ingest` connects to this socket and forwards the payload bytes of successive `ENCODED_IEC61937` frames unchanged to Omniphony stdin. It deliberately does not duplicate IEC61937 demultiplexing. Omniphony's streaming parser owns IEC61937 burst reassembly and supplies the resulting typed packet to the configured Harletty bridge. Rendered 7.1.4 raw-f32 output is converted to protocol-v1 `PCM_S32LE` periods and returned through the same socket.
+For live immersive input, `aurora-live-ingest` connects to this socket and forwards the payload bytes of successive `ENCODED_IEC61937` frames unchanged to Omniphony stdin. It deliberately does not duplicate IEC61937 demultiplexing. Omniphony's streaming parser owns IEC61937 burst reassembly and supplies the resulting typed packet to the configured Harletty bridge. Rendered 7.1.4 raw-f32 output is converted to protocol-v1 40-frame `PCM_S32LE` periods and returned through the same socket.
 
 ## Sequencing and recovery
 
@@ -218,7 +218,7 @@ For live immersive input, `aurora-live-ingest` connects to this socket and forwa
 48,000 × 12 × 4 = 2,304,000 B/s ≈ 18.4 Mbit/s
 ```
 
-Nominal bandwidth is therefore not the limiting issue on USB 2.0 High-Speed. Validation focuses on latency, scheduling, buffering, drift, resets and thermals.
+The 40-frame period increases application-frame cadence to 1,200 PCM periods/s but does not change the PCM payload data rate. Nominal bandwidth is therefore not the limiting issue on USB 2.0 High-Speed. Validation focuses on latency, scheduling, buffering, drift, resets, xruns and thermals.
 
 ## Validation gates
 
@@ -229,7 +229,7 @@ The transport is not production-ready until physical hardware passes:
 3. CONFIG mismatch always leaves amplifiers muted.
 4. Canonical IEC61937 preambles survive the physical HDMI/eARC receiver → STM32 normalization → USB path byte-for-byte.
 5. 8-hour bidirectional soak shows no framing/sequence corruption.
-6. 12-channel 48 kHz playback has no USB-induced underruns under sustained decode/render load.
+6. 12-channel 48 kHz playback has no USB-induced underruns under sustained decode/render load, including the 40-frame / 1,200-periods-per-second configuration.
 7. Clock-drift correction remains bounded without periodic buffer growth/shrink.
 8. Cable unplug/replug returns through mute → CONFIG → stream without reboot.
 9. Thermal load on S6 does not create sustained xruns.
