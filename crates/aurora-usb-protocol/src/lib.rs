@@ -4,7 +4,7 @@ pub const MAGIC: [u8; 4] = *b"AUR0";
 pub const VERSION: u16 = 1;
 pub const HEADER_LEN: usize = 32;
 pub const SAMPLE_RATE_HZ: u32 = 48_000;
-pub const DEFAULT_PERIOD_FRAMES: u16 = 256;
+pub const DEFAULT_PERIOD_FRAMES: u16 = 40;
 pub const DEFAULT_CHANNELS_7_1_4: u16 = 12;
 pub const PCM_FORMAT_S32LE: u16 = 1;
 pub const LAYOUT_ID_7_1_4: u16 = 1;
@@ -283,8 +283,8 @@ mod tests {
             flags: FLAG_PTS_VALID,
             sequence: 42,
             pts_48k: 123_456,
-            payload_len: 12 * 256 * 4,
-            aux: Header::pcm_aux(12, 256),
+            payload_len: DEFAULT_CHANNELS_7_1_4 as u32 * DEFAULT_PERIOD_FRAMES as u32 * 4,
+            aux: Header::pcm_aux(DEFAULT_CHANNELS_7_1_4, DEFAULT_PERIOD_FRAMES),
         };
         let decoded = Header::decode(&h.encode()).unwrap();
         assert_eq!(decoded, h);
@@ -299,7 +299,7 @@ mod tests {
             sequence: 0,
             pts_48k: 0,
             payload_len: 1,
-            aux: Header::pcm_aux(12, 256),
+            aux: Header::pcm_aux(DEFAULT_CHANNELS_7_1_4, DEFAULT_PERIOD_FRAMES),
         };
         assert!(matches!(
             h.validate_pcm_s32le(),
