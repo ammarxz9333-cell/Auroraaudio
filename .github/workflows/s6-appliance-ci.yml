@@ -125,8 +125,8 @@ jobs:
             protocol/aurora_usb_stream_v1.c \
             "$MCU/src/aurora_transport.c" \
             "$MCU/src/aurora_iec61937_capture.c" \
-            "$MCU/src/aurora_stm32_audio_app.c" \
-            "$MCU/test/test_aurora_stm32_audio_app.c" \
+            "$MCU/src/aurora_realtime_mcu_app.c" \
+            "$MCU/test/test_aurora_realtime_mcu_app.c" \
             -o /tmp/test-aurora-mcu-audio-app
           /tmp/test-aurora-mcu-audio-app
       - name: Test realtime-MCU HAL recovery boundary
@@ -140,7 +140,7 @@ jobs:
             protocol/aurora_usb_stream_v1.c \
             "$MCU/src/aurora_transport.c" \
             "$MCU/src/aurora_iec61937_capture.c" \
-            "$MCU/src/aurora_stm32_audio_app.c" \
+            "$MCU/src/aurora_realtime_mcu_app.c" \
             firmware/hal/aurora_realtime_mcu_hal.c \
             firmware/hal/test_aurora_realtime_mcu_hal.c \
             -o /tmp/test-aurora-realtime-mcu-hal
@@ -158,17 +158,18 @@ jobs:
           set -euo pipefail
           source config/aurora-hardware-target.env
           MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
+          PROTOCOL_DOC=docs/AURORA_USB_S6_REALTIME_MCU_PROTOCOL.md
           grep -q '#define AURORA_USB_VERSION 1u' protocol/aurora_usb_v1.h
           grep -q 'pub const VERSION: u16 = 1;' crates/aurora-usb-protocol/src/lib.rs
-          grep -q 'protocol_version = 1' docs/AURORA_USB_S6_STM32_PROTOCOL.md
+          grep -q 'protocol_version = 1' "$PROTOCOL_DOC"
           grep -q '#define AURORA_USB_PERIOD_FRAMES 40u' protocol/aurora_usb_v1.h
           grep -q 'pub const DEFAULT_PERIOD_FRAMES: u16 = 40;' crates/aurora-usb-protocol/src/lib.rs
-          grep -q 'period_frames = 40' docs/AURORA_USB_S6_STM32_PROTOCOL.md
+          grep -q 'period_frames = 40' "$PROTOCOL_DOC"
           grep -q '^AURORA_BLOCK_FRAMES=40$' platform/s6/rootfs/etc/aurora/aurora.env
-          grep -q '05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244' docs/AURORA_USB_S6_STM32_PROTOCOL.md
+          grep -q '05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244' "$PROTOCOL_DOC"
           grep -q '#define BRIDGE_SOCKET RUN_DIR "/usb-bridge.sock"' platform/s6/usb-gadget/aurora-ffs-daemon.c
           grep -q '#define BRIDGE_SOCKET "/run/aurora/usb-bridge.sock"' platform/s6/live-ingest/aurora-live-ingest.c
-          grep -q 'aurora_iec61937_capture_forward_stream_block' "$MCU/src/aurora_stm32_audio_app.c"
+          grep -q 'aurora_iec61937_capture_forward_stream_block' "$MCU/src/aurora_realtime_mcu_app.c"
       - name: Strict lint for new S6 Rust surfaces
         run: |
           cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess --no-deps -- -D warnings
