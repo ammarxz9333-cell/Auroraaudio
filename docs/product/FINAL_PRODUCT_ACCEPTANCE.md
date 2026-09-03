@@ -2,6 +2,8 @@
 
 Aurora is delivered as a final consumer-style appliance only when every mandatory gate below passes on the exact hardware release target.
 
+The concrete realtime MCU is selected only by `config/aurora-hardware-target.env`. This contract uses the stable realtime-MCU role so a future part replacement does not require renaming the product architecture.
+
 ## A. Build and reproducibility
 
 - one documented build command produces the appliance bundle;
@@ -39,13 +41,16 @@ For any optional proprietary/third-party decoder/renderer path enabled in a pers
 
 Aurora-owned open-format and renderer capabilities follow the main execution-roadmap acceptance rules.
 
-## E. STM32H753 realtime I/O
+## E. Realtime-MCU I/O
 
-- USB HS/ULPI enumeration passes repeated cold-plug/reset tests;
+For the exact target selected by the hardware-target manifest:
+
+- USB HS/PHY enumeration passes repeated cold-plug/reset tests;
 - CONFIG mismatch keeps amplifiers muted;
 - 12-channel S32LE 48 kHz transport runs for at least 8 hours without transport xruns;
-- hardware mute, SAI/TDM DMA, clock counters, reset recovery, and unplug/replug are physically validated;
-- power-on and failure states are fail-muted.
+- hardware mute, serial-audio/TDM DMA, clock counters, reset recovery, and unplug/replug are physically validated;
+- power-on and failure states are fail-muted;
+- changing MCU/package/PHY/pinmux/vendor stack invalidates this hardware acceptance until re-tested.
 
 ## F. Rear wireless system
 
@@ -156,7 +161,7 @@ A consumer-ready release must provide:
 
 - one delivery archive;
 - boot/system images appropriate to the S6 partition layout;
-- STM32 firmware image;
+- realtime-MCU firmware image identified by exact hardware-target manifest/revision;
 - rear-node firmware images when rear wireless is included;
 - version/commit/checksum manifest;
 - plugin manifests;
