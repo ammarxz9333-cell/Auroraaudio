@@ -37,6 +37,21 @@ jobs:
             protocol/test_aurora_usb_stream_v1.c \
             -o /tmp/test-aurora-usb-stream
           /tmp/test-aurora-usb-stream
+      - name: Test live E-AC-3 IEC61937 extraction
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Iplatform/s6/live-ingest \
+            platform/s6/live-ingest/iec61937_eac3.c \
+            platform/s6/live-ingest/test_iec61937_eac3.c \
+            -o /tmp/test-iec61937-eac3
+          /tmp/test-iec61937-eac3
+      - name: Compile live immersive ingest broker with warnings as errors
+        run: |
+          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror \
+            -Iprotocol -Iplatform/s6/live-ingest \
+            platform/s6/live-ingest/aurora-live-ingest.c \
+            platform/s6/live-ingest/iec61937_eac3.c \
+            -lm -o /tmp/aurora-live-ingest
       - name: Compile FunctionFS bridge with warnings as errors
         run: |
           cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
