@@ -138,6 +138,11 @@ jobs:
           grep -q '^NAVIDROME_VERSION=0.63.2$' platform/s6/rootfs/etc/aurora/aurora.env
           grep -q 'NAVIDROME_VERSION="${NAVIDROME_VERSION:-0.63.2}"' platform/s6/scripts/build-userspace-native-aarch64.sh
           grep -q '05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244' docs/AURORA_USB_S6_STM32_PROTOCOL.md
+          grep -q '#define BRIDGE_SOCKET RUN_DIR "/usb-bridge.sock"' platform/s6/usb-gadget/aurora-ffs-daemon.c
+          grep -q '#define BRIDGE_SOCKET "/run/aurora/usb-bridge.sock"' platform/s6/live-ingest/aurora-live-ingest.c
+          grep -q 'usb_enabled ? listen_fd : -1' platform/s6/usb-gadget/aurora-ffs-daemon.c
+          grep -q 'close_endpoint(backend_fd);' platform/s6/usb-gadget/aurora-ffs-daemon.c
+          grep -q 'aurora_iec61937_capture_forward_stream_block' firmware/stm32h753/src/aurora_stm32_audio_app.c
       - name: Strict lint for new S6 Rust surfaces
         run: |
           cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess --no-deps -- -D warnings
