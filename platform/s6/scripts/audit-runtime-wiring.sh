@@ -9,6 +9,7 @@ BUILD="$ROOT/platform/s6/scripts/build-userspace-native-aarch64.sh"
 ASSEMBLE="$ROOT/platform/s6/scripts/assemble-rootfs-native-aarch64.sh"
 ENVFILE="$ROOT/platform/s6/rootfs/etc/aurora/aurora.env"
 SERVICE="$INIT_DIR/aurora-live-ingest"
+FFS_SERVICE="$INIT_DIR/aurora-ffs"
 
 fail() {
     echo "audit-runtime-wiring: FAIL: $*" >&2
@@ -27,8 +28,10 @@ count_fixed() {
 # second processing path.
 set -- "$INIT_DIR"/aurora-*
 [ "$#" -eq 2 ] || fail "expected exactly two Aurora init services, found $#"
-[ -f "$INIT_DIR/aurora-ffs" ] || fail "aurora-ffs service missing"
-[ -f "$INIT_DIR/aurora-live-ingest" ] || fail "aurora-live-ingest service missing"
+[ -f "$FFS_SERVICE" ] || fail "aurora-ffs service missing"
+[ -f "$SERVICE" ] || fail "aurora-live-ingest service missing"
+sh -n "$FFS_SERVICE" || fail "aurora-ffs service has shell syntax errors"
+sh -n "$SERVICE" || fail "aurora-live-ingest service has shell syntax errors"
 [ "$(count_fixed 'need aurora-ffs' "$SERVICE")" -eq 1 ] || \
     fail "live ingest must depend on exactly one FunctionFS bridge"
 
@@ -57,6 +60,27 @@ for variable in AURORA_LIVE_INGEST_BIN AURORA_POSTPROCESS_BIN AURORA_ORENDER_BIN
         fail "service does not consume canonical runtime variable $variable"
 done
 
+# Every service/runtime path must resolve to exactly one file installed by the
+# rootfs assembler. This prevents a green component build from being wired to a
+# different binary or library in the appliance image.
+for install_line in \
+    'install -m 0755 "$STAGE/bin/aurora-live-ingest" "$ROOTFS/usr/local/sbin/aurora-live-ingest"' \
+    'install -m 0755 "$STAGE/bin/aurora-s6-postprocess" "$ROOTFS/usr/local/bin/aurora-s6-postprocess"' \
+    'install -m 0755 "$STAGE/bin/aurora-ffs-daemon" "$ROOTFS/usr/local/sbin/aurora-ffs-daemon"' \
+    'install -m 0755 "$STAGE/bin/orender" "$ROOTFS/opt/aurora/external/orender"' \
+    'install -m 0755 "$STAGE/lib/libharletty_bridge.so" "$ROOTFS/opt/aurora/external/libharletty_bridge.so"' \
+    'install -m 0644 "$STAGE/share/omniphony/layouts/7.1.4.yaml" "$ROOTFS/etc/aurora/layouts/7.1.4.yaml"'
+do
+    [ "$(count_fixed "$install_line" "$ASSEMBLE")" -eq 1 ] || \
+        fail "rootfs install missing or duplicated: $install_line"
+done
+[ "$(count_fixed 'command="/usr/local/sbin/aurora-ffs-daemon"' "$FFS_SERVICE")" -eq 1 ] || \
+    fail "FunctionFS service is not wired to the installed daemon"
+[ "$(count_fixed 'ln -sf /etc/init.d/aurora-ffs "$ROOTFS/etc/runlevels/default/aurora-ffs"' "$ASSEMBLE")" -eq 1 ] || \
+    fail "FunctionFS service is not enabled exactly once"
+[ "$(count_fixed 'ln -sf /etc/init.d/aurora-live-ingest "$ROOTFS/etc/runlevels/default/aurora-live-ingest"' "$ASSEMBLE")" -eq 1 ] || \
+    fail "live audio service is not enabled exactly once"
+
 # The S6 build intentionally excludes the workspace default CamillaDSP and
 # simulation features. Only the dedicated realtime binary belongs on this path.
 grep -Fq -- 'cargo build --locked --release -j "$JOBS" -p aurora-cli --no-default-features --features realtime' "$BUILD" || \
@@ -73,8 +97,6 @@ fi
     fail "expected exactly one postprocessor exec path"
 [ "$(count_fixed 'install -m 0755 target/release/aurora-s6-postprocess "$OUT/bin/aurora-s6-postprocess"' "$BUILD")" -eq 1 ] || \
     fail "postprocessor staging path mismatch"
-[ "$(count_fixed 'install -m 0755 "$STAGE/bin/aurora-s6-postprocess" "$ROOTFS/usr/local/bin/aurora-s6-postprocess"' "$ASSEMBLE")" -eq 1 ] || \
-    fail "postprocessor rootfs install path mismatch"
 
 # Clock correction must reuse the existing Aurora realtime primitives. A local
 # second ASRC or PI controller in the S6 binary would be duplicated ownership.
@@ -105,4 +127,4 @@ grep -Fq -- 'AURORA_SAMPLE_RATE=48000' "$ENVFILE" || fail "runtime sample rate i
 grep -Fq -- 'AURORA_BLOCK_FRAMES=40' "$ENVFILE" || fail "runtime block size is not 40 frames"
 grep -Fq -- 'AURORA_LAYOUT=7.1.4' "$ENVFILE" || fail "runtime layout is not 7.1.4"
 
-echo "audit-runtime-wiring: PASS single service chain, single DSP path, canonical runtime paths, shared clock primitives, consistent versions"
+echo "audit-runtime-wiring: PASS single service chain, single DSP path, canonical runtime paths, exact rootfs wiring, shared clock primitives, consistent versions"
