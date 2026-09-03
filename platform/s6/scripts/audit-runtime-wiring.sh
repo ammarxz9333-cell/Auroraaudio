@@ -9,6 +9,7 @@ BUILD="$ROOT/platform/s6/scripts/build-userspace-native-aarch64.sh"
 ASSEMBLE="$ROOT/platform/s6/scripts/assemble-rootfs-native-aarch64.sh"
 ENVFILE="$ROOT/platform/s6/rootfs/etc/aurora/aurora.env"
 HW_TARGET="$ROOT/config/aurora-hardware-target.env"
+PINMUX_PROOF="$ROOT/docs/AURORA_REALTIME_MCU_PINMUX_PROOF.md"
 SERVICE="$INIT_DIR/aurora-live-ingest"
 FFS_SERVICE="$INIT_DIR/aurora-ffs"
 
@@ -46,9 +47,19 @@ env_value() {
     fail "realtime MCU test directory does not exist"
 [ "$AURORA_REALTIME_MCU_USB_HS_HOST" = 1 ] || fail "target lacks mandatory USB HS host"
 [ "$AURORA_REALTIME_MCU_USB_HS_PHY" = ULPI ] || fail "target HS PHY contract is not ULPI"
+[ "$AURORA_REALTIME_MCU_ULPI_DIRECT_PINS" = 1 ] || fail "target does not use direct ULPI pins"
 [ "$AURORA_REALTIME_MCU_SAI_RX" = 1 ] || fail "target lacks mandatory serial-audio RX"
 [ "$AURORA_REALTIME_MCU_SAI_TDM_TX" = 1 ] || fail "target lacks mandatory TDM TX"
 [ "$AURORA_REALTIME_MCU_DMA" = 1 ] || fail "target lacks mandatory DMA"
+[ "$AURORA_REALTIME_MCU_PINMUX_STATUS" = "datasheet_verified" ] || \
+    fail "realtime MCU pinmux is not datasheet-verified"
+[ -n "$AURORA_REALTIME_MCU_PINMUX_PROOF" ] || fail "pinmux proof identifier missing"
+[ -f "$PINMUX_PROOF" ] || fail "pinmux proof document missing"
+
+# No physical MCU pin may own two simultaneous roles. Read the manifest itself,
+# not `env`: sourced shell assignments are not necessarily exported.
+duplicate_pins="$(sed -n 's/^AURORA_PIN_[^=]*=//p' "$HW_TARGET" | sort | uniq -d)"
+[ -z "$duplicate_pins" ] || fail "duplicate realtime-MCU pin assignments: $duplicate_pins"
 
 # The active concrete part string must not leak into runtime-critical consumers;
 # otherwise a future part swap would again require editing multiple files.
@@ -62,7 +73,8 @@ for file in \
     "$ROOT/.github/workflows/s6-appliance-ci.yml" \
     "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" \
     "$ROOT/docs/AURORA_EARC_STM32_PHYSICAL_BRINGUP.md" \
-    "$ROOT/docs/AURORA_SYSTEM_ARCHITECTURE_HARDENING_CONTRACT.md"
+    "$ROOT/docs/AURORA_SYSTEM_ARCHITECTURE_HARDENING_CONTRACT.md" \
+    "$PINMUX_PROOF"
 do
     if grep -Fq -- "$AURORA_REALTIME_MCU_PART" "$file"; then
         fail "concrete realtime MCU part leaked outside hardware target manifest: $file"
@@ -137,7 +149,7 @@ for install_line in \
     'install -m 0755 "$STAGE/bin/aurora-ffs-daemon" "$ROOTFS/usr/local/sbin/aurora-ffs-daemon"' \
     'install -m 0755 "$STAGE/bin/orender" "$ROOTFS/opt/aurora/external/orender"' \
     'install -m 0755 "$STAGE/lib/libharletty_bridge.so" "$ROOTFS/opt/aurora/external/libharletty_bridge.so"' \
-    'install -m 0644 "$STAGE/share/omniphony/layouts/7.1.4.yaml" "$ROOTFS/etc/aurora/layouts/7.1.4.yaml"'
+    'install -m 0644 "$STAGE/share/omniphony/layouts/7.1.4.yaml" "$ROOTFS/etc/aurora/layouts/7.1.4.yaml'
 do
     [ "$(count_fixed "$install_line" "$ASSEMBLE")" -eq 1 ] || \
         fail "rootfs install missing or duplicated: $install_line"
@@ -199,4 +211,4 @@ grep -Fq -- 'AURORA_LAYOUT=7.1.4' "$ENVFILE" || fail "runtime layout is not 7.1.
 [ "$AURORA_REALTIME_MCU_CHANNELS" = 12 ] || fail "hardware target channel-count drift"
 [ "$AURORA_REALTIME_MCU_PERIOD_FRAMES" = 40 ] || fail "hardware target period drift"
 
-echo "audit-runtime-wiring: PASS single service chain, single DSP path, single symbolic realtime-MCU target, canonical appliance config, exact rootfs wiring, shared clock primitives, consistent versions"
+echo "audit-runtime-wiring: PASS single service chain, single DSP path, single symbolic realtime-MCU target, unique datasheet-verified pin map, canonical appliance config, exact rootfs wiring, shared clock primitives, consistent versions"
