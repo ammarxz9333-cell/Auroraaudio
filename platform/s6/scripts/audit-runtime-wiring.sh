@@ -22,6 +22,11 @@ count_fixed() {
     grep -F -c -- "$pattern" "$file" || true
 }
 
+env_value() {
+    key="$1"
+    sed -n "s/^${key}=//p" "$ENVFILE"
+}
+
 # Exactly two Aurora services belong in the S6 appliance: the FunctionFS
 # transport bridge and the single live audio pipeline. Adding another Aurora
 # audio daemon must be an explicit architecture change, never an accidental
@@ -42,6 +47,10 @@ sh -n "$SERVICE" || fail "aurora-live-ingest service has shell syntax errors"
     fail "live service must source exactly one runtime manifest"
 [ "$(count_fixed 'command="$AURORA_LIVE_INGEST_BIN"' "$SERVICE")" -eq 1 ] || \
     fail "live service command must come from AURORA_LIVE_INGEST_BIN"
+[ "$(count_fixed 'AURORA_CONFIG_MISSING=1' "$SERVICE")" -eq 1 ] || \
+    fail "live service must record a missing runtime manifest"
+[ "$(count_fixed '[ "$AURORA_CONFIG_MISSING" -eq 0 ] || return 1' "$SERVICE")" -eq 1 ] || \
+    fail "live service must fail closed when the runtime manifest is missing"
 for assignment in \
     'AURORA_LIVE_INGEST_BIN=/usr/local/sbin/aurora-live-ingest' \
     'AURORA_POSTPROCESS_BIN=/usr/local/bin/aurora-s6-postprocess' \
@@ -59,6 +68,23 @@ for variable in AURORA_LIVE_INGEST_BIN AURORA_POSTPROCESS_BIN AURORA_ORENDER_BIN
     [ "$(count_fixed "\$$variable" "$SERVICE")" -ge 1 ] || \
         fail "service does not consume canonical runtime variable $variable"
 done
+
+# The broker retains compile-time fallbacks for standalone tests/manual runs,
+# but the appliance service cannot reach them when aurora.env is missing. Lock
+# every fallback to the canonical manifest so they can never become a second
+# drifting runtime configuration.
+broker_orender="$(sed -n 's/^#define DEFAULT_ORENDER "\(.*\)"$/\1/p' "$LIVE")"
+broker_harletty="$(sed -n 's/^#define DEFAULT_HARLETTY "\(.*\)"$/\1/p' "$LIVE")"
+broker_layout="$(sed -n 's/^#define DEFAULT_LAYOUT "\(.*\)"$/\1/p' "$LIVE")"
+broker_post="$(sed -n 's/^#define DEFAULT_POSTPROCESS "\(.*\)"$/\1/p' "$LIVE")"
+[ "$broker_orender" = "$(env_value AURORA_ORENDER_BIN)" ] || \
+    fail "broker Omniphony fallback drifted from canonical manifest"
+[ "$broker_harletty" = "$(env_value AURORA_HARLETTY_BRIDGE)" ] || \
+    fail "broker Harletty fallback drifted from canonical manifest"
+[ "$broker_layout" = "$(env_value AURORA_7_1_4_LAYOUT)" ] || \
+    fail "broker layout fallback drifted from canonical manifest"
+[ "$broker_post" = "$(env_value AURORA_POSTPROCESS_BIN)" ] || \
+    fail "broker postprocessor fallback drifted from canonical manifest"
 
 # Every service/runtime path must resolve to exactly one file installed by the
 # rootfs assembler. This prevents a green component build from being wired to a
@@ -127,4 +153,4 @@ grep -Fq -- 'AURORA_SAMPLE_RATE=48000' "$ENVFILE" || fail "runtime sample rate i
 grep -Fq -- 'AURORA_BLOCK_FRAMES=40' "$ENVFILE" || fail "runtime block size is not 40 frames"
 grep -Fq -- 'AURORA_LAYOUT=7.1.4' "$ENVFILE" || fail "runtime layout is not 7.1.4"
 
-echo "audit-runtime-wiring: PASS single service chain, single DSP path, canonical runtime paths, exact rootfs wiring, shared clock primitives, consistent versions"
+echo "audit-runtime-wiring: PASS single service chain, single DSP path, canonical appliance config, exact rootfs wiring, shared clock primitives, consistent versions"
