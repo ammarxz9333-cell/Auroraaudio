@@ -40,82 +40,10 @@ jobs:
           components: rustfmt, clippy
       - name: Install Linux audio build dependencies
         run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
-      - name: Validate realtime MCU target manifest
-        shell: bash
-        run: |
-          set -euo pipefail
-          source config/aurora-hardware-target.env
-          test -n "$AURORA_REALTIME_MCU_ROLE"
-          test -n "$AURORA_REALTIME_MCU_VENDOR"
-          test -n "$AURORA_REALTIME_MCU_FAMILY"
-          test -n "$AURORA_REALTIME_MCU_PART"
-          test -n "$AURORA_REALTIME_MCU_PACKAGE"
-          test -d "$AURORA_REALTIME_MCU_SOURCE_DIR/include"
-          test -d "$AURORA_REALTIME_MCU_SOURCE_DIR/src"
-          test -d "$AURORA_REALTIME_MCU_SOURCE_DIR/test"
-          test "$AURORA_REALTIME_MCU_USB_HS_HOST" = 1
-          test "$AURORA_REALTIME_MCU_USB_HS_PHY" = ULPI
-          test "$AURORA_REALTIME_MCU_ULPI_DIRECT_PINS" = 1
-          test "$AURORA_REALTIME_MCU_SAI_RX" = 1
-          test "$AURORA_REALTIME_MCU_SAI_TDM_TX" = 1
-          test "$AURORA_REALTIME_MCU_DMA" = 1
-          test "$AURORA_REALTIME_MCU_SAMPLE_RATE" = 48000
-          test "$AURORA_REALTIME_MCU_CHANNELS" = 12
-          test "$AURORA_REALTIME_MCU_PERIOD_FRAMES" = 40
-          test "$AURORA_REALTIME_MCU_PINMUX_STATUS" = datasheet_verified
-          test -n "$AURORA_REALTIME_MCU_PINMUX_PROOF"
-          test "$AURORA_REALTIME_MCU_HAL_STATUS" = not_implemented
-          test "$AURORA_REALTIME_MCU_PHYSICAL_STATUS" = not_measured
-
-          # The S6 must remain powered while it is the active USB data device.
-          # Require a BC1.2 charging downstream port, not a 500 mA SDP-only PHY.
-          test "$AURORA_USB_PHY_INTERFACE" = ULPI
-          test "$AURORA_USB_PHY_BC_SPEC" = BC1.2
-          test "$AURORA_USB_PHY_PORT_MODE" = CDP
-          test "$AURORA_USB_PHY_CDP_CURRENT_MA" -ge 1500
-          test "$AURORA_USB_PHY_ULPI_CLOCK_HZ" = 60000000
-          test "$AURORA_USB_PHY_REFERENCE_HZ" = 24000000
-          test "$AURORA_USB_PHY_REFSEL" = 111
-          test "$AURORA_USB_PHY_RESET_ACTIVE_LOW" = 1
-          test "$AURORA_USB_PHY_VBUS_ENABLE_SIGNAL" = CPEN
-          test "$AURORA_USB_PHY_STATUS" = datasheet_verified
-
-          # VBUS is a protected power rail, not a raw 5 V GPIO-controlled feed.
-          test "$AURORA_USB_VBUS_TARGET_MA" -ge 1500
-          test "$AURORA_USB_VBUS_SWITCH_MAX_CONTINUOUS_MA" -ge "$AURORA_USB_VBUS_TARGET_MA"
-          test "$AURORA_USB_VBUS_SWITCH_ADJUSTABLE_ILIM" = 1
-          test "$AURORA_USB_VBUS_SWITCH_REVERSE_BLOCKING" = 1
-          test "$AURORA_USB_VBUS_SWITCH_FAULT_OUTPUT" = 1
-          test "$AURORA_USB_VBUS_STATUS" = datasheet_verified
-
-          # The canonical pin map must not assign one MCU pin to two live roles.
-          duplicate_pins="$(sed -n 's/^AURORA_PIN_[^=]*=//p' config/aurora-hardware-target.env | sort | uniq -d)"
-          test -z "$duplicate_pins" || {
-            echo "duplicate realtime-MCU pin assignments:" >&2
-            echo "$duplicate_pins" >&2
-            exit 1
-          }
-
-          # Current target proof uses the documented alternate functions for
-          # direct ULPI, SAI capture and TDM output.
-          for v in \
-            AURORA_AF_ULPI_STP AURORA_AF_ULPI_DIR AURORA_AF_ULPI_NXT \
-            AURORA_AF_ULPI_CLK AURORA_AF_ULPI_D0 AURORA_AF_ULPI_D1 \
-            AURORA_AF_ULPI_D2 AURORA_AF_ULPI_D3 AURORA_AF_ULPI_D4 \
-            AURORA_AF_ULPI_D5 AURORA_AF_ULPI_D6 AURORA_AF_ULPI_D7
-          do
-            test "${!v}" = 10
-          done
-          for v in AURORA_AF_EARC_FS AURORA_AF_EARC_SCK AURORA_AF_EARC_SD; do
-            test "${!v}" = 6
-          done
-          for v in AURORA_AF_TDM_FS AURORA_AF_TDM_SCK AURORA_AF_TDM_SD AURORA_AF_TDM_MCLK; do
-            test "${!v}" = 10
-          done
+      - name: Audit hardware target and runtime wiring
+        run: sh platform/s6/scripts/audit-runtime-wiring.sh
       - name: Validate pinned Omniphony low-latency stdout patch
         run: sh platform/s6/scripts/test-omniphony-low-latency-patch.sh
-      - name: Audit S6 runtime wiring and duplication
-        run: sh platform/s6/scripts/audit-runtime-wiring.sh
       - name: Test Aurora USB Rust wire protocol
         run: cargo test --locked --manifest-path crates/aurora-usb-protocol/Cargo.toml
       - name: Format build and test S6 Rust runtime features on MSRV
@@ -199,14 +127,14 @@ jobs:
             "$MCU/test/test_aurora_stm32_audio_app.c" \
             -o /tmp/test-aurora-mcu-audio-app
           /tmp/test-aurora-mcu-audio-app
-      - name: Check S6 shell script syntax
+      - name: Check shell script syntax
         shell: bash
         run: |
           set -euo pipefail
           for f in platform/s6/scripts/*.sh platform/s6/initramfs/init firmware/*.sh; do
             bash -n "$f"
           done
-      - name: Verify protocol appliance and hardware-target contracts agree
+      - name: Verify protocol and appliance contracts agree
         shell: bash
         run: |
           set -euo pipefail
@@ -218,21 +146,10 @@ jobs:
           grep -q '#define AURORA_USB_PERIOD_FRAMES 40u' protocol/aurora_usb_v1.h
           grep -q 'pub const DEFAULT_PERIOD_FRAMES: u16 = 40;' crates/aurora-usb-protocol/src/lib.rs
           grep -q 'period_frames = 40' docs/AURORA_USB_S6_STM32_PROTOCOL.md
-          test "$AURORA_REALTIME_MCU_PERIOD_FRAMES" = 40
-          test "$AURORA_REALTIME_MCU_SAMPLE_RATE" = 48000
-          test "$AURORA_REALTIME_MCU_CHANNELS" = 12
           grep -q '^AURORA_BLOCK_FRAMES=40$' platform/s6/rootfs/etc/aurora/aurora.env
-          grep -q '^HARLETTY_VERSION=v0.7.3$' platform/s6/rootfs/etc/aurora/aurora.env
-          grep -q 'HARLETTY_VERSION="${HARLETTY_VERSION:-v0.7.3}"' platform/s6/scripts/build-userspace-native-aarch64.sh
-          grep -q '^OMNIPHONY_VERSION=v0.5.2$' platform/s6/rootfs/etc/aurora/aurora.env
-          grep -q 'OMNIPHONY_VERSION="${OMNIPHONY_VERSION:-v0.5.2}"' platform/s6/scripts/build-userspace-native-aarch64.sh
-          grep -q '^NAVIDROME_VERSION=0.63.2$' platform/s6/rootfs/etc/aurora/aurora.env
-          grep -q 'NAVIDROME_VERSION="${NAVIDROME_VERSION:-0.63.2}"' platform/s6/scripts/build-userspace-native-aarch64.sh
           grep -q '05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244' docs/AURORA_USB_S6_STM32_PROTOCOL.md
           grep -q '#define BRIDGE_SOCKET RUN_DIR "/usb-bridge.sock"' platform/s6/usb-gadget/aurora-ffs-daemon.c
           grep -q '#define BRIDGE_SOCKET "/run/aurora/usb-bridge.sock"' platform/s6/live-ingest/aurora-live-ingest.c
-          grep -q 'usb_enabled ? listen_fd : -1' platform/s6/usb-gadget/aurora-ffs-daemon.c
-          grep -q 'close_endpoint(backend_fd);' platform/s6/usb-gadget/aurora-ffs-daemon.c
           grep -q 'aurora_iec61937_capture_forward_stream_block' "$MCU/src/aurora_stm32_audio_app.c"
       - name: Strict lint for new S6 Rust surfaces
         run: |
