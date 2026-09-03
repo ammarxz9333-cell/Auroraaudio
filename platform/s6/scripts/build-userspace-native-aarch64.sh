@@ -40,22 +40,15 @@ mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/share/omniphony/layouts" "$OUT/navidrome" "
     "$ROOT/protocol/aurora_usb_stream_v1.c" \
     -o "$OUT/bin/aurora-ffs-daemon"
 
-# The live ingest service accepts complete ENCODED_IEC61937 frames from the
-# FunctionFS bridge, extracts E-AC-3/DD+ type 0x15, feeds the isolated
-# Harletty/Omniphony process, and packetizes rendered 7.1.4 PCM back to STM32.
-"$CC" -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror \
-    -I"$ROOT/protocol" -I"$ROOT/platform/s6/live-ingest" \
-    "$ROOT/platform/s6/live-ingest/aurora-live-ingest.c" \
-    "$ROOT/platform/s6/live-ingest/iec61937_eac3.c" \
-    -lm -o "$OUT/bin/aurora-live-ingest"
-
-# Run the deterministic streaming parser test on the native target builder too.
+# Live immersive streaming broker. It deliberately does NOT decode or unwrap
+# IEC61937 itself. Complete encoded frames received from STM32 are forwarded as
+# a byte stream to Omniphony stdin; Omniphony v0.5.2 owns the streaming
+# IEC61937 parser and passes typed packets to the Harletty bridge. Rendered
+# 7.1.4 raw-f32 is converted to Aurora protocol PCM_S32LE periods for STM32.
 "$CC" -std=c11 -O2 -Wall -Wextra -Werror \
-    -I"$ROOT/platform/s6/live-ingest" \
-    "$ROOT/platform/s6/live-ingest/iec61937_eac3.c" \
-    "$ROOT/platform/s6/live-ingest/test_iec61937_eac3.c" \
-    -o "$WORK/test-iec61937-eac3"
-"$WORK/test-iec61937-eac3"
+    -I"$ROOT/protocol" \
+    "$ROOT/platform/s6/live-ingest/aurora-live-ingest.c" \
+    -lm -o "$OUT/bin/aurora-live-ingest"
 
 # Aurora-owned Rust baseline. Exclude simulation and the external CamillaDSP process
 # from the appliance binary; realtime CPAL remains available for bring-up/testing.
@@ -106,7 +99,7 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
     echo "architecture=aarch64"
     echo "aurora_commit=$(git -C "$ROOT" rev-parse HEAD)"
     echo "aurora_usb_protocol=1"
-    echo "live_streaming_ingest=eac3-iec61937-type-0x15"
+    echo "live_streaming_ingest=iec61937-direct-to-omniphony"
     echo "harletty=$HARLETTY_VERSION"
     echo "omniphony=$OMNIPHONY_VERSION"
     echo "navidrome=v$NAVIDROME_VERSION"
