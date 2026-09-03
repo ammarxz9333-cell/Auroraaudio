@@ -1,6 +1,6 @@
 diff --git a/omniphony-renderer/audio_output/src/file_sink.rs b/omniphony-renderer/audio_output/src/file_sink.rs
 --- a/omniphony-renderer/audio_output/src/file_sink.rs
 +++ b/omniphony-renderer/audio_output/src/file_sink.rs
-@@ -64 +64 @@ impl FileAudioWriter {
+@@ -70 +70 @@ impl FileAudioWriter {
 -    const BUF_CAPACITY: usize = 64 * 1024;
 +    const BUF_CAPACITY: usize = 256 * 12 * 4;
