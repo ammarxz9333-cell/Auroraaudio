@@ -2,13 +2,17 @@
 
 # The live audio service has one runtime configuration source. Exporting the
 # manifest here also passes the same values to the broker and its children.
-if [ ! -r /etc/aurora/aurora.env ]; then
-    echo "aurora-live-ingest: missing /etc/aurora/aurora.env" >&2
-    return 1
+AURORA_CONFIG_MISSING=0
+if [ -r /etc/aurora/aurora.env ]; then
+    set -a
+    . /etc/aurora/aurora.env
+    set +a
+else
+    AURORA_CONFIG_MISSING=1
+    # Keep OpenRC's command field valid; start_pre rejects this state before
+    # anything can run.
+    AURORA_LIVE_INGEST_BIN=/bin/false
 fi
-set -a
-. /etc/aurora/aurora.env
-set +a
 
 name="Aurora live immersive ingest"
 description="Live DD+ IEC61937 to Harletty/Omniphony/Aurora DSP 7.1.4 pipeline"
@@ -24,6 +28,7 @@ depend() {
 }
 
 start_pre() {
+    [ "$AURORA_CONFIG_MISSING" -eq 0 ] || return 1
     checkpath --directory --mode 0755 /run/aurora
     checkpath --directory --mode 0755 /var/log/aurora
     [ -x "$AURORA_LIVE_INGEST_BIN" ] || return 1
