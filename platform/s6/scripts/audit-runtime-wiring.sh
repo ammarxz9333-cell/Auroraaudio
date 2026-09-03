@@ -9,6 +9,7 @@ BUILD="$ROOT/platform/s6/scripts/build-userspace-native-aarch64.sh"
 ASSEMBLE="$ROOT/platform/s6/scripts/assemble-rootfs-native-aarch64.sh"
 ENVFILE="$ROOT/platform/s6/rootfs/etc/aurora/aurora.env"
 HW_TARGET="$ROOT/config/aurora-hardware-target.env"
+HW_HEADER_GENERATOR="$ROOT/firmware/generate-hardware-target-header.sh"
 PINMUX_PROOF="$ROOT/docs/AURORA_REALTIME_MCU_PINMUX_PROOF.md"
 SERVICE="$INIT_DIR/aurora-live-ingest"
 FFS_SERVICE="$INIT_DIR/aurora-ffs"
@@ -60,6 +61,38 @@ env_value() {
 # not `env`: sourced shell assignments are not necessarily exported.
 duplicate_pins="$(sed -n 's/^AURORA_PIN_[^=]*=//p' "$HW_TARGET" | sort | uniq -d)"
 [ -z "$duplicate_pins" ] || fail "duplicate realtime-MCU pin assignments: $duplicate_pins"
+
+# HAL constants are generated, never hand-copied. This proves the manifest can
+# be converted deterministically into a C-facing target description.
+[ -f "$HW_HEADER_GENERATOR" ] || fail "hardware target header generator missing"
+sh -n "$HW_HEADER_GENERATOR" || fail "hardware target header generator has shell syntax errors"
+generated_header="$(mktemp)"
+trap 'rm -f "$generated_header"' EXIT HUP INT TERM
+sh "$HW_HEADER_GENERATOR" "$generated_header" || fail "hardware target header generation failed"
+grep -Fq "#define AURORA_HW_MCU_PART \"$AURORA_REALTIME_MCU_PART\"" "$generated_header" || \
+    fail "generated target header part does not match manifest"
+grep -Fq "#define AURORA_HW_MCU_PACKAGE \"$AURORA_REALTIME_MCU_PACKAGE\"" "$generated_header" || \
+    fail "generated target header package does not match manifest"
+grep -Fq '#define AURORA_HW_SAMPLE_RATE_HZ 48000u' "$generated_header" || \
+    fail "generated target header sample rate drift"
+grep -Fq '#define AURORA_HW_CHANNELS 12u' "$generated_header" || \
+    fail "generated target header channel-count drift"
+grep -Fq '#define AURORA_HW_PERIOD_FRAMES 40u' "$generated_header" || \
+    fail "generated target header period drift"
+for macro in \
+    AURORA_HW_ULPI_DIR_AF \
+    AURORA_HW_ULPI_NXT_AF \
+    AURORA_HW_EARC_FS_AF \
+    AURORA_HW_EARC_SCK_AF \
+    AURORA_HW_EARC_SD_AF \
+    AURORA_HW_TDM_FS_AF \
+    AURORA_HW_TDM_SCK_AF \
+    AURORA_HW_TDM_SD_AF \
+    AURORA_HW_AMP_MUTE_PIN_NUMBER
+do
+    grep -Fq "#define $macro " "$generated_header" || \
+        fail "generated target header missing $macro"
+done
 
 # The active concrete part string must not leak into runtime-critical consumers;
 # otherwise a future part swap would again require editing multiple files.
@@ -149,7 +182,7 @@ for install_line in \
     'install -m 0755 "$STAGE/bin/aurora-ffs-daemon" "$ROOTFS/usr/local/sbin/aurora-ffs-daemon"' \
     'install -m 0755 "$STAGE/bin/orender" "$ROOTFS/opt/aurora/external/orender"' \
     'install -m 0755 "$STAGE/lib/libharletty_bridge.so" "$ROOTFS/opt/aurora/external/libharletty_bridge.so"' \
-    'install -m 0644 "$STAGE/share/omniphony/layouts/7.1.4.yaml" "$ROOTFS/etc/aurora/layouts/7.1.4.yaml'
+    'install -m 0644 "$STAGE/share/omniphony/layouts/7.1.4.yaml" "$ROOTFS/etc/aurora/layouts/7.1.4.yaml"'
 do
     [ "$(count_fixed "$install_line" "$ASSEMBLE")" -eq 1 ] || \
         fail "rootfs install missing or duplicated: $install_line"
@@ -211,4 +244,4 @@ grep -Fq -- 'AURORA_LAYOUT=7.1.4' "$ENVFILE" || fail "runtime layout is not 7.1.
 [ "$AURORA_REALTIME_MCU_CHANNELS" = 12 ] || fail "hardware target channel-count drift"
 [ "$AURORA_REALTIME_MCU_PERIOD_FRAMES" = 40 ] || fail "hardware target period drift"
 
-echo "audit-runtime-wiring: PASS single service chain, single DSP path, single symbolic realtime-MCU target, unique datasheet-verified pin map, canonical appliance config, exact rootfs wiring, shared clock primitives, consistent versions"
+echo "audit-runtime-wiring: PASS single service chain, single DSP path, single symbolic realtime-MCU target, generated HAL constants, unique datasheet-verified pin map, canonical appliance config, exact rootfs wiring, shared clock primitives, consistent versions"
