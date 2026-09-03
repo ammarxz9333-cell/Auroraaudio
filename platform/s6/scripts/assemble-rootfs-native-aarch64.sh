@@ -20,6 +20,7 @@ fail() { echo "assemble-rootfs-native-aarch64: $*" >&2; exit 1; }
 [ -f /etc/alpine-release ] || fail "Alpine Linux builder required"
 [ -x "$STAGE/bin/aurora-cli" ] || fail "userspace stage missing; run build-userspace-native-aarch64.sh first"
 [ -x "$STAGE/bin/aurora-ffs-daemon" ] || fail "FunctionFS bridge stage missing"
+[ -x "$STAGE/bin/aurora-live-ingest" ] || fail "live streaming ingest stage missing"
 [ -x "$STAGE/bin/orender" ] || fail "Omniphony stage missing"
 [ -f "$STAGE/lib/libharletty_bridge.so" ] || fail "Harletty bridge stage missing"
 [ -x "$STAGE/navidrome/navidrome" ] || fail "Navidrome stage missing"
@@ -86,12 +87,15 @@ install -d "$ROOTFS/usr/local/bin" "$ROOTFS/usr/local/sbin" \
            "$ROOTFS/etc/runlevels/default"
 install -m 0755 "$STAGE/bin/aurora-cli" "$ROOTFS/usr/local/bin/aurora-cli"
 install -m 0755 "$STAGE/bin/aurora-ffs-daemon" "$ROOTFS/usr/local/sbin/aurora-ffs-daemon"
+install -m 0755 "$STAGE/bin/aurora-live-ingest" "$ROOTFS/usr/local/sbin/aurora-live-ingest"
 install -m 0755 "$ROOT/platform/s6/rootfs/etc/init.d/aurora-ffs" "$ROOTFS/etc/init.d/aurora-ffs"
+install -m 0755 "$ROOT/platform/s6/rootfs/etc/init.d/aurora-live-ingest" "$ROOTFS/etc/init.d/aurora-live-ingest"
 install -m 0755 "$STAGE/bin/orender" "$ROOTFS/opt/aurora/external/orender"
 install -m 0755 "$STAGE/lib/libharletty_bridge.so" "$ROOTFS/opt/aurora/external/libharletty_bridge.so"
 install -m 0644 "$STAGE/share/omniphony/layouts/7.1.4.yaml" "$ROOTFS/etc/aurora/layouts/7.1.4.yaml"
 cp -a "$STAGE/navidrome/." "$ROOTFS/opt/aurora/navidrome/"
 ln -sf /etc/init.d/aurora-ffs "$ROOTFS/etc/runlevels/default/aurora-ffs"
+ln -sf /etc/init.d/aurora-live-ingest "$ROOTFS/etc/runlevels/default/aurora-live-ingest"
 
 # Device-owned Broadcom firmware: keep it outside source control and place it at
 # the paths compiled into the zeroflte bcmdhd kernel configuration.
