@@ -42,11 +42,9 @@ jobs:
         run: sh platform/s6/scripts/test-omniphony-low-latency-patch.sh
       - name: Test Aurora USB Rust wire protocol
         run: cargo test --locked --manifest-path crates/aurora-usb-protocol/Cargo.toml
-      - name: Format lint build and test S6 Rust runtime features on MSRV
+      - name: Format build and test S6 Rust runtime features on MSRV
         run: |
           cargo fmt --all --check
-          cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess --no-deps -- -D warnings
-          cargo clippy --locked -p aurora-measurement --all-targets --no-deps -- -D warnings
           cargo check --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
           cargo build --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
           cargo test --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
@@ -120,4 +118,14 @@ jobs:
           grep -q 'pub const DEFAULT_PERIOD_FRAMES: u16 = 40;' crates/aurora-usb-protocol/src/lib.rs
           grep -q 'period_frames = 40' docs/AURORA_USB_S6_STM32_PROTOCOL.md
           grep -q '^AURORA_BLOCK_FRAMES=40$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q '^HARLETTY_VERSION=v0.7.3$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q 'HARLETTY_VERSION="${HARLETTY_VERSION:-v0.7.3}"' platform/s6/scripts/build-userspace-native-aarch64.sh
+          grep -q '^OMNIPHONY_VERSION=v0.5.2$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q 'OMNIPHONY_VERSION="${OMNIPHONY_VERSION:-v0.5.2}"' platform/s6/scripts/build-userspace-native-aarch64.sh
+          grep -q '^NAVIDROME_VERSION=0.63.2$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q 'NAVIDROME_VERSION="${NAVIDROME_VERSION:-0.63.2}"' platform/s6/scripts/build-userspace-native-aarch64.sh
           grep -q '05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244' docs/AURORA_USB_S6_STM32_PROTOCOL.md
+      - name: Strict lint for new S6 Rust surfaces
+        run: |
+          cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess --no-deps -- -D warnings
+          cargo clippy --locked -p aurora-measurement --all-targets --no-deps -- -D warnings
