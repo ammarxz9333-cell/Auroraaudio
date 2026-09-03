@@ -34,15 +34,21 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.78.0
+        with:
+          components: rustfmt, clippy
       - name: Install Linux audio build dependencies
         run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
       - name: Validate pinned Omniphony low-latency stdout patch
         run: sh platform/s6/scripts/test-omniphony-low-latency-patch.sh
       - name: Test Aurora USB Rust wire protocol
         run: cargo test --locked --manifest-path crates/aurora-usb-protocol/Cargo.toml
-      - name: Build and test S6 Rust runtime features on MSRV
+      - name: Format lint build and test S6 Rust runtime features on MSRV
         run: |
+          cargo fmt --all --check
+          cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess -- -D warnings
+          cargo clippy --locked -p aurora-measurement --all-targets -- -D warnings
           cargo check --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
+          cargo build --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
           cargo test --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
           cargo test --locked -p aurora-measurement
       - name: Test shared C streaming parser
@@ -64,6 +70,13 @@ jobs:
           python3 platform/s6/live-ingest/test_live_ingest.py \
             /tmp/aurora-live-ingest \
             platform/s6/live-ingest/mock_orender.py
+      - name: Test broker postprocessor ASRC and recovery integration
+        run: |
+          chmod +x platform/s6/live-ingest/test_live_postprocess.py
+          python3 platform/s6/live-ingest/test_live_postprocess.py \
+            /tmp/aurora-live-ingest \
+            platform/s6/live-ingest/mock_orender.py \
+            target/debug/aurora-s6-postprocess
       - name: Compile FunctionFS bridge with warnings as errors
         run: |
           cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
