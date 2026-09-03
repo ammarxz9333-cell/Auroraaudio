@@ -75,8 +75,8 @@ for var in \
 [ -f "$USB_PROTOCOL_DOC" ] || fail "target-neutral USB protocol document missing"
 [ -f "$EARC_BRINGUP_DOC" ] || fail "target-neutral eARC bring-up document missing"
 
-# Old active MCU identifiers are forbidden. Historical/research material is not
-# rewritten, but current source/build/runtime/contracts may never depend on them.
+# Old active MCU identifiers are forbidden. The audit file itself is excluded
+# because it intentionally contains the deny-list literals.
 [ ! -e "$ROOT/firmware/stm32h753" ] || fail "legacy firmware/stm32h753 tree still exists"
 [ ! -e "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" ] || fail "legacy USB protocol filename still exists"
 [ ! -e "$ROOT/docs/AURORA_EARC_STM32_PHYSICAL_BRINGUP.md" ] || fail "legacy eARC bring-up filename still exists"
@@ -84,9 +84,10 @@ for legacy in \
     stm32h753 STM32H753 aurora_stm32_audio_app AURORA_STM32_ \
     AURORA_STM32CUBE_ AURORA_USB_S6_STM32_PROTOCOL AURORA_EARC_STM32_PHYSICAL_BRINGUP
  do
-    if grep -R -n -F --exclude-dir=.git -- "$legacy" \
+    if grep -R -n -F --exclude-dir=.git --exclude=audit-runtime-wiring.sh -- "$legacy" \
         "$ROOT/.github" "$ROOT/config" "$ROOT/firmware" \
-        "$ROOT/platform" "$ROOT/protocol" >/tmp/aurora-legacy-name-hit 2>/dev/null; then
+        "$ROOT/platform" "$ROOT/protocol" "$ROOT/docs" \
+        >/tmp/aurora-legacy-name-hit 2>/dev/null; then
         cat /tmp/aurora-legacy-name-hit >&2
         rm -f /tmp/aurora-legacy-name-hit
         fail "legacy active MCU identifier remains: $legacy"
