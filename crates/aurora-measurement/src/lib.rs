@@ -4,6 +4,8 @@
 //! inputs are `unit_test`/`deterministic_simulation` truth only; they are not
 //! physical measurements until fed by an accepted real capture path.
 
+pub mod remote_clock;
+
 use std::error::Error;
 use std::fmt::{Display, Formatter};
 
