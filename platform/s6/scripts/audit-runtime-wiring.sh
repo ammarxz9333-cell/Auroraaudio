@@ -29,11 +29,33 @@ set -- "$INIT_DIR"/aurora-*
 [ "$#" -eq 2 ] || fail "expected exactly two Aurora init services, found $#"
 [ -f "$INIT_DIR/aurora-ffs" ] || fail "aurora-ffs service missing"
 [ -f "$INIT_DIR/aurora-live-ingest" ] || fail "aurora-live-ingest service missing"
-
-[ "$(count_fixed 'command="/usr/local/sbin/aurora-live-ingest"' "$SERVICE")" -eq 1 ] || \
-    fail "live ingest service command is missing or duplicated"
 [ "$(count_fixed 'need aurora-ffs' "$SERVICE")" -eq 1 ] || \
     fail "live ingest must depend on exactly one FunctionFS bridge"
+
+# Runtime path ownership is canonical: aurora.env owns all paths and the
+# OpenRC service consumes that manifest directly. Old alias keys are forbidden
+# because they can silently drift from the variables the broker actually reads.
+[ "$(count_fixed '. /etc/aurora/aurora.env' "$SERVICE")" -eq 1 ] || \
+    fail "live service must source exactly one runtime manifest"
+[ "$(count_fixed 'command="$AURORA_LIVE_INGEST_BIN"' "$SERVICE")" -eq 1 ] || \
+    fail "live service command must come from AURORA_LIVE_INGEST_BIN"
+for assignment in \
+    'AURORA_LIVE_INGEST_BIN=/usr/local/sbin/aurora-live-ingest' \
+    'AURORA_POSTPROCESS_BIN=/usr/local/bin/aurora-s6-postprocess' \
+    'AURORA_ORENDER_BIN=/opt/aurora/external/orender' \
+    'AURORA_HARLETTY_BRIDGE=/opt/aurora/external/libharletty_bridge.so' \
+    'AURORA_7_1_4_LAYOUT=/etc/aurora/layouts/7.1.4.yaml'
+do
+    [ "$(count_fixed "$assignment" "$ENVFILE")" -eq 1 ] || \
+        fail "runtime manifest assignment missing or duplicated: $assignment"
+done
+if grep -Eq '^(HARLETTY_BIN|OMNIPHONY_BIN)=' "$ENVFILE"; then
+    fail "obsolete Harletty/Omniphony path aliases remain in runtime manifest"
+fi
+for variable in AURORA_LIVE_INGEST_BIN AURORA_POSTPROCESS_BIN AURORA_ORENDER_BIN AURORA_HARLETTY_BRIDGE AURORA_7_1_4_LAYOUT; do
+    [ "$(count_fixed "\$$variable" "$SERVICE")" -ge 1 ] || \
+        fail "service does not consume canonical runtime variable $variable"
+done
 
 # The S6 build intentionally excludes the workspace default CamillaDSP and
 # simulation features. Only the dedicated realtime binary belongs on this path.
@@ -49,10 +71,6 @@ fi
     fail "expected exactly one Omniphony exec path"
 [ "$(count_fixed 'execl(postprocess, postprocess,' "$LIVE")" -eq 1 ] || \
     fail "expected exactly one postprocessor exec path"
-[ "$(count_fixed '#define DEFAULT_POSTPROCESS "/usr/local/bin/aurora-s6-postprocess"' "$LIVE")" -eq 1 ] || \
-    fail "broker postprocessor path is missing or duplicated"
-[ "$(count_fixed 'AURORA_POSTPROCESS_BIN=/usr/local/bin/aurora-s6-postprocess' "$ENVFILE")" -eq 1 ] || \
-    fail "runtime manifest postprocessor path mismatch"
 [ "$(count_fixed 'install -m 0755 target/release/aurora-s6-postprocess "$OUT/bin/aurora-s6-postprocess"' "$BUILD")" -eq 1 ] || \
     fail "postprocessor staging path mismatch"
 [ "$(count_fixed 'install -m 0755 "$STAGE/bin/aurora-s6-postprocess" "$ROOTFS/usr/local/bin/aurora-s6-postprocess"' "$ASSEMBLE")" -eq 1 ] || \
@@ -66,8 +84,7 @@ if grep -Eq -- '^[[:space:]]*(pub[[:space:]]+)?struct[[:space:]]+(RubatoAsrc|Dri
     fail "S6 postprocessor redefines an existing ASRC/drift primitive"
 fi
 
-# Version truth must have one source value across runtime manifest and native
-# build defaults. This catches silent build/runtime version drift.
+# Version truth must agree across the runtime manifest and native build defaults.
 env_harletty="$(sed -n 's/^HARLETTY_VERSION=//p' "$ENVFILE")"
 build_harletty="$(sed -n 's/^HARLETTY_VERSION="${HARLETTY_VERSION:-\(.*\)}"$/\1/p' "$BUILD")"
 [ -n "$env_harletty" ] && [ "$env_harletty" = "$build_harletty" ] || \
@@ -88,4 +105,4 @@ grep -Fq -- 'AURORA_SAMPLE_RATE=48000' "$ENVFILE" || fail "runtime sample rate i
 grep -Fq -- 'AURORA_BLOCK_FRAMES=40' "$ENVFILE" || fail "runtime block size is not 40 frames"
 grep -Fq -- 'AURORA_LAYOUT=7.1.4' "$ENVFILE" || fail "runtime layout is not 7.1.4"
 
-echo "audit-runtime-wiring: PASS single service chain, single DSP path, shared clock primitives, consistent versions"
+echo "audit-runtime-wiring: PASS single service chain, single DSP path, canonical runtime paths, shared clock primitives, consistent versions"
