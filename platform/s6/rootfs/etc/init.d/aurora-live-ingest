@@ -1,28 +1,24 @@
 #!/sbin/openrc-run
 
+# The live audio service has one runtime configuration source. Exporting the
+# manifest here also passes the same values to the broker and its children.
+if [ ! -r /etc/aurora/aurora.env ]; then
+    echo "aurora-live-ingest: missing /etc/aurora/aurora.env" >&2
+    return 1
+fi
+set -a
+. /etc/aurora/aurora.env
+set +a
+
 name="Aurora live immersive ingest"
 description="Live DD+ IEC61937 to Harletty/Omniphony/Aurora DSP 7.1.4 pipeline"
-command="/usr/local/sbin/aurora-live-ingest"
+command="$AURORA_LIVE_INGEST_BIN"
 command_background="yes"
 pidfile="/run/aurora/aurora-live-ingest.pid"
 output_log="/var/log/aurora/aurora-live-ingest.log"
 error_log="/var/log/aurora/aurora-live-ingest.log"
 
-# Runtime values are exported explicitly so the postprocessor starts with one
-# deterministic appliance configuration. The file is configuration intent only,
-# never proof of physical calibration.
-if [ -r /etc/aurora/aurora.env ]; then
-    set -a
-    . /etc/aurora/aurora.env
-    set +a
-fi
-
-export AURORA_POSTPROCESS_BIN="${AURORA_POSTPROCESS_BIN:-/usr/local/bin/aurora-s6-postprocess}"
-export AURORA_ORENDER_BIN="${AURORA_ORENDER_BIN:-/opt/aurora/external/orender}"
-export AURORA_HARLETTY_BRIDGE="${AURORA_HARLETTY_BRIDGE:-/opt/aurora/external/libharletty_bridge.so}"
-export AURORA_7_1_4_LAYOUT="${AURORA_7_1_4_LAYOUT:-/etc/aurora/layouts/7.1.4.yaml}"
-
- depend() {
+depend() {
     need aurora-ffs
     after localmount
 }
@@ -30,7 +26,7 @@ export AURORA_7_1_4_LAYOUT="${AURORA_7_1_4_LAYOUT:-/etc/aurora/layouts/7.1.4.yam
 start_pre() {
     checkpath --directory --mode 0755 /run/aurora
     checkpath --directory --mode 0755 /var/log/aurora
-    [ -x /usr/local/sbin/aurora-live-ingest ] || return 1
+    [ -x "$AURORA_LIVE_INGEST_BIN" ] || return 1
     [ -x "$AURORA_POSTPROCESS_BIN" ] || return 1
     [ -x "$AURORA_ORENDER_BIN" ] || return 1
     [ -f "$AURORA_HARLETTY_BRIDGE" ] || return 1
