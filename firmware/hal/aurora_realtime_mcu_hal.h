@@ -37,6 +37,7 @@ struct aurora_realtime_mcu_hal {
     uint64_t next_earc_carrier_frame;
     uint32_t earc_carrier_rate_hz;
     uint8_t carrier_locked;
+    uint8_t source_discontinuity_pending;
     uint8_t usb_session_active;
     uint8_t vbus_faulted;
 };
@@ -60,6 +61,8 @@ int aurora_realtime_mcu_hal_usb_receive(
 
 /* eARC receiver clock-lock boundary. The DMA callback supplies only captured
  * S32 slots; carrier-frame accounting remains owned by this one HAL boundary.
+ * Unlock/relock marks the first recovered block discontinuous even when the
+ * carrier returns at the same rate.
  */
 int aurora_realtime_mcu_hal_earc_lock(
     struct aurora_realtime_mcu_hal *hal,
@@ -82,10 +85,12 @@ void aurora_realtime_mcu_hal_playback_xrun(
     struct aurora_realtime_mcu_hal *hal);
 
 /* Protected VBUS switch fault is a hard session boundary. It immediately
- * fails closed and requires a fresh USB session after the electrical fault is
- * cleared by board-specific code.
+ * fails closed. Electrical recovery is explicit; clearing the fault does not
+ * reactivate USB until a fresh usb_session_begin() follows.
  */
 void aurora_realtime_mcu_hal_vbus_fault(
+    struct aurora_realtime_mcu_hal *hal);
+void aurora_realtime_mcu_hal_vbus_fault_cleared(
     struct aurora_realtime_mcu_hal *hal);
 
 #endif /* AURORA_REALTIME_MCU_HAL_H */
