@@ -21,11 +21,18 @@ static int mock_usb_send(void *opaque, const uint8_t *data, size_t len)
     return 0;
 }
 
+static void clear_tx(struct mock_ctx *ctx)
+{
+    ctx->tx_len = 0;
+    memset(ctx->tx, 0, sizeof(ctx->tx));
+}
+
 int main(void)
 {
     struct mock_ctx ctx;
     struct aurora_transport transport;
     struct aurora_transport_io io;
+    struct aurora_iec61937_capture_state capture_state;
     uint8_t layout_hash[32] = {0};
     uint8_t scratch[128];
 
@@ -34,6 +41,7 @@ int main(void)
     io.ctx = &ctx;
     io.usb_send = mock_usb_send;
     aurora_transport_init(&transport, &io, layout_hash);
+    aurora_iec61937_capture_state_init(&capture_state);
 
     /*
      * High 16 bits carry the IEC61937 word; low halves are deliberately noisy
@@ -99,6 +107,42 @@ int main(void)
                &transport, slots, 8, 0, 44100, 0,
                scratch, sizeof(scratch)) == -5);
     assert(ctx.tx_len == before);
+
+    /*
+     * Stateful capture adds DISCONTINUITY exactly when the physical carrier
+     * rate changes. The first valid block after init/reset is not mislabeled.
+     */
+    clear_tx(&ctx);
+    assert(aurora_iec61937_capture_forward_stream_block(
+               &capture_state, &transport, slots, 8,
+               400, 192000, 0, scratch, sizeof(scratch)) == 0);
+    assert((aurora_usb_read_le32(ctx.tx + 8) & AURORA_USB_FLAG_DISCONTINUITY) == 0);
+    assert(capture_state.have_carrier_rate == 1);
+    assert(capture_state.last_carrier_rate_hz == 192000u);
+
+    clear_tx(&ctx);
+    assert(aurora_iec61937_capture_forward_stream_block(
+               &capture_state, &transport, slots, 8,
+               400, 96000, 0, scratch, sizeof(scratch)) == 0);
+    assert((aurora_usb_read_le32(ctx.tx + 8) & AURORA_USB_FLAG_DISCONTINUITY) != 0);
+    assert(aurora_usb_read_le64(ctx.tx + 16) == 200);
+    assert(capture_state.last_carrier_rate_hz == 96000u);
+
+    aurora_iec61937_capture_state_reset(&capture_state);
+    clear_tx(&ctx);
+    assert(aurora_iec61937_capture_forward_stream_block(
+               &capture_state, &transport, slots, 8,
+               400, 96000, 0, scratch, sizeof(scratch)) == 0);
+    assert((aurora_usb_read_le32(ctx.tx + 8) & AURORA_USB_FLAG_DISCONTINUITY) == 0);
+
+    /* Rejected rates must not become the remembered continuity state. */
+    aurora_iec61937_capture_state_reset(&capture_state);
+    clear_tx(&ctx);
+    assert(aurora_iec61937_capture_forward_stream_block(
+               &capture_state, &transport, slots, 8,
+               0, 44100, 0, scratch, sizeof(scratch)) == -5);
+    assert(capture_state.have_carrier_rate == 0);
+    assert(ctx.tx_len == 0);
 
     puts("STM32 eARC IEC61937 capture-to-USB tests passed");
     return 0;
