@@ -83,10 +83,14 @@ jobs:
           for f in platform/s6/scripts/*.sh platform/s6/initramfs/init; do
             bash -n "$f"
           done
-      - name: Verify protocol version agrees across implementations
+      - name: Verify protocol contract agrees across implementations
         shell: bash
         run: |
           set -euo pipefail
           grep -q '#define AURORA_USB_VERSION 1u' protocol/aurora_usb_v1.h
           grep -q 'pub const VERSION: u16 = 1;' crates/aurora-usb-protocol/src/lib.rs
           grep -q 'protocol_version = 1' docs/AURORA_USB_S6_STM32_PROTOCOL.md
+          grep -q '#define AURORA_USB_PERIOD_FRAMES 40u' protocol/aurora_usb_v1.h
+          grep -q 'pub const DEFAULT_PERIOD_FRAMES: u16 = 40;' crates/aurora-usb-protocol/src/lib.rs
+          grep -q 'period_frames = 40' docs/AURORA_USB_S6_STM32_PROTOCOL.md
+          grep -q '05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244' docs/AURORA_USB_S6_STM32_PROTOCOL.md
