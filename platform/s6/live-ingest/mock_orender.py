@@ -19,7 +19,7 @@ if bytes(received) != expected:
     sys.exit(3)
 
 channels = 12
-frames = 256
+frames = 40
 sample = float(os.environ.get("AURORA_MOCK_SAMPLE", "0.25"))
 payload = struct.pack("<f", sample) * (channels * frames)
 sys.stdout.buffer.write(payload)
