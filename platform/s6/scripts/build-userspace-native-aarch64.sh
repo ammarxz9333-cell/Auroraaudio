@@ -11,6 +11,7 @@ JOBS="${JOBS:-4}"
 CC="${CC:-cc}"
 HARLETTY_VERSION="${HARLETTY_VERSION:-v0.7.4}"
 OMNIPHONY_VERSION="${OMNIPHONY_VERSION:-v0.5.2}"
+OMNIPHONY_PATCH="$ROOT/platform/s6/patches/omniphony-v0.5.2-low-latency-stdout.patch"
 NAVIDROME_VERSION="${NAVIDROME_VERSION:-0.63.2}"
 NAVIDROME_SHA256="5b74fb0eea5d48e3eb7565ea4116284232509e94431cb3756aaac2128dd50a43"
 
@@ -67,6 +68,19 @@ fi
     cd "$WORK/Omniphony"
     git fetch --tags --force
     git checkout --detach "$OMNIPHONY_VERSION"
+    git reset --hard "$OMNIPHONY_VERSION"
+
+    # Aurora's live path consumes raw-f32 on stdout. Upstream v0.5.2 uses a
+    # generic 64 KiB BufWriter, which can hide ~28.4 ms at 48 kHz / 12 ch.
+    # Apply a version-pinned patch that caps raw stdout buffering to one
+    # 256-frame period (~5.33 ms). Never silently build without it.
+    [ "$OMNIPHONY_VERSION" = "v0.5.2" ] || \
+        fail "Omniphony low-latency patch is pinned to v0.5.2, got $OMNIPHONY_VERSION"
+    [ -f "$OMNIPHONY_PATCH" ] || fail "missing Omniphony patch: $OMNIPHONY_PATCH"
+    git apply --check "$OMNIPHONY_PATCH" || \
+        fail "Omniphony low-latency patch no longer applies cleanly"
+    git apply "$OMNIPHONY_PATCH"
+
     cd omniphony-renderer
     cargo build --release -j "$JOBS" -p omniphony-renderer
     install -m 0755 target/release/orender "$OUT/bin/orender"
@@ -102,6 +116,7 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
     echo "live_streaming_ingest=iec61937-direct-to-omniphony"
     echo "harletty=$HARLETTY_VERSION"
     echo "omniphony=$OMNIPHONY_VERSION"
+    echo "omniphony_patch=low-latency-raw-stdout-256-frames-v1"
     echo "navidrome=v$NAVIDROME_VERSION"
     echo "navidrome_sha256=$NAVIDROME_SHA256"
 } > "$OUT/BUILD-MANIFEST.txt"
