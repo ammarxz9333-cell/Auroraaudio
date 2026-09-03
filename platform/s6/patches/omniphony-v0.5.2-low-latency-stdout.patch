@@ -1,0 +1,107 @@
+diff --git a/omniphony-renderer/audio_output/src/file_sink.rs b/omniphony-renderer/audio_output/src/file_sink.rs
+--- a/omniphony-renderer/audio_output/src/file_sink.rs
++++ b/omniphony-renderer/audio_output/src/file_sink.rs
+@@ -61,6 +61,21 @@ pub struct FileAudioWriter {
+     byte_scratch: Vec<u8>,
+ }
+ 
++const DEFAULT_BUF_CAPACITY: usize = 64 * 1024;
++const LOW_LATENCY_STDOUT_FRAMES: usize = 256;
++
++fn output_buffer_capacity(
++    destination: &str,
++    format: FileSinkFormat,
++    channel_count: u32,
++) -> usize {
++    if destination == "-" && format == FileSinkFormat::RawF32 {
++        LOW_LATENCY_STDOUT_FRAMES
++            .saturating_mul(channel_count as usize)
++            .saturating_mul(std::mem::size_of::<f32>())
++            .max(1)
++    } else {
++        DEFAULT_BUF_CAPACITY
++    }
++}
++
+ impl FileAudioWriter {
+-    const BUF_CAPACITY: usize = 64 * 1024;
+-
+     /// Open `destination` (`"-"` for stdout, otherwise a regular file or FIFO
+     /// path) and, for CAF, write the header immediately.
+     pub fn new(
+@@ -70,6 +85,7 @@ impl FileAudioWriter {
+         channel_count: u32,
+         channel_descs: Option<Vec<CafChannelDesc>>,
+     ) -> io::Result<Self> {
++        let buffer_capacity = output_buffer_capacity(destination, format, channel_count);
+         let sink: Box<dyn Write + Send> = if destination == "-" {
+             Box::new(io::stdout())
+         } else {
+@@ -83,7 +99,14 @@ impl FileAudioWriter {
+                     .open(destination)?,
+             )
+         };
+-        Self::with_writer(sink, format, sample_rate, channel_count, channel_descs)
++        Self::with_writer_capacity(
++            sink,
++            format,
++            sample_rate,
++            channel_count,
++            channel_descs,
++            buffer_capacity,
++        )
+     }
+ 
+     /// Construct over an arbitrary writer. Used by tests with an in-memory
+@@ -95,7 +118,28 @@ impl FileAudioWriter {
+         channel_count: u32,
+         channel_descs: Option<Vec<CafChannelDesc>>,
+     ) -> io::Result<Self> {
+-        let mut inner = BufWriter::with_capacity(Self::BUF_CAPACITY, sink);
++        Self::with_writer_capacity(
++            sink,
++            format,
++            sample_rate,
++            channel_count,
++            channel_descs,
++            DEFAULT_BUF_CAPACITY,
++        )
++    }
++
++    fn with_writer_capacity(
++        sink: Box<dyn Write + Send>,
++        format: FileSinkFormat,
++        sample_rate: u32,
++        channel_count: u32,
++        channel_descs: Option<Vec<CafChannelDesc>>,
++        buffer_capacity: usize,
++    ) -> io::Result<Self> {
++        /* Raw f32 stdout is used as a live process-to-process transport by
++         * Aurora. Keep at most one 256-frame period in userspace buffering
++         * instead of the generic 64 KiB file buffer (~28.4 ms at 48k/12ch).
++         * Regular files/FIFOs and CAF retain the original throughput-oriented
++         * buffer size. */
++        let mut inner = BufWriter::with_capacity(buffer_capacity.max(1), sink);
+         if format == FileSinkFormat::Caf {
+             write_caf_header(
+                 &mut inner,
+@@ -222,6 +266,17 @@ mod tests {
+         assert_eq!(&buf[8..12], &0.5f32.to_le_bytes());
+     }
+ 
++    #[test]
++    fn raw_stdout_buffer_is_one_256_frame_period() {
++        assert_eq!(
++            output_buffer_capacity("-", FileSinkFormat::RawF32, 12),
++            256 * 12 * 4
++        );
++        assert_eq!(
++            output_buffer_capacity("capture.f32", FileSinkFormat::RawF32, 12),
++            DEFAULT_BUF_CAPACITY
++        );
++        assert_eq!(output_buffer_capacity("-", FileSinkFormat::Caf, 12), DEFAULT_BUF_CAPACITY);
++    }
++
+     #[test]
+     fn channel_count_sweep_byte_sizes() {
+         for &ch in &[2usize, 8, 12, 16, 24, 32, 64] {
