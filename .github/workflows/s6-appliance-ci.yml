@@ -55,15 +55,42 @@ jobs:
           test -d "$AURORA_REALTIME_MCU_SOURCE_DIR/test"
           test "$AURORA_REALTIME_MCU_USB_HS_HOST" = 1
           test "$AURORA_REALTIME_MCU_USB_HS_PHY" = ULPI
+          test "$AURORA_REALTIME_MCU_ULPI_DIRECT_PINS" = 1
           test "$AURORA_REALTIME_MCU_SAI_RX" = 1
           test "$AURORA_REALTIME_MCU_SAI_TDM_TX" = 1
           test "$AURORA_REALTIME_MCU_DMA" = 1
           test "$AURORA_REALTIME_MCU_SAMPLE_RATE" = 48000
           test "$AURORA_REALTIME_MCU_CHANNELS" = 12
           test "$AURORA_REALTIME_MCU_PERIOD_FRAMES" = 40
-          test "$AURORA_REALTIME_MCU_PINMUX_STATUS" = unverified
+          test "$AURORA_REALTIME_MCU_PINMUX_STATUS" = datasheet_verified
+          test -n "$AURORA_REALTIME_MCU_PINMUX_PROOF"
           test "$AURORA_REALTIME_MCU_HAL_STATUS" = not_implemented
           test "$AURORA_REALTIME_MCU_PHYSICAL_STATUS" = not_measured
+
+          # The canonical pin map must not assign one MCU pin to two live roles.
+          duplicate_pins="$(env | sed -n 's/^AURORA_PIN_[^=]*=//p' | sort | uniq -d)"
+          test -z "$duplicate_pins" || {
+            echo "duplicate realtime-MCU pin assignments:" >&2
+            echo "$duplicate_pins" >&2
+            exit 1
+          }
+
+          # Current target proof uses the documented alternate functions for
+          # direct ULPI, SAI1-A capture and SAI4-A TDM output.
+          for v in \
+            AURORA_AF_ULPI_STP AURORA_AF_ULPI_DIR AURORA_AF_ULPI_NXT \
+            AURORA_AF_ULPI_CLK AURORA_AF_ULPI_D0 AURORA_AF_ULPI_D1 \
+            AURORA_AF_ULPI_D2 AURORA_AF_ULPI_D3 AURORA_AF_ULPI_D4 \
+            AURORA_AF_ULPI_D5 AURORA_AF_ULPI_D6 AURORA_AF_ULPI_D7
+          do
+            test "${!v}" = 10
+          done
+          for v in AURORA_AF_EARC_FS AURORA_AF_EARC_SCK AURORA_AF_EARC_SD; do
+            test "${!v}" = 6
+          done
+          for v in AURORA_AF_TDM_FS AURORA_AF_TDM_SCK AURORA_AF_TDM_SD AURORA_AF_TDM_MCLK; do
+            test "${!v}" = 10
+          done
       - name: Validate pinned Omniphony low-latency stdout patch
         run: sh platform/s6/scripts/test-omniphony-low-latency-patch.sh
       - name: Audit S6 runtime wiring and duplication
