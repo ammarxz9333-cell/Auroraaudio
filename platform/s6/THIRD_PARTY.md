@@ -15,7 +15,9 @@ AuroraOS-S6 keeps format decoders, spatial renderers, and music servers outside 
 - Pinned source: `mgth/Omniphony` tag `v0.5.2`.
 - `omniphony-renderer` declares GPL-3.0-or-later.
 - Role: optional external spatial renderer/host process.
-- If Aurora distributes a binary containing or accompanied by GPL-covered Omniphony artifacts, the release process must satisfy the corresponding source and license obligations. Aurora-owned libraries remain separated by process/plugin boundaries.
+- AuroraOS-S6 applies the retained source patch `platform/s6/patches/omniphony-v0.5.2-low-latency-stdout.patch` before building. The patch changes only raw-f32 stdout buffering for Aurora's live process-to-process path: instead of the generic 64 KiB file buffer, stdout capacity is bounded to one 256-frame period for the active channel count. Regular files, FIFOs and CAF retain the upstream buffer policy.
+- The builder is fail-closed: the patch is accepted only for the pinned `v0.5.2` source and must pass `git apply --check`; a changed/upgraded upstream tree requires explicit review rather than silently losing the latency fix.
+- If Aurora distributes a binary containing or accompanied by GPL-covered Omniphony artifacts, the release process must satisfy the corresponding source and license obligations, including making the applicable modified source/patch available as required. Aurora-owned libraries remain separated by process/plugin boundaries.
 
 ## Navidrome
 
