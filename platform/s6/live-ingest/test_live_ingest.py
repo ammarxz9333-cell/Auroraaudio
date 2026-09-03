@@ -22,8 +22,10 @@ KIND_ACK = 5
 FLAG_PTS_VALID = 1 << 0
 FLAG_DISCONTINUITY = 1 << 1
 
+PERIOD_FRAMES = 40
+CHANNELS = 12
 EXPECTED_LAYOUT_HASH = bytes.fromhex(
-    "40fb5d12fd76675aefb0344a8897145f0723981d20e205213b440e8bd3e127c0"
+    "05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244"
 )
 
 
@@ -67,8 +69,8 @@ def validate_config(config):
     assert len(config["payload"]) == 48
     cfg = config["payload"]
     assert struct.unpack_from("<I", cfg, 0)[0] == 48000
-    assert struct.unpack_from("<H", cfg, 4)[0] == 256
-    assert struct.unpack_from("<H", cfg, 6)[0] == 12
+    assert struct.unpack_from("<H", cfg, 4)[0] == PERIOD_FRAMES
+    assert struct.unpack_from("<H", cfg, 6)[0] == CHANNELS
     assert struct.unpack_from("<H", cfg, 8)[0] == 1
     assert struct.unpack_from("<H", cfg, 10)[0] == 1
     assert cfg[12:16] == b"\x00" * 4
@@ -79,12 +81,14 @@ def validate_pcm(pcm, pts):
     assert pcm["kind"] == KIND_PCM_S32LE, pcm
     assert pcm["flags"] & FLAG_PTS_VALID
     assert pcm["pts"] == pts
-    assert (pcm["aux"] >> 16) == 12
-    assert (pcm["aux"] & 0xFFFF) == 256
-    assert len(pcm["payload"]) == 12 * 256 * 4
+    assert (pcm["aux"] >> 16) == CHANNELS
+    assert (pcm["aux"] & 0xFFFF) == PERIOD_FRAMES
+    assert len(pcm["payload"]) == CHANNELS * PERIOD_FRAMES * 4
 
     # 0.25f is converted with llround(x * 2147483647.0) -> 536870912.
-    samples = struct.unpack("<" + "i" * (12 * 256), pcm["payload"])
+    samples = struct.unpack(
+        "<" + "i" * (CHANNELS * PERIOD_FRAMES), pcm["payload"]
+    )
     assert samples[0] == 536_870_912
     assert samples[-1] == 536_870_912
     assert all(v == 536_870_912 for v in samples)
@@ -286,7 +290,7 @@ def main():
     run_discontinuity_case(broker, mock_orender, encoded)
     run_reconnect_case(broker, mock_orender, encoded)
 
-    print("Aurora live-ingest startup/discontinuity/reconnect mock tests passed")
+    print("Aurora live-ingest 40-frame startup/discontinuity/reconnect mock tests passed")
     return 0
 
 
