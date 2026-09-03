@@ -16,7 +16,6 @@
 #include <unistd.h>
 
 #include "aurora_usb_v1.h"
-#include "iec61937_eac3.h"
 
 #define BRIDGE_SOCKET "/run/aurora/usb-bridge.sock"
 #define DEFAULT_ORENDER "/opt/aurora/external/orender"
@@ -27,6 +26,7 @@
 #define PCM_PERIOD_FRAMES 256u
 #define PCM_PERIOD_SAMPLES (PCM_CHANNELS * PCM_PERIOD_FRAMES)
 #define PCM_PERIOD_BYTES (PCM_PERIOD_SAMPLES * 4u)
+#define TX_FRAME_CAP (AURORA_USB_HEADER_LEN + PCM_PERIOD_BYTES)
 #define RX_FRAME_CAP AURORA_USB_MAX_FRAME
 #define RENDER_READ_CHUNK (64u * 1024u)
 #define RENDER_PENDING_CAP (PCM_PERIOD_BYTES * 16u)
@@ -34,7 +34,7 @@
 
 static volatile sig_atomic_t stop_requested;
 
-/* SHA-256 of:
+/* SHA-256 of the protocol-v1 canonical output-layout manifest:
  * AURORA_LAYOUT_V1;id=1;rate=48000;format=S32LE;period=256;
  * channels=FL,FR,C,LFE,BL,BR,SL,SR,TFL,TFR,TBL,TBR\n
  */
@@ -58,11 +58,10 @@ struct app {
     uint64_t next_pcm_pts;
     int have_pcm_pts;
     struct renderer_proc renderer;
-    struct aurora_iec61937_eac3_parser parser;
     uint8_t render_pending[RENDER_PENDING_CAP];
     size_t render_pending_len;
     uint64_t encoded_frames;
-    uint64_t eac3_bursts;
+    uint64_t encoded_bytes;
     uint64_t pcm_periods;
 };
 
@@ -85,9 +84,7 @@ static uint32_t read_le32(const uint8_t *p)
 
 static uint64_t read_le64(const uint8_t *p)
 {
-    uint64_t lo = read_le32(p);
-    uint64_t hi = read_le32(p + 4);
-    return lo | (hi << 32);
+    return (uint64_t)read_le32(p) | ((uint64_t)read_le32(p + 4) << 32);
 }
 
 static void write_le16(uint8_t *p, uint16_t v)
@@ -110,11 +107,17 @@ static void write_le64(uint8_t *p, uint64_t v)
     write_le32(p + 4, (uint32_t)(v >> 32));
 }
 
-static int wait_fd(int fd, short events, int timeout_ms)
+static const char *env_or(const char *key, const char *fallback)
+{
+    const char *v = getenv(key);
+    return (v && *v) ? v : fallback;
+}
+
+static int wait_fd(int fd, short events)
 {
     struct pollfd p = {.fd = fd, .events = events};
     for (;;) {
-        int rc = poll(&p, 1, timeout_ms);
+        int rc = poll(&p, 1, IO_TIMEOUT_MS);
         if (rc > 0)
             return (p.revents & events) ? 0 : -1;
         if (rc == 0) {
@@ -137,19 +140,12 @@ static int write_all_timeout(int fd, const uint8_t *buf, size_t len)
         }
         if (n < 0 && errno == EINTR)
             continue;
-        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK)) {
-            if (wait_fd(fd, POLLOUT, IO_TIMEOUT_MS) == 0)
-                continue;
-        }
+        if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK) &&
+            wait_fd(fd, POLLOUT) == 0)
+            continue;
         return -1;
     }
     return 0;
-}
-
-static const char *env_or(const char *key, const char *fallback)
-{
-    const char *v = getenv(key);
-    return (v && *v) ? v : fallback;
 }
 
 static void renderer_close_fds(struct renderer_proc *r)
@@ -192,11 +188,11 @@ static int renderer_start(struct renderer_proc *r)
     int to_child[2] = {-1, -1};
     int from_child[2] = {-1, -1};
 
-    if (pipe2(to_child, O_CLOEXEC) < 0 || pipe2(from_child, O_CLOEXEC) < 0) {
-        if (to_child[0] >= 0) close(to_child[0]);
-        if (to_child[1] >= 0) close(to_child[1]);
-        if (from_child[0] >= 0) close(from_child[0]);
-        if (from_child[1] >= 0) close(from_child[1]);
+    if (pipe2(to_child, O_CLOEXEC) < 0)
+        return -1;
+    if (pipe2(from_child, O_CLOEXEC) < 0) {
+        close(to_child[0]);
+        close(to_child[1]);
         return -1;
     }
 
@@ -215,6 +211,9 @@ static int renderer_start(struct renderer_proc *r)
         close(to_child[0]); close(to_child[1]);
         close(from_child[0]); close(from_child[1]);
 
+        /* Omniphony's stdin decoder thread detects IEC61937 sync, maintains a
+         * streaming SpdifParser across arbitrary read boundaries, and passes
+         * unwrapped packets + their IEC61937 data_type to Harletty. */
         execl(orender, orender,
               "-",
               "--bridge-path", bridge,
@@ -226,7 +225,7 @@ static int renderer_start(struct renderer_proc *r)
               "--output-file", "-",
               "--output-file-format", "raw-f32",
               (char *)NULL);
-        perror("aurora-live-ingest: exec renderer");
+        perror("aurora-live-ingest: exec orender");
         _exit(127);
     }
 
@@ -243,7 +242,7 @@ static int renderer_start(struct renderer_proc *r)
     r->pid = pid;
     r->stdin_fd = to_child[1];
     r->stdout_fd = from_child[0];
-    fprintf(stderr, "aurora-live-ingest: renderer pid=%ld\n", (long)pid);
+    fprintf(stderr, "aurora-live-ingest: orender pid=%ld\n", (long)pid);
     return 0;
 }
 
@@ -276,15 +275,12 @@ static int send_frame(struct app *a, uint16_t kind, uint32_t flags,
                       uint64_t pts_48k, uint32_t aux,
                       const uint8_t *payload, uint32_t payload_len)
 {
+    uint8_t frame[TX_FRAME_CAP];
     size_t total = AURORA_USB_HEADER_LEN + (size_t)payload_len;
-    if (total > AURORA_USB_MAX_FRAME)
+    if (total > sizeof(frame) || (payload_len && !payload))
         return -1;
 
-    uint8_t *frame = malloc(total);
-    if (!frame)
-        return -1;
     memset(frame, 0, AURORA_USB_HEADER_LEN);
-
     write_le32(frame + 0, AURORA_USB_MAGIC_U32);
     write_le16(frame + 4, AURORA_USB_VERSION);
     write_le16(frame + 6, kind);
@@ -297,7 +293,6 @@ static int send_frame(struct app *a, uint16_t kind, uint32_t flags,
         memcpy(frame + AURORA_USB_HEADER_LEN, payload, payload_len);
 
     ssize_t n = send(a->bridge_fd, frame, total, MSG_NOSIGNAL);
-    free(frame);
     return n == (ssize_t)total ? 0 : -1;
 }
 
@@ -315,17 +310,6 @@ static int send_config(struct app *a)
     return send_frame(a, AURORA_USB_CONFIG, 0, 0, 0, payload, sizeof(payload));
 }
 
-static int emit_eac3(void *opaque, const uint8_t *payload, size_t len)
-{
-    struct app *a = opaque;
-    if (a->renderer.stdin_fd < 0)
-        return -1;
-    if (write_all_timeout(a->renderer.stdin_fd, payload, len) < 0)
-        return -1;
-    a->eac3_bursts++;
-    return 0;
-}
-
 static int32_t f32_to_s32(float x)
 {
     if (!isfinite(x))
@@ -334,12 +318,7 @@ static int32_t f32_to_s32(float x)
         return INT32_MAX;
     if (x <= -1.0f)
         return INT32_MIN;
-    double scaled = (double)x * 2147483647.0;
-    if (scaled >= 2147483647.0)
-        return INT32_MAX;
-    if (scaled <= -2147483648.0)
-        return INT32_MIN;
-    return (int32_t)llround(scaled);
+    return (int32_t)llround((double)x * 2147483647.0);
 }
 
 static int flush_pcm_periods(struct app *a)
@@ -410,9 +389,8 @@ static int validate_frame(const uint8_t *frame, size_t len,
                           uint64_t *pts, const uint8_t **payload,
                           uint32_t *payload_len)
 {
-    if (len < AURORA_USB_HEADER_LEN)
-        return -1;
-    if (read_le32(frame + 0) != AURORA_USB_MAGIC_U32 ||
+    if (len < AURORA_USB_HEADER_LEN ||
+        read_le32(frame + 0) != AURORA_USB_MAGIC_U32 ||
         read_le16(frame + 4) != AURORA_USB_VERSION)
         return -1;
 
@@ -428,19 +406,13 @@ static int validate_frame(const uint8_t *frame, size_t len,
     return 0;
 }
 
-static void reset_stream(struct app *a, uint64_t new_pts, int pts_valid)
+static int restart_renderer(struct app *a, uint64_t pts, int pts_valid)
 {
-    aurora_iec61937_eac3_reset(&a->parser);
     a->render_pending_len = 0;
+    a->next_pcm_pts = pts;
     a->have_pcm_pts = pts_valid;
-    a->next_pcm_pts = new_pts;
-
     renderer_stop(&a->renderer);
-    a->renderer.stdin_fd = -1;
-    a->renderer.stdout_fd = -1;
-    a->renderer.pid = -1;
-    if (renderer_start(&a->renderer) < 0)
-        perror("aurora-live-ingest: restart renderer");
+    return renderer_start(&a->renderer);
 }
 
 static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
@@ -457,18 +429,22 @@ static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
 
     switch (kind) {
     case AURORA_USB_ENCODED_IEC61937:
-        a->encoded_frames++;
-        if ((flags & AURORA_USB_FLAG_DISCONTINUITY) != 0)
-            reset_stream(a, pts, (flags & AURORA_USB_FLAG_PTS_VALID) != 0);
-        else if (!a->have_pcm_pts && (flags & AURORA_USB_FLAG_PTS_VALID) != 0) {
+        if ((flags & AURORA_USB_FLAG_DISCONTINUITY) != 0 &&
+            restart_renderer(a, pts, (flags & AURORA_USB_FLAG_PTS_VALID) != 0) < 0)
+            return -1;
+
+        if (!a->have_pcm_pts && (flags & AURORA_USB_FLAG_PTS_VALID) != 0) {
             a->have_pcm_pts = 1;
             a->next_pcm_pts = pts;
         }
-        if (aurora_iec61937_eac3_feed(&a->parser, payload, payload_len,
-                                      emit_eac3, a) != 0) {
-            fprintf(stderr, "aurora-live-ingest: IEC61937/EAC3 parser failure\n");
+
+        /* Do NOT strip IEC61937 here. Omniphony v0.5.2 maintains a streaming
+         * SpdifParser on stdin and forwards packet.payload + data_type to the
+         * Harletty bridge as RInputTransport::Iec61937. */
+        if (write_all_timeout(a->renderer.stdin_fd, payload, payload_len) < 0)
             return -1;
-        }
+        a->encoded_frames++;
+        a->encoded_bytes += payload_len;
         break;
 
     case AURORA_USB_ACK:
@@ -514,10 +490,9 @@ int main(void)
     a.renderer.pid = -1;
     a.renderer.stdin_fd = -1;
     a.renderer.stdout_fd = -1;
-    aurora_iec61937_eac3_init(&a.parser);
 
     if (renderer_start(&a.renderer) < 0) {
-        perror("aurora-live-ingest: start renderer");
+        perror("aurora-live-ingest: start orender");
         return 1;
     }
 
@@ -572,26 +547,35 @@ int main(void)
                 a.configured = 0;
                 continue;
             }
-            if (handle_bridge_frame(&a, rx, (size_t)n) < 0)
-                fprintf(stderr, "aurora-live-ingest: bad bridge frame\n");
+            if (handle_bridge_frame(&a, rx, (size_t)n) < 0) {
+                fprintf(stderr, "aurora-live-ingest: encoded input failure; restarting renderer\n");
+                if (restart_renderer(&a, a.next_pcm_pts, a.have_pcm_pts) < 0)
+                    break;
+            }
         }
 
         if (p[1].revents & POLLIN) {
             int rr = ingest_renderer_output(&a);
-            if (rr < 0)
-                fprintf(stderr, "aurora-live-ingest: renderer output error\n");
-            else if (rr > 0)
-                reset_stream(&a, a.next_pcm_pts, a.have_pcm_pts);
+            if (rr < 0) {
+                fprintf(stderr, "aurora-live-ingest: renderer output failure\n");
+                if (restart_renderer(&a, a.next_pcm_pts, a.have_pcm_pts) < 0)
+                    break;
+            } else if (rr > 0) {
+                if (restart_renderer(&a, a.next_pcm_pts, a.have_pcm_pts) < 0)
+                    break;
+            }
         }
 
-        if (p[1].revents & (POLLHUP | POLLERR | POLLNVAL))
-            reset_stream(&a, a.next_pcm_pts, a.have_pcm_pts);
+        if (p[1].revents & (POLLHUP | POLLERR | POLLNVAL)) {
+            if (restart_renderer(&a, a.next_pcm_pts, a.have_pcm_pts) < 0)
+                break;
+        }
     }
 
     fprintf(stderr,
-            "aurora-live-ingest: stop encoded=%llu eac3=%llu pcm_periods=%llu\n",
+            "aurora-live-ingest: stop encoded_frames=%llu encoded_bytes=%llu pcm_periods=%llu\n",
             (unsigned long long)a.encoded_frames,
-            (unsigned long long)a.eac3_bursts,
+            (unsigned long long)a.encoded_bytes,
             (unsigned long long)a.pcm_periods);
 
     free(rx);
