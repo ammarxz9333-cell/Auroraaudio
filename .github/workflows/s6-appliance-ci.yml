@@ -5,6 +5,7 @@ on:
   push:
     branches:
       - agent/aurora-s6-appliance-bootstrap
+      - agent/s6-h723-hal-bringup
     paths:
       - "platform/s6/**"
       - "protocol/**"
