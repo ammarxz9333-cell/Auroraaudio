@@ -10,8 +10,8 @@ AuroraOS-S6 turns a Samsung Galaxy S6 board into the primary Aurora appliance co
 - UI: LVGL directly on framebuffer/DRM plus evdev touch. No desktop environment, Chromium, Android, or phone shell.
 - Music library backend: Navidrome. Navidrome never owns the realtime audio device.
 - Immersive external adapters: Harletty and Omniphony remain separate third-party processes/adapters and are never copied into Aurora-owned codec code.
-- Realtime I/O: STM32H753 over USB High-Speed custom transport.
-- Live immersive input: HDMI/eARC audio is normalized by the STM32-side front-end to canonical IEC61937 and transported to the S6 as `ENCODED_IEC61937`.
+- Realtime I/O: the Aurora realtime MCU selected by `config/aurora-hardware-target.env`, over the USB High-Speed custom transport.
+- Live immersive input: HDMI/eARC audio is normalized by the realtime-MCU-side front-end to canonical IEC61937 and transported to the S6 as `ENCODED_IEC61937`.
 - Rear speakers: ESP32-C5 5 GHz receiver nodes with timestamped AuroraLink audio and local I2S amplification.
 
 ## Runtime ownership
@@ -19,8 +19,8 @@ AuroraOS-S6 turns a Samsung Galaxy S6 board into the primary Aurora appliance co
 Critical services:
 
 1. `aurora-core` owns source arbitration, realtime audio orchestration, DSP, output timing, and device health.
-2. `aurora-ffs-daemon` owns the S6 FunctionFS endpoint and the S6 <-> STM32 application-frame handoff.
-3. `aurora-live-ingest` owns the dedicated live HDMI/eARC immersive path: it forwards IEC61937 bytes to the external renderer and packetizes rendered 7.1.4 PCM back to STM32.
+2. `aurora-ffs-daemon` owns the S6 FunctionFS endpoint and the S6 <-> realtime-MCU application-frame handoff.
+3. `aurora-live-ingest` owns the dedicated live HDMI/eARC immersive path: it forwards IEC61937 bytes to the external renderer and packetizes rendered 7.1.4 PCM back to the realtime MCU.
 4. Harletty/Omniphony are optional external adapters started only when configured and legally permitted. Omniphony owns live IEC61937 demultiplexing; Harletty owns E-AC-3/JOC decode and OAMD extraction.
 
 Restartable/non-critical services:
@@ -38,13 +38,13 @@ The v1 target is not "plays Atmos files". It is normal commercial streaming play
 Netflix / Prime Video / Disney+ / other service
         -> TV or streaming box handles authentication + DRM
         -> HDMI/eARC DD+ / E-AC-3 JOC
-        -> STM32 canonical IEC61937 capture
+        -> Aurora realtime-MCU canonical IEC61937 capture
         -> Galaxy S6 AuroraOS
         -> Omniphony IEC61937 parser
         -> Harletty JOC + OAMD
         -> Omniphony 7.1.4 object render
         -> Aurora PCM_S32LE
-        -> STM32 realtime speaker output
+        -> Aurora realtime-MCU speaker output
 ```
 
 Aurora does not decrypt a streaming application's protected media. It consumes the authorized HDMI/eARC audio output as a downstream audio appliance.
@@ -75,6 +75,6 @@ Exact affinity masks and realtime priorities remain configurable until measured 
 
 The live-ingest broker is host-CI validated, including an end-to-end mock transport test once that CI gate passes, but this directory remains an appliance bootstrap rather than proof of physical hardware readiness.
 
-The project must not claim a flash-and-play production image or validated live streaming Atmos until the exact S6 variant, kernel, HDMI/eARC front-end, USB transport, STM32 firmware, thermals, display/touch stack, real JOC service playback, output channel mapping and rear-node synchronization have passed their physical validation gates.
+The project must not claim a flash-and-play production image or validated live streaming Atmos until the exact S6 variant, kernel, HDMI/eARC front-end, USB transport, selected realtime-MCU firmware/HAL, thermals, display/touch stack, real JOC service playback, output channel mapping and rear-node synchronization have passed their physical validation gates.
 
 The initial supported hardware target for bring-up is `SM-G920F`/`zerofltexx`. Other S6 variants must be explicitly validated before flashing.
