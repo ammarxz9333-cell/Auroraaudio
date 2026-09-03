@@ -7,6 +7,21 @@
 struct aurora_transport;
 
 /*
+ * Minimal capture-side continuity state. This deliberately tracks only the
+ * physical IEC61937 carrier rate; Dolby burst/data-type parsing remains owned
+ * by the persistent Omniphony parser on the S6 and is not duplicated here.
+ */
+struct aurora_iec61937_capture_state {
+    uint32_t last_carrier_rate_hz;
+    uint8_t have_carrier_rate;
+};
+
+void aurora_iec61937_capture_state_init(
+    struct aurora_iec61937_capture_state *state);
+void aurora_iec61937_capture_state_reset(
+    struct aurora_iec61937_capture_state *state);
+
+/*
  * Normalize the HDMI/eARC receiver's left-justified S32 capture slots into the
  * protocol-v1 canonical S16_LE IEC61937 word stream.
  *
@@ -44,6 +59,24 @@ int aurora_iec61937_capture_pts_48k(uint64_t carrier_frame_counter,
  * IEC61937 parser on the S6 reassembles them.
  */
 int aurora_iec61937_capture_forward_s32_high_words(
+    struct aurora_transport *transport,
+    const uint32_t *slots,
+    size_t slot_count,
+    uint64_t first_carrier_frame,
+    uint32_t carrier_rate_hz,
+    uint32_t flags,
+    uint8_t *scratch,
+    size_t scratch_capacity);
+
+/*
+ * Stateful wrapper for the future HAL callback. In addition to caller-supplied
+ * source/reset flags, it automatically marks the first block after a physical
+ * carrier-rate change as DISCONTINUITY. State is committed only after a
+ * successful forward, so rejected blocks cannot poison transition tracking.
+ * Same-rate codec/data-type changes are intentionally not guessed here.
+ */
+int aurora_iec61937_capture_forward_stream_block(
+    struct aurora_iec61937_capture_state *state,
     struct aurora_transport *transport,
     const uint32_t *slots,
     size_t slot_count,
