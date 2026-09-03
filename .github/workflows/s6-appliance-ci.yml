@@ -102,6 +102,17 @@ jobs:
             firmware/stm32h753/test/test_aurora_iec61937_capture.c \
             -o /tmp/test-aurora-iec61937-capture
           /tmp/test-aurora-iec61937-capture
+      - name: Test integrated STM32 Aurora audio app core
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Iprotocol -Ifirmware/stm32h753/include \
+            protocol/aurora_usb_stream_v1.c \
+            firmware/stm32h753/src/aurora_transport.c \
+            firmware/stm32h753/src/aurora_iec61937_capture.c \
+            firmware/stm32h753/src/aurora_stm32_audio_app.c \
+            firmware/stm32h753/test/test_aurora_stm32_audio_app.c \
+            -o /tmp/test-aurora-stm32-audio-app
+          /tmp/test-aurora-stm32-audio-app
       - name: Check S6 shell script syntax
         shell: bash
         run: |
