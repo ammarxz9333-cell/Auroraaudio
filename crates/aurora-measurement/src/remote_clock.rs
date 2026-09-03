@@ -151,10 +151,10 @@ impl RemoteClockEstimator {
             return None;
         }
         // One ppm produces 1,000 ns of offset change per second.
-        Some((slope_ns_per_second / 1_000.0).clamp(
-            -self.config.maximum_rate_ppm,
-            self.config.maximum_rate_ppm,
-        ))
+        Some(
+            (slope_ns_per_second / 1_000.0)
+                .clamp(-self.config.maximum_rate_ppm, self.config.maximum_rate_ppm),
+        )
     }
 
     pub fn observe(
@@ -202,16 +202,13 @@ impl RemoteClockEstimator {
             self.rate_ppm = 0.0;
         } else {
             if let Some(estimated_rate_ppm) = self.regression_rate_ppm() {
-                self.rate_ppm +=
-                    self.config.rate_gain * (estimated_rate_ppm - self.rate_ppm);
-                self.rate_ppm = self.rate_ppm.clamp(
-                    -self.config.maximum_rate_ppm,
-                    self.config.maximum_rate_ppm,
-                );
+                self.rate_ppm += self.config.rate_gain * (estimated_rate_ppm - self.rate_ppm);
+                self.rate_ppm = self
+                    .rate_ppm
+                    .clamp(-self.config.maximum_rate_ppm, self.config.maximum_rate_ppm);
             }
             let elapsed_ns = (local_midpoint_ns - self.last_local_midpoint_ns) as f64;
-            let predicted_offset_ns =
-                self.offset_ns + self.rate_ppm * elapsed_ns / 1_000_000.0;
+            let predicted_offset_ns = self.offset_ns + self.rate_ppm * elapsed_ns / 1_000_000.0;
             let residual_ns = measured_offset_ns - predicted_offset_ns;
             self.offset_ns = predicted_offset_ns + self.config.offset_gain * residual_ns;
         }
@@ -307,7 +304,10 @@ mod tests {
         let future_local = 45_000_000_000_u64;
         let expected = remote_time(future_local, offset_ns, rate_ppm) as f64;
         let estimated = estimator.remote_time_for_local_ns(future_local).unwrap();
-        assert!((estimated - expected).abs() < 500_000.0, "estimated={estimated} expected={expected}");
+        assert!(
+            (estimated - expected).abs() < 500_000.0,
+            "estimated={estimated} expected={expected}"
+        );
     }
 
     #[test]
