@@ -750,7 +750,7 @@ mod tests {
         queue.pop_frames(&mut two, 2).unwrap();
         assert_eq!(two, first[..2 * CHANNELS]);
         let second = (100..103)
-            .flat_map(|frame| std::iter::repeat_n(frame as f32, CHANNELS))
+            .flat_map(|frame| std::iter::repeat(frame as f32).take(CHANNELS))
             .collect::<Vec<_>>();
         queue.push_interleaved(&second[..2 * CHANNELS]).unwrap();
         let mut remaining = vec![0.0; 3 * CHANNELS];
