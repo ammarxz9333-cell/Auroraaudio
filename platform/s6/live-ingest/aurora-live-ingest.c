@@ -58,6 +58,7 @@ struct app {
     uint64_t next_pcm_pts;
     int have_pcm_pts;
     struct renderer_proc renderer;
+    uint64_t renderer_serial;
     uint8_t render_pending[RENDER_PENDING_CAP];
     size_t render_pending_len;
     uint64_t encoded_frames;
@@ -248,6 +249,7 @@ static int renderer_start(struct renderer_proc *r)
 
 static int connect_bridge(void)
 {
+    const char *bridge_socket = env_or("AURORA_USB_BRIDGE_SOCKET", BRIDGE_SOCKET);
     int fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
     if (fd < 0)
         return -1;
@@ -255,12 +257,12 @@ static int connect_bridge(void)
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    if (strlen(BRIDGE_SOCKET) >= sizeof(addr.sun_path)) {
+    if (strlen(bridge_socket) >= sizeof(addr.sun_path)) {
         close(fd);
         errno = ENAMETOOLONG;
         return -1;
     }
-    strcpy(addr.sun_path, BRIDGE_SOCKET);
+    strcpy(addr.sun_path, bridge_socket);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         int saved = errno;
@@ -324,13 +326,10 @@ static int32_t f32_to_s32(float x)
 static int flush_pcm_periods(struct app *a)
 {
     while (a->render_pending_len >= PCM_PERIOD_BYTES) {
-        if (!a->configured) {
-            memmove(a->render_pending,
-                    a->render_pending + PCM_PERIOD_BYTES,
-                    a->render_pending_len - PCM_PERIOD_BYTES);
-            a->render_pending_len -= PCM_PERIOD_BYTES;
-            continue;
-        }
+        /* CONFIG is the fail-closed gate. Preserve already-rendered audio
+         * while waiting for the ACK instead of discarding the first period. */
+        if (!a->configured)
+            break;
 
         uint8_t out[PCM_PERIOD_BYTES];
         for (size_t i = 0; i < PCM_PERIOD_SAMPLES; ++i) {
@@ -408,6 +407,7 @@ static int validate_frame(const uint8_t *frame, size_t len,
 
 static int restart_renderer(struct app *a, uint64_t pts, int pts_valid)
 {
+    a->renderer_serial++;
     a->render_pending_len = 0;
     a->next_pcm_pts = pts;
     a->have_pcm_pts = pts_valid;
@@ -452,6 +452,8 @@ static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
             read_le16(payload + 2) == 0) {
             a->configured = 1;
             fprintf(stderr, "aurora-live-ingest: STM32 CONFIG accepted\n");
+            if (flush_pcm_periods(a) < 0)
+                return -1;
         }
         break;
 
@@ -462,8 +464,10 @@ static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
             fprintf(stderr,
                     "aurora-live-ingest: STM32 error offending=%u code=%u\n",
                     offending, code);
-            if (offending == AURORA_USB_CONFIG)
+            if (offending == AURORA_USB_CONFIG) {
                 a->configured = 0;
+                a->render_pending_len = 0;
+            }
         }
         break;
 
@@ -476,6 +480,15 @@ static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
     }
 
     return 0;
+}
+
+static int reset_after_bridge_disconnect(struct app *a)
+{
+    a->configured = 0;
+    a->render_pending_len = 0;
+    a->have_pcm_pts = 0;
+    a->next_pcm_pts = 0;
+    return restart_renderer(a, 0, 0);
 }
 
 int main(void)
@@ -512,17 +525,20 @@ int main(void)
             }
             a.tx_sequence = 0;
             a.configured = 0;
+            a.render_pending_len = 0;
             if (send_config(&a) < 0) {
                 close(a.bridge_fd);
                 a.bridge_fd = -1;
                 continue;
             }
-            fprintf(stderr, "aurora-live-ingest: connected to %s\n", BRIDGE_SOCKET);
+            fprintf(stderr, "aurora-live-ingest: connected to %s\n",
+                    env_or("AURORA_USB_BRIDGE_SOCKET", BRIDGE_SOCKET));
         }
 
         struct pollfd p[2];
         p[0] = (struct pollfd){.fd = a.bridge_fd, .events = POLLIN};
         p[1] = (struct pollfd){.fd = a.renderer.stdout_fd, .events = POLLIN};
+        uint64_t renderer_serial_at_poll = a.renderer_serial;
 
         int rc = poll(p, 2, 250);
         if (rc < 0) {
@@ -535,7 +551,8 @@ int main(void)
         if (p[0].revents & (POLLHUP | POLLERR | POLLNVAL)) {
             close(a.bridge_fd);
             a.bridge_fd = -1;
-            a.configured = 0;
+            if (reset_after_bridge_disconnect(&a) < 0)
+                break;
             continue;
         }
 
@@ -544,7 +561,8 @@ int main(void)
             if (n <= 0) {
                 close(a.bridge_fd);
                 a.bridge_fd = -1;
-                a.configured = 0;
+                if (reset_after_bridge_disconnect(&a) < 0)
+                    break;
                 continue;
             }
             if (handle_bridge_frame(&a, rx, (size_t)n) < 0) {
@@ -553,6 +571,11 @@ int main(void)
                     break;
             }
         }
+
+        /* If the bridge-side event restarted orender, revents for the old
+         * descriptor are stale and must not be applied to the new renderer. */
+        if (renderer_serial_at_poll != a.renderer_serial)
+            continue;
 
         if (p[1].revents & POLLIN) {
             int rr = ingest_renderer_output(&a);
