@@ -42,7 +42,6 @@
 #define POST_CTRL_MASTER_GAIN_MDB 4u
 #define POST_CTRL_MUTE 5u
 #define POST_CTRL_STANDBY 6u
-#define POST_CTRL_SOURCE_FORMAT 7u
 
 static volatile sig_atomic_t stop_requested;
 
@@ -114,7 +113,7 @@ static void write_le32(uint8_t *p, uint32_t v)
     p[0] = (uint8_t)(v & 0xffu);
     p[1] = (uint8_t)((v >> 8) & 0xffu);
     p[2] = (uint8_t)((v >> 16) & 0xffu);
-    p[3] = (uint8_t)((v >> 24) & 0xffu);
+    p[3] = (uint8_t)(v >> 24);
 }
 
 static void write_le64(uint8_t *p, uint64_t v)
