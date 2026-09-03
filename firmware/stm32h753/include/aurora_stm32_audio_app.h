@@ -8,7 +8,11 @@
 #include "aurora_transport.h"
 
 /*
- * Hardware-independent integration core for the STM32H753 side of Aurora.
+ * Hardware-independent integration core for Aurora's current STM32-family
+ * realtime-MCU layer. The concrete MCU part/package is selected only through
+ * config/aurora-hardware-target.env and must not be inferred from this legacy
+ * source-directory or API name.
+ *
  * Vendor HAL callbacks should terminate here rather than calling transport and
  * capture modules independently. This keeps one owner for continuity/reset
  * state and prevents parallel/duplicated audio paths.
