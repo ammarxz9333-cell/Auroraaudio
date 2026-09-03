@@ -5,6 +5,7 @@
 //! physical measurements until fed by an accepted real capture path.
 
 pub mod remote_clock;
+pub mod stimulus;
 
 use std::error::Error;
 use std::fmt::{Display, Formatter};
@@ -17,6 +18,7 @@ pub enum MeasurementError {
     NoCorrelation,
     InsufficientDecayRange,
     InvalidMeasurement,
+    UnsafeCalibration,
 }
 
 impl Display for MeasurementError {
@@ -28,6 +30,7 @@ impl Display for MeasurementError {
             Self::NoCorrelation => "measurement correlation is undefined",
             Self::InsufficientDecayRange => "insufficient decay range for RT60 estimation",
             Self::InvalidMeasurement => "measurement contains invalid numeric values",
+            Self::UnsafeCalibration => "measurement-derived calibration exceeds safety limits",
         };
         formatter.write_str(message)
     }
@@ -48,6 +51,28 @@ pub struct CalibrationAdjustment {
     pub added_delay_frames: f32,
     /// Gain adjustment in dB. The safe derivation never boosts a channel.
     pub gain_db: f32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct CalibrationSafetyLimits {
+    /// Maximum delay that an automatically staged preset may add.
+    pub maximum_added_delay_frames: f32,
+    /// Largest automatic attenuation allowed for one channel.
+    pub maximum_cut_db: f32,
+    /// Plausible RT60 interval used as a measurement sanity gate.
+    pub minimum_rt60_seconds: f32,
+    pub maximum_rt60_seconds: f32,
+}
+
+impl Default for CalibrationSafetyLimits {
+    fn default() -> Self {
+        Self {
+            maximum_added_delay_frames: 4_800.0, // 100 ms at 48 kHz.
+            maximum_cut_db: 12.0,
+            minimum_rt60_seconds: 0.05,
+            maximum_rt60_seconds: 3.0,
+        }
+    }
 }
 
 /// Returns the non-negative frame delay with the strongest normalized
@@ -228,6 +253,43 @@ pub fn derive_safe_time_level_alignment(
         .collect())
 }
 
+/// Produces an automatically stageable time/level preset only when every
+/// measurement and derived adjustment stays inside conservative safety limits.
+/// The caller is still responsible for transactional apply/rollback; this
+/// function deliberately never touches live DSP state itself.
+pub fn derive_guarded_time_level_alignment(
+    measurements: &[ChannelMeasurement],
+    limits: CalibrationSafetyLimits,
+) -> Result<Vec<CalibrationAdjustment>, MeasurementError> {
+    if !limits.maximum_added_delay_frames.is_finite()
+        || limits.maximum_added_delay_frames < 0.0
+        || !limits.maximum_cut_db.is_finite()
+        || limits.maximum_cut_db < 0.0
+        || !limits.minimum_rt60_seconds.is_finite()
+        || !limits.maximum_rt60_seconds.is_finite()
+        || limits.minimum_rt60_seconds < 0.0
+        || limits.maximum_rt60_seconds <= limits.minimum_rt60_seconds
+    {
+        return Err(MeasurementError::InvalidMeasurement);
+    }
+    for measurement in measurements {
+        if !measurement.rt60_seconds.is_finite()
+            || measurement.rt60_seconds < limits.minimum_rt60_seconds
+            || measurement.rt60_seconds > limits.maximum_rt60_seconds
+        {
+            return Err(MeasurementError::UnsafeCalibration);
+        }
+    }
+    let adjustments = derive_safe_time_level_alignment(measurements)?;
+    if adjustments.iter().any(|adjustment| {
+        adjustment.added_delay_frames > limits.maximum_added_delay_frames
+            || adjustment.gain_db < -limits.maximum_cut_db
+    }) {
+        return Err(MeasurementError::UnsafeCalibration);
+    }
+    Ok(adjustments)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -288,5 +350,59 @@ mod tests {
         assert_eq!(adjustments[0].gain_db, -6.0);
         assert_eq!(adjustments[1].gain_db, 0.0);
         assert!(adjustments.iter().all(|adjustment| adjustment.gain_db <= 0.0));
+    }
+
+    #[test]
+    fn guarded_alignment_rejects_implausible_or_excessive_adjustments() {
+        let safe = [
+            ChannelMeasurement {
+                delay_frames: 10.0,
+                level_dbfs: -20.0,
+                rt60_seconds: 0.4,
+            },
+            ChannelMeasurement {
+                delay_frames: 100.0,
+                level_dbfs: -24.0,
+                rt60_seconds: 0.5,
+            },
+        ];
+        assert!(derive_guarded_time_level_alignment(
+            &safe,
+            CalibrationSafetyLimits::default()
+        )
+        .is_ok());
+
+        let unsafe_level = [
+            ChannelMeasurement {
+                delay_frames: 0.0,
+                level_dbfs: -5.0,
+                rt60_seconds: 0.4,
+            },
+            ChannelMeasurement {
+                delay_frames: 0.0,
+                level_dbfs: -30.0,
+                rt60_seconds: 0.4,
+            },
+        ];
+        assert_eq!(
+            derive_guarded_time_level_alignment(
+                &unsafe_level,
+                CalibrationSafetyLimits::default()
+            ),
+            Err(MeasurementError::UnsafeCalibration)
+        );
+
+        let unsafe_rt60 = [ChannelMeasurement {
+            delay_frames: 0.0,
+            level_dbfs: -20.0,
+            rt60_seconds: 10.0,
+        }];
+        assert_eq!(
+            derive_guarded_time_level_alignment(
+                &unsafe_rt60,
+                CalibrationSafetyLimits::default()
+            ),
+            Err(MeasurementError::UnsafeCalibration)
+        );
     }
 }
