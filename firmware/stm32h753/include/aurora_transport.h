@@ -26,7 +26,7 @@ struct aurora_transport_io {
      * the byte stream using header.payload_len. Return 0 on success. */
     int (*usb_send)(void *ctx, const uint8_t *data, size_t len);
 
-    /* Queues exactly one 256-frame / 12-channel / S32LE playback period into
+    /* Queues exactly one 40-frame / 12-channel / S32LE playback period into
      * the realtime SAI/TDM path. Return 0 only if ownership was accepted. */
     int (*queue_pcm_period)(void *ctx, const uint8_t *pcm, size_t len,
                             uint64_t pts_48k, uint32_t flags);
