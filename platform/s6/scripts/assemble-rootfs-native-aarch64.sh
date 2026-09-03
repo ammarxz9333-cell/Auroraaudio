@@ -19,6 +19,7 @@ fail() { echo "assemble-rootfs-native-aarch64: $*" >&2; exit 1; }
 [ "$(uname -m)" = "aarch64" ] || fail "native aarch64 builder required"
 [ -f /etc/alpine-release ] || fail "Alpine Linux builder required"
 [ -x "$STAGE/bin/aurora-cli" ] || fail "userspace stage missing; run build-userspace-native-aarch64.sh first"
+[ -x "$STAGE/bin/aurora-s6-postprocess" ] || fail "S6 postprocessor stage missing"
 [ -x "$STAGE/bin/aurora-ffs-daemon" ] || fail "FunctionFS bridge stage missing"
 [ -x "$STAGE/bin/aurora-live-ingest" ] || fail "live streaming ingest stage missing"
 [ -x "$STAGE/bin/orender" ] || fail "Omniphony stage missing"
@@ -86,6 +87,7 @@ install -d "$ROOTFS/usr/local/bin" "$ROOTFS/usr/local/sbin" \
            "$ROOTFS/var/log/aurora" "$ROOTFS/srv/music" "$ROOTFS/etc/wifi" \
            "$ROOTFS/etc/runlevels/default"
 install -m 0755 "$STAGE/bin/aurora-cli" "$ROOTFS/usr/local/bin/aurora-cli"
+install -m 0755 "$STAGE/bin/aurora-s6-postprocess" "$ROOTFS/usr/local/bin/aurora-s6-postprocess"
 install -m 0755 "$STAGE/bin/aurora-ffs-daemon" "$ROOTFS/usr/local/sbin/aurora-ffs-daemon"
 install -m 0755 "$STAGE/bin/aurora-live-ingest" "$ROOTFS/usr/local/sbin/aurora-live-ingest"
 install -m 0755 "$ROOT/platform/s6/rootfs/etc/init.d/aurora-ffs" "$ROOTFS/etc/init.d/aurora-ffs"
