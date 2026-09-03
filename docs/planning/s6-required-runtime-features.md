@@ -18,7 +18,7 @@ Integrate the runtime features required for the Galaxy S6 + STM32H753 appliance 
 1. consume STM32 CLOCK_REPORT telemetry and drive Aurora's existing PI drift controller plus Rubato ASRC;
 2. add post-render bass management, LFE trim, headroom, speaker high-pass protection, and linked peak limiting;
 3. add bounded positive audio lip-sync delay with a control-plane update path;
-4. harden source/format transitions so decoder/DSP state resets and the first post-transition PCM period is marked discontinuous;
+4. reset decoder/render/DSP state on explicit source/discontinuity events and mark the first post-transition PCM period discontinuous; automatic same-rate codec-format transition detection remains outside this software proof until the real capture/HAL or decoder event boundary supplies it;
 5. add a reusable remote-clock estimator contract for future wireless rear endpoints without adding networking;
 6. replace the room-measurement placeholder with deterministic offline sweep/delay/level/RT60 analysis and time/level calibration derivation;
 7. define a generic local control boundary that future CEC/UI adapters can drive for mute, master gain, standby, and lip-sync;
@@ -32,6 +32,7 @@ Integrate the runtime features required for the Galaxy S6 + STM32H753 appliance 
 - no live network/wireless transport;
 - no claim that CEC works on physical hardware;
 - no claim that automatic room calibration is physically measured;
+- no claim that same-rate codec-format changes are detected automatically before the real capture/HAL or decoder event source is integrated;
 - no change to canonical 7.1.4 channel order;
 - no allocation, logging, filesystem access, process spawning, or blocking locks inside callback-reachable DSP processing;
 - no automatic merge into a release or production branch while physical gates remain open.
@@ -55,7 +56,8 @@ Integrate the runtime features required for the Galaxy S6 + STM32H753 appliance 
 - original LFE trim is independently configurable from redirected bass gain;
 - linked limiter prevents absolute output above the configured ceiling;
 - lip-sync delay is bounded and deterministic;
-- source discontinuity/format change resets renderer/postprocessor state and marks the first returned PCM period DISCONTINUITY;
+- an explicit DISCONTINUITY/source-reset event resets renderer/postprocessor state and marks the first returned PCM period DISCONTINUITY;
+- automatic same-rate codec-format transition detection is an open integration item and is not counted as accepted by the current tests;
 - remote clock estimator converges under deterministic ppm+jitter simulations without network code;
 - measurement crate deterministically estimates delay, level, RT60, and derives channel time/level alignment from synthetic fixtures;
 - unsupported immersive transports remain fail-closed and MAT is not advertised;
