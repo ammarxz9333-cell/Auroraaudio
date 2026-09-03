@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
 import os
+import select
 import signal
 import socket
 import struct
 import subprocess
 import sys
+import tempfile
 import time
 from pathlib import Path
 
@@ -19,7 +21,6 @@ KIND_CONFIG = 4
 KIND_ACK = 5
 FLAG_PTS_VALID = 1 << 0
 
-SOCKET_PATH = Path("/run/aurora/usb-bridge.sock")
 EXPECTED_LAYOUT_HASH = bytes.fromhex(
     "40fb5d12fd76675aefb0344a8897145f0723981d20e205213b440e8bd3e127c0"
 )
@@ -60,6 +61,109 @@ def parse(packet):
     }
 
 
+def validate_config(config):
+    assert config["kind"] == KIND_CONFIG, config
+    assert len(config["payload"]) == 48
+    cfg = config["payload"]
+    assert struct.unpack_from("<I", cfg, 0)[0] == 48000
+    assert struct.unpack_from("<H", cfg, 4)[0] == 256
+    assert struct.unpack_from("<H", cfg, 6)[0] == 12
+    assert struct.unpack_from("<H", cfg, 8)[0] == 1
+    assert struct.unpack_from("<H", cfg, 10)[0] == 1
+    assert cfg[12:16] == b"\x00" * 4
+    assert cfg[16:48] == EXPECTED_LAYOUT_HASH
+
+
+def validate_pcm(pcm, pts):
+    assert pcm["kind"] == KIND_PCM_S32LE, pcm
+    assert pcm["flags"] & FLAG_PTS_VALID
+    assert pcm["pts"] == pts
+    assert (pcm["aux"] >> 16) == 12
+    assert (pcm["aux"] & 0xFFFF) == 256
+    assert len(pcm["payload"]) == 12 * 256 * 4
+
+    # 0.25f is converted with llround(x * 2147483647.0) -> 536870912.
+    samples = struct.unpack("<" + "i" * (12 * 256), pcm["payload"])
+    assert samples[0] == 536_870_912
+    assert samples[-1] == 536_870_912
+    assert all(v == 536_870_912 for v in samples)
+
+
+def run_case(broker, mock_orender, encoded, ack_before_encoded):
+    with tempfile.TemporaryDirectory(prefix="aurora-live-ingest-") as td:
+        socket_path = Path(td) / "usb-bridge.sock"
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        listener.bind(str(socket_path))
+        listener.listen(1)
+        listener.settimeout(5.0)
+
+        env = os.environ.copy()
+        env["AURORA_USB_BRIDGE_SOCKET"] = str(socket_path)
+        env["AURORA_ORENDER_BIN"] = str(mock_orender)
+        env["AURORA_MOCK_EXPECT_HEX"] = encoded.hex()
+        env["AURORA_MOCK_SAMPLE"] = "0.25"
+
+        proc = subprocess.Popen(
+            [str(broker)],
+            env=env,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+        )
+
+        conn = None
+        try:
+            conn, _ = listener.accept()
+            conn.settimeout(5.0)
+
+            config = parse(conn.recv(65536))
+            validate_config(config)
+
+            ack_payload = struct.pack("<HH", KIND_CONFIG, 0)
+            ack = frame(KIND_ACK, ack_payload, sequence=0)
+            pts = 48_000
+            encoded_frame = frame(
+                KIND_ENCODED_IEC61937,
+                encoded,
+                flags=FLAG_PTS_VALID,
+                sequence=1,
+                pts=pts,
+            )
+
+            if ack_before_encoded:
+                conn.sendall(ack)
+                conn.sendall(encoded_frame)
+            else:
+                # Exercise the startup race: encoded Atmos can arrive while the
+                # STM32 is still validating CONFIG. The renderer may produce a
+                # complete period, but the broker must neither leak it before
+                # ACK nor discard it.
+                conn.sendall(encoded_frame)
+                time.sleep(0.20)
+                ready, _, _ = select.select([conn], [], [], 0)
+                assert not ready, "PCM leaked before STM32 CONFIG ACK"
+                conn.sendall(ack)
+
+            pcm = parse(conn.recv(65536))
+            validate_pcm(pcm, pts)
+        finally:
+            if conn is not None:
+                conn.close()
+            listener.close()
+
+            if proc.poll() is None:
+                proc.send_signal(signal.SIGTERM)
+                try:
+                    proc.wait(timeout=3.0)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+                    proc.wait(timeout=3.0)
+
+            if proc.returncode not in (0, -signal.SIGTERM):
+                stderr = proc.stderr.read() if proc.stderr else ""
+                raise AssertionError(f"broker exit={proc.returncode}\n{stderr}")
+
+
 def main():
     if len(sys.argv) != 3:
         print("usage: test_live_ingest.py BROKER MOCK_ORENDER", file=sys.stderr)
@@ -73,102 +177,17 @@ def main():
         raise SystemExit(f"mock renderer not found: {mock_orender}")
 
     mock_orender.chmod(mock_orender.stat().st_mode | 0o111)
-    SOCKET_PATH.parent.mkdir(parents=True, exist_ok=True)
-    try:
-        SOCKET_PATH.unlink()
-    except FileNotFoundError:
-        pass
-
-    listener = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
-    listener.bind(str(SOCKET_PATH))
-    listener.listen(1)
-    listener.settimeout(5.0)
 
     # Canonical S16_LE IEC61937 words. The test intentionally includes a DD+
-    # type-0x15 preamble, but the mock renderer validates byte preservation only;
-    # actual IEC61937/JOC parsing remains owned by Omniphony/Harletty.
+    # type-0x15 preamble. Actual IEC61937/JOC parsing is owned by
+    # Omniphony/Harletty; the mock verifies transport byte preservation.
     encoded = bytes.fromhex("72f81f4e15000600770b34127856")
 
-    env = os.environ.copy()
-    env["AURORA_ORENDER_BIN"] = str(mock_orender)
-    env["AURORA_MOCK_EXPECT_HEX"] = encoded.hex()
-    env["AURORA_MOCK_SAMPLE"] = "0.25"
+    run_case(broker, mock_orender, encoded, ack_before_encoded=True)
+    run_case(broker, mock_orender, encoded, ack_before_encoded=False)
 
-    proc = subprocess.Popen(
-        [str(broker)],
-        env=env,
-        stdout=subprocess.PIPE,
-        stderr=subprocess.PIPE,
-        text=True,
-    )
-
-    conn = None
-    try:
-        conn, _ = listener.accept()
-        conn.settimeout(5.0)
-
-        config = parse(conn.recv(65536))
-        assert config["kind"] == KIND_CONFIG, config
-        assert len(config["payload"]) == 48
-        cfg = config["payload"]
-        assert struct.unpack_from("<I", cfg, 0)[0] == 48000
-        assert struct.unpack_from("<H", cfg, 4)[0] == 256
-        assert struct.unpack_from("<H", cfg, 6)[0] == 12
-        assert struct.unpack_from("<H", cfg, 8)[0] == 1
-        assert struct.unpack_from("<H", cfg, 10)[0] == 1
-        assert cfg[12:16] == b"\x00" * 4
-        assert cfg[16:48] == EXPECTED_LAYOUT_HASH
-
-        ack_payload = struct.pack("<HH", KIND_CONFIG, 0)
-        conn.sendall(frame(KIND_ACK, ack_payload, sequence=0))
-
-        pts = 48_000
-        conn.sendall(
-            frame(
-                KIND_ENCODED_IEC61937,
-                encoded,
-                flags=FLAG_PTS_VALID,
-                sequence=1,
-                pts=pts,
-            )
-        )
-
-        pcm = parse(conn.recv(65536))
-        assert pcm["kind"] == KIND_PCM_S32LE, pcm
-        assert pcm["flags"] & FLAG_PTS_VALID
-        assert pcm["pts"] == pts
-        assert (pcm["aux"] >> 16) == 12
-        assert (pcm["aux"] & 0xFFFF) == 256
-        assert len(pcm["payload"]) == 12 * 256 * 4
-
-        # 0.25f is converted with llround(x * 2147483647.0) -> 536870912.
-        samples = struct.unpack("<" + "i" * (12 * 256), pcm["payload"])
-        assert samples[0] == 536_870_912
-        assert samples[-1] == 536_870_912
-        assert all(v == 536_870_912 for v in samples)
-
-        print("Aurora live-ingest broker end-to-end mock test passed")
-        return 0
-    finally:
-        if conn is not None:
-            conn.close()
-        listener.close()
-        try:
-            SOCKET_PATH.unlink()
-        except FileNotFoundError:
-            pass
-
-        if proc.poll() is None:
-            proc.send_signal(signal.SIGTERM)
-            try:
-                proc.wait(timeout=3.0)
-            except subprocess.TimeoutExpired:
-                proc.kill()
-                proc.wait(timeout=3.0)
-
-        if proc.returncode not in (0, -signal.SIGTERM):
-            stderr = proc.stderr.read() if proc.stderr else ""
-            print(f"broker exit={proc.returncode}\n{stderr}", file=sys.stderr)
+    print("Aurora live-ingest broker end-to-end mock tests passed")
+    return 0
 
 
 if __name__ == "__main__":
