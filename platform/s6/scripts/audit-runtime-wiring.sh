@@ -8,6 +8,7 @@ POST="$ROOT/crates/aurora-cli/src/bin/aurora-s6-postprocess.rs"
 BUILD="$ROOT/platform/s6/scripts/build-userspace-native-aarch64.sh"
 ASSEMBLE="$ROOT/platform/s6/scripts/assemble-rootfs-native-aarch64.sh"
 ENVFILE="$ROOT/platform/s6/rootfs/etc/aurora/aurora.env"
+HW_TARGET="$ROOT/config/aurora-hardware-target.env"
 SERVICE="$INIT_DIR/aurora-live-ingest"
 FFS_SERVICE="$INIT_DIR/aurora-ffs"
 
@@ -26,6 +27,47 @@ env_value() {
     key="$1"
     sed -n "s/^${key}=//p" "$ENVFILE"
 }
+
+# Hardware selection has exactly one machine-readable owner. Runtime/CI/docs
+# consume symbolic AURORA_REALTIME_MCU_* fields instead of duplicating a part
+# number. A legacy source-directory name is explicitly not target truth.
+[ -f "$HW_TARGET" ] || fail "hardware target manifest missing"
+# shellcheck disable=SC1090
+. "$HW_TARGET"
+[ "$AURORA_REALTIME_MCU_ROLE" = "aurora-realtime-mcu" ] || \
+    fail "unexpected realtime MCU symbolic role"
+[ -n "$AURORA_REALTIME_MCU_PART" ] || fail "realtime MCU part is empty"
+[ -n "$AURORA_REALTIME_MCU_PACKAGE" ] || fail "realtime MCU package is empty"
+[ -d "$ROOT/$AURORA_REALTIME_MCU_SOURCE_DIR/include" ] || \
+    fail "realtime MCU include directory does not exist"
+[ -d "$ROOT/$AURORA_REALTIME_MCU_SOURCE_DIR/src" ] || \
+    fail "realtime MCU source directory does not exist"
+[ -d "$ROOT/$AURORA_REALTIME_MCU_SOURCE_DIR/test" ] || \
+    fail "realtime MCU test directory does not exist"
+[ "$AURORA_REALTIME_MCU_USB_HS_HOST" = 1 ] || fail "target lacks mandatory USB HS host"
+[ "$AURORA_REALTIME_MCU_USB_HS_PHY" = ULPI ] || fail "target HS PHY contract is not ULPI"
+[ "$AURORA_REALTIME_MCU_SAI_RX" = 1 ] || fail "target lacks mandatory serial-audio RX"
+[ "$AURORA_REALTIME_MCU_SAI_TDM_TX" = 1 ] || fail "target lacks mandatory TDM TX"
+[ "$AURORA_REALTIME_MCU_DMA" = 1 ] || fail "target lacks mandatory DMA"
+
+# The active concrete part string must not leak into runtime-critical consumers;
+# otherwise a future part swap would again require editing multiple files.
+for file in \
+    "$LIVE" \
+    "$POST" \
+    "$BUILD" \
+    "$ASSEMBLE" \
+    "$SERVICE" \
+    "$FFS_SERVICE" \
+    "$ROOT/.github/workflows/s6-appliance-ci.yml" \
+    "$ROOT/docs/AURORA_USB_S6_STM32_PROTOCOL.md" \
+    "$ROOT/docs/AURORA_EARC_STM32_PHYSICAL_BRINGUP.md" \
+    "$ROOT/docs/AURORA_SYSTEM_ARCHITECTURE_HARDENING_CONTRACT.md"
+do
+    if grep -Fq -- "$AURORA_REALTIME_MCU_PART" "$file"; then
+        fail "concrete realtime MCU part leaked outside hardware target manifest: $file"
+    fi
+done
 
 # Exactly two Aurora services belong in the S6 appliance: the FunctionFS
 # transport bridge and the single live audio pipeline. Adding another Aurora
@@ -148,9 +190,13 @@ build_navidrome="$(sed -n 's/^NAVIDROME_VERSION="${NAVIDROME_VERSION:-\(.*\)}"$/
 [ -n "$env_navidrome" ] && [ "$env_navidrome" = "$build_navidrome" ] || \
     fail "Navidrome version drift: env=$env_navidrome build=$build_navidrome"
 
-# Core stream shape must remain one canonical contract end-to-end.
+# Core stream shape must remain one canonical contract end-to-end, including
+# the selected hardware target's declared transport shape.
 grep -Fq -- 'AURORA_SAMPLE_RATE=48000' "$ENVFILE" || fail "runtime sample rate is not 48 kHz"
 grep -Fq -- 'AURORA_BLOCK_FRAMES=40' "$ENVFILE" || fail "runtime block size is not 40 frames"
 grep -Fq -- 'AURORA_LAYOUT=7.1.4' "$ENVFILE" || fail "runtime layout is not 7.1.4"
+[ "$AURORA_REALTIME_MCU_SAMPLE_RATE" = 48000 ] || fail "hardware target sample rate drift"
+[ "$AURORA_REALTIME_MCU_CHANNELS" = 12 ] || fail "hardware target channel-count drift"
+[ "$AURORA_REALTIME_MCU_PERIOD_FRAMES" = 40 ] || fail "hardware target period drift"
 
-echo "audit-runtime-wiring: PASS single service chain, single DSP path, canonical appliance config, exact rootfs wiring, shared clock primitives, consistent versions"
+echo "audit-runtime-wiring: PASS single service chain, single DSP path, single symbolic realtime-MCU target, canonical appliance config, exact rootfs wiring, shared clock primitives, consistent versions"
