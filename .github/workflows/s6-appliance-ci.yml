@@ -41,7 +41,9 @@ jobs:
       - name: Install Linux audio build dependencies
         run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
       - name: Audit hardware target and runtime wiring
-        run: sh platform/s6/scripts/audit-runtime-wiring.sh
+        run: |
+          sh platform/s6/scripts/audit-runtime-wiring.sh
+          sh firmware/test-generated-target-contract.sh
       - name: Validate pinned Omniphony low-latency stdout patch
         run: sh platform/s6/scripts/test-omniphony-low-latency-patch.sh
       - name: Test Aurora USB Rust wire protocol
