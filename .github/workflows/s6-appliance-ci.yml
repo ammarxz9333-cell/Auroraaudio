@@ -8,7 +8,8 @@ on:
     paths:
       - "platform/s6/**"
       - "protocol/**"
-      - "firmware/stm32h753/**"
+      - "firmware/**"
+      - "config/aurora-hardware-target.env"
       - "crates/aurora-usb-protocol/**"
       - "crates/aurora-cli/**"
       - "crates/aurora-realtime-engine/**"
@@ -18,7 +19,8 @@ on:
     paths:
       - "platform/s6/**"
       - "protocol/**"
-      - "firmware/stm32h753/**"
+      - "firmware/**"
+      - "config/aurora-hardware-target.env"
       - "crates/aurora-usb-protocol/**"
       - "crates/aurora-cli/**"
       - "crates/aurora-realtime-engine/**"
@@ -38,6 +40,30 @@ jobs:
           components: rustfmt, clippy
       - name: Install Linux audio build dependencies
         run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
+      - name: Validate realtime MCU target manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          source config/aurora-hardware-target.env
+          test -n "$AURORA_REALTIME_MCU_ROLE"
+          test -n "$AURORA_REALTIME_MCU_VENDOR"
+          test -n "$AURORA_REALTIME_MCU_FAMILY"
+          test -n "$AURORA_REALTIME_MCU_PART"
+          test -n "$AURORA_REALTIME_MCU_PACKAGE"
+          test -d "$AURORA_REALTIME_MCU_SOURCE_DIR/include"
+          test -d "$AURORA_REALTIME_MCU_SOURCE_DIR/src"
+          test -d "$AURORA_REALTIME_MCU_SOURCE_DIR/test"
+          test "$AURORA_REALTIME_MCU_USB_HS_HOST" = 1
+          test "$AURORA_REALTIME_MCU_USB_HS_PHY" = ULPI
+          test "$AURORA_REALTIME_MCU_SAI_RX" = 1
+          test "$AURORA_REALTIME_MCU_SAI_TDM_TX" = 1
+          test "$AURORA_REALTIME_MCU_DMA" = 1
+          test "$AURORA_REALTIME_MCU_SAMPLE_RATE" = 48000
+          test "$AURORA_REALTIME_MCU_CHANNELS" = 12
+          test "$AURORA_REALTIME_MCU_PERIOD_FRAMES" = 40
+          test "$AURORA_REALTIME_MCU_PINMUX_STATUS" = unverified
+          test "$AURORA_REALTIME_MCU_HAL_STATUS" = not_implemented
+          test "$AURORA_REALTIME_MCU_PHYSICAL_STATUS" = not_measured
       - name: Validate pinned Omniphony low-latency stdout patch
         run: sh platform/s6/scripts/test-omniphony-low-latency-patch.sh
       - name: Audit S6 runtime wiring and duplication
@@ -83,36 +109,48 @@ jobs:
             platform/s6/usb-gadget/aurora-ffs-daemon.c \
             protocol/aurora_usb_stream_v1.c \
             -o /tmp/aurora-ffs-daemon
-      - name: Test portable STM32 transport state machine
+      - name: Test portable realtime-MCU transport state machine
+        shell: bash
         run: |
+          set -euo pipefail
+          source config/aurora-hardware-target.env
+          MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
           cc -std=c11 -O2 -Wall -Wextra -Werror \
-            -Iprotocol -Ifirmware/stm32h753/include \
+            -Iprotocol -I"$MCU/include" \
             protocol/aurora_usb_stream_v1.c \
-            firmware/stm32h753/src/aurora_transport.c \
-            firmware/stm32h753/test/test_aurora_transport.c \
-            -o /tmp/test-aurora-stm32-transport
-          /tmp/test-aurora-stm32-transport
-      - name: Test STM32 eARC IEC61937 capture-to-USB handoff
+            "$MCU/src/aurora_transport.c" \
+            "$MCU/test/test_aurora_transport.c" \
+            -o /tmp/test-aurora-mcu-transport
+          /tmp/test-aurora-mcu-transport
+      - name: Test realtime-MCU eARC IEC61937 capture-to-USB handoff
+        shell: bash
         run: |
+          set -euo pipefail
+          source config/aurora-hardware-target.env
+          MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
           cc -std=c11 -O2 -Wall -Wextra -Werror \
-            -Iprotocol -Ifirmware/stm32h753/include \
+            -Iprotocol -I"$MCU/include" \
             protocol/aurora_usb_stream_v1.c \
-            firmware/stm32h753/src/aurora_transport.c \
-            firmware/stm32h753/src/aurora_iec61937_capture.c \
-            firmware/stm32h753/test/test_aurora_iec61937_capture.c \
-            -o /tmp/test-aurora-iec61937-capture
-          /tmp/test-aurora-iec61937-capture
-      - name: Test integrated STM32 Aurora audio app core
+            "$MCU/src/aurora_transport.c" \
+            "$MCU/src/aurora_iec61937_capture.c" \
+            "$MCU/test/test_aurora_iec61937_capture.c" \
+            -o /tmp/test-aurora-mcu-iec61937-capture
+          /tmp/test-aurora-mcu-iec61937-capture
+      - name: Test integrated realtime-MCU Aurora audio app core
+        shell: bash
         run: |
+          set -euo pipefail
+          source config/aurora-hardware-target.env
+          MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
           cc -std=c11 -O2 -Wall -Wextra -Werror \
-            -Iprotocol -Ifirmware/stm32h753/include \
+            -Iprotocol -I"$MCU/include" \
             protocol/aurora_usb_stream_v1.c \
-            firmware/stm32h753/src/aurora_transport.c \
-            firmware/stm32h753/src/aurora_iec61937_capture.c \
-            firmware/stm32h753/src/aurora_stm32_audio_app.c \
-            firmware/stm32h753/test/test_aurora_stm32_audio_app.c \
-            -o /tmp/test-aurora-stm32-audio-app
-          /tmp/test-aurora-stm32-audio-app
+            "$MCU/src/aurora_transport.c" \
+            "$MCU/src/aurora_iec61937_capture.c" \
+            "$MCU/src/aurora_stm32_audio_app.c" \
+            "$MCU/test/test_aurora_stm32_audio_app.c" \
+            -o /tmp/test-aurora-mcu-audio-app
+          /tmp/test-aurora-mcu-audio-app
       - name: Check S6 shell script syntax
         shell: bash
         run: |
@@ -120,16 +158,21 @@ jobs:
           for f in platform/s6/scripts/*.sh platform/s6/initramfs/init; do
             bash -n "$f"
           done
-      - name: Verify protocol and appliance realtime contracts agree
+      - name: Verify protocol appliance and hardware-target contracts agree
         shell: bash
         run: |
           set -euo pipefail
+          source config/aurora-hardware-target.env
+          MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
           grep -q '#define AURORA_USB_VERSION 1u' protocol/aurora_usb_v1.h
           grep -q 'pub const VERSION: u16 = 1;' crates/aurora-usb-protocol/src/lib.rs
           grep -q 'protocol_version = 1' docs/AURORA_USB_S6_STM32_PROTOCOL.md
           grep -q '#define AURORA_USB_PERIOD_FRAMES 40u' protocol/aurora_usb_v1.h
           grep -q 'pub const DEFAULT_PERIOD_FRAMES: u16 = 40;' crates/aurora-usb-protocol/src/lib.rs
           grep -q 'period_frames = 40' docs/AURORA_USB_S6_STM32_PROTOCOL.md
+          test "$AURORA_REALTIME_MCU_PERIOD_FRAMES" = 40
+          test "$AURORA_REALTIME_MCU_SAMPLE_RATE" = 48000
+          test "$AURORA_REALTIME_MCU_CHANNELS" = 12
           grep -q '^AURORA_BLOCK_FRAMES=40$' platform/s6/rootfs/etc/aurora/aurora.env
           grep -q '^HARLETTY_VERSION=v0.7.3$' platform/s6/rootfs/etc/aurora/aurora.env
           grep -q 'HARLETTY_VERSION="${HARLETTY_VERSION:-v0.7.3}"' platform/s6/scripts/build-userspace-native-aarch64.sh
@@ -142,7 +185,7 @@ jobs:
           grep -q '#define BRIDGE_SOCKET "/run/aurora/usb-bridge.sock"' platform/s6/live-ingest/aurora-live-ingest.c
           grep -q 'usb_enabled ? listen_fd : -1' platform/s6/usb-gadget/aurora-ffs-daemon.c
           grep -q 'close_endpoint(backend_fd);' platform/s6/usb-gadget/aurora-ffs-daemon.c
-          grep -q 'aurora_iec61937_capture_forward_stream_block' firmware/stm32h753/src/aurora_stm32_audio_app.c
+          grep -q 'aurora_iec61937_capture_forward_stream_block' "$MCU/src/aurora_stm32_audio_app.c"
       - name: Strict lint for new S6 Rust surfaces
         run: |
           cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess --no-deps -- -D warnings
