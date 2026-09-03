@@ -55,8 +55,8 @@ pub fn generate_log_sweep(config: LogSweepConfig) -> Result<Vec<f32>, Measuremen
     let ratio = config.end_hz as f64 / start;
     let log_ratio = ratio.ln();
     let phase_scale = 2.0 * std::f64::consts::PI * start * duration / log_ratio;
-    let fade_frames = ((config.fade_seconds * config.sample_rate as f32).round() as usize)
-        .min(frame_count / 2);
+    let fade_frames =
+        ((config.fade_seconds * config.sample_rate as f32).round() as usize).min(frame_count / 2);
 
     let mut output = Vec::with_capacity(frame_count);
     for index in 0..frame_count {
@@ -97,7 +97,11 @@ pub fn generate_noise_burst(
     if frames == 0 {
         return Err(MeasurementError::InvalidMeasurement);
     }
-    let mut state = if seed == 0 { 0x9e37_79b9_7f4a_7c15 } else { seed };
+    let mut state = if seed == 0 {
+        0x9e37_79b9_7f4a_7c15
+    } else {
+        seed
+    };
     let mut output = Vec::with_capacity(frames);
     for _ in 0..frames {
         // xorshift64*: compact deterministic source; this is a measurement
@@ -125,7 +129,9 @@ mod tests {
         let sweep = generate_log_sweep(config).unwrap();
         assert_eq!(sweep.len(), 12_000);
         assert!(sweep.iter().all(|sample| sample.is_finite()));
-        assert!(sweep.iter().all(|sample| sample.abs() <= config.amplitude + 1.0e-6));
+        assert!(sweep
+            .iter()
+            .all(|sample| sample.abs() <= config.amplitude + 1.0e-6));
         assert!(sweep[0].abs() < 1.0e-7);
     }
 
@@ -135,6 +141,8 @@ mod tests {
         let second = generate_noise_burst(48_000, 0.1, 0.2, 1234).unwrap();
         assert_eq!(first, second);
         assert_eq!(first.len(), 4_800);
-        assert!(first.iter().all(|sample| sample.is_finite() && sample.abs() <= 0.2));
+        assert!(first
+            .iter()
+            .all(|sample| sample.is_finite() && sample.abs() <= 0.2));
     }
 }
