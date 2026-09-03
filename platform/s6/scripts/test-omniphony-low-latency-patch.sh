@@ -20,7 +20,8 @@ git apply "$PATCH"
 
 FILE="omniphony-renderer/audio_output/src/file_sink.rs"
 grep -q 'LOW_LATENCY_STDOUT_FRAMES: usize = 256' "$FILE"
-grep -q 'output_buffer_capacity(destination, format, channel_count)' "$FILE"
+grep -q 'raw_stdout_buffer_capacity(channel_count)' "$FILE"
+grep -q 'destination == "-" && format == FileSinkFormat::RawF32' "$FILE"
 
 # file_sink.rs depends only on std, so compile its own unit tests directly. This
 # avoids pulling the full PipeWire/dependency graph while still compiling the
