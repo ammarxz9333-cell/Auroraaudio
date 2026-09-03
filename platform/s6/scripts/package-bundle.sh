@@ -18,6 +18,7 @@ for f in "$BOOT" "$SYSTEM" \
          "$ROOT/platform/s6/COMPONENT_STATUS.md" \
          "$ROOT/docs/AURORA_PLUGIN_SYSTEM.md" \
          "$ROOT/docs/AURORA_FINAL_PRODUCT_ACCEPTANCE.md" \
+         "$ROOT/docs/AURORA_LIVE_STREAMING_ATMOS_ACCEPTANCE.md" \
          "$ROOT/docs/AURORA_MUSIC_HUB_PRODUCT_CONTRACT.md" \
          "$ROOT/docs/AURORA_PRODUCT_FOUNDATIONS_CONTRACT.md" \
          "$ROOT/docs/acceptance/AURORA_PRODUCT_FOUNDATIONS_ACCEPTANCE.md" \
@@ -47,6 +48,7 @@ install -m 0644 "$ROOT/platform/s6/FLASH_GATES.md" "$STAGE/docs/FLASH_GATES.md"
 install -m 0644 "$ROOT/platform/s6/COMPONENT_STATUS.md" "$STAGE/docs/COMPONENT_STATUS.md"
 install -m 0644 "$ROOT/docs/AURORA_PLUGIN_SYSTEM.md" "$STAGE/docs/AURORA_PLUGIN_SYSTEM.md"
 install -m 0644 "$ROOT/docs/AURORA_FINAL_PRODUCT_ACCEPTANCE.md" "$STAGE/docs/AURORA_FINAL_PRODUCT_ACCEPTANCE.md"
+install -m 0644 "$ROOT/docs/AURORA_LIVE_STREAMING_ATMOS_ACCEPTANCE.md" "$STAGE/docs/AURORA_LIVE_STREAMING_ATMOS_ACCEPTANCE.md"
 install -m 0644 "$ROOT/docs/AURORA_MUSIC_HUB_PRODUCT_CONTRACT.md" "$STAGE/docs/AURORA_MUSIC_HUB_PRODUCT_CONTRACT.md"
 install -m 0644 "$ROOT/docs/AURORA_PRODUCT_FOUNDATIONS_CONTRACT.md" "$STAGE/docs/AURORA_PRODUCT_FOUNDATIONS_CONTRACT.md"
 install -m 0644 "$ROOT/docs/acceptance/AURORA_PRODUCT_FOUNDATIONS_ACCEPTANCE.md" "$STAGE/docs/AURORA_PRODUCT_FOUNDATIONS_ACCEPTANCE.md"
@@ -70,11 +72,15 @@ build-script-only, staged third-party, and physical-hardware states are kept
 separate on purpose.
 
 Product requirements bundled with every image include the plugin contract,
-final product acceptance contract, Aurora Music Hub contract, mandatory product
-foundations, and mandatory system-architecture hardening: versioned Event Bus,
-hardware abstraction, thermal/resource budgeting, Safe/Recovery Mode, and
-built-in test/benchmark/soak mode. These files are part of the release truth and
-must match shipped capabilities.
+final product acceptance contract, live streaming Atmos acceptance contract,
+Aurora Music Hub contract, mandatory product foundations, and mandatory
+system-architecture hardening: versioned Event Bus, hardware abstraction,
+thermal/resource budgeting, Safe/Recovery Mode, and built-in
+test/benchmark/soak mode. These files are part of the release truth and must
+match shipped capabilities.
+
+A local Atmos/JOC file is not proof of streaming-service support. Read
+AURORA_LIVE_STREAMING_ATMOS_ACCEPTANCE.md before making any live Atmos claim.
 
 DO NOT FLASH this bundle merely because it built successfully.
 Physical validation gates in docs/FLASH_GATES.md must be completed first.
@@ -87,8 +93,9 @@ EOF
 cat > "$STAGE/NOT_FLASH_READY" <<'EOF'
 This marker is deliberate.
 Remove it only after the exact physical SM-G920F has passed the documented
-boot, display/touch, storage, Wi-Fi/BT, USB FunctionFS, thermal, and recovery
-gates. A green host CI build is not a hardware validation.
+boot, display/touch, storage, Wi-Fi/BT, USB FunctionFS, HDMI/eARC live input,
+streaming JOC/object rendering, thermal, and recovery gates. A green host CI
+build is not a hardware validation.
 EOF
 
 (
