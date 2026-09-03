@@ -127,6 +127,22 @@ jobs:
             "$MCU/test/test_aurora_stm32_audio_app.c" \
             -o /tmp/test-aurora-mcu-audio-app
           /tmp/test-aurora-mcu-audio-app
+      - name: Test realtime-MCU HAL recovery boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          source config/aurora-hardware-target.env
+          MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Iprotocol -I"$MCU/include" -Ifirmware/hal \
+            protocol/aurora_usb_stream_v1.c \
+            "$MCU/src/aurora_transport.c" \
+            "$MCU/src/aurora_iec61937_capture.c" \
+            "$MCU/src/aurora_stm32_audio_app.c" \
+            firmware/hal/aurora_realtime_mcu_hal.c \
+            firmware/hal/test_aurora_realtime_mcu_hal.c \
+            -o /tmp/test-aurora-realtime-mcu-hal
+          /tmp/test-aurora-realtime-mcu-hal
       - name: Check shell script syntax
         shell: bash
         run: |
