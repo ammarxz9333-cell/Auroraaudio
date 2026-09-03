@@ -40,6 +40,23 @@ mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/share/omniphony/layouts" "$OUT/navidrome" "
     "$ROOT/protocol/aurora_usb_stream_v1.c" \
     -o "$OUT/bin/aurora-ffs-daemon"
 
+# The live ingest service accepts complete ENCODED_IEC61937 frames from the
+# FunctionFS bridge, extracts E-AC-3/DD+ type 0x15, feeds the isolated
+# Harletty/Omniphony process, and packetizes rendered 7.1.4 PCM back to STM32.
+"$CC" -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror \
+    -I"$ROOT/protocol" -I"$ROOT/platform/s6/live-ingest" \
+    "$ROOT/platform/s6/live-ingest/aurora-live-ingest.c" \
+    "$ROOT/platform/s6/live-ingest/iec61937_eac3.c" \
+    -lm -o "$OUT/bin/aurora-live-ingest"
+
+# Run the deterministic streaming parser test on the native target builder too.
+"$CC" -std=c11 -O2 -Wall -Wextra -Werror \
+    -I"$ROOT/platform/s6/live-ingest" \
+    "$ROOT/platform/s6/live-ingest/iec61937_eac3.c" \
+    "$ROOT/platform/s6/live-ingest/test_iec61937_eac3.c" \
+    -o "$WORK/test-iec61937-eac3"
+"$WORK/test-iec61937-eac3"
+
 # Aurora-owned Rust baseline. Exclude simulation and the external CamillaDSP process
 # from the appliance binary; realtime CPAL remains available for bring-up/testing.
 (
@@ -89,6 +106,7 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
     echo "architecture=aarch64"
     echo "aurora_commit=$(git -C "$ROOT" rev-parse HEAD)"
     echo "aurora_usb_protocol=1"
+    echo "live_streaming_ingest=eac3-iec61937-type-0x15"
     echo "harletty=$HARLETTY_VERSION"
     echo "omniphony=$OMNIPHONY_VERSION"
     echo "navidrome=v$NAVIDROME_VERSION"
@@ -96,4 +114,5 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
 } > "$OUT/BUILD-MANIFEST.txt"
 
 sha256sum "$OUT/bin/aurora-ffs-daemon" > "$OUT/bin/aurora-ffs-daemon.sha256"
+sha256sum "$OUT/bin/aurora-live-ingest" > "$OUT/bin/aurora-live-ingest.sha256"
 echo "Userspace staging complete: $OUT"
