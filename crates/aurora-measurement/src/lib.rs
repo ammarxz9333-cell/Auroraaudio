@@ -305,7 +305,10 @@ mod tests {
         for (index, sample) in reference.iter().copied().enumerate() {
             captured[index + delay] = sample;
         }
-        assert_eq!(estimate_delay_frames(&reference, &captured, 100).unwrap(), delay);
+        assert_eq!(
+            estimate_delay_frames(&reference, &captured, 100).unwrap(),
+            delay
+        );
     }
 
     #[test]
@@ -349,7 +352,9 @@ mod tests {
         assert_eq!(adjustments[1].added_delay_frames, 0.0);
         assert_eq!(adjustments[0].gain_db, -6.0);
         assert_eq!(adjustments[1].gain_db, 0.0);
-        assert!(adjustments.iter().all(|adjustment| adjustment.gain_db <= 0.0));
+        assert!(adjustments
+            .iter()
+            .all(|adjustment| adjustment.gain_db <= 0.0));
     }
 
     #[test]
@@ -366,11 +371,9 @@ mod tests {
                 rt60_seconds: 0.5,
             },
         ];
-        assert!(derive_guarded_time_level_alignment(
-            &safe,
-            CalibrationSafetyLimits::default()
-        )
-        .is_ok());
+        assert!(
+            derive_guarded_time_level_alignment(&safe, CalibrationSafetyLimits::default()).is_ok()
+        );
 
         let unsafe_level = [
             ChannelMeasurement {
@@ -385,10 +388,7 @@ mod tests {
             },
         ];
         assert_eq!(
-            derive_guarded_time_level_alignment(
-                &unsafe_level,
-                CalibrationSafetyLimits::default()
-            ),
+            derive_guarded_time_level_alignment(&unsafe_level, CalibrationSafetyLimits::default()),
             Err(MeasurementError::UnsafeCalibration)
         );
 
@@ -398,10 +398,7 @@ mod tests {
             rt60_seconds: 10.0,
         }];
         assert_eq!(
-            derive_guarded_time_level_alignment(
-                &unsafe_rt60,
-                CalibrationSafetyLimits::default()
-            ),
+            derive_guarded_time_level_alignment(&unsafe_rt60, CalibrationSafetyLimits::default()),
             Err(MeasurementError::UnsafeCalibration)
         );
     }
