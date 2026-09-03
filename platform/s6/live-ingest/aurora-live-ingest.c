@@ -22,27 +22,26 @@
 #define DEFAULT_HARLETTY "/opt/aurora/external/libharletty_bridge.so"
 #define DEFAULT_LAYOUT "/etc/aurora/layouts/7.1.4.yaml"
 
-#define PCM_CHANNELS 12u
-#define PCM_PERIOD_FRAMES 256u
+#define PCM_CHANNELS AURORA_USB_CHANNELS_7_1_4
+#define PCM_PERIOD_FRAMES AURORA_USB_PERIOD_FRAMES
 #define PCM_PERIOD_SAMPLES (PCM_CHANNELS * PCM_PERIOD_FRAMES)
 #define PCM_PERIOD_BYTES (PCM_PERIOD_SAMPLES * 4u)
 #define TX_FRAME_CAP (AURORA_USB_HEADER_LEN + PCM_PERIOD_BYTES)
 #define RX_FRAME_CAP AURORA_USB_MAX_FRAME
 #define RENDER_READ_CHUNK (64u * 1024u)
-#define RENDER_PENDING_CAP (PCM_PERIOD_BYTES * 16u)
+#define RENDER_PENDING_CAP (128u * 1024u)
 #define IO_TIMEOUT_MS 100
 
 static volatile sig_atomic_t stop_requested;
 
 /* SHA-256 of the protocol-v1 canonical output-layout manifest:
- * AURORA_LAYOUT_V1;id=1;rate=48000;format=S32LE;period=256;
- * channels=FL,FR,C,LFE,BL,BR,SL,SR,TFL,TFR,TBL,TBR\n
+ * AURORA_LAYOUT_V1;id=1;rate=48000;format=S32LE;period=40;channels=FL,FR,C,LFE,BL,BR,SL,SR,TFL,TFR,TBL,TBR\n
  */
 static const uint8_t layout_hash_7_1_4_v1[32] = {
-    0x40, 0xfb, 0x5d, 0x12, 0xfd, 0x76, 0x67, 0x5a,
-    0xef, 0xb0, 0x34, 0x4a, 0x88, 0x97, 0x14, 0x5f,
-    0x07, 0x23, 0x98, 0x1d, 0x20, 0xe2, 0x05, 0x21,
-    0x3b, 0x44, 0x0e, 0x8b, 0xd3, 0xe1, 0x27, 0xc0,
+    0x05, 0x06, 0x35, 0x60, 0xd6, 0xc5, 0xc1, 0xb7,
+    0xd3, 0x70, 0x96, 0x56, 0xcd, 0x8c, 0x64, 0x4a,
+    0x6d, 0x2b, 0x52, 0xf5, 0xe8, 0x13, 0x83, 0x77,
+    0x1f, 0x26, 0x32, 0x34, 0x42, 0xd0, 0xa2, 0x44,
 };
 
 struct renderer_proc {
