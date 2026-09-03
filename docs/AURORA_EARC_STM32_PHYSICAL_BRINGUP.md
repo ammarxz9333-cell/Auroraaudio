@@ -1,6 +1,8 @@
-# Aurora eARC → STM32H753 physical bring-up
+# Aurora eARC → realtime-MCU physical bring-up
 
 Status: **physical bring-up contract, not physical acceptance evidence**.
+
+The active realtime MCU is selected only by `config/aurora-hardware-target.env`. This document uses the stable symbolic role `AURORA_REALTIME_MCU_ROLE`; a concrete part number in any old directory name is not target truth.
 
 This document defines the shortest measured path for getting live streaming-service Dolby Digital Plus / JOC into the existing Aurora S6 pipeline.
 
@@ -12,8 +14,8 @@ Fire TV / TV streaming application
         -> Lindy 38368 eARC extractor
         -> SiI9437 eARC receiver
         -> I2S SD0/BCLK/WS tap
-        -> STM32H753 SAI slave RX + DMA
-        -> Aurora STM32 audio app core
+        -> Aurora realtime MCU SAI/I2S slave RX + DMA
+        -> Aurora realtime-MCU audio app core
         -> canonical S16_LE IEC61937
         -> Aurora USB ENCODED_IEC61937
         -> Galaxy S6 / aurora-live-ingest
@@ -21,7 +23,7 @@ Fire TV / TV streaming application
         -> Harletty E-AC-3 JOC + OAMD
         -> Omniphony 7.1.4
         -> Aurora USB PCM_S32LE
-        -> STM32 audio app core / realtime output
+        -> realtime-MCU audio app core / realtime output
 ```
 
 The streaming device/application retains responsibility for account authentication, DRM, HDCP and licensed playback. Aurora taps the already-authorized eARC audio output exactly downstream of the TV.
@@ -52,14 +54,14 @@ Lattice publicly documents the SiI9437 as an eARC receiver with four-lane I2S ou
 
 For the compressed DD+ / JOC route, Aurora needs only SD0 plus the two external clocks. SD1-SD3 are useful later for multichannel LPCM but are not required to prove streaming Atmos v1.
 
-| SiI9437 | Signal | STM32H753 role |
+| SiI9437 | Signal | realtime-MCU role |
 |---|---|---|
-| pin 10 | SCK / BCLK | `SAIx_SCK` input |
-| pin 11 | WS / LRCK | `SAIx_FS` input |
-| pin 12 | SD0 | `SAIx_SD` input |
+| pin 10 | SCK / BCLK | audio serial clock input |
+| pin 11 | WS / LRCK | audio frame-sync input |
+| pin 12 | SD0 | serial audio data input |
 | pin 7/19 or nearby ground pour | GND | local digital ground return |
 
-The exact STM32 package pins depend on the selected H753 board/custom PCB and must be chosen from a valid SAI alternate-function set. No board-specific STM32 pinout is accepted by this document until that hardware target is explicitly selected and checked against its package/board routing.
+The exact MCU package pins depend on the target selected in `config/aurora-hardware-target.env` and its eventual board/custom PCB. Pinmux remains unverified until checked against the selected part/package datasheet and actual board routing.
 
 ### Tap rules
 
@@ -73,7 +75,7 @@ Use:
 - SCK paired/twisted with a ground return where practical;
 - mechanical strain relief at the 0.4 mm-pitch QFN tap point.
 
-Do not connect the SiI9437 3.3 V power pin to an STM32 GPIO supply. Only signals and common ground are required between independently powered boards.
+Do not connect the SiI9437 3.3 V power pin to an MCU GPIO supply. Only signals and common ground are required between independently powered boards.
 
 ## Expected DD+ electrical framing
 
@@ -85,19 +87,14 @@ slots per frame     = 2 (L,R)
 slot width          = 32 bits
 frame width         = 64 bits
 BCLK                = 192000 * 64 = 12.288 MHz
-WS/LRCK             = 192 kHz
+WS/LRCK              = 192 kHz
 ```
 
-The STM32H753 datasheet specifies SAI slave operation with 32-bit data and a maximum SAI clock of up to `128 × Fs` at 192 kHz. This path uses `64 × Fs`, so the measured 12.288 MHz BCLK is inside the documented timing envelope.
+The selected realtime MCU must be verified against these clock/serial-audio requirements before `AURORA_REALTIME_MCU_PINMUX_STATUS` can leave `unverified`. The manifest declares required capabilities; it does not replace the selected part's datasheet timing check.
 
-ST references:
+## Serial-audio capture configuration contract
 
-- STM32H753 datasheet, SAI characteristics
-- RM0433, Serial Audio Interface (SAI), slave mode and DMA
-
-## STM32 SAI configuration contract
-
-The physical HAL implementation must configure one SAI receive sub-block as:
+The physical HAL implementation must configure one receive sub-block as:
 
 - **slave receiver**;
 - asynchronous/external SCK + FS inputs;
@@ -113,13 +110,15 @@ The SiI9437 is the BCLK/WS master. Aurora must never synthesize a competing SCK/
 
 ## One HAL boundary — no parallel capture/transport path
 
-The portable firmware now provides one integration owner:
+The portable firmware provides one integration owner:
 
 ```c
 struct aurora_stm32_audio_app
 ```
 
-Vendor Cube/HAL callbacks must terminate at this app core instead of independently calling the lower-level capture and transport modules. The canonical hardware-facing entry points are:
+The concrete struct name is a legacy implementation identifier for the current STM32-family portable layer; it is not the target-selection mechanism. Vendor HAL callbacks must terminate at this app core instead of independently calling lower-level capture and transport modules.
+
+The canonical hardware-facing entry points are:
 
 ```text
 aurora_stm32_audio_app_init(...)
@@ -134,7 +133,7 @@ This gives one owner for USB protocol state, PCM fail-closed state, eARC carrier
 
 ## DMA callback contract
 
-The real SAI RX DMA half/full callbacks supply the raw S32 DMA slots, the first carrier-frame counter and the current measured/selected carrier rate to:
+The real audio RX DMA half/full callbacks supply the raw S32 DMA slots, the first carrier-frame counter and the current measured/selected carrier rate to:
 
 ```text
 aurora_stm32_audio_app_earc_dma_s32_high_words(...)
@@ -148,7 +147,7 @@ Through the stateful capture core this path:
 4. automatically marks supported physical carrier-rate changes as `AURORA_USB_FLAG_DISCONTINUITY`;
 5. sends the byte stream through the one embedded `aurora_transport` instance toward the S6.
 
-Burst boundaries are intentionally **not** parsed on STM32. A DD+ burst may cross DMA and USB boundaries. Omniphony v0.5.2 remains the single persistent IEC61937 parser on S6. Same-carrier-rate codec/data-type changes must come from a real HAL/receiver event or the S6 parser boundary later; STM32 must not duplicate Dolby/IEC payload parsing just to infer them.
+Burst boundaries are intentionally **not** parsed on the realtime MCU. A DD+ burst may cross DMA and USB boundaries. Omniphony v0.5.2 remains the single persistent IEC61937 parser on S6. Same-carrier-rate codec/data-type changes must come from a real HAL/receiver event or the S6 parser boundary later; the realtime MCU must not duplicate Dolby/IEC payload parsing just to infer them.
 
 For a DMA block containing `N` stereo carrier frames:
 
@@ -162,7 +161,7 @@ For the DD+ reference path, the measured reference carrier is `192000` Hz.
 
 ## USB host and playback callback contract
 
-The STM32 USB Host implementation must feed arbitrary received Aurora protocol bytes into:
+The realtime-MCU USB Host implementation must feed arbitrary received Aurora protocol bytes into:
 
 ```text
 aurora_stm32_audio_app_usb_receive(...)
@@ -185,7 +184,7 @@ The `aurora_transport_io` callbacks supplied at app initialization remain the ha
 - source sample counter;
 - queued playback frame count.
 
-The playback DMA implementation must call `aurora_stm32_audio_app_playback_xrun(...)` immediately on underrun. Periodic telemetry must use `aurora_stm32_audio_app_send_clock_report(...)` so the S6 drives one shared 12-channel ASRC ratio from the STM32-owned physical clock.
+The playback DMA implementation must call `aurora_stm32_audio_app_playback_xrun(...)` immediately on underrun. Periodic telemetry must use `aurora_stm32_audio_app_send_clock_report(...)` so the S6 drives one shared 12-channel ASRC ratio from the realtime-MCU-owned physical clock.
 
 ## Clock loss and source changes
 
@@ -193,7 +192,7 @@ A source or eARC clock interruption must not allow stale decoded PCM to reappear
 
 Required behavior:
 
-1. stop/abort the affected SAI DMA stream;
+1. stop/abort the affected audio RX DMA stream;
 2. reset/re-anchor the capture epoch as appropriate and mark the next valid encoded block discontinuous;
 3. re-anchor `first_carrier_frame`/PTS to the new capture epoch;
 4. let `aurora-live-ingest` restart Omniphony/Harletty state;
@@ -201,13 +200,13 @@ Required behavior:
 
 A supported physical carrier-rate transition is already detected by the stateful portable capture core. Same-rate codec/data-type transitions are still an explicit integration item and must not be claimed as detected automatically.
 
-The S6 live-ingest regression suite covers discontinuity and USB-bridge reconnect behavior in software. Physical SAI/eARC clock-loss behavior is still a mandatory hardware test.
+The S6 live-ingest regression suite covers discontinuity and USB-bridge reconnect behavior in software. Physical eARC clock-loss behavior is still a mandatory hardware test.
 
 ## Current proof boundary
 
-Software execution proves the portable chain through the integrated STM32 app core, including USB protocol handling, eARC word normalization, carrier-rate transition signaling, clock reports and XRUN fail-closed state. It does **not** prove a compiled STM32Cube firmware image or physical peripheral callbacks.
+Software execution proves the portable chain through the integrated realtime-MCU app core, including USB protocol handling, eARC word normalization, carrier-rate transition signaling, clock reports and XRUN fail-closed state. It does **not** prove a compiled target-specific HAL firmware image or physical peripheral callbacks.
 
-The repository still needs a selected STM32H753 board/package and its verified pinmux before a real Cube/HAL layer can be written without inventing pins.
+The current selected target and its status are read from `config/aurora-hardware-target.env`. Pinmux/HAL/physical status must remain honest there.
 
 ## First physical measurements
 
@@ -216,7 +215,7 @@ Before running Netflix/Prime/Disney, verify the link with an oscilloscope/logic 
 1. SCK present and approximately 12.288 MHz during DD+ playback;
 2. WS approximately 192 kHz;
 3. SD0 active;
-4. STM32 DMA progresses without overrun;
+4. realtime-MCU DMA progresses without overrun;
 5. normalized bytes contain repeated IEC61937 sync words `72 f8 1f 4e`;
 6. `Pc & 0x1f == 0x15` is observed for DD+ segments;
 7. S6 receives continuous `ENCODED_IEC61937` frames.
@@ -231,15 +230,15 @@ The physical test is successful only when the exact chain proves:
 commercial streaming service
 -> DD+ JOC over TV eARC
 -> SiI9437/Lindy tap
--> STM32 SAI/DMA
--> integrated STM32 audio app core
+-> realtime-MCU audio RX DMA
+-> integrated realtime-MCU audio app core
 -> Aurora USB IEC61937
 -> real Harletty JOC + OAMD
 -> real Omniphony object render
 -> 7.1.4 including height activity
 -> Aurora postprocessor
 -> Aurora USB PCM
--> integrated STM32 audio app core
+-> integrated realtime-MCU audio app core
 -> physical multichannel output
 ```
 
