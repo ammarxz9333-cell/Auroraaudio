@@ -1,7 +1,7 @@
 diff --git a/omniphony-renderer/audio_output/src/file_sink.rs b/omniphony-renderer/audio_output/src/file_sink.rs
 --- a/omniphony-renderer/audio_output/src/file_sink.rs
 +++ b/omniphony-renderer/audio_output/src/file_sink.rs
-@@ -64,28 +64,48 @@ impl FileAudioWriter {
+@@ -64,26 +64,46 @@ impl FileAudioWriter {
      const BUF_CAPACITY: usize = 64 * 1024;
 +    const LOW_LATENCY_STDOUT_FRAMES: usize = 256;
 +
@@ -49,7 +49,7 @@ diff --git a/omniphony-renderer/audio_output/src/file_sink.rs b/omniphony-render
          };
          Self::with_writer(sink, format, sample_rate, channel_count, channel_descs)
      }
-@@ -266,12 +286,20 @@ mod tests {
+@@ -266,11 +286,19 @@ mod tests {
      #[test]
      fn raw_f32_le_encoding() {
          let mut buf = Vec::new();
