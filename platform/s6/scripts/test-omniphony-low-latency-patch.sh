@@ -19,7 +19,7 @@ git apply --check "$PATCH"
 git apply "$PATCH"
 
 FILE="omniphony-renderer/audio_output/src/file_sink.rs"
-grep -Fq 'const BUF_CAPACITY: usize = 256 * 12 * 4;' "$FILE"
+grep -Fq 'const BUF_CAPACITY: usize = 40 * 12 * 4;' "$FILE"
 ! grep -Fq 'const BUF_CAPACITY: usize = 64 * 1024;' "$FILE"
 
 # The file sink is std-only. Compile and run all of its unit tests so the pinned
@@ -27,4 +27,4 @@ grep -Fq 'const BUF_CAPACITY: usize = 256 * 12 * 4;' "$FILE"
 rustc --edition=2021 --test "$FILE" -o "$TMP/file-sink-tests"
 "$TMP/file-sink-tests"
 
-echo "Omniphony v0.5.2 12-channel/256-frame output buffer patch test passed"
+echo "Omniphony v0.5.2 12-channel/40-frame output buffer patch test passed"
