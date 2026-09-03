@@ -1,6 +1,21 @@
 #include "aurora_iec61937_capture.h"
 #include "aurora_transport.h"
 
+void aurora_iec61937_capture_state_init(
+    struct aurora_iec61937_capture_state *state)
+{
+    aurora_iec61937_capture_state_reset(state);
+}
+
+void aurora_iec61937_capture_state_reset(
+    struct aurora_iec61937_capture_state *state)
+{
+    if (!state)
+        return;
+    state->last_carrier_rate_hz = 0;
+    state->have_carrier_rate = 0;
+}
+
 int aurora_iec61937_capture_s32_high_words(const uint32_t *slots,
                                            size_t slot_count,
                                            uint8_t *out,
@@ -92,4 +107,40 @@ int aurora_iec61937_capture_forward_s32_high_words(
 
     return aurora_transport_send_iec61937(
         transport, scratch, payload_len, pts_48k, flags);
+}
+
+int aurora_iec61937_capture_forward_stream_block(
+    struct aurora_iec61937_capture_state *state,
+    struct aurora_transport *transport,
+    const uint32_t *slots,
+    size_t slot_count,
+    uint64_t first_carrier_frame,
+    uint32_t carrier_rate_hz,
+    uint32_t flags,
+    uint8_t *scratch,
+    size_t scratch_capacity)
+{
+    if (!state)
+        return -1;
+
+    uint32_t effective_flags = flags;
+    if (state->have_carrier_rate &&
+        state->last_carrier_rate_hz != carrier_rate_hz) {
+        effective_flags |= AURORA_USB_FLAG_DISCONTINUITY;
+    }
+
+    int rc = aurora_iec61937_capture_forward_s32_high_words(
+        transport,
+        slots,
+        slot_count,
+        first_carrier_frame,
+        carrier_rate_hz,
+        effective_flags,
+        scratch,
+        scratch_capacity);
+    if (rc == 0 && slot_count != 0) {
+        state->last_carrier_rate_hz = carrier_rate_hz;
+        state->have_carrier_rate = 1;
+    }
+    return rc;
 }
