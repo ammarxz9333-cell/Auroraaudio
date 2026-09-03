@@ -43,6 +43,13 @@ jobs:
             -Iprotocol \
             platform/s6/live-ingest/aurora-live-ingest.c \
             -lm -o /tmp/aurora-live-ingest
+      - name: Test live immersive broker end-to-end with mock renderer
+        run: |
+          sudo install -d -o "$USER" -g "$(id -gn)" /run/aurora
+          chmod +x platform/s6/live-ingest/mock_orender.py
+          python3 platform/s6/live-ingest/test_live_ingest.py \
+            /tmp/aurora-live-ingest \
+            platform/s6/live-ingest/mock_orender.py
       - name: Compile FunctionFS bridge with warnings as errors
         run: |
           cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
