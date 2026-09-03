@@ -72,7 +72,23 @@ bit 3  XRUN_RECOVERY
 
 Direction: STM32 → S6.
 
-Payload is IEC61937 data captured by the STM32-side input path. Application framing comes from the Aurora header, never from individual 512-byte USB packets.
+Payload is a **canonical 16-bit little-endian IEC61937 word stream** captured by the STM32-side HDMI/eARC input path.
+
+The STM32 front-end must normalize the physical receiver representation before USB transport. If the HDMI/eARC receiver exposes IEC words in a 24- or 32-bit slot, firmware extracts the actual 16-bit IEC word and sends it as S16_LE bytes. Padding/unused slot bits are never forwarded to the S6.
+
+Canonical IEC61937 preamble bytes on the Aurora wire are therefore:
+
+```text
+Pa = 0xF872 -> 72 F8
+Pb = 0x4E1F -> 1F 4E
+Pc             little-endian u16
+Pd             little-endian u16
+payload ...
+```
+
+For streaming Dolby Digital Plus / E-AC-3, the relevant IEC61937 data type is `0x15`. Dolby Atmos carried as DD+ JOC uses the same E-AC-3 IEC61937 type; JOC/object presence is established later by the decoder metadata, not by inventing a separate Aurora transport kind.
+
+Application framing comes from the Aurora header, never from individual 512-byte USB packets. One `ENCODED_IEC61937` Aurora frame does **not** need to equal one IEC61937 burst: the local S6 consumer must preserve byte order across frame boundaries.
 
 `aux = 0` in protocol v1.
 
@@ -84,6 +100,12 @@ Direction: S6 → STM32.
 - sample rate: 48,000 Hz;
 - initial layout: 7.1.4 = 12 channels;
 - one sample occupies four bytes.
+
+Canonical protocol-v1 channel order is:
+
+```text
+FL FR C LFE BL BR SL SR TFL TFR TBL TBR
+```
 
 `aux` packs:
 
@@ -129,6 +151,20 @@ Offset  Size  Field
 16      32    layout_hash = raw SHA-256 of canonical channel-layout manifest
 ```
 
+The protocol-v1 canonical layout manifest is the exact UTF-8 byte sequence:
+
+```text
+AURORA_LAYOUT_V1;id=1;rate=48000;format=S32LE;period=256;channels=FL,FR,C,LFE,BL,BR,SL,SR,TFL,TFR,TBL,TBR\n
+```
+
+Its SHA-256 is fixed to:
+
+```text
+40fb5d12fd76675aefb0344a8897145f0723981d20e205213b440e8bd3e127c0
+```
+
+Both S6 and STM32 must use these exact 32 raw hash bytes. A different channel order, period, sample format or spelling requires a new layout manifest/hash and must fail closed against protocol-v1 configuration expecting the value above.
+
 Startup handshake:
 
 1. S6 sends CONFIG while STM32 amplifier outputs are muted.
@@ -154,22 +190,25 @@ u16 error_code
 
 The Linux bridge may also emit short UTF-8 diagnostic ERROR payloads during early transport bring-up; the production backend must not rely on human-readable text for state transitions.
 
+## Local S6 handoff and live immersive path
+
+`aurora-ffs-daemon` owns FunctionFS and exposes `/run/aurora/usb-bridge.sock` as Unix `SOCK_SEQPACKET`.
+
+The USB side is byte-stream reassembled first; one local socket message then equals exactly one complete Aurora frame. This isolates the decoder/renderer/Aurora DSP layer from USB reset and packet-fragment details.
+
+PING/PONG is handled directly by the FunctionFS daemon, so basic transport health can be tested before the audio backend starts.
+
+For live immersive input, `aurora-live-ingest` connects to this socket and forwards the payload bytes of successive `ENCODED_IEC61937` frames unchanged to Omniphony stdin. It deliberately does not duplicate IEC61937 demultiplexing. Omniphony's streaming parser owns IEC61937 burst reassembly and supplies the resulting typed packet to the configured Harletty bridge. Rendered 7.1.4 raw-f32 output is converted to protocol-v1 `PCM_S32LE` periods and returned through the same socket.
+
 ## Sequencing and recovery
 
 - `sequence` increments independently per USB direction and wraps as u32.
 - USB reset/disconnect clears CONFIG state and returns STM32 to muted `WAIT_CONFIG`.
-- A malformed stream resets the reassembler and leaves outputs muted.
+- A malformed Aurora USB stream resets the reassembler and leaves outputs muted.
 - On PCM underrun, STM32 outputs silence, mutes, increments its xrun counter and sends an XRUN clock report.
+- On a `DISCONTINUITY` encoded-input frame, the S6 live-ingest service resets/restarts decoder-renderer stream state before accepting new-program audio.
 - On a `DISCONTINUITY` PCM period, STM32 mutes before re-queueing and only unmutes after the valid period is accepted.
 - Protocol/layout mismatch never enables amplifier output.
-
-## Local S6 handoff
-
-`aurora-ffs-daemon` owns FunctionFS and exposes `/run/aurora/usb-bridge.sock` as Unix `SOCK_SEQPACKET`.
-
-The USB side is byte-stream reassembled first; one local socket message then equals exactly one complete Aurora frame. This isolates Harletty/Omniphony/Aurora DSP from USB reset and packet-fragment details.
-
-PING/PONG is handled directly by the FunctionFS daemon, so basic transport health can be tested before the audio backend starts.
 
 ## Bandwidth budget
 
@@ -188,8 +227,10 @@ The transport is not production-ready until physical hardware passes:
 1. STM32H753 + ULPI repeatedly enumerates the S6 FunctionFS gadget after cold boot/reset.
 2. PING/PONG works before the audio backend starts.
 3. CONFIG mismatch always leaves amplifiers muted.
-4. 8-hour bidirectional soak shows no framing/sequence corruption.
-5. 12-channel 48 kHz playback has no USB-induced underruns under sustained decode/render load.
-6. Clock-drift correction remains bounded without periodic buffer growth/shrink.
-7. Cable unplug/replug returns through mute → CONFIG → stream without reboot.
-8. Thermal load on S6 does not create sustained xruns.
+4. Canonical IEC61937 preambles survive the physical HDMI/eARC receiver → STM32 normalization → USB path byte-for-byte.
+5. 8-hour bidirectional soak shows no framing/sequence corruption.
+6. 12-channel 48 kHz playback has no USB-induced underruns under sustained decode/render load.
+7. Clock-drift correction remains bounded without periodic buffer growth/shrink.
+8. Cable unplug/replug returns through mute → CONFIG → stream without reboot.
+9. Thermal load on S6 does not create sustained xruns.
+10. Live streaming-service Atmos acceptance additionally satisfies `docs/AURORA_LIVE_STREAMING_ATMOS_ACCEPTANCE.md`.
