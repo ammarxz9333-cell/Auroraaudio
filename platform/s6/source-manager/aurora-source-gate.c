@@ -19,6 +19,7 @@
 
 #define DEFAULT_REAL_BRIDGE "/run/aurora/usb-bridge.sock"
 #define DEFAULT_SOURCE_SOCKET "/run/aurora/hdmi-source.sock"
+#define DEFAULT_LOCAL_SOURCE_SOCKET "/run/aurora/local-source.sock"
 #define DEFAULT_MANAGER_SOCKET "/run/aurora/source-manager.sock"
 #define POLL_TIMEOUT_MS 50
 #define SOURCE_IDLE_MS 1000u
@@ -32,6 +33,8 @@ struct gate {
     int bridge_fd;
     int source_listen_fd;
     int source_fd;
+    int local_listen_fd;
+    int local_fd;
     int manager_fd;
     uint32_t source_sequence;
     uint8_t manager_registered;
@@ -152,6 +155,22 @@ static int open_listener(const char *path)
         return -1;
     }
     return fd;
+}
+
+static void close_fd(int *fd)
+{
+    if (*fd >= 0) {
+        close(*fd);
+        *fd = -1;
+    }
+}
+
+static int send_packet(int fd, const uint8_t *frame, size_t len)
+{
+    if (fd < 0)
+        return -1;
+    ssize_t n = send(fd, frame, len, MSG_NOSIGNAL);
+    return n == (ssize_t)len ? 0 : -1;
 }
 
 static int source_send(struct gate *g, uint16_t kind, uint64_t data0,
@@ -330,6 +349,10 @@ static void write_s32le(uint8_t *p, int32_t value)
     write_le32(p, (uint32_t)value);
 }
 
+/* Returns 0 to forward the frame, 1 to drop an inactive HDMI PCM period, and
+ * -1 on invalid input. Dropping inactive PCM is mandatory once multiple source
+ * data clients share the single FunctionFS backend: zero periods from an
+ * inactive source would otherwise overwrite the active source's timeline. */
 static int apply_pcm_gate(struct gate *g, uint8_t *frame, size_t len)
 {
     uint16_t kind;
@@ -342,6 +365,8 @@ static int apply_pcm_gate(struct gate *g, uint8_t *frame, size_t len)
         return 0;
     if (payload_len != AURORA_USB_PERIOD_FRAMES * AURORA_USB_CHANNELS_7_1_4 * 4u)
         return -1;
+    if (!g->granted && !g->pending_quiesce)
+        return 1;
 
     if (g->force_discontinuity) {
         write_le32(frame + 8, flags | AURORA_USB_FLAG_DISCONTINUITY);
@@ -370,7 +395,7 @@ static int apply_pcm_gate(struct gate *g, uint8_t *frame, size_t len)
 
     if (g->pending_quiesce && g->current_gain == 0.0f &&
         g->ramp_frames_remaining == 0)
-        return complete_quiesce(g);
+        return complete_quiesce(g) < 0 ? -1 : 1;
     return 0;
 }
 
@@ -397,6 +422,55 @@ static void mark_source_absent(struct gate *g)
     fail_closed(g);
 }
 
+static void close_upstream_sources(struct gate *g)
+{
+    close_fd(&g->source_fd);
+    close_fd(&g->local_fd);
+    mark_source_absent(g);
+}
+
+static int forward_bridge_frame(struct gate *g, uint8_t *frame, size_t len)
+{
+    uint16_t kind;
+    uint32_t flags;
+    uint8_t *payload;
+    uint32_t payload_len;
+    if (validate_aurora_frame(frame, len, &kind, &flags, &payload, &payload_len) < 0)
+        return -1;
+    (void)flags;
+    (void)payload;
+    (void)payload_len;
+
+    if (kind == AURORA_USB_ENCODED_IEC61937) {
+        if (g->source_fd >= 0) {
+            mark_source_present(g);
+            if (send_packet(g->source_fd, frame, len) < 0) {
+                close_fd(&g->source_fd);
+                mark_source_absent(g);
+            }
+        }
+        return 0;
+    }
+
+    /* CONFIG ACK/ERROR, CLOCK_REPORT and other control traffic is safe to
+     * duplicate to source adapters. Each adapter keeps its own configured and
+     * drift state; IEC61937 media itself is never duplicated to local music. */
+    if (g->source_fd >= 0 && send_packet(g->source_fd, frame, len) < 0) {
+        close_fd(&g->source_fd);
+        mark_source_absent(g);
+    }
+    if (g->local_fd >= 0 && send_packet(g->local_fd, frame, len) < 0)
+        close_fd(&g->local_fd);
+    return 0;
+}
+
+static int local_frame_allowed(uint16_t kind)
+{
+    return kind == AURORA_USB_CONFIG ||
+           kind == AURORA_USB_PCM_S32LE ||
+           kind == AURORA_USB_PING;
+}
+
 int main(void)
 {
     signal(SIGINT, on_signal);
@@ -408,16 +482,26 @@ int main(void)
     g.bridge_fd = -1;
     g.source_listen_fd = -1;
     g.source_fd = -1;
+    g.local_listen_fd = -1;
+    g.local_fd = -1;
     g.manager_fd = -1;
     g.user_gain = 1.0f;
 
     const char *real_bridge = env_or("AURORA_USB_BRIDGE_SOCKET_REAL", DEFAULT_REAL_BRIDGE);
     const char *source_socket = env_or("AURORA_HDMI_SOURCE_SOCKET", DEFAULT_SOURCE_SOCKET);
+    const char *local_socket = env_or("AURORA_LOCAL_SOURCE_SOCKET", DEFAULT_LOCAL_SOURCE_SOCKET);
     const char *manager_socket = env_or("AURORA_SOURCE_MANAGER_SOCKET", DEFAULT_MANAGER_SOCKET);
 
     g.source_listen_fd = open_listener(source_socket);
     if (g.source_listen_fd < 0) {
-        perror("aurora-source-gate: source listener");
+        perror("aurora-source-gate: HDMI source listener");
+        return 1;
+    }
+    g.local_listen_fd = open_listener(local_socket);
+    if (g.local_listen_fd < 0) {
+        perror("aurora-source-gate: local source listener");
+        close(g.source_listen_fd);
+        unlink(source_socket);
         return 1;
     }
 
@@ -428,7 +512,9 @@ int main(void)
         free(source_buf);
         free(bridge_buf);
         close(g.source_listen_fd);
+        close(g.local_listen_fd);
         unlink(source_socket);
+        unlink(local_socket);
         return 1;
     }
 
@@ -441,19 +527,20 @@ int main(void)
                 g.manager_registered = 0;
                 g.source_sequence = 0;
                 if (register_with_manager(&g) < 0) {
-                    close(g.manager_fd);
-                    g.manager_fd = -1;
+                    close_fd(&g.manager_fd);
                     fail_closed(&g);
                 }
             }
         }
 
-        struct pollfd p[4];
+        struct pollfd p[6];
         p[0] = (struct pollfd){.fd = g.source_listen_fd, .events = POLLIN};
         p[1] = (struct pollfd){.fd = g.source_fd, .events = POLLIN};
         p[2] = (struct pollfd){.fd = g.bridge_fd, .events = POLLIN};
         p[3] = (struct pollfd){.fd = g.manager_fd, .events = POLLIN};
-        int rc = poll(p, 4, POLL_TIMEOUT_MS);
+        p[4] = (struct pollfd){.fd = g.local_listen_fd, .events = POLLIN};
+        p[5] = (struct pollfd){.fd = g.local_fd, .events = POLLIN};
+        int rc = poll(p, 6, POLL_TIMEOUT_MS);
         if (rc < 0) {
             if (errno == EINTR)
                 continue;
@@ -469,19 +556,26 @@ int main(void)
                     g.source_fd = accepted;
             }
         }
+        if (p[4].revents & POLLIN) {
+            int accepted = accept4(g.local_listen_fd, NULL, NULL, SOCK_CLOEXEC);
+            if (accepted >= 0) {
+                if (g.local_fd >= 0)
+                    close(accepted);
+                else
+                    g.local_fd = accepted;
+            }
+        }
 
         if (g.manager_fd >= 0 &&
             (p[3].revents & (POLLHUP | POLLERR | POLLNVAL))) {
-            close(g.manager_fd);
-            g.manager_fd = -1;
+            close_fd(&g.manager_fd);
             g.manager_registered = 0;
             fail_closed(&g);
         } else if (g.manager_fd >= 0 && (p[3].revents & POLLIN)) {
             uint8_t message[AURORA_SOURCE_MESSAGE_BYTES];
             ssize_t n = recv(g.manager_fd, message, sizeof(message), 0);
             if (n <= 0 || handle_manager_message(&g, message, (size_t)n) < 0) {
-                close(g.manager_fd);
-                g.manager_fd = -1;
+                close_fd(&g.manager_fd);
                 g.manager_registered = 0;
                 fail_closed(&g);
             }
@@ -489,59 +583,61 @@ int main(void)
 
         if (g.bridge_fd >= 0 &&
             (p[2].revents & (POLLHUP | POLLERR | POLLNVAL))) {
-            close(g.bridge_fd);
-            g.bridge_fd = -1;
-            if (g.source_fd >= 0) {
-                close(g.source_fd);
-                g.source_fd = -1;
-            }
-            mark_source_absent(&g);
-        } else if (g.bridge_fd >= 0 && g.source_fd >= 0 && (p[2].revents & POLLIN)) {
+            close_fd(&g.bridge_fd);
+            close_upstream_sources(&g);
+        } else if (g.bridge_fd >= 0 && (p[2].revents & POLLIN)) {
             ssize_t n = recv(g.bridge_fd, bridge_buf, AURORA_USB_MAX_FRAME, 0);
             if (n <= 0) {
-                close(g.bridge_fd);
-                g.bridge_fd = -1;
-                if (g.source_fd >= 0) {
-                    close(g.source_fd);
-                    g.source_fd = -1;
-                }
-                mark_source_absent(&g);
-            } else {
-                uint16_t kind;
-                uint32_t flags, payload_len;
-                uint8_t *payload;
-                if (validate_aurora_frame(bridge_buf, (size_t)n, &kind, &flags,
-                                          &payload, &payload_len) == 0 &&
-                    kind == AURORA_USB_ENCODED_IEC61937) {
-                    (void)flags;
-                    (void)payload;
-                    (void)payload_len;
-                    mark_source_present(&g);
-                }
-                if (send(g.source_fd, bridge_buf, (size_t)n, MSG_NOSIGNAL) != n) {
-                    close(g.source_fd);
-                    g.source_fd = -1;
-                    mark_source_absent(&g);
-                }
+                close_fd(&g.bridge_fd);
+                close_upstream_sources(&g);
+            } else if (forward_bridge_frame(&g, bridge_buf, (size_t)n) < 0) {
+                close_fd(&g.bridge_fd);
+                close_upstream_sources(&g);
             }
         }
 
         if (g.source_fd >= 0 &&
             (p[1].revents & (POLLHUP | POLLERR | POLLNVAL))) {
-            close(g.source_fd);
-            g.source_fd = -1;
+            close_fd(&g.source_fd);
             mark_source_absent(&g);
         } else if (g.source_fd >= 0 && g.bridge_fd >= 0 && (p[1].revents & POLLIN)) {
             ssize_t n = recv(g.source_fd, source_buf, AURORA_USB_MAX_FRAME, 0);
             if (n <= 0) {
-                close(g.source_fd);
-                g.source_fd = -1;
+                close_fd(&g.source_fd);
                 mark_source_absent(&g);
-            } else if (apply_pcm_gate(&g, source_buf, (size_t)n) < 0 ||
-                       send(g.bridge_fd, source_buf, (size_t)n, MSG_NOSIGNAL) != n) {
-                close(g.source_fd);
-                g.source_fd = -1;
-                mark_source_absent(&g);
+            } else {
+                int gate_rc = apply_pcm_gate(&g, source_buf, (size_t)n);
+                if (gate_rc < 0) {
+                    close_fd(&g.source_fd);
+                    mark_source_absent(&g);
+                } else if (gate_rc == 0 &&
+                           send_packet(g.bridge_fd, source_buf, (size_t)n) < 0) {
+                    close_fd(&g.bridge_fd);
+                    close_upstream_sources(&g);
+                }
+            }
+        }
+
+        if (g.local_fd >= 0 &&
+            (p[5].revents & (POLLHUP | POLLERR | POLLNVAL))) {
+            close_fd(&g.local_fd);
+        } else if (g.local_fd >= 0 && g.bridge_fd >= 0 && (p[5].revents & POLLIN)) {
+            ssize_t n = recv(g.local_fd, source_buf, AURORA_USB_MAX_FRAME, 0);
+            uint16_t kind;
+            uint32_t flags, payload_len;
+            uint8_t *payload;
+            if (n <= 0) {
+                close_fd(&g.local_fd);
+            } else if (validate_aurora_frame(source_buf, (size_t)n, &kind, &flags,
+                                             &payload, &payload_len) < 0 ||
+                       !local_frame_allowed(kind)) {
+                (void)flags;
+                (void)payload;
+                (void)payload_len;
+                close_fd(&g.local_fd);
+            } else if (send_packet(g.bridge_fd, source_buf, (size_t)n) < 0) {
+                close_fd(&g.bridge_fd);
+                close_upstream_sources(&g);
             }
         }
 
@@ -553,9 +649,7 @@ int main(void)
         if (g.pending_quiesce && g.quiesce_deadline_ms != 0 &&
             now >= g.quiesce_deadline_ms) {
             if (complete_quiesce(&g) < 0) {
-                if (g.manager_fd >= 0)
-                    close(g.manager_fd);
-                g.manager_fd = -1;
+                close_fd(&g.manager_fd);
                 g.manager_registered = 0;
                 fail_closed(&g);
             }
@@ -564,14 +658,13 @@ int main(void)
 
     free(source_buf);
     free(bridge_buf);
-    if (g.source_fd >= 0)
-        close(g.source_fd);
-    if (g.bridge_fd >= 0)
-        close(g.bridge_fd);
-    if (g.manager_fd >= 0)
-        close(g.manager_fd);
-    if (g.source_listen_fd >= 0)
-        close(g.source_listen_fd);
+    close_fd(&g.source_fd);
+    close_fd(&g.local_fd);
+    close_fd(&g.bridge_fd);
+    close_fd(&g.manager_fd);
+    close_fd(&g.source_listen_fd);
+    close_fd(&g.local_listen_fd);
     unlink(source_socket);
+    unlink(local_socket);
     return 0;
 }
