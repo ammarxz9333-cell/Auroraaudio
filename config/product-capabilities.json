@@ -1,0 +1,141 @@
+{
+  "schema_version": 1,
+  "product_baseline": "q995-clean-baseline",
+  "experience_target": "q995-class-7.1.4",
+  "claim_policy": {
+    "samsung_equivalence_claimed": false,
+    "dolby_atmos_compatibility_claimed": false,
+    "physical_acoustic_parity_claimed": false,
+    "rule": "Product-level claims require code, deterministic software evidence, lawful codec boundaries where applicable, and measured physical acceptance evidence."
+  },
+  "primary_hardware_lane": {
+    "platform": "Galaxy S6 appliance plus realtime-MCU",
+    "status": "host_software_validated_physical_gates_open",
+    "fallback_reference_platform": "i.MX93 R0/R1/R2 research line",
+    "selection_rule": "Keep S6 primary until measured CPU, thermal, latency, xrun, USB, and immersive-decode evidence proves it insufficient."
+  },
+  "capabilities": [
+    {
+      "id": "scene-model",
+      "status": "accepted_software",
+      "scope": "Aurora-owned scene, listener, speaker and object model",
+      "evidence": ["workspace tests"]
+    },
+    {
+      "id": "renderer-geometric-binaural",
+      "status": "experimental_host_validated",
+      "scope": "Stereo geometric ITD/ILD baseline",
+      "limitations": ["not HRTF", "no HRIR convolution", "no validated elevation", "no validated front/back discrimination"]
+    },
+    {
+      "id": "renderer-vbap-2d",
+      "status": "accepted_software_horizontal_only",
+      "scope": "Horizontal-plane loudspeaker VBAP",
+      "limitations": ["not a 3D height renderer", "must not be used as evidence of 5.1.2 or 7.1.4 height rendering"]
+    },
+    {
+      "id": "renderer-vbap-3d",
+      "status": "implementation_required",
+      "scope": "Height-capable 3D loudspeaker renderer for 5.1.2 and 7.1.4"
+    },
+    {
+      "id": "renderer-evaluation",
+      "status": "integrated_pending_clean_baseline_ci",
+      "scope": "Deterministic WAV, trajectory, discontinuity, validation and host-performance artifacts",
+      "limitations": ["host timing is not physical latency"]
+    },
+    {
+      "id": "s6-appliance-bootstrap",
+      "status": "host_validated_build_scripts_physical_open",
+      "scope": "Alpine ARM64 appliance, Exynos7420 kernel/image/package build path"
+    },
+    {
+      "id": "source-manager",
+      "status": "host_validated",
+      "scope": "Exclusive HDMI/eARC/local source ownership, fail-closed handoff and control state"
+    },
+    {
+      "id": "earc-iec61937-ingest",
+      "status": "host_validated_physical_open",
+      "scope": "Portable carrier normalization, live ingest and decoder handoff",
+      "limitations": ["physical eARC/SAI/DMA capture unmeasured"]
+    },
+    {
+      "id": "external-joc-render-path",
+      "status": "staged_physical_acceptance_required",
+      "scope": "Harletty plus Omniphony external immersive decode/render adapter",
+      "limitations": ["Aurora does not implement Dolby codec behavior", "live service JOC/object/height/realtime evidence still required"]
+    },
+    {
+      "id": "pcm-7.1.4-transport",
+      "status": "host_validated_protocol_physical_open",
+      "scope": "12-channel 48 kHz PCM framing and realtime-MCU transport"
+    },
+    {
+      "id": "realtime-mcu-portable-core",
+      "status": "host_validated",
+      "scope": "Transport, CONFIG/layout, queueing, XRUN recovery and reset logic"
+    },
+    {
+      "id": "realtime-mcu-target-hal",
+      "status": "hardware_blocked",
+      "scope": "USB HS-PHY, serial audio capture, TDM/DMA output and DAC/amp control"
+    },
+    {
+      "id": "fractional-delay",
+      "status": "accepted_software",
+      "scope": "Per-channel bounded fractional delay with linear interpolation"
+    },
+    {
+      "id": "bass-management",
+      "status": "implementation_required",
+      "scope": "Configurable crossover, LFE redirect/sum and headroom policy"
+    },
+    {
+      "id": "room-eq",
+      "status": "implementation_required",
+      "scope": "Per-channel PEQ/FIR correction and calibration-derived filters"
+    },
+    {
+      "id": "speaker-calibration",
+      "status": "implementation_required",
+      "scope": "Distance, level, polarity, delay, response and room-measurement workflow"
+    },
+    {
+      "id": "output-protection",
+      "status": "implementation_required",
+      "scope": "Limiter, clipping/headroom policy and amplifier/speaker protection"
+    },
+    {
+      "id": "wireless-rears",
+      "status": "hardware_and_transport_blocked",
+      "scope": "Low-jitter synchronized rear/height nodes",
+      "limitations": ["ESP32-C5 concept selected but packet transport and physical synchronization are not accepted"]
+    },
+    {
+      "id": "multiroom",
+      "status": "implementation_required",
+      "scope": "Synchronized multiroom program distribution and group control"
+    },
+    {
+      "id": "true-hrtf",
+      "status": "implementation_required",
+      "scope": "SOFA/HRIR backed headphone renderer"
+    },
+    {
+      "id": "iamf",
+      "status": "placeholder",
+      "scope": "Open immersive input through isolated reviewed decoder"
+    },
+    {
+      "id": "touch-ui",
+      "status": "implementation_required",
+      "scope": "LVGL source/status/settings/now-playing/calibration UI"
+    },
+    {
+      "id": "thermal-recovery-soak",
+      "status": "physical_acceptance_required",
+      "scope": "Sustained immersive decode/render/output without xruns or thermal failure"
+    }
+  ]
+}
