@@ -19,6 +19,8 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.78.0
         with:
           components: rustfmt
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
       - name: Fix deterministic 3D triplet iteration
         shell: bash
         run: |
