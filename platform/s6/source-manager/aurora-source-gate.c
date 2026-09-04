@@ -18,38 +18,56 @@
 #include "aurora_usb_v1.h"
 
 #define DEFAULT_REAL_BRIDGE "/run/aurora/usb-bridge.sock"
-#define DEFAULT_SOURCE_SOCKET "/run/aurora/hdmi-source.sock"
+#define DEFAULT_HDMI_SOURCE_SOCKET "/run/aurora/hdmi-source.sock"
 #define DEFAULT_LOCAL_SOURCE_SOCKET "/run/aurora/local-source.sock"
 #define DEFAULT_MANAGER_SOCKET "/run/aurora/source-manager.sock"
-#define POLL_TIMEOUT_MS 50
+#define POLL_TIMEOUT_MS 20
 #define SOURCE_IDLE_MS 1000u
 #define MAX_REVOKE_FADE_MS 1000u
 #define FADE_MS AURORA_SOURCE_REVOKE_FADE_MS
 #define FADE_FRAMES ((AURORA_USB_SAMPLE_RATE_HZ * FADE_MS) / 1000u)
+#define CONFIG_PAYLOAD_BYTES 48u
+#define CONFIG_FRAME_BYTES (AURORA_USB_HEADER_LEN + CONFIG_PAYLOAD_BYTES)
+#define PCM_PAYLOAD_BYTES \
+    (AURORA_USB_PERIOD_FRAMES * AURORA_USB_CHANNELS_7_1_4 * 4u)
+
+#define SLOT_HDMI 0u
+#define SLOT_LOCAL 1u
+#define SLOT_COUNT 2u
 
 static volatile sig_atomic_t stop_requested;
 
-struct gate {
-    int bridge_fd;
-    int source_listen_fd;
-    int source_fd;
-    int local_listen_fd;
-    int local_fd;
+struct source_slot {
+    uint16_t source_id;
+    uint32_t source_format;
+    int listen_fd;
+    int data_fd;
     int manager_fd;
     uint32_t source_sequence;
     uint8_t manager_registered;
-    uint8_t source_present;
+    uint8_t present;
     uint8_t granted;
     uint8_t pending_quiesce;
     uint8_t global_muted;
     uint8_t standby;
     uint8_t force_discontinuity;
+    uint8_t configured;
+    uint8_t config_awaiting_ack;
+    uint8_t config_cached;
     float user_gain;
     float current_gain;
     float target_gain;
     uint32_t ramp_frames_remaining;
-    uint64_t last_encoded_ms;
+    uint64_t last_media_ms;
     uint64_t quiesce_deadline_ms;
+    uint8_t config_frame[CONFIG_FRAME_BYTES];
+    size_t config_frame_len;
+};
+
+struct gate {
+    int bridge_fd;
+    struct source_slot slots[SLOT_COUNT];
+    const char *manager_socket;
 };
 
 static void on_signal(int signo)
@@ -74,24 +92,24 @@ static uint64_t read_le64(const uint8_t *p)
     return (uint64_t)read_le32(p) | ((uint64_t)read_le32(p + 4) << 32);
 }
 
-static void write_le16(uint8_t *p, uint16_t v)
+static void write_le16(uint8_t *p, uint16_t value)
 {
-    p[0] = (uint8_t)(v & 0xffu);
-    p[1] = (uint8_t)(v >> 8);
+    p[0] = (uint8_t)(value & 0xffu);
+    p[1] = (uint8_t)(value >> 8);
 }
 
-static void write_le32(uint8_t *p, uint32_t v)
+static void write_le32(uint8_t *p, uint32_t value)
 {
-    p[0] = (uint8_t)(v & 0xffu);
-    p[1] = (uint8_t)((v >> 8) & 0xffu);
-    p[2] = (uint8_t)((v >> 16) & 0xffu);
-    p[3] = (uint8_t)(v >> 24);
+    p[0] = (uint8_t)(value & 0xffu);
+    p[1] = (uint8_t)((value >> 8) & 0xffu);
+    p[2] = (uint8_t)((value >> 16) & 0xffu);
+    p[3] = (uint8_t)(value >> 24);
 }
 
-static void write_le64(uint8_t *p, uint64_t v)
+static void write_le64(uint8_t *p, uint64_t value)
 {
-    write_le32(p, (uint32_t)v);
-    write_le32(p + 4, (uint32_t)(v >> 32));
+    write_le32(p, (uint32_t)value);
+    write_le32(p + 4, (uint32_t)(value >> 32));
 }
 
 static uint64_t monotonic_ms(void)
@@ -108,11 +126,28 @@ static const char *env_or(const char *key, const char *fallback)
     return (value && *value) ? value : fallback;
 }
 
+static void close_fd(int *fd)
+{
+    if (*fd >= 0) {
+        close(*fd);
+        *fd = -1;
+    }
+}
+
+static int send_packet(int fd, const uint8_t *data, size_t len)
+{
+    if (fd < 0 || (!data && len != 0u))
+        return -1;
+    ssize_t n = send(fd, data, len, MSG_NOSIGNAL);
+    return n == (ssize_t)len ? 0 : -1;
+}
+
 static int connect_seqpacket(const char *path)
 {
     int fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
     if (fd < 0)
         return -1;
+
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
@@ -136,6 +171,7 @@ static int open_listener(const char *path)
     int fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
     if (fd < 0)
         return -1;
+
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
@@ -157,103 +193,87 @@ static int open_listener(const char *path)
     return fd;
 }
 
-static void close_fd(int *fd)
+static int source_send(struct source_slot *slot, uint16_t kind,
+                       uint64_t data0, uint32_t data1, uint32_t data2)
 {
-    if (*fd >= 0) {
-        close(*fd);
-        *fd = -1;
-    }
-}
-
-static int send_packet(int fd, const uint8_t *frame, size_t len)
-{
-    if (fd < 0)
+    if (!slot || slot->manager_fd < 0)
         return -1;
-    ssize_t n = send(fd, frame, len, MSG_NOSIGNAL);
-    return n == (ssize_t)len ? 0 : -1;
-}
 
-static int source_send(struct gate *g, uint16_t kind, uint64_t data0,
-                       uint32_t data1, uint32_t data2)
-{
-    if (g->manager_fd < 0)
-        return -1;
     uint8_t message[AURORA_SOURCE_MESSAGE_BYTES] = {0};
     write_le32(message + 0, AURORA_SOURCE_MAGIC_U32);
     write_le16(message + 4, AURORA_SOURCE_VERSION);
     write_le16(message + 6, kind);
-    write_le16(message + 8, AURORA_SOURCE_HDMI_EARC);
+    write_le16(message + 8, slot->source_id);
     write_le16(message + 10, 0);
-    write_le32(message + 12, g->source_sequence++);
+    write_le32(message + 12, slot->source_sequence++);
     write_le64(message + 16, data0);
     write_le32(message + 24, data1);
     write_le32(message + 28, data2);
-    ssize_t n = send(g->manager_fd, message, sizeof(message), MSG_NOSIGNAL);
-    return n == (ssize_t)sizeof(message) ? 0 : -1;
+    return send_packet(slot->manager_fd, message, sizeof(message));
 }
 
-static void set_target_gain(struct gate *g, float target, uint32_t frames)
+static void set_target_gain(struct source_slot *slot, float target,
+                            uint32_t frames)
 {
-    g->target_gain = target;
-    g->ramp_frames_remaining = frames;
-    if (frames == 0)
-        g->current_gain = target;
+    slot->target_gain = target;
+    slot->ramp_frames_remaining = frames;
+    if (frames == 0u)
+        slot->current_gain = target;
 }
 
-static float audible_target(const struct gate *g)
+static float audible_target(const struct source_slot *slot)
 {
-    if (!g->granted || g->global_muted || g->standby)
+    if (!slot->granted || slot->global_muted || slot->standby)
         return 0.0f;
-    return g->user_gain;
+    return slot->user_gain;
 }
 
-static void refresh_target(struct gate *g, uint32_t frames)
+static void refresh_target(struct source_slot *slot, uint32_t frames)
 {
-    set_target_gain(g, audible_target(g), frames);
+    set_target_gain(slot, audible_target(slot), frames);
 }
 
-static void fail_closed(struct gate *g)
+static void fail_closed(struct source_slot *slot)
 {
-    g->granted = 0;
-    g->pending_quiesce = 0;
-    g->quiesce_deadline_ms = 0;
-    g->force_discontinuity = 1;
-    set_target_gain(g, 0.0f, 0);
+    slot->granted = 0;
+    slot->pending_quiesce = 0;
+    slot->quiesce_deadline_ms = 0;
+    slot->configured = 0;
+    slot->config_awaiting_ack = 0;
+    slot->force_discontinuity = 1;
+    set_target_gain(slot, 0.0f, 0);
 }
 
-static int complete_quiesce(struct gate *g)
+static void reset_usb_state(struct source_slot *slot)
 {
-    if (!g->pending_quiesce)
-        return 0;
-    g->granted = 0;
-    g->pending_quiesce = 0;
-    g->quiesce_deadline_ms = 0;
-    set_target_gain(g, 0.0f, 0);
-    return source_send(g, AURORA_SOURCE_QUIESCED, 0, 0, 0);
+    slot->configured = 0;
+    slot->config_awaiting_ack = 0;
+    slot->force_discontinuity = 1;
 }
 
-static int register_with_manager(struct gate *g)
+static int register_with_manager(struct source_slot *slot)
 {
-    if (source_send(g, AURORA_SOURCE_REGISTER, 0, 0, 0) < 0)
+    if (source_send(slot, AURORA_SOURCE_REGISTER, 0, 0, 0) < 0)
         return -1;
-    g->manager_registered = 1;
-    if (g->source_present) {
-        if (source_send(g, AURORA_SOURCE_FORMAT, 0,
-                        AURORA_SOURCE_FORMAT_IEC61937, 0) < 0 ||
-            source_send(g, AURORA_SOURCE_PRESENT, 0, 0, 0) < 0)
+    slot->manager_registered = 1;
+    if (slot->present) {
+        if (source_send(slot, AURORA_SOURCE_FORMAT, 0,
+                        slot->source_format, 0) < 0 ||
+            source_send(slot, AURORA_SOURCE_PRESENT, 0, 0, 0) < 0)
             return -1;
     }
     return 0;
 }
 
-static int validate_source_message(const uint8_t *message, size_t len,
+static int validate_source_message(const struct source_slot *slot,
+                                   const uint8_t *message, size_t len,
                                    uint16_t *kind, uint64_t *data0,
                                    uint32_t *data1)
 {
-    if (len != AURORA_SOURCE_MESSAGE_BYTES ||
+    if (!slot || len != AURORA_SOURCE_MESSAGE_BYTES ||
         read_le32(message + 0) != AURORA_SOURCE_MAGIC_U32 ||
         read_le16(message + 4) != AURORA_SOURCE_VERSION ||
-        read_le16(message + 8) != AURORA_SOURCE_HDMI_EARC ||
+        read_le16(message + 8) != slot->source_id ||
         read_le16(message + 10) != 0)
         return -1;
     *kind = read_le16(message + 6);
@@ -262,38 +282,118 @@ static int validate_source_message(const uint8_t *message, size_t len,
     return 0;
 }
 
-static int handle_manager_message(struct gate *g, const uint8_t *message, size_t len)
+static int validate_aurora_frame(uint8_t *frame, size_t len,
+                                 uint16_t *kind, uint32_t *flags,
+                                 uint8_t **payload, uint32_t *payload_len)
+{
+    if (!frame || len < AURORA_USB_HEADER_LEN ||
+        read_le32(frame + 0) != AURORA_USB_MAGIC_U32 ||
+        read_le16(frame + 4) != AURORA_USB_VERSION)
+        return -1;
+
+    uint32_t plen = read_le32(frame + 24);
+    if ((size_t)plen + AURORA_USB_HEADER_LEN != len)
+        return -1;
+    *kind = read_le16(frame + 6);
+    *flags = read_le32(frame + 8);
+    *payload = frame + AURORA_USB_HEADER_LEN;
+    *payload_len = plen;
+    return 0;
+}
+
+static int config_frame_is_valid(const uint8_t *frame, size_t len)
+{
+    uint16_t kind;
+    uint32_t flags, payload_len;
+    uint8_t *payload;
+    if (validate_aurora_frame((uint8_t *)frame, len, &kind, &flags,
+                              &payload, &payload_len) < 0)
+        return 0;
+    (void)flags;
+    if (kind != AURORA_USB_CONFIG || payload_len != CONFIG_PAYLOAD_BYTES)
+        return 0;
+    if (read_le32(payload + 0) != AURORA_USB_SAMPLE_RATE_HZ ||
+        read_le16(payload + 4) != AURORA_USB_PERIOD_FRAMES ||
+        read_le16(payload + 6) != AURORA_USB_CHANNELS_7_1_4 ||
+        read_le16(payload + 8) != AURORA_USB_PCM_FORMAT_S32LE ||
+        read_le16(payload + 10) != AURORA_USB_LAYOUT_ID_7_1_4 ||
+        read_le32(payload + 12) != 0)
+        return 0;
+    return 1;
+}
+
+static int cache_config(struct source_slot *slot, const uint8_t *frame,
+                        size_t len)
+{
+    if (!slot || len != CONFIG_FRAME_BYTES || !config_frame_is_valid(frame, len))
+        return -1;
+    memcpy(slot->config_frame, frame, len);
+    slot->config_frame_len = len;
+    slot->config_cached = 1;
+    slot->configured = 0;
+    slot->config_awaiting_ack = 0;
+    return 0;
+}
+
+static int send_cached_config(struct gate *gate, struct source_slot *slot)
+{
+    if (!gate || !slot || gate->bridge_fd < 0 || !slot->config_cached)
+        return 0;
+    if (send_packet(gate->bridge_fd, slot->config_frame,
+                    slot->config_frame_len) < 0)
+        return -1;
+    slot->configured = 0;
+    slot->config_awaiting_ack = 1;
+    return 0;
+}
+
+static int complete_quiesce(struct source_slot *slot)
+{
+    if (!slot->pending_quiesce)
+        return 0;
+    slot->granted = 0;
+    slot->pending_quiesce = 0;
+    slot->quiesce_deadline_ms = 0;
+    slot->configured = 0;
+    slot->config_awaiting_ack = 0;
+    set_target_gain(slot, 0.0f, 0);
+    return source_send(slot, AURORA_SOURCE_QUIESCED, 0, 0, 0);
+}
+
+static int handle_manager_message(struct gate *gate, struct source_slot *slot,
+                                  const uint8_t *message, size_t len)
 {
     uint16_t kind;
     uint64_t data0;
     uint32_t data1;
-    if (validate_source_message(message, len, &kind, &data0, &data1) < 0)
+    if (validate_source_message(slot, message, len, &kind, &data0, &data1) < 0)
         return -1;
 
     switch (kind) {
     case AURORA_SOURCE_STATUS:
         return 0;
     case AURORA_SOURCE_GRANT:
-        g->granted = 1;
-        g->pending_quiesce = 0;
-        g->quiesce_deadline_ms = 0;
-        g->force_discontinuity = 1;
-        refresh_target(g, FADE_FRAMES);
-        return 0;
+        slot->granted = 1;
+        slot->pending_quiesce = 0;
+        slot->quiesce_deadline_ms = 0;
+        slot->force_discontinuity = 1;
+        refresh_target(slot, FADE_FRAMES);
+        return send_cached_config(gate, slot);
     case AURORA_SOURCE_REVOKE: {
         uint32_t fade_ms = data0 > MAX_REVOKE_FADE_MS ?
                            MAX_REVOKE_FADE_MS : (uint32_t)data0;
-        uint64_t fade_frames = ((uint64_t)AURORA_USB_SAMPLE_RATE_HZ * fade_ms) / 1000u;
-        g->pending_quiesce = 1;
-        g->quiesce_deadline_ms = monotonic_ms() + fade_ms;
-        set_target_gain(g, 0.0f, (uint32_t)fade_frames);
+        uint64_t fade_frames =
+            ((uint64_t)AURORA_USB_SAMPLE_RATE_HZ * fade_ms) / 1000u;
+        slot->pending_quiesce = 1;
+        slot->quiesce_deadline_ms = monotonic_ms() + fade_ms;
+        set_target_gain(slot, 0.0f, (uint32_t)fade_frames);
         return 0;
     }
     case AURORA_SOURCE_CONTROL:
         switch (data1) {
         case AURORA_SOURCE_CTRL_MUTE:
-            g->global_muted = data0 != 0;
-            refresh_target(g, FADE_FRAMES);
+            slot->global_muted = data0 != 0;
+            refresh_target(slot, FADE_FRAMES);
             return 0;
         case AURORA_SOURCE_CTRL_MASTER_GAIN_MDB: {
             int64_t milli_db = (int64_t)data0;
@@ -301,17 +401,17 @@ static int handle_manager_message(struct gate *g, const uint8_t *message, size_t
                 milli_db = 0;
             if (milli_db < -80000)
                 milli_db = -80000;
-            g->user_gain = powf(10.0f, (float)milli_db / 20000.0f);
-            refresh_target(g, FADE_FRAMES);
+            slot->user_gain = powf(10.0f, (float)milli_db / 20000.0f);
+            refresh_target(slot, FADE_FRAMES);
             return 0;
         }
         case AURORA_SOURCE_CTRL_STANDBY:
-            g->standby = data0 != 0;
-            refresh_target(g, FADE_FRAMES);
+            slot->standby = data0 != 0;
+            refresh_target(slot, FADE_FRAMES);
             return 0;
         case AURORA_SOURCE_CTRL_LIPSYNC_FRAMES:
-            /* The actual delay line remains upstream in the Aurora postprocessor.
-             * This final post-limiter gate must never duplicate lip-sync delay. */
+            /* Lip-sync delay belongs upstream in each source DSP path. This
+             * final mux intentionally does not duplicate a delay line. */
             return 0;
         default:
             return -1;
@@ -321,22 +421,27 @@ static int handle_manager_message(struct gate *g, const uint8_t *message, size_t
     }
 }
 
-static int validate_aurora_frame(uint8_t *frame, size_t len,
-                                 uint16_t *kind, uint32_t *flags,
-                                 uint8_t **payload, uint32_t *payload_len)
+static void mark_present(struct source_slot *slot)
 {
-    if (len < AURORA_USB_HEADER_LEN ||
-        read_le32(frame + 0) != AURORA_USB_MAGIC_U32 ||
-        read_le16(frame + 4) != AURORA_USB_VERSION)
-        return -1;
-    uint32_t plen = read_le32(frame + 24);
-    if ((size_t)plen + AURORA_USB_HEADER_LEN != len)
-        return -1;
-    *kind = read_le16(frame + 6);
-    *flags = read_le32(frame + 8);
-    *payload = frame + AURORA_USB_HEADER_LEN;
-    *payload_len = plen;
-    return 0;
+    slot->last_media_ms = monotonic_ms();
+    if (slot->present)
+        return;
+    slot->present = 1;
+    if (slot->manager_fd >= 0 && slot->manager_registered) {
+        (void)source_send(slot, AURORA_SOURCE_FORMAT, 0,
+                          slot->source_format, 0);
+        (void)source_send(slot, AURORA_SOURCE_PRESENT, 0, 0, 0);
+    }
+}
+
+static void mark_absent(struct source_slot *slot)
+{
+    if (!slot->present)
+        return;
+    slot->present = 0;
+    if (slot->manager_fd >= 0 && slot->manager_registered)
+        (void)source_send(slot, AURORA_SOURCE_ABSENT, 0, 0, 0);
+    fail_closed(slot);
 }
 
 static int32_t read_s32le(const uint8_t *p)
@@ -349,42 +454,47 @@ static void write_s32le(uint8_t *p, int32_t value)
     write_le32(p, (uint32_t)value);
 }
 
-/* Returns 0 to forward the frame, 1 to drop an inactive HDMI PCM period, and
- * -1 on invalid input. Dropping inactive PCM is mandatory once multiple source
- * data clients share the single FunctionFS backend: zero periods from an
- * inactive source would otherwise overwrite the active source's timeline. */
-static int apply_pcm_gate(struct gate *g, uint8_t *frame, size_t len)
+/* 0 = forward, 1 = drop, -1 = malformed/error. */
+static int apply_pcm_gate(struct source_slot *slot, uint8_t *frame, size_t len)
 {
     uint16_t kind;
-    uint32_t flags;
+    uint32_t flags, payload_len;
     uint8_t *payload;
-    uint32_t payload_len;
-    if (validate_aurora_frame(frame, len, &kind, &flags, &payload, &payload_len) < 0)
+    if (validate_aurora_frame(frame, len, &kind, &flags,
+                              &payload, &payload_len) < 0)
         return -1;
     if (kind != AURORA_USB_PCM_S32LE)
         return 0;
-    if (payload_len != AURORA_USB_PERIOD_FRAMES * AURORA_USB_CHANNELS_7_1_4 * 4u)
+    if (payload_len != PCM_PAYLOAD_BYTES)
         return -1;
-    if (!g->granted && !g->pending_quiesce)
+
+    if (slot->source_id == AURORA_SOURCE_LOCAL_MUSIC)
+        mark_present(slot);
+
+    if ((!slot->granted && !slot->pending_quiesce) || !slot->configured)
         return 1;
 
-    if (g->force_discontinuity) {
+    if (slot->force_discontinuity) {
         write_le32(frame + 8, flags | AURORA_USB_FLAG_DISCONTINUITY);
-        g->force_discontinuity = 0;
+        slot->force_discontinuity = 0;
     }
 
-    for (uint32_t audio_frame = 0; audio_frame < AURORA_USB_PERIOD_FRAMES; ++audio_frame) {
-        if (g->ramp_frames_remaining > 0) {
-            g->current_gain += (g->target_gain - g->current_gain) /
-                               (float)g->ramp_frames_remaining;
-            g->ramp_frames_remaining--;
-            if (g->ramp_frames_remaining == 0)
-                g->current_gain = g->target_gain;
+    for (uint32_t audio_frame = 0;
+         audio_frame < AURORA_USB_PERIOD_FRAMES; ++audio_frame) {
+        if (slot->ramp_frames_remaining > 0) {
+            slot->current_gain +=
+                (slot->target_gain - slot->current_gain) /
+                (float)slot->ramp_frames_remaining;
+            slot->ramp_frames_remaining--;
+            if (slot->ramp_frames_remaining == 0)
+                slot->current_gain = slot->target_gain;
         }
         uint32_t base = audio_frame * AURORA_USB_CHANNELS_7_1_4;
-        for (uint32_t channel = 0; channel < AURORA_USB_CHANNELS_7_1_4; ++channel) {
+        for (uint32_t channel = 0;
+             channel < AURORA_USB_CHANNELS_7_1_4; ++channel) {
             uint8_t *sample_bytes = payload + (base + channel) * 4u;
-            double scaled = (double)read_s32le(sample_bytes) * (double)g->current_gain;
+            double scaled =
+                (double)read_s32le(sample_bytes) * (double)slot->current_gain;
             if (scaled > 2147483647.0)
                 scaled = 2147483647.0;
             if (scaled < -2147483648.0)
@@ -393,82 +503,187 @@ static int apply_pcm_gate(struct gate *g, uint8_t *frame, size_t len)
         }
     }
 
-    if (g->pending_quiesce && g->current_gain == 0.0f &&
-        g->ramp_frames_remaining == 0)
-        return complete_quiesce(g) < 0 ? -1 : 1;
+    if (slot->pending_quiesce && slot->current_gain == 0.0f &&
+        slot->ramp_frames_remaining == 0)
+        return complete_quiesce(slot) < 0 ? -1 : 1;
     return 0;
 }
 
-static void mark_source_present(struct gate *g)
+static struct source_slot *granted_slot(struct gate *gate)
 {
-    g->last_encoded_ms = monotonic_ms();
-    if (g->source_present)
-        return;
-    g->source_present = 1;
-    if (g->manager_fd >= 0 && g->manager_registered) {
-        (void)source_send(g, AURORA_SOURCE_FORMAT, 0,
-                          AURORA_SOURCE_FORMAT_IEC61937, 0);
-        (void)source_send(g, AURORA_SOURCE_PRESENT, 0, 0, 0);
+    for (size_t i = 0; i < SLOT_COUNT; ++i) {
+        if (gate->slots[i].granted || gate->slots[i].pending_quiesce)
+            return &gate->slots[i];
     }
+    return NULL;
 }
 
-static void mark_source_absent(struct gate *g)
+static void close_data_client(struct source_slot *slot)
 {
-    if (!g->source_present)
-        return;
-    g->source_present = 0;
-    if (g->manager_fd >= 0 && g->manager_registered)
-        (void)source_send(g, AURORA_SOURCE_ABSENT, 0, 0, 0);
-    fail_closed(g);
+    close_fd(&slot->data_fd);
+    mark_absent(slot);
+    slot->config_cached = 0;
+    slot->config_frame_len = 0;
+    reset_usb_state(slot);
 }
 
-static void close_upstream_sources(struct gate *g)
+static void close_all_data_clients(struct gate *gate)
 {
-    close_fd(&g->source_fd);
-    close_fd(&g->local_fd);
-    mark_source_absent(g);
+    for (size_t i = 0; i < SLOT_COUNT; ++i)
+        close_data_client(&gate->slots[i]);
 }
 
-static int forward_bridge_frame(struct gate *g, uint8_t *frame, size_t len)
+static int forward_bridge_frame(struct gate *gate, uint8_t *frame, size_t len)
 {
     uint16_t kind;
-    uint32_t flags;
+    uint32_t flags, payload_len;
     uint8_t *payload;
-    uint32_t payload_len;
-    if (validate_aurora_frame(frame, len, &kind, &flags, &payload, &payload_len) < 0)
+    if (validate_aurora_frame(frame, len, &kind, &flags,
+                              &payload, &payload_len) < 0)
+        return -1;
+    (void)flags;
+
+    struct source_slot *hdmi = &gate->slots[SLOT_HDMI];
+    if (kind == AURORA_USB_ENCODED_IEC61937) {
+        if (hdmi->data_fd >= 0) {
+            mark_present(hdmi);
+            if (send_packet(hdmi->data_fd, frame, len) < 0)
+                close_data_client(hdmi);
+        }
+        return 0;
+    }
+
+    if (kind == AURORA_USB_CLOCK_REPORT) {
+        for (size_t i = 0; i < SLOT_COUNT; ++i) {
+            struct source_slot *slot = &gate->slots[i];
+            if (slot->data_fd >= 0 &&
+                send_packet(slot->data_fd, frame, len) < 0)
+                close_data_client(slot);
+        }
+        return 0;
+    }
+
+    if (kind == AURORA_USB_ACK && payload_len == 4u &&
+        read_le16(payload + 0) == AURORA_USB_CONFIG &&
+        read_le16(payload + 2) == 0u) {
+        for (size_t i = 0; i < SLOT_COUNT; ++i) {
+            struct source_slot *slot = &gate->slots[i];
+            if (!slot->config_awaiting_ack)
+                continue;
+            slot->config_awaiting_ack = 0;
+            slot->configured = 1;
+            if (slot->data_fd >= 0 &&
+                send_packet(slot->data_fd, frame, len) < 0)
+                close_data_client(slot);
+            return 0;
+        }
+        return 0;
+    }
+
+    if (kind == AURORA_USB_ERROR && payload_len >= 4u &&
+        read_le16(payload + 0) == AURORA_USB_CONFIG) {
+        for (size_t i = 0; i < SLOT_COUNT; ++i) {
+            struct source_slot *slot = &gate->slots[i];
+            if (!slot->config_awaiting_ack)
+                continue;
+            slot->config_awaiting_ack = 0;
+            slot->configured = 0;
+            if (slot->data_fd >= 0)
+                (void)send_packet(slot->data_fd, frame, len);
+            return 0;
+        }
+        return 0;
+    }
+
+    struct source_slot *active = granted_slot(gate);
+    if (active && active->data_fd >= 0)
+        return send_packet(active->data_fd, frame, len);
+
+    if (kind == AURORA_USB_PONG) {
+        for (size_t i = 0; i < SLOT_COUNT; ++i) {
+            if (gate->slots[i].data_fd >= 0)
+                (void)send_packet(gate->slots[i].data_fd, frame, len);
+        }
+    }
+    return 0;
+}
+
+static int source_frame_allowed(uint16_t kind)
+{
+    return kind == AURORA_USB_CONFIG ||
+           kind == AURORA_USB_PCM_S32LE ||
+           kind == AURORA_USB_PING;
+}
+
+static int handle_source_frame(struct gate *gate, struct source_slot *slot,
+                               uint8_t *frame, size_t len)
+{
+    uint16_t kind;
+    uint32_t flags, payload_len;
+    uint8_t *payload;
+    if (validate_aurora_frame(frame, len, &kind, &flags,
+                              &payload, &payload_len) < 0 ||
+        !source_frame_allowed(kind))
         return -1;
     (void)flags;
     (void)payload;
     (void)payload_len;
 
-    if (kind == AURORA_USB_ENCODED_IEC61937) {
-        if (g->source_fd >= 0) {
-            mark_source_present(g);
-            if (send_packet(g->source_fd, frame, len) < 0) {
-                close_fd(&g->source_fd);
-                mark_source_absent(g);
-            }
-        }
+    if (kind == AURORA_USB_CONFIG) {
+        if (cache_config(slot, frame, len) < 0)
+            return -1;
+        if (slot->granted)
+            return send_cached_config(gate, slot);
         return 0;
     }
 
-    /* CONFIG ACK/ERROR, CLOCK_REPORT and other control traffic is safe to
-     * duplicate to source adapters. Each adapter keeps its own configured and
-     * drift state; IEC61937 media itself is never duplicated to local music. */
-    if (g->source_fd >= 0 && send_packet(g->source_fd, frame, len) < 0) {
-        close_fd(&g->source_fd);
-        mark_source_absent(g);
+    if (kind == AURORA_USB_PCM_S32LE) {
+        int gate_rc = apply_pcm_gate(slot, frame, len);
+        if (gate_rc != 0)
+            return gate_rc;
+        return send_packet(gate->bridge_fd, frame, len) < 0 ? -1 : 0;
     }
-    if (g->local_fd >= 0 && send_packet(g->local_fd, frame, len) < 0)
-        close_fd(&g->local_fd);
+
+    if (!slot->granted)
+        return 1;
+    return send_packet(gate->bridge_fd, frame, len) < 0 ? -1 : 0;
+}
+
+static void init_slot(struct source_slot *slot, uint16_t source_id,
+                      uint32_t source_format)
+{
+    memset(slot, 0, sizeof(*slot));
+    slot->source_id = source_id;
+    slot->source_format = source_format;
+    slot->listen_fd = -1;
+    slot->data_fd = -1;
+    slot->manager_fd = -1;
+    slot->user_gain = 1.0f;
+    slot->force_discontinuity = 1;
+}
+
+static int connect_manager_for_slot(struct gate *gate,
+                                    struct source_slot *slot)
+{
+    slot->manager_fd = connect_seqpacket(gate->manager_socket);
+    if (slot->manager_fd < 0)
+        return -1;
+    slot->manager_registered = 0;
+    slot->source_sequence = 0;
+    if (register_with_manager(slot) < 0) {
+        close_fd(&slot->manager_fd);
+        slot->manager_registered = 0;
+        fail_closed(slot);
+        return -1;
+    }
     return 0;
 }
 
-static int local_frame_allowed(uint16_t kind)
+static void handle_manager_disconnect(struct source_slot *slot)
 {
-    return kind == AURORA_USB_CONFIG ||
-           kind == AURORA_USB_PCM_S32LE ||
-           kind == AURORA_USB_PING;
+    close_fd(&slot->manager_fd);
+    slot->manager_registered = 0;
+    fail_closed(slot);
 }
 
 int main(void)
@@ -477,31 +692,34 @@ int main(void)
     signal(SIGTERM, on_signal);
     signal(SIGPIPE, SIG_IGN);
 
-    struct gate g;
-    memset(&g, 0, sizeof(g));
-    g.bridge_fd = -1;
-    g.source_listen_fd = -1;
-    g.source_fd = -1;
-    g.local_listen_fd = -1;
-    g.local_fd = -1;
-    g.manager_fd = -1;
-    g.user_gain = 1.0f;
+    struct gate gate;
+    memset(&gate, 0, sizeof(gate));
+    gate.bridge_fd = -1;
+    gate.manager_socket = env_or("AURORA_SOURCE_MANAGER_SOCKET",
+                                 DEFAULT_MANAGER_SOCKET);
 
-    const char *real_bridge = env_or("AURORA_USB_BRIDGE_SOCKET_REAL", DEFAULT_REAL_BRIDGE);
-    const char *source_socket = env_or("AURORA_HDMI_SOURCE_SOCKET", DEFAULT_SOURCE_SOCKET);
-    const char *local_socket = env_or("AURORA_LOCAL_SOURCE_SOCKET", DEFAULT_LOCAL_SOURCE_SOCKET);
-    const char *manager_socket = env_or("AURORA_SOURCE_MANAGER_SOCKET", DEFAULT_MANAGER_SOCKET);
+    init_slot(&gate.slots[SLOT_HDMI], AURORA_SOURCE_HDMI_EARC,
+              AURORA_SOURCE_FORMAT_IEC61937);
+    init_slot(&gate.slots[SLOT_LOCAL], AURORA_SOURCE_LOCAL_MUSIC,
+              AURORA_SOURCE_FORMAT_PCM_STEREO);
 
-    g.source_listen_fd = open_listener(source_socket);
-    if (g.source_listen_fd < 0) {
-        perror("aurora-source-gate: HDMI source listener");
+    const char *bridge_socket = env_or("AURORA_USB_BRIDGE_SOCKET_REAL",
+                                       DEFAULT_REAL_BRIDGE);
+    const char *hdmi_socket = env_or("AURORA_HDMI_SOURCE_SOCKET",
+                                     DEFAULT_HDMI_SOURCE_SOCKET);
+    const char *local_socket = env_or("AURORA_LOCAL_SOURCE_SOCKET",
+                                      DEFAULT_LOCAL_SOURCE_SOCKET);
+
+    gate.slots[SLOT_HDMI].listen_fd = open_listener(hdmi_socket);
+    if (gate.slots[SLOT_HDMI].listen_fd < 0) {
+        perror("aurora-source-gate: HDMI listener");
         return 1;
     }
-    g.local_listen_fd = open_listener(local_socket);
-    if (g.local_listen_fd < 0) {
-        perror("aurora-source-gate: local source listener");
-        close(g.source_listen_fd);
-        unlink(source_socket);
+    gate.slots[SLOT_LOCAL].listen_fd = open_listener(local_socket);
+    if (gate.slots[SLOT_LOCAL].listen_fd < 0) {
+        perror("aurora-source-gate: local listener");
+        close_fd(&gate.slots[SLOT_HDMI].listen_fd);
+        unlink(hdmi_socket);
         return 1;
     }
 
@@ -511,160 +729,138 @@ int main(void)
         perror("aurora-source-gate: buffers");
         free(source_buf);
         free(bridge_buf);
-        close(g.source_listen_fd);
-        close(g.local_listen_fd);
-        unlink(source_socket);
+        close_fd(&gate.slots[SLOT_HDMI].listen_fd);
+        close_fd(&gate.slots[SLOT_LOCAL].listen_fd);
+        unlink(hdmi_socket);
         unlink(local_socket);
         return 1;
     }
 
     while (!stop_requested) {
-        if (g.bridge_fd < 0)
-            g.bridge_fd = connect_seqpacket(real_bridge);
-        if (g.manager_fd < 0) {
-            g.manager_fd = connect_seqpacket(manager_socket);
-            if (g.manager_fd >= 0) {
-                g.manager_registered = 0;
-                g.source_sequence = 0;
-                if (register_with_manager(&g) < 0) {
-                    close_fd(&g.manager_fd);
-                    fail_closed(&g);
-                }
-            }
+        if (gate.bridge_fd < 0)
+            gate.bridge_fd = connect_seqpacket(bridge_socket);
+        for (size_t i = 0; i < SLOT_COUNT; ++i) {
+            if (gate.slots[i].manager_fd < 0)
+                (void)connect_manager_for_slot(&gate, &gate.slots[i]);
         }
 
-        struct pollfd p[6];
-        p[0] = (struct pollfd){.fd = g.source_listen_fd, .events = POLLIN};
-        p[1] = (struct pollfd){.fd = g.source_fd, .events = POLLIN};
-        p[2] = (struct pollfd){.fd = g.bridge_fd, .events = POLLIN};
-        p[3] = (struct pollfd){.fd = g.manager_fd, .events = POLLIN};
-        p[4] = (struct pollfd){.fd = g.local_listen_fd, .events = POLLIN};
-        p[5] = (struct pollfd){.fd = g.local_fd, .events = POLLIN};
-        int rc = poll(p, 6, POLL_TIMEOUT_MS);
+        struct pollfd p[7];
+        p[0] = (struct pollfd){.fd = gate.slots[SLOT_HDMI].listen_fd,
+                               .events = POLLIN};
+        p[1] = (struct pollfd){.fd = gate.slots[SLOT_HDMI].data_fd,
+                               .events = POLLIN};
+        p[2] = (struct pollfd){.fd = gate.slots[SLOT_LOCAL].listen_fd,
+                               .events = POLLIN};
+        p[3] = (struct pollfd){.fd = gate.slots[SLOT_LOCAL].data_fd,
+                               .events = POLLIN};
+        p[4] = (struct pollfd){.fd = gate.bridge_fd, .events = POLLIN};
+        p[5] = (struct pollfd){.fd = gate.slots[SLOT_HDMI].manager_fd,
+                               .events = POLLIN};
+        p[6] = (struct pollfd){.fd = gate.slots[SLOT_LOCAL].manager_fd,
+                               .events = POLLIN};
+
+        int rc = poll(p, 7, POLL_TIMEOUT_MS);
         if (rc < 0) {
             if (errno == EINTR)
                 continue;
             break;
         }
 
-        if (p[0].revents & POLLIN) {
-            int accepted = accept4(g.source_listen_fd, NULL, NULL, SOCK_CLOEXEC);
-            if (accepted >= 0) {
-                if (g.source_fd >= 0)
-                    close(accepted);
-                else
-                    g.source_fd = accepted;
-            }
-        }
-        if (p[4].revents & POLLIN) {
-            int accepted = accept4(g.local_listen_fd, NULL, NULL, SOCK_CLOEXEC);
-            if (accepted >= 0) {
-                if (g.local_fd >= 0)
-                    close(accepted);
-                else
-                    g.local_fd = accepted;
-            }
-        }
-
-        if (g.manager_fd >= 0 &&
-            (p[3].revents & (POLLHUP | POLLERR | POLLNVAL))) {
-            close_fd(&g.manager_fd);
-            g.manager_registered = 0;
-            fail_closed(&g);
-        } else if (g.manager_fd >= 0 && (p[3].revents & POLLIN)) {
-            uint8_t message[AURORA_SOURCE_MESSAGE_BYTES];
-            ssize_t n = recv(g.manager_fd, message, sizeof(message), 0);
-            if (n <= 0 || handle_manager_message(&g, message, (size_t)n) < 0) {
-                close_fd(&g.manager_fd);
-                g.manager_registered = 0;
-                fail_closed(&g);
-            }
-        }
-
-        if (g.bridge_fd >= 0 &&
-            (p[2].revents & (POLLHUP | POLLERR | POLLNVAL))) {
-            close_fd(&g.bridge_fd);
-            close_upstream_sources(&g);
-        } else if (g.bridge_fd >= 0 && (p[2].revents & POLLIN)) {
-            ssize_t n = recv(g.bridge_fd, bridge_buf, AURORA_USB_MAX_FRAME, 0);
-            if (n <= 0) {
-                close_fd(&g.bridge_fd);
-                close_upstream_sources(&g);
-            } else if (forward_bridge_frame(&g, bridge_buf, (size_t)n) < 0) {
-                close_fd(&g.bridge_fd);
-                close_upstream_sources(&g);
-            }
-        }
-
-        if (g.source_fd >= 0 &&
-            (p[1].revents & (POLLHUP | POLLERR | POLLNVAL))) {
-            close_fd(&g.source_fd);
-            mark_source_absent(&g);
-        } else if (g.source_fd >= 0 && g.bridge_fd >= 0 && (p[1].revents & POLLIN)) {
-            ssize_t n = recv(g.source_fd, source_buf, AURORA_USB_MAX_FRAME, 0);
-            if (n <= 0) {
-                close_fd(&g.source_fd);
-                mark_source_absent(&g);
-            } else {
-                int gate_rc = apply_pcm_gate(&g, source_buf, (size_t)n);
-                if (gate_rc < 0) {
-                    close_fd(&g.source_fd);
-                    mark_source_absent(&g);
-                } else if (gate_rc == 0 &&
-                           send_packet(g.bridge_fd, source_buf, (size_t)n) < 0) {
-                    close_fd(&g.bridge_fd);
-                    close_upstream_sources(&g);
+        for (size_t i = 0; i < SLOT_COUNT; ++i) {
+            int poll_index = i == SLOT_HDMI ? 0 : 2;
+            struct source_slot *slot = &gate.slots[i];
+            if (p[poll_index].revents & POLLIN) {
+                int accepted = accept4(slot->listen_fd, NULL, NULL,
+                                       SOCK_CLOEXEC);
+                if (accepted >= 0) {
+                    if (slot->data_fd >= 0)
+                        close(accepted);
+                    else
+                        slot->data_fd = accepted;
                 }
             }
         }
 
-        if (g.local_fd >= 0 &&
-            (p[5].revents & (POLLHUP | POLLERR | POLLNVAL))) {
-            close_fd(&g.local_fd);
-        } else if (g.local_fd >= 0 && g.bridge_fd >= 0 && (p[5].revents & POLLIN)) {
-            ssize_t n = recv(g.local_fd, source_buf, AURORA_USB_MAX_FRAME, 0);
-            uint16_t kind;
-            uint32_t flags, payload_len;
-            uint8_t *payload;
-            if (n <= 0) {
-                close_fd(&g.local_fd);
-            } else if (validate_aurora_frame(source_buf, (size_t)n, &kind, &flags,
-                                             &payload, &payload_len) < 0 ||
-                       !local_frame_allowed(kind)) {
-                (void)flags;
-                (void)payload;
-                (void)payload_len;
-                close_fd(&g.local_fd);
-            } else if (send_packet(g.bridge_fd, source_buf, (size_t)n) < 0) {
-                close_fd(&g.bridge_fd);
-                close_upstream_sources(&g);
+        for (size_t i = 0; i < SLOT_COUNT; ++i) {
+            int poll_index = i == SLOT_HDMI ? 5 : 6;
+            struct source_slot *slot = &gate.slots[i];
+            if (slot->manager_fd >= 0 &&
+                (p[poll_index].revents & (POLLHUP | POLLERR | POLLNVAL))) {
+                handle_manager_disconnect(slot);
+            } else if (slot->manager_fd >= 0 &&
+                       (p[poll_index].revents & POLLIN)) {
+                uint8_t message[AURORA_SOURCE_MESSAGE_BYTES];
+                ssize_t n = recv(slot->manager_fd, message,
+                                 sizeof(message), 0);
+                if (n <= 0 || handle_manager_message(
+                                  &gate, slot, message, (size_t)n) < 0)
+                    handle_manager_disconnect(slot);
+            }
+        }
+
+        if (gate.bridge_fd >= 0 &&
+            (p[4].revents & (POLLHUP | POLLERR | POLLNVAL))) {
+            close_fd(&gate.bridge_fd);
+            close_all_data_clients(&gate);
+        } else if (gate.bridge_fd >= 0 && (p[4].revents & POLLIN)) {
+            ssize_t n = recv(gate.bridge_fd, bridge_buf,
+                             AURORA_USB_MAX_FRAME, 0);
+            if (n <= 0 || forward_bridge_frame(
+                              &gate, bridge_buf, (size_t)n) < 0) {
+                close_fd(&gate.bridge_fd);
+                close_all_data_clients(&gate);
+            }
+        }
+
+        for (size_t i = 0; i < SLOT_COUNT; ++i) {
+            int poll_index = i == SLOT_HDMI ? 1 : 3;
+            struct source_slot *slot = &gate.slots[i];
+            if (slot->data_fd >= 0 &&
+                (p[poll_index].revents & (POLLHUP | POLLERR | POLLNVAL))) {
+                close_data_client(slot);
+            } else if (slot->data_fd >= 0 && gate.bridge_fd >= 0 &&
+                       (p[poll_index].revents & POLLIN)) {
+                ssize_t n = recv(slot->data_fd, source_buf,
+                                 AURORA_USB_MAX_FRAME, 0);
+                if (n <= 0) {
+                    close_data_client(slot);
+                } else {
+                    int source_rc = handle_source_frame(
+                        &gate, slot, source_buf, (size_t)n);
+                    if (source_rc < 0) {
+                        close_data_client(slot);
+                    } else if (source_rc == -1) {
+                        close_fd(&gate.bridge_fd);
+                        close_all_data_clients(&gate);
+                    }
+                }
             }
         }
 
         uint64_t now = monotonic_ms();
-        if (g.source_present && g.last_encoded_ms != 0 &&
-            now > g.last_encoded_ms + SOURCE_IDLE_MS)
-            mark_source_absent(&g);
+        for (size_t i = 0; i < SLOT_COUNT; ++i) {
+            struct source_slot *slot = &gate.slots[i];
+            if (slot->present && slot->last_media_ms != 0u &&
+                now > slot->last_media_ms + SOURCE_IDLE_MS)
+                mark_absent(slot);
 
-        if (g.pending_quiesce && g.quiesce_deadline_ms != 0 &&
-            now >= g.quiesce_deadline_ms) {
-            if (complete_quiesce(&g) < 0) {
-                close_fd(&g.manager_fd);
-                g.manager_registered = 0;
-                fail_closed(&g);
+            if (slot->pending_quiesce && slot->quiesce_deadline_ms != 0u &&
+                now >= slot->quiesce_deadline_ms) {
+                if (complete_quiesce(slot) < 0)
+                    handle_manager_disconnect(slot);
             }
         }
     }
 
     free(source_buf);
     free(bridge_buf);
-    close_fd(&g.source_fd);
-    close_fd(&g.local_fd);
-    close_fd(&g.bridge_fd);
-    close_fd(&g.manager_fd);
-    close_fd(&g.source_listen_fd);
-    close_fd(&g.local_listen_fd);
-    unlink(source_socket);
+    for (size_t i = 0; i < SLOT_COUNT; ++i) {
+        close_fd(&gate.slots[i].data_fd);
+        close_fd(&gate.slots[i].manager_fd);
+        close_fd(&gate.slots[i].listen_fd);
+    }
+    close_fd(&gate.bridge_fd);
+    unlink(hdmi_socket);
     unlink(local_socket);
     return 0;
 }
