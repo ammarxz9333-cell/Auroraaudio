@@ -405,6 +405,31 @@ impl LinkedPeakLimiter {
     }
 }
 
+/// Immutable setup-time configuration for the canonical output DSP chain.
+#[derive(Debug, Clone, Copy)]
+pub struct OutputDspConfig<'a> {
+    /// Processing sample rate.
+    pub sample_rate: u32,
+    /// Number of output channels.
+    pub channel_count: usize,
+    /// Canonical LFE channel index.
+    pub lfe_index: usize,
+    /// Maximum block size prepared at setup.
+    pub max_frames: usize,
+    /// Main-channel Linkwitz-Riley crossover frequency.
+    pub crossover_hz: f32,
+    /// Gain applied to redirected low-frequency energy.
+    pub redirect_gain_db: f32,
+    /// Per-channel static trim in decibels.
+    pub channel_trim_db: &'a [f32],
+    /// Per-channel parametric EQ bands.
+    pub channel_bands: &'a [Vec<PeqBand>],
+    /// Linked peak limiter linear ceiling in 0..=1.
+    pub limiter_threshold: f32,
+    /// Linked limiter release time in milliseconds.
+    pub limiter_release_ms: f32,
+}
+
 /// Canonical post-render output DSP chain excluding propagation delay.
 #[derive(Debug, Clone, PartialEq)]
 pub struct OutputDspChain {
@@ -417,54 +442,44 @@ pub struct OutputDspChain {
 
 impl OutputDspChain {
     /// Creates the canonical output stage.
-    pub fn new(
-        sample_rate: u32,
-        channel_count: usize,
-        lfe_index: usize,
-        max_frames: usize,
-        crossover_hz: f32,
-        redirect_gain_db: f32,
-        channel_trim_db: &[f32],
-        channel_bands: &[Vec<PeqBand>],
-        limiter_threshold: f32,
-        limiter_release_ms: f32,
-    ) -> Result<Self, OutputDspError> {
-        if channel_trim_db.len() != channel_count {
+    /// Creates the canonical output stage from one validated setup object.
+    pub fn new(config: OutputDspConfig<'_>) -> Result<Self, OutputDspError> {
+        if config.channel_trim_db.len() != config.channel_count {
             return Err(OutputDspError::PerChannelConfig {
-                expected: channel_count,
-                actual: channel_trim_db.len(),
+                expected: config.channel_count,
+                actual: config.channel_trim_db.len(),
             });
         }
-        if channel_bands.len() != channel_count {
+        if config.channel_bands.len() != config.channel_count {
             return Err(OutputDspError::PerChannelConfig {
-                expected: channel_count,
-                actual: channel_bands.len(),
+                expected: config.channel_count,
+                actual: config.channel_bands.len(),
             });
         }
-        let mut trims = Vec::with_capacity(channel_count);
-        for gain_db in channel_trim_db {
+        let mut trims = Vec::with_capacity(config.channel_count);
+        for gain_db in config.channel_trim_db {
             if !gain_db.is_finite() {
                 return Err(OutputDspError::InvalidGain { gain_db: *gain_db });
             }
             trims.push(db_to_gain(*gain_db));
         }
         Ok(Self {
-            channel_count,
+            channel_count: config.channel_count,
             trims,
             bass_manager: BassManager::new(
-                sample_rate,
-                channel_count,
-                lfe_index,
-                max_frames,
-                crossover_hz,
-                redirect_gain_db,
+                config.sample_rate,
+                config.channel_count,
+                config.lfe_index,
+                config.max_frames,
+                config.crossover_hz,
+                config.redirect_gain_db,
             )?,
-            eq: ParametricEq::new(sample_rate, channel_bands)?,
+            eq: ParametricEq::new(config.sample_rate, config.channel_bands)?,
             limiter: LinkedPeakLimiter::new(
-                sample_rate,
-                channel_count,
-                limiter_threshold,
-                limiter_release_ms,
+                config.sample_rate,
+                config.channel_count,
+                config.limiter_threshold,
+                config.limiter_release_ms,
             )?,
         })
     }
@@ -682,19 +697,19 @@ mod tests {
     #[test]
     fn processing_does_not_change_channel_capacities() {
         let bands = vec![vec![], vec![]];
-        let mut chain = OutputDspChain::new(
-            48_000,
-            2,
-            1,
-            256,
-            120.0,
-            -6.0,
-            &[0.0, 0.0],
-            &bands,
-            0.95,
-            100.0,
-        )
-        .unwrap();
+        let config = OutputDspConfig {
+            sample_rate: 48_000,
+            channel_count: 2,
+            lfe_index: 1,
+            max_frames: 256,
+            crossover_hz: 120.0,
+            redirect_gain_db: -6.0,
+            channel_trim_db: &[0.0, 0.0],
+            channel_bands: &bands,
+            limiter_threshold: 0.95,
+            limiter_release_ms: 100.0,
+        };
+        let mut chain = OutputDspChain::new(config).unwrap();
         let mut audio = vec![vec![0.1; 256], vec![0.0; 256]];
         let capacities = audio.iter().map(Vec::capacity).collect::<Vec<_>>();
         for _ in 0..128 {
