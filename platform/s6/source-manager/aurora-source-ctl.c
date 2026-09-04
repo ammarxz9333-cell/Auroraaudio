@@ -9,14 +9,12 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/un.h>
-#include <time.h>
 #include <unistd.h>
 
 #include "aurora_source_manager_v1.h"
 
 #define DEFAULT_SOCKET "/run/aurora/source-manager.sock"
 #define ACK_TIMEOUT_MS 500
-#define CONTROL_DRAIN_MS 75
 
 static uint16_t read_le16(const uint8_t *p)
 {
@@ -101,7 +99,8 @@ static int send_message(int fd, uint16_t kind, uint64_t data0, uint32_t data1)
     return n == (ssize_t)sizeof(message) ? 0 : -1;
 }
 
-static int recv_registration_status(int fd, uint16_t *active_source)
+static int recv_status(int fd, uint32_t expected_control,
+                       uint16_t *active_source)
 {
     struct pollfd p = {.fd = fd, .events = POLLIN};
     int rc = poll(&p, 1, ACK_TIMEOUT_MS);
@@ -115,7 +114,8 @@ static int recv_registration_status(int fd, uint16_t *active_source)
         read_le16(message + 4) != AURORA_SOURCE_VERSION ||
         read_le16(message + 6) != AURORA_SOURCE_STATUS ||
         read_le16(message + 8) != AURORA_SOURCE_CONTROL_CLIENT ||
-        read_le16(message + 10) != 0)
+        read_le16(message + 10) != 0 ||
+        read_le32(message + 24) != expected_control)
         return -1;
 
     uint64_t active = read_le64(message + 16);
@@ -174,20 +174,6 @@ static int parse_lipsync_ms(const char *text, uint64_t *value)
     return 0;
 }
 
-static void drain_control_window(int fd)
-{
-    struct timespec ts;
-    ts.tv_sec = 0;
-    ts.tv_nsec = CONTROL_DRAIN_MS * 1000000L;
-    (void)nanosleep(&ts, NULL);
-
-    struct pollfd p = {.fd = fd, .events = POLLERR | POLLHUP | POLLNVAL};
-    if (poll(&p, 1, 0) > 0 && (p.revents & (POLLERR | POLLHUP | POLLNVAL))) {
-        fprintf(stderr, "aurora-source-ctl: manager connection closed while applying control\n");
-        exit(1);
-    }
-}
-
 static void usage(const char *argv0)
 {
     fprintf(stderr,
@@ -220,7 +206,7 @@ int main(int argc, char **argv)
     }
 
     uint16_t active_source = AURORA_SOURCE_NONE;
-    if (recv_registration_status(fd, &active_source) < 0) {
+    if (recv_status(fd, 0, &active_source) < 0) {
         fprintf(stderr, "aurora-source-ctl: invalid or missing registration status\n");
         close(fd);
         return 1;
@@ -279,10 +265,12 @@ int main(int argc, char **argv)
         return 1;
     }
 
-    /* The appliance UI should keep a persistent control socket. This one-shot
-     * diagnostic CLI intentionally leaves a short drain window so the manager
-     * consumes the queued command before the client closes. */
-    drain_control_window(fd);
+    if (recv_status(fd, control, &active_source) < 0) {
+        fprintf(stderr, "aurora-source-ctl: control was not acknowledged by source manager\n");
+        close(fd);
+        return 1;
+    }
+
     close(fd);
     return 0;
 }
