@@ -1,4 +1,3 @@
-use std::cmp::Ordering;
 use std::f32::consts::TAU;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -17,39 +16,22 @@ use serde::Serialize;
 #[command(name = "aurora-evaluate-renderer")]
 #[command(about = "Deterministic Aurora renderer evaluation and artifact runner")]
 struct Cli {
-    /// Renderer to evaluate. `all` evaluates both accepted built-in baselines.
     #[arg(long, value_enum, default_value_t = RendererSelection::All)]
     renderer: RendererSelection,
-
-    /// Root directory for generated evidence artifacts.
     #[arg(long, default_value = "output/evaluation")]
     output_dir: PathBuf,
-
-    /// Synthetic test duration in seconds.
     #[arg(long, default_value_t = 2.0)]
     duration_seconds: f64,
-
-    /// Processing sample rate.
     #[arg(long, default_value_t = 48_000)]
     sample_rate: u32,
-
-    /// Renderer block size.
     #[arg(long, default_value_t = 256)]
     block_size: usize,
-
-    /// Fail when the largest inter-block gain step exceeds this value.
     #[arg(long, default_value_t = 0.15)]
     max_gain_step: f32,
-
-    /// Fail when the largest inter-block delay step exceeds this many samples.
     #[arg(long, default_value_t = 64.0)]
     max_delay_step_samples: f32,
-
-    /// Allowed deviation of sum-of-squares gain power from 1.0.
     #[arg(long, default_value_t = 0.05)]
     normalization_tolerance: f32,
-
-    /// Fail when renderer p95 processing time exceeds this many microseconds.
     #[arg(long, default_value_t = 1_000.0)]
     max_p95_us: f64,
 }
@@ -73,26 +55,26 @@ struct EvaluationConfig {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct SourcePosition {
+struct Position {
     x: f32,
     y: f32,
     z: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct GainTrajectoryFrame {
+struct GainFrame {
     block_index: usize,
     time_seconds: f64,
-    source_position: SourcePosition,
+    source: Position,
     gains: Vec<f32>,
     power_sum_squares: f32,
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct DelayTrajectoryFrame {
+struct DelayFrame {
     block_index: usize,
     time_seconds: f64,
-    source_position: SourcePosition,
+    source: Position,
     delay_samples: Vec<f32>,
 }
 
@@ -121,7 +103,7 @@ struct PerformanceReport {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct RendererMetadata {
+struct Metadata {
     renderer: String,
     renderer_mode: String,
     sample_rate: u32,
@@ -136,7 +118,7 @@ struct RendererMetadata {
 }
 
 #[derive(Debug, Clone, Serialize)]
-struct EvaluationSummary {
+struct Summary {
     renderer: String,
     passed: bool,
     artifacts: Vec<String>,
@@ -146,8 +128,7 @@ struct EvaluationSummary {
 
 fn main() -> Result<()> {
     let cli = Cli::parse();
-    validate_cli(&cli)?;
-
+    validate(&cli)?;
     let config = EvaluationConfig {
         sample_rate: cli.sample_rate,
         block_size: cli.block_size,
@@ -157,26 +138,20 @@ fn main() -> Result<()> {
         normalization_tolerance: cli.normalization_tolerance,
         max_p95_us: cli.max_p95_us,
     };
-    let reproducible_command = reproducible_command();
-
-    let selections: &[RendererSelection] = match cli.renderer {
-        RendererSelection::All => &[
+    let command = reproducible_command();
+    let selections = match cli.renderer {
+        RendererSelection::All => vec![
             RendererSelection::GeometricBinaural,
             RendererSelection::InverseDistance,
         ],
-        RendererSelection::GeometricBinaural => &[RendererSelection::GeometricBinaural],
-        RendererSelection::InverseDistance => &[RendererSelection::InverseDistance],
+        selection => vec![selection],
     };
 
-    let mut failures = Vec::new();
+    let mut failed = Vec::new();
     for selection in selections {
-        let subdir = match selection {
-            RendererSelection::All => unreachable!(),
-            RendererSelection::GeometricBinaural => "geometric-binaural",
-            RendererSelection::InverseDistance => "inverse-distance",
-        };
-        let output_dir = cli.output_dir.join(subdir);
-        match evaluate_selection(*selection, &config, &output_dir, &reproducible_command) {
+        let name = selection_name(selection);
+        let output = cli.output_dir.join(name);
+        match evaluate(selection, &config, &output, &command) {
             Ok(summary) => {
                 println!(
                     "renderer={} passed={} p95_us={:.3} max_gain_step={:.6} max_delay_step_samples={:.6} output={}",
@@ -185,31 +160,27 @@ fn main() -> Result<()> {
                     summary.performance.p95_us,
                     summary.discontinuities.observed_max_gain_step,
                     summary.discontinuities.observed_max_delay_step_samples,
-                    output_dir.display()
+                    output.display()
                 );
                 if !summary.passed {
-                    failures.push(summary.renderer);
+                    failed.push(summary.renderer);
                 }
             }
             Err(error) => {
-                failures.push(subdir.to_owned());
-                eprintln!("renderer={subdir} evaluation_error={error:#}");
+                eprintln!("renderer={name} evaluation_error={error:#}");
+                failed.push(name.to_owned());
             }
         }
     }
-
-    if !failures.is_empty() {
-        bail!("renderer evaluation failed for: {}", failures.join(", "));
+    if !failed.is_empty() {
+        bail!("renderer evaluation failed for: {}", failed.join(", "));
     }
     Ok(())
 }
 
-fn validate_cli(cli: &Cli) -> Result<()> {
-    if cli.sample_rate == 0 {
-        bail!("sample rate must be greater than zero");
-    }
-    if cli.block_size == 0 {
-        bail!("block size must be greater than zero");
+fn validate(cli: &Cli) -> Result<()> {
+    if cli.sample_rate == 0 || cli.block_size == 0 {
+        bail!("sample rate and block size must be greater than zero");
     }
     if !cli.duration_seconds.is_finite() || cli.duration_seconds <= 0.0 {
         bail!("duration must be finite and greater than zero");
@@ -229,31 +200,15 @@ fn validate_cli(cli: &Cli) -> Result<()> {
     Ok(())
 }
 
-fn evaluate_selection(
+fn evaluate(
     selection: RendererSelection,
     config: &EvaluationConfig,
     output_dir: &Path,
-    reproducible_command: &str,
-) -> Result<EvaluationSummary> {
+    command: &str,
+) -> Result<Summary> {
     fs::create_dir_all(output_dir)
-        .with_context(|| format!("create evaluation directory {}", output_dir.display()))?;
-
-    let (renderer_name, renderer_mode_name, mode, speakers) = match selection {
-        RendererSelection::All => unreachable!(),
-        RendererSelection::GeometricBinaural => (
-            "basic-geometric-binaural",
-            "geometric-binaural",
-            BasicRendererMode::GeometricBinaural,
-            stereo_speakers(),
-        ),
-        RendererSelection::InverseDistance => (
-            "basic-inverse-distance",
-            "inverse-distance",
-            BasicRendererMode::InverseDistance,
-            five_one_two_speakers(),
-        ),
-    };
-
+        .with_context(|| format!("create {}", output_dir.display()))?;
+    let (renderer_name, mode_name, mode, speakers) = renderer_definition(selection);
     let roles = speakers
         .iter()
         .map(|speaker| speaker.channel_role.clone())
@@ -263,176 +218,159 @@ fn evaluate_selection(
         .map(|role| role.as_str().to_owned())
         .collect::<Vec<_>>();
 
-    let config_hash = configuration_hash(config, renderer_name, &role_names)?;
-    let commit_sha = resolve_commit_sha();
     let mut renderer = BasicRenderer::new(mode);
     renderer
         .configure(speakers, config.sample_rate, config.block_size, 1)
         .context("configure renderer")?;
-    let scratch_size = renderer
-        .required_scratch_size()
-        .context("query renderer scratch size")?;
-    let mut scratch = RendererScratch::new(scratch_size);
+    let mut scratch = RendererScratch::new(
+        renderer
+            .required_scratch_size()
+            .context("query scratch size")?,
+    );
     let output_channels = renderer.output_channel_count();
-    let renderer_latency_frames = renderer.latency_frames();
-
     let total_frames = (config.duration_seconds * f64::from(config.sample_rate)).round() as usize;
-    let block_count = total_frames.div_ceil(config.block_size);
+    let blocks = (total_frames + config.block_size - 1) / config.block_size;
     let mut pcm = (0..output_channels)
         .map(|_| Vec::with_capacity(total_frames))
         .collect::<Vec<_>>();
-    let mut gain_trajectory = Vec::with_capacity(block_count);
-    let mut delay_trajectory = Vec::with_capacity(block_count);
-    let mut render_times_ns = Vec::with_capacity(block_count);
-
+    let mut gain_frames = Vec::with_capacity(blocks);
+    let mut delay_frames = Vec::with_capacity(blocks);
+    let mut timings = Vec::with_capacity(blocks);
     let mut previous_gains: Option<Vec<f32>> = None;
     let mut previous_delays: Option<Vec<f32>> = None;
-    let mut observed_max_gain_step = 0.0_f32;
-    let mut observed_max_delay_step = 0.0_f32;
-    let mut gain_step_violations = 0_usize;
-    let mut delay_step_violations = 0_usize;
-    let mut normalization_failures = 0_usize;
-    let mut non_finite_failures = 0_usize;
-
+    let mut discontinuities = DiscontinuityReport {
+        configured_max_gain_step: config.max_gain_step,
+        configured_max_delay_step_samples: config.max_delay_step_samples,
+        observed_max_gain_step: 0.0,
+        observed_max_delay_step_samples: 0.0,
+        gain_step_violations: 0,
+        delay_step_violations: 0,
+        normalization_failures: 0,
+        non_finite_failures: 0,
+    };
     let listener = Listener {
         position: Vector3::ZERO,
         orientation: Vector3::new(0.0, 1.0, 0.0),
         ear_height: 1.2,
     };
 
-    for block_index in 0..block_count {
+    for block_index in 0..blocks {
         let start_frame = block_index * config.block_size;
-        let frames_this_block = (total_frames - start_frame).min(config.block_size);
-        let time_seconds = start_frame as f64 / f64::from(config.sample_rate);
-        let progress = if block_count > 1 {
-            block_index as f32 / (block_count - 1) as f32
+        let frames = (total_frames - start_frame).min(config.block_size);
+        let progress = if blocks > 1 {
+            block_index as f32 / (blocks - 1) as f32
         } else {
             0.0
         };
-        let position = deterministic_source_position(progress);
-        let object = RenderObject {
-            position,
-            gain: 1.0,
-        };
-        let mut gains = vec![SpeakerGain::default(); output_channels];
-
+        let position = source_position(progress);
+        let mut rendered = vec![SpeakerGain::default(); output_channels];
         let started = Instant::now();
         renderer
-            .render_gains(&listener, &[object], &mut gains, &mut scratch)
-            .context("render gain block")?;
-        render_times_ns.push(started.elapsed().as_nanos());
+            .render_gains(
+                &listener,
+                &[RenderObject {
+                    position,
+                    gain: 1.0,
+                }],
+                &mut rendered,
+                &mut scratch,
+            )
+            .context("render block")?;
+        timings.push(started.elapsed().as_nanos());
 
-        let gain_values = gains.iter().map(|value| value.gain).collect::<Vec<_>>();
-        let delay_values = gains
+        let gains = rendered.iter().map(|entry| entry.gain).collect::<Vec<_>>();
+        let delays = rendered
             .iter()
-            .map(|value| value.delay_samples)
+            .map(|entry| entry.delay_samples)
             .collect::<Vec<_>>();
-        if gain_values.iter().any(|value| !value.is_finite())
-            || delay_values.iter().any(|value| !value.is_finite())
+        if gains.iter().any(|value| !value.is_finite())
+            || delays.iter().any(|value| !value.is_finite())
         {
-            non_finite_failures += 1;
+            discontinuities.non_finite_failures += 1;
         }
+        let power = gains.iter().map(|gain| gain * gain).sum::<f32>();
+        if !power.is_finite() || (power - 1.0).abs() > config.normalization_tolerance {
+            discontinuities.normalization_failures += 1;
+        }
+        compare_steps(
+            previous_gains.as_deref(),
+            &gains,
+            config.max_gain_step,
+            &mut discontinuities.observed_max_gain_step,
+            &mut discontinuities.gain_step_violations,
+        );
+        compare_steps(
+            previous_delays.as_deref(),
+            &delays,
+            config.max_delay_step_samples,
+            &mut discontinuities.observed_max_delay_step_samples,
+            &mut discontinuities.delay_step_violations,
+        );
 
-        let power_sum_squares = gain_values.iter().map(|value| value * value).sum::<f32>();
-        if !power_sum_squares.is_finite()
-            || (power_sum_squares - 1.0).abs() > config.normalization_tolerance
-        {
-            normalization_failures += 1;
-        }
-
-        if let Some(previous) = &previous_gains {
-            for (before, after) in previous.iter().zip(&gain_values) {
-                let step = (after - before).abs();
-                observed_max_gain_step = observed_max_gain_step.max(step);
-                if step > config.max_gain_step {
-                    gain_step_violations += 1;
-                }
-            }
-        }
-        if let Some(previous) = &previous_delays {
-            for (before, after) in previous.iter().zip(&delay_values) {
-                let step = (after - before).abs();
-                observed_max_delay_step = observed_max_delay_step.max(step);
-                if step > config.max_delay_step_samples {
-                    delay_step_violations += 1;
-                }
-            }
-        }
-
-        let source_position = SourcePosition {
+        let source = Position {
             x: position.x,
             y: position.y,
             z: position.z,
         };
-        gain_trajectory.push(GainTrajectoryFrame {
+        let time_seconds = start_frame as f64 / f64::from(config.sample_rate);
+        gain_frames.push(GainFrame {
             block_index,
             time_seconds,
-            source_position: source_position.clone(),
-            gains: gain_values.clone(),
-            power_sum_squares,
+            source: source.clone(),
+            gains: gains.clone(),
+            power_sum_squares: power,
         });
-        delay_trajectory.push(DelayTrajectoryFrame {
+        delay_frames.push(DelayFrame {
             block_index,
             time_seconds,
-            source_position,
-            delay_samples: delay_values.clone(),
+            source,
+            delay_samples: delays.clone(),
         });
 
-        for local_frame in 0..frames_this_block {
-            let global_frame = start_frame + local_frame;
-            let phase = TAU * 440.0 * global_frame as f32 / config.sample_rate as f32;
-            let input_sample = 0.1 * phase.sin();
-            for (channel, gain) in pcm.iter_mut().zip(&gain_values) {
-                channel.push(input_sample * *gain);
+        for local_frame in 0..frames {
+            let frame = start_frame + local_frame;
+            let phase = TAU * 440.0 * frame as f32 / config.sample_rate as f32;
+            let sample = 0.1 * phase.sin();
+            for (channel, gain) in pcm.iter_mut().zip(&gains) {
+                channel.push(sample * *gain);
             }
         }
-
-        previous_gains = Some(gain_values);
-        previous_delays = Some(delay_values);
+        previous_gains = Some(gains);
+        previous_delays = Some(delays);
     }
 
-    let discontinuities = DiscontinuityReport {
-        configured_max_gain_step: config.max_gain_step,
-        configured_max_delay_step_samples: config.max_delay_step_samples,
-        observed_max_gain_step,
-        observed_max_delay_step_samples: observed_max_delay_step,
-        gain_step_violations,
-        delay_step_violations,
-        normalization_failures,
-        non_finite_failures,
-    };
-    let performance = performance_report(&render_times_ns, config.max_p95_us);
-    let metadata = RendererMetadata {
+    let performance = performance(&timings, config.max_p95_us);
+    let metadata = Metadata {
         renderer: renderer_name.to_owned(),
-        renderer_mode: renderer_mode_name.to_owned(),
+        renderer_mode: mode_name.to_owned(),
         sample_rate: config.sample_rate,
         block_size: config.block_size,
         output_channels,
-        output_roles: role_names,
-        renderer_latency_frames,
-        configuration_hash_fnv1a64: config_hash,
-        commit_sha,
-        scene: "deterministic 3D circular source with vertical excursion",
-        wav_semantics: "reference gain-routing artifact; delay trajectory is reported separately and is not applied to PCM",
+        output_roles: role_names.clone(),
+        renderer_latency_frames: renderer.latency_frames(),
+        configuration_hash_fnv1a64: configuration_hash(config, renderer_name, &role_names)?,
+        commit_sha: resolve_commit_sha(),
+        scene: "deterministic full-circle 3D source with vertical excursion",
+        wav_semantics: "gain-routing reference; delay trajectory is evidence but is not applied to PCM",
     };
 
     let wav_path = output_dir.join("rendered-reference.wav");
     write_wav_f32_with_channel_roles(&wav_path, config.sample_rate, &pcm, &roles)
         .with_context(|| format!("write {}", wav_path.display()))?;
-    write_json(output_dir.join("gain-trajectory.json"), &gain_trajectory)?;
-    write_json(output_dir.join("delay-trajectory.json"), &delay_trajectory)?;
+    write_json(output_dir.join("gain-trajectory.json"), &gain_frames)?;
+    write_json(output_dir.join("delay-trajectory.json"), &delay_frames)?;
     write_json(output_dir.join("discontinuities.json"), &discontinuities)?;
     write_json(output_dir.join("performance.json"), &performance)?;
     write_json(output_dir.join("metadata.json"), &metadata)?;
-    fs::write(output_dir.join("command.txt"), format!("{reproducible_command}\n"))
-        .context("write reproducible command")?;
+    fs::write(output_dir.join("command.txt"), format!("{command}\n"))
+        .context("write command artifact")?;
 
     let passed = discontinuities.gain_step_violations == 0
         && discontinuities.delay_step_violations == 0
         && discontinuities.normalization_failures == 0
         && discontinuities.non_finite_failures == 0
         && performance.p95_us <= config.max_p95_us;
-    let summary = EvaluationSummary {
+    let summary = Summary {
         renderer: renderer_name.to_owned(),
         passed,
         artifacts: vec![
@@ -452,7 +390,53 @@ fn evaluate_selection(
     Ok(summary)
 }
 
-fn deterministic_source_position(progress: f32) -> Vector3 {
+fn compare_steps(
+    previous: Option<&[f32]>,
+    current: &[f32],
+    threshold: f32,
+    observed_max: &mut f32,
+    violations: &mut usize,
+) {
+    if let Some(previous) = previous {
+        for (before, after) in previous.iter().zip(current) {
+            let step = (after - before).abs();
+            *observed_max = observed_max.max(step);
+            if step > threshold {
+                *violations += 1;
+            }
+        }
+    }
+}
+
+fn renderer_definition(
+    selection: RendererSelection,
+) -> (&'static str, &'static str, BasicRendererMode, Vec<Speaker>) {
+    match selection {
+        RendererSelection::All => unreachable!(),
+        RendererSelection::GeometricBinaural => (
+            "basic-geometric-binaural",
+            "geometric-binaural",
+            BasicRendererMode::GeometricBinaural,
+            stereo_speakers(),
+        ),
+        RendererSelection::InverseDistance => (
+            "basic-inverse-distance",
+            "inverse-distance",
+            BasicRendererMode::InverseDistance,
+            five_one_two_speakers(),
+        ),
+    }
+}
+
+fn selection_name(selection: RendererSelection) -> &'static str {
+    match selection {
+        RendererSelection::All => "all",
+        RendererSelection::GeometricBinaural => "geometric-binaural",
+        RendererSelection::InverseDistance => "inverse-distance",
+    }
+}
+
+fn source_position(progress: f32) -> Vector3 {
     let angle = TAU * progress;
     Vector3::new(
         1.35 * angle.sin(),
@@ -480,62 +464,22 @@ fn stereo_speakers() -> Vec<Speaker> {
 
 fn five_one_two_speakers() -> Vec<Speaker> {
     vec![
-        speaker(
-            "front-left",
-            "Front Left",
-            ChannelRole::FrontLeft,
-            Vector3::new(-1.2, 1.7, 1.2),
-        ),
-        speaker(
-            "front-right",
-            "Front Right",
-            ChannelRole::FrontRight,
-            Vector3::new(1.2, 1.7, 1.2),
-        ),
-        speaker(
-            "front-center",
-            "Front Center",
-            ChannelRole::FrontCenter,
-            Vector3::new(0.0, 1.8, 1.2),
-        ),
-        speaker(
-            "lfe",
-            "LFE",
-            ChannelRole::LowFrequencyEffects,
-            Vector3::new(0.0, 1.2, 0.2),
-        ),
-        speaker(
-            "surround-left",
-            "Surround Left",
-            ChannelRole::SurroundLeft,
-            Vector3::new(-1.7, -0.4, 1.2),
-        ),
-        speaker(
-            "surround-right",
-            "Surround Right",
-            ChannelRole::SurroundRight,
-            Vector3::new(1.7, -0.4, 1.2),
-        ),
-        speaker(
-            "top-front-left",
-            "Top Front Left",
-            ChannelRole::TopFrontLeft,
-            Vector3::new(-0.8, 0.9, 2.5),
-        ),
-        speaker(
-            "top-front-right",
-            "Top Front Right",
-            ChannelRole::TopFrontRight,
-            Vector3::new(0.8, 0.9, 2.5),
-        ),
+        speaker("front-left", "Front Left", ChannelRole::FrontLeft, Vector3::new(-1.2, 1.7, 1.2)),
+        speaker("front-right", "Front Right", ChannelRole::FrontRight, Vector3::new(1.2, 1.7, 1.2)),
+        speaker("front-center", "Front Center", ChannelRole::FrontCenter, Vector3::new(0.0, 1.8, 1.2)),
+        speaker("lfe", "LFE", ChannelRole::LowFrequencyEffects, Vector3::new(0.0, 1.2, 0.2)),
+        speaker("surround-left", "Surround Left", ChannelRole::SurroundLeft, Vector3::new(-1.7, -0.4, 1.2)),
+        speaker("surround-right", "Surround Right", ChannelRole::SurroundRight, Vector3::new(1.7, -0.4, 1.2)),
+        speaker("top-front-left", "Top Front Left", ChannelRole::TopFrontLeft, Vector3::new(-0.8, 0.9, 2.5)),
+        speaker("top-front-right", "Top Front Right", ChannelRole::TopFrontRight, Vector3::new(0.8, 0.9, 2.5)),
     ]
 }
 
-fn speaker(id: &str, label: &str, channel_role: ChannelRole, position: Vector3) -> Speaker {
+fn speaker(id: &str, label: &str, role: ChannelRole, position: Vector3) -> Speaker {
     Speaker {
         id: id.to_owned(),
         label: label.to_owned(),
-        channel_role,
+        channel_role: role,
         position,
         orientation: Vector3::new(0.0, -1.0, 0.0),
         gain_db: 0.0,
@@ -544,23 +488,14 @@ fn speaker(id: &str, label: &str, channel_role: ChannelRole, position: Vector3) 
     }
 }
 
-fn performance_report(render_times_ns: &[u128], max_p95_us: f64) -> PerformanceReport {
-    let p50_us = percentile_us(render_times_ns, 0.50);
-    let p95_us = percentile_us(render_times_ns, 0.95);
-    let p99_us = percentile_us(render_times_ns, 0.99);
-    let max_us = render_times_ns
-        .iter()
-        .copied()
-        .max()
-        .map(ns_to_us)
-        .unwrap_or(0.0);
+fn performance(times_ns: &[u128], max_p95_us: f64) -> PerformanceReport {
     let peak_memory_bytes = peak_memory_bytes();
     PerformanceReport {
-        measured_blocks: render_times_ns.len(),
-        p50_us,
-        p95_us,
-        p99_us,
-        max_us,
+        measured_blocks: times_ns.len(),
+        p50_us: percentile_us(times_ns, 0.50),
+        p95_us: percentile_us(times_ns, 0.95),
+        p99_us: percentile_us(times_ns, 0.99),
+        max_us: times_ns.iter().copied().max().map(ns_to_us).unwrap_or(0.0),
         configured_max_p95_us: max_p95_us,
         peak_memory_bytes,
         peak_memory_source: if cfg!(target_os = "linux") {
@@ -577,8 +512,7 @@ fn percentile_us(values: &[u128], quantile: f64) -> f64 {
     }
     let mut sorted = values.to_vec();
     sorted.sort_unstable();
-    let clamped = quantile.clamp(0.0, 1.0);
-    let index = ((sorted.len() - 1) as f64 * clamped).round() as usize;
+    let index = ((sorted.len() - 1) as f64 * quantile.clamp(0.0, 1.0)).round() as usize;
     ns_to_us(sorted[index])
 }
 
@@ -589,8 +523,9 @@ fn ns_to_us(value: u128) -> f64 {
 #[cfg(target_os = "linux")]
 fn peak_memory_bytes() -> Option<u64> {
     let status = fs::read_to_string("/proc/self/status").ok()?;
-    let line = status.lines().find(|line| line.starts_with("VmHWM:"))?;
-    let kib = line
+    let kib = status
+        .lines()
+        .find(|line| line.starts_with("VmHWM:"))?
         .split_whitespace()
         .nth(1)?
         .parse::<u64>()
@@ -603,14 +538,10 @@ fn peak_memory_bytes() -> Option<u64> {
     None
 }
 
-fn configuration_hash(
-    config: &EvaluationConfig,
-    renderer_name: &str,
-    role_names: &[String],
-) -> Result<String> {
-    let mut bytes = serde_json::to_vec(config).context("serialize evaluation configuration")?;
-    bytes.extend_from_slice(renderer_name.as_bytes());
-    for role in role_names {
+fn configuration_hash(config: &EvaluationConfig, renderer: &str, roles: &[String]) -> Result<String> {
+    let mut bytes = serde_json::to_vec(config).context("serialize evaluation config")?;
+    bytes.extend_from_slice(renderer.as_bytes());
+    for role in roles {
         bytes.push(0);
         bytes.extend_from_slice(role.as_bytes());
     }
@@ -625,9 +556,9 @@ fn configuration_hash(
 fn resolve_commit_sha() -> String {
     for variable in ["AURORA_COMMIT_SHA", "GITHUB_SHA"] {
         if let Ok(value) = std::env::var(variable) {
-            let trimmed = value.trim();
-            if !trimmed.is_empty() {
-                return trimmed.to_owned();
+            let value = value.trim();
+            if !value.is_empty() {
+                return value.to_owned();
             }
         }
     }
@@ -644,20 +575,18 @@ fn resolve_commit_sha() -> String {
 
 fn reproducible_command() -> String {
     std::env::args()
-        .map(|argument| shell_quote(&argument))
+        .map(|argument| {
+            if argument
+                .chars()
+                .all(|character| character.is_ascii_alphanumeric() || "-._/:=\\".contains(character))
+            {
+                argument
+            } else {
+                format!("\"{}\"", argument.replace('\\', "\\\\").replace('"', "\\\""))
+            }
+        })
         .collect::<Vec<_>>()
         .join(" ")
-}
-
-fn shell_quote(value: &str) -> String {
-    if value
-        .chars()
-        .all(|character| character.is_ascii_alphanumeric() || "-._/:=\\".contains(character))
-    {
-        value.to_owned()
-    } else {
-        format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
-    }
 }
 
 fn write_json(path: PathBuf, value: &impl Serialize) -> Result<()> {
@@ -670,14 +599,21 @@ mod tests {
     use super::*;
 
     #[test]
-    fn percentile_is_stable_for_known_values() {
+    fn percentile_is_deterministic() {
         let values = [1_000_u128, 2_000, 3_000, 4_000, 5_000];
         assert_eq!(percentile_us(&values, 0.50), 3.0);
         assert_eq!(percentile_us(&values, 0.95), 5.0);
     }
 
     #[test]
-    fn configuration_hash_changes_with_renderer_identity() {
+    fn source_path_contains_front_rear_and_height() {
+        assert!(source_position(0.0).y > 0.0);
+        assert!(source_position(0.5).y < 0.0);
+        assert!(source_position(0.125).z > 1.2);
+    }
+
+    #[test]
+    fn hash_changes_with_renderer_identity() {
         let config = EvaluationConfig {
             sample_rate: 48_000,
             block_size: 256,
@@ -688,25 +624,9 @@ mod tests {
             max_p95_us: 1_000.0,
         };
         let roles = vec!["front-left".to_owned(), "front-right".to_owned()];
-        let first = configuration_hash(&config, "a", &roles).unwrap();
-        let second = configuration_hash(&config, "b", &roles).unwrap();
-        assert_ne!(first, second);
-    }
-
-    #[test]
-    fn source_trajectory_covers_rear_and_height() {
-        let front = deterministic_source_position(0.0);
-        let rear = deterministic_source_position(0.5);
-        let elevated = deterministic_source_position(0.125);
-        assert!(front.y > 0.0);
-        assert!(rear.y < 0.0);
-        assert!(elevated.z > 1.2);
-    }
-
-    #[test]
-    fn floating_point_sort_fallback_is_not_required() {
-        let mut values = [3.0_f64, 1.0, 2.0];
-        values.sort_by(|left, right| left.partial_cmp(right).unwrap_or(Ordering::Equal));
-        assert_eq!(values, [1.0, 2.0, 3.0]);
+        assert_ne!(
+            configuration_hash(&config, "a", &roles).unwrap(),
+            configuration_hash(&config, "b", &roles).unwrap()
+        );
     }
 }
