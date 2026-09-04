@@ -1,0 +1,38 @@
+name: Product MSRV Lock Once
+
+on:
+  push:
+    branches:
+      - product/q995-clean-baseline
+
+permissions:
+  contents: write
+
+jobs:
+  pin:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(lock): restore MSRV') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/q995-clean-baseline
+      - uses: dtolnay/rust-toolchain@1.78.0
+      - name: Restore accepted Rust 1.78 transitive pins
+        run: |
+          cargo update -p half --precise 2.4.1
+          cargo update -p rayon --precise 1.10.0
+          cargo update -p rayon-core --precise 1.12.1
+      - name: Prove locked workspace on MSRV before commit
+        run: cargo check --workspace --all-targets --all-features --locked
+      - name: Commit compatible lockfile
+        shell: bash
+        run: |
+          if git diff --quiet -- Cargo.lock; then
+            echo "Cargo.lock already MSRV compatible"
+            exit 0
+          fi
+          git config user.name "aurora-ci"
+          git config user.email "aurora-ci@users.noreply.github.com"
+          git add Cargo.lock
+          git commit -m "chore(lock): restore MSRV-compatible transitive pins"
+          git push origin HEAD:product/q995-clean-baseline
