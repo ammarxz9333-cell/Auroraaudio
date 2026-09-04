@@ -67,14 +67,14 @@ jobs:
           /tmp/test-aurora-usb-stream
       - name: Test source manager priority and quiesce arbitration
         run: |
-          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
             platform/s6/source-manager/aurora-source-manager.c \
             -o /tmp/aurora-source-manager
           chmod +x platform/s6/source-manager/test_source_manager.py
           python3 platform/s6/source-manager/test_source_manager.py /tmp/aurora-source-manager
       - name: Compile managed HDMI source gate with warnings as errors
         run: |
-          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
             platform/s6/source-manager/aurora-source-gate.c \
             -lm -o /tmp/aurora-source-gate
       - name: Compile IEC61937 live immersive broker
