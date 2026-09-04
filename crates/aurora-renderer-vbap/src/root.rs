@@ -11,5 +11,8 @@ pub use horizontal::*;
 #[cfg(test)]
 pub(crate) use horizontal::allocation_audit;
 
+// Indexed triplet enumeration is intentional: stable speaker indices are part
+// of deterministic triplet tie-breaking and are written directly to gains.
+#[allow(clippy::needless_range_loop)]
 pub mod three_d;
 pub use three_d::Vbap3dRenderer;
