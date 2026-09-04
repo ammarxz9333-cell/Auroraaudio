@@ -491,12 +491,20 @@ int main(void)
             (p[2].revents & (POLLHUP | POLLERR | POLLNVAL))) {
             close(g.bridge_fd);
             g.bridge_fd = -1;
+            if (g.source_fd >= 0) {
+                close(g.source_fd);
+                g.source_fd = -1;
+            }
             mark_source_absent(&g);
         } else if (g.bridge_fd >= 0 && g.source_fd >= 0 && (p[2].revents & POLLIN)) {
             ssize_t n = recv(g.bridge_fd, bridge_buf, AURORA_USB_MAX_FRAME, 0);
             if (n <= 0) {
                 close(g.bridge_fd);
                 g.bridge_fd = -1;
+                if (g.source_fd >= 0) {
+                    close(g.source_fd);
+                    g.source_fd = -1;
+                }
                 mark_source_absent(&g);
             } else {
                 uint16_t kind;
