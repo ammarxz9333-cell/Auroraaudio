@@ -10,8 +10,8 @@ else
     AURORA_SOURCE_GATE_BIN=/bin/false
 fi
 
-name="Aurora HDMI source gate"
-description="Source-manager-controlled fail-closed PCM gate between live ingest and FunctionFS"
+name="Aurora source gate"
+description="Single-backend source data mux and fail-closed HDMI PCM gate before FunctionFS"
 command="$AURORA_SOURCE_GATE_BIN"
 command_background="yes"
 pidfile="/run/aurora/aurora-source-gate.pid"
@@ -30,6 +30,7 @@ start_pre() {
     [ -x "$AURORA_SOURCE_GATE_BIN" ] || return 1
     [ -n "${AURORA_SOURCE_MANAGER_SOCKET:-}" ] || return 1
     [ -n "${AURORA_HDMI_SOURCE_SOCKET:-}" ] || return 1
+    [ -n "${AURORA_LOCAL_SOURCE_SOCKET:-}" ] || return 1
     [ -n "${AURORA_USB_BRIDGE_SOCKET_REAL:-}" ] || return 1
     [ "$AURORA_USB_BRIDGE_SOCKET" = "$AURORA_HDMI_SOURCE_SOCKET" ] || return 1
 }
