@@ -4,6 +4,8 @@ set -eu
 ROOT="$(CDPATH= cd -- "$(dirname -- "$0")/../../.." && pwd)"
 INIT_DIR="$ROOT/platform/s6/rootfs/etc/init.d"
 LIVE="$ROOT/platform/s6/live-ingest/aurora-live-ingest.c"
+SOURCE_MANAGER="$ROOT/platform/s6/source-manager/aurora-source-manager.c"
+SOURCE_GATE="$ROOT/platform/s6/source-manager/aurora-source-gate.c"
 POST="$ROOT/crates/aurora-cli/src/bin/aurora-s6-postprocess.rs"
 BUILD="$ROOT/platform/s6/scripts/build-userspace-native-aarch64.sh"
 ASSEMBLE="$ROOT/platform/s6/scripts/assemble-rootfs-native-aarch64.sh"
@@ -13,7 +15,9 @@ HW_HEADER_GENERATOR="$ROOT/firmware/generate-hardware-target-header.sh"
 PINMUX_PROOF="$ROOT/docs/AURORA_REALTIME_MCU_PINMUX_PROOF.md"
 USB_PROTOCOL_DOC="$ROOT/docs/AURORA_USB_S6_REALTIME_MCU_PROTOCOL.md"
 EARC_BRINGUP_DOC="$ROOT/docs/AURORA_EARC_REALTIME_MCU_PHYSICAL_BRINGUP.md"
-SERVICE="$INIT_DIR/aurora-live-ingest"
+LIVE_SERVICE="$INIT_DIR/aurora-live-ingest"
+SOURCE_MANAGER_SERVICE="$INIT_DIR/aurora-source-manager"
+SOURCE_GATE_SERVICE="$INIT_DIR/aurora-source-gate"
 FFS_SERVICE="$INIT_DIR/aurora-ffs"
 
 fail() {
@@ -115,11 +119,9 @@ rm -f /tmp/aurora-legacy-name-hit
 [ "$AURORA_USB_VBUS_SWITCH_FAULT_OUTPUT" = 1 ] || fail "VBUS fault output required"
 [ "$AURORA_USB_VBUS_STATUS" = datasheet_verified ] || fail "VBUS switch is not datasheet-verified"
 
-# No GPIO may own two live roles.
 duplicate_pins="$(sed -n 's/^AURORA_PIN_[^=]*=//p' "$HW_TARGET" | sort | uniq -d)"
 [ -z "$duplicate_pins" ] || fail "duplicate realtime-MCU pin assignments: $duplicate_pins"
 
-# Pin AF groups are target contract, not copied into HAL source.
 for v in \
     AURORA_AF_ULPI_STP AURORA_AF_ULPI_DIR AURORA_AF_ULPI_NXT \
     AURORA_AF_ULPI_CLK AURORA_AF_ULPI_D0 AURORA_AF_ULPI_D1 \
@@ -138,7 +140,6 @@ for v in AURORA_AF_TDM_FS AURORA_AF_TDM_SCK AURORA_AF_TDM_SD AURORA_AF_TDM_MCLK;
     [ "$value" = 10 ] || fail "$v must be AF10"
 done
 
-# HAL-facing constants must be generated deterministically from the manifest.
 [ -f "$HW_HEADER_GENERATOR" ] || fail "hardware target header generator missing"
 sh -n "$HW_HEADER_GENERATOR" || fail "hardware target header generator syntax error"
 generated_header="$(mktemp)"
@@ -168,9 +169,9 @@ for macro in \
     grep -Fq "#define $macro " "$generated_header" || fail "generated header missing $macro"
  done
 
-# Concrete selected part must not leak into runtime or architecture consumers.
 for file in \
-    "$LIVE" "$POST" "$BUILD" "$ASSEMBLE" "$SERVICE" "$FFS_SERVICE" \
+    "$LIVE" "$SOURCE_MANAGER" "$SOURCE_GATE" "$POST" "$BUILD" "$ASSEMBLE" \
+    "$LIVE_SERVICE" "$SOURCE_MANAGER_SERVICE" "$SOURCE_GATE_SERVICE" "$FFS_SERVICE" \
     "$ROOT/.github/workflows/s6-appliance-ci.yml" \
     "$USB_PROTOCOL_DOC" "$EARC_BRINGUP_DOC" \
     "$ROOT/docs/AURORA_SYSTEM_ARCHITECTURE_HARDENING_CONTRACT.md" \
@@ -180,22 +181,40 @@ for file in \
  done
 
 # ---------------------------------------------------------------------------
-# One appliance runtime chain
+# One source-managed appliance runtime chain
 # ---------------------------------------------------------------------------
 set -- "$INIT_DIR"/aurora-*
-[ "$#" -eq 2 ] || fail "expected exactly two Aurora init services, found $#"
-[ -f "$FFS_SERVICE" ] || fail "aurora-ffs service missing"
-[ -f "$SERVICE" ] || fail "aurora-live-ingest service missing"
-sh -n "$FFS_SERVICE" || fail "aurora-ffs syntax error"
-sh -n "$SERVICE" || fail "aurora-live-ingest syntax error"
-[ "$(count_fixed 'need aurora-ffs' "$SERVICE")" -eq 1 ] || fail "live ingest dependency duplicated/missing"
+[ "$#" -eq 4 ] || fail "expected exactly four Aurora init services, found $#"
+for service in "$FFS_SERVICE" "$SOURCE_MANAGER_SERVICE" "$SOURCE_GATE_SERVICE" "$LIVE_SERVICE"; do
+    [ -f "$service" ] || fail "required service missing: $service"
+    sh -n "$service" || fail "service syntax error: $service"
+done
 
-[ "$(count_fixed '. /etc/aurora/aurora.env' "$SERVICE")" -eq 1 ] || fail "runtime manifest must be sourced exactly once"
-[ "$(count_fixed 'command="$AURORA_LIVE_INGEST_BIN"' "$SERVICE")" -eq 1 ] || fail "live command must come from runtime manifest"
-[ "$(count_fixed 'AURORA_CONFIG_MISSING=1' "$SERVICE")" -eq 1 ] || fail "missing-config guard absent"
-[ "$(count_fixed '[ "$AURORA_CONFIG_MISSING" -eq 0 ] || return 1' "$SERVICE")" -eq 1 ] || fail "service is not fail-closed on missing config"
+[ "$(count_fixed 'need aurora-ffs aurora-source-manager' "$SOURCE_GATE_SERVICE")" -eq 1 ] || \
+    fail "source gate must depend on FunctionFS and source manager exactly once"
+[ "$(count_fixed 'need aurora-source-gate' "$LIVE_SERVICE")" -eq 1 ] || \
+    fail "live ingest must depend on the source gate exactly once"
+if grep -Fq 'need aurora-ffs' "$LIVE_SERVICE"; then
+    fail "live ingest must not depend directly on FunctionFS"
+fi
+
+for service in "$SOURCE_MANAGER_SERVICE" "$SOURCE_GATE_SERVICE" "$LIVE_SERVICE"; do
+    [ "$(count_fixed '. /etc/aurora/aurora.env' "$service")" -eq 1 ] || \
+        fail "service must source runtime manifest exactly once: $service"
+    [ "$(count_fixed 'AURORA_CONFIG_MISSING=1' "$service")" -eq 1 ] || \
+        fail "missing-config guard absent: $service"
+done
+[ "$(count_fixed 'command="$AURORA_SOURCE_MANAGER_BIN"' "$SOURCE_MANAGER_SERVICE")" -eq 1 ] || fail "source-manager command drift"
+[ "$(count_fixed 'command="$AURORA_SOURCE_GATE_BIN"' "$SOURCE_GATE_SERVICE")" -eq 1 ] || fail "source-gate command drift"
+[ "$(count_fixed 'command="$AURORA_LIVE_INGEST_BIN"' "$LIVE_SERVICE")" -eq 1 ] || fail "live command drift"
 
 for assignment in \
+    'AURORA_SOURCE_MANAGER_BIN=/usr/local/sbin/aurora-source-manager' \
+    'AURORA_SOURCE_GATE_BIN=/usr/local/sbin/aurora-source-gate' \
+    'AURORA_SOURCE_MANAGER_SOCKET=/run/aurora/source-manager.sock' \
+    'AURORA_HDMI_SOURCE_SOCKET=/run/aurora/hdmi-source.sock' \
+    'AURORA_USB_BRIDGE_SOCKET=/run/aurora/hdmi-source.sock' \
+    'AURORA_USB_BRIDGE_SOCKET_REAL=/run/aurora/usb-bridge.sock' \
     'AURORA_LIVE_INGEST_BIN=/usr/local/sbin/aurora-live-ingest' \
     'AURORA_POSTPROCESS_BIN=/usr/local/bin/aurora-s6-postprocess' \
     'AURORA_ORENDER_BIN=/opt/aurora/external/orender' \
@@ -204,6 +223,14 @@ for assignment in \
  do
     [ "$(count_fixed "$assignment" "$ENVFILE")" -eq 1 ] || fail "runtime assignment missing/duplicated: $assignment"
  done
+
+[ "$(env_value AURORA_USB_BRIDGE_SOCKET)" = "$(env_value AURORA_HDMI_SOURCE_SOCKET)" ] || fail "live ingest does not terminate at source gate"
+[ "$(env_value AURORA_USB_BRIDGE_SOCKET_REAL)" = /run/aurora/usb-bridge.sock ] || fail "source gate real bridge path drift"
+[ "$(count_fixed 'env_or("AURORA_USB_BRIDGE_SOCKET_REAL", DEFAULT_REAL_BRIDGE)' "$SOURCE_GATE")" -eq 1 ] || fail "gate does not own real FunctionFS bridge path"
+[ "$(count_fixed 'env_or("AURORA_HDMI_SOURCE_SOCKET", DEFAULT_SOURCE_SOCKET)' "$SOURCE_GATE")" -eq 1 ] || fail "gate source socket drift"
+[ "$(count_fixed 'AURORA_SOURCE_QUIESCED' "$SOURCE_GATE")" -ge 1 ] || fail "source gate has no quiesce acknowledgement"
+[ "$(count_fixed 'AURORA_SOURCE_REVOKE' "$SOURCE_MANAGER")" -ge 1 ] || fail "source manager has no revoke transition"
+
 if grep -Eq '^(HARLETTY_BIN|OMNIPHONY_BIN)=' "$ENVFILE"; then
     fail "obsolete runtime path aliases remain"
 fi
@@ -218,6 +245,8 @@ broker_post="$(sed -n 's/^#define DEFAULT_POSTPROCESS "\(.*\)"$/\1/p' "$LIVE")"
 [ "$broker_post" = "$(env_value AURORA_POSTPROCESS_BIN)" ] || fail "postprocessor fallback drift"
 
 for install_line in \
+    'install -m 0755 "$STAGE/bin/aurora-source-manager" "$ROOTFS/usr/local/sbin/aurora-source-manager"' \
+    'install -m 0755 "$STAGE/bin/aurora-source-gate" "$ROOTFS/usr/local/sbin/aurora-source-gate"' \
     'install -m 0755 "$STAGE/bin/aurora-live-ingest" "$ROOTFS/usr/local/sbin/aurora-live-ingest"' \
     'install -m 0755 "$STAGE/bin/aurora-s6-postprocess" "$ROOTFS/usr/local/bin/aurora-s6-postprocess"' \
     'install -m 0755 "$STAGE/bin/aurora-ffs-daemon" "$ROOTFS/usr/local/sbin/aurora-ffs-daemon"' \
@@ -227,12 +256,16 @@ for install_line in \
  do
     [ "$(count_fixed "$install_line" "$ASSEMBLE")" -eq 1 ] || fail "rootfs install missing/duplicated: $install_line"
  done
-[ "$(count_fixed 'ln -sf /etc/init.d/aurora-ffs "$ROOTFS/etc/runlevels/default/aurora-ffs"' "$ASSEMBLE")" -eq 1 ] || fail "aurora-ffs not enabled exactly once"
-[ "$(count_fixed 'ln -sf /etc/init.d/aurora-live-ingest "$ROOTFS/etc/runlevels/default/aurora-live-ingest"' "$ASSEMBLE")" -eq 1 ] || fail "live-ingest not enabled exactly once"
+for service_name in aurora-ffs aurora-source-manager aurora-source-gate aurora-live-ingest; do
+    [ "$(count_fixed "ln -sf /etc/init.d/$service_name \"\$ROOTFS/etc/runlevels/default/$service_name\"" "$ASSEMBLE")" -eq 1 ] || \
+        fail "$service_name not enabled exactly once"
+done
 
-# One renderer, one DSP/postprocessor, one shared ASRC/drift implementation.
+# One renderer, one DSP/postprocessor, one source arbiter, one HDMI data gate.
 [ "$(count_fixed 'execl(orender, orender,' "$LIVE")" -eq 1 ] || fail "Omniphony exec path duplicated/missing"
 [ "$(count_fixed 'execl(postprocess, postprocess,' "$LIVE")" -eq 1 ] || fail "postprocessor exec path duplicated/missing"
+[ "$(count_fixed 'platform/s6/source-manager/aurora-source-manager.c' "$BUILD")" -eq 1 ] || fail "source manager build path duplicated/missing"
+[ "$(count_fixed 'platform/s6/source-manager/aurora-source-gate.c' "$BUILD")" -eq 1 ] || fail "source gate build path duplicated/missing"
 if grep -R -i -q -- 'camilladsp' "$INIT_DIR"; then
     fail "CamillaDSP must not run in parallel on S6"
 fi
@@ -241,7 +274,6 @@ if grep -Eq -- '^[[:space:]]*(pub[[:space:]]+)?struct[[:space:]]+(RubatoAsrc|Dri
     fail "postprocessor redefines ASRC/drift primitive"
 fi
 
-# Version and stream-shape truth must stay consistent.
 env_harletty="$(sed -n 's/^HARLETTY_VERSION=//p' "$ENVFILE")"
 build_harletty="$(sed -n 's/^HARLETTY_VERSION="${HARLETTY_VERSION:-\(.*\)}"$/\1/p' "$BUILD")"
 [ -n "$env_harletty" ] && [ "$env_harletty" = "$build_harletty" ] || fail "Harletty version drift"
@@ -256,4 +288,4 @@ grep -Fq 'AURORA_SAMPLE_RATE=48000' "$ENVFILE" || fail "runtime sample-rate drif
 grep -Fq 'AURORA_BLOCK_FRAMES=40' "$ENVFILE" || fail "runtime block-size drift"
 grep -Fq 'AURORA_LAYOUT=7.1.4' "$ENVFILE" || fail "runtime layout drift"
 
-echo "audit-runtime-wiring: PASS single hardware manifest, no legacy active MCU names, generated HAL constants, unique pin map, protected USB power/data path, single renderer/DSP/ASRC chain, canonical runtime config"
+echo "audit-runtime-wiring: PASS single hardware manifest, source-managed HDMI gate, no direct live-ingest/FunctionFS dependency, single renderer/DSP/ASRC chain, canonical runtime config"
