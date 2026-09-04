@@ -77,6 +77,19 @@ def terminate(proc):
         proc.wait(timeout=2)
 
 
+def wait_for_audible_pcm(live, bridge, pcm_payload, seq_base):
+    peaks = []
+    flags = []
+    for i in range(16):
+        live.sendall(frame(USB_PCM, pcm_payload, seq=seq_base + i,
+                           aux=(CHANNELS << 16) | PERIOD_FRAMES))
+        out = parse_frame(bridge.recv(USB_HEADER + PCM_BYTES))
+        assert out["kind"] == USB_PCM
+        peaks.append(pcm_peak(out["payload"]))
+        flags.append(out["flags"])
+    return peaks, flags
+
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit("usage: test_source_gate.py /path/to/aurora-source-manager /path/to/aurora-source-gate")
@@ -138,23 +151,46 @@ def main():
             assert encoded["kind"] == USB_ENCODED
             assert encoded["payload"] == encoded_payload
 
-            # Give manager/gate a short scheduling opportunity to exchange GRANT.
             time.sleep(0.05)
-
-            peaks = []
-            flags = []
-            for i in range(16):
-                live.sendall(frame(USB_PCM, pcm_payload, seq=10 + i,
-                                   aux=(CHANNELS << 16) | PERIOD_FRAMES))
-                out = parse_frame(bridge.recv(USB_HEADER + PCM_BYTES))
-                assert out["kind"] == USB_PCM
-                peaks.append(pcm_peak(out["payload"]))
-                flags.append(out["flags"])
-
+            peaks, flags = wait_for_audible_pcm(live, bridge, pcm_payload, 10)
             assert any(p > 0 for p in peaks), "PCM never opened after HDMI GRANT"
             assert peaks[-1] >= int(sample * 0.95), peaks[-4:]
             assert any(f & USB_FLAG_DISCONTINUITY for f in flags), \
                 "first post-GRANT PCM did not mark discontinuity"
+
+            # A physical USB session reset invalidates MCU CONFIG. FunctionFS
+            # therefore drops the real backend. The gate must propagate that
+            # reset upstream by closing the live source socket; otherwise the
+            # broker would incorrectly keep its old configured=true state.
+            bridge.close()
+            bridge = None
+            live.settimeout(1.0)
+            assert live.recv(1) == b"", \
+                "upstream source stayed connected across USB backend reset"
+            live.close()
+            live = None
+
+            # The gate reconnects to the new FunctionFS backend, and the live
+            # broker side must reconnect separately and start with a fresh CONFIG.
+            bridge, _ = bridge_listener.accept()
+            bridge.settimeout(1)
+            live = wait_connect(source_path)
+            live.settimeout(1)
+            live.sendall(frame(USB_CONFIG, config_payload, seq=200))
+            fresh_config = parse_frame(bridge.recv(4096))
+            assert fresh_config["kind"] == USB_CONFIG
+            assert fresh_config["payload"] == config_payload
+
+            # Re-establish HDMI presence/grant after the reset and prove audible
+            # output returns only through the new session.
+            bridge.sendall(frame(USB_ENCODED, encoded_payload, seq=201, pts=200))
+            encoded = parse_frame(live.recv(4096))
+            assert encoded["kind"] == USB_ENCODED
+            time.sleep(0.10)
+            peaks, flags = wait_for_audible_pcm(live, bridge, pcm_payload, 220)
+            assert peaks[-1] >= int(sample * 0.95), peaks[-4:]
+            assert any(f & USB_FLAG_DISCONTINUITY for f in flags), \
+                "post-reset PCM did not mark discontinuity"
 
             # Killing the manager must immediately fail closed. The gate may reconnect
             # later, but until a fresh GRANT arrives no audible PCM may escape.
@@ -162,7 +198,7 @@ def main():
             manager = None
             time.sleep(0.10)
             for i in range(3):
-                live.sendall(frame(USB_PCM, pcm_payload, seq=100 + i,
+                live.sendall(frame(USB_PCM, pcm_payload, seq=300 + i,
                                    aux=(CHANNELS << 16) | PERIOD_FRAMES))
                 out = parse_frame(bridge.recv(USB_HEADER + PCM_BYTES))
                 assert all_pcm_zero(out["payload"]), "PCM leaked after manager loss"
@@ -180,7 +216,7 @@ def main():
             if gate.returncode not in (0, -15):
                 raise AssertionError(f"source gate exited {gate.returncode}: {gate_stderr}")
 
-    print("source-gate fail-closed/ramp/manager-loss integration tests passed")
+    print("source-gate fail-closed/ramp/backend-reset/manager-loss integration tests passed")
 
 
 if __name__ == "__main__":
