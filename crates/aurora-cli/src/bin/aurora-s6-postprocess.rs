@@ -12,8 +12,10 @@ use aurora_realtime_engine::{
     AsynchronousResampler, DriftController, DriftControllerConfig, RubatoAsrc,
 };
 use std::f32::consts::PI;
+#[cfg(unix)]
 use std::fs::File;
 use std::io::{self, ErrorKind, Read, Write};
+#[cfg(unix)]
 use std::os::fd::{FromRawFd, RawFd};
 use std::sync::atomic::{AtomicBool, AtomicI64, AtomicU64, AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -538,13 +540,14 @@ fn apply_control_message(state: &ControlState, message: &[u8; CONTROL_MESSAGE_BY
     }
 }
 
-fn spawn_control_reader(fd: RawFd, state: Arc<ControlState>) {
+#[cfg(unix)]
+fn spawn_control_reader(fd: usize, state: Arc<ControlState>) -> Result<()> {
     std::thread::Builder::new()
         .name("aurora-post-control".to_owned())
         .spawn(move || {
             // SAFETY: the descriptor is intentionally transferred to this
             // thread by the execing parent and is owned here until thread exit.
-            let mut file = unsafe { File::from_raw_fd(fd) };
+            let mut file = unsafe { File::from_raw_fd(fd as RawFd) };
             let mut message = [0_u8; CONTROL_MESSAGE_BYTES];
             loop {
                 match file.read_exact(&mut message) {
@@ -554,7 +557,14 @@ fn spawn_control_reader(fd: RawFd, state: Arc<ControlState>) {
                 }
             }
         })
-        .expect("control thread creation must succeed before streaming");
+        .context("failed to spawn Aurora postprocessor control thread")?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn spawn_control_reader(_fd: usize, _state: Arc<ControlState>) -> Result<()> {
+    let _parse: fn(&ControlState, &[u8; CONTROL_MESSAGE_BYTES]) = apply_control_message;
+    bail!("aurora-s6-postprocess requires Unix file-descriptor passing");
 }
 
 fn read_exact_or_clean_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<bool> {
@@ -584,7 +594,7 @@ fn floats_to_bytes(samples: &[f32], output: &mut [u8]) {
 }
 
 fn run() -> Result<()> {
-    let control_fd = env_usize("AURORA_CONTROL_FD", 3)? as RawFd;
+    let control_fd = env_usize("AURORA_CONTROL_FD", 3)?;
     let drift_target_frames = env_usize("AURORA_DRIFT_TARGET_FRAMES", 120)?;
     if !(BLOCK_FRAMES..=4_096).contains(&drift_target_frames) {
         bail!("AURORA_DRIFT_TARGET_FRAMES must be between 40 and 4096");
@@ -596,7 +606,7 @@ fn run() -> Result<()> {
             .round() as usize,
         Ordering::Relaxed,
     );
-    spawn_control_reader(control_fd, Arc::clone(&state));
+    spawn_control_reader(control_fd, Arc::clone(&state))?;
 
     let drift_config = DriftControllerConfig {
         target_fill_frames: drift_target_frames,
