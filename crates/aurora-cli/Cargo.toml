@@ -12,6 +12,11 @@ path = "src/main.rs"
 bench = false
 
 [[bin]]
+name = "aurora-evaluate-renderer"
+path = "src/bin/aurora-evaluate-renderer.rs"
+bench = false
+
+[[bin]]
 name = "aurora-s6-postprocess"
 path = "src/bin/aurora-s6-postprocess.rs"
 bench = false
