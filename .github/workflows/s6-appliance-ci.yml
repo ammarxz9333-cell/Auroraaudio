@@ -82,6 +82,14 @@ jobs:
           chmod +x platform/s6/source-manager/test_source_gate.py
           python3 platform/s6/source-manager/test_source_gate.py \
             /tmp/aurora-source-manager /tmp/aurora-source-gate
+      - name: Test appliance source control CLI
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+            platform/s6/source-manager/aurora-source-ctl.c \
+            -lm -o /tmp/aurora-source-ctl
+          chmod +x platform/s6/source-manager/test_source_control_cli.py
+          python3 platform/s6/source-manager/test_source_control_cli.py \
+            /tmp/aurora-source-manager /tmp/aurora-source-ctl
       - name: Compile IEC61937 live immersive broker
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \
