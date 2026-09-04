@@ -40,12 +40,12 @@ mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/share/omniphony/layouts" "$OUT/navidrome" "
 # only process allowed to bridge live-ingest PCM into the FunctionFS backend;
 # it keeps CONFIG/clock traffic flowing but ramps audio to silence unless the
 # source manager grants HDMI/eARC ownership.
-"$CC" -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror \
+"$CC" -std=c11 -O2 -Wall -Wextra -Werror \
     -I"$ROOT/protocol" \
     "$ROOT/platform/s6/source-manager/aurora-source-manager.c" \
     -o "$OUT/bin/aurora-source-manager"
 
-"$CC" -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror \
+"$CC" -std=c11 -O2 -Wall -Wextra -Werror \
     -I"$ROOT/protocol" \
     "$ROOT/platform/s6/source-manager/aurora-source-gate.c" \
     -lm -o "$OUT/bin/aurora-source-gate"
