@@ -55,7 +55,7 @@ jobs:
           --output-dir output/evaluation
           --duration-seconds 0.5
       - name: Upload renderer evaluation evidence
-        if: always()
+        if: success()
         uses: actions/upload-artifact@v4
         with:
           name: renderer-evaluation-${{ github.sha }}
