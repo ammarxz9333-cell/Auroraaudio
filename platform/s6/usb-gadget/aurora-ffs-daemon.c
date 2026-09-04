@@ -298,6 +298,7 @@ static int open_stream_endpoints(int *ep_out, int *ep_in)
 }
 
 static void handle_ep0_events(int ep0, int *enabled, int *ep_out, int *ep_in,
+                              int *backend_fd,
                               struct aurora_usb_stream_v1 *stream)
 {
     struct usb_functionfs_event events[8];
@@ -324,7 +325,11 @@ static void handle_ep0_events(int ep0, int *enabled, int *ep_out, int *ep_in,
             aurora_usb_stream_v1_reset(stream);
             close_endpoint(ep_out);
             close_endpoint(ep_in);
-            fprintf(stderr, "aurora-ffs: USB disabled\n");
+            /* A USB session boundary invalidates STM32 CONFIG state. Force the
+             * live broker to reconnect so it must send a fresh CONFIG before
+             * any new PCM can reach the next USB session. */
+            close_endpoint(backend_fd);
+            fprintf(stderr, "aurora-ffs: USB disabled; backend reset required\n");
             break;
         case FUNCTIONFS_SETUP:
             /* Protocol v1 defines no class/vendor ep0 request. */
@@ -385,7 +390,11 @@ int main(void)
     while (!stop_requested) {
         struct pollfd p[4];
         p[0] = (struct pollfd){ .fd = ep0, .events = POLLIN };
-        p[1] = (struct pollfd){ .fd = listen_fd, .events = POLLIN };
+        /* Do not accept a live backend until USB is enabled. A broker may
+         * connect into the Unix-listener backlog while USB is down; accepting
+         * it only after ENABLE guarantees its first CONFIG belongs to the new
+         * physical USB session. */
+        p[1] = (struct pollfd){ .fd = usb_enabled ? listen_fd : -1, .events = POLLIN };
         p[2] = (struct pollfd){ .fd = usb_enabled ? ep_out : -1, .events = POLLIN };
         p[3] = (struct pollfd){ .fd = backend_fd, .events = POLLIN };
 
@@ -398,7 +407,8 @@ int main(void)
         }
 
         if (p[0].revents & POLLIN)
-            handle_ep0_events(ep0, &usb_enabled, &ep_out, &ep_in, &stream);
+            handle_ep0_events(ep0, &usb_enabled, &ep_out, &ep_in,
+                              &backend_fd, &stream);
 
         if (p[1].revents & POLLIN) {
             int fd = accept4(listen_fd, NULL, NULL, SOCK_CLOEXEC | SOCK_NONBLOCK);
@@ -442,6 +452,7 @@ int main(void)
                             close_endpoint(&ep_out);
                             close_endpoint(&ep_in);
                             aurora_usb_stream_v1_reset(&stream);
+                            close_endpoint(&backend_fd);
                         }
                     }
                 } else if (n == 0) {

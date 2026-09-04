@@ -24,7 +24,7 @@ Plugins are never required for core Aurora playback.
 
 1. Plugins run out-of-process. Do not `dlopen()` third-party plugins into the realtime process.
 2. A plugin crash, restart, network timeout, OAuth failure, or malformed response must not stop the active Aurora audio path.
-3. Plugins do not access STM32H753, amplifier mute GPIOs, TDM/I2S, or Aurora USB endpoints directly.
+3. Plugins do not access the realtime MCU, amplifier mute GPIOs, TDM/I2S, or Aurora USB endpoints directly.
 4. Only `Aurora Source Manager` may select or switch the active audio source.
 5. Only Aurora-owned realtime code may write the final 48 kHz multichannel stream to the hardware transport.
 6. Plugin control messages must not execute in the realtime audio callback.
@@ -154,7 +154,7 @@ Aurora must support two distinct roles when the Linux Bluetooth stack has passed
 
 Bluetooth output is an optional convenience path and is not the preferred synchronized theater-rear transport because Bluetooth latency and independent receiver clocks are not equivalent to AuroraLink theater synchronization.
 
-The Bluetooth plugin runs outside the critical Harletty/Omniphony/DSP/STM32 path. PipeWire/BlueZ may be used by this plugin even if the primary Aurora transport bypasses PipeWire.
+The Bluetooth plugin runs outside the critical Harletty/Omniphony/DSP/realtime-MCU path. PipeWire/BlueZ may be used by this plugin even if the primary Aurora transport bypasses PipeWire.
 
 ## 8. Alexa plugin requirements
 

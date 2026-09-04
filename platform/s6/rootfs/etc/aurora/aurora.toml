@@ -3,7 +3,7 @@
 
 [engine]
 sample_rate = 48000
-block_frames = 256
+block_frames = 40
 layout = "7.1.4"
 realtime = true
 
@@ -37,7 +37,7 @@ amoled_pixel_shift = true
 mode = "functionfs"
 role = "device"
 transport = "aurora-usb-v1"
-# STM32H753 is the preferred USB host in the final topology.
+# The USB host is the realtime MCU selected by config/aurora-hardware-target.env.
 
 [wireless_rears]
 enabled = false

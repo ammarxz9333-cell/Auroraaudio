@@ -1,6 +1,8 @@
 # AuroraOS-S6 physical flash gates
 
-Initial hardware target: **Samsung Galaxy S6 SM-G920F / zerofltexx only**.
+Initial application-platform target: **Samsung Galaxy S6 SM-G920F / zerofltexx only**.
+
+The concrete realtime MCU is selected only by `config/aurora-hardware-target.env`. These gates refer to the stable realtime-MCU role; replacing the selected part requires re-running every MCU-dependent hardware gate.
 
 A successful compiler/CI run is not permission to flash. The bundle remains marked `NOT_FLASH_READY` until the exact physical device passes the gates below.
 
@@ -64,9 +66,9 @@ Must work under AuroraOS, not Android:
 
 Camera, cellular modem, telephony, and Android services are not Aurora requirements.
 
-## Gate 5 — FunctionFS ↔ STM32H753
+## Gate 5 — FunctionFS ↔ realtime MCU
 
-With STM32H753 + a validated external USB HS ULPI PHY:
+With the realtime MCU and USB HS PHY selected by the hardware-target manifest:
 
 1. enumerate Aurora FunctionFS from at least 50 cold-plug/reset cycles;
 2. PING/PONG succeeds before the audio backend starts;
@@ -75,11 +77,13 @@ With STM32H753 + a validated external USB HS ULPI PHY:
 5. stream 12-channel 48 kHz S32LE periods without USB transport underruns;
 6. unplug/replug returns through mute → CONFIG → stream without reboot.
 
+Changing the selected MCU, package, USB PHY, vendor stack, or relevant pinmux invalidates this gate until it is re-run.
+
 ## Gate 6 — realtime audio
 
 Run the actual Aurora chain:
 
-`IEC61937/E-AC-3 JOC → Harletty → Omniphony 7.1.4 → Aurora DSP → USB → STM32`
+`IEC61937/E-AC-3 JOC → Harletty → Omniphony 7.1.4 → Aurora DSP → USB → realtime MCU`
 
 Pass criteria under representative movie material:
 
@@ -100,8 +104,10 @@ Pass criteria:
 - no repeated USB resets;
 - storage and battery/power temperatures remain within the hardware's normal operating limits.
 
+The selected realtime MCU and its power/PHY path must also remain within their datasheet limits throughout the same sustained run.
+
 ## Gate 8 — promote bundle
 
-Only after Gates 0–7 pass on the exact target may a validated release pipeline omit `NOT_FLASH_READY` and label the artifact `SM-G920F-HW-VALIDATED`.
+Only after Gates 0–7 pass on the exact application platform and selected realtime-MCU target may a validated release pipeline omit `NOT_FLASH_READY` and label the artifact `SM-G920F-HW-VALIDATED` together with the exact hardware-target manifest hash.
 
-Validation of one S6 variant does not automatically validate another (`G920I`, `G920T`, Edge variants, etc.).
+Validation of one S6 variant does not automatically validate another (`G920I`, `G920T`, Edge variants, etc.). Replacing the realtime MCU or directly coupled PHY/power hardware likewise requires fresh hardware acceptance.

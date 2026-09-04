@@ -21,6 +21,7 @@ KIND_CONFIG = 4
 KIND_ACK = 5
 FLAG_PTS_VALID = 1 << 0
 FLAG_DISCONTINUITY = 1 << 1
+FLAG_XRUN_RECOVERY = 1 << 3
 
 PERIOD_FRAMES = 40
 CHANNELS = 12
@@ -77,9 +78,10 @@ def validate_config(config):
     assert cfg[16:48] == EXPECTED_LAYOUT_HASH
 
 
-def validate_pcm(pcm, pts):
+def validate_pcm(pcm, pts, required_flags=0):
     assert pcm["kind"] == KIND_PCM_S32LE, pcm
     assert pcm["flags"] & FLAG_PTS_VALID
+    assert (pcm["flags"] & required_flags) == required_flags, pcm
     assert pcm["pts"] == pts
     assert (pcm["aux"] >> 16) == CHANNELS
     assert (pcm["aux"] & 0xFFFF) == PERIOD_FRAMES
@@ -115,6 +117,9 @@ def launch_broker(broker, mock_orender, socket_path, encoded):
     env = os.environ.copy()
     env["AURORA_USB_BRIDGE_SOCKET"] = str(socket_path)
     env["AURORA_ORENDER_BIN"] = str(mock_orender)
+    # This regression test isolates the broker/USB contract. The real
+    # postprocessor has its own Rust tests and a separate integration test.
+    env["AURORA_POSTPROCESS_BIN"] = "disabled"
     env["AURORA_MOCK_EXPECT_HEX"] = encoded.hex()
     env["AURORA_MOCK_SAMPLE"] = "0.25"
     return subprocess.Popen(
@@ -214,7 +219,11 @@ def run_discontinuity_case(broker, mock_orender, encoded):
                     discontinuity=True,
                 )
             )
-            validate_pcm(parse(conn.recv(65536)), second_pts)
+            validate_pcm(
+                parse(conn.recv(65536)),
+                second_pts,
+                required_flags=FLAG_DISCONTINUITY,
+            )
         finally:
             if conn is not None:
                 conn.close()
@@ -256,7 +265,11 @@ def run_reconnect_case(broker, mock_orender, encoded):
             second.sendall(make_ack(sequence=0))
             second_pts = 240_000
             second.sendall(make_encoded(encoded, second_pts, sequence=1))
-            validate_pcm(parse(second.recv(65536)), second_pts)
+            validate_pcm(
+                parse(second.recv(65536)),
+                second_pts,
+                required_flags=FLAG_DISCONTINUITY | FLAG_XRUN_RECOVERY,
+            )
         finally:
             if first is not None:
                 first.close()
