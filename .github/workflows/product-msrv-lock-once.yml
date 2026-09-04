@@ -21,13 +21,14 @@ jobs:
           components: rustfmt
       - name: Install Linux audio build dependencies
         run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
-      - name: Fix deterministic 3D triplet iteration
+      - name: Repair Rust 1.78 source compatibility
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          path = Path('crates/aurora-renderer-vbap3d/src/lib.rs')
-          text = path.read_text()
+
+          renderer = Path('crates/aurora-renderer-vbap3d/src/lib.rs')
+          text = renderer.read_text()
           replacements = [
               ('for first in 0..speakers.len() {', 'for (first, first_speaker) in speakers.iter().enumerate() {'),
               ('is_spatial_speaker(&speakers[first])', 'is_spatial_speaker(first_speaker)'),
@@ -43,7 +44,27 @@ jobs:
               if old not in text:
                   raise SystemExit(f'expected 3D expression not found: {old}')
               text = text.replace(old, new, 1)
-          path.write_text(text)
+          renderer.write_text(text)
+
+          dsp = Path('crates/aurora-dsp-output/src/lib.rs')
+          text = dsp.read_text()
+          old = '''                let high = hp[1].process(hp[0].process(input));
+                let low = lp[1].process(lp[0].process(input));
+'''
+          new = '''                let high_stage_1 = hp[0].process(input);
+                let high = hp[1].process(high_stage_1);
+                let low_stage_1 = lp[0].process(input);
+                let low = lp[1].process(low_stage_1);
+'''
+          if old not in text:
+              raise SystemExit('expected output DSP cascade not found')
+          dsp.write_text(text.replace(old, new, 1))
+
+          core_manifest = Path('crates/aurora-core/Cargo.toml')
+          text = core_manifest.read_text()
+          if 'serde_json.workspace = true' not in text:
+              text = text.rstrip() + '\n\n[dev-dependencies]\nserde_json.workspace = true\n'
+          core_manifest.write_text(text)
           PY
       - name: Restore accepted Rust 1.78 transitive pins
         shell: bash
@@ -52,6 +73,8 @@ jobs:
           cargo update -p rayon --precise 1.10.0
           cargo update -p rayon-core --precise 1.12.1
           cargo fmt --all
+      - name: Refresh only required lock metadata
+        run: cargo check --workspace --all-targets --all-features
       - name: Prove locked workspace on MSRV before commit
         run: cargo check --workspace --all-targets --all-features --locked
       - name: Commit repaired source and compatible lockfile
@@ -59,10 +82,10 @@ jobs:
         run: |
           git config user.name "aurora-ci"
           git config user.email "aurora-ci@users.noreply.github.com"
-          git add Cargo.lock crates/aurora-renderer-vbap3d/src/lib.rs
+          git add Cargo.lock crates/aurora-core/Cargo.toml crates/aurora-renderer-vbap3d/src/lib.rs crates/aurora-dsp-output/src/lib.rs
           if git diff --cached --quiet; then
             echo "Source and lockfile already repaired"
             exit 0
           fi
-          git commit -m "MSRV_REPAIR_DONE pin dependencies and fix 3D iteration"
+          git commit -m "MSRV_REPAIR_DONE stabilize 7.1.4 renderer and output DSP"
           git push origin HEAD:product/q995-clean-baseline
