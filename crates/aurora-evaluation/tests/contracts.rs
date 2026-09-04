@@ -251,10 +251,7 @@ fn missing_required_allocation_observation_makes_run_incomplete() {
         EvidenceStatus::NotObserved
     );
     assert_eq!(bundle.report.allocations.steady_state_allocations, None);
-    assert_eq!(
-        bundle.report.validation.status,
-        EvidenceStatus::NotObserved
-    );
+    assert_eq!(bundle.report.validation.status, EvidenceStatus::NotObserved);
 }
 
 #[test]
