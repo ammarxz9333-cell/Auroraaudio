@@ -50,6 +50,11 @@ mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/share/omniphony/layouts" "$OUT/navidrome" "
     "$ROOT/platform/s6/source-manager/aurora-source-gate.c" \
     -lm -o "$OUT/bin/aurora-source-gate"
 
+"$CC" -std=c11 -O2 -Wall -Wextra -Werror \
+    -I"$ROOT/protocol" \
+    "$ROOT/platform/s6/source-manager/aurora-source-ctl.c" \
+    -lm -o "$OUT/bin/aurora-source-ctl"
+
 # Live immersive streaming broker. It deliberately does NOT decode or unwrap
 # IEC61937 itself. Complete encoded frames are forwarded as a byte stream to
 # Omniphony stdin; Omniphony v0.5.2 owns the streaming IEC61937 parser and
@@ -113,7 +118,8 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
     echo "aurora_commit=$(git -C "$ROOT" rev-parse HEAD)"
     echo "aurora_usb_protocol=1"
     echo "aurora_usb_period_frames=40"
-    echo "source_manager=priority-quiesce-v1"
+    echo "source_manager=priority-quiesce-watchdog-v1"
+    echo "source_control_cli=status-mute-gain-lipsync-standby-v1"
     echo "hdmi_source_gate=managed-ramp-v1"
     echo "live_streaming_ingest=iec61937-omniphony-postprocess-source-gate"
     echo "postprocessor=aurora-s6-postprocess"
@@ -130,6 +136,7 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
 sha256sum "$OUT/bin/aurora-ffs-daemon" > "$OUT/bin/aurora-ffs-daemon.sha256"
 sha256sum "$OUT/bin/aurora-source-manager" > "$OUT/bin/aurora-source-manager.sha256"
 sha256sum "$OUT/bin/aurora-source-gate" > "$OUT/bin/aurora-source-gate.sha256"
+sha256sum "$OUT/bin/aurora-source-ctl" > "$OUT/bin/aurora-source-ctl.sha256"
 sha256sum "$OUT/bin/aurora-live-ingest" > "$OUT/bin/aurora-live-ingest.sha256"
 sha256sum "$OUT/bin/aurora-s6-postprocess" > "$OUT/bin/aurora-s6-postprocess.sha256"
 echo "Userspace staging complete: $OUT"
