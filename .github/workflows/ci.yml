@@ -48,6 +48,19 @@ jobs:
       - name: Verify immutable configuration read allocation guard
         run: cargo test -p aurora-config --test immutable_reads
       - run: cargo test --workspace --all-features
+      - name: Run deterministic renderer evaluation
+        run: >-
+          cargo run --release -p aurora-cli --bin aurora-evaluate-renderer --
+          --renderer all
+          --output-dir output/evaluation
+          --duration-seconds 0.5
+      - name: Upload renderer evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: renderer-evaluation-${{ github.sha }}
+          path: output/evaluation
+          if-no-files-found: error
       - name: Verify public API documentation
         env:
           RUSTDOCFLAGS: -D warnings
