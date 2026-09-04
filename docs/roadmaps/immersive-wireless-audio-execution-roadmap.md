@@ -4,12 +4,17 @@
 
 - `program_state`: `PRODUCT_IMPLEMENTATION_ACTIVE`
 - `active_program`: `Immersive Audio Product Implementation 1`
-- `active_work_item`: issue `#43`, Checkpoint A
-- `next_work_item`: issue `#44`
+- `completed_renderer_prerequisite`: issue `#43`, Checkpoint A, PR `#57`, merge commit `44e3df84cb2082f079e83622f8e950cc66da1b8a`
+- `active_renderer_work_item`: issue `#44`
+- `next_renderer_work_item`: issue `#45`
+- `s6_appliance_baseline`: PR `#83`, merge commit `5aa97d10df9e8af28d5afea34c24b90bad6b47db`
+- `s6_appliance_state`: `HOST_SOFTWARE_VALIDATED_PHYSICAL_GATES_OPEN`
 - `governance_mode`: maintenance only
 - `default_delivery_unit`: one reviewable implementation PR
 
-Aurora advances through executable product slices. Historical governance and accepted architecture remain valid, but they do not select the next task. New planning-only crates, ADRs, inspection layers, or contract programs require a concrete implementation blocker.
+Aurora advances through executable product slices. The renderer/product-evidence sequence and the Galaxy S6 appliance/hardware-enablement sequence are coordinated but separate lanes. Historical governance and accepted architecture remain valid, but they do not select the next task. New planning-only crates, ADRs, inspection layers, or contract programs require a concrete implementation blocker.
+
+The S6 appliance baseline landed through PR #83. That integration does not satisfy, skip, or reorder the renderer acceptance gates below, and host/software evidence from that lane must not be presented as physical hardware validation.
 
 ## 2. Product objective
 
@@ -20,7 +25,8 @@ Aurora is an open, low-cost spatial-audio platform that will:
 - decode open immersive formats into Aurora-owned PCM and scene metadata;
 - distribute synchronized audio over ordinary IP networks;
 - run receiver nodes on commodity Linux and Raspberry Pi-class hardware;
-- support theater-channel distribution and multiroom playback as separate operating modes.
+- support theater-channel distribution and multiroom playback as separate operating modes;
+- support a dedicated Galaxy S6 appliance path with managed source routing and realtime-MCU audio I/O where accepted by the corresponding hardware gates.
 
 Aurora does not claim Dolby Atmos compatibility without a lawful licensed decoder. The project targets an open immersive listening system using Aurora-owned scene, rendering, timing, transport, evaluation, and orchestration layers.
 
@@ -32,21 +38,33 @@ Implemented foundations:
 - offline multichannel WAV rendering;
 - local realtime engine and CPAL backend;
 - horizontal 2D VBAP;
-- geometric stereo ITD/ILD prototype;
+- accepted `GeometricBinaural` Checkpoint A baseline from PR `#57`, using geometric ITD/ILD and per-ear distance weighting with explicit non-HRTF labeling;
 - Rubato-backed ASRC and drift control;
 - deterministic virtual-device and fault simulation;
 - functional offline CamillaDSP process adapter;
-- placeholder or research adapters for IAMF, Cavern, and truehdd.
+- placeholder or research adapters for IAMF, Cavern, and truehdd;
+- S6 appliance bootstrap, reproducible build/runtime staging, and delivery packaging logic;
+- host-tested S6 source manager and exclusive HDMI/eARC/local final source gate;
+- host-tested live IEC61937 immersive ingest path and 7.1.4 PCM transport framing;
+- host-tested portable realtime-MCU transport, IEC61937 carrier normalization, CONFIG/layout handling, XRUN recovery, and USB-reset behavior;
+- S6 physical bring-up, flash, protocol, and target contracts that explicitly separate host proof from hardware proof.
 
 Not yet accepted as product capability:
 
+- unified renderer evaluation/artifact infrastructure under issue `#44`;
 - true HRTF convolution;
 - height-capable 3D loudspeaker rendering;
 - operational IAMF decoding;
 - packetized network audio;
 - distributed receiver synchronization on physical devices;
 - Raspberry Pi receiver runtime;
-- end-to-end multiroom behavior.
+- end-to-end multiroom behavior;
+- physical SM-G920F boot/display/touch/Wi-Fi acceptance;
+- physical HDMI/eARC carrier capture and realtime-MCU target HAL acceptance;
+- physical USB timing, TDM/DMA, DAC/amplifier/speaker output, thermal, xrun, and end-to-end latency acceptance;
+- live streaming-service DD+ JOC to measured 7.1.4 acceptance.
+
+For detailed S6 status, `platform/s6/COMPONENT_STATUS.md` is authoritative.
 
 ## 4. Completion rule
 
@@ -57,33 +75,31 @@ A capability is complete only when all of the following exist:
 3. measurable artifacts such as WAV, JSON trajectory, packet trace, synchronization report, or latency report;
 4. reproducible commands;
 5. documented limitations and licensing boundaries;
-6. CI evidence for the exact commit.
+6. CI evidence for the exact commit;
+7. physical measurement evidence when the capability claim depends on physical hardware behavior.
 
-Compilation alone, interface-only crates, placeholders, documents, or simulated claims presented as physical evidence do not count.
+Compilation alone, interface-only crates, placeholders, documents, host-only tests, or simulated claims presented as physical evidence do not count.
 
-## 5. Clean execution sequence
+## 5. Renderer/product-evidence execution sequence
 
-### Phase 0 — Stabilize the landed geometric binaural prototype
+### Phase 0 — Geometric binaural stabilization — COMPLETED
 
-**Issue:** `#43`, Checkpoint A
+**Issue:** `#43`, Checkpoint A  
+**Accepted through:** PR `#57`, merge commit `44e3df84cb2082f079e83622f8e950cc66da1b8a`
 
-Deliver only:
+Accepted baseline:
 
-- use the canonical mode name `GeometricBinaural`;
-- state that it uses geometric ITD, geometric ILD, and per-ear geometric
-  distance weighting followed by power normalization, and is not an HRTF
-  renderer;
-- state that it has no HRIR data, convolution, pinna cues, or elevation cues;
-- validate stereo layout, finite normalized gains, near-zero distance, and delay inputs;
-- verify partial-block and repeated-render behavior;
-- document dynamic-delay continuity limitations;
-- run fmt, Clippy, tests, strict rustdoc, and CI.
+- canonical mode name `GeometricBinaural`;
+- explicit classification as geometric ITD, geometric ILD, and per-ear geometric distance weighting followed by power normalization;
+- explicit statement that it is not an HRTF renderer and has no HRIR data, convolution, pinna cues, or elevation cues;
+- stereo layout, finite/bounded delay, polarity, normalization, near-zero-distance, partial-block, repeated-render, and allocation tests;
+- strict fmt, Clippy, tests, rustdoc, MSRV, benchmark, actionlint, and artifact checks reported by PR #57.
 
-Do not include true HRTF, IAMF, networking, or Raspberry Pi work in this PR.
+Checkpoint B dynamic-delay improvement and true HRTF remain separate future work. Completion of Phase 0 does not imply height rendering, HRTF, or physical hardware validation.
 
 ### Phase 1 — Establish common product evidence
 
-#### 1A. Unified evaluation runner
+#### 1A. Unified evaluation runner — ACTIVE
 
 **Issue:** `#44`
 
@@ -96,11 +112,13 @@ Create one Aurora-owned evaluation path for every renderer:
 - configuration hash and commit SHA;
 - deterministic fixtures for front, side, rear, overhead, and motion.
 
-#### 1B. Capability registry
+A prior draft implementation PR may exist, but issue `#44` is not complete until accepted and merged against the current canonical branch with exact-commit CI evidence.
+
+#### 1B. Capability registry — NEXT
 
 **Issue:** `#45`
 
-Add a versioned machine-readable registry and `aurora-cli capabilities` output. README capability claims must match the registry. Placeholder, experimental, accepted, and production-ready states must remain distinct.
+Add a versioned machine-readable registry and `aurora-cli capabilities` output. README capability claims must match the registry. Placeholder, experimental, accepted, host-validated, physically validated, and production-ready states must remain distinct.
 
 Phase 1 is required before new engines are called complete.
 
@@ -250,15 +268,15 @@ After Aurora-owned renderers work:
 
 Reference engines validate Aurora; they do not become the product architecture.
 
-### Phase 11 — Physical validation and hardware selection
+### Phase 11 — Minimum physical system validation and hardware selection
 
-Only after software reports exist, test the smallest falsifiable physical setup:
+After the relevant software reports exist, test the smallest falsifiable distributed setup:
 
 - one coordinator;
 - two receiver nodes;
 - two independent DAC clocks.
 
-Before recommending a complete system, measure:
+Before recommending a complete distributed system, measure:
 
 - coordinator CPU per object and channel;
 - receiver CPU and memory;
@@ -268,42 +286,73 @@ Before recommending a complete system, measure:
 - restart and reconnection behavior;
 - required DAC and amplification topology.
 
-A full 5.1.2 purchase is not the first experiment.
+A full 5.1.2 purchase is not the first distributed-network experiment.
 
-## 6. Dependency order
+This phase does not prevent dedicated S6 appliance physical bring-up from occurring earlier. S6 flash/boot/eARC/USB/TDM/DAC/thermal acceptance is a separate evidence lane governed by the S6 bring-up documents and may proceed whenever the required hardware is available.
 
-The mandatory order is:
+## 6. Parallel S6 appliance and realtime-MCU lane
 
-1. `#43A` geometric binaural stabilization;
-2. `#44` evaluation runner;
-3. `#45` capability registry;
-4. `#38` offline 3D loudspeaker rendering;
-5. `#46` SOFA/HRIR backend;
-6. offline Aurora HRTF;
-7. operational IAMF integration;
-8. CamillaDSP runtime hardening;
-9. deterministic network simulator;
-10. packet transport;
-11. Linux receiver and optional PipeWire backend;
-12. multiroom mode;
-13. external Steam Audio and Snapcast comparisons;
-14. physical validation and hardware selection.
+PR `#83` established the integrated S6 host/software baseline. Future work in this lane must stay in dedicated PRs and use `platform/s6/COMPONENT_STATUS.md` as the evidence matrix.
 
-IAMF may proceed in parallel after scene and evaluation contracts stabilize, but it must not share a PR with HRTF or networking.
+Allowed next work includes:
 
-## 7. Inactive or deferred paths
+- correcting defects in the landed source manager, source gate, live-ingest, protocol, build, packaging, or realtime-MCU portable layers;
+- completing missing local-music, Bluetooth, or later network source adapters when their own roadmap dependencies are satisfied;
+- executing flash/boot/display/touch/Wi-Fi gates on a physical SM-G920F;
+- integrating and validating the selected realtime-MCU target USB/eARC/TDM HAL on hardware;
+- measuring real carrier handling, xruns, latency, thermal behavior, DAC/amplifier output, and live JOC-to-7.1.4 behavior.
+
+Promotion rules:
+
+- `HOST-PASS` means host/software evidence only;
+- `BUILD-SCRIPT` means reproducible build logic, not boot proof;
+- `STAGED` means integrated payload, not end-to-end runtime proof;
+- `HW-BLOCKED` remains open until accepted physical evidence exists;
+- no S6 lane result may be called flash-ready, plug-and-play, production-ready, physically validated, or live streaming Atmos/JOC validated while required gates remain open.
+
+S6 appliance work does not authorize new Dolby codec implementation or any claim of licensed Dolby compatibility.
+
+## 7. Renderer dependency order
+
+Completed:
+
+- `#43A` geometric binaural stabilization — PR `#57` merged.
+
+Mandatory current order:
+
+1. `#44` evaluation runner;
+2. `#45` capability registry;
+3. `#38` offline 3D loudspeaker rendering;
+4. `#46` SOFA/HRIR backend;
+5. offline Aurora HRTF;
+6. operational IAMF integration;
+7. CamillaDSP runtime hardening;
+8. deterministic network simulator;
+9. packet transport;
+10. Linux receiver and optional PipeWire backend;
+11. multiroom mode;
+12. external Steam Audio and Snapcast comparisons;
+13. minimum distributed physical validation and hardware selection.
+
+IAMF may proceed in parallel after scene and evaluation contracts stabilize, but it must not share a PR with HRTF or networking. Dedicated S6 maintenance and physical-bring-up work may proceed in parallel without being treated as completion of renderer gates.
+
+## 8. Inactive or deferred paths
 
 The following are not active product priorities:
 
 - licensed Dolby decoding;
-- HDMI/eARC capture;
+- new HDMI/eARC product expansion beyond the landed S6 baseline before its physical bring-up gates are accepted;
 - Cavern integration without completed license review;
 - truehdd product behavior;
 - Resonance Audio integration;
-- polished consumer UI;
+- polished consumer UI until its underlying runtime contracts are ready;
 - further governance expansion without an implementation blocker;
 - hardware bills of materials based on guessed prices.
 
-## 8. Immediate action
+The existing S6 HDMI/eARC host-validated path is **not** inactive; it is an integrated appliance baseline with open physical acceptance gates.
 
-The active PR must implement issue `#43`, Checkpoint A only. After merge, execute issues `#44` and `#45`, then issue `#38`. No agent should skip directly to HRTF, IAMF, networking, or hardware procurement unless the earlier acceptance gates are complete.
+## 9. Immediate action
+
+For the renderer/product-evidence lane, the active implementation task is issue `#44`. After it is accepted on the current canonical branch, execute issue `#45`, then issue `#38`. Do not return to #43A as if it were unfinished; PR #57 already accepted that checkpoint. No renderer agent should skip directly to HRTF, IAMF, networking, or hardware procurement unless the earlier renderer gates are complete.
+
+For the S6 appliance lane, retain the PR #83 baseline, fix regressions in dedicated PRs, and execute the documented physical bring-up gates when hardware is available. Do not describe host CI as hardware proof and do not mix S6 bring-up work into renderer checkpoint/evidence PRs.

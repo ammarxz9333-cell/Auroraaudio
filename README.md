@@ -1,15 +1,18 @@
 # Aurora Spatial Audio Platform
 
-Aurora is an open, modular, hardware-independent spatial-audio processing platform written in Rust.
+Aurora is an open, modular, hardware-independent spatial-audio processing platform written in Rust, with a dedicated Galaxy S6 appliance integration lane for low-cost deployment experiments.
 
-The project is now in **active product implementation**. The immediate work is to stabilize the landed geometric binaural prototype, establish a common evaluation and capability-reporting layer, implement offline 3D loudspeaker rendering, then build true HRTF, open IAMF input, synchronized IP transport, Linux receiver nodes, and multiroom behavior.
+The project is in **active product implementation**. Work is tracked in two coordinated lanes:
 
-Aurora does not currently claim Dolby Atmos compatibility, true HRTF capability, height-capable loudspeaker rendering, production IAMF decoding, synchronized wireless speakers, or physical multiroom validation unless the corresponding acceptance evidence exists.
+1. the renderer/product-evidence lane, where geometric binaural Checkpoint A is complete and the active task is issue `#44` for unified renderer evaluation and artifact generation;
+2. the Galaxy S6 appliance/realtime-MCU lane, whose integrated baseline landed through PR `#83` and is **host/software validated but not physically accepted**.
+
+Aurora does not currently claim Dolby Atmos compatibility, true HRTF capability, height-capable loudspeaker rendering, production IAMF decoding, synchronized wireless speakers, physical S6/eARC/USB/DAC validation, or physical multiroom validation unless the corresponding acceptance evidence exists.
 
 ## Geometric binaural baseline
 
-`GeometricBinaural` is Aurora's lightweight two-channel headphone baseline. It
-uses geometric interaural time difference (ITD), geometric interaural level
+`GeometricBinaural` is Aurora's accepted Checkpoint A lightweight two-channel headphone baseline, merged through PR `#57`.
+It uses geometric interaural time difference (ITD), geometric interaural level
 difference (ILD), and per-ear geometric distance weighting followed by power
 normalization. It is **not an HRTF renderer**: it uses no HRIR data,
 convolution, pinna cues, or elevation cues.
@@ -29,11 +32,26 @@ cargo run -p aurora-cli -- render `
 ```
 
 Geometric delays are recalculated once per block and applied directly to the
-existing fractional delay line. Checkpoint A verifies that the geometric delay
-trajectory is continuous, but it does not add crossfading or interpolation
-between block updates and does not claim click-free moving-source output. The
-current dynamic delay capacity remains the existing explicit `1024` samples;
-deriving it from future scene/runtime bounds belongs to Checkpoint B.
+existing fractional delay line. Checkpoint A verified the current geometric
+delay trajectory and safety contracts, but it did not add crossfading or
+interpolation between block updates and does not claim click-free moving-source
+output. The current dynamic delay capacity remains the existing explicit `1024`
+samples; deriving it from future scene/runtime bounds belongs to Checkpoint B.
+
+## Galaxy S6 appliance baseline
+
+PR `#83` integrated the reviewed S6 appliance and realtime-MCU stack into `main-v2`. The landed host/software baseline includes:
+
+- appliance bootstrap and reproducible S6 build/runtime staging;
+- managed source routing with exclusive HDMI/eARC/local final-source ownership;
+- live IEC61937 immersive ingest and 7.1.4 PCM transport framing;
+- realtime post-processing, clock-correction, measurement, and control boundaries;
+- target-neutral realtime-MCU transport and capture foundations;
+- build/package, protocol, hardware-target, and physical-bring-up contracts.
+
+This is **not physical product acceptance**. Physical S6 boot/display/touch/Wi-Fi, eARC capture, USB timing, target realtime-MCU HAL, TDM/DMA, DAC/amplifier/speaker output, thermal/xrun/latency measurements, wireless operation, and live streaming-service JOC-to-7.1.4 acceptance remain open gates.
+
+Detailed component status is maintained in [`platform/s6/COMPONENT_STATUS.md`](platform/s6/COMPONENT_STATUS.md). Physical bring-up is governed by [`platform/s6/FLASH_GATES.md`](platform/s6/FLASH_GATES.md) and [`docs/AURORA_EARC_REALTIME_MCU_PHYSICAL_BRINGUP.md`](docs/AURORA_EARC_REALTIME_MCU_PHYSICAL_BRINGUP.md).
 
 ## Repository status
 
@@ -43,26 +61,34 @@ Start here:
 
 - [Current execution state](PROJECT_EXECUTION_STATE.md)
 - [Authoritative product execution roadmap](docs/roadmaps/immersive-wireless-audio-execution-roadmap.md)
+- [S6 component status](platform/s6/COMPONENT_STATUS.md)
 - [Master project reference](AURORA_MASTER_REFERENCE.md)
 - [Architecture](docs/architecture.md)
 - [Repository history](docs/repository-history.md)
 
-Historical governance, ADRs, and acceptance records remain available, but they do not override the active product execution sequence.
+Historical governance, ADRs, and acceptance records remain available, but they do not override the active execution state, renderer roadmap, or S6 evidence matrix.
 
-## Active sequence
+## Active renderer/product-evidence sequence
 
-1. issue `#43`, Checkpoint A — stabilize geometric binaural;
-2. issue `#44` — unified evaluation and artifact runner;
-3. issue `#45` — capability registry and CLI;
-4. issue `#38` — offline 3D loudspeaker rendering;
-5. issue `#46` — SOFA/HRIR backend;
-6. true offline and realtime Aurora HRTF;
-7. operational IAMF integration;
-8. CamillaDSP runtime hardening;
-9. deterministic network simulation and packet transport;
-10. Linux receiver, optional PipeWire backend, and multiroom behavior;
-11. external Steam Audio and Snapcast comparisons;
-12. minimum physical validation and measurement-driven hardware selection.
+Completed prerequisite:
+
+- issue `#43`, Checkpoint A — geometric binaural stabilization, merged through PR `#57`.
+
+Current sequence:
+
+1. issue `#44` — unified evaluation and artifact runner;
+2. issue `#45` — capability registry and CLI;
+3. issue `#38` — offline 3D loudspeaker rendering;
+4. issue `#46` — SOFA/HRIR backend;
+5. true offline and realtime Aurora HRTF;
+6. operational IAMF integration;
+7. CamillaDSP runtime hardening;
+8. deterministic network simulation and packet transport;
+9. Linux receiver, optional PipeWire backend, and multiroom behavior;
+10. external Steam Audio and Snapcast comparisons;
+11. minimum distributed physical validation and measurement-driven hardware selection.
+
+The S6 appliance baseline is maintained in parallel. Dedicated S6 maintenance and physical-bring-up work may proceed without being treated as completion of the renderer gates above.
 
 ## Build
 
@@ -77,7 +103,7 @@ cargo bench --workspace
 
 Linux stable is the main validation environment. Windows stable verifies cross-platform compilation and software-only tests, and a Linux job checks the declared Rust 1.78 MSRV explicitly. Stable jobs run formatting, all-target and all-feature Clippy, workspace tests, and strict public documentation checks; the MSRV job performs locked all-target/all-feature checks and tests.
 
-All CI results are software evidence only. Ignored hardware tests remain hardware-gated, and no CI result is a physical measurement. Future renderer PRs must also publish deterministic WAV and machine-readable evaluation artifacts through issue `#44`.
+The repository also contains dedicated S6 appliance CI and deterministic simulation-assurance workflows. All CI results remain software evidence only. Ignored hardware tests and all S6 physical acceptance gates remain hardware-gated, and no CI result is a physical measurement. Future renderer PRs must publish deterministic WAV and machine-readable evaluation artifacts through issue `#44` once that infrastructure is accepted.
 
 ## Run
 
