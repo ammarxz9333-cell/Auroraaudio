@@ -36,8 +36,12 @@
 #define SLOT_COUNT 2u
 #define NO_CONFIG_OWNER (-1)
 
-static const uint8_t layout_hash_7_1_4_v1[32] =
-    AURORA_USB_LAYOUT_HASH_7_1_4_V1_BYTES;
+static const uint8_t layout_hash_7_1_4_v1[32] = {
+    0x05, 0x06, 0x35, 0x60, 0xd6, 0xc5, 0xc1, 0xb7,
+    0xd3, 0x70, 0x96, 0x56, 0xcd, 0x8c, 0x64, 0x4a,
+    0x6d, 0x2b, 0x52, 0xf5, 0xe8, 0x13, 0x83, 0x77,
+    0x1f, 0x26, 0x32, 0x34, 0x42, 0xd0, 0xa2, 0x44,
+};
 
 static volatile sig_atomic_t stop_requested;
 
@@ -48,7 +52,6 @@ struct source_slot {
     int data_fd;
     int manager_fd;
     uint32_t source_sequence;
-    uint32_t adapter_control_sequence;
     uint8_t manager_registered;
     uint8_t present;
     uint8_t granted;
@@ -65,7 +68,6 @@ struct source_slot {
     uint32_t ramp_frames_remaining;
     uint64_t last_media_ms;
     uint64_t quiesce_deadline_ms;
-    uint64_t lip_sync_frames;
     uint8_t config_frame[CONFIG_FRAME_BYTES];
     size_t config_frame_len;
 };
@@ -200,44 +202,23 @@ static int open_listener(const char *path)
     return fd;
 }
 
-static void encode_source_message(uint8_t message[AURORA_SOURCE_MESSAGE_BYTES],
-                                  uint16_t kind, uint16_t source,
-                                  uint32_t sequence, uint64_t data0,
-                                  uint32_t data1, uint32_t data2)
-{
-    memset(message, 0, AURORA_SOURCE_MESSAGE_BYTES);
-    write_le32(message + 0, AURORA_SOURCE_MAGIC_U32);
-    write_le16(message + 4, AURORA_SOURCE_VERSION);
-    write_le16(message + 6, kind);
-    write_le16(message + 8, source);
-    write_le16(message + 10, 0);
-    write_le32(message + 12, sequence);
-    write_le64(message + 16, data0);
-    write_le32(message + 24, data1);
-    write_le32(message + 28, data2);
-}
-
 static int source_send(struct source_slot *slot, uint16_t kind,
                        uint64_t data0, uint32_t data1, uint32_t data2)
 {
     if (!slot || slot->manager_fd < 0)
         return -1;
 
-    uint8_t message[AURORA_SOURCE_MESSAGE_BYTES];
-    encode_source_message(message, kind, slot->source_id,
-                          slot->source_sequence++, data0, data1, data2);
+    uint8_t message[AURORA_SOURCE_MESSAGE_BYTES] = {0};
+    write_le32(message + 0, AURORA_SOURCE_MAGIC_U32);
+    write_le16(message + 4, AURORA_SOURCE_VERSION);
+    write_le16(message + 6, kind);
+    write_le16(message + 8, slot->source_id);
+    write_le16(message + 10, 0);
+    write_le32(message + 12, slot->source_sequence++);
+    write_le64(message + 16, data0);
+    write_le32(message + 24, data1);
+    write_le32(message + 28, data2);
     return send_packet(slot->manager_fd, message, sizeof(message));
-}
-
-static int adapter_control_send(struct source_slot *slot, uint32_t control,
-                                uint64_t value)
-{
-    if (!slot || slot->data_fd < 0)
-        return 0;
-    uint8_t message[AURORA_SOURCE_MESSAGE_BYTES];
-    encode_source_message(message, AURORA_SOURCE_CONTROL, slot->source_id,
-                          slot->adapter_control_sequence++, value, control, 0);
-    return send_packet(slot->data_fd, message, sizeof(message));
 }
 
 static void set_target_gain(struct source_slot *slot, float target,
@@ -419,9 +400,6 @@ static int handle_manager_message(struct gate *gate, struct source_slot *slot,
         slot->quiesce_deadline_ms = 0;
         slot->force_discontinuity = 1;
         refresh_target(slot, FADE_FRAMES);
-        if (adapter_control_send(slot, AURORA_SOURCE_CTRL_LIPSYNC_FRAMES,
-                                 slot->lip_sync_frames) < 0)
-            return -1;
         return send_cached_config(gate, slot);
     case AURORA_SOURCE_REVOKE: {
         uint32_t fade_ms = data0 > MAX_REVOKE_FADE_MS ?
@@ -454,8 +432,9 @@ static int handle_manager_message(struct gate *gate, struct source_slot *slot,
             refresh_target(slot, FADE_FRAMES);
             return 0;
         case AURORA_SOURCE_CTRL_LIPSYNC_FRAMES:
-            slot->lip_sync_frames = data0;
-            return adapter_control_send(slot, data1, data0);
+            /* Lip-sync delay belongs upstream in each source DSP path. This
+             * final mux intentionally does not duplicate a delay line. */
+            return 0;
         default:
             return -1;
         }
@@ -567,7 +546,6 @@ static void close_data_client(struct source_slot *slot)
     mark_absent(slot);
     slot->config_cached = 0;
     slot->config_frame_len = 0;
-    slot->adapter_control_sequence = 0;
     reset_usb_state(slot);
 }
 
@@ -818,16 +796,10 @@ int main(void)
                 int accepted = accept4(slot->listen_fd, NULL, NULL,
                                        SOCK_CLOEXEC);
                 if (accepted >= 0) {
-                    if (slot->data_fd >= 0) {
+                    if (slot->data_fd >= 0)
                         close(accepted);
-                    } else {
+                    else
                         slot->data_fd = accepted;
-                        slot->adapter_control_sequence = 0;
-                        if (adapter_control_send(
-                                slot, AURORA_SOURCE_CTRL_LIPSYNC_FRAMES,
-                                slot->lip_sync_frames) < 0)
-                            close_data_client(slot);
-                    }
                 }
             }
         }
