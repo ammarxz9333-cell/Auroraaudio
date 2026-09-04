@@ -206,8 +206,7 @@ fn evaluate(
     output_dir: &Path,
     command: &str,
 ) -> Result<Summary> {
-    fs::create_dir_all(output_dir)
-        .with_context(|| format!("create {}", output_dir.display()))?;
+    fs::create_dir_all(output_dir).with_context(|| format!("create {}", output_dir.display()))?;
     let (renderer_name, mode_name, mode, speakers) = renderer_definition(selection);
     let roles = speakers
         .iter()
@@ -229,7 +228,7 @@ fn evaluate(
     );
     let output_channels = renderer.output_channel_count();
     let total_frames = (config.duration_seconds * f64::from(config.sample_rate)).round() as usize;
-    let blocks = (total_frames + config.block_size - 1) / config.block_size;
+    let blocks = total_frames.div_ceil(config.block_size);
     let mut pcm = (0..output_channels)
         .map(|_| Vec::with_capacity(total_frames))
         .collect::<Vec<_>>();
@@ -351,7 +350,8 @@ fn evaluate(
         configuration_hash_fnv1a64: configuration_hash(config, renderer_name, &role_names)?,
         commit_sha: resolve_commit_sha(),
         scene: "deterministic full-circle 3D source with vertical excursion",
-        wav_semantics: "gain-routing reference; delay trajectory is evidence but is not applied to PCM",
+        wav_semantics:
+            "gain-routing reference; delay trajectory is evidence but is not applied to PCM",
     };
 
     let wav_path = output_dir.join("rendered-reference.wav");
@@ -464,14 +464,54 @@ fn stereo_speakers() -> Vec<Speaker> {
 
 fn five_one_two_speakers() -> Vec<Speaker> {
     vec![
-        speaker("front-left", "Front Left", ChannelRole::FrontLeft, Vector3::new(-1.2, 1.7, 1.2)),
-        speaker("front-right", "Front Right", ChannelRole::FrontRight, Vector3::new(1.2, 1.7, 1.2)),
-        speaker("front-center", "Front Center", ChannelRole::FrontCenter, Vector3::new(0.0, 1.8, 1.2)),
-        speaker("lfe", "LFE", ChannelRole::LowFrequencyEffects, Vector3::new(0.0, 1.2, 0.2)),
-        speaker("surround-left", "Surround Left", ChannelRole::SurroundLeft, Vector3::new(-1.7, -0.4, 1.2)),
-        speaker("surround-right", "Surround Right", ChannelRole::SurroundRight, Vector3::new(1.7, -0.4, 1.2)),
-        speaker("top-front-left", "Top Front Left", ChannelRole::TopFrontLeft, Vector3::new(-0.8, 0.9, 2.5)),
-        speaker("top-front-right", "Top Front Right", ChannelRole::TopFrontRight, Vector3::new(0.8, 0.9, 2.5)),
+        speaker(
+            "front-left",
+            "Front Left",
+            ChannelRole::FrontLeft,
+            Vector3::new(-1.2, 1.7, 1.2),
+        ),
+        speaker(
+            "front-right",
+            "Front Right",
+            ChannelRole::FrontRight,
+            Vector3::new(1.2, 1.7, 1.2),
+        ),
+        speaker(
+            "front-center",
+            "Front Center",
+            ChannelRole::FrontCenter,
+            Vector3::new(0.0, 1.8, 1.2),
+        ),
+        speaker(
+            "lfe",
+            "LFE",
+            ChannelRole::LowFrequencyEffects,
+            Vector3::new(0.0, 1.2, 0.2),
+        ),
+        speaker(
+            "surround-left",
+            "Surround Left",
+            ChannelRole::SurroundLeft,
+            Vector3::new(-1.7, -0.4, 1.2),
+        ),
+        speaker(
+            "surround-right",
+            "Surround Right",
+            ChannelRole::SurroundRight,
+            Vector3::new(1.7, -0.4, 1.2),
+        ),
+        speaker(
+            "top-front-left",
+            "Top Front Left",
+            ChannelRole::TopFrontLeft,
+            Vector3::new(-0.8, 0.9, 2.5),
+        ),
+        speaker(
+            "top-front-right",
+            "Top Front Right",
+            ChannelRole::TopFrontRight,
+            Vector3::new(0.8, 0.9, 2.5),
+        ),
     ]
 }
 
@@ -538,7 +578,11 @@ fn peak_memory_bytes() -> Option<u64> {
     None
 }
 
-fn configuration_hash(config: &EvaluationConfig, renderer: &str, roles: &[String]) -> Result<String> {
+fn configuration_hash(
+    config: &EvaluationConfig,
+    renderer: &str,
+    roles: &[String],
+) -> Result<String> {
     let mut bytes = serde_json::to_vec(config).context("serialize evaluation config")?;
     bytes.extend_from_slice(renderer.as_bytes());
     for role in roles {
@@ -576,13 +620,15 @@ fn resolve_commit_sha() -> String {
 fn reproducible_command() -> String {
     std::env::args()
         .map(|argument| {
-            if argument
-                .chars()
-                .all(|character| character.is_ascii_alphanumeric() || "-._/:=\\".contains(character))
-            {
+            if argument.chars().all(|character| {
+                character.is_ascii_alphanumeric() || "-._/:=\\".contains(character)
+            }) {
                 argument
             } else {
-                format!("\"{}\"", argument.replace('\\', "\\\\").replace('"', "\\\""))
+                format!(
+                    "\"{}\"",
+                    argument.replace('\\', "\\\\").replace('"', "\\\"")
+                )
             }
         })
         .collect::<Vec<_>>()
