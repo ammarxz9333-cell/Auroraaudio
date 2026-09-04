@@ -5,6 +5,7 @@ import struct
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 
 MAGIC = 0x30435341
@@ -16,6 +17,7 @@ CONTROL = 7
 FORMAT = 8
 STATUS = 10
 LOCAL = 2
+CONTROL_CLIENT = 255
 CTRL_MUTE = 1
 CTRL_GAIN = 2
 CTRL_LIPSYNC = 3
@@ -75,6 +77,34 @@ def expect_control(source_sock, control, value):
     assert msg["data1"] == control and msg["data0"] == value, msg
 
 
+def run_no_ack_server(path, ready, errors):
+    listener = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+    try:
+        listener.bind(path)
+        listener.listen(1)
+        ready.set()
+        conn, _ = listener.accept()
+        try:
+            register = recv_msg(conn)
+            assert register["kind"] == REGISTER
+            assert register["source"] == CONTROL_CLIENT
+            conn.sendall(pack(STATUS, CONTROL_CLIENT, data0=LOCAL))
+            control = recv_msg(conn)
+            assert control["kind"] == CONTROL
+            assert control["source"] == CONTROL_CLIENT
+            assert control["data1"] == CTRL_MUTE
+            # Deliberately do not acknowledge the accepted control. The CLI
+            # must time out and return failure instead of assuming delivery.
+            time.sleep(0.65)
+        finally:
+            conn.close()
+    except BaseException as exc:  # propagated after thread join
+        errors.append(exc)
+        ready.set()
+    finally:
+        listener.close()
+
+
 def main():
     if len(sys.argv) != 3:
         raise SystemExit("usage: test_source_control_cli.py MANAGER CTL")
@@ -97,7 +127,6 @@ def main():
             local.sendall(pack(PRESENT, LOCAL))
             grant = recv_msg(local)
             assert grant["kind"] == GRANT
-            # Drain persistent controls replayed on grant.
             for _ in range(4):
                 assert recv_msg(local)["kind"] == CONTROL
 
@@ -128,7 +157,28 @@ def main():
                 stderr = manager.stderr.read() if manager.stderr else ""
                 raise AssertionError(f"manager exited {manager.returncode}: {stderr}")
 
-    print("source-control CLI status/mute/gain/lipsync/standby tests passed")
+        # Prove a control write without manager acknowledgement is not reported
+        # as success by the one-shot CLI.
+        noack_path = os.path.join(td, "noack.sock")
+        noack_env = os.environ.copy()
+        noack_env["AURORA_SOURCE_MANAGER_SOCKET"] = noack_path
+        ready = threading.Event()
+        errors = []
+        thread = threading.Thread(target=run_no_ack_server,
+                                  args=(noack_path, ready, errors), daemon=True)
+        thread.start()
+        assert ready.wait(timeout=1.0)
+        noack = subprocess.run([ctl_bin, "mute", "on"], env=noack_env,
+                               text=True, stdout=subprocess.PIPE,
+                               stderr=subprocess.PIPE)
+        thread.join(timeout=2.0)
+        assert not thread.is_alive(), "no-ACK test server did not finish"
+        if errors:
+            raise errors[0]
+        assert noack.returncode == 1, noack
+        assert "not acknowledged" in noack.stderr, noack.stderr
+
+    print("source-control CLI status/control-ack/missing-ack tests passed")
 
 
 if __name__ == "__main__":
