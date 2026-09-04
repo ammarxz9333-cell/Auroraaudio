@@ -1,4 +1,4 @@
-name: Product MSRV Lock Once
+name: Product MSRV Repair Once
 
 on:
   push:
@@ -9,30 +9,86 @@ permissions:
   contents: write
 
 jobs:
-  pin:
-    if: ${{ !startsWith(github.event.head_commit.message, 'chore(lock): restore MSRV') }}
+  repair:
+    if: ${{ !contains(github.event.head_commit.message, 'MSRV_REPAIR_DONE') }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
         with:
           ref: product/q995-clean-baseline
       - uses: dtolnay/rust-toolchain@1.78.0
+        with:
+          components: rustfmt
+      - name: Fix deterministic 3D triplet iteration
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('crates/aurora-renderer-vbap3d/src/lib.rs')
+          text = path.read_text()
+          old = '''    for first in 0..speakers.len() {
+        if !is_spatial_speaker(&speakers[first]) {
+            continue;
+        }
+        let Some(a) = normalize(vector_between(listener, speakers[first].position)) else {
+            continue;
+        };
+        for second in (first + 1)..speakers.len() {
+            if !is_spatial_speaker(&speakers[second]) {
+                continue;
+            }
+            let Some(b) = normalize(vector_between(listener, speakers[second].position)) else {
+                continue;
+            };
+            for third in (second + 1)..speakers.len() {
+                if !is_spatial_speaker(&speakers[third]) {
+                    continue;
+                }
+                let Some(c) = normalize(vector_between(listener, speakers[third].position)) else {
+                    continue;
+                };
+'''
+          new = '''    for (first, first_speaker) in speakers.iter().enumerate() {
+        if !is_spatial_speaker(first_speaker) {
+            continue;
+        }
+        let Some(a) = normalize(vector_between(listener, first_speaker.position)) else {
+            continue;
+        };
+        for (second, second_speaker) in speakers.iter().enumerate().skip(first + 1) {
+            if !is_spatial_speaker(second_speaker) {
+                continue;
+            }
+            let Some(b) = normalize(vector_between(listener, second_speaker.position)) else {
+                continue;
+            };
+            for (third, third_speaker) in speakers.iter().enumerate().skip(second + 1) {
+                if !is_spatial_speaker(third_speaker) {
+                    continue;
+                }
+                let Some(c) = normalize(vector_between(listener, third_speaker.position)) else {
+                    continue;
+                };
+'''
+          if old not in text:
+              raise SystemExit('expected 3D triplet loop not found')
+          path.write_text(text.replace(old, new, 1))
       - name: Restore accepted Rust 1.78 transitive pins
         run: |
           cargo update -p half --precise 2.4.1
           cargo update -p rayon --precise 1.10.0
           cargo update -p rayon-core --precise 1.12.1
+          cargo fmt --all
       - name: Prove locked workspace on MSRV before commit
         run: cargo check --workspace --all-targets --all-features --locked
-      - name: Commit compatible lockfile
+      - name: Commit repaired source and compatible lockfile
         shell: bash
         run: |
-          if git diff --quiet -- Cargo.lock; then
-            echo "Cargo.lock already MSRV compatible"
-            exit 0
-          fi
           git config user.name "aurora-ci"
           git config user.email "aurora-ci@users.noreply.github.com"
-          git add Cargo.lock
-          git commit -m "chore(lock): restore MSRV-compatible transitive pins"
+          git add Cargo.lock crates/aurora-renderer-vbap3d/src/lib.rs
+          if git diff --cached --quiet; then
+            echo "Source and lockfile already repaired"
+            exit 0
+          fi
+          git commit -m "MSRV_REPAIR_DONE: pin dependencies and fix 3D iteration"
           git push origin HEAD:product/q995-clean-baseline
