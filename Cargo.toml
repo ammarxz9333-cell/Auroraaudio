@@ -5,10 +5,8 @@ members = [
     "crates/aurora-renderer-api",
     "crates/aurora-renderer-basic",
     "crates/aurora-renderer-vbap",
-    "crates/aurora-renderer-cavern",
     "crates/aurora-decoder-api",
     "crates/aurora-decoder-iamf",
-    "crates/aurora-decoder-truehdd",
     "crates/aurora-dsp-api",
     "crates/aurora-dsp-basic",
     "crates/aurora-dsp-camilladsp",
@@ -21,12 +19,26 @@ members = [
     "crates/aurora-config",
     "crates/aurora-runtime-assembly",
     "crates/aurora-runtime-inspection",
+    "crates/aurora-evaluation",
     "crates/aurora-realtime-engine",
     "crates/aurora-measurement",
     "crates/aurora-cli",
 ]
-exclude = ["crates/aurora-usb-protocol"]
+exclude = [
+    "crates/aurora-renderer-cavern",
+    "crates/aurora-decoder-truehdd",
+    "crates/aurora-usb-protocol",
+]
 resolver = "2"
+
+[workspace.metadata.aurora]
+product_baseline = "q995-clean-baseline"
+active_component_policy = "Only workspace members are active product components. Excluded crates remain preserved research/legacy source and require an explicit reviewed reactivation decision."
+legacy_preservation_policy = "Do not delete excluded crates until dependency, documentation, licensing, migration, and replacement audits are complete."
+legacy_components = [
+    "crates/aurora-renderer-cavern",
+    "crates/aurora-decoder-truehdd",
+]
 
 [workspace.package]
 edition = "2021"
