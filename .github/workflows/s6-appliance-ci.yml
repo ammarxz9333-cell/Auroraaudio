@@ -65,7 +65,19 @@ jobs:
             protocol/test_aurora_usb_stream_v1.c \
             -o /tmp/test-aurora-usb-stream
           /tmp/test-aurora-usb-stream
-      - name: Compile direct IEC61937 live immersive broker
+      - name: Test source manager priority and quiesce arbitration
+        run: |
+          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+            platform/s6/source-manager/aurora-source-manager.c \
+            -o /tmp/aurora-source-manager
+          chmod +x platform/s6/source-manager/test_source_manager.py
+          python3 platform/s6/source-manager/test_source_manager.py /tmp/aurora-source-manager
+      - name: Compile managed HDMI source gate with warnings as errors
+        run: |
+          cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+            platform/s6/source-manager/aurora-source-gate.c \
+            -lm -o /tmp/aurora-source-gate
+      - name: Compile IEC61937 live immersive broker
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \
             -Iprotocol \
@@ -169,9 +181,11 @@ jobs:
           grep -q 'pub const DEFAULT_PERIOD_FRAMES: u16 = 40;' crates/aurora-usb-protocol/src/lib.rs
           grep -q 'period_frames = 40' "$PROTOCOL_DOC"
           grep -q '^AURORA_BLOCK_FRAMES=40$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q '^AURORA_USB_BRIDGE_SOCKET=/run/aurora/hdmi-source.sock$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q '^AURORA_USB_BRIDGE_SOCKET_REAL=/run/aurora/usb-bridge.sock$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q '^AURORA_SOURCE_MANAGER_SOCKET=/run/aurora/source-manager.sock$' platform/s6/rootfs/etc/aurora/aurora.env
           grep -q '05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244' "$PROTOCOL_DOC"
           grep -q '#define BRIDGE_SOCKET RUN_DIR "/usb-bridge.sock"' platform/s6/usb-gadget/aurora-ffs-daemon.c
-          grep -q '#define BRIDGE_SOCKET "/run/aurora/usb-bridge.sock"' platform/s6/live-ingest/aurora-live-ingest.c
           grep -q 'aurora_iec61937_capture_forward_stream_block' "$MCU/src/aurora_realtime_mcu_app.c"
       - name: Strict lint for new S6 Rust surfaces
         run: |
