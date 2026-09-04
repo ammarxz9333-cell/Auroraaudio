@@ -8,5 +8,8 @@
 mod horizontal;
 pub use horizontal::*;
 
+#[cfg(test)]
+pub(crate) use horizontal::allocation_audit;
+
 pub mod three_d;
 pub use three_d::Vbap3dRenderer;
