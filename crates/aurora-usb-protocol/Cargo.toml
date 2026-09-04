@@ -1,0 +1,10 @@
+[package]
+name = "aurora-usb-protocol"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/ammarxz9333-cell/Auroraaudio"
+rust-version = "1.78"
+
+[lib]
+path = "src/lib.rs"

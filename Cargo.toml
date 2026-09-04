@@ -25,6 +25,7 @@ members = [
     "crates/aurora-measurement",
     "crates/aurora-cli",
 ]
+exclude = ["crates/aurora-usb-protocol"]
 resolver = "2"
 
 [workspace.package]
