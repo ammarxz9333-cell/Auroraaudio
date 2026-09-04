@@ -18,17 +18,21 @@ AuroraOS-S6 turns a Samsung Galaxy S6 board into the primary Aurora appliance co
 
 Critical services:
 
-1. `aurora-core` owns source arbitration, realtime audio orchestration, DSP, output timing, and device health.
+1. `aurora-source-manager` owns source priority, one-active-source arbitration, controlled REVOKE/QUIESCED handoff, persistent mute/gain/lip-sync/standby state, and the stalled-source quiesce watchdog.
 2. `aurora-ffs-daemon` owns the S6 FunctionFS endpoint and the S6 <-> realtime-MCU application-frame handoff.
-3. `aurora-live-ingest` owns the dedicated live HDMI/eARC immersive path: it forwards IEC61937 bytes to the external renderer and packetizes rendered 7.1.4 PCM back to the realtime MCU.
-4. Harletty/Omniphony are optional external adapters started only when configured and legally permitted. Omniphony owns live IEC61937 demultiplexing; Harletty owns E-AC-3/JOC decode and OAMD extraction.
+3. `aurora-source-gate` owns the only live HDMI/eARC PCM path from `aurora-live-ingest` to the real FunctionFS bridge. It fails closed before GRANT or when source-manager ownership is lost.
+4. `aurora-live-ingest` owns the dedicated live HDMI/eARC immersive decode/render path: it forwards IEC61937 bytes to the external renderer and packetizes rendered 7.1.4 PCM into 40-frame transport periods.
+5. `aurora-s6-postprocess` owns the shared post-render ASRC/drift, speaker crossover/bass management, limiter, master gain/mute/standby and lip-sync processing used by the live immersive path.
+6. Harletty/Omniphony are external adapters started only when configured and legally permitted. Omniphony owns live IEC61937 demultiplexing; Harletty owns E-AC-3/JOC decode and OAMD extraction.
+
+`aurora-source-ctl` is a host-tested diagnostic/control client for source status, mute, gain, lip-sync and standby. Each control command requires a matching acknowledgement from `aurora-source-manager`; it does not assume success from socket delivery alone. The future LVGL UI should use the same protocol through a persistent control connection rather than launching the CLI for every interaction.
 
 Restartable/non-critical services:
 
-- `aurora-ui` owns the touchscreen, clock/screensaver, settings, now-playing, album art, and synchronized lyric presentation.
+- `aurora-ui` will own the touchscreen, clock/screensaver, settings, source/status, now-playing, album art, and synchronized lyric presentation.
 - `navidrome` owns the music catalog/API only.
 
-A UI or music-library crash must not stop the realtime audio service.
+A UI or music-library crash must not stop the realtime HDMI/eARC audio service.
 
 ## Live streaming target
 
@@ -43,6 +47,8 @@ Netflix / Prime Video / Disney+ / other service
         -> Omniphony IEC61937 parser
         -> Harletty JOC + OAMD
         -> Omniphony 7.1.4 object render
+        -> Aurora postprocessor
+        -> managed HDMI source gate
         -> Aurora PCM_S32LE
         -> Aurora realtime-MCU speaker output
 ```
@@ -60,7 +66,7 @@ Default priority is:
 3. Bluetooth
 4. Multi-room/network program
 
-The source manager performs controlled fades and is the only component allowed to switch the active audio source once the general source-manager appliance service is implemented.
+The source-manager control plane and HDMI/eARC data gate are host-CI validated. Local music, Bluetooth and network source IDs already participate in the arbitration contract, but their production audio data adapters are not implemented yet. They must not bypass the source manager or create a second realtime output owner when added.
 
 ## CPU policy
 
@@ -73,7 +79,7 @@ Exact affinity masks and realtime priorities remain configurable until measured 
 
 ## Current truth
 
-The live-ingest broker is host-CI validated, including an end-to-end mock transport test once that CI gate passes, but this directory remains an appliance bootstrap rather than proof of physical hardware readiness.
+The source manager, HDMI source gate, live-ingest broker, postprocessor integration and portable realtime-MCU protocol path are host-CI validated. This directory remains an appliance implementation under hardware bring-up, not proof of physical S6 readiness.
 
 The project must not claim a flash-and-play production image or validated live streaming Atmos until the exact S6 variant, kernel, HDMI/eARC front-end, USB transport, selected realtime-MCU firmware/HAL, thermals, display/touch stack, real JOC service playback, output channel mapping and rear-node synchronization have passed their physical validation gates.
 
