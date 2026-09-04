@@ -7,8 +7,9 @@ Aurora is in **active product implementation** with two coordinated execution la
 ### Lane A — immersive renderer and product evidence
 
 - Active program: `Immersive Audio Product Implementation 1`
-- Active work item: issue `#43`, Checkpoint A
-- Next work items: issues `#44`, `#45`, then `#38`
+- Completed prerequisite: issue `#43`, Checkpoint A, merged through PR `#57` (`44e3df84cb2082f079e83622f8e950cc66da1b8a`)
+- Active work item: issue `#44` — unified renderer evaluation and artifact runner
+- Next work items: issue `#45`, then issue `#38`
 - Default delivery unit: one reviewable implementation PR
 - Governance mode: maintenance only
 
@@ -35,20 +36,25 @@ Historical governance documents remain records of earlier decisions. They do not
 
 ## Renderer/product dependency chain
 
-1. `#43A` — stabilize and honestly classify geometric binaural.
-2. `#44` — add the unified renderer evaluation and artifact runner.
-3. `#45` — add the capability registry and CLI.
-4. `#38` — implement offline 3D loudspeaker rendering.
-5. `#46` — integrate the SOFA/HRIR data backend.
-6. implement true offline Aurora HRTF, then realtime HRTF.
-7. activate IAMF decoding as a separate out-of-process integration.
-8. harden the CamillaDSP external runtime adapter.
-9. build the deterministic network simulator.
-10. implement packetized IP audio.
-11. add the Linux receiver and optional PipeWire backend.
-12. add multiroom behavior.
-13. compare against Steam Audio and Snapcast as external references.
-14. perform minimum physical system validation and measurement-driven hardware selection.
+Completed prerequisite:
+
+- `#43A` — geometric binaural stabilization and honest classification, merged through PR `#57`.
+
+Current and upcoming sequence:
+
+1. `#44` — add the unified renderer evaluation and artifact runner.
+2. `#45` — add the capability registry and CLI.
+3. `#38` — implement offline 3D loudspeaker rendering.
+4. `#46` — integrate the SOFA/HRIR data backend.
+5. implement true offline Aurora HRTF, then realtime HRTF.
+6. activate IAMF decoding as a separate out-of-process integration.
+7. harden the CamillaDSP external runtime adapter.
+8. build the deterministic network simulator.
+9. implement packetized IP audio.
+10. add the Linux receiver and optional PipeWire backend.
+11. add multiroom behavior.
+12. compare against Steam Audio and Snapcast as external references.
+13. perform minimum physical system validation and measurement-driven hardware selection.
 
 The landed S6 appliance baseline does not satisfy or skip any renderer acceptance gate above.
 
@@ -75,7 +81,7 @@ Contributors and coding agents must:
 7. document dataset, patent, and redistribution boundaries;
 8. avoid adding planning-only architecture unless a concrete implementation blocker requires it;
 9. never combine HRTF, IAMF, networking, receiver, and multiroom work in one PR;
-10. keep S6 appliance/hardware work separate from renderer checkpoint PRs unless an issue explicitly requires cross-lane integration.
+10. keep S6 appliance/hardware work separate from renderer checkpoint/evidence PRs unless an issue explicitly requires cross-lane integration.
 
 ## Integration policy
 
@@ -94,7 +100,7 @@ Cavern, truehdd, and Resonance Audio are not active first-release dependencies.
 
 ## Capability honesty
 
-The landed `GeometricBinaural` implementation uses geometric ITD, geometric
+The accepted `GeometricBinaural` Checkpoint A baseline uses geometric ITD, geometric
 ILD, and per-ear geometric distance weighting followed by power normalization.
 It is not a true HRTF renderer and has no HRIR data, convolution, pinna cues, or
 elevation cues. It must not be described
