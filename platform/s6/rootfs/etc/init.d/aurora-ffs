@@ -1,7 +1,7 @@
 #!/sbin/openrc-run
 
 name="Aurora FunctionFS transport"
-description="Galaxy S6 USB gadget bridge for STM32H753 realtime transport"
+description="Galaxy S6 USB gadget bridge for Aurora realtime-MCU transport"
 command="/usr/local/sbin/aurora-ffs-daemon"
 command_background="yes"
 pidfile="/run/aurora/aurora-ffs.pid"

@@ -5,18 +5,29 @@ on:
   push:
     branches:
       - agent/aurora-s6-appliance-bootstrap
+      - agent/s6-realtime-mcu-hal-bringup
     paths:
       - "platform/s6/**"
       - "protocol/**"
-      - "firmware/stm32h753/**"
+      - "firmware/**"
+      - "config/aurora-hardware-target.env"
+      - "docs/**"
       - "crates/aurora-usb-protocol/**"
+      - "crates/aurora-cli/**"
+      - "crates/aurora-realtime-engine/**"
+      - "crates/aurora-measurement/**"
       - ".github/workflows/s6-appliance-ci.yml"
   pull_request:
     paths:
       - "platform/s6/**"
       - "protocol/**"
-      - "firmware/stm32h753/**"
+      - "firmware/**"
+      - "config/aurora-hardware-target.env"
+      - "docs/**"
       - "crates/aurora-usb-protocol/**"
+      - "crates/aurora-cli/**"
+      - "crates/aurora-realtime-engine/**"
+      - "crates/aurora-measurement/**"
       - ".github/workflows/s6-appliance-ci.yml"
 
 permissions:
@@ -28,8 +39,25 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.78.0
+        with:
+          components: rustfmt, clippy
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
+      - name: Audit hardware target and runtime wiring
+        run: |
+          sh platform/s6/scripts/audit-runtime-wiring.sh
+          sh firmware/test-generated-target-contract.sh
+      - name: Validate pinned Omniphony low-latency stdout patch
+        run: sh platform/s6/scripts/test-omniphony-low-latency-patch.sh
       - name: Test Aurora USB Rust wire protocol
         run: cargo test --locked --manifest-path crates/aurora-usb-protocol/Cargo.toml
+      - name: Format build and test S6 Rust runtime features on MSRV
+        run: |
+          cargo fmt --all --check
+          cargo check --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
+          cargo build --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
+          cargo test --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess
+          cargo test --locked -p aurora-measurement
       - name: Test shared C streaming parser
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
@@ -37,7 +65,32 @@ jobs:
             protocol/test_aurora_usb_stream_v1.c \
             -o /tmp/test-aurora-usb-stream
           /tmp/test-aurora-usb-stream
-      - name: Compile direct IEC61937 live immersive broker
+      - name: Test source manager priority and quiesce arbitration
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+            platform/s6/source-manager/aurora-source-manager.c \
+            -o /tmp/aurora-source-manager
+          chmod +x platform/s6/source-manager/test_source_manager.py
+          python3 platform/s6/source-manager/test_source_manager.py /tmp/aurora-source-manager
+      - name: Compile managed HDMI source gate with warnings as errors
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+            platform/s6/source-manager/aurora-source-gate.c \
+            -lm -o /tmp/aurora-source-gate
+      - name: Test managed HDMI source gate fail-closed integration
+        run: |
+          chmod +x platform/s6/source-manager/test_source_gate.py
+          python3 platform/s6/source-manager/test_source_gate.py \
+            /tmp/aurora-source-manager /tmp/aurora-source-gate
+      - name: Test appliance source control CLI
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+            platform/s6/source-manager/aurora-source-ctl.c \
+            -lm -o /tmp/aurora-source-ctl
+          chmod +x platform/s6/source-manager/test_source_control_cli.py
+          python3 platform/s6/source-manager/test_source_control_cli.py \
+            /tmp/aurora-source-manager /tmp/aurora-source-ctl
+      - name: Compile IEC61937 live immersive broker
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \
             -Iprotocol \
@@ -45,37 +98,109 @@ jobs:
             -lm -o /tmp/aurora-live-ingest
       - name: Test live immersive broker end-to-end with mock renderer
         run: |
-          sudo install -d -o "$USER" -g "$(id -gn)" /run/aurora
           chmod +x platform/s6/live-ingest/mock_orender.py
           python3 platform/s6/live-ingest/test_live_ingest.py \
             /tmp/aurora-live-ingest \
             platform/s6/live-ingest/mock_orender.py
+      - name: Test broker postprocessor ASRC and recovery integration
+        run: |
+          chmod +x platform/s6/live-ingest/test_live_postprocess.py
+          python3 platform/s6/live-ingest/test_live_postprocess.py \
+            /tmp/aurora-live-ingest \
+            platform/s6/live-ingest/mock_orender.py \
+            target/debug/aurora-s6-postprocess
       - name: Compile FunctionFS bridge with warnings as errors
         run: |
           cc -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
             platform/s6/usb-gadget/aurora-ffs-daemon.c \
             protocol/aurora_usb_stream_v1.c \
             -o /tmp/aurora-ffs-daemon
-      - name: Test portable STM32 transport state machine
-        run: |
-          cc -std=c11 -O2 -Wall -Wextra -Werror \
-            -Iprotocol -Ifirmware/stm32h753/include \
-            protocol/aurora_usb_stream_v1.c \
-            firmware/stm32h753/src/aurora_transport.c \
-            firmware/stm32h753/test/test_aurora_transport.c \
-            -o /tmp/test-aurora-stm32-transport
-          /tmp/test-aurora-stm32-transport
-      - name: Check S6 shell script syntax
+      - name: Test portable realtime-MCU transport state machine
         shell: bash
         run: |
           set -euo pipefail
-          for f in platform/s6/scripts/*.sh platform/s6/initramfs/init; do
+          source config/aurora-hardware-target.env
+          MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Iprotocol -I"$MCU/include" \
+            protocol/aurora_usb_stream_v1.c \
+            "$MCU/src/aurora_transport.c" \
+            "$MCU/test/test_aurora_transport.c" \
+            -o /tmp/test-aurora-mcu-transport
+          /tmp/test-aurora-mcu-transport
+      - name: Test realtime-MCU eARC IEC61937 capture-to-USB handoff
+        shell: bash
+        run: |
+          set -euo pipefail
+          source config/aurora-hardware-target.env
+          MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Iprotocol -I"$MCU/include" \
+            protocol/aurora_usb_stream_v1.c \
+            "$MCU/src/aurora_transport.c" \
+            "$MCU/src/aurora_iec61937_capture.c" \
+            "$MCU/test/test_aurora_iec61937_capture.c" \
+            -o /tmp/test-aurora-mcu-iec61937-capture
+          /tmp/test-aurora-mcu-iec61937-capture
+      - name: Test integrated realtime-MCU Aurora audio app core
+        shell: bash
+        run: |
+          set -euo pipefail
+          source config/aurora-hardware-target.env
+          MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Iprotocol -I"$MCU/include" \
+            protocol/aurora_usb_stream_v1.c \
+            "$MCU/src/aurora_transport.c" \
+            "$MCU/src/aurora_iec61937_capture.c" \
+            "$MCU/src/aurora_realtime_mcu_app.c" \
+            "$MCU/test/test_aurora_realtime_mcu_app.c" \
+            -o /tmp/test-aurora-mcu-audio-app
+          /tmp/test-aurora-mcu-audio-app
+      - name: Test realtime-MCU HAL recovery boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          source config/aurora-hardware-target.env
+          MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
+          cc -std=c11 -O2 -Wall -Wextra -Werror \
+            -Iprotocol -I"$MCU/include" -Ifirmware/hal \
+            protocol/aurora_usb_stream_v1.c \
+            "$MCU/src/aurora_transport.c" \
+            "$MCU/src/aurora_iec61937_capture.c" \
+            "$MCU/src/aurora_realtime_mcu_app.c" \
+            firmware/hal/aurora_realtime_mcu_hal.c \
+            firmware/hal/test_aurora_realtime_mcu_hal.c \
+            -o /tmp/test-aurora-realtime-mcu-hal
+          /tmp/test-aurora-realtime-mcu-hal
+      - name: Check shell script syntax
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in platform/s6/scripts/*.sh platform/s6/initramfs/init firmware/*.sh; do
             bash -n "$f"
           done
-      - name: Verify protocol version agrees across implementations
+      - name: Verify protocol and appliance contracts agree
         shell: bash
         run: |
           set -euo pipefail
+          source config/aurora-hardware-target.env
+          MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
+          PROTOCOL_DOC=docs/AURORA_USB_S6_REALTIME_MCU_PROTOCOL.md
           grep -q '#define AURORA_USB_VERSION 1u' protocol/aurora_usb_v1.h
           grep -q 'pub const VERSION: u16 = 1;' crates/aurora-usb-protocol/src/lib.rs
-          grep -q 'protocol_version = 1' docs/AURORA_USB_S6_STM32_PROTOCOL.md
+          grep -q 'protocol_version = 1' "$PROTOCOL_DOC"
+          grep -q '#define AURORA_USB_PERIOD_FRAMES 40u' protocol/aurora_usb_v1.h
+          grep -q 'pub const DEFAULT_PERIOD_FRAMES: u16 = 40;' crates/aurora-usb-protocol/src/lib.rs
+          grep -q 'period_frames = 40' "$PROTOCOL_DOC"
+          grep -q '^AURORA_BLOCK_FRAMES=40$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q '^AURORA_USB_BRIDGE_SOCKET=/run/aurora/hdmi-source.sock$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q '^AURORA_USB_BRIDGE_SOCKET_REAL=/run/aurora/usb-bridge.sock$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q '^AURORA_SOURCE_MANAGER_SOCKET=/run/aurora/source-manager.sock$' platform/s6/rootfs/etc/aurora/aurora.env
+          grep -q '05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244' "$PROTOCOL_DOC"
+          grep -q '#define BRIDGE_SOCKET RUN_DIR "/usb-bridge.sock"' platform/s6/usb-gadget/aurora-ffs-daemon.c
+          grep -q 'aurora_iec61937_capture_forward_stream_block' "$MCU/src/aurora_realtime_mcu_app.c"
+      - name: Strict lint for new S6 Rust surfaces
+        run: |
+          cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess --no-deps -- -D warnings
+          cargo clippy --locked -p aurora-measurement --all-targets --no-deps -- -D warnings

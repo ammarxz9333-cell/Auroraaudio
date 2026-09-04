@@ -1,12 +1,14 @@
-# Aurora USB transport: Galaxy S6 ↔ STM32H753
+# Aurora USB transport: Galaxy S6 ↔ Aurora realtime MCU
 
 Status: protocol contract for implementation and bench validation. It is not a claim of validated hardware operation.
+
+The concrete realtime MCU is selected only by `config/aurora-hardware-target.env`. This protocol uses the stable symbolic role `AURORA_REALTIME_MCU_ROLE`; changing the selected part must not change protocol-v1 unless a protocol requirement itself changes.
 
 ## Roles
 
 - Galaxy S6 / AuroraOS-S6: USB **device/gadget** using Linux FunctionFS.
-- STM32H753 + external ULPI PHY: USB 2.0 High-Speed **host**.
-- STM32 owns the physical audio sample clock and realtime I/O deadlines.
+- Aurora realtime MCU + required external HS PHY: USB 2.0 High-Speed **host**.
+- Realtime MCU owns the physical audio sample clock and realtime I/O deadlines.
 - S6 owns decode, object rendering, and DSP.
 
 This role split intentionally avoids depending on Galaxy S6 USB-host + simultaneous-charge behavior.
@@ -17,8 +19,8 @@ Use one vendor-specific FunctionFS interface.
 
 | Endpoint | USB direction | Type | Purpose |
 |---|---|---|---|
-| EP1 OUT | STM32 → S6 | Bulk HS | encoded IEC61937/E-AC-3 JOC input, clock reports, ACK/error/control |
-| EP2 IN | S6 → STM32 | Bulk HS | rendered multichannel PCM, CONFIG and control |
+| EP1 OUT | realtime MCU → S6 | Bulk HS | encoded IEC61937/E-AC-3 JOC input, clock reports, ACK/error/control |
+| EP2 IN | S6 → realtime MCU | Bulk HS | rendered multichannel PCM, CONFIG and control |
 
 High-Speed bulk max packet size is 512 bytes. This is a USB packet size, **not** an Aurora application-frame boundary.
 
@@ -42,7 +44,7 @@ Offset  Size  Field
 28      4     aux
 ```
 
-`pts_48k` is a sample counter in the STM32 48 kHz clock domain when `PTS_VALID` is set. It is not wall-clock time.
+`pts_48k` is a sample counter in the realtime-MCU 48 kHz clock domain when `PTS_VALID` is set. It is not wall-clock time.
 
 ### Kinds
 
@@ -70,11 +72,11 @@ bit 3  XRUN_RECOVERY
 
 ### ENCODED_IEC61937
 
-Direction: STM32 → S6.
+Direction: realtime MCU → S6.
 
-Payload is a **canonical 16-bit little-endian IEC61937 word stream** captured by the STM32-side HDMI/eARC input path.
+Payload is a **canonical 16-bit little-endian IEC61937 word stream** captured by the realtime-MCU HDMI/eARC input path.
 
-The STM32 front-end must normalize the physical receiver representation before USB transport. If the HDMI/eARC receiver exposes IEC words in a 24- or 32-bit slot, firmware extracts the actual 16-bit IEC word and sends it as S16_LE bytes. Padding/unused slot bits are never forwarded to the S6.
+The front-end must normalize the physical receiver representation before USB transport. If the HDMI/eARC receiver exposes IEC words in a 24- or 32-bit slot, firmware extracts the actual 16-bit IEC word and sends it as S16_LE bytes. Padding/unused slot bits are never forwarded to the S6.
 
 Canonical IEC61937 preamble bytes on the Aurora wire are therefore:
 
@@ -94,7 +96,7 @@ Application framing comes from the Aurora header, never from individual 512-byte
 
 ### PCM_S32LE
 
-Direction: S6 → STM32.
+Direction: S6 → realtime MCU.
 
 - interleaved signed little-endian 32-bit samples;
 - sample rate: 48,000 Hz;
@@ -114,11 +116,11 @@ bits 31..16  channel_count
 bits 15..0   frame_count
 ```
 
-Initial realtime period is **256 frames**. One 12-channel period is therefore 12,288 payload bytes and 12,320 bytes including the Aurora header.
+Initial realtime period is **40 frames**, matching the current Omniphony render quantum. One 12-channel period is therefore 1,920 payload bytes and 1,952 bytes including the Aurora header. At 48 kHz this period represents approximately **0.833 ms** of audio. This is a software transport quantum, not a claim of measured physical end-to-end latency.
 
 ### CLOCK_REPORT
 
-Direction: STM32 → S6.
+Direction: realtime MCU → S6.
 
 Version-1 payload is exactly 24 bytes:
 
@@ -130,11 +132,11 @@ Offset  Size  Field
 20      4     capture_flags
 ```
 
-The S6 can use `sink_sample_counter` for adaptive drift correction. A playback underrun sets `XRUN_RECOVERY` and returns the STM32 to a muted recovery state.
+The S6 can use `sink_sample_counter` for adaptive drift correction. A playback underrun sets `XRUN_RECOVERY` and returns the realtime MCU to a muted recovery state.
 
 ### CONFIG
 
-Direction: S6 → STM32.
+Direction: S6 → realtime MCU.
 
 CONFIG is deliberately fixed binary rather than JSON so the MCU can validate it deterministically with no dynamic parser or heap allocation.
 
@@ -143,7 +145,7 @@ Version-1 payload is exactly 48 bytes:
 ```text
 Offset  Size  Field
 0       4     sample_rate = 48000
-4       2     period_frames = 256
+4       2     period_frames = 40
 6       2     channels = 12
 8       2     pcm_format = 1 (S32LE)
 10      2     layout_id = 1 (7.1.4)
@@ -154,29 +156,29 @@ Offset  Size  Field
 The protocol-v1 canonical layout manifest is the exact UTF-8 byte sequence:
 
 ```text
-AURORA_LAYOUT_V1;id=1;rate=48000;format=S32LE;period=256;channels=FL,FR,C,LFE,BL,BR,SL,SR,TFL,TFR,TBL,TBR\n
+AURORA_LAYOUT_V1;id=1;rate=48000;format=S32LE;period=40;channels=FL,FR,C,LFE,BL,BR,SL,SR,TFL,TFR,TBL,TBR\n
 ```
 
 Its SHA-256 is fixed to:
 
 ```text
-40fb5d12fd76675aefb0344a8897145f0723981d20e205213b440e8bd3e127c0
+05063560d6c5c1b7d3709656cd8c644a6d2b52f5e81383771f26323442d0a244
 ```
 
-Both S6 and STM32 must use these exact 32 raw hash bytes. A different channel order, period, sample format or spelling requires a new layout manifest/hash and must fail closed against protocol-v1 configuration expecting the value above.
+Both S6 and realtime MCU must use these exact 32 raw hash bytes. A different channel order, period, sample format or spelling requires a new layout manifest/hash and must fail closed against protocol-v1 configuration expecting the value above.
 
 Startup handshake:
 
-1. S6 sends CONFIG while STM32 amplifier outputs are muted.
-2. STM32 checks all numeric fields and the expected layout hash.
-3. Valid CONFIG → STM32 sends ACK(CONFIG) and enters `ARMED_MUTED`.
+1. S6 sends CONFIG while realtime-MCU amplifier outputs are muted.
+2. Realtime MCU checks all numeric fields and the expected layout hash.
+3. Valid CONFIG → realtime MCU sends ACK(CONFIG) and enters `ARMED_MUTED`.
 4. S6 may then send PCM.
-5. STM32 unmutes only after it has accepted and queued the first valid PCM period.
+5. Realtime MCU unmutes only after it has accepted and queued the first valid PCM period.
 6. Any mismatch stays fail-closed/muted.
 
 ### ACK / ERROR
 
-Protocol-v1 STM32 ACK and ERROR payloads are four bytes:
+Protocol-v1 MCU ACK and ERROR payloads are four bytes:
 
 ```text
 ACK:
@@ -198,16 +200,16 @@ The USB side is byte-stream reassembled first; one local socket message then equ
 
 PING/PONG is handled directly by the FunctionFS daemon, so basic transport health can be tested before the audio backend starts.
 
-For live immersive input, `aurora-live-ingest` connects to this socket and forwards the payload bytes of successive `ENCODED_IEC61937` frames unchanged to Omniphony stdin. It deliberately does not duplicate IEC61937 demultiplexing. Omniphony's streaming parser owns IEC61937 burst reassembly and supplies the resulting typed packet to the configured Harletty bridge. Rendered 7.1.4 raw-f32 output is converted to protocol-v1 `PCM_S32LE` periods and returned through the same socket.
+For live immersive input, `aurora-live-ingest` connects to this socket and forwards the payload bytes of successive `ENCODED_IEC61937` frames unchanged to Omniphony stdin. It deliberately does not duplicate IEC61937 demultiplexing. Omniphony's streaming parser owns IEC61937 burst reassembly and supplies the resulting typed packet to the configured Harletty bridge. Rendered 7.1.4 raw-f32 output is converted to protocol-v1 40-frame `PCM_S32LE` periods and returned through the same socket.
 
 ## Sequencing and recovery
 
 - `sequence` increments independently per USB direction and wraps as u32.
-- USB reset/disconnect clears CONFIG state and returns STM32 to muted `WAIT_CONFIG`.
+- USB reset/disconnect clears CONFIG state and returns realtime MCU to muted `WAIT_CONFIG`.
 - A malformed Aurora USB stream resets the reassembler and leaves outputs muted.
-- On PCM underrun, STM32 outputs silence, mutes, increments its xrun counter and sends an XRUN clock report.
+- On PCM underrun, realtime MCU outputs silence, mutes, increments its xrun counter and sends an XRUN clock report.
 - On a `DISCONTINUITY` encoded-input frame, the S6 live-ingest service resets/restarts decoder-renderer stream state before accepting new-program audio.
-- On a `DISCONTINUITY` PCM period, STM32 mutes before re-queueing and only unmutes after the valid period is accepted.
+- On a `DISCONTINUITY` PCM period, realtime MCU mutes before re-queueing and only unmutes after the valid period is accepted.
 - Protocol/layout mismatch never enables amplifier output.
 
 ## Bandwidth budget
@@ -218,19 +220,31 @@ For live immersive input, `aurora-live-ingest` connects to this socket and forwa
 48,000 × 12 × 4 = 2,304,000 B/s ≈ 18.4 Mbit/s
 ```
 
-Nominal bandwidth is therefore not the limiting issue on USB 2.0 High-Speed. Validation focuses on latency, scheduling, buffering, drift, resets and thermals.
+The 40-frame period increases application-frame cadence to 1,200 PCM periods/s but does not change the PCM payload data rate. Nominal bandwidth is therefore not the limiting issue on USB 2.0 High-Speed. Validation focuses on latency, scheduling, buffering, drift, resets, xruns and thermals.
+
+## Hardware-target indirection
+
+The concrete part/package/source location and current validation state are read only from:
+
+```text
+config/aurora-hardware-target.env
+```
+
+Build/CI must use `AURORA_REALTIME_MCU_SOURCE_DIR` and capability fields. A part-number change does not require editing this protocol. See `docs/AURORA_HARDWARE_TARGET_CONTRACT.md`.
 
 ## Validation gates
 
-The transport is not production-ready until physical hardware passes:
+The transport is not production-ready until the realtime MCU selected by the hardware-target manifest passes physical hardware validation:
 
-1. STM32H753 + ULPI repeatedly enumerates the S6 FunctionFS gadget after cold boot/reset.
+1. Selected MCU + declared HS PHY repeatedly enumerates the S6 FunctionFS gadget after cold boot/reset.
 2. PING/PONG works before the audio backend starts.
 3. CONFIG mismatch always leaves amplifiers muted.
-4. Canonical IEC61937 preambles survive the physical HDMI/eARC receiver → STM32 normalization → USB path byte-for-byte.
+4. Canonical IEC61937 preambles survive the physical HDMI/eARC receiver → realtime-MCU normalization → USB path byte-for-byte.
 5. 8-hour bidirectional soak shows no framing/sequence corruption.
-6. 12-channel 48 kHz playback has no USB-induced underruns under sustained decode/render load.
+6. 12-channel 48 kHz playback has no USB-induced underruns under sustained decode/render load, including the 40-frame / 1,200-periods-per-second configuration.
 7. Clock-drift correction remains bounded without periodic buffer growth/shrink.
 8. Cable unplug/replug returns through mute → CONFIG → stream without reboot.
 9. Thermal load on S6 does not create sustained xruns.
 10. Live streaming-service Atmos acceptance additionally satisfies `docs/AURORA_LIVE_STREAMING_ATMOS_ACCEPTANCE.md`.
+
+The manifest's `PINMUX_STATUS`, `HAL_STATUS`, and `PHYSICAL_STATUS` fields must remain honest until these corresponding gates are actually satisfied.

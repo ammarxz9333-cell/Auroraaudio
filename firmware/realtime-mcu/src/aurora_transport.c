@@ -22,7 +22,6 @@ static int send_frame(struct aurora_transport *t, uint16_t kind,
                       const uint8_t *payload, uint32_t payload_len)
 {
     uint8_t header[AURORA_USB_HEADER_LEN] = {0};
-
     if (!t || !t->io.usb_send)
         return -1;
     if (payload_len > AURORA_USB_MAX_FRAME - AURORA_USB_HEADER_LEN)
@@ -80,9 +79,7 @@ static int config_is_valid(const struct aurora_transport *t,
         return 0;
     if (aurora_usb_read_le32(payload + 12) != 0)
         return 0;
-    if (memcmp(payload + 16, t->expected_layout_hash, 32) != 0)
-        return 0;
-    return 1;
+    return memcmp(payload + 16, t->expected_layout_hash, 32) == 0;
 }
 
 static int handle_config(struct aurora_transport *t, const uint8_t *payload,
@@ -91,12 +88,10 @@ static int handle_config(struct aurora_transport *t, const uint8_t *payload,
     set_mute(t, 1);
     t->configured = 0;
     t->state = AURORA_TRANSPORT_WAIT_CONFIG;
-
     if (!config_is_valid(t, payload, len)) {
         (void)send_error(t, AURORA_USB_CONFIG, AURORA_ERR_CONFIG);
         return 0;
     }
-
     t->configured = 1;
     t->state = AURORA_TRANSPORT_ARMED_MUTED;
     return send_ack(t, AURORA_USB_CONFIG);
@@ -117,9 +112,8 @@ static int handle_pcm(struct aurora_transport *t, const uint8_t *frame,
         (void)send_error(t, AURORA_USB_PCM_S32LE, AURORA_ERR_NOT_CONFIGURED);
         return 0;
     }
-
     if (frame_len != AURORA_USB_HEADER_LEN + (size_t)payload_len ||
-        payload_len != AURORA_STM32_PCM_PERIOD_BYTES ||
+        payload_len != AURORA_REALTIME_MCU_PCM_PERIOD_BYTES ||
         AURORA_USB_PCM_AUX_CHANNELS(aux) != AURORA_USB_CHANNELS_7_1_4 ||
         AURORA_USB_PCM_AUX_FRAMES(aux) != AURORA_USB_PERIOD_FRAMES) {
         set_mute(t, 1);
@@ -127,12 +121,10 @@ static int handle_pcm(struct aurora_transport *t, const uint8_t *frame,
         (void)send_error(t, AURORA_USB_PCM_S32LE, AURORA_ERR_PCM_SHAPE);
         return 0;
     }
-
     if (flags & AURORA_USB_FLAG_DISCONTINUITY) {
         set_mute(t, 1);
         t->state = AURORA_TRANSPORT_ARMED_MUTED;
     }
-
     if (!t->io.queue_pcm_period ||
         t->io.queue_pcm_period(t->io.ctx, payload, payload_len,
                                pts_48k, flags) != 0) {
@@ -140,7 +132,6 @@ static int handle_pcm(struct aurora_transport *t, const uint8_t *frame,
         (void)send_error(t, AURORA_USB_PCM_S32LE, AURORA_ERR_PCM_QUEUE);
         return 0;
     }
-
     t->state = AURORA_TRANSPORT_STREAMING;
     set_mute(t, 0);
     return 0;
@@ -155,7 +146,6 @@ static int handle_frame(void *opaque, const uint8_t *frame, size_t frame_len)
 
     if (frame_len != AURORA_USB_HEADER_LEN + (size_t)payload_len)
         return -1;
-
     switch (kind) {
     case AURORA_USB_CONFIG:
         return handle_config(t, payload, payload_len);
@@ -179,13 +169,11 @@ void aurora_transport_init(struct aurora_transport *t,
 {
     if (!t)
         return;
-
     memset(t, 0, sizeof(*t));
     if (io)
         t->io = *io;
     if (expected_layout_hash)
         memcpy(t->expected_layout_hash, expected_layout_hash, 32);
-
     aurora_usb_stream_v1_init(&t->rx_stream, t->rx_storage,
                               sizeof(t->rx_storage));
     t->state = AURORA_TRANSPORT_WAIT_CONFIG;
@@ -206,11 +194,10 @@ void aurora_transport_usb_reset(struct aurora_transport *t)
 int aurora_transport_receive(struct aurora_transport *t,
                              const uint8_t *data, size_t len)
 {
+    int rc;
     if (!t)
         return -1;
-
-    int rc = aurora_usb_stream_v1_feed(&t->rx_stream, data, len,
-                                       handle_frame, t);
+    rc = aurora_usb_stream_v1_feed(&t->rx_stream, data, len, handle_frame, t);
     if (rc != AURORA_USB_STREAM_OK) {
         aurora_usb_stream_v1_reset(&t->rx_stream);
         t->configured = 0;
@@ -229,7 +216,6 @@ int aurora_transport_send_iec61937(struct aurora_transport *t,
     if (!t || !payload || len == 0 ||
         len > AURORA_USB_MAX_FRAME - AURORA_USB_HEADER_LEN)
         return -1;
-
     return send_frame(t, AURORA_USB_ENCODED_IEC61937,
                       flags | AURORA_USB_FLAG_PTS_VALID,
                       pts_48k, 0, payload, (uint32_t)len);
@@ -242,7 +228,6 @@ int aurora_transport_send_clock_report(struct aurora_transport *t,
     uint64_t sink = 0;
     uint64_t source = 0;
     uint32_t queued = 0;
-
     if (!t)
         return -1;
     if (t->io.sink_sample_counter)
@@ -251,12 +236,10 @@ int aurora_transport_send_clock_report(struct aurora_transport *t,
         source = t->io.source_sample_counter(t->io.ctx);
     if (t->io.queued_playback_frames)
         queued = t->io.queued_playback_frames(t->io.ctx);
-
     aurora_usb_write_le64(payload + 0, sink);
     aurora_usb_write_le64(payload + 8, source);
     aurora_usb_write_le32(payload + 16, queued);
     aurora_usb_write_le32(payload + 20, extra_flags);
-
     return send_frame(t, AURORA_USB_CLOCK_REPORT,
                       extra_flags & AURORA_USB_FLAG_XRUN_RECOVERY,
                       sink, 0, payload, sizeof(payload));

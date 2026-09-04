@@ -21,34 +21,47 @@
 #define DEFAULT_ORENDER "/opt/aurora/external/orender"
 #define DEFAULT_HARLETTY "/opt/aurora/external/libharletty_bridge.so"
 #define DEFAULT_LAYOUT "/etc/aurora/layouts/7.1.4.yaml"
+#define DEFAULT_POSTPROCESS "/usr/local/bin/aurora-s6-postprocess"
 
-#define PCM_CHANNELS 12u
-#define PCM_PERIOD_FRAMES 256u
+#define PCM_CHANNELS AURORA_USB_CHANNELS_7_1_4
+#define PCM_PERIOD_FRAMES AURORA_USB_PERIOD_FRAMES
 #define PCM_PERIOD_SAMPLES (PCM_CHANNELS * PCM_PERIOD_FRAMES)
 #define PCM_PERIOD_BYTES (PCM_PERIOD_SAMPLES * 4u)
 #define TX_FRAME_CAP (AURORA_USB_HEADER_LEN + PCM_PERIOD_BYTES)
 #define RX_FRAME_CAP AURORA_USB_MAX_FRAME
 #define RENDER_READ_CHUNK (64u * 1024u)
-#define RENDER_PENDING_CAP (PCM_PERIOD_BYTES * 16u)
+#define RENDER_PENDING_CAP (128u * 1024u)
 #define IO_TIMEOUT_MS 100
+
+#define POST_CONTROL_MAGIC_U32 0x30435041u /* "APC0" */
+#define POST_CONTROL_VERSION 1u
+#define POST_CONTROL_BYTES 32u
+#define POST_CTRL_RESET 1u
+#define POST_CTRL_CLOCK_REPORT 2u
+#define POST_CTRL_LIPSYNC_FRAMES 3u
+#define POST_CTRL_MASTER_GAIN_MDB 4u
+#define POST_CTRL_MUTE 5u
+#define POST_CTRL_STANDBY 6u
 
 static volatile sig_atomic_t stop_requested;
 
 /* SHA-256 of the protocol-v1 canonical output-layout manifest:
- * AURORA_LAYOUT_V1;id=1;rate=48000;format=S32LE;period=256;
- * channels=FL,FR,C,LFE,BL,BR,SL,SR,TFL,TFR,TBL,TBR\n
+ * AURORA_LAYOUT_V1;id=1;rate=48000;format=S32LE;period=40;channels=FL,FR,C,LFE,BL,BR,SL,SR,TFL,TFR,TBL,TBR\n
  */
 static const uint8_t layout_hash_7_1_4_v1[32] = {
-    0x40, 0xfb, 0x5d, 0x12, 0xfd, 0x76, 0x67, 0x5a,
-    0xef, 0xb0, 0x34, 0x4a, 0x88, 0x97, 0x14, 0x5f,
-    0x07, 0x23, 0x98, 0x1d, 0x20, 0xe2, 0x05, 0x21,
-    0x3b, 0x44, 0x0e, 0x8b, 0xd3, 0xe1, 0x27, 0xc0,
+    0x05, 0x06, 0x35, 0x60, 0xd6, 0xc5, 0xc1, 0xb7,
+    0xd3, 0x70, 0x96, 0x56, 0xcd, 0x8c, 0x64, 0x4a,
+    0x6d, 0x2b, 0x52, 0xf5, 0xe8, 0x13, 0x83, 0x77,
+    0x1f, 0x26, 0x32, 0x34, 0x42, 0xd0, 0xa2, 0x44,
 };
 
 struct renderer_proc {
     pid_t pid;
+    pid_t post_pid;
     int stdin_fd;
     int stdout_fd;
+    int control_fd;
+    int postprocess_enabled;
 };
 
 struct app {
@@ -57,7 +70,9 @@ struct app {
     int configured;
     uint64_t next_pcm_pts;
     int have_pcm_pts;
+    uint32_t next_pcm_flags;
     struct renderer_proc renderer;
+    uint64_t renderer_serial;
     uint8_t render_pending[RENDER_PENDING_CAP];
     size_t render_pending_len;
     uint64_t encoded_frames;
@@ -98,7 +113,7 @@ static void write_le32(uint8_t *p, uint32_t v)
     p[0] = (uint8_t)(v & 0xffu);
     p[1] = (uint8_t)((v >> 8) & 0xffu);
     p[2] = (uint8_t)((v >> 16) & 0xffu);
-    p[3] = (uint8_t)((v >> 24) & 0xffu);
+    p[3] = (uint8_t)(v >> 24);
 }
 
 static void write_le64(uint8_t *p, uint64_t v)
@@ -111,6 +126,11 @@ static const char *env_or(const char *key, const char *fallback)
 {
     const char *v = getenv(key);
     return (v && *v) ? v : fallback;
+}
+
+static int postprocess_disabled(const char *path)
+{
+    return strcmp(path, "disabled") == 0 || strcmp(path, "none") == 0;
 }
 
 static int wait_fd(int fd, short events)
@@ -148,36 +168,56 @@ static int write_all_timeout(int fd, const uint8_t *buf, size_t len)
     return 0;
 }
 
+static void close_if_valid(int *fd)
+{
+    if (*fd >= 0) {
+        close(*fd);
+        *fd = -1;
+    }
+}
+
 static void renderer_close_fds(struct renderer_proc *r)
 {
-    if (r->stdin_fd >= 0) {
-        close(r->stdin_fd);
-        r->stdin_fd = -1;
+    close_if_valid(&r->stdin_fd);
+    close_if_valid(&r->stdout_fd);
+    close_if_valid(&r->control_fd);
+}
+
+static void terminate_child(pid_t *pid)
+{
+    if (*pid <= 0)
+        return;
+
+    kill(*pid, SIGTERM);
+    for (int i = 0; i < 20; ++i) {
+        pid_t w = waitpid(*pid, NULL, WNOHANG);
+        if (w == *pid) {
+            *pid = -1;
+            return;
+        }
+        usleep(10000);
     }
-    if (r->stdout_fd >= 0) {
-        close(r->stdout_fd);
-        r->stdout_fd = -1;
-    }
+    kill(*pid, SIGKILL);
+    (void)waitpid(*pid, NULL, 0);
+    *pid = -1;
 }
 
 static void renderer_stop(struct renderer_proc *r)
 {
     renderer_close_fds(r);
-    if (r->pid <= 0)
-        return;
+    terminate_child(&r->pid);
+    terminate_child(&r->post_pid);
+    r->postprocess_enabled = 0;
+}
 
-    kill(r->pid, SIGTERM);
-    for (int i = 0; i < 20; ++i) {
-        pid_t w = waitpid(r->pid, NULL, WNOHANG);
-        if (w == r->pid) {
-            r->pid = -1;
-            return;
-        }
-        usleep(10000);
+static void close_child_fds_above(int keep0, int keep1, int keep3,
+                                  const int *fds, size_t count)
+{
+    for (size_t i = 0; i < count; ++i) {
+        int fd = fds[i];
+        if (fd >= 0 && fd != keep0 && fd != keep1 && fd != keep3 && fd > 2)
+            close(fd);
     }
-    kill(r->pid, SIGKILL);
-    (void)waitpid(r->pid, NULL, 0);
-    r->pid = -1;
 }
 
 static int renderer_start(struct renderer_proc *r)
@@ -185,31 +225,39 @@ static int renderer_start(struct renderer_proc *r)
     const char *orender = env_or("AURORA_ORENDER_BIN", DEFAULT_ORENDER);
     const char *bridge = env_or("AURORA_HARLETTY_BRIDGE", DEFAULT_HARLETTY);
     const char *layout = env_or("AURORA_7_1_4_LAYOUT", DEFAULT_LAYOUT);
+    const char *postprocess = env_or("AURORA_POSTPROCESS_BIN", DEFAULT_POSTPROCESS);
+    int enable_post = !postprocess_disabled(postprocess);
     int to_child[2] = {-1, -1};
     int from_child[2] = {-1, -1};
+    int render_to_post[2] = {-1, -1};
+    int control_to_post[2] = {-1, -1};
 
     if (pipe2(to_child, O_CLOEXEC) < 0)
         return -1;
-    if (pipe2(from_child, O_CLOEXEC) < 0) {
-        close(to_child[0]);
-        close(to_child[1]);
-        return -1;
-    }
+    if (pipe2(from_child, O_CLOEXEC) < 0)
+        goto fail;
+    if (enable_post && pipe2(render_to_post, O_CLOEXEC) < 0)
+        goto fail;
+    if (enable_post && pipe2(control_to_post, O_CLOEXEC) < 0)
+        goto fail;
 
     pid_t pid = fork();
-    if (pid < 0) {
-        close(to_child[0]); close(to_child[1]);
-        close(from_child[0]); close(from_child[1]);
-        return -1;
-    }
+    if (pid < 0)
+        goto fail;
 
     if (pid == 0) {
+        int output_fd = enable_post ? render_to_post[1] : from_child[1];
         if (dup2(to_child[0], STDIN_FILENO) < 0 ||
-            dup2(from_child[1], STDOUT_FILENO) < 0)
+            dup2(output_fd, STDOUT_FILENO) < 0)
             _exit(126);
 
-        close(to_child[0]); close(to_child[1]);
-        close(from_child[0]); close(from_child[1]);
+        int all_fds[] = {
+            to_child[0], to_child[1], from_child[0], from_child[1],
+            render_to_post[0], render_to_post[1],
+            control_to_post[0], control_to_post[1]
+        };
+        close_child_fds_above(STDIN_FILENO, STDOUT_FILENO, -1,
+                              all_fds, sizeof(all_fds) / sizeof(all_fds[0]));
 
         /* Omniphony's stdin decoder thread detects IEC61937 sync, maintains a
          * streaming SpdifParser across arbitrary read boundaries, and passes
@@ -229,8 +277,41 @@ static int renderer_start(struct renderer_proc *r)
         _exit(127);
     }
 
+    pid_t post_pid = -1;
+    if (enable_post) {
+        post_pid = fork();
+        if (post_pid < 0) {
+            kill(pid, SIGTERM);
+            (void)waitpid(pid, NULL, 0);
+            goto fail;
+        }
+        if (post_pid == 0) {
+            if (dup2(render_to_post[0], STDIN_FILENO) < 0 ||
+                dup2(from_child[1], STDOUT_FILENO) < 0 ||
+                dup2(control_to_post[0], 3) < 0)
+                _exit(126);
+
+            int all_fds[] = {
+                to_child[0], to_child[1], from_child[0], from_child[1],
+                render_to_post[0], render_to_post[1],
+                control_to_post[0], control_to_post[1]
+            };
+            close_child_fds_above(STDIN_FILENO, STDOUT_FILENO, 3,
+                                  all_fds, sizeof(all_fds) / sizeof(all_fds[0]));
+            setenv("AURORA_CONTROL_FD", "3", 1);
+            execl(postprocess, postprocess, (char *)NULL);
+            perror("aurora-live-ingest: exec postprocessor");
+            _exit(127);
+        }
+    }
+
     close(to_child[0]);
     close(from_child[1]);
+    if (enable_post) {
+        close(render_to_post[0]);
+        close(render_to_post[1]);
+        close(control_to_post[0]);
+    }
 
     int flags = fcntl(to_child[1], F_GETFL, 0);
     if (flags >= 0)
@@ -238,16 +319,56 @@ static int renderer_start(struct renderer_proc *r)
     flags = fcntl(from_child[0], F_GETFL, 0);
     if (flags >= 0)
         (void)fcntl(from_child[0], F_SETFL, flags | O_NONBLOCK);
+    if (enable_post) {
+        flags = fcntl(control_to_post[1], F_GETFL, 0);
+        if (flags >= 0)
+            (void)fcntl(control_to_post[1], F_SETFL, flags | O_NONBLOCK);
+    }
 
     r->pid = pid;
+    r->post_pid = post_pid;
     r->stdin_fd = to_child[1];
     r->stdout_fd = from_child[0];
-    fprintf(stderr, "aurora-live-ingest: orender pid=%ld\n", (long)pid);
+    r->control_fd = enable_post ? control_to_post[1] : -1;
+    r->postprocess_enabled = enable_post;
+    fprintf(stderr,
+            "aurora-live-ingest: orender pid=%ld postprocess=%s pid=%ld\n",
+            (long)pid, enable_post ? "enabled" : "disabled", (long)post_pid);
     return 0;
+
+fail:
+    if (to_child[0] >= 0) close(to_child[0]);
+    if (to_child[1] >= 0) close(to_child[1]);
+    if (from_child[0] >= 0) close(from_child[0]);
+    if (from_child[1] >= 0) close(from_child[1]);
+    if (render_to_post[0] >= 0) close(render_to_post[0]);
+    if (render_to_post[1] >= 0) close(render_to_post[1]);
+    if (control_to_post[0] >= 0) close(control_to_post[0]);
+    if (control_to_post[1] >= 0) close(control_to_post[1]);
+    return -1;
+}
+
+static int renderer_send_control(struct renderer_proc *r, uint16_t kind,
+                                 uint64_t data0, uint64_t data1,
+                                 uint32_t data2, uint32_t flags)
+{
+    if (!r->postprocess_enabled || r->control_fd < 0)
+        return 0;
+
+    uint8_t message[POST_CONTROL_BYTES] = {0};
+    write_le32(message + 0, POST_CONTROL_MAGIC_U32);
+    write_le16(message + 4, POST_CONTROL_VERSION);
+    write_le16(message + 6, kind);
+    write_le64(message + 8, data0);
+    write_le64(message + 16, data1);
+    write_le32(message + 24, data2);
+    write_le32(message + 28, flags);
+    return write_all_timeout(r->control_fd, message, sizeof(message));
 }
 
 static int connect_bridge(void)
 {
+    const char *bridge_socket = env_or("AURORA_USB_BRIDGE_SOCKET", BRIDGE_SOCKET);
     int fd = socket(AF_UNIX, SOCK_SEQPACKET | SOCK_CLOEXEC, 0);
     if (fd < 0)
         return -1;
@@ -255,12 +376,12 @@ static int connect_bridge(void)
     struct sockaddr_un addr;
     memset(&addr, 0, sizeof(addr));
     addr.sun_family = AF_UNIX;
-    if (strlen(BRIDGE_SOCKET) >= sizeof(addr.sun_path)) {
+    if (strlen(bridge_socket) >= sizeof(addr.sun_path)) {
         close(fd);
         errno = ENAMETOOLONG;
         return -1;
     }
-    strcpy(addr.sun_path, BRIDGE_SOCKET);
+    strcpy(addr.sun_path, bridge_socket);
 
     if (connect(fd, (struct sockaddr *)&addr, sizeof(addr)) < 0) {
         int saved = errno;
@@ -324,13 +445,10 @@ static int32_t f32_to_s32(float x)
 static int flush_pcm_periods(struct app *a)
 {
     while (a->render_pending_len >= PCM_PERIOD_BYTES) {
-        if (!a->configured) {
-            memmove(a->render_pending,
-                    a->render_pending + PCM_PERIOD_BYTES,
-                    a->render_pending_len - PCM_PERIOD_BYTES);
-            a->render_pending_len -= PCM_PERIOD_BYTES;
-            continue;
-        }
+        /* CONFIG is the fail-closed gate. Preserve already-rendered audio
+         * while waiting for the ACK instead of discarding the first period. */
+        if (!a->configured)
+            break;
 
         uint8_t out[PCM_PERIOD_BYTES];
         for (size_t i = 0; i < PCM_PERIOD_SAMPLES; ++i) {
@@ -340,11 +458,14 @@ static int flush_pcm_periods(struct app *a)
         }
 
         uint32_t aux = AURORA_USB_PCM_AUX(PCM_CHANNELS, PCM_PERIOD_FRAMES);
-        uint32_t flags = a->have_pcm_pts ? AURORA_USB_FLAG_PTS_VALID : 0;
+        uint32_t flags = a->next_pcm_flags;
+        if (a->have_pcm_pts)
+            flags |= AURORA_USB_FLAG_PTS_VALID;
         if (send_frame(a, AURORA_USB_PCM_S32LE, flags,
                        a->next_pcm_pts, aux, out, sizeof(out)) < 0)
             return -1;
 
+        a->next_pcm_flags = 0;
         if (a->have_pcm_pts)
             a->next_pcm_pts += PCM_PERIOD_FRAMES;
         a->pcm_periods++;
@@ -408,11 +529,36 @@ static int validate_frame(const uint8_t *frame, size_t len,
 
 static int restart_renderer(struct app *a, uint64_t pts, int pts_valid)
 {
+    a->renderer_serial++;
     a->render_pending_len = 0;
     a->next_pcm_pts = pts;
     a->have_pcm_pts = pts_valid;
     renderer_stop(&a->renderer);
     return renderer_start(&a->renderer);
+}
+
+static int handle_clock_report(struct app *a, const uint8_t *payload,
+                               uint32_t payload_len, uint32_t frame_flags)
+{
+    if (payload_len != sizeof(struct aurora_usb_clock_report_v1))
+        return -1;
+
+    uint64_t sink = read_le64(payload + 0);
+    uint64_t source = read_le64(payload + 8);
+    uint32_t queued = read_le32(payload + 16);
+    uint32_t capture_flags = read_le32(payload + 20);
+    uint32_t combined_flags = capture_flags | frame_flags;
+
+    if ((combined_flags & AURORA_USB_FLAG_XRUN_RECOVERY) != 0) {
+        a->next_pcm_flags |= AURORA_USB_FLAG_XRUN_RECOVERY |
+                             AURORA_USB_FLAG_DISCONTINUITY;
+        if (renderer_send_control(&a->renderer, POST_CTRL_RESET,
+                                  0, 0, 0, combined_flags) < 0)
+            return -1;
+    }
+
+    return renderer_send_control(&a->renderer, POST_CTRL_CLOCK_REPORT,
+                                 sink, source, queued, combined_flags);
 }
 
 static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
@@ -429,9 +575,12 @@ static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
 
     switch (kind) {
     case AURORA_USB_ENCODED_IEC61937:
-        if ((flags & AURORA_USB_FLAG_DISCONTINUITY) != 0 &&
-            restart_renderer(a, pts, (flags & AURORA_USB_FLAG_PTS_VALID) != 0) < 0)
-            return -1;
+        if ((flags & AURORA_USB_FLAG_DISCONTINUITY) != 0) {
+            a->next_pcm_flags |= AURORA_USB_FLAG_DISCONTINUITY;
+            if (restart_renderer(a, pts,
+                                 (flags & AURORA_USB_FLAG_PTS_VALID) != 0) < 0)
+                return -1;
+        }
 
         if (!a->have_pcm_pts && (flags & AURORA_USB_FLAG_PTS_VALID) != 0) {
             a->have_pcm_pts = 1;
@@ -452,6 +601,8 @@ static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
             read_le16(payload + 2) == 0) {
             a->configured = 1;
             fprintf(stderr, "aurora-live-ingest: STM32 CONFIG accepted\n");
+            if (flush_pcm_periods(a) < 0)
+                return -1;
         }
         break;
 
@@ -462,12 +613,23 @@ static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
             fprintf(stderr,
                     "aurora-live-ingest: STM32 error offending=%u code=%u\n",
                     offending, code);
-            if (offending == AURORA_USB_CONFIG)
+            if (offending == AURORA_USB_CONFIG) {
                 a->configured = 0;
+                a->render_pending_len = 0;
+            }
+            if (offending == AURORA_USB_PCM_S32LE) {
+                a->next_pcm_flags |= AURORA_USB_FLAG_XRUN_RECOVERY |
+                                     AURORA_USB_FLAG_DISCONTINUITY;
+                (void)renderer_send_control(&a->renderer, POST_CTRL_RESET,
+                                            0, 0, 0,
+                                            AURORA_USB_FLAG_XRUN_RECOVERY);
+            }
         }
         break;
 
     case AURORA_USB_CLOCK_REPORT:
+        return handle_clock_report(a, payload, payload_len, flags);
+
     case AURORA_USB_PONG:
         break;
 
@@ -476,6 +638,17 @@ static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
     }
 
     return 0;
+}
+
+static int reset_after_bridge_disconnect(struct app *a)
+{
+    a->configured = 0;
+    a->render_pending_len = 0;
+    a->have_pcm_pts = 0;
+    a->next_pcm_pts = 0;
+    a->next_pcm_flags = AURORA_USB_FLAG_DISCONTINUITY |
+                        AURORA_USB_FLAG_XRUN_RECOVERY;
+    return restart_renderer(a, 0, 0);
 }
 
 int main(void)
@@ -488,11 +661,13 @@ int main(void)
     memset(&a, 0, sizeof(a));
     a.bridge_fd = -1;
     a.renderer.pid = -1;
+    a.renderer.post_pid = -1;
     a.renderer.stdin_fd = -1;
     a.renderer.stdout_fd = -1;
+    a.renderer.control_fd = -1;
 
     if (renderer_start(&a.renderer) < 0) {
-        perror("aurora-live-ingest: start orender");
+        perror("aurora-live-ingest: start renderer pipeline");
         return 1;
     }
 
@@ -512,17 +687,20 @@ int main(void)
             }
             a.tx_sequence = 0;
             a.configured = 0;
+            a.render_pending_len = 0;
             if (send_config(&a) < 0) {
                 close(a.bridge_fd);
                 a.bridge_fd = -1;
                 continue;
             }
-            fprintf(stderr, "aurora-live-ingest: connected to %s\n", BRIDGE_SOCKET);
+            fprintf(stderr, "aurora-live-ingest: connected to %s\n",
+                    env_or("AURORA_USB_BRIDGE_SOCKET", BRIDGE_SOCKET));
         }
 
         struct pollfd p[2];
         p[0] = (struct pollfd){.fd = a.bridge_fd, .events = POLLIN};
         p[1] = (struct pollfd){.fd = a.renderer.stdout_fd, .events = POLLIN};
+        uint64_t renderer_serial_at_poll = a.renderer_serial;
 
         int rc = poll(p, 2, 250);
         if (rc < 0) {
@@ -535,7 +713,8 @@ int main(void)
         if (p[0].revents & (POLLHUP | POLLERR | POLLNVAL)) {
             close(a.bridge_fd);
             a.bridge_fd = -1;
-            a.configured = 0;
+            if (reset_after_bridge_disconnect(&a) < 0)
+                break;
             continue;
         }
 
@@ -544,29 +723,42 @@ int main(void)
             if (n <= 0) {
                 close(a.bridge_fd);
                 a.bridge_fd = -1;
-                a.configured = 0;
+                if (reset_after_bridge_disconnect(&a) < 0)
+                    break;
                 continue;
             }
             if (handle_bridge_frame(&a, rx, (size_t)n) < 0) {
-                fprintf(stderr, "aurora-live-ingest: encoded input failure; restarting renderer\n");
+                fprintf(stderr, "aurora-live-ingest: input/control failure; restarting renderer pipeline\n");
+                a.next_pcm_flags |= AURORA_USB_FLAG_DISCONTINUITY |
+                                    AURORA_USB_FLAG_XRUN_RECOVERY;
                 if (restart_renderer(&a, a.next_pcm_pts, a.have_pcm_pts) < 0)
                     break;
             }
         }
 
+        /* If the bridge-side event restarted the pipeline, revents for the old
+         * descriptor are stale and must not be applied to the new renderer. */
+        if (renderer_serial_at_poll != a.renderer_serial)
+            continue;
+
         if (p[1].revents & POLLIN) {
             int rr = ingest_renderer_output(&a);
             if (rr < 0) {
-                fprintf(stderr, "aurora-live-ingest: renderer output failure\n");
+                fprintf(stderr, "aurora-live-ingest: renderer/postprocessor output failure\n");
+                a.next_pcm_flags |= AURORA_USB_FLAG_DISCONTINUITY |
+                                    AURORA_USB_FLAG_XRUN_RECOVERY;
                 if (restart_renderer(&a, a.next_pcm_pts, a.have_pcm_pts) < 0)
                     break;
             } else if (rr > 0) {
+                a.next_pcm_flags |= AURORA_USB_FLAG_DISCONTINUITY;
                 if (restart_renderer(&a, a.next_pcm_pts, a.have_pcm_pts) < 0)
                     break;
             }
         }
 
         if (p[1].revents & (POLLHUP | POLLERR | POLLNVAL)) {
+            a.next_pcm_flags |= AURORA_USB_FLAG_DISCONTINUITY |
+                                AURORA_USB_FLAG_XRUN_RECOVERY;
             if (restart_renderer(&a, a.next_pcm_pts, a.have_pcm_pts) < 0)
                 break;
         }

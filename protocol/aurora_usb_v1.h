@@ -9,10 +9,16 @@
 #define AURORA_USB_MAX_FRAME (256u * 1024u)
 
 #define AURORA_USB_SAMPLE_RATE_HZ 48000u
-#define AURORA_USB_PERIOD_FRAMES 256u
+#define AURORA_USB_PERIOD_FRAMES 40u
 #define AURORA_USB_CHANNELS_7_1_4 12u
 #define AURORA_USB_PCM_FORMAT_S32LE 1u
 #define AURORA_USB_LAYOUT_ID_7_1_4 1u
+#define AURORA_USB_LAYOUT_HASH_7_1_4_V1_BYTES { \
+    0x05, 0x06, 0x35, 0x60, 0xd6, 0xc5, 0xc1, 0xb7, \
+    0xd3, 0x70, 0x96, 0x56, 0xcd, 0x8c, 0x64, 0x4a, \
+    0x6d, 0x2b, 0x52, 0xf5, 0xe8, 0x13, 0x83, 0x77, \
+    0x1f, 0x26, 0x32, 0x34, 0x42, 0xd0, 0xa2, 0x44  \
+}
 
 #define AURORA_USB_FLAG_PTS_VALID      (1u << 0)
 #define AURORA_USB_FLAG_DISCONTINUITY  (1u << 1)

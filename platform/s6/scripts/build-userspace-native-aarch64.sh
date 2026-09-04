@@ -9,8 +9,9 @@ OUT="${AURORA_OUT:-$ROOT/out/s6-aarch64}"
 WORK="${AURORA_WORK:-$ROOT/.work/s6-aarch64}"
 JOBS="${JOBS:-4}"
 CC="${CC:-cc}"
-HARLETTY_VERSION="${HARLETTY_VERSION:-v0.7.4}"
+HARLETTY_VERSION="${HARLETTY_VERSION:-v0.7.3}"
 OMNIPHONY_VERSION="${OMNIPHONY_VERSION:-v0.5.2}"
+OMNIPHONY_PATCH="$ROOT/platform/s6/patches/omniphony-v0.5.2-low-latency-stdout.patch"
 NAVIDROME_VERSION="${NAVIDROME_VERSION:-0.63.2}"
 NAVIDROME_SHA256="5b74fb0eea5d48e3eb7565ea4116284232509e94431cb3756aaac2128dd50a43"
 
@@ -24,42 +25,53 @@ done
 
 mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/share/omniphony/layouts" "$OUT/navidrome" "$WORK"
 
-# Validate the isolated USB wire-format crate without touching the main
-# workspace lockfile. It has no external dependencies and carries its own lock.
 (
     cd "$ROOT"
     cargo test --locked --manifest-path crates/aurora-usb-protocol/Cargo.toml
 )
 
-# Build the FunctionFS bridge natively for AuroraOS-S6. The streaming parser is
-# shared with the STM32 firmware core so split/coalesced bulk reads follow one
-# implementation on both peers.
 "$CC" -D_GNU_SOURCE -std=c11 -O2 -Wall -Wextra -Werror \
     -I"$ROOT/protocol" \
     "$ROOT/platform/s6/usb-gadget/aurora-ffs-daemon.c" \
     "$ROOT/protocol/aurora_usb_stream_v1.c" \
     -o "$OUT/bin/aurora-ffs-daemon"
 
+# Source arbitration is a separate control plane. The HDMI source gate is the
+# only process allowed to bridge live-ingest PCM into the FunctionFS backend;
+# it keeps CONFIG/clock traffic flowing but ramps audio to silence unless the
+# source manager grants HDMI/eARC ownership.
+"$CC" -std=c11 -O2 -Wall -Wextra -Werror \
+    -I"$ROOT/protocol" \
+    "$ROOT/platform/s6/source-manager/aurora-source-manager.c" \
+    -o "$OUT/bin/aurora-source-manager"
+
+"$CC" -std=c11 -O2 -Wall -Wextra -Werror \
+    -I"$ROOT/protocol" \
+    "$ROOT/platform/s6/source-manager/aurora-source-gate.c" \
+    -lm -o "$OUT/bin/aurora-source-gate"
+
+"$CC" -std=c11 -O2 -Wall -Wextra -Werror \
+    -I"$ROOT/protocol" \
+    "$ROOT/platform/s6/source-manager/aurora-source-ctl.c" \
+    -lm -o "$OUT/bin/aurora-source-ctl"
+
 # Live immersive streaming broker. It deliberately does NOT decode or unwrap
-# IEC61937 itself. Complete encoded frames received from STM32 are forwarded as
-# a byte stream to Omniphony stdin; Omniphony v0.5.2 owns the streaming
-# IEC61937 parser and passes typed packets to the Harletty bridge. Rendered
-# 7.1.4 raw-f32 is converted to Aurora protocol PCM_S32LE periods for STM32.
+# IEC61937 itself. Complete encoded frames are forwarded as a byte stream to
+# Omniphony stdin; Omniphony v0.5.2 owns the streaming IEC61937 parser and
+# passes typed packets to the Harletty bridge. The runtime manifest routes this
+# broker through aurora-source-gate rather than directly to FunctionFS.
 "$CC" -std=c11 -O2 -Wall -Wextra -Werror \
     -I"$ROOT/protocol" \
     "$ROOT/platform/s6/live-ingest/aurora-live-ingest.c" \
     -lm -o "$OUT/bin/aurora-live-ingest"
 
-# Aurora-owned Rust baseline. Exclude simulation and the external CamillaDSP process
-# from the appliance binary; realtime CPAL remains available for bring-up/testing.
 (
     cd "$ROOT"
     cargo build --locked --release -j "$JOBS" -p aurora-cli --no-default-features --features realtime
     install -m 0755 target/release/aurora-cli "$OUT/bin/aurora-cli"
+    install -m 0755 target/release/aurora-s6-postprocess "$OUT/bin/aurora-s6-postprocess"
 )
 
-# Omniphony and Harletty must be sibling checkouts because the Harletty bridge
-# intentionally consumes Omniphony's bridge ABI through path dependencies.
 if [ ! -d "$WORK/Omniphony/.git" ]; then
     git clone https://github.com/mgth/Omniphony.git "$WORK/Omniphony"
 fi
@@ -67,6 +79,15 @@ fi
     cd "$WORK/Omniphony"
     git fetch --tags --force
     git checkout --detach "$OMNIPHONY_VERSION"
+    git reset --hard "$OMNIPHONY_VERSION"
+
+    [ "$OMNIPHONY_VERSION" = "v0.5.2" ] || \
+        fail "Omniphony low-latency patch is pinned to v0.5.2, got $OMNIPHONY_VERSION"
+    [ -f "$OMNIPHONY_PATCH" ] || fail "missing Omniphony patch: $OMNIPHONY_PATCH"
+    git apply --check "$OMNIPHONY_PATCH" || \
+        fail "Omniphony low-latency patch no longer applies cleanly"
+    git apply "$OMNIPHONY_PATCH"
+
     cd omniphony-renderer
     cargo build --release -j "$JOBS" -p omniphony-renderer
     install -m 0755 target/release/orender "$OUT/bin/orender"
@@ -84,8 +105,6 @@ fi
     install -m 0755 target/release/libharletty_bridge.so "$OUT/lib/libharletty_bridge.so"
 )
 
-# Navidrome publishes a native Linux ARM64 tarball. Verify the release digest
-# before it is admitted to the appliance staging tree.
 NAV_ARCHIVE="$WORK/navidrome_${NAVIDROME_VERSION}_linux_arm64.tar.gz"
 if [ ! -f "$NAV_ARCHIVE" ]; then
     curl -fL "https://github.com/navidrome/navidrome/releases/download/v${NAVIDROME_VERSION}/navidrome_${NAVIDROME_VERSION}_linux_arm64.tar.gz" -o "$NAV_ARCHIVE"
@@ -94,18 +113,30 @@ echo "$NAVIDROME_SHA256  $NAV_ARCHIVE" | sha256sum -c -
 tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
 [ -x "$OUT/navidrome/navidrome" ] || fail "Navidrome binary missing after extraction"
 
-# Record exact provenance used by the bundle.
 {
     echo "architecture=aarch64"
     echo "aurora_commit=$(git -C "$ROOT" rev-parse HEAD)"
     echo "aurora_usb_protocol=1"
-    echo "live_streaming_ingest=iec61937-direct-to-omniphony"
+    echo "aurora_usb_period_frames=40"
+    echo "source_manager=priority-quiesce-watchdog-v1"
+    echo "source_control_cli=status-mute-gain-lipsync-standby-v1"
+    echo "hdmi_source_gate=managed-ramp-v1"
+    echo "live_streaming_ingest=iec61937-omniphony-postprocess-source-gate"
+    echo "postprocessor=aurora-s6-postprocess"
+    echo "postprocessor_asrc=rubato-sinc-fixed-out"
+    echo "postprocessor_bass_management=lr4-configurable"
+    echo "postprocessor_limiter=linked-peak"
     echo "harletty=$HARLETTY_VERSION"
     echo "omniphony=$OMNIPHONY_VERSION"
+    echo "omniphony_patch=low-latency-raw-stdout-40-frames-v1"
     echo "navidrome=v$NAVIDROME_VERSION"
     echo "navidrome_sha256=$NAVIDROME_SHA256"
 } > "$OUT/BUILD-MANIFEST.txt"
 
 sha256sum "$OUT/bin/aurora-ffs-daemon" > "$OUT/bin/aurora-ffs-daemon.sha256"
+sha256sum "$OUT/bin/aurora-source-manager" > "$OUT/bin/aurora-source-manager.sha256"
+sha256sum "$OUT/bin/aurora-source-gate" > "$OUT/bin/aurora-source-gate.sha256"
+sha256sum "$OUT/bin/aurora-source-ctl" > "$OUT/bin/aurora-source-ctl.sha256"
 sha256sum "$OUT/bin/aurora-live-ingest" > "$OUT/bin/aurora-live-ingest.sha256"
+sha256sum "$OUT/bin/aurora-s6-postprocess" > "$OUT/bin/aurora-s6-postprocess.sha256"
 echo "Userspace staging complete: $OUT"

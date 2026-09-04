@@ -1,6 +1,8 @@
 # Aurora live streaming Atmos acceptance
 
-Status: **mandatory product acceptance contract** for the Galaxy S6 + STM32H753 appliance path.
+Status: **mandatory product acceptance contract** for the Galaxy S6 + Aurora realtime-MCU appliance path.
+
+The concrete realtime MCU is selected only by `config/aurora-hardware-target.env`; this acceptance contract intentionally names the stable role rather than a part number.
 
 This contract exists to prevent a local-file or synthetic-fixture success from being reported as streaming-service support.
 
@@ -17,14 +19,14 @@ streaming service/application
         -> HDMI/eARC source output
         -> E-AC-3 / Dolby Digital Plus + JOC
         -> IEC61937 carrier
-        -> STM32H753 capture + Aurora USB ENCODED_IEC61937
+        -> realtime-MCU capture + Aurora USB ENCODED_IEC61937
         -> Galaxy S6 AuroraOS
         -> Omniphony streaming IEC61937 parser
         -> Harletty E-AC-3 JOC decode + OAMD metadata
         -> Omniphony object renderer
         -> 7.1.4 PCM
         -> Aurora USB PCM_S32LE
-        -> STM32H753 realtime output
+        -> realtime-MCU realtime output
 ```
 
 A file copied to the S6 is not a substitute for this test.
@@ -36,10 +38,10 @@ A file copied to the S6 is not a substitute for this test.
 Its job is limited to:
 
 1. connect to `/run/aurora/usb-bridge.sock`;
-2. receive complete `ENCODED_IEC61937` Aurora frames from the STM32 side;
+2. receive complete `ENCODED_IEC61937` Aurora frames from the realtime-MCU side;
 3. preserve the IEC61937 byte stream and forward it continuously to the external Omniphony process;
 4. receive rendered 7.1.4 raw-f32 PCM from Omniphony;
-5. convert/packetize it into 256-frame, 12-channel `PCM_S32LE` Aurora frames;
+5. convert/packetize it into **40-frame, 12-channel** `PCM_S32LE` Aurora frames, matching protocol v1;
 6. preserve mute/config/discontinuity fail-closed behavior.
 
 Omniphony v0.5.2 owns streaming IEC61937 framing/demultiplexing and passes typed IEC61937 packets to the Harletty bridge. Harletty owns E-AC-3/JOC decode and OAMD extraction. Aurora-owned code remains format-agnostic outside the external-adapter boundary.
@@ -56,7 +58,7 @@ The source must be a normal released application on a TV/streaming box. No local
 
 ### 2. Encoded transport proof
 
-During playback, STM32 capture diagnostics must show continuous `ENCODED_IEC61937` traffic.
+During playback, realtime-MCU capture diagnostics must show continuous `ENCODED_IEC61937` traffic.
 
 For the Atmos segment, the external renderer/bridge telemetry must prove that the stream was recognized as E-AC-3/DD+ with JOC/object metadata. A plain AC-3 or channel-only DD+ stream does not satisfy this gate.
 
@@ -121,7 +123,9 @@ Dolby MAT and TrueHD may be added later, but their absence must not be hidden by
 
 ## Promotion rule
 
-The project may say **live streaming Atmos validated** only after the physical evidence above is archived for the exact S6 variant, STM32 firmware, HDMI/eARC front-end, source device, AuroraOS build, Harletty version and Omniphony version under test.
+The project may say **live streaming Atmos validated** only after the physical evidence above is archived for the exact S6 variant, exact hardware-target manifest/revision, realtime-MCU firmware, HDMI/eARC front-end, source device, AuroraOS build, Harletty version and Omniphony version under test.
+
+Replacing the selected realtime MCU, its package, directly coupled USB PHY/power path, or relevant pinmux invalidates the hardware-dependent portion of this acceptance until re-tested.
 
 Until then, repository status must distinguish:
 

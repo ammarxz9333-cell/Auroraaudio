@@ -31,7 +31,9 @@ Initial event families include:
 
 ## 2. Hardware Abstraction Layer
 
-Aurora Core must not depend directly on Galaxy S6, STM32H753, ESP32-C5, or any future board-specific implementation.
+Aurora Core must not depend directly on Galaxy S6, a concrete realtime-MCU part number, ESP32-C5, or any future board-specific implementation.
+
+The selected realtime MCU is resolved only through `config/aurora-hardware-target.env` under the symbolic role `AURORA_REALTIME_MCU_ROLE`. Concrete vendor/family/part/package names are target data, not Aurora Core API names. See `docs/AURORA_HARDWARE_TARGET_CONTRACT.md`.
 
 Required boundaries:
 - platform display/touch;
@@ -44,7 +46,7 @@ Required boundaries:
 - hardware mute/safety state;
 - rear-node discovery and telemetry.
 
-The initial production platform is `s6-exynos7420`, but a second platform adapter must be implementable without changing Aurora Core APIs.
+The initial production application platform is `s6-exynos7420`, but both the application platform and realtime-MCU target must be replaceable without changing Aurora Core APIs.
 
 Hardware safety remains fail-closed. HAL failure cannot silently bypass amplifier mute, source arbitration, clock ownership, or channel mapping.
 
