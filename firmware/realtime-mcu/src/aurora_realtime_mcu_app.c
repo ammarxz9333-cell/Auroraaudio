@@ -1,7 +1,7 @@
-#include "aurora_stm32_audio_app.h"
+#include "aurora_realtime_mcu_app.h"
 
-void aurora_stm32_audio_app_init(
-    struct aurora_stm32_audio_app *app,
+void aurora_realtime_mcu_app_init(
+    struct aurora_realtime_mcu_app *app,
     const struct aurora_transport_io *io,
     const uint8_t expected_layout_hash[32])
 {
@@ -11,7 +11,7 @@ void aurora_stm32_audio_app_init(
     aurora_iec61937_capture_state_init(&app->capture);
 }
 
-void aurora_stm32_audio_app_usb_reset(struct aurora_stm32_audio_app *app)
+void aurora_realtime_mcu_app_usb_reset(struct aurora_realtime_mcu_app *app)
 {
     if (!app)
         return;
@@ -19,8 +19,8 @@ void aurora_stm32_audio_app_usb_reset(struct aurora_stm32_audio_app *app)
     aurora_iec61937_capture_state_reset(&app->capture);
 }
 
-int aurora_stm32_audio_app_usb_receive(
-    struct aurora_stm32_audio_app *app,
+int aurora_realtime_mcu_app_usb_receive(
+    struct aurora_realtime_mcu_app *app,
     const uint8_t *data,
     size_t len)
 {
@@ -29,8 +29,8 @@ int aurora_stm32_audio_app_usb_receive(
     return aurora_transport_receive(&app->transport, data, len);
 }
 
-int aurora_stm32_audio_app_earc_dma_s32_high_words(
-    struct aurora_stm32_audio_app *app,
+int aurora_realtime_mcu_app_earc_dma_s32_high_words(
+    struct aurora_realtime_mcu_app *app,
     const uint32_t *slots,
     size_t slot_count,
     uint64_t first_carrier_frame,
@@ -42,19 +42,13 @@ int aurora_stm32_audio_app_earc_dma_s32_high_words(
     if (!app)
         return -1;
     return aurora_iec61937_capture_forward_stream_block(
-        &app->capture,
-        &app->transport,
-        slots,
-        slot_count,
-        first_carrier_frame,
-        carrier_rate_hz,
-        flags,
-        scratch,
-        scratch_capacity);
+        &app->capture, &app->transport, slots, slot_count,
+        first_carrier_frame, carrier_rate_hz, flags,
+        scratch, scratch_capacity);
 }
 
-int aurora_stm32_audio_app_send_clock_report(
-    struct aurora_stm32_audio_app *app,
+int aurora_realtime_mcu_app_send_clock_report(
+    struct aurora_realtime_mcu_app *app,
     uint32_t extra_flags)
 {
     if (!app)
@@ -62,8 +56,8 @@ int aurora_stm32_audio_app_send_clock_report(
     return aurora_transport_send_clock_report(&app->transport, extra_flags);
 }
 
-void aurora_stm32_audio_app_playback_xrun(
-    struct aurora_stm32_audio_app *app)
+void aurora_realtime_mcu_app_playback_xrun(
+    struct aurora_realtime_mcu_app *app)
 {
     if (!app)
         return;

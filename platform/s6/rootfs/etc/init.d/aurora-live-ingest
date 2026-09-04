@@ -23,7 +23,7 @@ output_log="/var/log/aurora/aurora-live-ingest.log"
 error_log="/var/log/aurora/aurora-live-ingest.log"
 
 depend() {
-    need aurora-ffs
+    need aurora-source-gate
     after localmount
 }
 
@@ -36,6 +36,8 @@ start_pre() {
     [ -x "$AURORA_ORENDER_BIN" ] || return 1
     [ -f "$AURORA_HARLETTY_BRIDGE" ] || return 1
     [ -f "$AURORA_7_1_4_LAYOUT" ] || return 1
+    [ -n "${AURORA_USB_BRIDGE_SOCKET:-}" ] || return 1
+    [ "$AURORA_USB_BRIDGE_SOCKET" = "$AURORA_HDMI_SOURCE_SOCKET" ] || return 1
     [ "${AURORA_BLOCK_FRAMES:-0}" = "40" ] || return 1
     [ "${AURORA_SAMPLE_RATE:-0}" = "48000" ] || return 1
 }

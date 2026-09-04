@@ -31,6 +31,8 @@ AURORA_REALTIME_MCU_FAMILY
 AURORA_REALTIME_MCU_PART
 AURORA_REALTIME_MCU_PACKAGE
 AURORA_REALTIME_MCU_SOURCE_DIR
+AURORA_REALTIME_MCU_VENDOR_STACK
+AURORA_REALTIME_MCU_VENDOR_STACK_VERSION
 ```
 
 and explicit capability/status fields for:
@@ -57,23 +59,38 @@ MCU="$AURORA_REALTIME_MCU_SOURCE_DIR"
 cc -I"$MCU/include" ...
 ```
 
-They must not encode the active part number in paths or conditionals.
+They must not encode the active part number, vendor family, or superseded target names in paths or conditionals.
 
 Rust/C realtime protocol code must depend on Aurora protocol/capability contracts rather than a concrete MCU model wherever practical.
 
 ## Changing the MCU
 
-A normal pin-compatible/capability-compatible MCU change should require edits to this manifest only, followed by validation.
+A normal capability-compatible MCU change begins with this manifest, followed by target-specific validation.
 
 A replacement is accepted only if CI confirms the declared capabilities and the target-specific pinmux/HAL/physical gates are re-run. Changing a manifest value never converts an unverified hardware claim into measured evidence.
 
-If a replacement requires different portable firmware source, change `AURORA_REALTIME_MCU_SOURCE_DIR` in the same manifest. Consumers still remain unchanged.
+Portable Aurora firmware remains at:
+
+```text
+firmware/realtime-mcu
+```
+
+and `AURORA_REALTIME_MCU_SOURCE_DIR` must resolve to that target-neutral source tree unless a future architecture change explicitly introduces a separate portable implementation contract. Concrete part names must not be reintroduced as source-directory names.
+
+Target-vendor bindings, generated constants and board-specific implementation details must remain behind the realtime-MCU HAL/manifest boundary rather than renaming the portable API.
 
 ## Directory-name rule
 
-Historical directory names are not target truth. The current portable MCU source directory may retain an older family/part label until a mechanical rename is performed, but all build and CI consumers must resolve it through `AURORA_REALTIME_MCU_SOURCE_DIR`.
+Current portable MCU source, tests and application APIs use only target-neutral names such as:
 
-A future mechanical rename to a fully generic directory must not alter the public protocol or hardware-selection contract.
+```text
+firmware/realtime-mcu
+aurora_realtime_mcu_app_*
+aurora_realtime_mcu_hal_*
+AURORA_REALTIME_MCU_*
+```
+
+A future part replacement must not require mechanical renaming of these public/internal architecture surfaces. Concrete vendor/family/part/package identity belongs in the hardware-target manifest and target-specific proof material only.
 
 ## Safety
 
