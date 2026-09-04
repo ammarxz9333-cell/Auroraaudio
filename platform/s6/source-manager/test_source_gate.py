@@ -245,16 +245,20 @@ def main():
             assert struct.unpack("<HH", ack["payload"]) == (USB_CONFIG, 0)
             ramp_to_audible(hdmi, bridge, 220, sample)
 
-            # Local PCM remains present as a candidate but cannot overwrite the
-            # active HDMI timeline.
+            # Local remains a genuinely active candidate while HDMI owns the
+            # final timeline. Keep feeding Local below its 1 s idle threshold;
+            # those periods must be dropped and must never overwrite HDMI.
             send_pcm(local, 300, sample)
             expect_no_packet(bridge)
-
-            # Stop HDMI media long enough for idle detection. Local PCM sent
-            # afterwards re-establishes local presence. Manager must revoke HDMI,
-            # quiesce it, grant Local, and release Local's cached CONFIG again.
-            time.sleep(1.10)
+            time.sleep(0.55)
             send_pcm(local, 301, sample)
+            expect_no_packet(bridge)
+
+            # Now stop HDMI long enough for HDMI alone to expire. Local is still
+            # active (last PCM < 1 s ago), so manager must revoke HDMI, grant
+            # Local, and release Local's cached CONFIG without a stale-candidate
+            # ambiguity in the test fixture.
+            time.sleep(0.60)
             local_config = recv_kind(bridge, USB_CONFIG, timeout=1.0)
             assert local_config["seq"] == 2
             bridge.sendall(config_ack(302))
