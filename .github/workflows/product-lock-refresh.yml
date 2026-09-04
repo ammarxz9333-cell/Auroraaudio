@@ -1,0 +1,33 @@
+name: Product Lock Refresh
+
+on:
+  push:
+    branches:
+      - product/q995-clean-baseline
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    if: ${{ !startsWith(github.event.head_commit.message, 'chore(lock):') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/q995-clean-baseline
+      - uses: dtolnay/rust-toolchain@1.78.0
+      - name: Regenerate workspace lockfile
+        run: cargo generate-lockfile
+      - name: Commit lockfile only when changed
+        shell: bash
+        run: |
+          if git diff --quiet -- Cargo.lock; then
+            echo "Cargo.lock already current"
+            exit 0
+          fi
+          git config user.name "aurora-ci"
+          git config user.email "aurora-ci@users.noreply.github.com"
+          git add Cargo.lock
+          git commit -m "chore(lock): refresh product workspace lockfile"
+          git push origin HEAD:product/q995-clean-baseline
