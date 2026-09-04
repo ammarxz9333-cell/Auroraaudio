@@ -82,6 +82,13 @@ def expect_kind(sock, kind, source):
     return msg
 
 
+def expect_control_ack(sock, active_source, control):
+    msg = expect_kind(sock, STATUS, CONTROL_CLIENT)
+    assert msg["data0"] == active_source, msg
+    assert msg["data1"] == control, msg
+    return msg
+
+
 def main():
     if len(sys.argv) != 2:
         raise SystemExit("usage: test_source_manager.py /path/to/aurora-source-manager")
@@ -136,12 +143,14 @@ def main():
             control.sendall(pack(CONTROL, CONTROL_CLIENT, data0=1, data1=CTRL_MUTE))
             mute = expect_kind(hdmi, CONTROL, HDMI)
             assert mute["data1"] == CTRL_MUTE and mute["data0"] == 1
+            expect_control_ack(control, HDMI, CTRL_MUTE)
 
             minus_3000_mdb = 0xFFFFFFFFFFFFFFFF - 2999
             control.sendall(pack(CONTROL, CONTROL_CLIENT,
                                  data0=minus_3000_mdb, data1=CTRL_GAIN))
             gain = expect_kind(hdmi, CONTROL, HDMI)
             assert gain["data1"] == CTRL_GAIN
+            expect_control_ack(control, HDMI, CTRL_GAIN)
 
             hdmi.sendall(pack(ABSENT, HDMI))
             expect_kind(hdmi, REVOKE, HDMI)
@@ -181,7 +190,7 @@ def main():
             if proc.returncode not in (0, -15):
                 stderr = proc.stderr.read() if proc.stderr else ""
                 raise AssertionError(f"source manager exited {proc.returncode}: {stderr}")
-    print("source-manager priority/quiesce/control/watchdog tests passed")
+    print("source-manager priority/quiesce/control-ack/watchdog tests passed")
 
 
 if __name__ == "__main__":
