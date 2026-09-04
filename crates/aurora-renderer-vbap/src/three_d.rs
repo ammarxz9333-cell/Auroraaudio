@@ -93,12 +93,7 @@ impl Vbap3dRenderer {
             && object.gain.is_finite();
 
         if runtime_finite {
-            solve_3d_weights(
-                &self.layout,
-                listener.position,
-                object.position,
-                weights,
-            );
+            solve_3d_weights(&self.layout, listener.position, object.position, weights);
         } else {
             weights.fill(0.0);
         }
@@ -238,12 +233,7 @@ impl Renderer for Vbap3dRenderer {
     }
 }
 
-fn solve_3d_weights(
-    speakers: &[Speaker],
-    listener: Vector3,
-    source: Vector3,
-    weights: &mut [f32],
-) {
+fn solve_3d_weights(speakers: &[Speaker], listener: Vector3, source: Vector3, weights: &mut [f32]) {
     weights.fill(0.0);
     let source_vector = vector_between(listener, source);
     let Some(source_direction) = normalize(source_vector) else {
@@ -294,10 +284,7 @@ fn solve_3d_weights(
                 for gain in &mut gains {
                     *gain = gain.max(0.0);
                 }
-                let norm = (gains[0] * gains[0]
-                    + gains[1] * gains[1]
-                    + gains[2] * gains[2])
-                    .sqrt();
+                let norm = (gains[0] * gains[0] + gains[1] * gains[1] + gains[2] * gains[2]).sqrt();
                 if !norm.is_finite() || norm <= GEOMETRY_EPSILON {
                     continue;
                 }
@@ -414,11 +401,7 @@ fn normalize(vector: [f64; 3]) -> Option<[f64; 3]> {
     if !length.is_finite() || length <= GEOMETRY_EPSILON {
         return None;
     }
-    Some([
-        vector[0] / length,
-        vector[1] / length,
-        vector[2] / length,
-    ])
+    Some([vector[0] / length, vector[1] / length, vector[2] / length])
 }
 
 fn cross(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
@@ -486,13 +469,7 @@ mod tests {
             speaker("FL", ChannelRole::FrontLeft, -1.0, 1.0, 0.0),
             speaker("FR", ChannelRole::FrontRight, 1.0, 1.0, 0.0),
             speaker("FC", ChannelRole::FrontCenter, 0.0, 1.0, 0.0),
-            speaker(
-                "LFE",
-                ChannelRole::LowFrequencyEffects,
-                0.0,
-                0.5,
-                0.0,
-            ),
+            speaker("LFE", ChannelRole::LowFrequencyEffects, 0.0, 0.5, 0.0),
             speaker("SL", ChannelRole::SurroundLeft, -1.0, -1.0, 0.0),
             speaker("SR", ChannelRole::SurroundRight, 1.0, -1.0, 0.0),
             speaker("TFL", ChannelRole::TopFrontLeft, -0.8, 0.8, 1.2),
@@ -523,7 +500,10 @@ mod tests {
 
         let height_power = output[6].gain.powi(2) + output[7].gain.powi(2);
         let total_power: f32 = output.iter().map(|gain| gain.gain.powi(2)).sum();
-        assert!(height_power > 0.05, "height energy must be non-zero: {output:?}");
+        assert!(
+            height_power > 0.05,
+            "height energy must be non-zero: {output:?}"
+        );
         assert!((total_power - 1.0).abs() < 1.0e-4, "power={total_power}");
     }
 
@@ -604,13 +584,7 @@ mod tests {
         let layout = vec![
             speaker("FL", ChannelRole::FrontLeft, -1.0, 1.0, 0.0),
             speaker("FR", ChannelRole::FrontRight, 1.0, 1.0, 0.0),
-            speaker(
-                "LFE",
-                ChannelRole::LowFrequencyEffects,
-                0.0,
-                0.5,
-                0.0,
-            ),
+            speaker("LFE", ChannelRole::LowFrequencyEffects, 0.0, 0.5, 0.0),
         ];
         assert!(matches!(
             renderer.configure(layout, 48_000, 256, 1),
