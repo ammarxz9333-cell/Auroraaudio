@@ -88,13 +88,19 @@ fn load_registry() -> Result<Registry> {
 
 fn validate_registry(registry: &Registry) -> Result<()> {
     if registry.schema_version != 1 {
-        bail!("unsupported capability registry schema {}", registry.schema_version);
+        bail!(
+            "unsupported capability registry schema {}",
+            registry.schema_version
+        );
     }
     if registry.product_baseline != "q995-clean-baseline" {
         bail!("unexpected product baseline {}", registry.product_baseline);
     }
     if registry.experience_target != "q995-class-7.1.4" {
-        bail!("unexpected experience target {}", registry.experience_target);
+        bail!(
+            "unexpected experience target {}",
+            registry.experience_target
+        );
     }
     if registry.claim_policy.samsung_equivalence_claimed
         || registry.claim_policy.dolby_atmos_compatibility_claimed
@@ -103,7 +109,11 @@ fn validate_registry(registry: &Registry) -> Result<()> {
         bail!("unsupported product-equivalence claim enabled in capability registry");
     }
     if registry.claim_policy.rule.trim().is_empty()
-        || registry.primary_hardware_lane.selection_rule.trim().is_empty()
+        || registry
+            .primary_hardware_lane
+            .selection_rule
+            .trim()
+            .is_empty()
     {
         bail!("claim and hardware-selection policies must not be empty");
     }
