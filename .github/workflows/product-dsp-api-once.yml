@@ -1,0 +1,143 @@
+name: Product DSP API Refactor Once
+
+on:
+  push:
+    branches:
+      - product/q995-clean-baseline
+
+permissions:
+  contents: write
+
+jobs:
+  refactor:
+    if: ${{ !contains(github.event.head_commit.message, 'DSP_API_REFACTOR_DONE') }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: product/q995-clean-baseline
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
+      - name: Replace ten-argument constructor with typed config
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          path = Path('crates/aurora-dsp-output/src/lib.rs')
+          lines = path.read_text().splitlines()
+
+          marker = lines.index('/// Canonical post-render output DSP chain excluding propagation delay.')
+          config_lines = [
+              '/// Immutable setup-time configuration for the canonical output DSP chain.',
+              '#[derive(Debug, Clone, Copy)]',
+              "pub struct OutputDspConfig<'a> {",
+              '    /// Processing sample rate.',
+              '    pub sample_rate: u32,',
+              '    /// Number of output channels.',
+              '    pub channel_count: usize,',
+              '    /// Canonical LFE channel index.',
+              '    pub lfe_index: usize,',
+              '    /// Maximum block size prepared at setup.',
+              '    pub max_frames: usize,',
+              '    /// Main-channel Linkwitz-Riley crossover frequency.',
+              '    pub crossover_hz: f32,',
+              '    /// Gain applied to redirected low-frequency energy.',
+              '    pub redirect_gain_db: f32,',
+              '    /// Per-channel static trim in decibels.',
+              "    pub channel_trim_db: &'a [f32],",
+              '    /// Per-channel parametric EQ bands.',
+              "    pub channel_bands: &'a [Vec<PeqBand>],",
+              '    /// Linked peak limiter linear ceiling in 0..=1.',
+              '    pub limiter_threshold: f32,',
+              '    /// Linked limiter release time in milliseconds.',
+              '    pub limiter_release_ms: f32,',
+              '}',
+              '',
+          ]
+          lines[marker:marker] = config_lines
+
+          impl_start = lines.index('impl OutputDspChain {')
+          start = lines.index('    pub fn new(', impl_start)
+          end = lines.index('    /// Applies trims, bass management, PEQ and linked limiting in place.', start)
+          method = [
+              '    /// Creates the canonical output stage from one validated setup object.',
+              "    pub fn new(config: OutputDspConfig<'_>) -> Result<Self, OutputDspError> {",
+              '        if config.channel_trim_db.len() != config.channel_count {',
+              '            return Err(OutputDspError::PerChannelConfig {',
+              '                expected: config.channel_count,',
+              '                actual: config.channel_trim_db.len(),',
+              '            });',
+              '        }',
+              '        if config.channel_bands.len() != config.channel_count {',
+              '            return Err(OutputDspError::PerChannelConfig {',
+              '                expected: config.channel_count,',
+              '                actual: config.channel_bands.len(),',
+              '            });',
+              '        }',
+              '        let mut trims = Vec::with_capacity(config.channel_count);',
+              '        for gain_db in config.channel_trim_db {',
+              '            if !gain_db.is_finite() {',
+              '                return Err(OutputDspError::InvalidGain { gain_db: *gain_db });',
+              '            }',
+              '            trims.push(db_to_gain(*gain_db));',
+              '        }',
+              '        Ok(Self {',
+              '            channel_count: config.channel_count,',
+              '            trims,',
+              '            bass_manager: BassManager::new(',
+              '                config.sample_rate,',
+              '                config.channel_count,',
+              '                config.lfe_index,',
+              '                config.max_frames,',
+              '                config.crossover_hz,',
+              '                config.redirect_gain_db,',
+              '            )?,',
+              '            eq: ParametricEq::new(config.sample_rate, config.channel_bands)?,',
+              '            limiter: LinkedPeakLimiter::new(',
+              '                config.sample_rate,',
+              '                config.channel_count,',
+              '                config.limiter_threshold,',
+              '                config.limiter_release_ms,',
+              '            )?,',
+              '        })',
+              '    }',
+              '',
+          ]
+          lines[start:end] = method
+
+          test_start = lines.index('        let mut chain = OutputDspChain::new(')
+          test_end = next(i for i in range(test_start, len(lines)) if lines[i].strip() == '.unwrap();')
+          test_lines = [
+              '        let config = OutputDspConfig {',
+              '            sample_rate: 48_000,',
+              '            channel_count: 2,',
+              '            lfe_index: 1,',
+              '            max_frames: 256,',
+              '            crossover_hz: 120.0,',
+              '            redirect_gain_db: -6.0,',
+              '            channel_trim_db: &[0.0, 0.0],',
+              '            channel_bands: &bands,',
+              '            limiter_threshold: 0.95,',
+              '            limiter_release_ms: 100.0,',
+              '        };',
+              '        let mut chain = OutputDspChain::new(config).unwrap();',
+          ]
+          lines[test_start:test_end + 1] = test_lines
+          path.write_text('\n'.join(lines) + '\n')
+          PY
+      - name: Format and prove the refactor
+        run: |
+          cargo fmt --all
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo test -p aurora-dsp-output
+      - name: Commit refactor
+        shell: bash
+        run: |
+          git config user.name "aurora-ci"
+          git config user.email "aurora-ci@users.noreply.github.com"
+          git add crates/aurora-dsp-output/src/lib.rs
+          git commit -m "DSP_API_REFACTOR_DONE use typed output DSP configuration"
+          git push origin HEAD:product/q995-clean-baseline
