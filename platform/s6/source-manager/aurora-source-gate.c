@@ -34,6 +34,14 @@
 #define SLOT_HDMI 0u
 #define SLOT_LOCAL 1u
 #define SLOT_COUNT 2u
+#define NO_CONFIG_OWNER (-1)
+
+static const uint8_t layout_hash_7_1_4_v1[32] = {
+    0x05, 0x06, 0x35, 0x60, 0xd6, 0xc5, 0xc1, 0xb7,
+    0xd3, 0x70, 0x96, 0x56, 0xcd, 0x8c, 0x64, 0x4a,
+    0x6d, 0x2b, 0x52, 0xf5, 0xe8, 0x13, 0x83, 0x77,
+    0x1f, 0x26, 0x32, 0x34, 0x42, 0xd0, 0xa2, 0x44,
+};
 
 static volatile sig_atomic_t stop_requested;
 
@@ -66,6 +74,7 @@ struct source_slot {
 
 struct gate {
     int bridge_fd;
+    int config_owner_slot;
     struct source_slot slots[SLOT_COUNT];
     const char *manager_socket;
 };
@@ -317,7 +326,9 @@ static int config_frame_is_valid(const uint8_t *frame, size_t len)
         read_le16(payload + 6) != AURORA_USB_CHANNELS_7_1_4 ||
         read_le16(payload + 8) != AURORA_USB_PCM_FORMAT_S32LE ||
         read_le16(payload + 10) != AURORA_USB_LAYOUT_ID_7_1_4 ||
-        read_le32(payload + 12) != 0)
+        read_le32(payload + 12) != 0 ||
+        memcmp(payload + 16, layout_hash_7_1_4_v1,
+               sizeof(layout_hash_7_1_4_v1)) != 0)
         return 0;
     return 1;
 }
@@ -335,15 +346,26 @@ static int cache_config(struct source_slot *slot, const uint8_t *frame,
     return 0;
 }
 
+static int slot_index(const struct gate *gate, const struct source_slot *slot)
+{
+    if (!gate || !slot || slot < &gate->slots[0] || slot >= &gate->slots[SLOT_COUNT])
+        return NO_CONFIG_OWNER;
+    return (int)(slot - &gate->slots[0]);
+}
+
 static int send_cached_config(struct gate *gate, struct source_slot *slot)
 {
     if (!gate || !slot || gate->bridge_fd < 0 || !slot->config_cached)
         return 0;
+    int owner = slot_index(gate, slot);
+    if (owner == NO_CONFIG_OWNER)
+        return -1;
     if (send_packet(gate->bridge_fd, slot->config_frame,
                     slot->config_frame_len) < 0)
         return -1;
     slot->configured = 0;
     slot->config_awaiting_ack = 1;
+    gate->config_owner_slot = owner;
     return 0;
 }
 
@@ -529,6 +551,7 @@ static void close_data_client(struct source_slot *slot)
 
 static void close_all_data_clients(struct gate *gate)
 {
+    gate->config_owner_slot = NO_CONFIG_OWNER;
     for (size_t i = 0; i < SLOT_COUNT; ++i)
         close_data_client(&gate->slots[i]);
 }
@@ -566,32 +589,31 @@ static int forward_bridge_frame(struct gate *gate, uint8_t *frame, size_t len)
     if (kind == AURORA_USB_ACK && payload_len == 4u &&
         read_le16(payload + 0) == AURORA_USB_CONFIG &&
         read_le16(payload + 2) == 0u) {
-        for (size_t i = 0; i < SLOT_COUNT; ++i) {
-            struct source_slot *slot = &gate->slots[i];
-            if (!slot->config_awaiting_ack)
-                continue;
-            slot->config_awaiting_ack = 0;
-            slot->configured = 1;
-            if (slot->data_fd >= 0 &&
-                send_packet(slot->data_fd, frame, len) < 0)
-                close_data_client(slot);
+        int owner = gate->config_owner_slot;
+        gate->config_owner_slot = NO_CONFIG_OWNER;
+        if (owner < 0 || owner >= (int)SLOT_COUNT)
             return 0;
-        }
+        struct source_slot *slot = &gate->slots[owner];
+        if (!slot->config_awaiting_ack)
+            return 0;
+        slot->config_awaiting_ack = 0;
+        slot->configured = 1;
+        if (slot->data_fd >= 0 && send_packet(slot->data_fd, frame, len) < 0)
+            close_data_client(slot);
         return 0;
     }
 
     if (kind == AURORA_USB_ERROR && payload_len >= 4u &&
         read_le16(payload + 0) == AURORA_USB_CONFIG) {
-        for (size_t i = 0; i < SLOT_COUNT; ++i) {
-            struct source_slot *slot = &gate->slots[i];
-            if (!slot->config_awaiting_ack)
-                continue;
-            slot->config_awaiting_ack = 0;
-            slot->configured = 0;
-            if (slot->data_fd >= 0)
-                (void)send_packet(slot->data_fd, frame, len);
+        int owner = gate->config_owner_slot;
+        gate->config_owner_slot = NO_CONFIG_OWNER;
+        if (owner < 0 || owner >= (int)SLOT_COUNT)
             return 0;
-        }
+        struct source_slot *slot = &gate->slots[owner];
+        slot->config_awaiting_ack = 0;
+        slot->configured = 0;
+        if (slot->data_fd >= 0)
+            (void)send_packet(slot->data_fd, frame, len);
         return 0;
     }
 
@@ -695,6 +717,7 @@ int main(void)
     struct gate gate;
     memset(&gate, 0, sizeof(gate));
     gate.bridge_fd = -1;
+    gate.config_owner_slot = NO_CONFIG_OWNER;
     gate.manager_socket = env_or("AURORA_SOURCE_MANAGER_SOCKET",
                                  DEFAULT_MANAGER_SOCKET);
 
@@ -827,12 +850,8 @@ int main(void)
                 } else {
                     int source_rc = handle_source_frame(
                         &gate, slot, source_buf, (size_t)n);
-                    if (source_rc < 0) {
+                    if (source_rc < 0)
                         close_data_client(slot);
-                    } else if (source_rc == -1) {
-                        close_fd(&gate.bridge_fd);
-                        close_all_data_clients(&gate);
-                    }
                 }
             }
         }
