@@ -368,7 +368,9 @@ static int handle_message(struct manager *m, struct client *c,
         }
         if (m->active_source != AURORA_SOURCE_NONE)
             send_control_to(m, client_for_source(m, m->active_source), data1, data0);
-        return 0;
+        return send_message(m, c, AURORA_SOURCE_STATUS,
+                            AURORA_SOURCE_CONTROL_CLIENT,
+                            m->active_source, data1, 0);
     default:
         return -1;
     }
