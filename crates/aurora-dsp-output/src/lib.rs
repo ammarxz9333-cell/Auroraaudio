@@ -160,10 +160,7 @@ pub struct ParametricEq {
 
 impl ParametricEq {
     /// Builds one independent PEQ chain per channel.
-    pub fn new(
-        sample_rate: u32,
-        channel_bands: &[Vec<PeqBand>],
-    ) -> Result<Self, OutputDspError> {
+    pub fn new(sample_rate: u32, channel_bands: &[Vec<PeqBand>]) -> Result<Self, OutputDspError> {
         if sample_rate == 0 {
             return Err(OutputDspError::InvalidSampleRate);
         }
@@ -383,10 +380,9 @@ impl LinkedPeakLimiter {
             if target < self.gain {
                 self.gain = target;
             } else {
-                self.gain = self.release_coefficient.mul_add(
-                    self.gain,
-                    (1.0 - self.release_coefficient) * target,
-                );
+                self.gain = self
+                    .release_coefficient
+                    .mul_add(self.gain, (1.0 - self.release_coefficient) * target);
             }
             for samples in channels.iter_mut() {
                 let output = samples[frame] * self.gain;
@@ -529,9 +525,7 @@ fn validate_filter(sample_rate: u32, frequency_hz: f32, q: f32) -> Result<(), Ou
     if sample_rate == 0 {
         return Err(OutputDspError::InvalidSampleRate);
     }
-    if !frequency_hz.is_finite()
-        || frequency_hz <= 0.0
-        || frequency_hz >= sample_rate as f32 * 0.5
+    if !frequency_hz.is_finite() || frequency_hz <= 0.0 || frequency_hz >= sample_rate as f32 * 0.5
     {
         return Err(OutputDspError::InvalidFrequency {
             frequency_hz,
@@ -653,7 +647,10 @@ mod tests {
         let mut audio = vec![vec![2.0, 0.5], vec![1.0, 0.25]];
         limiter.process_in_place(&mut audio, 2).unwrap();
 
-        assert!(audio.iter().flatten().all(|sample| sample.abs() <= 0.800_001));
+        assert!(audio
+            .iter()
+            .flatten()
+            .all(|sample| sample.abs() <= 0.800_001));
         assert!((audio[0][0] / audio[1][0] - 2.0).abs() < 1.0e-6);
     }
 
@@ -674,7 +671,10 @@ mod tests {
         first.process_in_place(&mut first_audio, 256).unwrap();
         second.process_in_place(&mut second_audio, 256).unwrap();
         assert_eq!(first_audio, second_audio);
-        assert!(first_audio.iter().flatten().all(|sample| sample.is_finite()));
+        assert!(first_audio
+            .iter()
+            .flatten()
+            .all(|sample| sample.is_finite()));
     }
 
     #[test]
