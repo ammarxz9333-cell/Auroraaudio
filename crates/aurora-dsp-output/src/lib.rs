@@ -287,8 +287,10 @@ impl BassManager {
             let lp = &mut self.low_pass[channel_index];
             for (frame, sample) in samples.iter_mut().take(frame_count).enumerate() {
                 let input = *sample;
-                let high = hp[1].process(hp[0].process(input));
-                let low = lp[1].process(lp[0].process(input));
+                let high_stage_1 = hp[0].process(input);
+                let high = hp[1].process(high_stage_1);
+                let low_stage_1 = lp[0].process(input);
+                let low = lp[1].process(low_stage_1);
                 *sample = high;
                 self.lfe_accumulator[frame] += low * self.redirect_gain;
             }

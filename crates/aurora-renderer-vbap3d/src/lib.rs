@@ -243,25 +243,25 @@ fn solve_3d_weights(speakers: &[Speaker], listener: Vector3, source: Vector3, we
 
     let mut best = None::<TripletCandidate>;
 
-    for first in 0..speakers.len() {
-        if !is_spatial_speaker(&speakers[first]) {
+    for (first, first_speaker) in speakers.iter().enumerate() {
+        if !is_spatial_speaker(first_speaker) {
             continue;
         }
-        let Some(a) = normalize(vector_between(listener, speakers[first].position)) else {
+        let Some(a) = normalize(vector_between(listener, first_speaker.position)) else {
             continue;
         };
-        for second in (first + 1)..speakers.len() {
-            if !is_spatial_speaker(&speakers[second]) {
+        for (second, second_speaker) in speakers.iter().enumerate().skip(first + 1) {
+            if !is_spatial_speaker(second_speaker) {
                 continue;
             }
-            let Some(b) = normalize(vector_between(listener, speakers[second].position)) else {
+            let Some(b) = normalize(vector_between(listener, second_speaker.position)) else {
                 continue;
             };
-            for third in (second + 1)..speakers.len() {
-                if !is_spatial_speaker(&speakers[third]) {
+            for (third, third_speaker) in speakers.iter().enumerate().skip(second + 1) {
+                if !is_spatial_speaker(third_speaker) {
                     continue;
                 }
-                let Some(c) = normalize(vector_between(listener, speakers[third].position)) else {
+                let Some(c) = normalize(vector_between(listener, third_speaker.position)) else {
                     continue;
                 };
 
