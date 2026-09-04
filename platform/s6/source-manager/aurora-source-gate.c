@@ -22,6 +22,7 @@
 #define DEFAULT_MANAGER_SOCKET "/run/aurora/source-manager.sock"
 #define POLL_TIMEOUT_MS 50
 #define SOURCE_IDLE_MS 1000u
+#define MAX_REVOKE_FADE_MS 1000u
 #define FADE_MS AURORA_SOURCE_REVOKE_FADE_MS
 #define FADE_FRAMES ((AURORA_USB_SAMPLE_RATE_HZ * FADE_MS) / 1000u)
 
@@ -45,6 +46,7 @@ struct gate {
     float target_gain;
     uint32_t ramp_frames_remaining;
     uint64_t last_encoded_ms;
+    uint64_t quiesce_deadline_ms;
 };
 
 static void on_signal(int signo)
@@ -195,8 +197,20 @@ static void fail_closed(struct gate *g)
 {
     g->granted = 0;
     g->pending_quiesce = 0;
+    g->quiesce_deadline_ms = 0;
     g->force_discontinuity = 1;
     set_target_gain(g, 0.0f, 0);
+}
+
+static int complete_quiesce(struct gate *g)
+{
+    if (!g->pending_quiesce)
+        return 0;
+    g->granted = 0;
+    g->pending_quiesce = 0;
+    g->quiesce_deadline_ms = 0;
+    set_target_gain(g, 0.0f, 0);
+    return source_send(g, AURORA_SOURCE_QUIESCED, 0, 0, 0);
 }
 
 static int register_with_manager(struct gate *g)
@@ -243,14 +257,19 @@ static int handle_manager_message(struct gate *g, const uint8_t *message, size_t
     case AURORA_SOURCE_GRANT:
         g->granted = 1;
         g->pending_quiesce = 0;
+        g->quiesce_deadline_ms = 0;
         g->force_discontinuity = 1;
         refresh_target(g, FADE_FRAMES);
         return 0;
-    case AURORA_SOURCE_REVOKE:
+    case AURORA_SOURCE_REVOKE: {
+        uint32_t fade_ms = data0 > MAX_REVOKE_FADE_MS ?
+                           MAX_REVOKE_FADE_MS : (uint32_t)data0;
+        uint64_t fade_frames = ((uint64_t)AURORA_USB_SAMPLE_RATE_HZ * fade_ms) / 1000u;
         g->pending_quiesce = 1;
-        set_target_gain(g, 0.0f,
-                        (uint32_t)((AURORA_USB_SAMPLE_RATE_HZ * data0) / 1000u));
+        g->quiesce_deadline_ms = monotonic_ms() + fade_ms;
+        set_target_gain(g, 0.0f, (uint32_t)fade_frames);
         return 0;
+    }
     case AURORA_SOURCE_CONTROL:
         switch (data1) {
         case AURORA_SOURCE_CTRL_MUTE:
@@ -260,7 +279,7 @@ static int handle_manager_message(struct gate *g, const uint8_t *message, size_t
         case AURORA_SOURCE_CTRL_MASTER_GAIN_MDB: {
             int64_t milli_db = (int64_t)data0;
             if (milli_db > 0)
-                milli_db = 0; /* post-limiter gate may attenuate, never boost */
+                milli_db = 0;
             if (milli_db < -80000)
                 milli_db = -80000;
             g->user_gain = powf(10.0f, (float)milli_db / 20000.0f);
@@ -272,9 +291,8 @@ static int handle_manager_message(struct gate *g, const uint8_t *message, size_t
             refresh_target(g, FADE_FRAMES);
             return 0;
         case AURORA_SOURCE_CTRL_LIPSYNC_FRAMES:
-            /* Lip-sync belongs in the upstream postprocessor so it stays before
-             * the final transport gate. The manager persists this value; the
-             * gate deliberately does not duplicate the delay line. */
+            /* The actual delay line remains upstream in the Aurora postprocessor.
+             * This final post-limiter gate must never duplicate lip-sync delay. */
             return 0;
         default:
             return -1;
@@ -351,12 +369,8 @@ static int apply_pcm_gate(struct gate *g, uint8_t *frame, size_t len)
     }
 
     if (g->pending_quiesce && g->current_gain == 0.0f &&
-        g->ramp_frames_remaining == 0) {
-        g->granted = 0;
-        g->pending_quiesce = 0;
-        if (source_send(g, AURORA_SOURCE_QUIESCED, 0, 0, 0) < 0)
-            return -1;
-    }
+        g->ramp_frames_remaining == 0)
+        return complete_quiesce(g);
     return 0;
 }
 
@@ -381,18 +395,6 @@ static void mark_source_absent(struct gate *g)
     if (g->manager_fd >= 0 && g->manager_registered)
         (void)source_send(g, AURORA_SOURCE_ABSENT, 0, 0, 0);
     fail_closed(g);
-}
-
-static int forward_packet(int from, int to, uint8_t *buffer, size_t capacity,
-                          ssize_t *received)
-{
-    ssize_t n = recv(from, buffer, capacity, 0);
-    if (n <= 0)
-        return -1;
-    if (send(to, buffer, (size_t)n, MSG_NOSIGNAL) != n)
-        return -1;
-    *received = n;
-    return 0;
 }
 
 int main(void)
@@ -503,7 +505,9 @@ int main(void)
                 if (validate_aurora_frame(bridge_buf, (size_t)n, &kind, &flags,
                                           &payload, &payload_len) == 0 &&
                     kind == AURORA_USB_ENCODED_IEC61937) {
-                    (void)flags; (void)payload; (void)payload_len;
+                    (void)flags;
+                    (void)payload;
+                    (void)payload_len;
                     mark_source_present(&g);
                 }
                 if (send(g.source_fd, bridge_buf, (size_t)n, MSG_NOSIGNAL) != n) {
@@ -538,19 +542,28 @@ int main(void)
             now > g.last_encoded_ms + SOURCE_IDLE_MS)
             mark_source_absent(&g);
 
-        if (g.pending_quiesce && g.ramp_frames_remaining == 0 && g.current_gain == 0.0f) {
-            g.granted = 0;
-            g.pending_quiesce = 0;
-            (void)source_send(&g, AURORA_SOURCE_QUIESCED, 0, 0, 0);
+        if (g.pending_quiesce && g.quiesce_deadline_ms != 0 &&
+            now >= g.quiesce_deadline_ms) {
+            if (complete_quiesce(&g) < 0) {
+                if (g.manager_fd >= 0)
+                    close(g.manager_fd);
+                g.manager_fd = -1;
+                g.manager_registered = 0;
+                fail_closed(&g);
+            }
         }
     }
 
     free(source_buf);
     free(bridge_buf);
-    if (g.source_fd >= 0) close(g.source_fd);
-    if (g.bridge_fd >= 0) close(g.bridge_fd);
-    if (g.manager_fd >= 0) close(g.manager_fd);
-    if (g.source_listen_fd >= 0) close(g.source_listen_fd);
+    if (g.source_fd >= 0)
+        close(g.source_fd);
+    if (g.bridge_fd >= 0)
+        close(g.bridge_fd);
+    if (g.manager_fd >= 0)
+        close(g.manager_fd);
+    if (g.source_listen_fd >= 0)
+        close(g.source_listen_fd);
     unlink(source_socket);
     return 0;
 }
