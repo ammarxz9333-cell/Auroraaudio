@@ -1,0 +1,31 @@
+#!/sbin/openrc-run
+
+AURORA_CONFIG_MISSING=0
+if [ -r /etc/aurora/aurora.env ]; then
+    set -a
+    . /etc/aurora/aurora.env
+    set +a
+else
+    AURORA_CONFIG_MISSING=1
+    AURORA_SOURCE_MANAGER_BIN=/bin/false
+fi
+
+name="Aurora source manager"
+description="Fail-closed source arbitration and persistent appliance controls"
+command="$AURORA_SOURCE_MANAGER_BIN"
+command_background="yes"
+pidfile="/run/aurora/aurora-source-manager.pid"
+output_log="/var/log/aurora/aurora-source-manager.log"
+error_log="/var/log/aurora/aurora-source-manager.log"
+
+depend() {
+    after localmount
+}
+
+start_pre() {
+    [ "$AURORA_CONFIG_MISSING" -eq 0 ] || return 1
+    checkpath --directory --mode 0755 /run/aurora
+    checkpath --directory --mode 0755 /var/log/aurora
+    [ -x "$AURORA_SOURCE_MANAGER_BIN" ] || return 1
+    [ -n "${AURORA_SOURCE_MANAGER_SOCKET:-}" ] || return 1
+}
