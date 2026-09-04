@@ -2,17 +2,17 @@
 
 Aurora is an open, modular, hardware-independent spatial-audio processing platform written in Rust, with a dedicated Galaxy S6 appliance integration lane for low-cost deployment experiments.
 
-The project is in **active product implementation**. Work is now tracked in two coordinated lanes:
+The project is in **active product implementation**. Work is tracked in two coordinated lanes:
 
-1. the renderer/product-evidence lane, currently stabilizing `GeometricBinaural` before unified evaluation, capability reporting, 3D loudspeaker rendering, HRTF, IAMF, networking, receiver, and multiroom work;
+1. the renderer/product-evidence lane, where geometric binaural Checkpoint A is complete and the active task is issue `#44` for unified renderer evaluation and artifact generation;
 2. the Galaxy S6 appliance/realtime-MCU lane, whose integrated baseline landed through PR `#83` and is **host/software validated but not physically accepted**.
 
 Aurora does not currently claim Dolby Atmos compatibility, true HRTF capability, height-capable loudspeaker rendering, production IAMF decoding, synchronized wireless speakers, physical S6/eARC/USB/DAC validation, or physical multiroom validation unless the corresponding acceptance evidence exists.
 
 ## Geometric binaural baseline
 
-`GeometricBinaural` is Aurora's lightweight two-channel headphone baseline. It
-uses geometric interaural time difference (ITD), geometric interaural level
+`GeometricBinaural` is Aurora's accepted Checkpoint A lightweight two-channel headphone baseline, merged through PR `#57`.
+It uses geometric interaural time difference (ITD), geometric interaural level
 difference (ILD), and per-ear geometric distance weighting followed by power
 normalization. It is **not an HRTF renderer**: it uses no HRIR data,
 convolution, pinna cues, or elevation cues.
@@ -32,11 +32,11 @@ cargo run -p aurora-cli -- render `
 ```
 
 Geometric delays are recalculated once per block and applied directly to the
-existing fractional delay line. Checkpoint A verifies that the geometric delay
-trajectory is continuous, but it does not add crossfading or interpolation
-between block updates and does not claim click-free moving-source output. The
-current dynamic delay capacity remains the existing explicit `1024` samples;
-deriving it from future scene/runtime bounds belongs to Checkpoint B.
+existing fractional delay line. Checkpoint A verified the current geometric
+delay trajectory and safety contracts, but it did not add crossfading or
+interpolation between block updates and does not claim click-free moving-source
+output. The current dynamic delay capacity remains the existing explicit `1024`
+samples; deriving it from future scene/runtime bounds belongs to Checkpoint B.
 
 ## Galaxy S6 appliance baseline
 
@@ -70,18 +70,23 @@ Historical governance, ADRs, and acceptance records remain available, but they d
 
 ## Active renderer/product-evidence sequence
 
-1. issue `#43`, Checkpoint A — stabilize geometric binaural;
-2. issue `#44` — unified evaluation and artifact runner;
-3. issue `#45` — capability registry and CLI;
-4. issue `#38` — offline 3D loudspeaker rendering;
-5. issue `#46` — SOFA/HRIR backend;
-6. true offline and realtime Aurora HRTF;
-7. operational IAMF integration;
-8. CamillaDSP runtime hardening;
-9. deterministic network simulation and packet transport;
-10. Linux receiver, optional PipeWire backend, and multiroom behavior;
-11. external Steam Audio and Snapcast comparisons;
-12. minimum distributed physical validation and measurement-driven hardware selection.
+Completed prerequisite:
+
+- issue `#43`, Checkpoint A — geometric binaural stabilization, merged through PR `#57`.
+
+Current sequence:
+
+1. issue `#44` — unified evaluation and artifact runner;
+2. issue `#45` — capability registry and CLI;
+3. issue `#38` — offline 3D loudspeaker rendering;
+4. issue `#46` — SOFA/HRIR backend;
+5. true offline and realtime Aurora HRTF;
+6. operational IAMF integration;
+7. CamillaDSP runtime hardening;
+8. deterministic network simulation and packet transport;
+9. Linux receiver, optional PipeWire backend, and multiroom behavior;
+10. external Steam Audio and Snapcast comparisons;
+11. minimum distributed physical validation and measurement-driven hardware selection.
 
 The S6 appliance baseline is maintained in parallel. Dedicated S6 maintenance and physical-bring-up work may proceed without being treated as completion of the renderer gates above.
 
@@ -98,7 +103,7 @@ cargo bench --workspace
 
 Linux stable is the main validation environment. Windows stable verifies cross-platform compilation and software-only tests, and a Linux job checks the declared Rust 1.78 MSRV explicitly. Stable jobs run formatting, all-target and all-feature Clippy, workspace tests, and strict public documentation checks; the MSRV job performs locked all-target/all-feature checks and tests.
 
-The repository also contains dedicated S6 appliance CI and deterministic simulation-assurance workflows. All CI results remain software evidence only. Ignored hardware tests and all S6 physical acceptance gates remain hardware-gated, and no CI result is a physical measurement. Future renderer PRs must also publish deterministic WAV and machine-readable evaluation artifacts through issue `#44`.
+The repository also contains dedicated S6 appliance CI and deterministic simulation-assurance workflows. All CI results remain software evidence only. Ignored hardware tests and all S6 physical acceptance gates remain hardware-gated, and no CI result is a physical measurement. Future renderer PRs must publish deterministic WAV and machine-readable evaluation artifacts through issue `#44` once that infrastructure is accepted.
 
 ## Run
 
