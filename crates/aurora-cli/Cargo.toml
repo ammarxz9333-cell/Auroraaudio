@@ -17,6 +17,11 @@ path = "src/bin/aurora-s6-postprocess.rs"
 bench = false
 required-features = ["realtime"]
 
+[[bin]]
+name = "aurora-capabilities"
+path = "src/bin/aurora-capabilities.rs"
+bench = false
+
 [features]
 default = ["camilladsp", "realtime", "simulation"]
 camilladsp = ["dep:aurora-dsp-camilladsp", "aurora-dsp-camilladsp/camilladsp-process"]
