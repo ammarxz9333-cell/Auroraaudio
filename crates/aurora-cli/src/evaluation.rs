@@ -281,8 +281,7 @@ fn evaluate_one(
             .context("query renderer scratch size")?,
     );
     let output_channels = renderer.output_channel_count();
-    let total_frames =
-        (options.duration_seconds * f64::from(options.sample_rate)).round() as usize;
+    let total_frames = (options.duration_seconds * f64::from(options.sample_rate)).round() as usize;
     let blocks = total_frames.div_ceil(options.block_size);
 
     let mut pcm = (0..output_channels)
@@ -717,7 +716,10 @@ mod tests {
 
     #[test]
     fn renderer_slugs_are_stable() {
-        assert_eq!(RendererTarget::GeometricBinaural.slug(), "geometric-binaural");
+        assert_eq!(
+            RendererTarget::GeometricBinaural.slug(),
+            "geometric-binaural"
+        );
         assert_eq!(RendererTarget::InverseDistance.slug(), "inverse-distance");
     }
 
