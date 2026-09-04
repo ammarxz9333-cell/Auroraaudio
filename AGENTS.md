@@ -15,5 +15,7 @@
 - Keep accelerated simulation deterministic for equal seeds and allocation-free after scheduler startup.
 - Live callbacks must not allocate, block, log, access files/processes, or silently change selected devices.
 - Prefer small, reviewable commits.
-- Do not add network or hardware functionality until Phase 0 acceptance tests pass.
-- Do not add HDMI, ARC, eARC, HDCP, streaming-service capture, wireless speaker streaming, Raspberry Pi deployment, or mobile application functionality during Phase 0.
+- Keep the renderer/product-evidence execution lane and the S6 appliance/hardware-enablement lane separate. Do not mix HRTF, IAMF, networking, receiver, multiroom, HDMI/eARC, or appliance expansion into a renderer checkpoint PR unless the active issue explicitly requires it.
+- The S6 appliance/realtime-MCU baseline landed through PR #83 and may receive dedicated maintenance, hardening, build, or physical-bring-up work. Host/software validation must never be presented as physical S6, eARC, USB, DAC, speaker, thermal, latency, or wireless validation.
+- During renderer Phase 0, do not add new network or hardware product scope. Existing S6 appliance infrastructure does not need to be removed or rolled back; changes to it must stay in dedicated PRs and preserve its evidence boundaries.
+- During renderer Phase 0, do not add new HDMI, ARC, eARC, HDCP, streaming-service capture, wireless speaker streaming, Raspberry Pi deployment, or mobile application scope to the renderer work item. Existing host-validated S6/HDMI/eARC infrastructure is maintained as a separate execution lane.
