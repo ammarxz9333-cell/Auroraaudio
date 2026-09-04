@@ -11,13 +11,15 @@
 #include <sys/stat.h>
 #include <sys/types.h>
 #include <sys/un.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "aurora_source_manager_v1.h"
 
 #define DEFAULT_SOCKET "/run/aurora/source-manager.sock"
 #define MAX_CLIENTS 8
-#define POLL_TIMEOUT_MS 250
+#define POLL_TIMEOUT_MS 50
+#define QUIESCE_TIMEOUT_MS 250u
 
 static volatile sig_atomic_t stop_requested;
 
@@ -37,6 +39,7 @@ struct manager {
     uint16_t pending_source;
     uint16_t waiting_quiesce_source;
     uint32_t tx_sequence;
+    uint64_t quiesce_deadline_ms;
     int64_t master_gain_mdb;
     uint32_t lipsync_frames;
     uint8_t muted;
@@ -47,6 +50,14 @@ static void on_signal(int signo)
 {
     (void)signo;
     stop_requested = 1;
+}
+
+static uint64_t monotonic_ms(void)
+{
+    struct timespec ts;
+    if (clock_gettime(CLOCK_MONOTONIC, &ts) != 0)
+        return 0;
+    return (uint64_t)ts.tv_sec * 1000u + (uint64_t)ts.tv_nsec / 1000000u;
 }
 
 static uint16_t read_le16(const uint8_t *p)
@@ -176,6 +187,7 @@ static void grant_source(struct manager *m, uint16_t source)
     m->active_source = source;
     m->pending_source = AURORA_SOURCE_NONE;
     m->waiting_quiesce_source = AURORA_SOURCE_NONE;
+    m->quiesce_deadline_ms = 0;
     if (send_message(m, c, AURORA_SOURCE_GRANT, source, 0, 0, 0) < 0) {
         c->granted = 0;
         m->active_source = AURORA_SOURCE_NONE;
@@ -204,12 +216,14 @@ static void reconcile(struct manager *m)
         }
         m->pending_source = candidate;
         m->waiting_quiesce_source = m->active_source;
+        m->quiesce_deadline_ms = monotonic_ms() + QUIESCE_TIMEOUT_MS;
         if (send_message(m, active, AURORA_SOURCE_REVOKE,
                          active->source, AURORA_SOURCE_REVOKE_FADE_MS,
                          0, 0) < 0) {
             active->granted = 0;
             m->active_source = AURORA_SOURCE_NONE;
             m->waiting_quiesce_source = AURORA_SOURCE_NONE;
+            m->quiesce_deadline_ms = 0;
             reconcile(m);
         }
         return;
@@ -235,9 +249,35 @@ static void disconnect_client(struct manager *m, struct client *c)
     c->fd = -1;
     if (was_active)
         m->active_source = AURORA_SOURCE_NONE;
-    if (was_waiting)
+    if (was_waiting) {
         m->waiting_quiesce_source = AURORA_SOURCE_NONE;
+        m->quiesce_deadline_ms = 0;
+    }
     reconcile(m);
+}
+
+static void enforce_quiesce_deadline(struct manager *m)
+{
+    if (m->waiting_quiesce_source == AURORA_SOURCE_NONE ||
+        m->quiesce_deadline_ms == 0)
+        return;
+    uint64_t now = monotonic_ms();
+    if (now < m->quiesce_deadline_ms)
+        return;
+
+    uint16_t stuck_source = m->waiting_quiesce_source;
+    struct client *stuck = client_for_source(m, stuck_source);
+    fprintf(stderr, "aurora-source-manager: quiesce timeout source=%u\n",
+            stuck_source);
+    m->waiting_quiesce_source = AURORA_SOURCE_NONE;
+    m->quiesce_deadline_ms = 0;
+    if (stuck) {
+        disconnect_client(m, stuck);
+    } else {
+        if (m->active_source == stuck_source)
+            m->active_source = AURORA_SOURCE_NONE;
+        reconcile(m);
+    }
 }
 
 static int parse_message(const uint8_t *message, size_t len,
@@ -304,6 +344,7 @@ static int handle_message(struct manager *m, struct client *c,
         c->granted = 0;
         m->active_source = AURORA_SOURCE_NONE;
         m->waiting_quiesce_source = AURORA_SOURCE_NONE;
+        m->quiesce_deadline_ms = 0;
         reconcile(m);
         return 0;
     case AURORA_SOURCE_CONTROL:
@@ -427,6 +468,7 @@ int main(void)
                     disconnect_client(&m, c);
             }
         }
+        enforce_quiesce_deadline(&m);
     }
 
     for (size_t i = 0; i < MAX_CLIENTS; ++i)
