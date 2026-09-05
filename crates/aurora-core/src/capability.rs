@@ -389,7 +389,9 @@ pub fn canonical_capability_registry() -> CapabilityRegistry {
                 artifact_verification: ArtifactVerification::None,
                 adapter_placeholder: false,
                 production_ready: false,
-                cue_limitations: vec!["Inactive pending license and redistribution review".to_owned()],
+                cue_limitations: vec![
+                    "Inactive pending license and redistribution review".to_owned()
+                ],
                 evidence: vec!["Disabled-by-default research adapter".to_owned()],
             },
             CapabilityEntry {
@@ -403,7 +405,9 @@ pub fn canonical_capability_registry() -> CapabilityRegistry {
                 artifact_verification: ArtifactVerification::None,
                 adapter_placeholder: false,
                 production_ready: false,
-                cue_limitations: vec!["Inactive research path; product use requires legal review".to_owned()],
+                cue_limitations: vec![
+                    "Inactive research path; product use requires legal review".to_owned()
+                ],
                 evidence: vec!["Disabled-by-default research adapter".to_owned()],
             },
             CapabilityEntry {
@@ -417,7 +421,9 @@ pub fn canonical_capability_registry() -> CapabilityRegistry {
                 artifact_verification: ArtifactVerification::None,
                 adapter_placeholder: false,
                 production_ready: false,
-                cue_limitations: vec!["Must not be claimed before issue #38 acceptance evidence".to_owned()],
+                cue_limitations: vec![
+                    "Must not be claimed before issue #38 acceptance evidence".to_owned()
+                ],
                 evidence: vec![],
             },
         ],
@@ -456,9 +462,9 @@ mod tests {
 
     #[test]
     fn unknown_implementation_status_is_rejected_by_typed_deserialization() {
-        let result = ImplementationStatus::deserialize(StrDeserializer::<
-            serde::de::value::Error,
-        >::new("invented-status"));
+        let result = ImplementationStatus::deserialize(
+            StrDeserializer::<serde::de::value::Error>::new("invented-status"),
+        );
         assert!(result.is_err());
     }
 
