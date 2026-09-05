@@ -48,6 +48,11 @@ jobs:
       - name: Verify immutable configuration read allocation guard
         run: cargo test -p aurora-config --test immutable_reads
       - run: cargo test --workspace --all-features
+      - name: Verify README capability claims against registry
+        run: >-
+          cargo run -p aurora-cli --bin aurora-capability-docs --
+          --mode check
+          --readme README.md
       - name: Run Criterion performance foundation
         run: cargo bench -p aurora-realtime-engine --bench performance -- --quick --noplot
       - name: Enforce Criterion regression policy
