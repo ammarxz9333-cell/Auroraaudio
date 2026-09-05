@@ -1,5 +1,9 @@
 //! Core data model for Aurora spatial-audio scenes and PCM blocks.
 
+pub mod capability;
+
+pub use capability::*;
+
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serialize, Serializer};
 use thiserror::Error;
 
