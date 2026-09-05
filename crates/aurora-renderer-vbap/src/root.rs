@@ -9,6 +9,9 @@ mod two_d;
 
 pub use two_d::*;
 
+#[cfg(test)]
+pub(crate) use two_d::allocation_audit;
+
 /// Experimental three-dimensional loudspeaker VBAP.
 pub mod three_d;
 
