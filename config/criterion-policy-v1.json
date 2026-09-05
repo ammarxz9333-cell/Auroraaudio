@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "sample_rate_hz": 48000,
+  "block_size_frames": 256,
+  "metric": "mean.point_estimate_ns",
+  "benchmarks": [
+    {
+      "id": "renderer_gains/custom-12",
+      "max_ns": 250000,
+      "rationale": "12-channel renderer gain calculation must remain a small fraction of a 256-frame real-time block."
+    },
+    {
+      "id": "adaptive_asrc_48khz_256/12",
+      "max_ns": 3500000,
+      "rationale": "12-channel adaptive ASRC must remain below the 5.333 ms block budget with margin for the rest of the pipeline."
+    },
+    {
+      "id": "deterministic_convolution_12ch_256_128tap",
+      "max_ns": 4000000,
+      "rationale": "Reference 12-channel 128-tap convolution must remain within a bounded software budget before true HRTF convolution lands."
+    },
+    {
+      "id": "transport_round_trip_contiguous_12ch_256",
+      "max_ns": 500000,
+      "rationale": "The preferred contiguous transport path must remain negligible relative to the audio block budget."
+    }
+  ]
+}
