@@ -97,7 +97,7 @@ Issue #38 adds a separate deterministic evidence runner for the experimental hei
 Run it with:
 
 ```bash
-cargo run --release -p aurora-cli --bin aurora-evaluate-vbap3d -- \
+cargo run --release -p aurora-simulation-assurance --bin aurora-evaluate-vbap3d -- \
   --scene fixtures/scenes/5_1_2_upfiring.json \
   --output-dir output/evaluation/vbap3d-5.1.2 \
   --duration-seconds 0.5
@@ -116,7 +116,7 @@ The canonical fixture contains installation trims, including reduced height-chan
 
 The 3D runner fails when the prepared 5.1.2 listener is not inside the loudspeaker hull, when no validated triplets exist, when any gain or delay is non-finite, when spatial gain power exceeds the configured tolerance, or when an inter-block channel-gain step exceeds the configured threshold. LFE is excluded from spatial power by design.
 
-As with the general renderer evaluator, the WAV applies gain routing but does not apply the reported propagation-delay trajectory. It is an offline audible routing artifact, not acoustic proof of elevation localization.
+The reference WAV is written as 32-bit IEEE-float `WAVE_FORMAT_EXTENSIBLE` with the standard channel mask derived from Aurora channel roles. As with the general renderer evaluator, it applies gain routing but does not apply the reported propagation-delay trajectory. It is an offline audible routing artifact, not acoustic proof of elevation localization.
 
 ## Evidence boundary
 
