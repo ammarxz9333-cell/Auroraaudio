@@ -22,6 +22,7 @@ concurrency:
 jobs:
   linux-stable:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -70,6 +71,7 @@ jobs:
             output/evaluation/criterion-policy-summary.json
             config/criterion-policy-v1.json
           if-no-files-found: warn
+          retention-days: 14
       - name: Run deterministic renderer evaluation
         run: >-
           cargo run --release -p aurora-cli --bin aurora-evaluate-renderer --
@@ -83,6 +85,7 @@ jobs:
           name: renderer-evaluation-${{ github.sha }}
           path: output/evaluation
           if-no-files-found: error
+          retention-days: 14
       - name: Verify public API documentation
         env:
           RUSTDOCFLAGS: -D warnings
@@ -90,6 +93,7 @@ jobs:
 
   windows-stable:
     runs-on: windows-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -115,6 +119,7 @@ jobs:
 
   msrv-1-78:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.78.0

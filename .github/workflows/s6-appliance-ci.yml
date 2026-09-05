@@ -7,31 +7,55 @@ on:
       - agent/aurora-s6-appliance-bootstrap
       - agent/s6-realtime-mcu-hal-bringup
     paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "platform/s6/**"
       - "protocol/**"
       - "firmware/**"
       - "config/aurora-hardware-target.env"
-      - "docs/**"
+      - "docs/AURORA_USB_S6_REALTIME_MCU_PROTOCOL.md"
       - "crates/aurora-usb-protocol/**"
-      - "crates/aurora-cli/**"
+      - "crates/aurora-cli/Cargo.toml"
+      - "crates/aurora-cli/src/bin/aurora-s6-postprocess.rs"
+      - "crates/aurora-core/**"
+      - "crates/aurora-dsp-api/**"
+      - "crates/aurora-dsp-basic/**"
+      - "crates/aurora-realtime-audio-api/**"
       - "crates/aurora-realtime-engine/**"
+      - "crates/aurora-renderer-api/**"
+      - "crates/aurora-renderer-basic/**"
+      - "crates/aurora-scene/**"
       - "crates/aurora-measurement/**"
       - ".github/workflows/s6-appliance-ci.yml"
   pull_request:
     paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
       - "platform/s6/**"
       - "protocol/**"
       - "firmware/**"
       - "config/aurora-hardware-target.env"
-      - "docs/**"
+      - "docs/AURORA_USB_S6_REALTIME_MCU_PROTOCOL.md"
       - "crates/aurora-usb-protocol/**"
-      - "crates/aurora-cli/**"
+      - "crates/aurora-cli/Cargo.toml"
+      - "crates/aurora-cli/src/bin/aurora-s6-postprocess.rs"
+      - "crates/aurora-core/**"
+      - "crates/aurora-dsp-api/**"
+      - "crates/aurora-dsp-basic/**"
+      - "crates/aurora-realtime-audio-api/**"
       - "crates/aurora-realtime-engine/**"
+      - "crates/aurora-renderer-api/**"
+      - "crates/aurora-renderer-basic/**"
+      - "crates/aurora-scene/**"
       - "crates/aurora-measurement/**"
       - ".github/workflows/s6-appliance-ci.yml"
 
 permissions:
   contents: read
+
+concurrency:
+  group: s6-appliance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   host-validation:
