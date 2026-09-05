@@ -27,7 +27,9 @@ pub enum CapabilityOutputFormat {
 /// Renders the canonical validated registry in the selected presentation format.
 pub fn render_capabilities(format: CapabilityOutputFormat) -> Result<String> {
     let registry = canonical_capability_registry();
-    registry.validate().context("validate capability registry")?;
+    registry
+        .validate()
+        .context("validate capability registry")?;
     match format {
         CapabilityOutputFormat::Text => Ok(render_text(&registry)),
         CapabilityOutputFormat::Json => {
