@@ -78,7 +78,7 @@ jobs:
           --duration-seconds 0.5
       - name: Run deterministic 3D VBAP evaluation
         run: >-
-          cargo run --release -p aurora-cli --bin aurora-evaluate-vbap3d --
+          cargo run --release -p aurora-simulation-assurance --bin aurora-evaluate-vbap3d --
           --scene fixtures/scenes/5_1_2_upfiring.json
           --output-dir output/evaluation/vbap3d-5.1.2
           --duration-seconds 0.5
