@@ -6,11 +6,11 @@
 
 use std::f32::consts::TAU;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use aurora_audio_io::write_wav_f32_with_channel_roles;
-use aurora_core::{ChannelRole, Listener, Speaker, Vector3};
+use aurora_core::{ChannelRole, Listener, Vector3};
 use aurora_renderer_api::{RenderObject, Renderer, RendererScratch, SpeakerGain};
 use aurora_renderer_vbap::Vbap3dRenderer;
 use aurora_scene::load_render_scene;
