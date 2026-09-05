@@ -1,0 +1,135 @@
+name: Private Self-Hosted CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    branches:
+      - main-v2
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+
+permissions:
+  contents: read
+
+concurrency:
+  group: private-self-hosted-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+  CARGO_TARGET_X86_64_PC_WINDOWS_GNU_LINKER: rust-lld
+  RUSTFLAGS: -Clink-self-contained=yes
+
+jobs:
+  windows-stable-self-hosted:
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main-v2' &&
+       github.actor == github.repository_owner) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login == github.repository_owner &&
+       github.actor == github.repository_owner)
+    runs-on: [self-hosted, Windows, X64, aurora-private-ci]
+    timeout-minutes: 45
+    steps:
+      - name: Check out the exact revision without retaining credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          clean: true
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Provision stable GNU Rust toolchain
+        shell: pwsh
+        run: >-
+          rustup toolchain install stable-x86_64-pc-windows-gnu
+          --profile minimal --component rustfmt,clippy
+      - name: Verify formatting
+        run: cargo +stable-x86_64-pc-windows-gnu fmt --all --check
+      - name: Lint all targets and features
+        run: >-
+          cargo +stable-x86_64-pc-windows-gnu clippy
+          --workspace --all-targets --all-features -- -D warnings
+      - name: Run full workspace test suite
+        run: >-
+          cargo +stable-x86_64-pc-windows-gnu test
+          --workspace --all-features
+      - name: Verify README capability claims against registry
+        run: >-
+          cargo +stable-x86_64-pc-windows-gnu run
+          -p aurora-cli --bin aurora-capability-docs --
+          --mode check --readme README.md
+      - name: Run Criterion performance foundation
+        run: >-
+          cargo +stable-x86_64-pc-windows-gnu bench
+          -p aurora-realtime-engine --bench performance -- --quick --noplot
+      - name: Enforce Criterion regression policy
+        run: >-
+          python scripts/check_criterion_policy.py
+          --policy config/criterion-policy-v1.json
+          --criterion-root target/criterion
+          --output output/evaluation/criterion-policy-summary.json
+      - name: Run deterministic renderer evaluation
+        run: >-
+          cargo +stable-x86_64-pc-windows-gnu run --release
+          -p aurora-cli --bin aurora-evaluate-renderer --
+          --renderer all --output-dir output/evaluation --duration-seconds 0.5
+      - name: Run deterministic 500-scenario smoke campaign
+        run: >-
+          cargo +stable-x86_64-pc-windows-gnu run --release
+          -p aurora-simulation-assurance --
+          --level smoke --scenarios 500 --start-seed 0
+          --report output/simulation-assurance/pr-smoke.json
+      - name: Verify public API documentation
+        env:
+          RUSTDOCFLAGS: -D warnings
+        run: >-
+          cargo +stable-x86_64-pc-windows-gnu doc
+          --workspace --all-features --no-deps
+      - name: Upload reproducible validation evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: private-self-hosted-evidence-${{ github.sha }}
+          path: |
+            output/evaluation
+            output/simulation-assurance
+            config/criterion-policy-v1.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  msrv-1-78-self-hosted:
+    if: >-
+      (github.event_name == 'workflow_dispatch' &&
+       github.ref == 'refs/heads/main-v2' &&
+       github.actor == github.repository_owner) ||
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository &&
+       github.event.pull_request.user.login == github.repository_owner &&
+       github.actor == github.repository_owner)
+    runs-on: [self-hosted, Windows, X64, aurora-private-ci]
+    timeout-minutes: 35
+    steps:
+      - name: Check out the exact revision without retaining credentials
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262
+        with:
+          clean: true
+          fetch-depth: 1
+          persist-credentials: false
+      - name: Provision Rust 1.78 GNU toolchain
+        shell: pwsh
+        run: >-
+          rustup toolchain install 1.78.0-x86_64-pc-windows-gnu
+          --profile minimal
+      - name: Check all targets and features on MSRV
+        run: >-
+          cargo +1.78.0-x86_64-pc-windows-gnu check
+          --workspace --all-targets --all-features --locked
+      - name: Test full workspace on MSRV
+        run: >-
+          cargo +1.78.0-x86_64-pc-windows-gnu test
+          --workspace --all-features --locked
