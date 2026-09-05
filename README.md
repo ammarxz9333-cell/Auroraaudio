@@ -4,10 +4,29 @@ Aurora is an open, modular, hardware-independent spatial-audio processing platfo
 
 The project is in **active product implementation**. Work is tracked in two coordinated lanes:
 
-1. the renderer/product-evidence lane, where geometric binaural Checkpoint A is complete and the active task is issue `#44` for unified renderer evaluation and artifact generation;
+1. the renderer/product-evidence lane, where geometric binaural Checkpoint A and unified renderer evaluation issue `#44` are complete and the active task is issue `#45` for machine-readable capability truth;
 2. the Galaxy S6 appliance/realtime-MCU lane, whose integrated baseline landed through PR `#83` and is **host/software validated but not physically accepted**.
 
 Aurora does not currently claim Dolby Atmos compatibility, true HRTF capability, height-capable loudspeaker rendering, production IAMF decoding, synchronized wireless speakers, physical S6/eARC/USB/DAC validation, or physical multiroom validation unless the corresponding acceptance evidence exists.
+
+## Capability truth registry
+
+The canonical capability state is a versioned typed registry owned by `aurora-core`. The table below is generated from that registry; manual documentation must not claim a stronger implementation, execution surface, verification level, or production state.
+
+<!-- AURORA_CAPABILITIES_BEGIN -->
+
+| Capability | Implementation | Offline | Realtime | Verification | Tested layouts | Production-ready |
+| --- | --- | --- | --- | --- | --- | --- |
+| `geometric-binaural` — Geometric binaural renderer | experimental | functional | experimental | ci-artifact | stereo | no |
+| `iamf` — IAMF decoder adapter | adapter-placeholder | unsupported | unsupported | none | none | no |
+| `camilladsp` — CamillaDSP external adapter | functional | functional | unsupported | software-tested | 5.1 | no |
+| `cavern` — Cavern renderer adapter | inactive-research | unsupported | unsupported | none | none | no |
+| `truehdd` — truehdd decoder adapter | inactive-research | unsupported | unsupported | none | none | no |
+| `loudspeaker-3d` — 3D loudspeaker renderer | not-implemented | unsupported | unsupported | none | none | no |
+
+<!-- AURORA_CAPABILITIES_END -->
+
+The registry also carries known cue/scope limitations and evidence references that are intentionally omitted from this compact README table. JSON and detailed human-readable CLI views are delivered by issue `#45` and must use the same registry rather than duplicate capability state.
 
 ## Geometric binaural baseline
 
@@ -66,27 +85,27 @@ Start here:
 - [Architecture](docs/architecture.md)
 - [Repository history](docs/repository-history.md)
 
-Historical governance, ADRs, and acceptance records remain available, but they do not override the active execution state, renderer roadmap, or S6 evidence matrix.
+Historical governance, ADRs, and acceptance records remain available, but they do not override the active execution state, renderer roadmap, capability registry, or S6 evidence matrix.
 
 ## Active renderer/product-evidence sequence
 
-Completed prerequisite:
+Completed prerequisites:
 
-- issue `#43`, Checkpoint A — geometric binaural stabilization, merged through PR `#57`.
+- issue `#43`, Checkpoint A — geometric binaural stabilization, merged through PR `#57`;
+- issue `#44` — unified renderer evaluation, versioned artifacts, Criterion performance policy, and CI evidence, completed through PRs `#86`, `#87`, and `#88`.
 
 Current sequence:
 
-1. issue `#44` — unified evaluation and artifact runner;
-2. issue `#45` — capability registry and CLI;
-3. issue `#38` — offline 3D loudspeaker rendering;
-4. issue `#46` — SOFA/HRIR backend;
-5. true offline and realtime Aurora HRTF;
-6. operational IAMF integration;
-7. CamillaDSP runtime hardening;
-8. deterministic network simulation and packet transport;
-9. Linux receiver, optional PipeWire backend, and multiroom behavior;
-10. external Steam Audio and Snapcast comparisons;
-11. minimum distributed physical validation and measurement-driven hardware selection.
+1. issue `#45` — capability registry, documentation claim gate, and CLI;
+2. issue `#38` — offline 3D loudspeaker rendering;
+3. issue `#46` — SOFA/HRIR backend;
+4. true offline and realtime Aurora HRTF;
+5. operational IAMF integration;
+6. CamillaDSP runtime hardening;
+7. deterministic network simulation and packet transport;
+8. Linux receiver, optional PipeWire backend, and multiroom behavior;
+9. external Steam Audio and Snapcast comparisons;
+10. minimum distributed physical validation and measurement-driven hardware selection.
 
 The S6 appliance baseline is maintained in parallel. Dedicated S6 maintenance and physical-bring-up work may proceed without being treated as completion of the renderer gates above.
 
@@ -103,7 +122,7 @@ cargo bench --workspace
 
 Linux stable is the main validation environment. Windows stable verifies cross-platform compilation and software-only tests, and a Linux job checks the declared Rust 1.78 MSRV explicitly. Stable jobs run formatting, all-target and all-feature Clippy, workspace tests, and strict public documentation checks; the MSRV job performs locked all-target/all-feature checks and tests.
 
-The repository also contains dedicated S6 appliance CI and deterministic simulation-assurance workflows. All CI results remain software evidence only. Ignored hardware tests and all S6 physical acceptance gates remain hardware-gated, and no CI result is a physical measurement. Future renderer PRs must publish deterministic WAV and machine-readable evaluation artifacts through issue `#44` once that infrastructure is accepted.
+The repository also contains dedicated S6 appliance CI and deterministic simulation-assurance workflows. All CI results remain software evidence only. Ignored hardware tests and all S6 physical acceptance gates remain hardware-gated, and no CI result is a physical measurement. Renderer PRs publish deterministic WAV and machine-readable evaluation artifacts through the accepted issue `#44` infrastructure. Capability documentation is verified against the issue `#45` registry so README claims cannot silently exceed registered state.
 
 ## Run
 
