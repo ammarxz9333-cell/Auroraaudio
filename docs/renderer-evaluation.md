@@ -18,7 +18,7 @@ The trajectory performs a full horizontal circle around the listener and include
 
 ## Artifact schema
 
-All JSON artifacts are wrapped in a stable envelope:
+All renderer JSON artifacts are wrapped in a stable envelope:
 
 ```json
 {
@@ -45,7 +45,7 @@ The reference WAV applies renderer gains to a deterministic mono sine source. It
 
 ## Failure rules
 
-The runner exits non-zero when any selected renderer exceeds a configured evidence threshold:
+The renderer runner exits non-zero when any selected renderer exceeds a configured evidence threshold:
 
 - non-finite gain or delay values;
 - gain-power normalization outside the configured tolerance;
@@ -73,12 +73,23 @@ LD_PRELOAD=/path/to/libbytehound.so \
 
 The exact Bytehound preload path depends on the local installation. External profiler output is supplemental evidence; CI does not require Bytehound.
 
-## Criterion foundation
+## Criterion regression policy
 
-Aurora already maintains Criterion microbenchmarks in `aurora-realtime-engine` for renderer gain calculation, full multichannel block processing, geometric fractional delay, a DSP kernel, rotating-source updates, adaptive ASRC, and duplex transport. Issue #44 extends that foundation rather than creating a second benchmark framework.
+Aurora maintains Criterion microbenchmarks in `aurora-realtime-engine` for renderer gain calculation, full multichannel block processing, geometric fractional delay, DSP kernels, rotating-source updates, adaptive ASRC, deterministic reference convolution, and transport operations.
 
-Criterion estimates are performance characterization; the evaluation runner is the deterministic pass/fail gate. A later #44 slice adds the remaining deterministic convolution microbenchmark and a versioned benchmark-policy artifact so Criterion results can be compared to explicit CI baselines rather than treated as pass merely because the benchmark executed.
+Linux CI runs the performance benchmark in Criterion quick mode and enforces `config/criterion-policy-v1.json` with `scripts/check_criterion_policy.py`. The versioned policy watches four 12-channel hot paths:
+
+- renderer gain calculation;
+- adaptive ASRC at 48 kHz / 256 frames;
+- deterministic 128-tap convolution at 12 channels / 256 frames;
+- contiguous transport round trip at 12 channels / 256 frames.
+
+The policy uses Criterion's `mean.point_estimate` and explicit absolute ceilings. These ceilings are deliberately wider than a single developer workstation baseline so normal GitHub-host variance does not become a false regression. They are still bounded relative to the 5.333 ms 48 kHz / 256-frame block budget and can be tightened only through a reviewed policy change.
+
+The checker emits `output/evaluation/criterion-policy-summary.json` with schema version, commit SHA, policy path, measured nanoseconds/microseconds, block-budget percentage, configured ceiling, and pass/fail status for every watched benchmark. A missing estimate, malformed estimate, non-finite value, or ceiling violation fails CI. The summary and the exact policy file are uploaded as CI evidence.
+
+This policy is Aurora's machine-readable benchmark baseline contract. Bencher or another external benchmark service may consume it later, but no external service is required for local development or CI correctness.
 
 ## Evidence boundary
 
-This runner is software evidence only. It does not establish physical S6 performance, eARC capture, USB timing, MCU/TDM behavior, DAC output, acoustic response, wireless synchronization, Dolby Atmos/JOC compatibility, true HRTF capability, elevation accuracy, or product readiness.
+This runner and benchmark policy are software evidence only. They do not establish physical S6 performance, eARC capture, USB timing, MCU/TDM behavior, DAC output, acoustic response, wireless synchronization, Dolby Atmos/JOC compatibility, true HRTF capability, elevation accuracy, or product readiness.

@@ -48,6 +48,23 @@ jobs:
       - name: Verify immutable configuration read allocation guard
         run: cargo test -p aurora-config --test immutable_reads
       - run: cargo test --workspace --all-features
+      - name: Run Criterion performance foundation
+        run: cargo bench -p aurora-realtime-engine --bench performance -- --quick --noplot
+      - name: Enforce Criterion regression policy
+        run: >-
+          python3 scripts/check_criterion_policy.py
+          --policy config/criterion-policy-v1.json
+          --criterion-root target/criterion
+          --output output/evaluation/criterion-policy-summary.json
+      - name: Upload Criterion regression evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: criterion-policy-${{ github.sha }}
+          path: |
+            output/evaluation/criterion-policy-summary.json
+            config/criterion-policy-v1.json
+          if-no-files-found: warn
       - name: Run deterministic renderer evaluation
         run: >-
           cargo run --release -p aurora-cli --bin aurora-evaluate-renderer --

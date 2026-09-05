@@ -4,7 +4,9 @@ use std::hint::black_box;
 
 use aurora_core::{StandardLayout, Vector3};
 use aurora_dsp_basic::DelayProcessor;
-use aurora_realtime_engine::{AsynchronousResampler, RubatoAsrc, TestSignal};
+use aurora_realtime_engine::{
+    AsynchronousResampler, RubatoAsrc, TestSignal, TransportKind, TransportPrototype,
+};
 use aurora_renderer_api::{RenderObject, Renderer, RendererScratch, SpeakerGain};
 use aurora_renderer_basic::{BasicRenderer, BasicRendererMode};
 use criterion::{criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
@@ -149,6 +151,64 @@ fn adaptive_asrc(c: &mut Criterion) {
     group.finish();
 }
 
+fn deterministic_convolution(c: &mut Criterion) {
+    const CHANNELS: usize = 12;
+    const FRAMES: usize = 256;
+    const TAPS: usize = 128;
+
+    let mut impulse = vec![0.0_f32; TAPS];
+    for (index, tap) in impulse.iter_mut().enumerate() {
+        let decay = 1.0 - index as f32 / TAPS as f32;
+        *tap = decay * ((index as f32 + 1.0) * 0.071).sin() * 0.02;
+    }
+    impulse[0] += 1.0;
+
+    let input_frames = FRAMES + TAPS - 1;
+    let mut input = vec![0.0_f32; CHANNELS * input_frames];
+    for channel in 0..CHANNELS {
+        for frame in 0..input_frames {
+            input[channel * input_frames + frame] =
+                ((frame + channel * 17) as f32 * 0.013).sin() * 0.25;
+        }
+    }
+    let mut output = vec![0.0_f32; CHANNELS * FRAMES];
+
+    c.bench_function("deterministic_convolution_12ch_256_128tap", |b| {
+        b.iter(|| {
+            for channel in 0..CHANNELS {
+                let input_base = channel * input_frames;
+                let output_base = channel * FRAMES;
+                for frame in 0..FRAMES {
+                    let mut sum = 0.0_f32;
+                    for (tap_index, tap) in impulse.iter().enumerate() {
+                        sum = input[input_base + frame + TAPS - 1 - tap_index].mul_add(*tap, sum);
+                    }
+                    output[output_base + frame] = sum;
+                }
+            }
+            black_box(&output);
+        });
+    });
+}
+
+fn transport_round_trip(c: &mut Criterion) {
+    const CHANNELS: usize = 12;
+    const FRAMES: usize = 256;
+    let samples = CHANNELS * FRAMES;
+    let transport = TransportPrototype::new(TransportKind::ContiguousFrameRing, samples, 8)
+        .expect("valid transport benchmark configuration");
+    let input = vec![0.25_f32; samples];
+    let mut output = vec![0.0_f32; samples];
+
+    c.bench_function("transport_round_trip_contiguous_12ch_256", |b| {
+        b.iter(|| {
+            assert!(transport.try_push_block(black_box(&input)));
+            assert!(transport.try_pop_block(black_box(&mut output)));
+            black_box(&output);
+        });
+    });
+}
+
 criterion_group!(
     benches,
     renderer_gains,
@@ -156,6 +216,8 @@ criterion_group!(
     geometric_delay,
     basic_dsp_kernel,
     rotating_source,
-    adaptive_asrc
+    adaptive_asrc,
+    deterministic_convolution,
+    transport_round_trip
 );
 criterion_main!(benches);
