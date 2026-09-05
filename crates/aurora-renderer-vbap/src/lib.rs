@@ -732,7 +732,7 @@ fn finite_f32(value: f64) -> f32 {
 }
 
 #[cfg(test)]
-mod allocation_audit {
+pub(crate) mod allocation_audit {
     use std::alloc::{GlobalAlloc, Layout, System};
     use std::cell::Cell;
 
