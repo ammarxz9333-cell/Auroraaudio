@@ -17,6 +17,11 @@ path = "src/bin/aurora-evaluate-renderer.rs"
 bench = false
 
 [[bin]]
+name = "aurora-evaluate-vbap3d"
+path = "src/bin/aurora-evaluate-vbap3d.rs"
+bench = false
+
+[[bin]]
 name = "aurora-s6-postprocess"
 path = "src/bin/aurora-s6-postprocess.rs"
 bench = false
@@ -36,6 +41,7 @@ aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-dsp-camilladsp = { path = "../aurora-dsp-camilladsp", optional = true }
 aurora-renderer-api = { path = "../aurora-renderer-api" }
 aurora-renderer-basic = { path = "../aurora-renderer-basic" }
+aurora-renderer-vbap = { path = "../aurora-renderer-vbap" }
 aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api", optional = true }
 aurora-realtime-audio-cpal = { path = "../aurora-realtime-audio-cpal", optional = true }
 aurora-realtime-audio-sim = { path = "../aurora-realtime-audio-sim", optional = true }
