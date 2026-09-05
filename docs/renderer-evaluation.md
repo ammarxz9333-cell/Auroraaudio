@@ -90,6 +90,34 @@ The checker emits `output/evaluation/criterion-policy-summary.json` with schema 
 
 This policy is Aurora's machine-readable benchmark baseline contract. Bencher or another external benchmark service may consume it later, but no external service is required for local development or CI correctness.
 
+## Experimental 3D VBAP 5.1.2 evidence
+
+Issue #38 adds a separate deterministic evidence runner for the experimental height-capable `Vbap3dRenderer`. It uses the canonical `fixtures/scenes/5_1_2_upfiring.json` listener and loudspeaker geometry and exercises a full horizontal revolution with both positive and negative elevation relative to the acoustic listener centre.
+
+Run it with:
+
+```bash
+cargo run --release -p aurora-cli --bin aurora-evaluate-vbap3d -- \
+  --scene fixtures/scenes/5_1_2_upfiring.json \
+  --output-dir output/evaluation/vbap3d-5.1.2 \
+  --duration-seconds 0.5
+```
+
+The runner emits:
+
+- `gain-trajectory.json`: per-block 3D VBAP speaker gains and spatial power;
+- `delay-trajectory.json`: per-block propagation-delay reports;
+- `rendered-reference.wav`: multichannel audible routing reference generated from a deterministic 440 Hz source;
+- `metadata.json`: scene, channel, trim, WAV, and evidence semantics;
+- `command.txt`: exact reproduction command;
+- `summary.json`: closed-hull state, validated-triplet count, continuity and numerical-safety results, and artifact inventory.
+
+The canonical fixture contains installation trims, including reduced height-channel gain. For renderer-only unit-power evidence, the evaluator preserves speaker positions and channel roles but normalizes `gain_db` to `0 dB` before rendering. This prevents installation calibration from being misclassified as a VBAP energy-normalization failure. The metadata records this explicitly.
+
+The 3D runner fails when the prepared 5.1.2 listener is not inside the loudspeaker hull, when no validated triplets exist, when any gain or delay is non-finite, when spatial gain power exceeds the configured tolerance, or when an inter-block channel-gain step exceeds the configured threshold. LFE is excluded from spatial power by design.
+
+As with the general renderer evaluator, the WAV applies gain routing but does not apply the reported propagation-delay trajectory. It is an offline audible routing artifact, not acoustic proof of elevation localization.
+
 ## Evidence boundary
 
-This runner and benchmark policy are software evidence only. They do not establish physical S6 performance, eARC capture, USB timing, MCU/TDM behavior, DAC output, acoustic response, wireless synchronization, Dolby Atmos/JOC compatibility, true HRTF capability, elevation accuracy, or product readiness.
+These runners and the benchmark policy are software evidence only. They do not establish physical S6 performance, eARC capture, USB timing, MCU/TDM behavior, DAC output, acoustic response, wireless synchronization, Dolby Atmos/JOC compatibility, true HRTF capability, perceptual elevation accuracy, or product readiness.
