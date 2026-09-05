@@ -1,5 +1,6 @@
 [package]
 name = "aurora-simulation-assurance"
+default-run = "aurora-simulation-assurance"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,6 +8,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+aurora-audio-io = { path = "../aurora-audio-io" }
 anyhow.workspace = true
 aurora-core = { path = "../aurora-core" }
 aurora-realtime-audio-sim = { path = "../aurora-realtime-audio-sim" }

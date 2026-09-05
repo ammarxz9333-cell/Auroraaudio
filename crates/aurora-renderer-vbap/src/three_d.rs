@@ -639,9 +639,7 @@ fn supporting_plane(
         }
     }
 
-    if has_positive {
-        normal = scale(normal, -1.0);
-    } else if !has_negative && dot(normal, first) < 0.0 {
+    if has_positive || (!has_negative && dot(normal, first) < 0.0) {
         normal = scale(normal, -1.0);
     }
     let offset = dot(normal, first);

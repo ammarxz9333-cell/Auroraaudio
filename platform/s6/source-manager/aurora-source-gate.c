@@ -66,6 +66,8 @@ struct source_slot {
     float current_gain;
     float target_gain;
     uint32_t ramp_frames_remaining;
+    uint32_t lipsync_frames;
+    uint8_t lipsync_valid;
     uint64_t last_media_ms;
     uint64_t quiesce_deadline_ms;
     uint8_t config_frame[CONFIG_FRAME_BYTES];
@@ -74,6 +76,8 @@ struct source_slot {
 
 struct gate {
     int bridge_fd;
+    int dsp_control_fd;
+    uint64_t last_dsp_control_ms;
     int config_owner_slot;
     struct source_slot slots[SLOT_COUNT];
     const char *manager_socket;
@@ -434,6 +438,9 @@ static int handle_manager_message(struct gate *gate, struct source_slot *slot,
         case AURORA_SOURCE_CTRL_LIPSYNC_FRAMES:
             /* Lip-sync delay belongs upstream in each source DSP path. This
              * final mux intentionally does not duplicate a delay line. */
+            if (data0 > AURORA_SOURCE_MAX_LIPSYNC_FRAMES) return -1;
+            slot->lipsync_frames = (uint32_t)data0;
+            slot->lipsync_valid = 1;
             return 0;
         default:
             return -1;
@@ -708,6 +715,33 @@ static void handle_manager_disconnect(struct source_slot *slot)
     fail_closed(slot);
 }
 
+/* A separate control socket keeps APC0 messages out of AUR0 audio framing.
+ * Replay the latest absolute setting so pipeline restarts recover without
+ * changing the user's setting. Missing/restarting DSP sockets are retried. */
+static void replay_dsp_controls(struct gate *gate, uint64_t now)
+{
+    if (now - gate->last_dsp_control_ms < 100u) return;
+    gate->last_dsp_control_ms = now;
+    for (size_t i = 0; i < SLOT_COUNT; ++i) {
+        const struct source_slot *slot = &gate->slots[i];
+        const char *path = getenv(i == SLOT_HDMI ? "AURORA_DSP_CONTROL_SOCKET" :
+                                                 "AURORA_LOCAL_DSP_CONTROL_SOCKET");
+        if (!path || !*path || !slot->manager_registered || !slot->lipsync_valid) continue;
+        struct sockaddr_un address;
+        memset(&address, 0, sizeof(address));
+        if (strlen(path) >= sizeof(address.sun_path)) continue;
+        address.sun_family = AF_UNIX;
+        memcpy(address.sun_path, path, strlen(path) + 1u);
+        uint8_t message[32] = {0};
+        write_le32(message, 0x30435041u); /* APC0 */
+        write_le16(message + 4, 1u);
+        write_le16(message + 6, 3u); /* lip-sync frames */
+        write_le64(message + 8, slot->lipsync_frames);
+        (void)sendto(gate->dsp_control_fd, message, sizeof(message), MSG_NOSIGNAL,
+                     (const struct sockaddr *)&address, sizeof(address));
+    }
+}
+
 int main(void)
 {
     signal(SIGINT, on_signal);
@@ -716,6 +750,11 @@ int main(void)
 
     struct gate gate;
     memset(&gate, 0, sizeof(gate));
+    gate.dsp_control_fd = socket(AF_UNIX, SOCK_DGRAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (gate.dsp_control_fd < 0) {
+        perror("aurora-source-gate: DSP control socket");
+        return 1;
+    }
     gate.bridge_fd = -1;
     gate.config_owner_slot = NO_CONFIG_OWNER;
     gate.manager_socket = env_or("AURORA_SOURCE_MANAGER_SOCKET",
@@ -857,6 +896,7 @@ int main(void)
         }
 
         uint64_t now = monotonic_ms();
+        replay_dsp_controls(&gate, now);
         for (size_t i = 0; i < SLOT_COUNT; ++i) {
             struct source_slot *slot = &gate.slots[i];
             if (slot->present && slot->last_media_ms != 0u &&
@@ -879,6 +919,7 @@ int main(void)
         close_fd(&gate.slots[i].listen_fd);
     }
     close_fd(&gate.bridge_fd);
+    close_fd(&gate.dsp_control_fd);
     unlink(hdmi_socket);
     unlink(local_socket);
     return 0;

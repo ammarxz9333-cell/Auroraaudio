@@ -4,7 +4,7 @@ Aurora is an open, modular, hardware-independent spatial-audio processing platfo
 
 The project is in **active product implementation**. Work is tracked in two coordinated lanes:
 
-1. the renderer/product-evidence lane, where geometric binaural Checkpoint A and unified renderer evaluation issue `#44` are complete and the active task is issue `#45` for machine-readable capability truth;
+1. the renderer/product-evidence lane, where geometric binaural Checkpoint A and unified renderer evaluation issue `#44` are complete and issue `#45` capability truth is merged; the active integration is issue `#38` and shared output validation;
 2. the Galaxy S6 appliance/realtime-MCU lane, whose integrated baseline landed through PR `#83` and is **host/software validated but not physically accepted**.
 
 Aurora does not currently claim Dolby Atmos compatibility, true HRTF capability, height-capable loudspeaker rendering, production IAMF decoding, synchronized wireless speakers, physical S6/eARC/USB/DAC validation, or physical multiroom validation unless the corresponding acceptance evidence exists.

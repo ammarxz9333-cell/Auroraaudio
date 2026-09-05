@@ -269,7 +269,10 @@ fn irregular_source_and_spread_sweeps_have_stable_checksum() {
     let first = sweep_checksum();
     let second = sweep_checksum();
     assert_eq!(first, second);
-    if cfg!(target_os = "windows") {
+    if cfg!(all(target_os = "windows", target_env = "gnu")) {
+        // The GNU libm baseline is distinct from MSVC, but is equally strict.
+        assert_eq!(first, 0x1869_afdd_b32a_2516);
+    } else if cfg!(all(target_os = "windows", target_env = "msvc")) {
         assert_eq!(first, 0x0ef1_fc03_dfa5_892e);
     } else if cfg!(target_os = "linux") {
         assert_eq!(first, 0x6c25_035a_7242_4f0f);

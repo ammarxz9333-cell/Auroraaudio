@@ -20,6 +20,8 @@ on:
       - "crates/aurora-core/**"
       - "crates/aurora-dsp-api/**"
       - "crates/aurora-dsp-basic/**"
+      - "crates/aurora-test-alloc/**"
+      - "scripts/test_output_process.py"
       - "crates/aurora-realtime-audio-api/**"
       - "crates/aurora-realtime-engine/**"
       - "crates/aurora-renderer-api/**"
@@ -42,6 +44,8 @@ on:
       - "crates/aurora-core/**"
       - "crates/aurora-dsp-api/**"
       - "crates/aurora-dsp-basic/**"
+      - "crates/aurora-test-alloc/**"
+      - "scripts/test_output_process.py"
       - "crates/aurora-realtime-audio-api/**"
       - "crates/aurora-realtime-engine/**"
       - "crates/aurora-renderer-api/**"
@@ -114,6 +118,12 @@ jobs:
           chmod +x platform/s6/source-manager/test_source_control_cli.py
           python3 platform/s6/source-manager/test_source_control_cli.py \
             /tmp/aurora-source-manager /tmp/aurora-source-ctl
+      - name: Test actual DSP calibration and source lip-sync delivery
+        run: |
+          python3 scripts/test_output_process.py target/debug/aurora-s6-postprocess
+          python3 platform/s6/source-manager/test_dsp_control.py \
+            /tmp/aurora-source-manager /tmp/aurora-source-gate \
+            /tmp/aurora-source-ctl target/debug/aurora-s6-postprocess
       - name: Compile IEC61937 live immersive broker
         run: |
           cc -std=c11 -O2 -Wall -Wextra -Werror \

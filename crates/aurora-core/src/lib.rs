@@ -116,6 +116,10 @@ pub enum ChannelRole {
     TopFrontLeft,
     /// Top front right height channel.
     TopFrontRight,
+    /// Top rear/back left height channel.
+    TopRearLeft,
+    /// Top rear/back right height channel.
+    TopRearRight,
     /// Extensible role for custom layouts.
     Custom(String),
 }
@@ -134,6 +138,8 @@ impl ChannelRole {
             Self::SurroundBackRight => "surround-back-right",
             Self::TopFrontLeft => "top-front-left",
             Self::TopFrontRight => "top-front-right",
+            Self::TopRearLeft => "top-rear-left",
+            Self::TopRearRight => "top-rear-right",
             Self::Custom(value) => value,
         }
     }
@@ -151,6 +157,8 @@ impl ChannelRole {
             Self::SurroundRight => Some(0x400),
             Self::TopFrontLeft => Some(0x1000),
             Self::TopFrontRight => Some(0x4000),
+            Self::TopRearLeft => Some(0x8000),
+            Self::TopRearRight => Some(0x20000),
             Self::Custom(_) => None,
         }
     }
@@ -188,6 +196,8 @@ impl<'de> Deserialize<'de> for ChannelRole {
             "surround-back-right" | "SBR" => Self::SurroundBackRight,
             "top-front-left" | "TFL" => Self::TopFrontLeft,
             "top-front-right" | "TFR" => Self::TopFrontRight,
+            "top-rear-left" | "top-back-left" | "TRL" | "TBL" => Self::TopRearLeft,
+            "top-rear-right" | "top-back-right" | "TRR" | "TBR" => Self::TopRearRight,
             "" => return Err(D::Error::custom("channel role must not be empty")),
             _ => Self::Custom(value),
         })
@@ -209,6 +219,9 @@ pub enum StandardLayout {
     /// 5.1.2: FL, FR, FC, LFE, SL, SR, TFL, TFR.
     #[serde(rename = "5.1.2")]
     FiveOneTwo,
+    /// 7.1.4: FL, FR, FC, LFE, SL, SR, SBL, SBR, TFL, TFR, TRL, TRR.
+    #[serde(rename = "7.1.4")]
+    SevenOneFour,
     /// Custom layout with fixture-defined ordering.
     #[serde(rename = "custom")]
     Custom,
@@ -246,6 +259,20 @@ impl StandardLayout {
                 ChannelRole::SurroundRight,
                 ChannelRole::TopFrontLeft,
                 ChannelRole::TopFrontRight,
+            ],
+            Self::SevenOneFour => &[
+                ChannelRole::FrontLeft,
+                ChannelRole::FrontRight,
+                ChannelRole::FrontCenter,
+                ChannelRole::LowFrequencyEffects,
+                ChannelRole::SurroundLeft,
+                ChannelRole::SurroundRight,
+                ChannelRole::SurroundBackLeft,
+                ChannelRole::SurroundBackRight,
+                ChannelRole::TopFrontLeft,
+                ChannelRole::TopFrontRight,
+                ChannelRole::TopRearLeft,
+                ChannelRole::TopRearRight,
             ],
             Self::Custom => &[],
         }
@@ -342,5 +369,48 @@ impl AudioBlock {
         }
 
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn seven_one_four_has_canonical_twelve_channel_order() {
+        assert_eq!(StandardLayout::SevenOneFour.canonical_roles().len(), 12);
+        assert_eq!(
+            StandardLayout::SevenOneFour.canonical_roles(),
+            &[
+                ChannelRole::FrontLeft,
+                ChannelRole::FrontRight,
+                ChannelRole::FrontCenter,
+                ChannelRole::LowFrequencyEffects,
+                ChannelRole::SurroundLeft,
+                ChannelRole::SurroundRight,
+                ChannelRole::SurroundBackLeft,
+                ChannelRole::SurroundBackRight,
+                ChannelRole::TopFrontLeft,
+                ChannelRole::TopFrontRight,
+                ChannelRole::TopRearLeft,
+                ChannelRole::TopRearRight,
+            ]
+        );
+    }
+
+    #[test]
+    fn top_rear_roles_roundtrip_stably() {
+        let left = serde_json::to_string(&ChannelRole::TopRearLeft).unwrap();
+        let right = serde_json::to_string(&ChannelRole::TopRearRight).unwrap();
+        assert_eq!(left, "\"top-rear-left\"");
+        assert_eq!(right, "\"top-rear-right\"");
+        assert_eq!(
+            serde_json::from_str::<ChannelRole>("\"TBL\"").unwrap(),
+            ChannelRole::TopRearLeft
+        );
+        assert_eq!(
+            serde_json::from_str::<ChannelRole>("\"TBR\"").unwrap(),
+            ChannelRole::TopRearRight
+        );
     }
 }

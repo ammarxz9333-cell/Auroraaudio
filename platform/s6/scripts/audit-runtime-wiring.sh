@@ -245,6 +245,12 @@ if grep -Eq -- '^[[:space:]]*(pub[[:space:]]+)?struct[[:space:]]+(RubatoAsrc|Dri
     fail "postprocessor redefines ASRC/drift primitive"
 fi
 
+# The live path must reuse the same output DSP exercised by the host self-test.
+grep -Fq 'aurora_dsp_basic::output::' "$POST" || fail "postprocessor bypasses shared output DSP"
+if grep -Eq '^[[:space:]]*struct[[:space:]]+(Biquad|Crossover|LinkedLimiter|SpeakerPostProcessor)[[:space:]]*\{' "$POST"; then
+    fail "duplicate output DSP implementation in S6 executable"
+fi
+
 # Pinned versions and realtime shape must agree.
 env_harletty="$(sed -n 's/^HARLETTY_VERSION=//p' "$ENVFILE")"
 build_harletty="$(sed -n 's/^HARLETTY_VERSION="${HARLETTY_VERSION:-\(.*\)}"$/\1/p' "$BUILD")"

@@ -77,7 +77,14 @@ jobs:
           cargo run --release -p aurora-simulation-assurance --bin aurora-evaluate-vbap3d --
           --scene fixtures/scenes/5_1_2_upfiring.json
           --output-dir output/evaluation/vbap3d-5.1.2
-          --duration-seconds 0.5
+          --duration-seconds 2 --block-size 40
+      - name: Validate 7.1.4 rendering and shared cinema output
+        run: |
+          cargo run --release -p aurora-simulation-assurance --bin aurora-evaluate-vbap3d -- --scene fixtures/scenes/7_1_4_q995_class.json --output-dir output/evaluation/vbap3d-7.1.4 --duration-seconds 2 --block-size 40
+          cargo run --release -p aurora-cli --bin aurora-self-test -- --output-dir output/evaluation/output-dsp
+          cargo build --release -p aurora-cli --bin aurora-s6-postprocess
+          python3 scripts/test_output_process.py target/release/aurora-s6-postprocess
+          cargo bench -p aurora-dsp-basic --bench output -- --quick --noplot
       - name: Upload renderer evaluation evidence
         if: success()
         uses: actions/upload-artifact@v4

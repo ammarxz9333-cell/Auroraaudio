@@ -19,6 +19,7 @@ aurora-core = { path = "../aurora-core" }
 aurora-renderer-api = { path = "../aurora-renderer-api" }
 
 [dev-dependencies]
+aurora-test-alloc = { path = "../aurora-test-alloc" }
 aurora-renderer-basic = { path = "../aurora-renderer-basic" }
 aurora-scene = { path = "../aurora-scene" }
 criterion.workspace = true

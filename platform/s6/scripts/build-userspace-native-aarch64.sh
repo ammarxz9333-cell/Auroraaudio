@@ -70,6 +70,7 @@ mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/share/omniphony/layouts" "$OUT/navidrome" "
     cargo build --locked --release -j "$JOBS" -p aurora-cli --no-default-features --features realtime
     install -m 0755 target/release/aurora-cli "$OUT/bin/aurora-cli"
     install -m 0755 target/release/aurora-s6-postprocess "$OUT/bin/aurora-s6-postprocess"
+    install -m 0755 target/release/aurora-self-test "$OUT/bin/aurora-self-test"
 )
 
 if [ ! -d "$WORK/Omniphony/.git" ]; then

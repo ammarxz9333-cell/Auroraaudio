@@ -358,6 +358,7 @@ static int handle_message(struct manager *m, struct client *c,
             m->master_gain_mdb = (int64_t)data0;
             break;
         case AURORA_SOURCE_CTRL_LIPSYNC_FRAMES:
+            if (data0 > AURORA_SOURCE_MAX_LIPSYNC_FRAMES) return -1;
             m->lipsync_frames = (uint32_t)data0;
             break;
         case AURORA_SOURCE_CTRL_STANDBY:

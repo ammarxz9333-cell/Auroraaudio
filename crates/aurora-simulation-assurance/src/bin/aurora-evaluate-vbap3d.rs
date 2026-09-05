@@ -1,7 +1,6 @@
 use std::f32::consts::TAU;
-use std::fs::{self, File};
-use std::io::{BufWriter, Write};
-use std::path::{Path, PathBuf};
+use std::fs;
+use std::path::PathBuf;
 
 use anyhow::{bail, Context, Result};
 use aurora_core::{ChannelRole, Listener, Speaker, Vector3};
@@ -14,7 +13,9 @@ const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Parser)]
 #[command(name = "aurora-evaluate-vbap3d")]
-#[command(about = "Generate deterministic offline 3D VBAP evidence for the canonical 5.1.2 scene")]
+#[command(
+    about = "Generate deterministic offline 3D VBAP evidence for a configured loudspeaker scene"
+)]
 struct Cli {
     #[arg(long, default_value = "fixtures/scenes/5_1_2_upfiring.json")]
     scene: PathBuf,
@@ -141,8 +142,8 @@ fn validate_cli(cli: &Cli) -> Result<()> {
 }
 
 fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
-    let fixture_bytes = fs::read(&cli.scene)
-        .with_context(|| format!("read scene {}", cli.scene.display()))?;
+    let fixture_bytes =
+        fs::read(&cli.scene).with_context(|| format!("read scene {}", cli.scene.display()))?;
     let fixture: Fixture = serde_json::from_slice(&fixture_bytes)
         .with_context(|| format!("parse scene {}", cli.scene.display()))?;
     if fixture.speakers.is_empty() {
@@ -162,6 +163,8 @@ fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
     for speaker in &mut speakers {
         speaker.gain_db = 0.0;
     }
+    // RIFF mask order differs from Aurora's canonical order for 7.1.4.
+    // Keep renderer/JSON in canonical order; reorder samples only at WAV export.
     validate_wav_roles(&speakers)?;
 
     let roles = speakers
@@ -254,9 +257,7 @@ fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
             })
             .map(|(_, gain)| gain * gain)
             .sum::<f32>();
-        if !spatial_power.is_finite()
-            || (spatial_power - 1.0).abs() > cli.normalization_tolerance
-        {
+        if !spatial_power.is_finite() || (spatial_power - 1.0).abs() > cli.normalization_tolerance {
             normalization_failures += 1;
         }
 
@@ -301,11 +302,11 @@ fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
         previous_gains = Some(gains);
     }
 
-    write_float32_extensible_wav(
-        &cli.output_dir.join("rendered-reference.wav"),
+    aurora_audio_io::write_wav_f32_with_channel_roles(
+        cli.output_dir.join("rendered-reference.wav"),
         cli.sample_rate,
-        &roles,
         &pcm,
+        &roles,
     )?;
     write_json_artifact(
         cli.output_dir.join("gain-trajectory.json"),
@@ -329,7 +330,7 @@ fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
         listener_inside_hull,
         scene_path: cli.scene.display().to_string(),
         commit_sha: std::env::var("GITHUB_SHA").unwrap_or_else(|_| "unknown".to_owned()),
-        scene_semantics: "canonical Aurora 5.1.2 fixture; listener and speaker geometry loaded from JSON",
+        scene_semantics: "Aurora fixture; listener and speaker geometry loaded from JSON",
         trim_semantics: "speaker gain_db normalized to 0 dB for renderer-only unit-power evidence",
         wav_semantics: "IEEE-float WAVE_FORMAT_EXTENSIBLE; 440 Hz mono reference routed by block gains; propagation delays are not applied to PCM",
         evidence_boundary: "software-only; no Atmos/JOC, HRTF, physical hardware, acoustic, or product-readiness claim",
@@ -383,84 +384,17 @@ fn source_position(progress: f32, listener: &Listener) -> Vector3 {
 }
 
 fn validate_wav_roles(speakers: &[Speaker]) -> Result<()> {
-    let mut previous_bit = 0_u32;
+    let mut seen = 0_u32;
     for speaker in speakers {
         let bit = speaker
             .channel_role
             .wav_channel_mask_bit()
-            .with_context(|| format!("WAV evidence requires a standard channel role: {}", speaker.id))?;
-        if bit <= previous_bit {
-            bail!(
-                "fixture channel order is not WAVE_FORMAT_EXTENSIBLE mask order at {}",
-                speaker.id
-            );
+            .with_context(|| format!("WAV requires a standard channel role: {}", speaker.id))?;
+        if seen & bit != 0 {
+            bail!("duplicate WAV channel role: {}", speaker.channel_role);
         }
-        previous_bit = bit;
+        seen |= bit;
     }
-    Ok(())
-}
-
-fn write_float32_extensible_wav(
-    path: &Path,
-    sample_rate: u32,
-    roles: &[ChannelRole],
-    pcm: &[Vec<f32>],
-) -> Result<()> {
-    if pcm.is_empty() || pcm.len() != roles.len() {
-        bail!("WAV channel and role counts must match and be non-zero");
-    }
-    let frames = pcm[0].len();
-    if pcm.iter().any(|channel| channel.len() != frames) {
-        bail!("all WAV channels must contain the same number of frames");
-    }
-    let channels = u16::try_from(pcm.len()).context("too many WAV channels")?;
-    let block_align = channels
-        .checked_mul(4)
-        .context("WAV block alignment overflow")?;
-    let byte_rate = sample_rate
-        .checked_mul(u32::from(block_align))
-        .context("WAV byte rate overflow")?;
-    let data_bytes = frames
-        .checked_mul(usize::from(block_align))
-        .context("WAV data size overflow")?;
-    let data_bytes_u32 = u32::try_from(data_bytes).context("WAV data exceeds RIFF limit")?;
-    let riff_size = 60_u32
-        .checked_add(data_bytes_u32)
-        .context("WAV RIFF size overflow")?;
-    let channel_mask = roles.iter().try_fold(0_u32, |mask, role| {
-        role.wav_channel_mask_bit()
-            .map(|bit| mask | bit)
-            .context("WAV evidence requires standard channel roles")
-    })?;
-
-    let file = File::create(path).with_context(|| format!("create {}", path.display()))?;
-    let mut writer = BufWriter::new(file);
-    writer.write_all(b"RIFF")?;
-    writer.write_all(&riff_size.to_le_bytes())?;
-    writer.write_all(b"WAVE")?;
-    writer.write_all(b"fmt ")?;
-    writer.write_all(&40_u32.to_le_bytes())?;
-    writer.write_all(&0xfffe_u16.to_le_bytes())?;
-    writer.write_all(&channels.to_le_bytes())?;
-    writer.write_all(&sample_rate.to_le_bytes())?;
-    writer.write_all(&byte_rate.to_le_bytes())?;
-    writer.write_all(&block_align.to_le_bytes())?;
-    writer.write_all(&32_u16.to_le_bytes())?;
-    writer.write_all(&22_u16.to_le_bytes())?;
-    writer.write_all(&32_u16.to_le_bytes())?;
-    writer.write_all(&channel_mask.to_le_bytes())?;
-    writer.write_all(&3_u32.to_le_bytes())?;
-    writer.write_all(&0_u16.to_le_bytes())?;
-    writer.write_all(&0x0010_u16.to_le_bytes())?;
-    writer.write_all(&[0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71])?;
-    writer.write_all(b"data")?;
-    writer.write_all(&data_bytes_u32.to_le_bytes())?;
-    for frame in 0..frames {
-        for channel in pcm {
-            writer.write_all(&channel[frame].to_le_bytes())?;
-        }
-    }
-    writer.flush()?;
     Ok(())
 }
 

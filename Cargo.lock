@@ -121,6 +121,7 @@ dependencies = [
  "aurora-renderer-basic",
  "aurora-scene",
  "clap",
+ "libc",
  "serde",
  "serde_json",
  "tracing",
@@ -131,6 +132,7 @@ name = "aurora-config"
 version = "0.1.0"
 dependencies = [
  "aurora-diagnostics",
+ "aurora-test-alloc",
  "criterion",
  "serde",
  "serde_json",
@@ -141,6 +143,7 @@ name = "aurora-core"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -172,6 +175,7 @@ dependencies = [
 name = "aurora-diagnostics"
 version = "0.1.0"
 dependencies = [
+ "aurora-test-alloc",
  "criterion",
  "serde",
  "serde_json",
@@ -189,8 +193,12 @@ dependencies = [
 name = "aurora-dsp-basic"
 version = "0.1.0"
 dependencies = [
+ "anyhow",
  "aurora-core",
  "aurora-dsp-api",
+ "aurora-test-alloc",
+ "criterion",
+ "serde",
  "thiserror",
 ]
 
@@ -236,6 +244,7 @@ dependencies = [
  "aurora-realtime-audio-api",
  "aurora-realtime-engine",
  "aurora-scene",
+ "aurora-test-alloc",
  "criterion",
  "serde",
  "serde_json",
@@ -252,6 +261,7 @@ dependencies = [
  "aurora-renderer-api",
  "aurora-renderer-basic",
  "aurora-scene",
+ "aurora-test-alloc",
  "criterion",
  "crossbeam-queue",
  "rubato",
@@ -291,6 +301,7 @@ dependencies = [
  "aurora-renderer-api",
  "aurora-renderer-basic",
  "aurora-scene",
+ "aurora-test-alloc",
  "criterion",
 ]
 
@@ -327,6 +338,7 @@ name = "aurora-simulation-assurance"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "aurora-audio-io",
  "aurora-core",
  "aurora-realtime-audio-sim",
  "aurora-renderer-api",
@@ -335,6 +347,10 @@ dependencies = [
  "serde",
  "serde_json",
 ]
+
+[[package]]
+name = "aurora-test-alloc"
+version = "0.1.0"
 
 [[package]]
 name = "autocfg"

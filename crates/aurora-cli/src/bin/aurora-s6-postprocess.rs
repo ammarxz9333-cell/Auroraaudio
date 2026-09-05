@@ -8,10 +8,10 @@
 //! consumed on a dedicated thread; the audio loop observes atomics only.
 
 use anyhow::{bail, Context, Result};
+use aurora_dsp_basic::output::{OutputDspConfig, SpeakerPostProcessor};
 use aurora_realtime_engine::{
     AsynchronousResampler, DriftController, DriftControllerConfig, RubatoAsrc,
 };
-use std::f32::consts::PI;
 #[cfg(unix)]
 use std::fs::File;
 use std::io::{self, ErrorKind, Read, Write};
@@ -27,11 +27,9 @@ const BLOCK_SAMPLES: usize = CHANNELS * BLOCK_FRAMES;
 const READ_FRAMES: usize = 8;
 const READ_SAMPLES: usize = READ_FRAMES * CHANNELS;
 const READ_BYTES: usize = READ_SAMPLES * 4;
-const LFE: usize = 3;
 const MAX_ASRC_INPUT_FRAMES: usize = 128;
 const INPUT_QUEUE_FRAMES: usize = 512;
 const MAX_LIPSYNC_FRAMES: usize = 24_000; // 500 ms at 48 kHz.
-const LIPSYNC_RING_FRAMES: usize = MAX_LIPSYNC_FRAMES + 1;
 const CONTROL_MESSAGE_BYTES: usize = 32;
 const CONTROL_MAGIC: [u8; 4] = *b"APC0";
 const CONTROL_VERSION: u16 = 1;
@@ -43,15 +41,17 @@ const CTRL_MASTER_GAIN_MDB: u16 = 4;
 const CTRL_MUTE: u16 = 5;
 const CTRL_STANDBY: u16 = 6;
 
-fn db_to_linear(db: f32) -> f32 {
-    10.0_f32.powf(db / 20.0)
-}
-
 fn env_f32(name: &str, default: f32) -> Result<f32> {
     match std::env::var(name) {
-        Ok(value) => value
-            .parse::<f32>()
-            .with_context(|| format!("invalid {name}={value}")),
+        Ok(value) => {
+            let parsed = value
+                .parse::<f32>()
+                .with_context(|| format!("invalid {name}={value}"))?;
+            if !parsed.is_finite() {
+                bail!("{name} must be finite");
+            }
+            Ok(parsed)
+        }
         Err(std::env::VarError::NotPresent) => Ok(default),
         Err(error) => Err(error.into()),
     }
@@ -67,357 +67,39 @@ fn env_usize(name: &str, default: usize) -> Result<usize> {
     }
 }
 
-#[derive(Debug, Clone, Copy, Default)]
-struct Biquad {
-    b0: f32,
-    b1: f32,
-    b2: f32,
-    a1: f32,
-    a2: f32,
-    z1: f32,
-    z2: f32,
-}
-
-impl Biquad {
-    fn low_pass(sample_rate: f32, frequency: f32, q: f32) -> Result<Self> {
-        Self::design(sample_rate, frequency, q, false)
+fn postprocessor_from_environment() -> Result<SpeakerPostProcessor> {
+    let bed_crossover_hz = env_f32("AURORA_BED_CROSSOVER_HZ", 80.0)?;
+    let height_crossover_hz = env_f32("AURORA_HEIGHT_CROSSOVER_HZ", 100.0)?;
+    let lfe_lowpass_hz = env_f32("AURORA_LFE_LOWPASS_HZ", 120.0)?;
+    let sub_highpass_hz = env_f32("AURORA_SUB_HIGHPASS_HZ", 20.0)?;
+    // 0 dB is intentionally conservative until the physical decoder/render
+    // chain is level-calibrated. This avoids accidentally applying the LFE
+    // playback convention twice.
+    let lfe_trim_db = env_f32("AURORA_LFE_TRIM_DB", 0.0)?;
+    let redirected_bass_db = env_f32("AURORA_REDIRECTED_BASS_DB", 0.0)?;
+    let headroom_db = env_f32("AURORA_HEADROOM_DB", -3.0)?;
+    let limiter_dbfs = env_f32("AURORA_LIMITER_DBFS", -1.0)?;
+    let limiter_release_ms = env_f32("AURORA_LIMITER_RELEASE_MS", 50.0)?;
+    let lipsync_ms = env_f32("AURORA_LIPSYNC_MS", 0.0)?.clamp(0.0, 500.0);
+    let lipsync_frames = (lipsync_ms * SAMPLE_RATE as f32 / 1_000.0).round() as usize;
+    let mut processor = SpeakerPostProcessor::new(OutputDspConfig {
+        bed_crossover_hz,
+        height_crossover_hz,
+        lfe_lowpass_hz,
+        sub_highpass_hz,
+        lfe_trim_db,
+        redirected_bass_db,
+        headroom_db,
+        limiter_dbfs,
+        limiter_release_ms,
+        lipsync_frames,
+    })?;
+    if let Some(path) = std::env::var_os("AURORA_SPEAKER_CALIBRATION") {
+        let bytes = std::fs::read(&path).context("read speaker calibration")?;
+        let config = serde_json::from_slice(&bytes).context("parse speaker calibration")?;
+        processor.configure_calibration(&config)?;
     }
-
-    fn high_pass(sample_rate: f32, frequency: f32, q: f32) -> Result<Self> {
-        Self::design(sample_rate, frequency, q, true)
-    }
-
-    fn design(sample_rate: f32, frequency: f32, q: f32, high_pass: bool) -> Result<Self> {
-        if !sample_rate.is_finite()
-            || !frequency.is_finite()
-            || !q.is_finite()
-            || sample_rate <= 0.0
-            || frequency <= 0.0
-            || frequency >= sample_rate * 0.49
-            || q <= 0.0
-        {
-            bail!("invalid biquad design");
-        }
-        let omega = 2.0 * PI * frequency / sample_rate;
-        let cos = omega.cos();
-        let sin = omega.sin();
-        let alpha = sin / (2.0 * q);
-        let a0 = 1.0 + alpha;
-        let (b0, b1, b2) = if high_pass {
-            ((1.0 + cos) * 0.5, -(1.0 + cos), (1.0 + cos) * 0.5)
-        } else {
-            ((1.0 - cos) * 0.5, 1.0 - cos, (1.0 - cos) * 0.5)
-        };
-        Ok(Self {
-            b0: b0 / a0,
-            b1: b1 / a0,
-            b2: b2 / a0,
-            a1: (-2.0 * cos) / a0,
-            a2: (1.0 - alpha) / a0,
-            z1: 0.0,
-            z2: 0.0,
-        })
-    }
-
-    #[inline]
-    fn process(&mut self, input: f32) -> f32 {
-        let output = self.b0 * input + self.z1;
-        self.z1 = self.b1 * input - self.a1 * output + self.z2;
-        self.z2 = self.b2 * input - self.a2 * output;
-        if output.is_finite() {
-            output
-        } else {
-            0.0
-        }
-    }
-
-    fn reset(&mut self) {
-        self.z1 = 0.0;
-        self.z2 = 0.0;
-    }
-}
-
-#[derive(Debug, Clone, Copy, Default)]
-struct Crossover {
-    low_1: Biquad,
-    low_2: Biquad,
-    high_1: Biquad,
-    high_2: Biquad,
-}
-
-impl Crossover {
-    fn linkwitz_riley_4(sample_rate: f32, frequency: f32) -> Result<Self> {
-        let q = 1.0 / 2.0_f32.sqrt();
-        let low = Biquad::low_pass(sample_rate, frequency, q)?;
-        let high = Biquad::high_pass(sample_rate, frequency, q)?;
-        Ok(Self {
-            low_1: low,
-            low_2: low,
-            high_1: high,
-            high_2: high,
-        })
-    }
-
-    #[inline]
-    fn split(&mut self, input: f32) -> (f32, f32) {
-        let low = self.low_2.process(self.low_1.process(input));
-        let high = self.high_2.process(self.high_1.process(input));
-        (high, low)
-    }
-
-    fn reset(&mut self) {
-        self.low_1.reset();
-        self.low_2.reset();
-        self.high_1.reset();
-        self.high_2.reset();
-    }
-}
-
-#[derive(Debug, Clone)]
-struct LinkedLimiter {
-    ceiling: f32,
-    gain: f32,
-    release_alpha: f32,
-}
-
-impl LinkedLimiter {
-    fn new(ceiling_dbfs: f32, release_ms: f32) -> Result<Self> {
-        let ceiling = db_to_linear(ceiling_dbfs);
-        if !ceiling.is_finite()
-            || ceiling <= 0.0
-            || ceiling > 1.0
-            || !release_ms.is_finite()
-            || release_ms <= 0.0
-        {
-            bail!("invalid limiter configuration");
-        }
-        let release_samples = release_ms * SAMPLE_RATE as f32 / 1_000.0;
-        let release_alpha = 1.0 - (-1.0 / release_samples.max(1.0)).exp();
-        Ok(Self {
-            ceiling,
-            gain: 1.0,
-            release_alpha,
-        })
-    }
-
-    #[inline]
-    fn process_frame(&mut self, frame: &mut [f32]) {
-        let peak = frame.iter().copied().map(f32::abs).fold(0.0_f32, f32::max);
-        let requested = if peak > self.ceiling && peak > 0.0 {
-            self.ceiling / peak
-        } else {
-            1.0
-        };
-        if requested < self.gain {
-            self.gain = requested;
-        } else {
-            self.gain += (1.0 - self.gain) * self.release_alpha;
-        }
-        for sample in frame {
-            *sample = (*sample * self.gain).clamp(-self.ceiling, self.ceiling);
-        }
-    }
-
-    fn reset(&mut self) {
-        self.gain = 1.0;
-    }
-}
-
-#[derive(Debug, Clone)]
-struct LipDelay {
-    ring: Vec<f32>,
-    write_frame: usize,
-    delay_frames: usize,
-}
-
-impl LipDelay {
-    fn new(delay_frames: usize) -> Result<Self> {
-        if delay_frames > MAX_LIPSYNC_FRAMES {
-            bail!("lip-sync delay exceeds 500 ms");
-        }
-        Ok(Self {
-            ring: vec![0.0; LIPSYNC_RING_FRAMES * CHANNELS],
-            write_frame: 0,
-            delay_frames,
-        })
-    }
-
-    fn set_delay_frames(&mut self, delay_frames: usize) {
-        self.delay_frames = delay_frames.min(MAX_LIPSYNC_FRAMES);
-    }
-
-    #[inline]
-    fn process_frame(&mut self, frame: &mut [f32]) {
-        let write_base = self.write_frame * CHANNELS;
-        self.ring[write_base..write_base + CHANNELS].copy_from_slice(frame);
-        let read_frame =
-            (self.write_frame + LIPSYNC_RING_FRAMES - self.delay_frames) % LIPSYNC_RING_FRAMES;
-        let read_base = read_frame * CHANNELS;
-        frame.copy_from_slice(&self.ring[read_base..read_base + CHANNELS]);
-        self.write_frame += 1;
-        if self.write_frame == LIPSYNC_RING_FRAMES {
-            self.write_frame = 0;
-        }
-    }
-
-    fn reset(&mut self) {
-        self.ring.fill(0.0);
-        self.write_frame = 0;
-    }
-}
-
-struct SpeakerPostProcessor {
-    crossovers: [Crossover; CHANNELS],
-    lfe_low_1: Biquad,
-    lfe_low_2: Biquad,
-    sub_high_1: Biquad,
-    sub_high_2: Biquad,
-    lfe_gain: f32,
-    redirected_bass_gain: f32,
-    headroom_gain: f32,
-    user_gain: f32,
-    smoothed_master_gain: f32,
-    gain_alpha: f32,
-    muted: bool,
-    standby: bool,
-    limiter: LinkedLimiter,
-    lip_delay: LipDelay,
-}
-
-impl SpeakerPostProcessor {
-    fn from_environment() -> Result<Self> {
-        let bed_crossover_hz = env_f32("AURORA_BED_CROSSOVER_HZ", 80.0)?;
-        let height_crossover_hz = env_f32("AURORA_HEIGHT_CROSSOVER_HZ", 100.0)?;
-        let lfe_lowpass_hz = env_f32("AURORA_LFE_LOWPASS_HZ", 120.0)?;
-        let sub_highpass_hz = env_f32("AURORA_SUB_HIGHPASS_HZ", 20.0)?;
-        // 0 dB is intentionally conservative until the physical decoder/render
-        // chain is level-calibrated. This avoids accidentally applying the LFE
-        // playback convention twice.
-        let lfe_trim_db = env_f32("AURORA_LFE_TRIM_DB", 0.0)?;
-        let redirected_bass_db = env_f32("AURORA_REDIRECTED_BASS_DB", 0.0)?;
-        let headroom_db = env_f32("AURORA_HEADROOM_DB", -3.0)?;
-        let limiter_dbfs = env_f32("AURORA_LIMITER_DBFS", -1.0)?;
-        let limiter_release_ms = env_f32("AURORA_LIMITER_RELEASE_MS", 50.0)?;
-        let lipsync_ms = env_f32("AURORA_LIPSYNC_MS", 0.0)?.clamp(0.0, 500.0);
-        let lipsync_frames = (lipsync_ms * SAMPLE_RATE as f32 / 1_000.0).round() as usize;
-        Self::new(
-            bed_crossover_hz,
-            height_crossover_hz,
-            lfe_lowpass_hz,
-            sub_highpass_hz,
-            lfe_trim_db,
-            redirected_bass_db,
-            headroom_db,
-            limiter_dbfs,
-            limiter_release_ms,
-            lipsync_frames,
-        )
-    }
-
-    #[allow(clippy::too_many_arguments)]
-    fn new(
-        bed_crossover_hz: f32,
-        height_crossover_hz: f32,
-        lfe_lowpass_hz: f32,
-        sub_highpass_hz: f32,
-        lfe_trim_db: f32,
-        redirected_bass_db: f32,
-        headroom_db: f32,
-        limiter_dbfs: f32,
-        limiter_release_ms: f32,
-        lipsync_frames: usize,
-    ) -> Result<Self> {
-        let bed = Crossover::linkwitz_riley_4(SAMPLE_RATE as f32, bed_crossover_hz)?;
-        let height = Crossover::linkwitz_riley_4(SAMPLE_RATE as f32, height_crossover_hz)?;
-        let mut crossovers = [bed; CHANNELS];
-        for crossover in &mut crossovers[8..12] {
-            *crossover = height;
-        }
-        crossovers[LFE] = Crossover::default();
-        let q = 1.0 / 2.0_f32.sqrt();
-        let lfe_low = Biquad::low_pass(SAMPLE_RATE as f32, lfe_lowpass_hz, q)?;
-        let sub_high = Biquad::high_pass(SAMPLE_RATE as f32, sub_highpass_hz, q)?;
-        let gain_samples = 5.0 * SAMPLE_RATE as f32 / 1_000.0;
-        Ok(Self {
-            crossovers,
-            lfe_low_1: lfe_low,
-            lfe_low_2: lfe_low,
-            sub_high_1: sub_high,
-            sub_high_2: sub_high,
-            lfe_gain: db_to_linear(lfe_trim_db),
-            redirected_bass_gain: db_to_linear(redirected_bass_db),
-            headroom_gain: db_to_linear(headroom_db),
-            user_gain: 1.0,
-            smoothed_master_gain: 0.0,
-            gain_alpha: 1.0 - (-1.0 / gain_samples.max(1.0)).exp(),
-            muted: false,
-            standby: false,
-            limiter: LinkedLimiter::new(limiter_dbfs, limiter_release_ms)?,
-            lip_delay: LipDelay::new(lipsync_frames)?,
-        })
-    }
-
-    fn set_master_gain_mdb(&mut self, milli_db: i64) {
-        let db = (milli_db as f32 / 1_000.0).clamp(-80.0, 12.0);
-        self.user_gain = db_to_linear(db);
-    }
-
-    fn set_lipsync_frames(&mut self, frames: usize) {
-        self.lip_delay.set_delay_frames(frames);
-    }
-
-    fn set_mute(&mut self, muted: bool) {
-        self.muted = muted;
-    }
-
-    fn set_standby(&mut self, standby: bool) {
-        self.standby = standby;
-    }
-
-    fn process_block(&mut self, block: &mut [f32]) {
-        for frame in block.chunks_exact_mut(CHANNELS) {
-            let original_lfe = frame[LFE];
-            let mut redirected_bass = 0.0_f32;
-            for (channel, sample) in frame.iter_mut().enumerate() {
-                if channel == LFE {
-                    continue;
-                }
-                let (high, low) = self.crossovers[channel].split(*sample);
-                *sample = high;
-                redirected_bass += low;
-            }
-
-            let lfe_band =
-                self.lfe_low_2.process(self.lfe_low_1.process(original_lfe)) * self.lfe_gain;
-            let summed_sub = lfe_band + redirected_bass * self.redirected_bass_gain;
-            frame[LFE] = self.sub_high_2.process(self.sub_high_1.process(summed_sub));
-
-            let target = if self.muted || self.standby {
-                0.0
-            } else {
-                self.headroom_gain * self.user_gain
-            };
-            self.smoothed_master_gain += (target - self.smoothed_master_gain) * self.gain_alpha;
-            for sample in frame.iter_mut() {
-                *sample *= self.smoothed_master_gain;
-            }
-            self.limiter.process_frame(frame);
-            self.lip_delay.process_frame(frame);
-        }
-    }
-
-    fn reset(&mut self) {
-        for crossover in &mut self.crossovers {
-            crossover.reset();
-        }
-        self.lfe_low_1.reset();
-        self.lfe_low_2.reset();
-        self.sub_high_1.reset();
-        self.sub_high_2.reset();
-        self.limiter.reset();
-        self.lip_delay.reset();
-        self.smoothed_master_gain = 0.0;
-    }
+    Ok(processor)
 }
 
 struct FixedFrameQueue {
@@ -541,7 +223,75 @@ fn apply_control_message(state: &ControlState, message: &[u8; CONTROL_MESSAGE_BY
 }
 
 #[cfg(unix)]
+fn spawn_source_control(state: Arc<ControlState>) -> Result<()> {
+    use std::os::unix::{
+        fs::{FileTypeExt, PermissionsExt},
+        net::UnixDatagram,
+    };
+    let Some(path) = std::env::var_os("AURORA_DSP_CONTROL_SOCKET") else {
+        return Ok(());
+    };
+    let bind = || UnixDatagram::bind(&path);
+    let socket = match bind() {
+        Ok(socket) => socket,
+        Err(error) if error.kind() == ErrorKind::AddrInUse => {
+            // Remove only a socket with a refused connection, never a live
+            // process endpoint or an arbitrary file at the configured path.
+            if !std::fs::symlink_metadata(&path)?.file_type().is_socket() {
+                return Err(error.into());
+            }
+            let probe = UnixDatagram::unbound()?;
+            let result = probe
+                .connect(&path)
+                .and_then(|_| probe.send(&[]).map(|_| ()));
+            if !matches!(result, Err(ref e) if e.kind() == ErrorKind::ConnectionRefused) {
+                return Err(error.into());
+            }
+            std::fs::remove_file(&path)?;
+            bind()?
+        }
+        Err(error) => return Err(error.into()),
+    };
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600))?;
+    std::thread::Builder::new()
+        .name("aurora-source-control".into())
+        .spawn(move || {
+            let mut bytes = [0_u8; CONTROL_MESSAGE_BYTES + 1];
+            loop {
+                match socket.recv(&mut bytes) {
+                    Ok(CONTROL_MESSAGE_BYTES) => {
+                        if read_le16(&bytes[6..8]) == CTRL_LIPSYNC_FRAMES {
+                            let message: &[u8; CONTROL_MESSAGE_BYTES] =
+                                (&bytes[..CONTROL_MESSAGE_BYTES]).try_into().unwrap();
+                            apply_control_message(&state, message);
+                        }
+                    }
+                    Ok(_) => {}
+                    Err(error) if error.kind() == ErrorKind::Interrupted => continue,
+                    Err(_) => break,
+                }
+            }
+        })?;
+    Ok(())
+}
+
+#[cfg(not(unix))]
+fn spawn_source_control(_state: Arc<ControlState>) -> Result<()> {
+    if std::env::var_os("AURORA_DSP_CONTROL_SOCKET").is_some() {
+        bail!("source DSP socket requires Unix");
+    }
+    Ok(())
+}
+
+#[cfg(unix)]
 fn spawn_control_reader(fd: usize, state: Arc<ControlState>) -> Result<()> {
+    if fd < 3 || fd > i32::MAX as usize {
+        bail!("control descriptor must be an inherited non-stdio descriptor");
+    }
+    // SAFETY: F_GETFD only queries the supplied integer descriptor.
+    if unsafe { libc::fcntl(fd as RawFd, libc::F_GETFD) } < 0 {
+        return Err(io::Error::last_os_error()).context("invalid inherited control descriptor");
+    }
     std::thread::Builder::new()
         .name("aurora-post-control".to_owned())
         .spawn(move || {
@@ -594,7 +344,6 @@ fn floats_to_bytes(samples: &[f32], output: &mut [u8]) {
 }
 
 fn run() -> Result<()> {
-    let control_fd = env_usize("AURORA_CONTROL_FD", 3)?;
     let drift_target_frames = env_usize("AURORA_DRIFT_TARGET_FRAMES", 120)?;
     if !(BLOCK_FRAMES..=4_096).contains(&drift_target_frames) {
         bail!("AURORA_DRIFT_TARGET_FRAMES must be between 40 and 4096");
@@ -606,7 +355,10 @@ fn run() -> Result<()> {
             .round() as usize,
         Ordering::Relaxed,
     );
-    spawn_control_reader(control_fd, Arc::clone(&state))?;
+    if std::env::var_os("AURORA_CONTROL_FD").is_some() {
+        spawn_control_reader(env_usize("AURORA_CONTROL_FD", 3)?, Arc::clone(&state))?;
+    }
+    spawn_source_control(Arc::clone(&state))?;
 
     let drift_config = DriftControllerConfig {
         target_fill_frames: drift_target_frames,
@@ -619,7 +371,7 @@ fn run() -> Result<()> {
         bail!("ASRC input requirement exceeds fixed Aurora scratch capacity");
     }
 
-    let mut post = SpeakerPostProcessor::from_environment()?;
+    let mut post = postprocessor_from_environment()?;
     post.set_lipsync_frames(state.lipsync_frames.load(Ordering::Relaxed));
     let mut queue = FixedFrameQueue::new(INPUT_QUEUE_FRAMES);
     let mut asrc_input = vec![0.0_f32; MAX_ASRC_INPUT_FRAMES * CHANNELS];
@@ -726,7 +478,7 @@ fn run() -> Result<()> {
             if report.output_frames != BLOCK_FRAMES {
                 bail!("ASRC produced unexpected block size");
             }
-            post.process_block(&mut output[..BLOCK_SAMPLES]);
+            post.process_block(&mut output[..BLOCK_SAMPLES])?;
             floats_to_bytes(&output[..BLOCK_SAMPLES], &mut output_bytes);
             stdout.write_all(&output_bytes)?;
             stdout.flush()?;
@@ -748,10 +500,6 @@ fn main() {
 mod tests {
     use super::*;
 
-    fn processor() -> SpeakerPostProcessor {
-        SpeakerPostProcessor::new(80.0, 100.0, 120.0, 20.0, 0.0, 0.0, -3.0, -1.0, 50.0, 0).unwrap()
-    }
-
     #[test]
     fn fixed_queue_preserves_frame_order_across_wrap() {
         let mut queue = FixedFrameQueue::new(4);
@@ -769,49 +517,6 @@ mod tests {
         assert_eq!(&remaining[..CHANNELS], &first[2 * CHANNELS..3 * CHANNELS]);
         assert_eq!(&remaining[CHANNELS..2 * CHANNELS], &second[..CHANNELS]);
         assert_eq!(&remaining[2 * CHANNELS..], &second[CHANNELS..2 * CHANNELS]);
-    }
-
-    #[test]
-    fn linked_limiter_never_exceeds_ceiling_and_preserves_channel_ratio() {
-        let mut limiter = LinkedLimiter::new(-1.0, 50.0).unwrap();
-        let mut frame = [0.0_f32; CHANNELS];
-        frame[0] = 2.0;
-        frame[1] = 1.0;
-        limiter.process_frame(&mut frame);
-        let ceiling = db_to_linear(-1.0);
-        assert!(frame.iter().all(|sample| sample.abs() <= ceiling + 1.0e-6));
-        assert!((frame[0] / frame[1] - 2.0).abs() < 1.0e-5);
-    }
-
-    #[test]
-    fn lip_delay_delays_all_channels_by_exact_frames() {
-        let mut delay = LipDelay::new(2).unwrap();
-        let mut first = [0.0_f32; CHANNELS];
-        first[0] = 1.0;
-        delay.process_frame(&mut first);
-        assert_eq!(first[0], 0.0);
-        let mut second = [0.0_f32; CHANNELS];
-        delay.process_frame(&mut second);
-        assert_eq!(second[0], 0.0);
-        let mut third = [0.0_f32; CHANNELS];
-        delay.process_frame(&mut third);
-        assert_eq!(third[0], 1.0);
-    }
-
-    #[test]
-    fn speaker_postprocessor_is_finite_and_peak_bounded() {
-        let mut post = processor();
-        let mut block = vec![0.0_f32; BLOCK_SAMPLES];
-        for (index, sample) in block.iter_mut().enumerate() {
-            *sample = ((index as f32 * 0.071).sin() * 1.8).clamp(-1.8, 1.8);
-        }
-        for _ in 0..200 {
-            post.process_block(&mut block);
-            assert!(block.iter().all(|sample| sample.is_finite()));
-            assert!(block
-                .iter()
-                .all(|sample| sample.abs() <= db_to_linear(-1.0) + 1.0e-6));
-        }
     }
 
     #[test]

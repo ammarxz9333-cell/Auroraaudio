@@ -167,7 +167,8 @@ static int parse_lipsync_ms(const char *text, uint64_t *value)
     char *end = NULL;
     errno = 0;
     double ms = strtod(text, &end);
-    if (errno != 0 || !end || *end != '\0' || !isfinite(ms) || ms < 0.0 || ms > 1000.0)
+    if (errno != 0 || !end || *end != '\0' || !isfinite(ms) || ms < 0.0 ||
+        ms > (double)AURORA_SOURCE_MAX_LIPSYNC_FRAMES / 48.0)
         return -1;
     double frames = ms * 48.0;
     *value = (uint64_t)llround(frames);
@@ -181,7 +182,7 @@ static void usage(const char *argv0)
             "  %s status\n"
             "  %s mute on|off\n"
             "  %s gain-db -80..0\n"
-            "  %s lipsync-ms 0..1000\n"
+            "  %s lipsync-ms 0..500\n"
             "  %s standby on|off\n",
             argv0, argv0, argv0, argv0, argv0);
 }
