@@ -181,3 +181,47 @@ renderer, DSP processor, backend, stream, callback, or engine, access a host or
 device, or claim runtime readiness. Checkpoints A-D remain `NOT_STARTED` in
 this governance change. See ADR 0017 and
 `docs/planning/runtime-materialization-contracts-1.md`.
+
+
+## Shared cinema output processing
+
+`aurora-dsp-basic::output::SpeakerPostProcessor` owns the 48 kHz canonical
+7.1.4 interleaved output path. `aurora-s6-postprocess` uses this same unit after
+Rubato ASRC; `aurora-self-test` exercises it without opening a device. There is
+no second output-DSP crate or duplicate S6 filter implementation in this branch.
+
+Order: per-channel LR4 crossover (80 Hz bed / 100 Hz height defaults), LFE
+120 Hz low-pass plus bass redirection, 20 Hz sub high-pass, per-speaker PEQ /
+trim / polarity / delay, lip-sync delay, smoothed master gain and linked peak
+limiting. LFE trim defaults to 0 dB to avoid doubling an upstream playback gain.
+
+`SpeakerCalibration` is a strict schema-1, 48 kHz configuration in Aurora
+canonical order, with up to eight PEQ bands and 100 ms delay per channel.
+Construction/configuration allocate; processing, reset and control setters do
+not. Invalid partial interleaved blocks are silenced and return `OutputShapeError`.
+Nonfinite input is sanitized before filters. Lip-sync changes crossfade over
+240 frames; mute applies after the delay, so queued audio cannot defer mute.
+
+Set `AURORA_SPEAKER_CALIBRATION` to a validated JSON path before launching the
+S6 postprocessor. The flat example is `config/speaker-calibration-flat-v1.json`.
+These are manually supplied corrections, not an automatic acoustic measurement.
+
+WAVE_FORMAT_EXTENSIBLE export permutes samples into ascending speaker-mask order;
+Aurora runtime and JSON trajectories retain canonical order. Specifically,
+7.1.4 back channels precede side channels in the file but not in the runtime.
+
+### Source DSP control and allocation audits
+
+The source gate delivers validated absolute lip-sync frames through a dedicated
+APC0 Unix datagram endpoint, separate from the AUR0 audio stream. HDMI uses
+`AURORA_DSP_CONTROL_SOCKET`; the optional local adapter has its own endpoint.
+The supported range is 0–24000 frames at 48 kHz. Active-source control is
+replayed after DSP restart. The legacy broker pipe remains available only when
+`AURORA_CONTROL_FD` is explicitly supplied and names a valid descriptor.
+
+Tests share the dev-only `aurora-test-alloc` allocator. Windows uses a native
+thread ID and atomic counters because Rust 1.78 GNU TLS initialization itself
+allocates. Measurement setup is serialized outside the measured closure;
+allocator callbacks never acquire that mutex. Other targets use thread-local
+counters. Panic cleanup and positive allocation/reallocation controls protect
+against false zero-allocation results.

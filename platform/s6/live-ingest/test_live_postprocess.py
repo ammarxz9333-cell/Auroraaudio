@@ -157,11 +157,20 @@ def main():
             conn.sendall(
                 encoded_packet(encoded, second_pts, sequence=3, discontinuity=True)
             )
-            validate_processed_pcm(
-                conn.recv(65536),
-                second_pts,
-                required_flags=FLAG_DISCONTINUITY,
-            )
+            # Packets already sent before the reset cannot be withdrawn from
+            # this socket. Validate the bounded old epoch while draining it;
+            # the first packet of the new epoch must still carry the flag.
+            expected_old_pts = first_pts + PERIOD_FRAMES
+            for _ in range(17):
+                packet = conn.recv(65536)
+                if parse(packet)["pts"] == second_pts:
+                    validate_processed_pcm(packet, second_pts, FLAG_DISCONTINUITY)
+                    break
+                validate_processed_pcm(packet, expected_old_pts)
+                expected_old_pts += PERIOD_FRAMES
+                assert expected_old_pts <= first_pts + 16 * PERIOD_FRAMES
+            else:
+                raise AssertionError("no discontinuity-marked new epoch within mock output bound")
         finally:
             if conn is not None:
                 conn.close()

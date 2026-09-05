@@ -19,6 +19,7 @@ serde_json.workspace = true
 thiserror.workspace = true
 
 [dev-dependencies]
+aurora-test-alloc = { path = "../aurora-test-alloc" }
 criterion.workspace = true
 
 [[bench]]

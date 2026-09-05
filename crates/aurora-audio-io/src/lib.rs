@@ -170,7 +170,20 @@ pub fn write_wav_f32_with_channel_roles<P: AsRef<Path>>(
             expected: channels.len(),
         });
     }
-    let channel_mask = wav_channel_mask(channel_roles)?;
+    // Unlabelled exports use mask zero and retain caller order. Explicit
+    // speaker roles must be complete and unique, and are serialized in bit order.
+    let unlabelled = channel_roles
+        .iter()
+        .all(|role| matches!(role, ChannelRole::Custom(_)));
+    let channel_mask = if unlabelled {
+        0
+    } else {
+        wav_channel_mask(channel_roles)?
+    };
+    let mut channel_order: Vec<usize> = (0..channels.len()).collect();
+    if !unlabelled {
+        channel_order.sort_by_key(|&index| channel_roles[index].wav_channel_mask_bit());
+    }
 
     let frame_count = channels[0].len();
     let mut peak_per_channel = vec![0.0_f32; channels.len()];
@@ -183,9 +196,9 @@ pub fn write_wav_f32_with_channel_roles<P: AsRef<Path>>(
         frame_count as u32,
         channel_mask,
     )?;
-    for frame_index in 0..frame_count {
-        for (channel_index, channel) in channels.iter().enumerate() {
-            let sample = channel[frame_index];
+    for (frame_index, _) in channels[0].iter().enumerate() {
+        for &channel_index in &channel_order {
+            let sample = channels[channel_index][frame_index];
             let peak = sample.abs();
             peak_per_channel[channel_index] = peak_per_channel[channel_index].max(peak);
             if !(-1.0..=1.0).contains(&sample) {
@@ -257,6 +270,9 @@ pub fn wav_channel_mask(channel_roles: &[ChannelRole]) -> Result<u32, AudioIoErr
         let bit = role
             .wav_channel_mask_bit()
             .ok_or(AudioIoError::UnsupportedChannelMask)?;
+        if mask & bit != 0 {
+            return Err(AudioIoError::UnsupportedChannelMask);
+        }
         mask |= bit;
     }
     Ok(mask)
@@ -474,6 +490,37 @@ mod tests {
             .unwrap(),
             0x560F
         );
+    }
+
+    #[test]
+    fn seven_one_four_export_permutates_samples_with_mask_order() {
+        let path = temp_wav_path("714_order");
+        let roles = aurora_core::StandardLayout::SevenOneFour.canonical_roles();
+        let channels = (0..12)
+            .map(|i| vec![(i + 1) as f32 / 16.0])
+            .collect::<Vec<_>>();
+        write_wav_f32_with_channel_roles(&path, 48000, &channels, roles).unwrap();
+        let decoded = read_wav(&path).unwrap();
+        let order = [0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11];
+        for (file_channel, source) in order.into_iter().enumerate() {
+            assert_eq!(decoded.channels[file_channel], channels[source]);
+        }
+        fs::remove_file(path).unwrap();
+    }
+
+    #[test]
+    fn duplicate_channel_roles_are_rejected() {
+        assert!(wav_channel_mask(&[ChannelRole::FrontLeft, ChannelRole::FrontLeft]).is_err());
+    }
+
+    #[test]
+    fn unlabelled_wav_preserves_channel_order() {
+        let path = temp_wav_path("unlabelled");
+        let channels = vec![vec![0.25, 0.5], vec![0.0, -0.25]];
+        let report = write_wav_f32(&path, 48000, &channels).unwrap();
+        assert_eq!(report.channel_mask, 0);
+        assert_eq!(read_wav(&path).unwrap().channels, channels);
+        fs::remove_file(path).unwrap();
     }
 
     fn temp_wav_path(name: &str) -> PathBuf {

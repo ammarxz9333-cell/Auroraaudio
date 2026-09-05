@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "sample_rate": 48000,
+  "channels": [
+    {
+      "role": "front-left",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "front-right",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "front-center",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "low-frequency-effects",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "surround-left",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "surround-right",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "surround-back-left",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "surround-back-right",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "top-front-left",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "top-front-right",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "top-rear-left",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    },
+    {
+      "role": "top-rear-right",
+      "trim_db": 0.0,
+      "delay_frames": 0,
+      "invert_polarity": false,
+      "peq": []
+    }
+  ]
+}

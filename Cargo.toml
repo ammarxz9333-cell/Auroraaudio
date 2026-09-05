@@ -1,5 +1,6 @@
 [workspace]
 members = [
+    "crates/aurora-test-alloc",
     "crates/aurora-core",
     "crates/aurora-scene",
     "crates/aurora-renderer-api",

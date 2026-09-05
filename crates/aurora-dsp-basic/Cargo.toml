@@ -10,6 +10,16 @@ rust-version.workspace = true
 bench = false
 
 [dependencies]
+anyhow.workspace = true
+serde.workspace = true
 aurora-core = { path = "../aurora-core" }
 aurora-dsp-api = { path = "../aurora-dsp-api" }
 thiserror.workspace = true
+
+[dev-dependencies]
+aurora-test-alloc = { path = "../aurora-test-alloc" }
+criterion.workspace = true
+
+[[bench]]
+name = "output"
+harness = false

@@ -733,54 +733,14 @@ fn histogram_percentile(
 
 #[cfg(test)]
 mod tests {
-    use std::alloc::{GlobalAlloc, Layout, System};
-    use std::cell::Cell;
+    use aurora_test_alloc::{count_allocations as measured_allocations, CountingAllocator};
 
     use super::*;
     use aurora_core::{Listener, Speaker};
     use aurora_scene::{SceneObject, Trajectory};
 
-    struct ThreadCountingAllocator;
-
-    thread_local! {
-        static TRACK_ALLOCATIONS: Cell<bool> = const { Cell::new(false) };
-        static ALLOCATION_COUNT: Cell<usize> = const { Cell::new(0) };
-    }
-
-    unsafe impl GlobalAlloc for ThreadCountingAllocator {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            TRACK_ALLOCATIONS.with(|tracking| {
-                if tracking.get() {
-                    ALLOCATION_COUNT.with(|count| count.set(count.get().saturating_add(1)));
-                }
-            });
-            unsafe { System.alloc(layout) }
-        }
-
-        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-            unsafe { System.dealloc(ptr, layout) }
-        }
-
-        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-            TRACK_ALLOCATIONS.with(|tracking| {
-                if tracking.get() {
-                    ALLOCATION_COUNT.with(|count| count.set(count.get().saturating_add(1)));
-                }
-            });
-            unsafe { System.realloc(ptr, layout, new_size) }
-        }
-    }
-
     #[global_allocator]
-    static TEST_ALLOCATOR: ThreadCountingAllocator = ThreadCountingAllocator;
-
-    fn measured_allocations(operation: impl FnOnce()) -> usize {
-        ALLOCATION_COUNT.with(|count| count.set(0));
-        TRACK_ALLOCATIONS.with(|tracking| tracking.set(true));
-        operation();
-        TRACK_ALLOCATIONS.with(|tracking| tracking.set(false));
-        ALLOCATION_COUNT.with(Cell::get)
-    }
+    static TEST_ALLOCATOR: CountingAllocator = CountingAllocator;
 
     fn record_process_status(all_blocks_processed: &mut bool, status: ProcessStatus) {
         *all_blocks_processed &= status == ProcessStatus::Ok;
