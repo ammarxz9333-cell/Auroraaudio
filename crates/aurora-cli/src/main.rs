@@ -1552,7 +1552,10 @@ mod tests {
     #[test]
     fn capabilities_command_parses_human_and_json_modes() {
         let human = Cli::try_parse_from(["aurora", "capabilities"]).unwrap();
-        assert!(matches!(human.command, Command::Capabilities { json: false }));
+        assert!(matches!(
+            human.command,
+            Command::Capabilities { json: false }
+        ));
 
         let json = Cli::try_parse_from(["aurora", "capabilities", "--json"]).unwrap();
         assert!(matches!(json.command, Command::Capabilities { json: true }));
