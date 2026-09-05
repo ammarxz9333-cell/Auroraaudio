@@ -2,12 +2,6 @@ name: CI
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - main-v2
-      - "phase-*"
-      - "feat/**"
-      - "fix/**"
   pull_request:
     branches:
       - main-v2
