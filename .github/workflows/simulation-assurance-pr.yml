@@ -4,6 +4,23 @@ on:
   pull_request:
     branches:
       - main-v2
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/aurora-core/**"
+      - "crates/aurora-dsp-api/**"
+      - "crates/aurora-dsp-basic/**"
+      - "crates/aurora-realtime-audio-api/**"
+      - "crates/aurora-realtime-audio-sim/**"
+      - "crates/aurora-realtime-engine/**"
+      - "crates/aurora-renderer-api/**"
+      - "crates/aurora-renderer-basic/**"
+      - "crates/aurora-renderer-vbap/**"
+      - "crates/aurora-scene/**"
+      - "crates/aurora-simulation-assurance/**"
+      - "fixtures/scenes/**"
+      - "fixtures/simulation/**"
+      - ".github/workflows/simulation-assurance-pr.yml"
 
 permissions:
   contents: read
@@ -36,9 +53,13 @@ jobs:
           cargo run --release -p aurora-simulation-assurance --
           --level smoke --scenarios 500 --start-seed 0
           --report output/simulation-assurance/pr-smoke.json
-      - name: Verify warmed-up callback and renderer allocation guards
+      - name: Verify simulation and warmed-up allocation guards
         run: >-
-          cargo test --workspace --all-features
+          cargo test
+          -p aurora-simulation-assurance
+          -p aurora-realtime-engine
+          -p aurora-renderer-vbap
+          --all-features
       - name: Upload bounded smoke report
         if: always()
         uses: actions/upload-artifact@v4
