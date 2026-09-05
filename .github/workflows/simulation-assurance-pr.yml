@@ -32,6 +32,7 @@ concurrency:
 jobs:
   smoke:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -67,3 +68,4 @@ jobs:
           name: simulation-assurance-pr-smoke
           path: output/simulation-assurance/**/*.json
           if-no-files-found: error
+          retention-days: 14
