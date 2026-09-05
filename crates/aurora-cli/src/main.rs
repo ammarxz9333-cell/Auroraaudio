@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
 use aurora_audio_io::{read_wav, write_wav_f32_with_channel_roles, WavData, WavWriteReport};
+use aurora_cli::capabilities::{render_capabilities, CapabilityOutputFormat};
 use aurora_core::{ChannelRole, Listener, Speaker, StandardLayout, Vector3};
 use aurora_dsp_basic::DelayProcessor;
 #[cfg(feature = "camilladsp")]
@@ -54,6 +55,12 @@ enum Command {
     Doctor {
         #[arg(long)]
         camilladsp_path: Option<PathBuf>,
+    },
+    /// Print the canonical capability registry.
+    Capabilities {
+        /// Emit the stable machine-readable JSON registry instead of human text.
+        #[arg(long)]
+        json: bool,
     },
     /// Print calculated speaker gains for a moving source.
     Gains {
@@ -344,6 +351,7 @@ fn main() -> Result<()> {
     match cli.command {
         Command::Devices => list_devices(),
         Command::Doctor { camilladsp_path } => doctor(camilladsp_path.as_deref()),
+        Command::Capabilities { json } => print_capabilities(json),
         Command::Gains {
             layout,
             steps,
@@ -524,6 +532,20 @@ fn main() -> Result<()> {
             confirm,
         } => identify_speakers(output_device, layout, &confirm),
     }
+}
+
+fn print_capabilities(json: bool) -> Result<()> {
+    let format = if json {
+        CapabilityOutputFormat::Json
+    } else {
+        CapabilityOutputFormat::Text
+    };
+    let output = render_capabilities(format)?;
+    print!("{output}");
+    if json {
+        println!();
+    }
+    Ok(())
 }
 
 fn doctor(camilladsp_path: Option<&Path>) -> Result<()> {
@@ -1525,6 +1547,18 @@ mod tests {
             frame_count: samples.len(),
             channels: vec![samples],
         }
+    }
+
+    #[test]
+    fn capabilities_command_parses_human_and_json_modes() {
+        let human = Cli::try_parse_from(["aurora", "capabilities"]).unwrap();
+        assert!(matches!(
+            human.command,
+            Command::Capabilities { json: false }
+        ));
+
+        let json = Cli::try_parse_from(["aurora", "capabilities", "--json"]).unwrap();
+        assert!(matches!(json.command, Command::Capabilities { json: true }));
     }
 
     #[test]
