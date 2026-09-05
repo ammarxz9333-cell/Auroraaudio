@@ -208,11 +208,9 @@ impl Vbap3dRenderer {
                         self.spatial_indices[second_position],
                         self.spatial_indices[third_position],
                     ];
-                    let Some(plane) = supporting_plane(
-                        candidate,
-                        &self.direction_cache,
-                        &self.spatial_indices,
-                    ) else {
+                    let Some(plane) =
+                        supporting_plane(candidate, &self.direction_cache, &self.spatial_indices)
+                    else {
                         continue;
                     };
 
@@ -275,7 +273,8 @@ impl Vbap3dRenderer {
 
         let mut basis_u = None;
         for index in self.face_vertices.iter().copied() {
-            if let Some(candidate) = normalize(subtract_arrays(self.direction_cache[index], centroid))
+            if let Some(candidate) =
+                normalize(subtract_arrays(self.direction_cache[index], centroid))
             {
                 basis_u = Some(candidate);
                 break;
@@ -292,8 +291,7 @@ impl Vbap3dRenderer {
             let first_relative = subtract_arrays(self.direction_cache[*first], centroid);
             let second_relative = subtract_arrays(self.direction_cache[*second], centroid);
             let first_angle = dot(first_relative, basis_v).atan2(dot(first_relative, basis_u));
-            let second_angle =
-                dot(second_relative, basis_v).atan2(dot(second_relative, basis_u));
+            let second_angle = dot(second_relative, basis_v).atan2(dot(second_relative, basis_u));
             first_angle
                 .total_cmp(&second_angle)
                 .then_with(|| compare_speakers(&self.layout, *first, *second))
@@ -728,7 +726,7 @@ fn nearest_direction(
             continue;
         }
         let candidate_dot = dot(direction, source_direction);
-        let replace = best.is_none_or(|(best_index, best_dot)| {
+        let replace = best.map_or(true, |(best_index, best_dot)| {
             candidate_dot > best_dot + GAIN_EPSILON
                 || ((candidate_dot - best_dot).abs() <= GAIN_EPSILON
                     && compare_speakers(layout, index, best_index) == Ordering::Less)
@@ -913,10 +911,7 @@ mod tests {
         ]
     }
 
-    fn configured(
-        layout: Vec<Speaker>,
-        listener: &Listener,
-    ) -> (Vbap3dRenderer, RendererScratch) {
+    fn configured(layout: Vec<Speaker>, listener: &Listener) -> (Vbap3dRenderer, RendererScratch) {
         let mut renderer = Vbap3dRenderer::new();
         renderer.configure(layout, 48_000, 256, 1).unwrap();
         renderer.prepare_listener(listener).unwrap();
@@ -924,11 +919,7 @@ mod tests {
         (renderer, scratch)
     }
 
-    fn render(
-        layout: Vec<Speaker>,
-        listener: &Listener,
-        position: Vector3,
-    ) -> Vec<SpeakerGain> {
+    fn render(layout: Vec<Speaker>, listener: &Listener, position: Vector3) -> Vec<SpeakerGain> {
         let speaker_count = layout.iter().filter(|speaker| speaker.enabled).count();
         let (mut renderer, mut scratch) = configured(layout, listener);
         let mut output = vec![SpeakerGain::default(); speaker_count];
@@ -964,11 +955,7 @@ mod tests {
         assert!(renderer.validated_triplets()[0].determinant_abs() > 0.99);
         assert!(!renderer.listener_inside_hull());
 
-        let gains = render(
-            axis_layout(),
-            &listener,
-            Vector3::new(1.0, 0.0, 0.0),
-        );
+        let gains = render(axis_layout(), &listener, Vector3::new(1.0, 0.0, 0.0));
         assert!((gains[0].gain - 1.0).abs() < 1.0e-5);
         assert!(gains[1].gain.abs() < 1.0e-5);
         assert!(gains[2].gain.abs() < 1.0e-5);
@@ -1121,16 +1108,8 @@ mod tests {
     #[test]
     fn outside_open_hull_uses_deterministic_nearest_fallback() {
         let listener = listener_at_origin();
-        let first = render(
-            axis_layout(),
-            &listener,
-            Vector3::new(-1.0, 0.0, 0.0),
-        );
-        let second = render(
-            axis_layout(),
-            &listener,
-            Vector3::new(-1.0, 0.0, 0.0),
-        );
+        let first = render(axis_layout(), &listener, Vector3::new(-1.0, 0.0, 0.0));
+        let second = render(axis_layout(), &listener, Vector3::new(-1.0, 0.0, 0.0));
         assert_eq!(first, second);
         assert_eq!(first.iter().filter(|gain| gain.gain > 0.5).count(), 1);
         assert!((power(&first) - 1.0).abs() < 1.0e-5);
