@@ -1,9 +1,11 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "realtime")]
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+#[cfg(feature = "realtime")]
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
@@ -273,6 +275,7 @@ enum CliTestSignal {
     RotatingSine,
 }
 
+#[cfg(feature = "realtime")]
 impl From<CliTestSignal> for TestSignal {
     fn from(value: CliTestSignal) -> Self {
         match value {
@@ -879,6 +882,7 @@ fn run_realtime(
     _speed_of_sound: f32,
     _test_signal: CliTestSignal,
     _duration_seconds: u64,
+    _renderer_mode: BasicRendererMode,
 ) -> Result<()> {
     bail!("real-time audio feature is disabled")
 }
