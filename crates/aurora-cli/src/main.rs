@@ -1,3 +1,4 @@
+#[allow(unused_imports)]
 use std::io::Write;
 use std::path::{Path, PathBuf};
 #[cfg(feature = "realtime")]
@@ -342,6 +343,7 @@ struct OfflineRenderReport {
     wav_report: WavWriteReport,
 }
 
+#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 struct ProcessOptions<'a> {
     input_path: &'a Path,
@@ -954,6 +956,7 @@ fn identify_speakers(
     bail!("real-time audio feature is disabled")
 }
 
+#[cfg(feature = "realtime")]
 fn confirmed(confirm: &str) -> Result<bool> {
     if confirm == "YES" {
         return Ok(true);
