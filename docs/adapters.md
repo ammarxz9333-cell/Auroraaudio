@@ -2,6 +2,8 @@
 
 Milestone 0D creates adapter crates only. Aurora does not copy third-party source into the repository and does not link third-party decoder, renderer, or DSP code by default.
 
+The reviewed selection record is `config/external-components-v1.json`; the integration order and promotion gates are documented in `docs/upstream-component-plan.md`. Candidate entries are not runtime dependencies and do not imply codec, hardware, or production validation.
+
 ## Adapter Policy
 
 - Adapters implement Aurora-owned traits.
