@@ -2,13 +2,15 @@
 //!
 //! stdin:  raw interleaved f32, 48 kHz, 12-channel 7.1.4 from Omniphony
 //! stdout: raw interleaved f32, 48 kHz, 12-channel 7.1.4 in 40-frame quanta
+//! Both pipe boundaries use FL FR C LFE BL BR SL SR TFL TFR TBL TBR.
+//! The shared DSP uses SL SR before BL BR; conversion stays at this boundary.
 //!
 //! An optional inherited control pipe (fd 3 by default) carries fixed-size
 //! CLOCK_REPORT and local-control messages from `aurora-live-ingest`. Control is
 //! consumed on a dedicated thread; the audio loop observes atomics only.
 
 use anyhow::{bail, Context, Result};
-use aurora_dsp_basic::output::{OutputDspConfig, SpeakerPostProcessor};
+use aurora_dsp_basic::output::{OutputDspConfig, OutputShapeError, SpeakerPostProcessor};
 use aurora_realtime_engine::{
     AsynchronousResampler, DriftController, DriftControllerConfig, RubatoAsrc,
 };
@@ -336,6 +338,28 @@ fn read_exact_or_clean_eof<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Re
     Ok(true)
 }
 
+// The permutation is its own inverse. Input shape is checked by the wrapper.
+fn swap_surround_order(samples: &mut [f32]) {
+    for frame in samples.chunks_exact_mut(CHANNELS) {
+        frame.swap(4, 6);
+        frame.swap(5, 7);
+    }
+}
+
+fn process_wire_block(
+    post: &mut SpeakerPostProcessor,
+    samples: &mut [f32],
+) -> std::result::Result<(), OutputShapeError> {
+    if samples.len() % CHANNELS != 0 {
+        samples.fill(0.0);
+        return Err(OutputShapeError);
+    }
+    swap_surround_order(samples);
+    let result = post.process_block(samples);
+    swap_surround_order(samples);
+    result
+}
+
 fn floats_to_bytes(samples: &[f32], output: &mut [u8]) {
     debug_assert_eq!(output.len(), samples.len() * 4);
     for (sample, bytes) in samples.iter().zip(output.chunks_exact_mut(4)) {
@@ -478,7 +502,7 @@ fn run() -> Result<()> {
             if report.output_frames != BLOCK_FRAMES {
                 bail!("ASRC produced unexpected block size");
             }
-            post.process_block(&mut output[..BLOCK_SAMPLES])?;
+            process_wire_block(&mut post, &mut output[..BLOCK_SAMPLES])?;
             floats_to_bytes(&output[..BLOCK_SAMPLES], &mut output_bytes);
             stdout.write_all(&output_bytes)?;
             stdout.flush()?;
@@ -499,6 +523,67 @@ fn main() {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aurora_dsp_basic::output::{ChannelCalibration, SpeakerCalibration};
+
+    #[global_allocator]
+    static ALLOCATOR: aurora_test_alloc::CountingAllocator = aurora_test_alloc::CountingAllocator;
+
+    #[test]
+    fn wire_channels_receive_their_own_role_calibration() {
+        let calibration = SpeakerCalibration {
+            schema_version: 1,
+            sample_rate: SAMPLE_RATE,
+            channels: aurora_core::StandardLayout::SevenOneFour
+                .canonical_roles()
+                .iter()
+                .enumerate()
+                .map(|(index, role)| ChannelCalibration {
+                    role: role.clone(),
+                    trim_db: index as f32 - 6.0,
+                    delay_frames: index,
+                    invert_polarity: index % 2 == 0,
+                    peq: Vec::new(),
+                })
+                .collect(),
+        };
+        let mut actual_post = SpeakerPostProcessor::new(OutputDspConfig::default()).unwrap();
+        let mut reference_post = SpeakerPostProcessor::new(OutputDspConfig::default()).unwrap();
+        actual_post.configure_calibration(&calibration).unwrap();
+        reference_post.configure_calibration(&calibration).unwrap();
+        // Canonical index for each external wire channel, derived from role names.
+        let canonical_index = [0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11];
+        let mut wire = [0.0_f32; BLOCK_SAMPLES];
+        let mut canonical = [0.0_f32; BLOCK_SAMPLES];
+        for (channel, &index) in canonical_index.iter().enumerate() {
+            wire[channel] = (channel + 1) as f32 * 0.001;
+            canonical[index] = wire[channel];
+        }
+        reference_post.process_block(&mut canonical).unwrap();
+        let allocations = aurora_test_alloc::count_allocations(|| {
+            process_wire_block(&mut actual_post, &mut wire).unwrap();
+        });
+        assert_eq!(allocations, 0);
+        for (actual_frame, expected_frame) in wire
+            .chunks_exact(CHANNELS)
+            .zip(canonical.chunks_exact(CHANNELS))
+        {
+            for (channel, &index) in canonical_index.iter().enumerate() {
+                assert_eq!(actual_frame[channel], expected_frame[index]);
+            }
+        }
+    }
+
+    #[test]
+    fn incomplete_wire_frame_is_silenced() {
+        let mut post = SpeakerPostProcessor::new(OutputDspConfig::default()).unwrap();
+        let mut block = [0.5_f32; CHANNELS + 1];
+        assert_eq!(
+            process_wire_block(&mut post, &mut block),
+            Err(OutputShapeError)
+        );
+        assert!(block.iter().all(|sample| *sample == 0.0));
+    }
+
 
     #[test]
     fn fixed_queue_preserves_frame_order_across_wrap() {
@@ -557,3 +642,4 @@ mod tests {
         }
     }
 }
+
