@@ -229,3 +229,13 @@ allocates. Measurement setup is serialized outside the measured closure;
 allocator callbacks never acquire that mutex. Other targets use thread-local
 counters. Panic cleanup and positive allocation/reallocation controls protect
 against false zero-allocation results.
+
+
+## Explicit channel-based immersive alternative
+
+The S6 broker accepts `AURORA_DECODE_MODE=surround-upmix` to launch a separate
+FFmpeg decoder/filter process instead of Omniphony. It consumes the same
+IEC61937 stream and emits the same canonical 48 kHz, 12-channel raw-f32 output
+into Aurora's existing postprocessor and managed source gate. The default
+`objects` mode remains separate; failure never silently selects an upmixer.
+See [the surround-upmix adapter](surround-upmix.md) for semantics and evidence.

@@ -25,6 +25,7 @@ fail() { echo "assemble-rootfs-native-aarch64: $*" >&2; exit 1; }
 [ -x "$STAGE/bin/aurora-source-gate" ] || fail "source gate stage missing"
 [ -x "$STAGE/bin/aurora-source-ctl" ] || fail "source control CLI stage missing"
 [ -x "$STAGE/bin/aurora-live-ingest" ] || fail "live streaming ingest stage missing"
+[ -x "$STAGE/bin/aurora-surround-upmix" ] || fail "surround upmixer stage missing"
 [ -x "$STAGE/bin/orender" ] || fail "Omniphony stage missing"
 [ -f "$STAGE/lib/libharletty_bridge.so" ] || fail "Harletty bridge stage missing"
 [ -x "$STAGE/navidrome/navidrome" ] || fail "Navidrome stage missing"
@@ -97,6 +98,7 @@ install -m 0755 "$ROOT/platform/s6/rootfs/etc/init.d/aurora-ffs" "$ROOTFS/etc/in
 install -m 0755 "$ROOT/platform/s6/rootfs/etc/init.d/aurora-source-manager" "$ROOTFS/etc/init.d/aurora-source-manager"
 install -m 0755 "$ROOT/platform/s6/rootfs/etc/init.d/aurora-source-gate" "$ROOTFS/etc/init.d/aurora-source-gate"
 install -m 0755 "$ROOT/platform/s6/rootfs/etc/init.d/aurora-live-ingest" "$ROOTFS/etc/init.d/aurora-live-ingest"
+install -m 0755 "$STAGE/bin/aurora-surround-upmix" "$ROOTFS/usr/local/sbin/aurora-surround-upmix"
 install -m 0755 "$STAGE/bin/orender" "$ROOTFS/opt/aurora/external/orender"
 install -m 0755 "$STAGE/lib/libharletty_bridge.so" "$ROOTFS/opt/aurora/external/libharletty_bridge.so"
 install -m 0644 "$STAGE/share/omniphony/layouts/7.1.4.yaml" "$ROOTFS/etc/aurora/layouts/7.1.4.yaml"
@@ -128,3 +130,4 @@ tar --numeric-owner --xattrs --acls -C "$ROOTFS" -czf "$STAGE/AuroraOS-S6-rootfs
 sha256sum "$STAGE/AuroraOS-S6-rootfs-${ALPINE_VERSION}-aarch64.tar.gz" > "$STAGE/AuroraOS-S6-rootfs-${ALPINE_VERSION}-aarch64.tar.gz.sha256"
 
 echo "Rootfs assembled: $STAGE/AuroraOS-S6-rootfs-${ALPINE_VERSION}-aarch64.tar.gz"
+
