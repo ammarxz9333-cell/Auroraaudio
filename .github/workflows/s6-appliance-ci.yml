@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main-v2
       - agent/aurora-s6-appliance-bootstrap
       - agent/s6-realtime-mcu-hal-bringup
     paths:
