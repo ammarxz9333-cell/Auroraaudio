@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>Aurora Cinema, Spotify Hub & Sonos Multi-Room</title>
+    <title>Aurora Cinema 11.1.4, Spotify Hub & AI Spatial Ecosystem</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
@@ -17,6 +17,7 @@
             --accent-gold: #ffbe0b;
             --accent-purple: #8338ec;
             --accent-spotify: #1db954;
+            --accent-airplay: #007aff;
             --text-primary: #ffffff;
             --text-secondary: #94a3b8;
         }
@@ -60,16 +61,16 @@
         }
 
         .logo-icon {
-            width: 36px;
-            height: 36px;
+            width: 38px;
+            height: 38px;
             background: linear-gradient(135deg, var(--accent-cyan), var(--accent-magenta));
-            border-radius: 9px;
+            border-radius: 10px;
             display: flex;
             align-items: center;
             justify-content: center;
             box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
             font-weight: 900;
-            font-size: 1.15rem;
+            font-size: 1.2rem;
         }
 
         .logo-title {
@@ -83,24 +84,26 @@
 
         .nav-tabs {
             display: flex;
-            gap: 0.5rem;
+            gap: 0.4rem;
             background: rgba(255, 255, 255, 0.05);
             padding: 4px;
             border-radius: 12px;
             border: 1px solid rgba(255, 255, 255, 0.08);
+            overflow-x: auto;
         }
 
         .tab-btn {
             background: transparent;
             border: none;
             color: var(--text-secondary);
-            padding: 0.5rem 1.1rem;
+            padding: 0.5rem 0.9rem;
             border-radius: 8px;
             font-family: inherit;
             font-weight: 600;
             font-size: 0.85rem;
             cursor: pointer;
             transition: all 0.2s;
+            white-space: nowrap;
         }
 
         .tab-btn.active {
@@ -298,6 +301,64 @@
             text-shadow: 0 0 30px rgba(0, 229, 255, 0.5);
         }
 
+        /* Spatial Head-Tracking Visualizer */
+        .compass-circle {
+            width: 220px;
+            height: 220px;
+            border-radius: 50%;
+            border: 2px dashed rgba(0, 229, 255, 0.4);
+            position: relative;
+            margin: 1rem auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background: radial-gradient(circle, rgba(0, 229, 255, 0.05) 0%, transparent 70%);
+        }
+
+        .head-marker {
+            width: 24px;
+            height: 24px;
+            background: var(--accent-cyan);
+            border-radius: 50%;
+            position: absolute;
+            box-shadow: 0 0 15px var(--accent-cyan);
+            transition: transform 0.05s ease-out;
+        }
+
+        .head-nose {
+            position: absolute;
+            top: -10px;
+            left: 50%;
+            transform: translateX(-50%);
+            width: 0;
+            height: 0;
+            border-left: 6px solid transparent;
+            border-right: 6px solid transparent;
+            border-bottom: 10px solid #ffffff;
+        }
+
+        .badge-active {
+            background: rgba(0, 255, 136, 0.15);
+            color: #00ff88;
+            border: 1px solid rgba(0, 255, 136, 0.3);
+            border-radius: 999px;
+            padding: 4px 12px;
+            font-size: 0.8rem;
+            font-weight: 700;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .badge-active::before {
+            content: '';
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00ff88;
+            box-shadow: 0 0 8px #00ff88;
+        }
+
         /* Persistent Bottom Player */
         .bottom-player {
             position: fixed;
@@ -406,16 +467,19 @@
         <div class="logo-group">
             <div class="logo-icon">A</div>
             <div>
-                <div class="logo-title">AURORA MULTI-ROOM</div>
-                <div style="font-size: 0.7rem; color: var(--text-secondary);">Cinema 11.1.4 & Spotify Hub</div>
+                <div class="logo-title">AURORA CINEMA</div>
+                <div style="font-size: 0.7rem; color: var(--text-secondary);">11.1.4 Spatial & Spotify Ecosystem</div>
             </div>
         </div>
 
         <div class="nav-tabs">
             <button class="tab-btn active" onclick="switchTab('tab-music')">Spotify Hub</button>
+            <button class="tab-btn" onclick="switchTab('tab-headphones')">🎧 Headphone Spatial</button>
+            <button class="tab-btn" onclick="switchTab('tab-ai-voice')">🎙️ AI Neural Voice</button>
+            <button class="tab-btn" onclick="switchTab('tab-casting')">📡 Cast Bridges</button>
             <button class="tab-btn" onclick="switchTab('tab-multiroom')">Sonos Multi-Room</button>
             <button class="tab-btn" onclick="switchTab('tab-lyrics')">Karaoke Lyrics</button>
-            <button class="tab-btn" onclick="switchTab('tab-cinema')">Cinema 11.1.4 3D</button>
+            <button class="tab-btn" onclick="switchTab('tab-cinema')">11.1.4 Cinema</button>
         </div>
     </header>
 
@@ -431,7 +495,159 @@
             <div class="track-grid" id="track-container"></div>
         </div>
 
-        <!-- 2. SONOS MULTI-ROOM TAB -->
+        <!-- 2. HEADPHONE SPATIAL & HEAD-TRACKING TAB -->
+        <div id="tab-headphones" class="tab-content">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <div>
+                        <h2 style="font-size: 1.25rem; font-weight: 700;">Headphone 3D Spatial Cinema & Dynamic Head-Tracking</h2>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary);">Transforms 16-channel 11.1.4 Atmos into binaural out-of-head sound. Screen dialogue stays fixed when turning your head.</p>
+                    </div>
+                    <div class="badge-active" id="spatial-badge">11.1.4 HRTF Active</div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem; align-items: center;">
+                    <div style="text-align: center;">
+                        <div class="compass-circle">
+                            <div class="head-marker" id="head-marker">
+                                <div class="head-nose"></div>
+                            </div>
+                            <div style="position: absolute; top: 8px; font-size: 0.75rem; color: var(--accent-cyan); font-weight: 700;">SCREEN / CENTER</div>
+                            <div style="position: absolute; bottom: 8px; font-size: 0.75rem; color: var(--text-secondary);">REAR SURROUNDS</div>
+                        </div>
+                        <div style="font-size: 0.95rem; font-weight: 700; margin-top: 0.5rem;" id="gyro-readout">
+                            Yaw: 0.0° | Pitch: 0.0° | Roll: 0.0°
+                        </div>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 1rem;">
+                        <div style="display: flex; gap: 0.8rem;">
+                            <button class="btn-action" style="flex: 1; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));" onclick="enableGyroTracking()">
+                                📱 Calibrate Phone Gyro
+                            </button>
+                            <button class="btn-action" style="flex: 1; background: rgba(255, 255, 255, 0.1);" onclick="centerHeadTracking()">
+                                🎯 Center / Zero Lock
+                            </button>
+                        </div>
+
+                        <div style="background: rgba(255, 255, 255, 0.03); border: 1px solid rgba(255, 255, 255, 0.08); border-radius: 12px; padding: 1rem;">
+                            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.6rem;">
+                                <span style="font-weight: 600;">Spatial Binaural Mode</span>
+                                <input type="checkbox" id="spatial-toggle" checked onchange="toggleSpatialBinaural(this.checked)" style="accent-color: var(--accent-cyan); transform: scale(1.3);">
+                            </div>
+                            <div style="display: flex; justify-content: space-between; align-items: center;">
+                                <span style="font-weight: 600;">Lock Dialogue To Screen</span>
+                                <input type="checkbox" id="head-tracking-toggle" checked onchange="toggleHeadTracking(this.checked)" style="accent-color: var(--accent-cyan); transform: scale(1.3);">
+                            </div>
+                        </div>
+
+                        <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4;">
+                            💡 <b>Tip:</b> Put on standard headphones. Move your phone or rotate your head while listening to center vocals—the acoustic stage stays firmly anchored in front of you.
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 3. AI NEURAL VOICE ISOLATOR TAB -->
+        <div id="tab-ai-voice" class="tab-content">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <div>
+                        <h2 style="font-size: 1.25rem; font-weight: 700;">Lightweight Pure-Rust AI Neural Voice Isolator</h2>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary);">Embedded RNNoise recurrent GRU neural model (~120 KB, < 1% CPU). Separates pristine human voice from explosions and background noise.</p>
+                    </div>
+                    <div class="badge-active" id="vad-status-badge">Neural VAD: Listening</div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.5rem;">
+                    <div style="background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.2rem;">
+                        <h3 style="font-size: 1rem; font-weight: 700; margin-bottom: 1rem;">Real-Time Voice Activity Detection (VAD)</h3>
+                        <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.5rem;">
+                            <span style="font-size: 0.85rem; color: var(--text-secondary);">Speech Probability Score</span>
+                            <span style="font-weight: 700; color: var(--accent-cyan);" id="vad-prob-num">88%</span>
+                        </div>
+                        <div style="width: 100%; height: 10px; background: rgba(255,255,255,0.1); border-radius: 999px; overflow: hidden; margin-bottom: 1.2rem;">
+                            <div id="vad-bar" style="width: 88%; height: 100%; background: linear-gradient(90deg, var(--accent-cyan), #00ff88); transition: width 0.1s;"></div>
+                        </div>
+
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);">
+                            Neural network evaluates 480-sample subband frames (10ms) and dynamically cleans the Center dialogue speaker.
+                        </div>
+                    </div>
+
+                    <div style="display: flex; flex-direction: column; gap: 1.2rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.2rem;">
+                        <div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
+                                <label style="font-weight: 600; font-size: 0.9rem;">Dialogue Gain Boost</label>
+                                <span style="font-weight: 700; color: var(--accent-cyan);" id="boost-val">+4.0 dB</span>
+                            </div>
+                            <input type="range" min="0" max="12" step="0.5" value="4" style="width: 100%; accent-color: var(--accent-cyan);" oninput="updateAiVoiceParams()">
+                        </div>
+
+                        <div>
+                            <div style="display: flex; justify-content: space-between; margin-bottom: 0.4rem;">
+                                <label style="font-weight: 600; font-size: 0.9rem;">Neural Extraction Blend</label>
+                                <span style="font-weight: 700; color: var(--accent-cyan);" id="blend-val">85%</span>
+                            </div>
+                            <input type="range" min="0" max="100" step="5" value="85" style="width: 100%; accent-color: var(--accent-cyan);" oninput="updateAiVoiceParams()">
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 4. CASTING BRIDGES TAB -->
+        <div id="tab-casting" class="tab-content">
+            <div class="card">
+                <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                    <div>
+                        <h2 style="font-size: 1.25rem; font-weight: 700;">Native Streaming Bridges: Spotify Connect & AirPlay 2</h2>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary);">Zeroconf mDNS daemon advertises "Aurora Cinema 11.1.4" natively on your home Wi-Fi network.</p>
+                    </div>
+                    <div class="badge-active" id="cast-status-badge">mDNS: Broadcasting</div>
+                </div>
+
+                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 1.2rem;">
+                    <div style="background: rgba(29, 185, 84, 0.08); border: 1px solid rgba(29, 185, 84, 0.3); border-radius: 12px; padding: 1.2rem;">
+                        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem;">
+                            <span style="font-size: 1.5rem;">🟢</span>
+                            <h3 style="font-size: 1.1rem; font-weight: 700;">Spotify Connect Receiver</h3>
+                        </div>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                            Discovered in Spotify app under "Connect to a device". Streams bit-perfect 24-bit 48kHz PCM directly into the 11.1.4 spatial upmixer.
+                        </p>
+                        <button class="btn-action" style="background: #1db954;" onclick="simulateCastConnect('spotify', 'Spotify Mobile (Galaxy S20)')">
+                            Pair / Test Spotify Connect
+                        </button>
+                    </div>
+
+                    <div style="background: rgba(0, 122, 255, 0.08); border: 1px solid rgba(0, 122, 255, 0.3); border-radius: 12px; padding: 1.2rem;">
+                        <div style="display: flex; align-items: center; gap: 0.6rem; margin-bottom: 0.8rem;">
+                            <span style="font-size: 1.5rem;">🍎</span>
+                            <h3 style="font-size: 1.1rem; font-weight: 700;">Apple AirPlay 2 Receiver</h3>
+                        </div>
+                        <p style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 1rem;">
+                            Discovered in iOS Control Center. Supports multi-room grouping, Siri casting, and zero-drop audio stream buffering.
+                        </p>
+                        <button class="btn-action" style="background: #007aff;" onclick="simulateCastConnect('airplay', 'iPhone 15 Pro (AirPlay 2)')">
+                            Pair / Test AirPlay 2
+                        </button>
+                    </div>
+                </div>
+
+                <div style="margin-top: 1.5rem; background: rgba(255,255,255,0.03); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; padding: 1.2rem; display: flex; justify-content: space-between; align-items: center;" id="active-cast-card">
+                    <div>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);">Currently Connected Receiver:</div>
+                        <div style="font-weight: 700; font-size: 1.1rem; color: var(--accent-cyan);" id="cast-device-name">Ready for Connection</div>
+                        <div style="font-size: 0.85rem; color: #ffffff;" id="cast-track-info">Lossless PCM 24-bit 48kHz | Latency: 2.1ms</div>
+                    </div>
+                    <button class="btn-action" style="background: rgba(255, 0, 80, 0.2); border: 1px solid rgba(255, 0, 80, 0.4);" onclick="disconnectCast()">Disconnect Stream</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- 5. SONOS MULTI-ROOM TAB -->
         <div id="tab-multiroom" class="tab-content">
             <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
                 <div>
@@ -444,7 +660,7 @@
             <div class="multiroom-grid" id="multiroom-container"></div>
         </div>
 
-        <!-- 3. SYNCHRONIZED KARAOKE LYRICS TAB -->
+        <!-- 6. SYNCHRONIZED KARAOKE LYRICS TAB -->
         <div id="tab-lyrics" class="tab-content">
             <div class="card" style="margin-bottom: 0;">
                 <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem; text-align: center;">
@@ -455,7 +671,7 @@
             </div>
         </div>
 
-        <!-- 4. CINEMA 11.1.4 3D TAB -->
+        <!-- 7. CINEMA 11.1.4 3D TAB -->
         <div id="tab-cinema" class="tab-content">
             <div class="card">
                 <h2 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">11.1.4 Physical Speakers & Atmos Telemetry</h2>
@@ -463,6 +679,7 @@
                     <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent-cyan);">Samsung Q995D Emulation Active (JOC = 1)</div>
                     <div style="font-size: 0.9rem; color: var(--text-secondary);">True-Peak Limiter: Active (-0.2 dBFS) | Subwoofer Phase: Aligned (80 Hz)</div>
                     <div style="font-size: 0.85rem; color: #00ff88;">Aurora-WLink Wireless Surrounds: Connected (< 2.0ms Latency)</div>
+                    <div style="font-size: 0.85rem; color: var(--accent-gold);">mDNS Cast Bridges: Spotify Connect + AirPlay 2 Discoverable</div>
                 </div>
             </div>
         </div>
@@ -510,12 +727,16 @@
         let allTracks = [];
         let currentTrackId = "";
         let isPlaying = false;
+        let headOrientation = { yaw: 0, pitch: 0, roll: 0 };
+        let gyroActive = false;
 
         function switchTab(tabId) {
             document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
             document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
             document.getElementById(tabId).classList.add('active');
-            event.target.classList.add('active');
+            if (event && event.target) {
+                event.target.classList.add('active');
+            }
         }
 
         async function loadTracks() {
@@ -549,84 +770,95 @@
                 const zones = await res.json();
                 const container = document.getElementById('multiroom-container');
                 container.innerHTML = "";
-
-                zones.forEach(zone => {
+                zones.forEach(z => {
                     const card = document.createElement('div');
-                    card.className = 'zone-card' + (zone.is_grouped ? ' grouped' : '');
+                    card.className = `zone-card ${z.is_grouped ? 'grouped' : ''}`;
                     card.innerHTML = `
                         <div class="zone-header">
-                            <div>
-                                <div class="zone-name">${zone.name}</div>
-                                <div style="font-size: 0.75rem; color: var(--text-secondary);">${zone.active_layout}</div>
-                            </div>
-                            <span class="zone-tag">${zone.is_grouped ? 'GROUPED' : 'STANDALONE'}</span>
+                            <span class="zone-name">${z.name}</span>
+                            <span class="zone-tag">${z.is_grouped ? 'GROUPED' : 'STANDALONE'}</span>
                         </div>
-                        <div style="display: flex; align-items: center; gap: 0.8rem; margin-top: 0.4rem;">
-                            <span style="font-size: 0.8rem;">Vol:</span>
-                            <input type="range" style="flex: 1; accent-color: var(--accent-cyan);" min="0" max="100" value="${zone.volume_percent}" onchange="setZoneVol('${zone.id}', this.value)">
-                            <button class="tab-btn" style="padding: 4px 10px; font-size: 0.75rem;" onclick="toggleGroup('${zone.id}')">${zone.is_grouped ? 'Ungroup' : 'Group'}</button>
+                        <div style="font-size: 0.8rem; color: var(--text-secondary);">IP: ${z.ip_address} | Delay: ${z.latency_ms.toFixed(1)}ms</div>
+                        <div style="display: flex; align-items: center; gap: 0.5rem;">
+                            <span>🔊</span>
+                            <input type="range" min="0" max="100" value="${z.volume}" style="width: 100%; accent-color: var(--accent-cyan);" oninput="setZoneVol('${z.id}', this.value)">
                         </div>
+                        <button class="tab-btn" style="width: 100%; background: rgba(255,255,255,0.06);" onclick="toggleGroup('${z.id}')">
+                            ${z.is_grouped ? 'Ungroup from Cinema' : 'Group with Cinema 11.1.4'}
+                        </button>
                     `;
                     container.appendChild(card);
                 });
             } catch(e) { console.error(e); }
         }
 
-        async function playTrack(id) {
-            await fetch(`/api/player/play?id=${id}`, { method: 'POST' });
-            updatePlayer();
-        }
-
-        async function togglePlay() {
-            await fetch('/api/player/toggle', { method: 'POST' });
-            updatePlayer();
-        }
-
-        async function toggleGroup(id) {
-            await fetch(`/api/multiroom/group?id=${id}`, { method: 'POST' });
-            loadMultiroom();
-        }
-
-        async function setZoneVol(id, vol) {
-            await fetch(`/api/multiroom/volume?id=${id}&vol=${vol}`, { method: 'POST' });
-        }
-
-        async function updatePlayer() {
+        async function updatePlayerStatus() {
             try {
                 const res = await fetch('/api/player/current');
-                const data = await res.json();
+                const st = await res.json();
+                if (st.track) {
+                    document.getElementById('curr-thumb').src = st.track.cover_art_url;
+                    document.getElementById('curr-title').textContent = st.track.title;
+                    document.getElementById('curr-artist').textContent = st.track.artist;
+                    document.getElementById('lyrics-song-title').textContent = `${st.track.title} - ${st.track.artist}`;
+                }
+                isPlaying = st.is_playing;
+                document.getElementById('play-pause-btn').textContent = isPlaying ? "⏸" : "▶";
 
-                if (data.track) {
-                    currentTrackId = data.track.id;
-                    document.getElementById('curr-title').textContent = data.track.title;
-                    document.getElementById('curr-artist').textContent = data.track.artist;
-                    document.getElementById('curr-thumb').src = data.track.cover_art_url;
-                    document.getElementById('lyrics-song-title').textContent = `${data.track.title} — ${data.track.artist}`;
-
-                    // Update lyrics
-                    renderLyrics(data.track.lyrics, data.active_lyric_index);
-                    if (data.active_lyric_text) {
-                        document.getElementById('current-lyric-preview').textContent = "♪ " + data.active_lyric_text;
-                    }
+                if (st.active_lyric_text) {
+                    document.getElementById('current-lyric-preview').textContent = `🎤 ${st.active_lyric_text}`;
                 }
 
-                isPlaying = data.is_playing;
-                document.getElementById('play-pause-btn').textContent = isPlaying ? '⏸' : '▶';
+                if (st.track && st.track.lyrics) {
+                    renderLyrics(st.track.lyrics, st.active_lyric_index);
+                }
             } catch(e) { console.error(e); }
         }
 
         function renderLyrics(lyrics, activeIdx) {
             const box = document.getElementById('lyrics-scroll-box');
-            box.innerHTML = "";
-            lyrics.forEach((l, idx) => {
-                const p = document.createElement('p');
-                p.className = 'lyric-line' + (idx === activeIdx ? ' active' : '');
-                p.textContent = l.text;
-                box.appendChild(p);
-                if (idx === activeIdx) {
-                    p.scrollIntoView({ behavior: 'smooth', block: 'center' });
+            if (box.dataset.renderedTrack !== currentTrackId) {
+                box.innerHTML = "";
+                lyrics.forEach((l, i) => {
+                    const line = document.createElement('div');
+                    line.className = 'lyric-line';
+                    line.id = `lyric-line-${i}`;
+                    line.textContent = l.text;
+                    box.appendChild(line);
+                });
+                box.dataset.renderedTrack = currentTrackId;
+            }
+
+            document.querySelectorAll('.lyric-line').forEach((el, i) => {
+                if (i === activeIdx) {
+                    if (!el.classList.contains('active')) {
+                        el.classList.add('active');
+                        el.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    }
+                } else {
+                    el.classList.remove('active');
                 }
             });
+        }
+
+        async function playTrack(id) {
+            currentTrackId = id;
+            await fetch(`/api/player/play?id=${id}`);
+            updatePlayerStatus();
+        }
+
+        async function togglePlay() {
+            await fetch('/api/player/toggle');
+            updatePlayerStatus();
+        }
+
+        async function setZoneVol(id, vol) {
+            await fetch(`/api/multiroom/volume?id=${id}&vol=${vol}`);
+        }
+
+        async function toggleGroup(id) {
+            await fetch(`/api/multiroom/group?id=${id}`);
+            loadMultiroom();
         }
 
         function openDownloadModal() {
@@ -640,19 +872,117 @@
         async function submitDownload() {
             const url = document.getElementById('link-url-input').value;
             if (!url) return;
-            alert("Downloading & categorizing track into album...");
-            closeDownloadModal();
-            const res = await fetch(`/api/download?url=${encodeURIComponent(url)}`, { method: 'POST' });
-            const newTrack = await res.json();
-            loadTracks();
-            playTrack(newTrack.id);
+            try {
+                const res = await fetch(`/api/download?url=${encodeURIComponent(url)}`);
+                const track = await res.json();
+                closeDownloadModal();
+                loadTracks();
+                playTrack(track.id);
+            } catch(e) {
+                alert("Download failed: " + e);
+            }
         }
 
-        // Live polling loop (every 500ms for smooth lyrics and state sync)
-        setInterval(updatePlayer, 600);
+        /* 🎧 Headphone Spatial & Gyro Head-Tracking */
+        function enableGyroTracking() {
+            if (typeof DeviceOrientationEvent !== 'undefined' && typeof DeviceOrientationEvent.requestPermission === 'function') {
+                DeviceOrientationEvent.requestPermission().then(response => {
+                    if (response === 'granted') {
+                        startListeningOrientation();
+                    } else {
+                        alert('Device orientation permission denied');
+                    }
+                }).catch(console.error);
+            } else {
+                startListeningOrientation();
+            }
+        }
 
+        function startListeningOrientation() {
+            gyroActive = true;
+            window.addEventListener('deviceorientation', (e) => {
+                const yaw = (e.alpha || 0);
+                const pitch = (e.beta || 0);
+                const roll = (e.gamma || 0);
+                updateOrientationUI(yaw, pitch, roll);
+                // Send to backend
+                fetch(`/api/spatial/orientation?yaw=${yaw.toFixed(1)}&pitch=${pitch.toFixed(1)}&roll=${roll.toFixed(1)}`);
+            });
+            alert('Phone Gyroscope Activated! Rotate your phone to verify.');
+        }
+
+        function updateOrientationUI(yaw, pitch, roll) {
+            headOrientation = { yaw, pitch, roll };
+            document.getElementById('gyro-readout').textContent = `Yaw: ${yaw.toFixed(1)}° | Pitch: ${pitch.toFixed(1)}° | Roll: ${roll.toFixed(1)}°`;
+            const marker = document.getElementById('head-marker');
+            if (marker) {
+                marker.style.transform = `rotate(${yaw}deg)`;
+            }
+        }
+
+        async function centerHeadTracking() {
+            await fetch('/api/spatial/center');
+            alert('Head-tracking forward center locked to your screen position.');
+        }
+
+        async function toggleSpatialBinaural(enabled) {
+            await fetch(`/api/spatial/toggle?enabled=${enabled}`);
+            document.getElementById('spatial-badge').textContent = enabled ? '11.1.4 HRTF Active' : 'Stereo Fold-Down';
+        }
+
+        /* 🎙️ AI Neural Voice Isolator Controls */
+        async function updateAiVoiceParams() {
+            const boost = document.querySelectorAll('#tab-ai-voice input[type=range]')[0].value;
+            const blend = (document.querySelectorAll('#tab-ai-voice input[type=range]')[1].value / 100.0).toFixed(2);
+            document.getElementById('boost-val').textContent = `+${boost} dB`;
+            document.getElementById('blend-val').textContent = `${(blend * 100).toFixed(0)}%`;
+
+            await fetch(`/api/ai_voice/toggle?enabled=true&boost=${boost}&blend=${blend}`);
+        }
+
+        async function pollAiVoiceStatus() {
+            try {
+                const res = await fetch('/api/ai_voice/status');
+                const st = await res.json();
+                const probPercent = Math.round(st.vad_probability * 100);
+                document.getElementById('vad-prob-num').textContent = `${probPercent}%`;
+                document.getElementById('vad-bar').style.width = `${probPercent}%`;
+                document.getElementById('vad-status-badge').textContent = st.speech_active ? "Speech Detected 🎤" : "Neural VAD: Clean";
+            } catch(e) {}
+        }
+
+        /* 📡 Casting Bridges */
+        async function simulateCastConnect(source, device) {
+            const res = await fetch(`/api/cast/connect?source=${source}&device=${encodeURIComponent(device)}&track=Blinding%20Lights%20(Dolby%20Atmos)&artist=The%20Weeknd`);
+            const st = await res.json();
+            updateCastUI(st);
+        }
+
+        async function disconnectCast() {
+            const res = await fetch('/api/cast/disconnect');
+            const st = await res.json();
+            updateCastUI(st);
+        }
+
+        function updateCastUI(st) {
+            document.getElementById('cast-device-name').textContent = st.connected_device_name;
+            document.getElementById('cast-track-info').textContent = `${st.track_title} | ${st.artist_name} | Bitrate: ${st.stream_bitrate_kbps} kbps`;
+        }
+
+        async function pollCastStatus() {
+            try {
+                const res = await fetch('/api/cast/status');
+                const st = await res.json();
+                updateCastUI(st);
+            } catch(e) {}
+        }
+
+        // Periodic Polling loops
         loadTracks();
         loadMultiroom();
+        setInterval(updatePlayerStatus, 600);
+        setInterval(pollAiVoiceStatus, 1500);
+        setInterval(pollCastStatus, 2500);
     </script>
 </body>
 </html>

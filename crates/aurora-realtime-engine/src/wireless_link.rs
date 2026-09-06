@@ -530,7 +530,7 @@ mod tests {
         let p3 = vec![0x01, 0x02, 0x03, 0x04];
 
         let h0 = WLinkHeader::new_data(2, 0, 0, 4, 0, 100, 48000, 48, 4);
-        let h1 = WLinkHeader::new_data(2, 0, 1, 4, 1, 200, 48000, 48, 4);
+        let _h1 = WLinkHeader::new_data(2, 0, 1, 4, 1, 200, 48000, 48, 4);
         let h2 = WLinkHeader::new_data(2, 0, 2, 4, 2, 300, 48000, 48, 4);
         let h3 = WLinkHeader::new_data(2, 0, 3, 4, 3, 400, 48000, 48, 4);
 

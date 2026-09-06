@@ -1,5 +1,7 @@
 //! Basic offline DSP processors.
 
+pub mod ai_voice;
+pub mod binaural;
 pub mod crossover;
 pub mod dialogue;
 pub mod limiter;
@@ -7,6 +9,8 @@ pub mod output;
 pub mod phase;
 pub mod upmixer;
 
+pub use ai_voice::{AiVoiceConfig, NeuralVoiceIsolator};
+pub use binaural::{BinauralSpatialEngine, HeadOrientation, VirtualSpeaker};
 pub use crossover::CrossoverProcessor;
 pub use dialogue::DialogueEnhancer;
 pub use limiter::{LimiterConfig, LimiterStats, TruePeakLimiter};
