@@ -1,12 +1,9 @@
-#[allow(unused_imports)]
 use std::io::Write;
 use std::path::{Path, PathBuf};
-#[cfg(feature = "realtime")]
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
-#[cfg(feature = "realtime")]
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
@@ -41,12 +38,6 @@ const CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES: f32 = 1_024.0;
 mod realtime_commands;
 #[cfg(feature = "simulation")]
 mod simulation_commands;
-mod calibration_runner;
-mod media_downloader;
-mod multiroom;
-mod music_library;
-mod streaming_bridge;
-mod web_server;
 
 #[derive(Debug, Parser)]
 #[command(name = "aurora")]
@@ -256,87 +247,12 @@ enum Command {
         #[arg(long, default_value = "NO")]
         confirm: String,
     },
-    /// Decode a live or file bitstream (IEC 61937 / E-AC-3 Atmos / IAMF) and render to multichannel or 11.1.4 WAV.
-    DecodeStream {
-        #[arg(long)]
-        input: PathBuf,
-        #[arg(long)]
-        output: PathBuf,
-        #[arg(long, value_enum, default_value_t = LayoutName::ElevenOneFour)]
-        layout: LayoutName,
-        #[arg(long, default_value_t = true)]
-        apply_crossover: bool,
-        #[arg(long, default_value_t = 80.0)]
-        crossover_freq: f32,
-        #[arg(long, default_value_t = true)]
-        enhance_dialogue: bool,
-    },
-    /// Generate an EDID / CTA-861-H binary (e.g. Samsung HW-Q995D) with Dolby Atmos (JOC=1), MAT 2.0, DTS:X, and 11.1.4 SAD descriptors.
-    GenerateEdid {
-        #[arg(long)]
-        output: PathBuf,
-        #[arg(long, default_value = "samsung-q995d")]
-        profile: String,
-    },
-    /// Generate a 16-channel SpaceFit acoustic calibration stimulus sweep WAV file.
-    GenerateCalibrationStimulus {
-        #[arg(long)]
-        output: PathBuf,
-        #[arg(long, default_value_t = 48_000)]
-        sample_rate: u32,
-        #[arg(long, default_value_t = 2.0)]
-        sweep_duration: f32,
-    },
-    /// Analyze a recorded calibration sweep and generate an 11.1.4 room calibration profile.
-    CalibrateRoom {
-        #[arg(long)]
-        recorded_wav: PathBuf,
-        #[arg(long)]
-        output_profile: PathBuf,
-        #[arg(long, default_value_t = 48_000)]
-        sample_rate: u32,
-    },
-    /// Start the embedded 3D Spatial Audio & Dolby Atmos Web Dashboard and Remote Control server.
-    Serve {
-        #[arg(long, default_value_t = 8080)]
-        port: u16,
-        #[arg(long, default_value = "0.0.0.0")]
-        bind_ip: String,
-    },
-    /// Broadcast rear surround / ceiling height channels over Aurora-WLink Wi-Fi (Surpasses WiSA).
-    WirelessTx {
-        #[arg(long)]
-        input_wav: Option<PathBuf>,
-        #[arg(long, default_value = "127.0.0.1:5004")]
-        target: String,
-        #[arg(long, default_value_t = 48_000)]
-        sample_rate: u32,
-        #[arg(long, default_value_t = 4)]
-        channels: u8,
-        #[arg(long, default_value_t = 48)]
-        frame_size: usize,
-    },
-    /// Receive wireless surround audio on satellite speakers via Aurora-WLink with Zero-Delay XOR-FEC.
-    WirelessRx {
-        #[arg(long, default_value = "0.0.0.0:5004")]
-        bind: String,
-        #[arg(long, default_value_t = 48_000)]
-        sample_rate: u32,
-        #[arg(long, default_value_t = 4)]
-        channels: usize,
-        #[arg(long, default_value_t = 5)]
-        duration_seconds: u64,
-    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
 enum LayoutName {
     Stereo,
     Quad,
-    FiveOne,
-    SevenOne,
-    #[value(alias = "11.1.4")]
-    ElevenOneFour,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -353,7 +269,6 @@ enum CliTestSignal {
     RotatingSine,
 }
 
-#[cfg(feature = "realtime")]
 impl From<CliTestSignal> for TestSignal {
     fn from(value: CliTestSignal) -> Self {
         match value {
@@ -394,8 +309,6 @@ enum IdentifyLayout {
     Stereo,
     FiveOne,
     SevenOne,
-    #[value(alias = "11.1.4")]
-    ElevenOneFour,
 }
 
 impl From<IdentifyLayout> for StandardLayout {
@@ -404,7 +317,6 @@ impl From<IdentifyLayout> for StandardLayout {
             IdentifyLayout::Stereo => Self::Stereo,
             IdentifyLayout::FiveOne => Self::FiveOne,
             IdentifyLayout::SevenOne => Self::SevenOne,
-            IdentifyLayout::ElevenOneFour => Self::ElevenOneFour,
         }
     }
 }
@@ -420,7 +332,6 @@ struct OfflineRenderReport {
     wav_report: WavWriteReport,
 }
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, Copy)]
 struct ProcessOptions<'a> {
     input_path: &'a Path,
@@ -620,49 +531,6 @@ fn main() -> Result<()> {
             layout,
             confirm,
         } => identify_speakers(output_device, layout, &confirm),
-        Command::DecodeStream {
-            input,
-            output,
-            layout,
-            apply_crossover,
-            crossover_freq,
-            enhance_dialogue,
-        } => run_decode_stream(
-            &input,
-            &output,
-            layout,
-            apply_crossover,
-            crossover_freq,
-            enhance_dialogue,
-        ),
-        Command::GenerateEdid { output, profile } => generate_edid_command(&output, &profile),
-        Command::GenerateCalibrationStimulus {
-            output,
-            sample_rate,
-            sweep_duration,
-        } => calibration_runner::generate_calibration_stimulus_wav(&output, sample_rate, sweep_duration),
-        Command::CalibrateRoom {
-            recorded_wav,
-            output_profile,
-            sample_rate,
-        } => {
-            calibration_runner::analyze_room_calibration(&recorded_wav, &output_profile, sample_rate)?;
-            Ok(())
-        }
-        Command::Serve { port, bind_ip } => web_server::start_web_server(port, &bind_ip),
-        Command::WirelessTx {
-            input_wav,
-            target,
-            sample_rate,
-            channels,
-            frame_size,
-        } => run_wireless_tx(input_wav.as_deref(), &target, sample_rate, channels, frame_size),
-        Command::WirelessRx {
-            bind,
-            sample_rate,
-            channels,
-            duration_seconds,
-        } => run_wireless_rx(&bind, sample_rate, channels, duration_seconds),
     }
 }
 
@@ -1004,7 +872,6 @@ fn run_realtime(
     _speed_of_sound: f32,
     _test_signal: CliTestSignal,
     _duration_seconds: u64,
-    _renderer_mode: BasicRendererMode,
 ) -> Result<()> {
     bail!("real-time audio feature is disabled")
 }
@@ -1076,7 +943,6 @@ fn identify_speakers(
     bail!("real-time audio feature is disabled")
 }
 
-#[cfg(feature = "realtime")]
 fn confirmed(confirm: &str) -> Result<bool> {
     if confirm == "YES" {
         return Ok(true);
@@ -1188,7 +1054,6 @@ fn simulate_output_validation_command(
     bail!("simulation feature is disabled")
 }
 
-#[cfg(feature = "realtime")]
 #[derive(Debug, Default)]
 struct RealtimeCounters {
     callback_count: AtomicU64,
@@ -1339,9 +1204,6 @@ fn print_gains(layout: LayoutName, steps: usize, radius: f32) -> Result<()> {
     let speakers = match layout {
         LayoutName::Stereo => stereo_layout(),
         LayoutName::Quad => quad_layout(),
-        LayoutName::FiveOne => five_one_layout(),
-        LayoutName::SevenOne => seven_one_layout(),
-        LayoutName::ElevenOneFour => eleven_one_four_layout(),
     };
     let listener = Listener {
         position: Vector3::ZERO,
@@ -1632,51 +1494,6 @@ fn quad_layout() -> Vec<Speaker> {
     ]
 }
 
-fn five_one_layout() -> Vec<Speaker> {
-    vec![
-        speaker("front-left", "Front Left", ChannelRole::FrontLeft, -1.5, 2.0, 0.0),
-        speaker("front-right", "Front Right", ChannelRole::FrontRight, 1.5, 2.0, 0.0),
-        speaker("front-center", "Front Center", ChannelRole::FrontCenter, 0.0, 2.0, 0.0),
-        speaker("lfe", "Subwoofer LFE", ChannelRole::LowFrequencyEffects, 0.0, 1.0, -0.5),
-        speaker("surround-left", "Surround Left", ChannelRole::SurroundLeft, -2.0, -1.0, 0.0),
-        speaker("surround-right", "Surround Right", ChannelRole::SurroundRight, 2.0, -1.0, 0.0),
-    ]
-}
-
-fn seven_one_layout() -> Vec<Speaker> {
-    vec![
-        speaker("front-left", "Front Left", ChannelRole::FrontLeft, -1.5, 2.0, 0.0),
-        speaker("front-right", "Front Right", ChannelRole::FrontRight, 1.5, 2.0, 0.0),
-        speaker("front-center", "Front Center", ChannelRole::FrontCenter, 0.0, 2.0, 0.0),
-        speaker("lfe", "Subwoofer LFE", ChannelRole::LowFrequencyEffects, 0.0, 1.0, -0.5),
-        speaker("surround-left", "Surround Left", ChannelRole::SurroundLeft, -2.0, 0.0, 0.0),
-        speaker("surround-right", "Surround Right", ChannelRole::SurroundRight, 2.0, 0.0, 0.0),
-        speaker("surround-back-left", "Surround Back Left", ChannelRole::SurroundBackLeft, -1.5, -2.0, 0.0),
-        speaker("surround-back-right", "Surround Back Right", ChannelRole::SurroundBackRight, 1.5, -2.0, 0.0),
-    ]
-}
-
-fn eleven_one_four_layout() -> Vec<Speaker> {
-    vec![
-        speaker("front-left", "Front Left", ChannelRole::FrontLeft, -1.5, 2.5, 0.0),
-        speaker("front-right", "Front Right", ChannelRole::FrontRight, 1.5, 2.5, 0.0),
-        speaker("front-center", "Front Center", ChannelRole::FrontCenter, 0.0, 2.5, 0.0),
-        speaker("lfe", "Subwoofer LFE", ChannelRole::LowFrequencyEffects, 0.0, 1.0, -0.5),
-        speaker("surround-left", "Surround Left", ChannelRole::SurroundLeft, -2.5, 0.0, 0.0),
-        speaker("surround-right", "Surround Right", ChannelRole::SurroundRight, 2.5, 0.0, 0.0),
-        speaker("surround-back-left", "Surround Back Left", ChannelRole::SurroundBackLeft, -1.5, -2.5, 0.0),
-        speaker("surround-back-right", "Surround Back Right", ChannelRole::SurroundBackRight, 1.5, -2.5, 0.0),
-        speaker("wide-left", "Wide Left", ChannelRole::WideLeft, -2.5, 1.5, 0.0),
-        speaker("wide-right", "Wide Right", ChannelRole::WideRight, 2.5, 1.5, 0.0),
-        speaker("top-front-left", "Top Front Left", ChannelRole::TopFrontLeft, -1.5, 2.0, 1.5),
-        speaker("top-front-right", "Top Front Right", ChannelRole::TopFrontRight, 1.5, 2.0, 1.5),
-        speaker("top-rear-left", "Top Rear Left", ChannelRole::TopRearLeft, -1.5, -2.0, 1.5),
-        speaker("top-rear-right", "Top Rear Right", ChannelRole::TopRearRight, 1.5, -2.0, 1.5),
-        speaker("top-side-left", "Top Side Left", ChannelRole::TopSideLeft, -2.0, 0.0, 1.5),
-        speaker("top-side-right", "Top Side Right", ChannelRole::TopSideRight, 2.0, 0.0, 1.5),
-    ]
-}
-
 fn speaker(id: &str, label: &str, channel_role: ChannelRole, x: f32, y: f32, z: f32) -> Speaker {
     Speaker {
         id: id.to_owned(),
@@ -1689,332 +1506,6 @@ fn speaker(id: &str, label: &str, channel_role: ChannelRole, x: f32, y: f32, z: 
         enabled: true,
     }
 }
-
-fn run_decode_stream(
-    input: &Path,
-    output: &Path,
-    layout_name: LayoutName,
-    apply_crossover: bool,
-    crossover_freq: f32,
-    enhance_dialogue: bool,
-) -> Result<()> {
-    use aurora_decoder_eac3_atmos::FormatAutoSwitch;
-    use aurora_dsp_basic::{CrossoverProcessor, DialogueEnhancer, SmartImmersiveUpmixer, SubwooferPhaseAligner};
-
-    let speakers = match layout_name {
-        LayoutName::Stereo => stereo_layout(),
-        LayoutName::Quad => quad_layout(),
-        LayoutName::FiveOne => five_one_layout(),
-        LayoutName::SevenOne => seven_one_layout(),
-        LayoutName::ElevenOneFour => eleven_one_four_layout(),
-    };
-    let channel_roles: Vec<ChannelRole> = speakers.iter().map(|s| s.channel_role.clone()).collect();
-    let num_speakers = speakers.len();
-
-    println!("Decoding live stream: {}", input.display());
-    println!("Target speaker layout: {:?} ({} channels)", layout_name, num_speakers);
-
-    let input_bytes = std::fs::read(input)
-        .with_context(|| format!("Failed to read input bitstream file: {}", input.display()))?;
-
-    let sample_rate = 48000_u32;
-    let mut auto_switcher = FormatAutoSwitch::new(192);
-
-    let mut renderer = BasicRenderer::new(BasicRendererMode::InverseDistance);
-    renderer.configure(speakers.clone(), sample_rate, 1536, 32)
-        .map_err(|e| anyhow::anyhow!("Renderer config error: {e}"))?;
-    let scratch_size = renderer.required_scratch_size()
-        .map_err(|e| anyhow::anyhow!("Scratch size error: {e}"))?;
-    let mut scratch = RendererScratch::new(scratch_size);
-    let listener = Listener {
-        position: Vector3::new(0.0, 0.0, 0.0),
-        orientation: Vector3::new(0.0, 1.0, 0.0),
-        ear_height: 1.2,
-    };
-
-    // DSP Suite: Crossover, Dialogue Enhancer, Smart Upmixer, Phase Aligner
-    let lfe_idx = channel_roles.iter().position(|r| *r == ChannelRole::LowFrequencyEffects);
-    let center_idx = channel_roles.iter().position(|r| *r == ChannelRole::FrontCenter);
-
-    let mut crossover = if apply_crossover {
-        Some(CrossoverProcessor::new(num_speakers, lfe_idx, crossover_freq, sample_rate))
-    } else {
-        None
-    };
-
-    let mut dialogue_enhancer = if enhance_dialogue {
-        Some(DialogueEnhancer::new(center_idx, 3.0, false, sample_rate))
-    } else {
-        None
-    };
-
-    let mut upmixer = SmartImmersiveUpmixer::new(sample_rate);
-    let mut phase_aligner = SubwooferPhaseAligner::new(sample_rate, crossover_freq, 45.0);
-    let mut limiter = aurora_dsp_basic::TruePeakLimiter::new(aurora_dsp_basic::LimiterConfig {
-        sample_rate,
-        channel_count: num_speakers,
-        ceiling_linear: 0.9772,
-        lookahead_ms: 2.5,
-        attack_ms: 1.0,
-        release_ms: 50.0,
-        link_channels: true,
-    });
-
-    let mut output_channels: Vec<Vec<f32>> = vec![Vec::new(); num_speakers];
-    let mut total_decoded_frames = 0;
-    let mut total_active_objects = 0;
-    let mut upmixed_blocks_count = 0;
-
-    let chunk_size = 4096;
-    let mut offset = 0;
-
-    while offset < input_bytes.len() {
-        let end = (offset + chunk_size).min(input_bytes.len());
-        let chunk = &input_bytes[offset..end];
-        offset = end;
-
-        if let Some(decoded) = auto_switcher.decode_auto(chunk) {
-            total_decoded_frames += 1;
-            let frame_len = decoded.audio.frame_count;
-            total_active_objects += decoded.objects.len();
-
-            let mut block_channels = vec![vec![0.0_f32; frame_len]; num_speakers];
-
-            // If 3D spatial objects are present (Atmos JOC, MAT, or DTS:X), use 3D VBAP renderer
-            if !decoded.objects.is_empty() {
-                // Map bed channels
-                for (bed_idx, bed_samples) in decoded.audio.channels.iter().enumerate() {
-                    let target_ch = bed_idx % num_speakers;
-                    for (s_out, s_in) in block_channels[target_ch].iter_mut().zip(bed_samples.iter()) {
-                        *s_out += *s_in;
-                    }
-                }
-
-                // Render dynamic 3D objects
-                let render_objs: Vec<RenderObject> = decoded.objects.iter().map(|obj| {
-                    RenderObject {
-                        position: obj.position,
-                        gain: 10.0_f32.powf(obj.gain_db / 20.0),
-                    }
-                }).collect();
-
-                let mut speaker_gains = vec![SpeakerGain::default(); render_objs.len() * num_speakers];
-                renderer.render_gains(&listener, &render_objs, &mut speaker_gains, &mut scratch)
-                    .map_err(|e| anyhow::anyhow!("Render gains error: {e}"))?;
-
-                for (obj_idx, _obj) in decoded.objects.iter().enumerate() {
-                    let obj_freq = 300.0 + (obj_idx as f32 * 120.0);
-                    for spk_idx in 0..num_speakers {
-                        let gain = speaker_gains[obj_idx * num_speakers + spk_idx].gain;
-                        if gain > 0.001 {
-                            for frame_i in 0..frame_len {
-                                let t = frame_i as f32 / sample_rate as f32;
-                                let obj_sample = (2.0 * std::f32::consts::PI * obj_freq * t).sin() * 0.15;
-                                block_channels[spk_idx][frame_i] += obj_sample * gain;
-                            }
-                        }
-                    }
-                }
-            } else if num_speakers == 16 {
-                // Non-Atmos content (Stereo or 5.1/7.1 broadcast): Engage Smart 11.1.4 Immersive Upmixer!
-                upmixed_blocks_count += 1;
-                let _ = upmixer.upmix_to_11_1_4(&decoded.audio.channels, &mut block_channels, frame_len);
-            } else {
-                for (ch_idx, ch_samples) in decoded.audio.channels.iter().enumerate() {
-                    let target_ch = ch_idx % num_speakers;
-                    for (s_out, s_in) in block_channels[target_ch].iter_mut().zip(ch_samples.iter()) {
-                        *s_out += *s_in;
-                    }
-                }
-            }
-
-            // 1. Linkwitz-Riley 4th Order Crossover (24 dB/oct)
-            if let Some(ref mut xover) = crossover {
-                xover.process_in_place(&mut block_channels, frame_len)
-                    .map_err(|e| anyhow::anyhow!("Crossover DSP error: {e}"))?;
-            }
-
-            // 2. Subwoofer FIR Phase Alignment
-            if let Some(lfe_channel_index) = lfe_idx {
-                phase_aligner.process_lfe_in_place(&mut block_channels[lfe_channel_index]);
-            }
-
-            // 3. Center Channel Dialogue Enhancement
-            if let Some(ref mut d_enhancer) = dialogue_enhancer {
-                let _ = d_enhancer.process_in_place(&mut block_channels, frame_len);
-            }
-
-            // 4. Multichannel Lookahead True-Peak Limiter (Zero-Clipping Speaker Guard)
-            limiter.process_in_place(&mut block_channels, frame_len);
-
-            for (out_ch, block_ch) in output_channels.iter_mut().zip(block_channels.iter()) {
-                out_ch.extend_from_slice(block_ch);
-            }
-        }
-    }
-
-    if output_channels[0].is_empty() {
-        println!("Warning: No complete audio frames decoded from input.");
-    } else {
-        let stats = auto_switcher.stats();
-        println!("Stream decode complete:");
-        println!("  - Detected Format: {:?}", stats.active_format.unwrap_or(aurora_decoder_eac3_atmos::DetectedStreamFormat::Unknown));
-        println!("  - Total Audio Blocks: {}", total_decoded_frames);
-        println!("  - 3D Spatial Objects: {}", total_active_objects);
-        println!("  - 11.1.4 Upmixed Blocks: {}", upmixed_blocks_count);
-        println!("  - Zero-Click Format Transitions: {}", stats.format_transitions);
-        if limiter.stats().limited_frames_count > 0 {
-            println!("  - True-Peak Limiter: Active (Max Gain Reduction: {:.2} dB, Limited Frames: {})",
-                limiter.stats().max_gain_reduction_db, limiter.stats().limited_frames_count);
-        } else {
-            println!("  - True-Peak Limiter: Pass-Through (Zero inter-sample clipping detected)");
-        }
-        let report = write_wav_f32_with_channel_roles(output, sample_rate, &output_channels, &channel_roles)?;
-        println!("Wrote cinema 11.1.4 WAV: {} (channels: {}, frames: {}, clipped: {})",
-            output.display(), report.channel_count, report.frames_written, report.clipped);
-    }
-
-    Ok(())
-}
-
-fn generate_edid_command(output: &Path, profile: &str) -> Result<()> {
-    use aurora_config::edid_spoof::{generate_samsung_q995d_edid, verify_edid_checksums};
-
-    println!("Generating spoofed EDID / CTA-861-H binary (Target profile: {profile})...");
-    let edid = generate_samsung_q995d_edid();
-
-    if !verify_edid_checksums(&edid) {
-        bail!("EDID checksum validation failed!");
-    }
-
-    std::fs::write(output, &edid)
-        .with_context(|| format!("Failed to write EDID binary to {}", output.display()))?;
-
-    println!("Successfully generated 256-byte Samsung HW-Q995D EDID binary:");
-    println!("  - Output path: {}", output.display());
-    println!("  - Vendor ID: SAM (Samsung Electronics)");
-    println!("  - Product ID: 0x0995 (HW-Q995D 11.1.4 Soundbar)");
-    println!("  - Base EDID 1.4: 128 bytes (Modulo-256 Checksum Valid)");
-    println!("  - CTA-861-H Extension: 128 bytes (Modulo-256 Checksum Valid)");
-    println!("  - Audio Descriptors (SADs):");
-    println!("      * LPCM (8 ch, 192 kHz / 24-bit)");
-    println!("      * Dolby Digital (AC-3 5.1)");
-    println!("      * Dolby Digital Plus (E-AC-3 7.1) with JOC=1 (Dolby Atmos flag ACTIVE)");
-    println!("      * Dolby TrueHD Atmos (8 ch, 192 kHz Lossless)");
-    println!("      * DTS / DTS-HD MA / DTS:X (8 ch, 192 kHz)");
-    println!("      * Dolby MAT 2.0 / 2.1 (Apple TV / PS5 Atmos metadata)");
-    println!("  - Speaker Allocation: 11.1.4 physical channels (FL, FR, LFE, FC, BL, BR, FLC, FRC, BC, Rls, Rrs, TpFL, TpFR, TpBL, TpBR)");
-    println!("  - eARC CDS: Supported (37 Mbps high-bitrate audio)");
-
-    Ok(())
-}
-
-fn run_wireless_tx(
-    input_wav: Option<&Path>,
-    target: &str,
-    sample_rate: u32,
-    channels: u8,
-    frame_size: usize,
-) -> Result<()> {
-    use aurora_realtime_engine::wireless_link::WLinkTransmitter;
-    let target_addr: std::net::SocketAddr = target
-        .parse()
-        .with_context(|| format!("Invalid target socket address: {target}"))?;
-
-    println!("Starting Aurora-WLink Carrier-Grade Wireless Surround Transmitter (Surpassing WiSA HT)...");
-    println!("  - Target: {}", target_addr);
-    println!("  - Sample Rate: {} Hz", sample_rate);
-    println!("  - Channels: {} (Surround / Height Channels)", channels);
-    println!(
-        "  - Transmission Frame: {} samples ({:.2} ms packet transit)",
-        frame_size,
-        (frame_size as f32 / sample_rate as f32) * 1000.0
-    );
-    println!("  - Zero-Delay Forward Error Correction: Active (4:1 XOR Parity)");
-    println!("  - WMM Voice Priority: DSCP 46 (EF)");
-
-    let mut tx = WLinkTransmitter::bind("0.0.0.0:0", target_addr, sample_rate, channels, 4)?;
-
-    let test_channels: Vec<Vec<f32>> = if let Some(wav_path) = input_wav {
-        let wav = read_wav(wav_path)?;
-        wav.channels
-    } else {
-        // Generate test multichannel tones (440Hz, 880Hz, 1320Hz, 1760Hz)
-        let total_frames = sample_rate as usize * 3;
-        (0..channels)
-            .map(|ch| {
-                let freq = 440.0 * (ch as f32 + 1.0);
-                (0..total_frames)
-                    .map(|i| {
-                        let t = i as f32 / sample_rate as f32;
-                        (2.0 * std::f32::consts::PI * freq * t).sin() * 0.2
-                    })
-                    .collect()
-            })
-            .collect()
-    };
-
-    let total_frames = test_channels[0].len();
-    let mut offset = 0;
-    let mut packets_sent = 0;
-    let start = std::time::Instant::now();
-
-    while offset + frame_size <= total_frames {
-        let block: Vec<Vec<f32>> = test_channels
-            .iter()
-            .map(|ch| ch[offset..offset + frame_size].to_vec())
-            .collect();
-        tx.send_audio_block(&block, frame_size)?;
-        packets_sent += 1;
-        offset += frame_size;
-
-        let target_elapsed = std::time::Duration::from_secs_f64(offset as f64 / sample_rate as f64);
-        if let Some(sleep_dur) = target_elapsed.checked_sub(start.elapsed()) {
-            std::thread::sleep(sleep_dur);
-        }
-    }
-
-    println!(
-        "Aurora-WLink transmission complete: {} packets transmitted in {:.2}s",
-        packets_sent,
-        start.elapsed().as_secs_f32()
-    );
-    Ok(())
-}
-
-fn run_wireless_rx(
-    bind: &str,
-    sample_rate: u32,
-    channels: usize,
-    duration_seconds: u64,
-) -> Result<()> {
-    use aurora_realtime_engine::wireless_link::WLinkReceiver;
-    println!("Starting Aurora-WLink Satellite Speaker Receiver...");
-    println!("  - Listening on: {}", bind);
-    println!("  - Channels: {}", channels);
-    println!("  - Sample Rate: {} Hz", sample_rate);
-    println!("  - Zero-Delay XOR-FEC Engine: Armed");
-
-    let mut rx = WLinkReceiver::bind(bind, sample_rate, channels)?;
-    let start = std::time::Instant::now();
-    let mut total_received_frames = 0;
-
-    while start.elapsed() < std::time::Duration::from_secs(duration_seconds) {
-        if let Ok(Some(channels_data)) = rx.receive_frame() {
-            total_received_frames += channels_data[0].len();
-        }
-    }
-
-    let (pkts, recovered) = rx.stats();
-    println!("Aurora-WLink Reception Summary:");
-    println!("  - Total Audio Frames Decoded: {}", total_received_frames);
-    println!("  - Packets Received: {}", pkts);
-    println!("  - Dropped Packets Recovered via 0ms XOR-FEC: {}", recovered);
-    println!("  - Jitter / Dropout Rate: 0.00%");
-
-    Ok(())
-}
-
 
 #[cfg(test)]
 mod tests {

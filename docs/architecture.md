@@ -1,5 +1,9 @@
 # Architecture
 
+The separate S6 appliance live-ingest I/O loop and its bounded duplex queues
+are described in [live streaming transport reliability](s6-streaming-transport-reliability.md).
+This transport implementation does not establish physical streaming Atmos acceptance.
+
 Aurora is a format-independent spatial-audio system with implemented offline
 rendering, basic DSP, backend-neutral real-time contracts, deterministic
 simulation, and accepted diagnostics and configuration control planes. Physical
@@ -215,7 +219,7 @@ Aurora runtime and JSON trajectories retain canonical order. Specifically,
 The source gate delivers validated absolute lip-sync frames through a dedicated
 APC0 Unix datagram endpoint, separate from the AUR0 audio stream. HDMI uses
 `AURORA_DSP_CONTROL_SOCKET`; the optional local adapter has its own endpoint.
-The supported range is 0–24000 frames at 48 kHz. Active-source control is
+The supported range is 0Â–24000 frames at 48 kHz. Active-source control is
 replayed after DSP restart. The legacy broker pipe remains available only when
 `AURORA_CONTROL_FD` is explicitly supplied and names a valid descriptor.
 
@@ -225,3 +229,13 @@ allocates. Measurement setup is serialized outside the measured closure;
 allocator callbacks never acquire that mutex. Other targets use thread-local
 counters. Panic cleanup and positive allocation/reallocation controls protect
 against false zero-allocation results.
+
+
+## Explicit channel-based immersive alternative
+
+The S6 broker accepts `AURORA_DECODE_MODE=surround-upmix` to launch a separate
+FFmpeg decoder/filter process instead of Omniphony. It consumes the same
+IEC61937 stream and emits the same canonical 48 kHz, 12-channel raw-f32 output
+into Aurora's existing postprocessor and managed source gate. The default
+`objects` mode remains separate; failure never silently selects an upmixer.
+See [the surround-upmix adapter](surround-upmix.md) for semantics and evidence.

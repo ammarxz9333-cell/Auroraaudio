@@ -15,7 +15,6 @@ serde.workspace = true
 aurora-core = { path = "../aurora-core" }
 aurora-dsp-api = { path = "../aurora-dsp-api" }
 thiserror.workspace = true
-nnnoiseless = { version = "0.5", default-features = false }
 
 [dev-dependencies]
 aurora-test-alloc = { path = "../aurora-test-alloc" }

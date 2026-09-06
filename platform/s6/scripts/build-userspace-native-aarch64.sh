@@ -9,8 +9,10 @@ OUT="${AURORA_OUT:-$ROOT/out/s6-aarch64}"
 WORK="${AURORA_WORK:-$ROOT/.work/s6-aarch64}"
 JOBS="${JOBS:-4}"
 CC="${CC:-cc}"
-HARLETTY_VERSION="${HARLETTY_VERSION:-v0.7.3}"
+HARLETTY_VERSION="${HARLETTY_VERSION:-v0.7.4}"
+HARLETTY_COMMIT="10943821cca7e6886c11f45d2267b06d76e6db7c"
 OMNIPHONY_VERSION="${OMNIPHONY_VERSION:-v0.5.2}"
+OMNIPHONY_COMMIT="f9a79721af64ad9c39042d4deded158b568fc598"
 OMNIPHONY_PATCH="$ROOT/platform/s6/patches/omniphony-v0.5.2-low-latency-stdout.patch"
 NAVIDROME_VERSION="${NAVIDROME_VERSION:-0.63.2}"
 NAVIDROME_SHA256="5b74fb0eea5d48e3eb7565ea4116284232509e94431cb3756aaac2128dd50a43"
@@ -18,6 +20,8 @@ NAVIDROME_SHA256="5b74fb0eea5d48e3eb7565ea4116284232509e94431cb3756aaac2128dd50a
 fail() { echo "build-userspace-native-aarch64: $*" >&2; exit 1; }
 [ "$(uname -m)" = "aarch64" ] || fail "native aarch64 builder required"
 [ -f /etc/alpine-release ] || fail "Alpine Linux builder required"
+[ "$HARLETTY_VERSION" = "v0.7.4" ] || fail "Harletty adapter is pinned to v0.7.4"
+[ "$OMNIPHONY_VERSION" = "v0.5.2" ] || fail "Omniphony adapter is pinned to v0.5.2"
 
 for cmd in cargo rustc git cmake pkg-config curl sha256sum tar "$CC"; do
     command -v "$cmd" >/dev/null 2>&1 || fail "missing build dependency: $cmd"
@@ -55,6 +59,9 @@ mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/share/omniphony/layouts" "$OUT/navidrome" "
     "$ROOT/platform/s6/source-manager/aurora-source-ctl.c" \
     -lm -o "$OUT/bin/aurora-source-ctl"
 
+install -m 0755 "$ROOT/platform/s6/surround-upmix/aurora-surround-upmix.sh" \
+    "$OUT/bin/aurora-surround-upmix"
+
 # Live immersive streaming broker. It deliberately does NOT decode or unwrap
 # IEC61937 itself. Complete encoded frames are forwarded as a byte stream to
 # Omniphony stdin; Omniphony v0.5.2 owns the streaming IEC61937 parser and
@@ -80,7 +87,9 @@ fi
     cd "$WORK/Omniphony"
     git fetch --tags --force
     git checkout --detach "$OMNIPHONY_VERSION"
-    git reset --hard "$OMNIPHONY_VERSION"
+    [ "$(git rev-parse HEAD)" = "$OMNIPHONY_COMMIT" ] || \
+        fail "Omniphony tag does not match pinned source commit"
+    git reset --hard "$OMNIPHONY_COMMIT"
 
     [ "$OMNIPHONY_VERSION" = "v0.5.2" ] || \
         fail "Omniphony low-latency patch is pinned to v0.5.2, got $OMNIPHONY_VERSION"
@@ -102,6 +111,9 @@ fi
     cd "$WORK/harletty-bridge"
     git fetch --tags --force
     git checkout --detach "$HARLETTY_VERSION"
+    [ "$(git rev-parse HEAD)" = "$HARLETTY_COMMIT" ] || \
+        fail "Harletty tag does not match pinned source commit"
+    git diff --quiet HEAD -- || fail "Harletty checkout contains modified tracked source"
     cargo build --release -j "$JOBS" -p harletty-bridge
     install -m 0755 target/release/libharletty_bridge.so "$OUT/lib/libharletty_bridge.so"
 )
@@ -122,13 +134,16 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
     echo "source_manager=priority-quiesce-watchdog-v1"
     echo "source_control_cli=status-mute-gain-lipsync-standby-v1"
     echo "hdmi_source_gate=managed-ramp-v1"
+    echo "surround_upmix=ffmpeg-channel-bed-synthetic-heights-v1"
     echo "live_streaming_ingest=iec61937-omniphony-postprocess-source-gate"
     echo "postprocessor=aurora-s6-postprocess"
     echo "postprocessor_asrc=rubato-sinc-fixed-out"
     echo "postprocessor_bass_management=lr4-configurable"
     echo "postprocessor_limiter=linked-peak"
     echo "harletty=$HARLETTY_VERSION"
+    echo "harletty_commit=$HARLETTY_COMMIT"
     echo "omniphony=$OMNIPHONY_VERSION"
+    echo "omniphony_commit=$OMNIPHONY_COMMIT"
     echo "omniphony_patch=low-latency-raw-stdout-40-frames-v1"
     echo "navidrome=v$NAVIDROME_VERSION"
     echo "navidrome_sha256=$NAVIDROME_SHA256"
@@ -141,3 +156,4 @@ sha256sum "$OUT/bin/aurora-source-ctl" > "$OUT/bin/aurora-source-ctl.sha256"
 sha256sum "$OUT/bin/aurora-live-ingest" > "$OUT/bin/aurora-live-ingest.sha256"
 sha256sum "$OUT/bin/aurora-s6-postprocess" > "$OUT/bin/aurora-s6-postprocess.sha256"
 echo "Userspace staging complete: $OUT"
+

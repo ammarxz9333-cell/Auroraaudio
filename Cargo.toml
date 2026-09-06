@@ -8,7 +8,6 @@ members = [
     "crates/aurora-renderer-vbap",
     "crates/aurora-renderer-cavern",
     "crates/aurora-decoder-api",
-    "crates/aurora-decoder-eac3-atmos",
     "crates/aurora-decoder-iamf",
     "crates/aurora-decoder-truehdd",
     "crates/aurora-dsp-api",

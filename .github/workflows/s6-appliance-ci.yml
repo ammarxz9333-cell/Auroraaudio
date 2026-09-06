@@ -4,6 +4,7 @@ on:
   workflow_dispatch:
   push:
     branches:
+      - main-v2
       - agent/aurora-s6-appliance-bootstrap
       - agent/s6-realtime-mcu-hal-bringup
     paths:
@@ -70,7 +71,7 @@ jobs:
         with:
           components: rustfmt, clippy
       - name: Install Linux audio build dependencies
-        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev ffmpeg
       - name: Audit hardware target and runtime wiring
         run: |
           sh platform/s6/scripts/audit-runtime-wiring.sh
@@ -130,12 +131,20 @@ jobs:
             -Iprotocol \
             platform/s6/live-ingest/aurora-live-ingest.c \
             -lm -o /tmp/aurora-live-ingest
+      - name: Test broker bounded duplex I/O with real pipes
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+            platform/s6/live-ingest/test_live_ingest_io.c \
+            -lm -o /tmp/test-live-ingest-io
+          /tmp/test-live-ingest-io
       - name: Test live immersive broker end-to-end with mock renderer
         run: |
           chmod +x platform/s6/live-ingest/mock_orender.py
           python3 platform/s6/live-ingest/test_live_ingest.py \
             /tmp/aurora-live-ingest \
             platform/s6/live-ingest/mock_orender.py
+      - name: Test real E-AC-3 channel decoding and explicit surround upmix
+        run: python3 platform/s6/surround-upmix/test_surround_upmix.py
       - name: Test broker postprocessor ASRC and recovery integration
         run: |
           chmod +x platform/s6/live-ingest/test_live_postprocess.py
@@ -211,7 +220,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          for f in platform/s6/scripts/*.sh platform/s6/initramfs/init firmware/*.sh; do
+          for f in platform/s6/scripts/*.sh platform/s6/surround-upmix/*.sh platform/s6/initramfs/init firmware/*.sh; do
             bash -n "$f"
           done
       - name: Verify protocol and appliance contracts agree
@@ -238,3 +247,4 @@ jobs:
         run: |
           cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess --no-deps -- -D warnings
           cargo clippy --locked -p aurora-measurement --all-targets --no-deps -- -D warnings
+
