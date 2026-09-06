@@ -253,6 +253,10 @@ enum Command {
 enum LayoutName {
     Stereo,
     Quad,
+    FiveOne,
+    SevenOne,
+    #[value(alias = "11.1.4")]
+    ElevenOneFour,
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -309,6 +313,8 @@ enum IdentifyLayout {
     Stereo,
     FiveOne,
     SevenOne,
+    #[value(alias = "11.1.4")]
+    ElevenOneFour,
 }
 
 impl From<IdentifyLayout> for StandardLayout {
@@ -317,6 +323,7 @@ impl From<IdentifyLayout> for StandardLayout {
             IdentifyLayout::Stereo => Self::Stereo,
             IdentifyLayout::FiveOne => Self::FiveOne,
             IdentifyLayout::SevenOne => Self::SevenOne,
+            IdentifyLayout::ElevenOneFour => Self::ElevenOneFour,
         }
     }
 }
@@ -1204,6 +1211,9 @@ fn print_gains(layout: LayoutName, steps: usize, radius: f32) -> Result<()> {
     let speakers = match layout {
         LayoutName::Stereo => stereo_layout(),
         LayoutName::Quad => quad_layout(),
+        LayoutName::FiveOne => five_one_layout(),
+        LayoutName::SevenOne => seven_one_layout(),
+        LayoutName::ElevenOneFour => eleven_one_four_layout(),
     };
     let listener = Listener {
         position: Vector3::ZERO,
@@ -1491,6 +1501,51 @@ fn quad_layout() -> Vec<Speaker> {
             -1.0,
             0.0,
         ),
+    ]
+}
+
+fn five_one_layout() -> Vec<Speaker> {
+    vec![
+        speaker("front-left", "Front Left", ChannelRole::FrontLeft, -1.5, 2.0, 0.0),
+        speaker("front-right", "Front Right", ChannelRole::FrontRight, 1.5, 2.0, 0.0),
+        speaker("front-center", "Front Center", ChannelRole::FrontCenter, 0.0, 2.0, 0.0),
+        speaker("lfe", "Subwoofer LFE", ChannelRole::LowFrequencyEffects, 0.0, 1.0, -0.5),
+        speaker("surround-left", "Surround Left", ChannelRole::SurroundLeft, -2.0, -1.0, 0.0),
+        speaker("surround-right", "Surround Right", ChannelRole::SurroundRight, 2.0, -1.0, 0.0),
+    ]
+}
+
+fn seven_one_layout() -> Vec<Speaker> {
+    vec![
+        speaker("front-left", "Front Left", ChannelRole::FrontLeft, -1.5, 2.0, 0.0),
+        speaker("front-right", "Front Right", ChannelRole::FrontRight, 1.5, 2.0, 0.0),
+        speaker("front-center", "Front Center", ChannelRole::FrontCenter, 0.0, 2.0, 0.0),
+        speaker("lfe", "Subwoofer LFE", ChannelRole::LowFrequencyEffects, 0.0, 1.0, -0.5),
+        speaker("surround-left", "Surround Left", ChannelRole::SurroundLeft, -2.0, 0.0, 0.0),
+        speaker("surround-right", "Surround Right", ChannelRole::SurroundRight, 2.0, 0.0, 0.0),
+        speaker("surround-back-left", "Surround Back Left", ChannelRole::SurroundBackLeft, -1.5, -2.0, 0.0),
+        speaker("surround-back-right", "Surround Back Right", ChannelRole::SurroundBackRight, 1.5, -2.0, 0.0),
+    ]
+}
+
+fn eleven_one_four_layout() -> Vec<Speaker> {
+    vec![
+        speaker("front-left", "Front Left", ChannelRole::FrontLeft, -1.5, 2.5, 0.0),
+        speaker("front-right", "Front Right", ChannelRole::FrontRight, 1.5, 2.5, 0.0),
+        speaker("front-center", "Front Center", ChannelRole::FrontCenter, 0.0, 2.5, 0.0),
+        speaker("lfe", "Subwoofer LFE", ChannelRole::LowFrequencyEffects, 0.0, 1.0, -0.5),
+        speaker("surround-left", "Surround Left", ChannelRole::SurroundLeft, -2.5, 0.0, 0.0),
+        speaker("surround-right", "Surround Right", ChannelRole::SurroundRight, 2.5, 0.0, 0.0),
+        speaker("surround-back-left", "Surround Back Left", ChannelRole::SurroundBackLeft, -1.5, -2.5, 0.0),
+        speaker("surround-back-right", "Surround Back Right", ChannelRole::SurroundBackRight, 1.5, -2.5, 0.0),
+        speaker("wide-left", "Wide Left", ChannelRole::WideLeft, -2.5, 1.5, 0.0),
+        speaker("wide-right", "Wide Right", ChannelRole::WideRight, 2.5, 1.5, 0.0),
+        speaker("top-front-left", "Top Front Left", ChannelRole::TopFrontLeft, -1.5, 2.0, 1.5),
+        speaker("top-front-right", "Top Front Right", ChannelRole::TopFrontRight, 1.5, 2.0, 1.5),
+        speaker("top-rear-left", "Top Rear Left", ChannelRole::TopRearLeft, -1.5, -2.0, 1.5),
+        speaker("top-rear-right", "Top Rear Right", ChannelRole::TopRearRight, 1.5, -2.0, 1.5),
+        speaker("top-side-left", "Top Side Left", ChannelRole::TopSideLeft, -2.0, 0.0, 1.5),
+        speaker("top-side-right", "Top Side Right", ChannelRole::TopSideRight, 2.0, 0.0, 1.5),
     ]
 }
 

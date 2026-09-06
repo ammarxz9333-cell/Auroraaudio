@@ -120,6 +120,14 @@ pub enum ChannelRole {
     TopRearLeft,
     /// Top rear/back right height channel.
     TopRearRight,
+    /// Wide left surround channel.
+    WideLeft,
+    /// Wide right surround channel.
+    WideRight,
+    /// Top side left height channel.
+    TopSideLeft,
+    /// Top side right height channel.
+    TopSideRight,
     /// Extensible role for custom layouts.
     Custom(String),
 }
@@ -140,6 +148,10 @@ impl ChannelRole {
             Self::TopFrontRight => "top-front-right",
             Self::TopRearLeft => "top-rear-left",
             Self::TopRearRight => "top-rear-right",
+            Self::WideLeft => "wide-left",
+            Self::WideRight => "wide-right",
+            Self::TopSideLeft => "top-side-left",
+            Self::TopSideRight => "top-side-right",
             Self::Custom(value) => value,
         }
     }
@@ -159,6 +171,10 @@ impl ChannelRole {
             Self::TopFrontRight => Some(0x4000),
             Self::TopRearLeft => Some(0x8000),
             Self::TopRearRight => Some(0x20000),
+            Self::WideLeft => Some(0x40),
+            Self::WideRight => Some(0x80),
+            Self::TopSideLeft => Some(0x800),
+            Self::TopSideRight => Some(0x2000),
             Self::Custom(_) => None,
         }
     }
@@ -198,6 +214,10 @@ impl<'de> Deserialize<'de> for ChannelRole {
             "top-front-right" | "TFR" => Self::TopFrontRight,
             "top-rear-left" | "top-back-left" | "TRL" | "TBL" => Self::TopRearLeft,
             "top-rear-right" | "top-back-right" | "TRR" | "TBR" => Self::TopRearRight,
+            "wide-left" | "WL" => Self::WideLeft,
+            "wide-right" | "WR" => Self::WideRight,
+            "top-side-left" | "TSL" => Self::TopSideLeft,
+            "top-side-right" | "TSR" => Self::TopSideRight,
             "" => return Err(D::Error::custom("channel role must not be empty")),
             _ => Self::Custom(value),
         })
@@ -222,6 +242,9 @@ pub enum StandardLayout {
     /// 7.1.4: FL, FR, FC, LFE, SL, SR, SBL, SBR, TFL, TFR, TRL, TRR.
     #[serde(rename = "7.1.4")]
     SevenOneFour,
+    /// 11.1.4: FL, FR, FC, LFE, SL, SR, SBL, SBR, WL, WR, TFL, TFR, TRL, TRR, TSL, TSR.
+    #[serde(rename = "11.1.4")]
+    ElevenOneFour,
     /// Custom layout with fixture-defined ordering.
     #[serde(rename = "custom")]
     Custom,
@@ -273,6 +296,24 @@ impl StandardLayout {
                 ChannelRole::TopFrontRight,
                 ChannelRole::TopRearLeft,
                 ChannelRole::TopRearRight,
+            ],
+            Self::ElevenOneFour => &[
+                ChannelRole::FrontLeft,
+                ChannelRole::FrontRight,
+                ChannelRole::FrontCenter,
+                ChannelRole::LowFrequencyEffects,
+                ChannelRole::SurroundLeft,
+                ChannelRole::SurroundRight,
+                ChannelRole::SurroundBackLeft,
+                ChannelRole::SurroundBackRight,
+                ChannelRole::WideLeft,
+                ChannelRole::WideRight,
+                ChannelRole::TopFrontLeft,
+                ChannelRole::TopFrontRight,
+                ChannelRole::TopRearLeft,
+                ChannelRole::TopRearRight,
+                ChannelRole::TopSideLeft,
+                ChannelRole::TopSideRight,
             ],
             Self::Custom => &[],
         }
@@ -394,6 +435,32 @@ mod tests {
                 ChannelRole::TopFrontRight,
                 ChannelRole::TopRearLeft,
                 ChannelRole::TopRearRight,
+            ]
+        );
+    }
+
+    #[test]
+    fn eleven_one_four_has_canonical_sixteen_channel_order() {
+        assert_eq!(StandardLayout::ElevenOneFour.canonical_roles().len(), 16);
+        assert_eq!(
+            StandardLayout::ElevenOneFour.canonical_roles(),
+            &[
+                ChannelRole::FrontLeft,
+                ChannelRole::FrontRight,
+                ChannelRole::FrontCenter,
+                ChannelRole::LowFrequencyEffects,
+                ChannelRole::SurroundLeft,
+                ChannelRole::SurroundRight,
+                ChannelRole::SurroundBackLeft,
+                ChannelRole::SurroundBackRight,
+                ChannelRole::WideLeft,
+                ChannelRole::WideRight,
+                ChannelRole::TopFrontLeft,
+                ChannelRole::TopFrontRight,
+                ChannelRole::TopRearLeft,
+                ChannelRole::TopRearRight,
+                ChannelRole::TopSideLeft,
+                ChannelRole::TopSideRight,
             ]
         );
     }

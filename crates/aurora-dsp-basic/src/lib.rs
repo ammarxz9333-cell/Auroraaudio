@@ -1,6 +1,11 @@
 //! Basic offline DSP processors.
 
+pub mod crossover;
+pub mod dialogue;
 pub mod output;
+
+pub use crossover::CrossoverProcessor;
+pub use dialogue::DialogueEnhancer;
 
 use aurora_core::AudioBlock;
 use thiserror::Error;
