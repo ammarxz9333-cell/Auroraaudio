@@ -2,20 +2,21 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Aurora Cinema 11.1.4 Spatial Audio Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Aurora Cinema, Spotify Hub & Sonos Multi-Room</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;900&display=swap" rel="stylesheet">
     <style>
         :root {
-            --bg-base: #080a10;
-            --bg-card: rgba(18, 23, 38, 0.7);
-            --border-glow: rgba(0, 229, 255, 0.25);
+            --bg-base: #07090e;
+            --bg-card: rgba(16, 21, 36, 0.75);
+            --border-glow: rgba(0, 229, 255, 0.2);
             --accent-cyan: #00e5ff;
             --accent-magenta: #ff007f;
             --accent-gold: #ffbe0b;
             --accent-purple: #8338ec;
+            --accent-spotify: #1db954;
             --text-primary: #ffffff;
             --text-secondary: #94a3b8;
         }
@@ -25,258 +26,378 @@
             margin: 0;
             padding: 0;
             user-select: none;
+            -webkit-tap-highlight-color: transparent;
         }
 
         body {
             font-family: 'Outfit', sans-serif;
-            background: radial-gradient(circle at top right, #151b30, var(--bg-base) 60%);
+            background: radial-gradient(circle at top right, #13182c, var(--bg-base) 60%);
             color: var(--text-primary);
             min-height: 100vh;
             display: flex;
             flex-direction: column;
             overflow-x: hidden;
+            padding-bottom: 85px; /* space for persistent bottom player */
         }
 
         header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 1.25rem 2.5rem;
-            background: rgba(10, 14, 26, 0.8);
+            padding: 1rem 2rem;
+            background: rgba(9, 12, 22, 0.85);
             backdrop-filter: blur(16px);
             border-bottom: 1px solid var(--border-glow);
+            position: sticky;
+            top: 0;
+            z-index: 100;
         }
 
         .logo-group {
             display: flex;
             align-items: center;
-            gap: 1rem;
+            gap: 0.8rem;
         }
 
         .logo-icon {
-            width: 38px;
-            height: 38px;
+            width: 36px;
+            height: 36px;
             background: linear-gradient(135deg, var(--accent-cyan), var(--accent-magenta));
-            border-radius: 10px;
+            border-radius: 9px;
             display: flex;
             align-items: center;
             justify-content: center;
-            box-shadow: 0 0 20px rgba(0, 229, 255, 0.5);
+            box-shadow: 0 0 16px rgba(0, 229, 255, 0.4);
             font-weight: 900;
-            font-size: 1.25rem;
+            font-size: 1.15rem;
         }
 
         .logo-title {
-            font-size: 1.4rem;
+            font-size: 1.25rem;
             font-weight: 700;
-            letter-spacing: 1px;
+            letter-spacing: 0.8px;
             background: linear-gradient(to right, #ffffff, var(--accent-cyan));
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
         }
 
-        .status-badge {
+        .nav-tabs {
             display: flex;
-            align-items: center;
             gap: 0.5rem;
-            padding: 0.4rem 1rem;
-            background: rgba(0, 229, 255, 0.1);
-            border: 1px solid var(--accent-cyan);
-            border-radius: 9999px;
-            font-size: 0.85rem;
+            background: rgba(255, 255, 255, 0.05);
+            padding: 4px;
+            border-radius: 12px;
+            border: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .tab-btn {
+            background: transparent;
+            border: none;
+            color: var(--text-secondary);
+            padding: 0.5rem 1.1rem;
+            border-radius: 8px;
+            font-family: inherit;
             font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-            box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
         }
 
-        .status-dot {
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            background: #00ff88;
-            box-shadow: 0 0 8px #00ff88;
-            animation: pulse 1.8s infinite;
+        .tab-btn.active {
+            background: var(--bg-card);
+            color: #ffffff;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.5);
+            border: 1px solid var(--border-glow);
         }
 
-        @keyframes pulse {
-            0%, 100% { transform: scale(1); opacity: 1; }
-            50% { transform: scale(1.4); opacity: 0.6; }
-        }
-
-        main {
-            display: grid;
-            grid-template-columns: 1fr 360px;
-            gap: 1.5rem;
-            padding: 1.5rem 2.5rem;
+        .main-container {
+            padding: 1.5rem 2rem;
             flex: 1;
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+        }
+
+        .tab-content {
+            display: none;
+        }
+        .tab-content.active {
+            display: block;
         }
 
         .card {
             background: var(--bg-card);
             backdrop-filter: blur(20px);
             border: 1px solid rgba(255, 255, 255, 0.08);
-            border-radius: 18px;
+            border-radius: 16px;
             padding: 1.5rem;
             box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
-            position: relative;
-            overflow: hidden;
+            margin-bottom: 1.5rem;
         }
 
-        .card::before {
-            content: '';
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            height: 2px;
-            background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+        /* Spotify Music Hub Styles */
+        .search-bar-wrap {
+            margin-bottom: 1.5rem;
+            display: flex;
+            gap: 0.8rem;
         }
 
-        .canvas-container {
-            position: relative;
-            height: 520px;
-            border-radius: 12px;
-            overflow: hidden;
-            background: radial-gradient(circle at center, #101528, #050811);
-        }
-
-        canvas {
-            width: 100%;
-            height: 100%;
-            display: block;
-        }
-
-        .canvas-overlay {
-            position: absolute;
-            top: 1rem;
-            left: 1rem;
-            background: rgba(0, 0, 0, 0.6);
-            backdrop-filter: blur(8px);
-            padding: 0.6rem 1rem;
+        .search-input {
+            flex: 1;
+            background: rgba(255, 255, 255, 0.06);
+            border: 1px solid rgba(255, 255, 255, 0.12);
             border-radius: 10px;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            font-size: 0.85rem;
-        }
-
-        .canvas-overlay span {
-            color: var(--accent-cyan);
-            font-weight: 700;
-        }
-
-        .sidebar {
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
-
-        .control-group {
-            margin-bottom: 1.2rem;
-        }
-
-        .control-label {
-            display: flex;
-            justify-content: space-between;
-            font-size: 0.9rem;
-            color: var(--text-secondary);
-            margin-bottom: 0.5rem;
-            font-weight: 600;
-        }
-
-        .slider {
-            width: 100%;
-            -webkit-appearance: none;
-            height: 6px;
-            border-radius: 3px;
-            background: rgba(255, 255, 255, 0.15);
+            padding: 0.75rem 1.2rem;
+            color: #ffffff;
+            font-family: inherit;
+            font-size: 0.95rem;
             outline: none;
         }
 
-        .slider::-webkit-slider-thumb {
-            -webkit-appearance: none;
-            width: 18px;
-            height: 18px;
-            border-radius: 50%;
-            background: var(--accent-cyan);
+        .search-input:focus {
+            border-color: var(--accent-spotify);
+            box-shadow: 0 0 15px rgba(29, 185, 84, 0.3);
+        }
+
+        .btn-action {
+            background: linear-gradient(135deg, var(--accent-spotify), #169c46);
+            border: none;
+            color: #ffffff;
+            padding: 0.75rem 1.4rem;
+            border-radius: 10px;
+            font-family: inherit;
+            font-weight: 700;
+            font-size: 0.9rem;
             cursor: pointer;
-            box-shadow: 0 0 10px var(--accent-cyan);
+            box-shadow: 0 4px 15px rgba(29, 185, 84, 0.3);
             transition: transform 0.1s;
         }
 
-        .slider::-webkit-slider-thumb:hover {
-            transform: scale(1.2);
+        .btn-action:hover {
+            transform: scale(1.03);
         }
 
-        .modes-grid {
+        .track-grid {
             display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 0.6rem;
+            grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
+            gap: 1.2rem;
         }
 
-        .mode-btn {
-            background: rgba(255, 255, 255, 0.05);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            color: #ffffff;
-            padding: 0.75rem;
-            border-radius: 10px;
-            font-family: inherit;
-            font-weight: 600;
-            font-size: 0.85rem;
+        .track-card {
+            background: rgba(255, 255, 255, 0.03);
+            border: 1px solid rgba(255, 255, 255, 0.06);
+            border-radius: 12px;
+            padding: 1rem;
             cursor: pointer;
             transition: all 0.2s;
-            text-align: center;
+            display: flex;
+            flex-direction: column;
         }
 
-        .mode-btn:hover {
-            background: rgba(0, 229, 255, 0.15);
-            border-color: var(--accent-cyan);
+        .track-card:hover {
+            background: rgba(255, 255, 255, 0.08);
+            border-color: var(--accent-spotify);
+            transform: translateY(-4px);
         }
 
-        .mode-btn.active {
-            background: linear-gradient(135deg, rgba(0, 229, 255, 0.3), rgba(255, 0, 127, 0.3));
-            border-color: var(--accent-cyan);
-            box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
+        .track-art {
+            width: 100%;
+            aspect-ratio: 1/1;
+            border-radius: 8px;
+            object-fit: cover;
+            margin-bottom: 0.8rem;
+            background: #1e2438;
         }
 
-        .vu-grid {
+        .track-title {
+            font-weight: 700;
+            font-size: 1rem;
+            margin-bottom: 0.2rem;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .track-artist {
+            font-size: 0.85rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.4rem;
+        }
+
+        /* Sonos Multi-Room Styles */
+        .multiroom-grid {
             display: grid;
-            grid-template-columns: repeat(16, 1fr);
-            gap: 4px;
-            height: 90px;
-            align-items: flex-end;
-            padding: 0.5rem 0;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 1.2rem;
         }
 
-        .vu-bar-col {
+        .zone-card {
+            background: rgba(255, 255, 255, 0.04);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 14px;
+            padding: 1.2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 0.8rem;
+        }
+
+        .zone-card.grouped {
+            border-color: var(--accent-cyan);
+            background: linear-gradient(135deg, rgba(0, 229, 255, 0.08), rgba(255, 255, 255, 0.03));
+            box-shadow: 0 0 20px rgba(0, 229, 255, 0.15);
+        }
+
+        .zone-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .zone-name {
+            font-weight: 700;
+            font-size: 1.05rem;
+        }
+
+        .zone-tag {
+            font-size: 0.75rem;
+            font-weight: 600;
+            padding: 2px 8px;
+            border-radius: 999px;
+            background: rgba(0, 229, 255, 0.15);
+            color: var(--accent-cyan);
+        }
+
+        /* Synced Lyrics Karaoke View */
+        .lyrics-container {
+            max-width: 800px;
+            margin: 0 auto;
+            text-align: center;
+            height: 600px;
+            overflow-y: auto;
+            scroll-behavior: smooth;
+            padding: 3rem 1rem;
+        }
+
+        .lyric-line {
+            font-size: 1.4rem;
+            font-weight: 600;
+            color: rgba(255, 255, 255, 0.25);
+            margin: 1.8rem 0;
+            transition: all 0.3s ease;
+            cursor: pointer;
+        }
+
+        .lyric-line.active {
+            font-size: 2.1rem;
+            font-weight: 900;
+            color: #ffffff;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-gold));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            transform: scale(1.08);
+            text-shadow: 0 0 30px rgba(0, 229, 255, 0.5);
+        }
+
+        /* Persistent Bottom Player */
+        .bottom-player {
+            position: fixed;
+            bottom: 0;
+            left: 0;
+            right: 0;
+            background: rgba(11, 15, 28, 0.95);
+            backdrop-filter: blur(24px);
+            border-top: 1px solid var(--border-glow);
+            padding: 0.8rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            z-index: 200;
+            gap: 1.5rem;
+        }
+
+        .player-track-info {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+            min-width: 220px;
+        }
+
+        .player-thumb {
+            width: 50px;
+            height: 50px;
+            border-radius: 8px;
+            object-fit: cover;
+            background: #1a2034;
+        }
+
+        .player-controls {
             display: flex;
             flex-direction: column;
             align-items: center;
-            height: 100%;
-            justify-content: flex-end;
-            gap: 4px;
+            gap: 0.4rem;
+            flex: 1;
+            max-width: 550px;
         }
 
-        .vu-bar-track {
-            width: 100%;
-            height: 70px;
-            background: rgba(255, 255, 255, 0.05);
-            border-radius: 3px;
+        .player-buttons {
             display: flex;
-            align-items: flex-end;
-            overflow: hidden;
+            align-items: center;
+            gap: 1.2rem;
         }
 
-        .vu-bar-fill {
-            width: 100%;
-            background: linear-gradient(to top, #00ff88 60%, var(--accent-gold) 85%, var(--accent-magenta) 98%);
-            border-radius: 2px;
-            transition: height 0.08s ease;
+        .btn-round {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #ffffff;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.1rem;
+            transition: all 0.15s;
         }
 
-        .vu-label {
-            font-size: 0.55rem;
-            color: var(--text-secondary);
-            text-transform: uppercase;
+        .btn-round.play-pause {
+            width: 46px;
+            height: 46px;
+            background: #ffffff;
+            color: #000000;
+            font-weight: 900;
+        }
+
+        .btn-round:hover {
+            transform: scale(1.1);
+        }
+
+        /* Modal */
+        .modal {
+            display: none;
+            position: fixed;
+            inset: 0;
+            background: rgba(0, 0, 0, 0.7);
+            backdrop-filter: blur(10px);
+            z-index: 300;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .modal.open {
+            display: flex;
+        }
+
+        .modal-card {
+            background: #11162a;
+            border: 1px solid var(--border-glow);
+            border-radius: 16px;
+            padding: 2rem;
+            width: 90%;
+            max-width: 500px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.2rem;
         }
     </style>
 </head>
@@ -285,279 +406,253 @@
         <div class="logo-group">
             <div class="logo-icon">A</div>
             <div>
-                <div class="logo-title">AURORA SPATIAL AUDIO</div>
-                <div style="font-size: 0.75rem; color: var(--text-secondary);">Cinema Reference 11.1.4 DSP & Spatial Engine</div>
+                <div class="logo-title">AURORA MULTI-ROOM</div>
+                <div style="font-size: 0.7rem; color: var(--text-secondary);">Cinema 11.1.4 & Spotify Hub</div>
             </div>
         </div>
-        <div class="status-badge">
-            <div class="status-dot"></div>
-            <span id="codec-badge">DOLBY ATMOS TRUEHD 11.1.4</span>
+
+        <div class="nav-tabs">
+            <button class="tab-btn active" onclick="switchTab('tab-music')">Spotify Hub</button>
+            <button class="tab-btn" onclick="switchTab('tab-multiroom')">Sonos Multi-Room</button>
+            <button class="tab-btn" onclick="switchTab('tab-lyrics')">Karaoke Lyrics</button>
+            <button class="tab-btn" onclick="switchTab('tab-cinema')">Cinema 11.1.4 3D</button>
         </div>
     </header>
 
-    <main>
-        <div class="card" style="display: flex; flex-direction: column;">
-            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
-                <h2 style="font-size: 1.1rem; font-weight: 700;">Live 3D Acoustic Soundstage</h2>
-                <div style="font-size: 0.85rem; color: var(--text-secondary);">16 Physical Speakers | Realtime VBAP Panning</div>
-            </div>
-            <div class="canvas-container">
-                <canvas id="stage-canvas"></canvas>
-                <div class="canvas-overlay">
-                    Active 3D Atmos Objects: <span id="object-counter">8</span> | Ceiling Channels: <span>4 Active</span>
-                </div>
+    <div class="main-container">
+        <!-- 1. SPOTIFY MUSIC HUB TAB -->
+        <div id="tab-music" class="tab-content active">
+            <div class="search-bar-wrap">
+                <input type="text" class="search-input" id="search-input" placeholder="Search artists, songs, albums or paste direct link...">
+                <button class="btn-action" onclick="openDownloadModal()">+ Add From Link</button>
             </div>
 
-            <div style="margin-top: 1rem;">
-                <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">
-                    11.1.4 Multichannel Speaker Levels (True-Peak Protected)
+            <h3 style="font-size: 1.15rem; margin-bottom: 1rem; font-weight: 700;">Curated Spatial & Cinema Audio Releases</h3>
+            <div class="track-grid" id="track-container"></div>
+        </div>
+
+        <!-- 2. SONOS MULTI-ROOM TAB -->
+        <div id="tab-multiroom" class="tab-content">
+            <div class="card" style="display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                    <h2 style="font-size: 1.2rem; font-weight: 700;">Sonos-Style Multi-Room Synchronization</h2>
+                    <p style="font-size: 0.85rem; color: var(--text-secondary);">Group rooms with Aurora-WLink sub-millisecond PTP clock discipline.</p>
                 </div>
-                <div class="vu-grid" id="vu-container"></div>
+                <button class="btn-action" style="background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple));" onclick="togglePartyMode()">Party Mode (All Rooms)</button>
+            </div>
+
+            <div class="multiroom-grid" id="multiroom-container"></div>
+        </div>
+
+        <!-- 3. SYNCHRONIZED KARAOKE LYRICS TAB -->
+        <div id="tab-lyrics" class="tab-content">
+            <div class="card" style="margin-bottom: 0;">
+                <div style="font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 0.5rem; text-align: center;">
+                    Now Singing on Phone Core Screen:
+                </div>
+                <h2 id="lyrics-song-title" style="text-align: center; font-size: 1.5rem; font-weight: 900; margin-bottom: 1rem;">Song Title</h2>
+                <div class="lyrics-container" id="lyrics-scroll-box"></div>
             </div>
         </div>
 
-        <div class="sidebar">
+        <!-- 4. CINEMA 11.1.4 3D TAB -->
+        <div id="tab-cinema" class="tab-content">
             <div class="card">
-                <h3 style="font-size: 1rem; margin-bottom: 1rem; font-weight: 700;">DSP & Master Controls</h3>
-
-                <div class="control-group">
-                    <div class="control-label">
-                        <span>Master Volume</span>
-                        <span id="vol-val">-12 dB</span>
-                    </div>
-                    <input type="range" class="slider" min="-60" max="0" value="-12" id="vol-slider">
+                <h2 style="font-size: 1.1rem; font-weight: 700; margin-bottom: 1rem;">11.1.4 Physical Speakers & Atmos Telemetry</h2>
+                <div style="background: #080c16; border-radius: 12px; height: 380px; display: flex; align-items: center; justify-content: center; flex-direction: column; gap: 1rem;">
+                    <div style="font-size: 1.2rem; font-weight: 700; color: var(--accent-cyan);">Samsung Q995D Emulation Active (JOC = 1)</div>
+                    <div style="font-size: 0.9rem; color: var(--text-secondary);">True-Peak Limiter: Active (-0.2 dBFS) | Subwoofer Phase: Aligned (80 Hz)</div>
+                    <div style="font-size: 0.85rem; color: #00ff88;">Aurora-WLink Wireless Surrounds: Connected (< 2.0ms Latency)</div>
                 </div>
-
-                <div class="control-group">
-                    <div class="control-label">
-                        <span>Dialogue Enhancer</span>
-                        <span id="dialogue-val">+3.0 dB</span>
-                    </div>
-                    <input type="range" class="slider" min="0" max="6" step="0.5" value="3.0" id="dialogue-slider">
-                </div>
-
-                <div class="control-group">
-                    <div class="control-label">
-                        <span>Subwoofer Phase Alignment</span>
-                        <span style="color: var(--accent-cyan);">80 Hz / FIR 65-Tap</span>
-                    </div>
-                </div>
-
-                <div class="control-group">
-                    <div class="control-label">
-                        <span>Lookahead True-Peak Limiter</span>
-                        <span style="color: #00ff88;">-0.2 dBFS (Active)</span>
-                    </div>
-                </div>
-
-                <div style="margin-top: 1.2rem;">
-                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.6rem; font-weight: 600;">Sound Preset</div>
-                    <div class="modes-grid">
-                        <button class="mode-btn active" onclick="setPreset(this, 'Cinema 11.1.4')">Cinema 11.1.4</button>
-                        <button class="mode-btn" onclick="setPreset(this, 'Night Mode')">Night Mode</button>
-                        <button class="mode-btn" onclick="setPreset(this, 'Voice Boost')">Voice Boost</button>
-                        <button class="mode-btn" onclick="setPreset(this, 'Pure Direct')">Pure Direct</button>
-                    </div>
-                </div>
-            </div>
-
-            <div class="card">
-                <h3 style="font-size: 1rem; margin-bottom: 0.8rem; font-weight: 700;">SpaceFit Room Calibration</h3>
-                <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 1rem;">
-                    Auto-aligns delay to within 0.02ms and eliminates room resonances across all 16 channels.
-                </div>
-                <button class="mode-btn" style="width: 100%; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border: none; padding: 0.8rem;" onclick="triggerCalibration()">
-                    Run SpaceFit Calibration
-                </button>
             </div>
         </div>
-    </main>
+    </div>
+
+    <!-- PERSISTENT BOTTOM PLAYER -->
+    <div class="bottom-player">
+        <div class="player-track-info">
+            <img class="player-thumb" id="curr-thumb" src="" alt="">
+            <div>
+                <div id="curr-title" style="font-weight: 700; font-size: 0.95rem;">Select Track</div>
+                <div id="curr-artist" style="font-size: 0.8rem; color: var(--text-secondary);">Artist</div>
+            </div>
+        </div>
+
+        <div class="player-controls">
+            <div class="player-buttons">
+                <button class="btn-round" onclick="prevTrack()">⏮</button>
+                <button class="btn-round play-pause" id="play-pause-btn" onclick="togglePlay()">▶</button>
+                <button class="btn-round" onclick="nextTrack()">⏭</button>
+            </div>
+            <div id="current-lyric-preview" style="font-size: 0.8rem; color: var(--accent-cyan); font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;"></div>
+        </div>
+
+        <div style="min-width: 200px; display: flex; align-items: center; gap: 0.8rem;">
+            <span style="font-size: 0.85rem; color: var(--text-secondary);">🔊</span>
+            <input type="range" style="width: 100%; accent-color: var(--accent-cyan);" min="0" max="100" value="70" oninput="setMasterVol(this.value)">
+        </div>
+    </div>
+
+    <!-- LINK DOWNLOAD MODAL -->
+    <div class="modal" id="download-modal">
+        <div class="modal-card">
+            <h3 style="font-size: 1.2rem; font-weight: 700;">Add Song From Link</h3>
+            <p style="font-size: 0.85rem; color: var(--text-secondary);">Paste a YouTube, SoundCloud, or direct audio link from your other phone:</p>
+            <input type="text" class="search-input" id="link-url-input" placeholder="https://youtube.com/watch?v=... or .mp3 link">
+            <div style="display: flex; justify-content: flex-end; gap: 0.8rem;">
+                <button class="tab-btn" onclick="closeDownloadModal()">Cancel</button>
+                <button class="btn-action" onclick="submitDownload()">Download & Ingest</button>
+            </div>
+        </div>
+    </div>
 
     <script>
-        const canvas = document.getElementById('stage-canvas');
-        const ctx = canvas.getContext('2d');
+        let allTracks = [];
+        let currentTrackId = "";
+        let isPlaying = false;
 
-        function resize() {
-            canvas.width = canvas.parentElement.clientWidth;
-            canvas.height = canvas.parentElement.clientHeight;
+        function switchTab(tabId) {
+            document.querySelectorAll('.tab-content').forEach(el => el.classList.remove('active'));
+            document.querySelectorAll('.tab-btn').forEach(el => el.classList.remove('active'));
+            document.getElementById(tabId).classList.add('active');
+            event.target.classList.add('active');
         }
-        window.addEventListener('resize', resize);
-        resize();
 
-        // 16 speakers definition in 3D (X: -1 to 1, Y: -1 to 1, Z: -1 to 1)
-        const speakers = [
-            { name: "FL", x: -0.6, y: -0.7, z: 0.0 },
-            { name: "FR", x: 0.6, y: -0.7, z: 0.0 },
-            { name: "FC", x: 0.0, y: -0.8, z: 0.0 },
-            { name: "LFE", x: -0.3, y: -0.6, z: -0.3, isSub: true },
-            { name: "BL", x: -0.7, y: 0.7, z: 0.0 },
-            { name: "BR", x: 0.7, y: 0.7, z: 0.0 },
-            { name: "FLC", x: -0.3, y: -0.75, z: 0.0 },
-            { name: "FRC", x: 0.3, y: -0.75, z: 0.0 },
-            { name: "BC", x: 0.0, y: 0.75, z: 0.0 },
-            { name: "Rls", x: -0.85, y: 0.1, z: 0.0 },
-            { name: "Rrs", x: 0.85, y: 0.1, z: 0.0 },
-            { name: "TpFL", x: -0.5, y: -0.4, z: 0.8, isHeight: true },
-            { name: "TpFR", x: 0.5, y: -0.4, z: 0.8, isHeight: true },
-            { name: "TpBL", x: -0.5, y: 0.4, z: 0.8, isHeight: true },
-            { name: "TpBR", x: 0.5, y: 0.4, z: 0.8, isHeight: true },
-            { name: "TpC", x: 0.0, y: 0.0, z: 0.9, isHeight: true }
-        ];
+        async function loadTracks() {
+            try {
+                const res = await fetch('/api/library/tracks');
+                allTracks = await res.json();
+                renderTracks(allTracks);
+            } catch(e) { console.error(e); }
+        }
 
-        // Animated 3D Dolby Atmos Objects
-        const atmosObjects = [];
-        for (let i = 0; i < 8; i++) {
-            atmosObjects.push({
-                radius: 0.35 + Math.random() * 0.45,
-                angle: Math.random() * Math.PI * 2,
-                speed: (0.01 + Math.random() * 0.02) * (Math.random() > 0.5 ? 1 : -1),
-                z: -0.2 + Math.random() * 0.9,
-                zSpeed: (Math.random() - 0.5) * 0.015
+        function renderTracks(tracks) {
+            const container = document.getElementById('track-container');
+            container.innerHTML = "";
+            tracks.forEach(track => {
+                const card = document.createElement('div');
+                card.className = 'track-card';
+                card.onclick = () => playTrack(track.id);
+                card.innerHTML = `
+                    <img class="track-art" src="${track.cover_art_url}" alt="${track.title}">
+                    <div class="track-title">${track.title}</div>
+                    <div class="track-artist">${track.artist}</div>
+                    <div style="font-size: 0.75rem; color: rgba(255,255,255,0.4);">${track.album}</div>
+                `;
+                container.appendChild(card);
             });
         }
 
-        // VU Bars setup
-        const vuContainer = document.getElementById('vu-container');
-        const vuFills = [];
-        speakers.forEach(spk => {
-            const col = document.createElement('div');
-            col.className = 'vu-bar-col';
-            col.innerHTML = `
-                <div class="vu-bar-track">
-                    <div class="vu-bar-fill" style="height: 10%;"></div>
-                </div>
-                <span class="vu-label">${spk.name}</span>
-            `;
-            vuContainer.appendChild(col);
-            vuFills.push(col.querySelector('.vu-bar-fill'));
-        });
+        async function loadMultiroom() {
+            try {
+                const res = await fetch('/api/multiroom/zones');
+                const zones = await res.json();
+                const container = document.getElementById('multiroom-container');
+                container.innerHTML = "";
 
-        let rotation = 0;
+                zones.forEach(zone => {
+                    const card = document.createElement('div');
+                    card.className = 'zone-card' + (zone.is_grouped ? ' grouped' : '');
+                    card.innerHTML = `
+                        <div class="zone-header">
+                            <div>
+                                <div class="zone-name">${zone.name}</div>
+                                <div style="font-size: 0.75rem; color: var(--text-secondary);">${zone.active_layout}</div>
+                            </div>
+                            <span class="zone-tag">${zone.is_grouped ? 'GROUPED' : 'STANDALONE'}</span>
+                        </div>
+                        <div style="display: flex; align-items: center; gap: 0.8rem; margin-top: 0.4rem;">
+                            <span style="font-size: 0.8rem;">Vol:</span>
+                            <input type="range" style="flex: 1; accent-color: var(--accent-cyan);" min="0" max="100" value="${zone.volume_percent}" onchange="setZoneVol('${zone.id}', this.value)">
+                            <button class="tab-btn" style="padding: 4px 10px; font-size: 0.75rem;" onclick="toggleGroup('${zone.id}')">${zone.is_grouped ? 'Ungroup' : 'Group'}</button>
+                        </div>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch(e) { console.error(e); }
+        }
 
-        function render() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            rotation += 0.002;
+        async function playTrack(id) {
+            await fetch(`/api/player/play?id=${id}`, { method: 'POST' });
+            updatePlayer();
+        }
 
-            const cx = canvas.width / 2;
-            const cy = canvas.height / 2 + 20;
-            const scale = Math.min(canvas.width, canvas.height) * 0.42;
+        async function togglePlay() {
+            await fetch('/api/player/toggle', { method: 'POST' });
+            updatePlayer();
+        }
 
-            // Draw 3D floor wireframe grid
-            ctx.strokeStyle = "rgba(0, 229, 255, 0.08)";
-            ctx.lineWidth = 1;
-            for (let i = -1; i <= 1; i += 0.25) {
-                const p1 = project(i, -1, -0.3, rotation, cx, cy, scale);
-                const p2 = project(i, 1, -0.3, rotation, cx, cy, scale);
-                ctx.beginPath();
-                ctx.moveTo(p1.x, p1.y);
-                ctx.lineTo(p2.x, p2.y);
-                ctx.stroke();
+        async function toggleGroup(id) {
+            await fetch(`/api/multiroom/group?id=${id}`, { method: 'POST' });
+            loadMultiroom();
+        }
 
-                const p3 = project(-1, i, -0.3, rotation, cx, cy, scale);
-                const p4 = project(1, i, -0.3, rotation, cx, cy, scale);
-                ctx.beginPath();
-                ctx.moveTo(p3.x, p3.y);
-                ctx.lineTo(p4.x, p4.y);
-                ctx.stroke();
-            }
+        async function setZoneVol(id, vol) {
+            await fetch(`/api/multiroom/volume?id=${id}&vol=${vol}`, { method: 'POST' });
+        }
 
-            // Draw Listener
-            const listenerP = project(0, 0, 0, rotation, cx, cy, scale);
-            ctx.fillStyle = "#ffffff";
-            ctx.beginPath();
-            ctx.arc(listenerP.x, listenerP.y, 6, 0, Math.PI * 2);
-            ctx.fill();
+        async function updatePlayer() {
+            try {
+                const res = await fetch('/api/player/current');
+                const data = await res.json();
 
-            // Draw 16 Speakers
-            speakers.forEach(spk => {
-                const p = project(spk.x, spk.y, spk.z, rotation, cx, cy, scale);
+                if (data.track) {
+                    currentTrackId = data.track.id;
+                    document.getElementById('curr-title').textContent = data.track.title;
+                    document.getElementById('curr-artist').textContent = data.track.artist;
+                    document.getElementById('curr-thumb').src = data.track.cover_art_url;
+                    document.getElementById('lyrics-song-title').textContent = `${data.track.title} — ${data.track.artist}`;
 
-                // Halo glow
-                const grad = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, 16);
-                grad.addColorStop(0, spk.isHeight ? "rgba(255, 0, 127, 0.8)" : "rgba(0, 229, 255, 0.8)");
-                grad.addColorStop(1, "rgba(0,0,0,0)");
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
-                ctx.fill();
+                    // Update lyrics
+                    renderLyrics(data.track.lyrics, data.active_lyric_index);
+                    if (data.active_lyric_text) {
+                        document.getElementById('current-lyric-preview').textContent = "♪ " + data.active_lyric_text;
+                    }
+                }
 
-                // Speaker core
-                ctx.fillStyle = spk.isHeight ? "#ff007f" : (spk.isSub ? "#ffbe0b" : "#00e5ff");
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-                ctx.fill();
+                isPlaying = data.is_playing;
+                document.getElementById('play-pause-btn').textContent = isPlaying ? '⏸' : '▶';
+            } catch(e) { console.error(e); }
+        }
 
-                // Speaker label
-                ctx.fillStyle = "rgba(255,255,255,0.7)";
-                ctx.font = "9px Outfit";
-                ctx.fillText(spk.name, p.x + 8, p.y + 3);
+        function renderLyrics(lyrics, activeIdx) {
+            const box = document.getElementById('lyrics-scroll-box');
+            box.innerHTML = "";
+            lyrics.forEach((l, idx) => {
+                const p = document.createElement('p');
+                p.className = 'lyric-line' + (idx === activeIdx ? ' active' : '');
+                p.textContent = l.text;
+                box.appendChild(p);
+                if (idx === activeIdx) {
+                    p.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                }
             });
-
-            // Update & Draw 3D Atmos Objects
-            atmosObjects.forEach((obj, idx) => {
-                obj.angle += obj.speed;
-                obj.z += obj.zSpeed;
-                if (obj.z > 0.8 || obj.z < -0.2) obj.zSpeed *= -1;
-
-                const ox = Math.cos(obj.angle) * obj.radius;
-                const oy = Math.sin(obj.angle) * obj.radius;
-                const p = project(ox, oy, obj.z, rotation, cx, cy, scale);
-
-                // Trail / Glow
-                const grad = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 20);
-                grad.addColorStop(0, "rgba(255, 190, 11, 0.9)");
-                grad.addColorStop(1, "rgba(255, 190, 11, 0)");
-                ctx.fillStyle = grad;
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
-                ctx.fill();
-
-                ctx.fillStyle = "#ffffff";
-                ctx.beginPath();
-                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-                ctx.fill();
-            });
-
-            // Animate VU meters smoothly
-            vuFills.forEach(fill => {
-                const randHeight = 20 + Math.random() * 65;
-                fill.style.height = randHeight + "%";
-            });
-
-            requestAnimationFrame(render);
         }
 
-        function project(x, y, z, rot, cx, cy, scale) {
-            const cos = Math.cos(rot);
-            const sin = Math.sin(rot);
-            const rx = x * cos - y * sin;
-            const ry = x * sin + y * cos;
-
-            // Simple isometric / perspective projection
-            const px = cx + rx * scale;
-            const py = cy + (ry * 0.5 - z * 0.7) * scale;
-            return { x: px, y: py };
+        function openDownloadModal() {
+            document.getElementById('download-modal').classList.add('open');
         }
 
-        render();
-
-        function setPreset(btn, name) {
-            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
-            btn.classList.add('active');
-            console.log("Applied sound preset:", name);
+        function closeDownloadModal() {
+            document.getElementById('download-modal').classList.remove('open');
         }
 
-        function triggerCalibration() {
-            alert("Starting SpaceFit Room Calibration sweep across all 16 channels...");
+        async function submitDownload() {
+            const url = document.getElementById('link-url-input').value;
+            if (!url) return;
+            alert("Downloading & categorizing track into album...");
+            closeDownloadModal();
+            const res = await fetch(`/api/download?url=${encodeURIComponent(url)}`, { method: 'POST' });
+            const newTrack = await res.json();
+            loadTracks();
+            playTrack(newTrack.id);
         }
 
-        document.getElementById('vol-slider').addEventListener('input', e => {
-            document.getElementById('vol-val').textContent = e.target.value + " dB";
-        });
+        // Live polling loop (every 500ms for smooth lyrics and state sync)
+        setInterval(updatePlayer, 600);
 
-        document.getElementById('dialogue-slider').addEventListener('input', e => {
-            document.getElementById('dialogue-val').textContent = "+" + Number(e.target.value).toFixed(1) + " dB";
-        });
+        loadTracks();
+        loadMultiroom();
     </script>
 </body>
 </html>

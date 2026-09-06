@@ -42,6 +42,9 @@ mod realtime_commands;
 #[cfg(feature = "simulation")]
 mod simulation_commands;
 mod calibration_runner;
+mod media_downloader;
+mod multiroom;
+mod music_library;
 mod web_server;
 
 #[derive(Debug, Parser)]
