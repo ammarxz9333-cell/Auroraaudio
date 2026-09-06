@@ -1,0 +1,25 @@
+name: Capability truth validation
+
+on:
+  push:
+    branches:
+      - codex/harden-capability-truth
+
+permissions:
+  contents: read
+
+jobs:
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Check formatting
+        run: cargo fmt --all --check
+      - name: Lint changed decoder and CLI surfaces
+        run: cargo clippy -p aurora-decoder-eac3-atmos -p aurora-decoder-truehdd -p aurora-config -p aurora-cli --all-targets --all-features -- -D warnings
+      - name: Test changed decoder and configuration crates
+        run: cargo test -p aurora-decoder-eac3-atmos -p aurora-decoder-truehdd -p aurora-config --all-features
