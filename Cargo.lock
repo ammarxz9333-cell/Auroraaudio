@@ -280,6 +280,7 @@ version = "0.1.0"
 dependencies = [
  "aurora-core",
  "aurora-dsp-basic",
+ "aurora-measurement",
  "aurora-realtime-audio-api",
  "aurora-renderer-api",
  "aurora-renderer-basic",

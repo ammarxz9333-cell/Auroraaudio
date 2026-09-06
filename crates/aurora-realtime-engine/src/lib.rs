@@ -7,8 +7,10 @@ mod drift_controller;
 mod duplex;
 mod latency;
 mod transport;
+pub mod wireless_link;
 
 pub use asrc::{AsrcError, AsrcProcessReport, AsynchronousResampler, RubatoAsrc};
+pub use wireless_link::{WLinkFecDecoder, WLinkFecEncoder, WLinkHeader, WLinkReceiver, WLinkTransmitter};
 pub use aurora_renderer_basic::BasicRendererMode;
 pub use device_state::{
     DuplexStateEvent, DuplexStateMachine, DuplexStateTransitionError, DuplexStreamState,
