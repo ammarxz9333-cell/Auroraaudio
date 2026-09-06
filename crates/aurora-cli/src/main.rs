@@ -1065,6 +1065,7 @@ fn simulate_output_validation_command(
     bail!("simulation feature is disabled")
 }
 
+#[cfg(feature = "realtime")]
 #[derive(Debug, Default)]
 struct RealtimeCounters {
     callback_count: AtomicU64,
