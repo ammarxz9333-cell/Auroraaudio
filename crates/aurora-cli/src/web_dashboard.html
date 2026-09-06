@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aurora Cinema 11.1.4 Spatial Audio Dashboard</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;600;700;900&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-base: #080a10;
+            --bg-card: rgba(18, 23, 38, 0.7);
+            --border-glow: rgba(0, 229, 255, 0.25);
+            --accent-cyan: #00e5ff;
+            --accent-magenta: #ff007f;
+            --accent-gold: #ffbe0b;
+            --accent-purple: #8338ec;
+            --text-primary: #ffffff;
+            --text-secondary: #94a3b8;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+            user-select: none;
+        }
+
+        body {
+            font-family: 'Outfit', sans-serif;
+            background: radial-gradient(circle at top right, #151b30, var(--bg-base) 60%);
+            color: var(--text-primary);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 1.25rem 2.5rem;
+            background: rgba(10, 14, 26, 0.8);
+            backdrop-filter: blur(16px);
+            border-bottom: 1px solid var(--border-glow);
+        }
+
+        .logo-group {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        .logo-icon {
+            width: 38px;
+            height: 38px;
+            background: linear-gradient(135deg, var(--accent-cyan), var(--accent-magenta));
+            border-radius: 10px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 0 20px rgba(0, 229, 255, 0.5);
+            font-weight: 900;
+            font-size: 1.25rem;
+        }
+
+        .logo-title {
+            font-size: 1.4rem;
+            font-weight: 700;
+            letter-spacing: 1px;
+            background: linear-gradient(to right, #ffffff, var(--accent-cyan));
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .status-badge {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 1rem;
+            background: rgba(0, 229, 255, 0.1);
+            border: 1px solid var(--accent-cyan);
+            border-radius: 9999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #00ff88;
+            box-shadow: 0 0 8px #00ff88;
+            animation: pulse 1.8s infinite;
+        }
+
+        @keyframes pulse {
+            0%, 100% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.4); opacity: 0.6; }
+        }
+
+        main {
+            display: grid;
+            grid-template-columns: 1fr 360px;
+            gap: 1.5rem;
+            padding: 1.5rem 2.5rem;
+            flex: 1;
+        }
+
+        .card {
+            background: var(--bg-card);
+            backdrop-filter: blur(20px);
+            border: 1px solid rgba(255, 255, 255, 0.08);
+            border-radius: 18px;
+            padding: 1.5rem;
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.4);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 2px;
+            background: linear-gradient(90deg, transparent, var(--accent-cyan), transparent);
+        }
+
+        .canvas-container {
+            position: relative;
+            height: 520px;
+            border-radius: 12px;
+            overflow: hidden;
+            background: radial-gradient(circle at center, #101528, #050811);
+        }
+
+        canvas {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+
+        .canvas-overlay {
+            position: absolute;
+            top: 1rem;
+            left: 1rem;
+            background: rgba(0, 0, 0, 0.6);
+            backdrop-filter: blur(8px);
+            padding: 0.6rem 1rem;
+            border-radius: 10px;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            font-size: 0.85rem;
+        }
+
+        .canvas-overlay span {
+            color: var(--accent-cyan);
+            font-weight: 700;
+        }
+
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .control-group {
+            margin-bottom: 1.2rem;
+        }
+
+        .control-label {
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.9rem;
+            color: var(--text-secondary);
+            margin-bottom: 0.5rem;
+            font-weight: 600;
+        }
+
+        .slider {
+            width: 100%;
+            -webkit-appearance: none;
+            height: 6px;
+            border-radius: 3px;
+            background: rgba(255, 255, 255, 0.15);
+            outline: none;
+        }
+
+        .slider::-webkit-slider-thumb {
+            -webkit-appearance: none;
+            width: 18px;
+            height: 18px;
+            border-radius: 50%;
+            background: var(--accent-cyan);
+            cursor: pointer;
+            box-shadow: 0 0 10px var(--accent-cyan);
+            transition: transform 0.1s;
+        }
+
+        .slider::-webkit-slider-thumb:hover {
+            transform: scale(1.2);
+        }
+
+        .modes-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.6rem;
+        }
+
+        .mode-btn {
+            background: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            color: #ffffff;
+            padding: 0.75rem;
+            border-radius: 10px;
+            font-family: inherit;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s;
+            text-align: center;
+        }
+
+        .mode-btn:hover {
+            background: rgba(0, 229, 255, 0.15);
+            border-color: var(--accent-cyan);
+        }
+
+        .mode-btn.active {
+            background: linear-gradient(135deg, rgba(0, 229, 255, 0.3), rgba(255, 0, 127, 0.3));
+            border-color: var(--accent-cyan);
+            box-shadow: 0 0 15px rgba(0, 229, 255, 0.3);
+        }
+
+        .vu-grid {
+            display: grid;
+            grid-template-columns: repeat(16, 1fr);
+            gap: 4px;
+            height: 90px;
+            align-items: flex-end;
+            padding: 0.5rem 0;
+        }
+
+        .vu-bar-col {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            height: 100%;
+            justify-content: flex-end;
+            gap: 4px;
+        }
+
+        .vu-bar-track {
+            width: 100%;
+            height: 70px;
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 3px;
+            display: flex;
+            align-items: flex-end;
+            overflow: hidden;
+        }
+
+        .vu-bar-fill {
+            width: 100%;
+            background: linear-gradient(to top, #00ff88 60%, var(--accent-gold) 85%, var(--accent-magenta) 98%);
+            border-radius: 2px;
+            transition: height 0.08s ease;
+        }
+
+        .vu-label {
+            font-size: 0.55rem;
+            color: var(--text-secondary);
+            text-transform: uppercase;
+        }
+    </style>
+</head>
+<body>
+    <header>
+        <div class="logo-group">
+            <div class="logo-icon">A</div>
+            <div>
+                <div class="logo-title">AURORA SPATIAL AUDIO</div>
+                <div style="font-size: 0.75rem; color: var(--text-secondary);">Cinema Reference 11.1.4 DSP & Spatial Engine</div>
+            </div>
+        </div>
+        <div class="status-badge">
+            <div class="status-dot"></div>
+            <span id="codec-badge">DOLBY ATMOS TRUEHD 11.1.4</span>
+        </div>
+    </header>
+
+    <main>
+        <div class="card" style="display: flex; flex-direction: column;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+                <h2 style="font-size: 1.1rem; font-weight: 700;">Live 3D Acoustic Soundstage</h2>
+                <div style="font-size: 0.85rem; color: var(--text-secondary);">16 Physical Speakers | Realtime VBAP Panning</div>
+            </div>
+            <div class="canvas-container">
+                <canvas id="stage-canvas"></canvas>
+                <div class="canvas-overlay">
+                    Active 3D Atmos Objects: <span id="object-counter">8</span> | Ceiling Channels: <span>4 Active</span>
+                </div>
+            </div>
+
+            <div style="margin-top: 1rem;">
+                <div style="font-size: 0.85rem; font-weight: 600; color: var(--text-secondary); margin-bottom: 0.5rem;">
+                    11.1.4 Multichannel Speaker Levels (True-Peak Protected)
+                </div>
+                <div class="vu-grid" id="vu-container"></div>
+            </div>
+        </div>
+
+        <div class="sidebar">
+            <div class="card">
+                <h3 style="font-size: 1rem; margin-bottom: 1rem; font-weight: 700;">DSP & Master Controls</h3>
+
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Master Volume</span>
+                        <span id="vol-val">-12 dB</span>
+                    </div>
+                    <input type="range" class="slider" min="-60" max="0" value="-12" id="vol-slider">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Dialogue Enhancer</span>
+                        <span id="dialogue-val">+3.0 dB</span>
+                    </div>
+                    <input type="range" class="slider" min="0" max="6" step="0.5" value="3.0" id="dialogue-slider">
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Subwoofer Phase Alignment</span>
+                        <span style="color: var(--accent-cyan);">80 Hz / FIR 65-Tap</span>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <div class="control-label">
+                        <span>Lookahead True-Peak Limiter</span>
+                        <span style="color: #00ff88;">-0.2 dBFS (Active)</span>
+                    </div>
+                </div>
+
+                <div style="margin-top: 1.2rem;">
+                    <div style="font-size: 0.85rem; color: var(--text-secondary); margin-bottom: 0.6rem; font-weight: 600;">Sound Preset</div>
+                    <div class="modes-grid">
+                        <button class="mode-btn active" onclick="setPreset(this, 'Cinema 11.1.4')">Cinema 11.1.4</button>
+                        <button class="mode-btn" onclick="setPreset(this, 'Night Mode')">Night Mode</button>
+                        <button class="mode-btn" onclick="setPreset(this, 'Voice Boost')">Voice Boost</button>
+                        <button class="mode-btn" onclick="setPreset(this, 'Pure Direct')">Pure Direct</button>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card">
+                <h3 style="font-size: 1rem; margin-bottom: 0.8rem; font-weight: 700;">SpaceFit Room Calibration</h3>
+                <div style="font-size: 0.8rem; color: var(--text-secondary); line-height: 1.4; margin-bottom: 1rem;">
+                    Auto-aligns delay to within 0.02ms and eliminates room resonances across all 16 channels.
+                </div>
+                <button class="mode-btn" style="width: 100%; background: linear-gradient(135deg, var(--accent-cyan), var(--accent-purple)); border: none; padding: 0.8rem;" onclick="triggerCalibration()">
+                    Run SpaceFit Calibration
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script>
+        const canvas = document.getElementById('stage-canvas');
+        const ctx = canvas.getContext('2d');
+
+        function resize() {
+            canvas.width = canvas.parentElement.clientWidth;
+            canvas.height = canvas.parentElement.clientHeight;
+        }
+        window.addEventListener('resize', resize);
+        resize();
+
+        // 16 speakers definition in 3D (X: -1 to 1, Y: -1 to 1, Z: -1 to 1)
+        const speakers = [
+            { name: "FL", x: -0.6, y: -0.7, z: 0.0 },
+            { name: "FR", x: 0.6, y: -0.7, z: 0.0 },
+            { name: "FC", x: 0.0, y: -0.8, z: 0.0 },
+            { name: "LFE", x: -0.3, y: -0.6, z: -0.3, isSub: true },
+            { name: "BL", x: -0.7, y: 0.7, z: 0.0 },
+            { name: "BR", x: 0.7, y: 0.7, z: 0.0 },
+            { name: "FLC", x: -0.3, y: -0.75, z: 0.0 },
+            { name: "FRC", x: 0.3, y: -0.75, z: 0.0 },
+            { name: "BC", x: 0.0, y: 0.75, z: 0.0 },
+            { name: "Rls", x: -0.85, y: 0.1, z: 0.0 },
+            { name: "Rrs", x: 0.85, y: 0.1, z: 0.0 },
+            { name: "TpFL", x: -0.5, y: -0.4, z: 0.8, isHeight: true },
+            { name: "TpFR", x: 0.5, y: -0.4, z: 0.8, isHeight: true },
+            { name: "TpBL", x: -0.5, y: 0.4, z: 0.8, isHeight: true },
+            { name: "TpBR", x: 0.5, y: 0.4, z: 0.8, isHeight: true },
+            { name: "TpC", x: 0.0, y: 0.0, z: 0.9, isHeight: true }
+        ];
+
+        // Animated 3D Dolby Atmos Objects
+        const atmosObjects = [];
+        for (let i = 0; i < 8; i++) {
+            atmosObjects.push({
+                radius: 0.35 + Math.random() * 0.45,
+                angle: Math.random() * Math.PI * 2,
+                speed: (0.01 + Math.random() * 0.02) * (Math.random() > 0.5 ? 1 : -1),
+                z: -0.2 + Math.random() * 0.9,
+                zSpeed: (Math.random() - 0.5) * 0.015
+            });
+        }
+
+        // VU Bars setup
+        const vuContainer = document.getElementById('vu-container');
+        const vuFills = [];
+        speakers.forEach(spk => {
+            const col = document.createElement('div');
+            col.className = 'vu-bar-col';
+            col.innerHTML = `
+                <div class="vu-bar-track">
+                    <div class="vu-bar-fill" style="height: 10%;"></div>
+                </div>
+                <span class="vu-label">${spk.name}</span>
+            `;
+            vuContainer.appendChild(col);
+            vuFills.push(col.querySelector('.vu-bar-fill'));
+        });
+
+        let rotation = 0;
+
+        function render() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            rotation += 0.002;
+
+            const cx = canvas.width / 2;
+            const cy = canvas.height / 2 + 20;
+            const scale = Math.min(canvas.width, canvas.height) * 0.42;
+
+            // Draw 3D floor wireframe grid
+            ctx.strokeStyle = "rgba(0, 229, 255, 0.08)";
+            ctx.lineWidth = 1;
+            for (let i = -1; i <= 1; i += 0.25) {
+                const p1 = project(i, -1, -0.3, rotation, cx, cy, scale);
+                const p2 = project(i, 1, -0.3, rotation, cx, cy, scale);
+                ctx.beginPath();
+                ctx.moveTo(p1.x, p1.y);
+                ctx.lineTo(p2.x, p2.y);
+                ctx.stroke();
+
+                const p3 = project(-1, i, -0.3, rotation, cx, cy, scale);
+                const p4 = project(1, i, -0.3, rotation, cx, cy, scale);
+                ctx.beginPath();
+                ctx.moveTo(p3.x, p3.y);
+                ctx.lineTo(p4.x, p4.y);
+                ctx.stroke();
+            }
+
+            // Draw Listener
+            const listenerP = project(0, 0, 0, rotation, cx, cy, scale);
+            ctx.fillStyle = "#ffffff";
+            ctx.beginPath();
+            ctx.arc(listenerP.x, listenerP.y, 6, 0, Math.PI * 2);
+            ctx.fill();
+
+            // Draw 16 Speakers
+            speakers.forEach(spk => {
+                const p = project(spk.x, spk.y, spk.z, rotation, cx, cy, scale);
+
+                // Halo glow
+                const grad = ctx.createRadialGradient(p.x, p.y, 1, p.x, p.y, 16);
+                grad.addColorStop(0, spk.isHeight ? "rgba(255, 0, 127, 0.8)" : "rgba(0, 229, 255, 0.8)");
+                grad.addColorStop(1, "rgba(0,0,0,0)");
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 16, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Speaker core
+                ctx.fillStyle = spk.isHeight ? "#ff007f" : (spk.isSub ? "#ffbe0b" : "#00e5ff");
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+
+                // Speaker label
+                ctx.fillStyle = "rgba(255,255,255,0.7)";
+                ctx.font = "9px Outfit";
+                ctx.fillText(spk.name, p.x + 8, p.y + 3);
+            });
+
+            // Update & Draw 3D Atmos Objects
+            atmosObjects.forEach((obj, idx) => {
+                obj.angle += obj.speed;
+                obj.z += obj.zSpeed;
+                if (obj.z > 0.8 || obj.z < -0.2) obj.zSpeed *= -1;
+
+                const ox = Math.cos(obj.angle) * obj.radius;
+                const oy = Math.sin(obj.angle) * obj.radius;
+                const p = project(ox, oy, obj.z, rotation, cx, cy, scale);
+
+                // Trail / Glow
+                const grad = ctx.createRadialGradient(p.x, p.y, 2, p.x, p.y, 20);
+                grad.addColorStop(0, "rgba(255, 190, 11, 0.9)");
+                grad.addColorStop(1, "rgba(255, 190, 11, 0)");
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 20, 0, Math.PI * 2);
+                ctx.fill();
+
+                ctx.fillStyle = "#ffffff";
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+                ctx.fill();
+            });
+
+            // Animate VU meters smoothly
+            vuFills.forEach(fill => {
+                const randHeight = 20 + Math.random() * 65;
+                fill.style.height = randHeight + "%";
+            });
+
+            requestAnimationFrame(render);
+        }
+
+        function project(x, y, z, rot, cx, cy, scale) {
+            const cos = Math.cos(rot);
+            const sin = Math.sin(rot);
+            const rx = x * cos - y * sin;
+            const ry = x * sin + y * cos;
+
+            // Simple isometric / perspective projection
+            const px = cx + rx * scale;
+            const py = cy + (ry * 0.5 - z * 0.7) * scale;
+            return { x: px, y: py };
+        }
+
+        render();
+
+        function setPreset(btn, name) {
+            document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            console.log("Applied sound preset:", name);
+        }
+
+        function triggerCalibration() {
+            alert("Starting SpaceFit Room Calibration sweep across all 16 channels...");
+        }
+
+        document.getElementById('vol-slider').addEventListener('input', e => {
+            document.getElementById('vol-val').textContent = e.target.value + " dB";
+        });
+
+        document.getElementById('dialogue-slider').addEventListener('input', e => {
+            document.getElementById('dialogue-val').textContent = "+" + Number(e.target.value).toFixed(1) + " dB";
+        });
+    </script>
+</body>
+</html>

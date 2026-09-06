@@ -118,6 +118,7 @@ dependencies = [
  "aurora-decoder-truehdd",
  "aurora-dsp-basic",
  "aurora-dsp-camilladsp",
+ "aurora-measurement",
  "aurora-realtime-audio-api",
  "aurora-realtime-audio-cpal",
  "aurora-realtime-audio-sim",

@@ -41,6 +41,8 @@ const CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES: f32 = 1_024.0;
 mod realtime_commands;
 #[cfg(feature = "simulation")]
 mod simulation_commands;
+mod calibration_runner;
+mod web_server;
 
 #[derive(Debug, Parser)]
 #[command(name = "aurora")]
@@ -271,6 +273,31 @@ enum Command {
         output: PathBuf,
         #[arg(long, default_value = "samsung-q995d")]
         profile: String,
+    },
+    /// Generate a 16-channel SpaceFit acoustic calibration stimulus sweep WAV file.
+    GenerateCalibrationStimulus {
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value_t = 48_000)]
+        sample_rate: u32,
+        #[arg(long, default_value_t = 2.0)]
+        sweep_duration: f32,
+    },
+    /// Analyze a recorded calibration sweep and generate an 11.1.4 room calibration profile.
+    CalibrateRoom {
+        #[arg(long)]
+        recorded_wav: PathBuf,
+        #[arg(long)]
+        output_profile: PathBuf,
+        #[arg(long, default_value_t = 48_000)]
+        sample_rate: u32,
+    },
+    /// Start the embedded 3D Spatial Audio & Dolby Atmos Web Dashboard and Remote Control server.
+    Serve {
+        #[arg(long, default_value_t = 8080)]
+        port: u16,
+        #[arg(long, default_value = "0.0.0.0")]
+        bind_ip: String,
     },
 }
 
@@ -581,6 +608,20 @@ fn main() -> Result<()> {
             enhance_dialogue,
         ),
         Command::GenerateEdid { output, profile } => generate_edid_command(&output, &profile),
+        Command::GenerateCalibrationStimulus {
+            output,
+            sample_rate,
+            sweep_duration,
+        } => calibration_runner::generate_calibration_stimulus_wav(&output, sample_rate, sweep_duration),
+        Command::CalibrateRoom {
+            recorded_wav,
+            output_profile,
+            sample_rate,
+        } => {
+            calibration_runner::analyze_room_calibration(&recorded_wav, &output_profile, sample_rate)?;
+            Ok(())
+        }
+        Command::Serve { port, bind_ip } => web_server::start_web_server(port, &bind_ip),
     }
 }
 
@@ -1668,6 +1709,15 @@ fn run_decode_stream(
 
     let mut upmixer = SmartImmersiveUpmixer::new(sample_rate);
     let mut phase_aligner = SubwooferPhaseAligner::new(sample_rate, crossover_freq, 45.0);
+    let mut limiter = aurora_dsp_basic::TruePeakLimiter::new(aurora_dsp_basic::LimiterConfig {
+        sample_rate,
+        channel_count: num_speakers,
+        ceiling_linear: 0.9772,
+        lookahead_ms: 2.5,
+        attack_ms: 1.0,
+        release_ms: 50.0,
+        link_channels: true,
+    });
 
     let mut output_channels: Vec<Vec<f32>> = vec![Vec::new(); num_speakers];
     let mut total_decoded_frames = 0;
@@ -1753,6 +1803,9 @@ fn run_decode_stream(
                 let _ = d_enhancer.process_in_place(&mut block_channels, frame_len);
             }
 
+            // 4. Multichannel Lookahead True-Peak Limiter (Zero-Clipping Speaker Guard)
+            limiter.process_in_place(&mut block_channels, frame_len);
+
             for (out_ch, block_ch) in output_channels.iter_mut().zip(block_channels.iter()) {
                 out_ch.extend_from_slice(block_ch);
             }
@@ -1769,6 +1822,12 @@ fn run_decode_stream(
         println!("  - 3D Spatial Objects: {}", total_active_objects);
         println!("  - 11.1.4 Upmixed Blocks: {}", upmixed_blocks_count);
         println!("  - Zero-Click Format Transitions: {}", stats.format_transitions);
+        if limiter.stats().limited_frames_count > 0 {
+            println!("  - True-Peak Limiter: Active (Max Gain Reduction: {:.2} dB, Limited Frames: {})",
+                limiter.stats().max_gain_reduction_db, limiter.stats().limited_frames_count);
+        } else {
+            println!("  - True-Peak Limiter: Pass-Through (Zero inter-sample clipping detected)");
+        }
         let report = write_wav_f32_with_channel_roles(output, sample_rate, &output_channels, &channel_roles)?;
         println!("Wrote cinema 11.1.4 WAV: {} (channels: {}, frames: {}, clipped: {})",
             output.display(), report.channel_count, report.frames_written, report.clipped);

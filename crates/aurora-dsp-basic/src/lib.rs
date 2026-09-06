@@ -2,12 +2,14 @@
 
 pub mod crossover;
 pub mod dialogue;
+pub mod limiter;
 pub mod output;
 pub mod phase;
 pub mod upmixer;
 
 pub use crossover::CrossoverProcessor;
 pub use dialogue::DialogueEnhancer;
+pub use limiter::{LimiterConfig, LimiterStats, TruePeakLimiter};
 pub use phase::SubwooferPhaseAligner;
 pub use upmixer::SmartImmersiveUpmixer;
 
