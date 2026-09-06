@@ -279,6 +279,54 @@ def run_reconnect_case(broker, mock_orender, encoded):
             stop_broker(proc)
 
 
+def run_duplex_pressure_case(broker):
+    """Real broker loop under simultaneous decoder and downstream pressure."""
+    with tempfile.TemporaryDirectory(prefix="aurora-live-pressure-") as td:
+        socket_path = Path(td) / "usb-bridge.sock"
+        renderer = Path(td) / "pressure_renderer.py"
+        renderer.write_text("""#!/usr/bin/env python3
+import struct
+import sys
+expected = bytes(range(256)) * 16
+pcm = struct.pack('<f', 0.25) * (12 * 40 * 8)
+for _ in range(32):
+    data = sys.stdin.buffer.read(4096)
+    if data != expected:
+        sys.exit(3)
+    sys.stdout.buffer.write(pcm)
+    sys.stdout.buffer.flush()
+while sys.stdin.buffer.read(4096):
+    pass
+""")
+        renderer.chmod(0o755)
+        listener = socket.socket(socket.AF_UNIX, socket.SOCK_SEQPACKET)
+        listener.bind(str(socket_path))
+        listener.listen(1)
+        listener.settimeout(5.0)
+        proc = launch_broker(broker, renderer, socket_path, b"")
+        conn = None
+        try:
+            conn, _ = listener.accept()
+            conn.settimeout(5.0)
+            validate_config(parse(conn.recv(65536)))
+            conn.sendall(make_ack())
+            pts = 48000
+            conn.sendall(make_encoded(bytes(range(256)) * 512, pts))
+            # Let the sink back up; the broker must retain output and drain
+            # both pipe directions once the sink resumes reading.
+            time.sleep(0.25)
+            for i in range(32 * 8):
+                packet = parse(conn.recv(65536))
+                validate_pcm(packet, pts + i * PERIOD_FRAMES)
+                assert packet["sequence"] == i + 1
+                assert not packet["flags"] & (FLAG_DISCONTINUITY | FLAG_XRUN_RECOVERY)
+        finally:
+            if conn is not None:
+                conn.close()
+            listener.close()
+            stop_broker(proc)
+
+
 def main():
     if len(sys.argv) != 3:
         print("usage: test_live_ingest.py BROKER MOCK_ORENDER", file=sys.stderr)
@@ -302,10 +350,12 @@ def main():
     run_startup_case(broker, mock_orender, encoded, ack_before_encoded=False)
     run_discontinuity_case(broker, mock_orender, encoded)
     run_reconnect_case(broker, mock_orender, encoded)
+    run_duplex_pressure_case(broker)
 
-    print("Aurora live-ingest 40-frame startup/discontinuity/reconnect mock tests passed")
+    print("Aurora live-ingest 40-frame startup/discontinuity/reconnect/duplex-pressure mock tests passed")
     return 0
 
 
 if __name__ == "__main__":
     raise SystemExit(main())
+

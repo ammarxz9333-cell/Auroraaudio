@@ -4,7 +4,7 @@ AuroraOS-S6 keeps format decoders, spatial renderers, and music servers outside 
 
 ## Harletty Bridge
 
-- Pinned source: `harletty/harletty-bridge` tag `v0.7.4`.
+- Pinned source: `harletty/harletty-bridge` tag `v0.7.4`, source commit `10943821cca7e6886c11f45d2267b06d76e6db7c`.
 - Crate license declared by the bridge: Apache-2.0.
 - Role: optional runtime bridge loaded by Omniphony.
 - Aurora does not copy Harletty codec implementation into this repository.
@@ -33,3 +33,14 @@ Wi-Fi/Bluetooth firmware captured from an owner's existing Galaxy S6 installatio
 ## Release rule
 
 The one-file appliance target is a packaging goal, not a license shortcut. A public downloadable image may include only artifacts whose redistribution terms have been reviewed and satisfied. Optional adapters can instead be fetched/built by the owner during image preparation where appropriate.
+
+
+## Source identity
+
+The native builder checks both external tags against their pinned commit IDs
+and records those IDs in `BUILD-MANIFEST.txt`. Its Harletty default is v0.7.4,
+matching this document (previously the script still selected v0.7.3).
+These source identities do not establish decoder correctness, ABI/load success,
+real-time throughput, patent clearance, or physical live-service acceptance.
+The external projects use Rust edition 2024; their native build requires an
+edition-2024-capable toolchain independently of Aurora's own Rust 1.78 MSRV.
