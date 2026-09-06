@@ -1,6 +1,7 @@
-//! Real-time live streaming ingest controller for IEC 61937 and E-AC-3 Atmos streams.
+//! Bounded compressed-stream ingest buffer and external-decoder boundary.
 //!
-//! Provides ring buffering, continuity checking, PTS tracking, and fail-safe mute.
+//! This module does not claim codec decoding. It reports the unavailable
+//! decoder error until a reviewed decoder is connected.
 
 use std::collections::VecDeque;
 
@@ -123,44 +124,21 @@ impl LiveStreamIngest {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::oamd::{serialize_oamd_metadata, AtmosBedLayout, AtmosFrameMetadata, AtmosObjectMetadata};
-    use aurora_core::Vector3;
 
     #[test]
-    fn streaming_ingest_processes_continuous_packets() {
-        let mut ingest = LiveStreamIngest::new(131072);
+    fn compressed_input_reports_decoder_unavailable() {
+        let mut ingest = LiveStreamIngest::new(4096);
+        ingest.ingest_bytes(&[0x0b, 0x77, 0, 0, 0, 0]).unwrap();
 
-        // Build mock E-AC-3 Atmos packet
-        let mut frame_bytes = vec![
-            0x0B, 0x77, // syncword
-            0x02, 0xFF, // strmtyp=0, substream=0, frmsiz=767
-            0x3F, // 48k, 6 blocks, 3/2, lfeon=1
-            0x87, 0x00, // bsid=16, dialnorm=28
-        ];
-        let oamd_meta = AtmosFrameMetadata {
-            bed_layout: AtmosBedLayout::FivePointOne,
-            sequence_number: 1,
-            decorrelation_factor: 0.1,
-            objects: vec![AtmosObjectMetadata {
-                object_id: 1,
-                position: Vector3::new(0.0, 0.0, 1.0), // overhead center
-                gain_db: 0.0,
-                spread: 0.1,
-                is_active: true,
-            }],
-        };
-        frame_bytes.extend_from_slice(&serialize_oamd_metadata(&oamd_meta));
-
-        // Ingest packet
-        ingest.ingest_bytes(&frame_bytes).unwrap();
-        let frame = ingest.poll_next_frame().unwrap().expect("frame expected");
-
-        assert_eq!(frame.audio.frame_count, 1536);
-        assert_eq!(frame.objects.len(), 1);
-
-        let telem = ingest.telemetry();
-        assert_eq!(telem.frames_decoded, 1);
-        assert!(telem.is_locked);
-        assert_eq!(telem.active_objects_count, 1);
+        assert!(matches!(
+            ingest.poll_next_frame(),
+            Err(IngestError::Decoder(
+                aurora_decoder_api::DecoderError::Unavailable(_)
+            ))
+        ));
+        let telemetry = ingest.telemetry();
+        assert_eq!(telemetry.frames_decoded, 0);
+        assert!(!telemetry.is_locked);
+        assert_eq!(telemetry.discontinuities_detected, 1);
     }
 }
