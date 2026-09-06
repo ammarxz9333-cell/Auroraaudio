@@ -130,6 +130,12 @@ jobs:
             -Iprotocol \
             platform/s6/live-ingest/aurora-live-ingest.c \
             -lm -o /tmp/aurora-live-ingest
+      - name: Test broker bounded duplex I/O with real pipes
+        run: |
+          cc -std=c11 -O2 -Wall -Wextra -Werror -Iprotocol \
+            platform/s6/live-ingest/test_live_ingest_io.c \
+            -lm -o /tmp/test-live-ingest-io
+          /tmp/test-live-ingest-io
       - name: Test live immersive broker end-to-end with mock renderer
         run: |
           chmod +x platform/s6/live-ingest/mock_orender.py
@@ -238,3 +244,4 @@ jobs:
         run: |
           cargo clippy --locked -p aurora-cli --no-default-features --features realtime --bin aurora-s6-postprocess --no-deps -- -D warnings
           cargo clippy --locked -p aurora-measurement --all-targets --no-deps -- -D warnings
+

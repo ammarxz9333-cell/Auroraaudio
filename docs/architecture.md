@@ -1,5 +1,9 @@
 # Architecture
 
+The separate S6 appliance live-ingest I/O loop and its bounded duplex queues
+are described in [live streaming transport reliability](s6-streaming-transport-reliability.md).
+This transport implementation does not establish physical streaming Atmos acceptance.
+
 Aurora is a format-independent spatial-audio system with implemented offline
 rendering, basic DSP, backend-neutral real-time contracts, deterministic
 simulation, and accepted diagnostics and configuration control planes. Physical
@@ -215,7 +219,7 @@ Aurora runtime and JSON trajectories retain canonical order. Specifically,
 The source gate delivers validated absolute lip-sync frames through a dedicated
 APC0 Unix datagram endpoint, separate from the AUR0 audio stream. HDMI uses
 `AURORA_DSP_CONTROL_SOCKET`; the optional local adapter has its own endpoint.
-The supported range is 0–24000 frames at 48 kHz. Active-source control is
+The supported range is 0Â–24000 frames at 48 kHz. Active-source control is
 replayed after DSP restart. The legacy broker pipe remains available only when
 `AURORA_CONTROL_FD` is explicitly supplied and names a valid descriptor.
 

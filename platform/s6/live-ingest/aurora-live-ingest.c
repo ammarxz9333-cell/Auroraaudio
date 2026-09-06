@@ -32,6 +32,7 @@
 #define RENDER_READ_CHUNK (64u * 1024u)
 #define RENDER_PENDING_CAP (128u * 1024u)
 #define IO_TIMEOUT_MS 100
+#define ENCODED_PENDING_CAP (2u * AURORA_USB_MAX_FRAME)
 
 #define POST_CONTROL_MAGIC_U32 0x30435041u /* "APC0" */
 #define POST_CONTROL_VERSION 1u
@@ -75,6 +76,9 @@ struct app {
     uint64_t renderer_serial;
     uint8_t render_pending[RENDER_PENDING_CAP];
     size_t render_pending_len;
+    uint8_t encoded_pending[ENCODED_PENDING_CAP];
+    size_t encoded_pending_offset;
+    size_t encoded_pending_len;
     uint64_t encoded_frames;
     uint64_t encoded_bytes;
     uint64_t pcm_periods;
@@ -166,6 +170,46 @@ static int write_all_timeout(int fd, const uint8_t *buf, size_t len)
         return -1;
     }
     return 0;
+}
+
+/* This broker is a process I/O loop, not an audio-device callback. Never
+ * wait for decoder input while its output may need draining on this thread. */
+static int flush_encoded(struct app *a)
+{
+    if (!a->encoded_pending_len)
+        return 0;
+    ssize_t n = write(a->renderer.stdin_fd,
+                      a->encoded_pending + a->encoded_pending_offset,
+                      a->encoded_pending_len);
+    if (n > 0) {
+        a->encoded_pending_offset += (size_t)n;
+        a->encoded_pending_len -= (size_t)n;
+        if (!a->encoded_pending_len)
+            a->encoded_pending_offset = 0;
+        return 0;
+    }
+    if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+        return 0;
+    return -1;
+}
+
+static int queue_encoded(struct app *a, const uint8_t *payload, size_t len)
+{
+    if (len > sizeof(a->encoded_pending) - a->encoded_pending_len) {
+        errno = ENOBUFS;
+        return -1;
+    }
+    if (len > sizeof(a->encoded_pending) - a->encoded_pending_offset -
+              a->encoded_pending_len) {
+        memmove(a->encoded_pending,
+                a->encoded_pending + a->encoded_pending_offset,
+                a->encoded_pending_len);
+        a->encoded_pending_offset = 0;
+    }
+    memcpy(a->encoded_pending + a->encoded_pending_offset +
+           a->encoded_pending_len, payload, len);
+    a->encoded_pending_len += len;
+    return flush_encoded(a);
 }
 
 static void close_if_valid(int *fd)
@@ -406,15 +450,21 @@ static int send_frame(struct app *a, uint16_t kind, uint32_t flags,
     write_le16(frame + 4, AURORA_USB_VERSION);
     write_le16(frame + 6, kind);
     write_le32(frame + 8, flags);
-    write_le32(frame + 12, a->tx_sequence++);
+    write_le32(frame + 12, a->tx_sequence);
     write_le64(frame + 16, pts_48k);
     write_le32(frame + 24, payload_len);
     write_le32(frame + 28, aux);
     if (payload_len)
         memcpy(frame + AURORA_USB_HEADER_LEN, payload, payload_len);
 
-    ssize_t n = send(a->bridge_fd, frame, total, MSG_NOSIGNAL);
-    return n == (ssize_t)total ? 0 : -1;
+    ssize_t n = send(a->bridge_fd, frame, total, MSG_NOSIGNAL | MSG_DONTWAIT);
+    if (n == (ssize_t)total) {
+        a->tx_sequence++;
+        return 0;
+    }
+    if (n < 0 && (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK))
+        return 1; /* Retain the complete packet and retry on POLLOUT. */
+    return -1;
 }
 
 static int send_config(struct app *a)
@@ -461,9 +511,12 @@ static int flush_pcm_periods(struct app *a)
         uint32_t flags = a->next_pcm_flags;
         if (a->have_pcm_pts)
             flags |= AURORA_USB_FLAG_PTS_VALID;
-        if (send_frame(a, AURORA_USB_PCM_S32LE, flags,
-                       a->next_pcm_pts, aux, out, sizeof(out)) < 0)
+        int rc = send_frame(a, AURORA_USB_PCM_S32LE, flags,
+                            a->next_pcm_pts, aux, out, sizeof(out));
+        if (rc < 0)
             return -1;
+        if (rc > 0)
+            break;
 
         a->next_pcm_flags = 0;
         if (a->have_pcm_pts)
@@ -481,28 +534,22 @@ static int flush_pcm_periods(struct app *a)
 static int ingest_renderer_output(struct app *a)
 {
     uint8_t tmp[RENDER_READ_CHUNK];
-    for (;;) {
-        ssize_t n = read(a->renderer.stdout_fd, tmp, sizeof(tmp));
-        if (n > 0) {
-            if ((size_t)n > sizeof(a->render_pending) - a->render_pending_len) {
-                fprintf(stderr, "aurora-live-ingest: rendered PCM backlog overflow\n");
-                a->render_pending_len = 0;
-                return -1;
-            }
-            memcpy(a->render_pending + a->render_pending_len, tmp, (size_t)n);
-            a->render_pending_len += (size_t)n;
-            if (flush_pcm_periods(a) < 0)
-                return -1;
-            continue;
-        }
-        if (n == 0)
-            return 1;
-        if (errno == EINTR)
-            continue;
-        if (errno == EAGAIN || errno == EWOULDBLOCK)
-            return 0;
-        return -1;
+    size_t available = sizeof(a->render_pending) - a->render_pending_len;
+    if (!available)
+        return 0;
+    size_t count = available < sizeof(tmp) ? available : sizeof(tmp);
+    /* One bounded read per poll cycle keeps input/control events responsive. */
+    ssize_t n = read(a->renderer.stdout_fd, tmp, count);
+    if (n > 0) {
+        memcpy(a->render_pending + a->render_pending_len, tmp, (size_t)n);
+        a->render_pending_len += (size_t)n;
+        return flush_pcm_periods(a);
     }
+    if (n == 0)
+        return 1;
+    if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK)
+        return 0;
+    return -1;
 }
 
 static int validate_frame(const uint8_t *frame, size_t len,
@@ -510,7 +557,7 @@ static int validate_frame(const uint8_t *frame, size_t len,
                           uint64_t *pts, const uint8_t **payload,
                           uint32_t *payload_len)
 {
-    if (len < AURORA_USB_HEADER_LEN ||
+    if (len > RX_FRAME_CAP || len < AURORA_USB_HEADER_LEN ||
         read_le32(frame + 0) != AURORA_USB_MAGIC_U32 ||
         read_le16(frame + 4) != AURORA_USB_VERSION)
         return -1;
@@ -530,6 +577,8 @@ static int validate_frame(const uint8_t *frame, size_t len,
 static int restart_renderer(struct app *a, uint64_t pts, int pts_valid)
 {
     a->renderer_serial++;
+    a->encoded_pending_offset = 0;
+    a->encoded_pending_len = 0;
     a->render_pending_len = 0;
     a->next_pcm_pts = pts;
     a->have_pcm_pts = pts_valid;
@@ -590,7 +639,7 @@ static int handle_bridge_frame(struct app *a, const uint8_t *frame, size_t len)
         /* Do NOT strip IEC61937 here. Omniphony v0.5.2 maintains a streaming
          * SpdifParser on stdin and forwards packet.payload + data_type to the
          * Harletty bridge as RInputTransport::Iec61937. */
-        if (write_all_timeout(a->renderer.stdin_fd, payload, payload_len) < 0)
+        if (queue_encoded(a, payload, payload_len) < 0)
             return -1;
         a->encoded_frames++;
         a->encoded_bytes += payload_len;
@@ -688,7 +737,7 @@ int main(void)
             a.tx_sequence = 0;
             a.configured = 0;
             a.render_pending_len = 0;
-            if (send_config(&a) < 0) {
+            if (send_config(&a) != 0) {
                 close(a.bridge_fd);
                 a.bridge_fd = -1;
                 continue;
@@ -697,12 +746,23 @@ int main(void)
                     env_or("AURORA_USB_BRIDGE_SOCKET", BRIDGE_SOCKET));
         }
 
-        struct pollfd p[2];
-        p[0] = (struct pollfd){.fd = a.bridge_fd, .events = POLLIN};
-        p[1] = (struct pollfd){.fd = a.renderer.stdout_fd, .events = POLLIN};
+        struct pollfd p[3];
+        short bridge_events = POLLIN;
+        if (a.configured && a.render_pending_len >= PCM_PERIOD_BYTES)
+            bridge_events |= POLLOUT;
+        p[0] = (struct pollfd){.fd = a.bridge_fd, .events = bridge_events};
+        /* A full output queue applies pipe backpressure without discarding PCM. */
+        p[1] = (struct pollfd){
+            .fd = a.render_pending_len < RENDER_PENDING_CAP ? a.renderer.stdout_fd : -1,
+            .events = POLLIN
+        };
+        p[2] = (struct pollfd){
+            .fd = a.encoded_pending_len ? a.renderer.stdin_fd : -1,
+            .events = POLLOUT
+        };
         uint64_t renderer_serial_at_poll = a.renderer_serial;
 
-        int rc = poll(p, 2, 250);
+        int rc = poll(p, 3, 250);
         if (rc < 0) {
             if (errno == EINTR)
                 continue;
@@ -719,7 +779,7 @@ int main(void)
         }
 
         if (p[0].revents & POLLIN) {
-            ssize_t n = recv(a.bridge_fd, rx, RX_FRAME_CAP, 0);
+            ssize_t n = recv(a.bridge_fd, rx, RX_FRAME_CAP, MSG_TRUNC);
             if (n <= 0) {
                 close(a.bridge_fd);
                 a.bridge_fd = -1;
@@ -741,6 +801,24 @@ int main(void)
         if (renderer_serial_at_poll != a.renderer_serial)
             continue;
 
+        if ((p[0].revents & POLLOUT) && flush_pcm_periods(&a) < 0) {
+            close(a.bridge_fd);
+            a.bridge_fd = -1;
+            if (reset_after_bridge_disconnect(&a) < 0)
+                break;
+            continue;
+        }
+
+        if (p[2].revents & (POLLOUT | POLLHUP | POLLERR | POLLNVAL)) {
+            if (flush_encoded(&a) < 0) {
+                a.next_pcm_flags |= AURORA_USB_FLAG_DISCONTINUITY |
+                                    AURORA_USB_FLAG_XRUN_RECOVERY;
+                if (restart_renderer(&a, a.next_pcm_pts, a.have_pcm_pts) < 0)
+                    break;
+                continue;
+            }
+        }
+
         if (p[1].revents & POLLIN) {
             int rr = ingest_renderer_output(&a);
             if (rr < 0) {
@@ -756,7 +834,11 @@ int main(void)
             }
         }
 
-        if (p[1].revents & (POLLHUP | POLLERR | POLLNVAL)) {
+        if (renderer_serial_at_poll != a.renderer_serial)
+            continue;
+
+        if (!(p[1].revents & POLLIN) &&
+            (p[1].revents & (POLLHUP | POLLERR | POLLNVAL))) {
             a.next_pcm_flags |= AURORA_USB_FLAG_DISCONTINUITY |
                                 AURORA_USB_FLAG_XRUN_RECOVERY;
             if (restart_renderer(&a, a.next_pcm_pts, a.have_pcm_pts) < 0)
@@ -776,3 +858,4 @@ int main(void)
     renderer_stop(&a.renderer);
     return 0;
 }
+
