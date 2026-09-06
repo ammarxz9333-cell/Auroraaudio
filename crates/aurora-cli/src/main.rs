@@ -265,6 +265,13 @@ enum Command {
         #[arg(long, default_value_t = true)]
         enhance_dialogue: bool,
     },
+    /// Generate an EDID / CTA-861-H binary (e.g. Samsung HW-Q995D) with Dolby Atmos (JOC=1), MAT 2.0, DTS:X, and 11.1.4 SAD descriptors.
+    GenerateEdid {
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, default_value = "samsung-q995d")]
+        profile: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -573,6 +580,7 @@ fn main() -> Result<()> {
             crossover_freq,
             enhance_dialogue,
         ),
+        Command::GenerateEdid { output, profile } => generate_edid_command(&output, &profile),
     }
 }
 
@@ -1765,6 +1773,38 @@ fn run_decode_stream(
         println!("Wrote cinema 11.1.4 WAV: {} (channels: {}, frames: {}, clipped: {})",
             output.display(), report.channel_count, report.frames_written, report.clipped);
     }
+
+    Ok(())
+}
+
+fn generate_edid_command(output: &Path, profile: &str) -> Result<()> {
+    use aurora_config::edid_spoof::{generate_samsung_q995d_edid, verify_edid_checksums};
+
+    println!("Generating spoofed EDID / CTA-861-H binary (Target profile: {profile})...");
+    let edid = generate_samsung_q995d_edid();
+
+    if !verify_edid_checksums(&edid) {
+        bail!("EDID checksum validation failed!");
+    }
+
+    std::fs::write(output, &edid)
+        .with_context(|| format!("Failed to write EDID binary to {}", output.display()))?;
+
+    println!("Successfully generated 256-byte Samsung HW-Q995D EDID binary:");
+    println!("  - Output path: {}", output.display());
+    println!("  - Vendor ID: SAM (Samsung Electronics)");
+    println!("  - Product ID: 0x0995 (HW-Q995D 11.1.4 Soundbar)");
+    println!("  - Base EDID 1.4: 128 bytes (Modulo-256 Checksum Valid)");
+    println!("  - CTA-861-H Extension: 128 bytes (Modulo-256 Checksum Valid)");
+    println!("  - Audio Descriptors (SADs):");
+    println!("      * LPCM (8 ch, 192 kHz / 24-bit)");
+    println!("      * Dolby Digital (AC-3 5.1)");
+    println!("      * Dolby Digital Plus (E-AC-3 7.1) with JOC=1 (Dolby Atmos flag ACTIVE)");
+    println!("      * Dolby TrueHD Atmos (8 ch, 192 kHz Lossless)");
+    println!("      * DTS / DTS-HD MA / DTS:X (8 ch, 192 kHz)");
+    println!("      * Dolby MAT 2.0 / 2.1 (Apple TV / PS5 Atmos metadata)");
+    println!("  - Speaker Allocation: 11.1.4 physical channels (FL, FR, LFE, FC, BL, BR, FLC, FRC, BC, Rls, Rrs, TpFL, TpFR, TpBL, TpBR)");
+    println!("  - eARC CDS: Supported (37 Mbps high-bitrate audio)");
 
     Ok(())
 }

@@ -16,3 +16,4 @@ truehdd-process = []
 [dependencies]
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
+thiserror.workspace = true

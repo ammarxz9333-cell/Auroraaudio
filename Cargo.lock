@@ -110,10 +110,12 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "aurora-audio-io",
+ "aurora-config",
  "aurora-core",
  "aurora-decoder-api",
  "aurora-decoder-eac3-atmos",
  "aurora-decoder-iamf",
+ "aurora-decoder-truehdd",
  "aurora-dsp-basic",
  "aurora-dsp-camilladsp",
  "aurora-realtime-audio-api",
@@ -188,6 +190,7 @@ version = "0.1.0"
 dependencies = [
  "aurora-core",
  "aurora-decoder-api",
+ "thiserror",
 ]
 
 [[package]]

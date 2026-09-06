@@ -7,6 +7,7 @@
 //! configuration.
 
 mod error;
+pub mod edid_spoof;
 mod limits;
 mod migration;
 mod model;
@@ -14,6 +15,7 @@ mod preset;
 mod redaction;
 mod validation;
 
+pub use edid_spoof::{EdidError, SamsungQ995EdidBuilder, EDID_TOTAL_BYTES};
 pub use error::{ConfigError, ErrorCategory, ErrorCode};
 pub use limits::*;
 pub use migration::{migrate_v0_to_v1, MigrationResult, MigrationWarning};
