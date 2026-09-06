@@ -1,8 +1,8 @@
-//! Production Dolby Atmos, Dolby MAT 2.0, DTS:X, and IEC 61937 live streaming ingest suite.
+//! Immersive compressed-format inspection and external-decoder adapters.
 //!
-//! Provides standard IEC 61937 burst parsing, ATSC A/52:2018 Annex E bitstream
-//! decoding, ETSI TS 103 420 OAMD 3D object metadata extraction, Dolby MAT 2.0 LPCM
-//! unpacking, DTS:X / IMAX Enhanced extraction, and seamless format auto-switching.
+//! IEC 61937 and elementary header inspection are implemented. Aurora does
+//! not bundle E-AC-3/JOC, Dolby MAT, DTS-HD or DTS:X decoding. The OAMD module
+//! is an Aurora test-fixture format and is not a Dolby metadata implementation.
 
 pub mod autoswitch;
 pub mod decoder;
@@ -20,7 +20,4 @@ pub use eac3::{parse_eac3_header, BitReader, Eac3AudioCodingMode, Eac3Header, Ea
 pub use iec61937::{Iec61937Burst, Iec61937DataType, Iec61937Error, Iec61937Parser};
 pub use ingest::{IngestError, IngestTelemetry, LiveStreamIngest};
 pub use mat::{parse_dolby_mat_payload, DolbyMatError, DolbyMatFrame};
-pub use oamd::{
-    parse_oamd_metadata, serialize_oamd_metadata, AtmosBedLayout, AtmosFrameMetadata,
-    AtmosObjectMetadata,
-};
+pub use oamd::{parse_oamd_metadata, serialize_oamd_metadata, AtmosBedLayout, AtmosFrameMetadata, AtmosObjectMetadata};

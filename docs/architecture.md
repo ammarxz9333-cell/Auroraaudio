@@ -6,6 +6,12 @@ simulation, and accepted diagnostics and configuration control planes. Physical
 hardware validation remains incomplete. Proprietary codec decoding and network
 speaker transport are out of scope.
 
+Compressed E-AC-3/JOC, Dolby MAT, TrueHD/MLP, DTS-HD and DTS:X inputs are
+explicitly unavailable without a separately reviewed external decoder. Aurora
+never substitutes generated tones or fabricated objects for undecoded input.
+The Samsung-identity EDID generator and placeholder casting bridge were removed
+because they did not provide verified interoperability.
+
 ## Workspace Layout
 
 - `aurora-core`: Shared data model for formats, vectors, speakers, listeners, objects, audio blocks, and scenes.
@@ -215,7 +221,7 @@ Aurora runtime and JSON trajectories retain canonical order. Specifically,
 The source gate delivers validated absolute lip-sync frames through a dedicated
 APC0 Unix datagram endpoint, separate from the AUR0 audio stream. HDMI uses
 `AURORA_DSP_CONTROL_SOCKET`; the optional local adapter has its own endpoint.
-The supported range is 0–24000 frames at 48 kHz. Active-source control is
+The supported range is 0Â–24000 frames at 48 kHz. Active-source control is
 replayed after DSP restart. The legacy broker pipe remains available only when
 `AURORA_CONTROL_FD` is explicitly supplied and names a valid descriptor.
 
