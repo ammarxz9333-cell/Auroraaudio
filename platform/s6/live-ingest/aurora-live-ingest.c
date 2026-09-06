@@ -21,6 +21,7 @@
 #define DEFAULT_ORENDER "/opt/aurora/external/orender"
 #define DEFAULT_HARLETTY "/opt/aurora/external/libharletty_bridge.so"
 #define DEFAULT_LAYOUT "/etc/aurora/layouts/7.1.4.yaml"
+#define DEFAULT_SURROUND_UPMIX "/usr/local/sbin/aurora-surround-upmix"
 #define DEFAULT_POSTPROCESS "/usr/local/bin/aurora-s6-postprocess"
 
 #define PCM_CHANNELS AURORA_USB_CHANNELS_7_1_4
@@ -266,6 +267,14 @@ static void close_child_fds_above(int keep0, int keep1, int keep3,
 
 static int renderer_start(struct renderer_proc *r)
 {
+    const char *mode = env_or("AURORA_DECODE_MODE", "objects");
+    int surround_upmix = strcmp(mode, "surround-upmix") == 0;
+    if (!surround_upmix && strcmp(mode, "objects") != 0) {
+        fprintf(stderr, "aurora-live-ingest: invalid AURORA_DECODE_MODE=%s\n", mode);
+        errno = EINVAL;
+        return -1;
+    }
+    const char *fallback = env_or("AURORA_SURROUND_UPMIX_BIN", DEFAULT_SURROUND_UPMIX);
     const char *orender = env_or("AURORA_ORENDER_BIN", DEFAULT_ORENDER);
     const char *bridge = env_or("AURORA_HARLETTY_BRIDGE", DEFAULT_HARLETTY);
     const char *layout = env_or("AURORA_7_1_4_LAYOUT", DEFAULT_LAYOUT);
@@ -302,6 +311,12 @@ static int renderer_start(struct renderer_proc *r)
         };
         close_child_fds_above(STDIN_FILENO, STDOUT_FILENO, -1,
                               all_fds, sizeof(all_fds) / sizeof(all_fds[0]));
+
+        if (surround_upmix) {
+            execl(fallback, fallback, (char *)NULL);
+            perror("aurora-live-ingest: exec surround upmixer");
+            _exit(127);
+        }
 
         /* Omniphony's stdin decoder thread detects IEC61937 sync, maintains a
          * streaming SpdifParser across arbitrary read boundaries, and passes
@@ -376,8 +391,8 @@ static int renderer_start(struct renderer_proc *r)
     r->control_fd = enable_post ? control_to_post[1] : -1;
     r->postprocess_enabled = enable_post;
     fprintf(stderr,
-            "aurora-live-ingest: orender pid=%ld postprocess=%s pid=%ld\n",
-            (long)pid, enable_post ? "enabled" : "disabled", (long)post_pid);
+            "aurora-live-ingest: decode_mode=%s pid=%ld postprocess=%s pid=%ld\n",
+            mode, (long)pid, enable_post ? "enabled" : "disabled", (long)post_pid);
     return 0;
 
 fail:

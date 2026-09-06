@@ -15,7 +15,7 @@ else
 fi
 
 name="Aurora live immersive ingest"
-description="Live DD+ IEC61937 to Harletty/Omniphony/Aurora DSP 7.1.4 pipeline"
+description="IEC61937 object rendering or explicit channel surround upmix through Aurora DSP"
 command="$AURORA_LIVE_INGEST_BIN"
 command_background="yes"
 pidfile="/run/aurora/aurora-live-ingest.pid"
@@ -33,11 +33,21 @@ start_pre() {
     checkpath --directory --mode 0755 /var/log/aurora
     [ -x "$AURORA_LIVE_INGEST_BIN" ] || return 1
     [ -x "$AURORA_POSTPROCESS_BIN" ] || return 1
-    [ -x "$AURORA_ORENDER_BIN" ] || return 1
-    [ -f "$AURORA_HARLETTY_BRIDGE" ] || return 1
-    [ -f "$AURORA_7_1_4_LAYOUT" ] || return 1
+    case "${AURORA_DECODE_MODE:-objects}" in
+        objects)
+            [ -x "$AURORA_ORENDER_BIN" ] || return 1
+            [ -f "$AURORA_HARLETTY_BRIDGE" ] || return 1
+            [ -f "$AURORA_7_1_4_LAYOUT" ] || return 1
+            ;;
+        surround-upmix)
+            [ -x "$AURORA_SURROUND_UPMIX_BIN" ] || return 1
+            [ -x "$AURORA_FFMPEG_BIN" ] || return 1
+            ;;
+        *) return 1 ;;
+    esac
     [ -n "${AURORA_USB_BRIDGE_SOCKET:-}" ] || return 1
     [ "$AURORA_USB_BRIDGE_SOCKET" = "$AURORA_HDMI_SOURCE_SOCKET" ] || return 1
     [ "${AURORA_BLOCK_FRAMES:-0}" = "40" ] || return 1
     [ "${AURORA_SAMPLE_RATE:-0}" = "48000" ] || return 1
 }
+

@@ -59,6 +59,9 @@ mkdir -p "$OUT/bin" "$OUT/lib" "$OUT/share/omniphony/layouts" "$OUT/navidrome" "
     "$ROOT/platform/s6/source-manager/aurora-source-ctl.c" \
     -lm -o "$OUT/bin/aurora-source-ctl"
 
+install -m 0755 "$ROOT/platform/s6/surround-upmix/aurora-surround-upmix.sh" \
+    "$OUT/bin/aurora-surround-upmix"
+
 # Live immersive streaming broker. It deliberately does NOT decode or unwrap
 # IEC61937 itself. Complete encoded frames are forwarded as a byte stream to
 # Omniphony stdin; Omniphony v0.5.2 owns the streaming IEC61937 parser and
@@ -131,6 +134,7 @@ tar -xzf "$NAV_ARCHIVE" -C "$OUT/navidrome"
     echo "source_manager=priority-quiesce-watchdog-v1"
     echo "source_control_cli=status-mute-gain-lipsync-standby-v1"
     echo "hdmi_source_gate=managed-ramp-v1"
+    echo "surround_upmix=ffmpeg-channel-bed-synthetic-heights-v1"
     echo "live_streaming_ingest=iec61937-omniphony-postprocess-source-gate"
     echo "postprocessor=aurora-s6-postprocess"
     echo "postprocessor_asrc=rubato-sinc-fixed-out"

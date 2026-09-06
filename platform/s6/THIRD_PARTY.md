@@ -44,3 +44,15 @@ These source identities do not establish decoder correctness, ABI/load success,
 real-time throughput, patent clearance, or physical live-service acceptance.
 The external projects use Rust edition 2024; their native build requires an
 edition-2024-capable toolchain independently of Aurora's own Rust 1.78 MSRV.
+
+## FFmpeg surround-upmix adapter
+
+The explicit `surround-upmix` mode executes the system FFmpeg binary as a separate
+process. FFmpeg decodes the IEC61937 channel bed; a filter graph preserves the
+normalized 7.1 bed and derives synthetic height ambience. It does not recover JOC
+objects or advertise licensed Dolby Surround/Atmos processing. No FFmpeg source
+is copied. FFmpeg is already an Alpine rootfs dependency; its applicable build,
+license and redistribution obligations remain part of image release review.
+
+Local software tests used Ubuntu FFmpeg 6.1.1 with real generated E-AC-3/AC-3
+streams, not an Atmos sample or protected streaming-service media.
