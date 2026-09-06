@@ -3,9 +3,13 @@
 pub mod crossover;
 pub mod dialogue;
 pub mod output;
+pub mod phase;
+pub mod upmixer;
 
 pub use crossover::CrossoverProcessor;
 pub use dialogue::DialogueEnhancer;
+pub use phase::SubwooferPhaseAligner;
+pub use upmixer::SmartImmersiveUpmixer;
 
 use aurora_core::AudioBlock;
 use thiserror::Error;

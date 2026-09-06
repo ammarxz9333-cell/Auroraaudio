@@ -1608,9 +1608,8 @@ fn run_decode_stream(
     crossover_freq: f32,
     enhance_dialogue: bool,
 ) -> Result<()> {
-    use aurora_decoder_api::Decoder;
-    use aurora_decoder_eac3_atmos::Eac3AtmosDecoder;
-    use aurora_dsp_basic::{CrossoverProcessor, DialogueEnhancer};
+    use aurora_decoder_eac3_atmos::FormatAutoSwitch;
+    use aurora_dsp_basic::{CrossoverProcessor, DialogueEnhancer, SmartImmersiveUpmixer, SubwooferPhaseAligner};
 
     let speakers = match layout_name {
         LayoutName::Stereo => stereo_layout(),
@@ -1622,22 +1621,14 @@ fn run_decode_stream(
     let channel_roles: Vec<ChannelRole> = speakers.iter().map(|s| s.channel_role.clone()).collect();
     let num_speakers = speakers.len();
 
-    println!("Decoding stream: {}", input.display());
-    println!("Output speaker layout: {:?} ({} channels)", layout_name, num_speakers);
+    println!("Decoding live stream: {}", input.display());
+    println!("Target speaker layout: {:?} ({} channels)", layout_name, num_speakers);
 
     let input_bytes = std::fs::read(input)
         .with_context(|| format!("Failed to read input bitstream file: {}", input.display()))?;
 
     let sample_rate = 48000_u32;
-    let format = aurora_core::AudioFormat {
-        sample_rate,
-        channel_count: num_speakers,
-        sample_type: aurora_core::SampleType::F32,
-        block_size: 1536,
-    };
-
-    let mut decoder = Eac3AtmosDecoder::new();
-    decoder.configure(format).map_err(|e| anyhow::anyhow!("Decoder config error: {e}"))?;
+    let mut auto_switcher = FormatAutoSwitch::new(192);
 
     let mut renderer = BasicRenderer::new(BasicRendererMode::InverseDistance);
     renderer.configure(speakers.clone(), sample_rate, 1536, 32)
@@ -1651,6 +1642,7 @@ fn run_decode_stream(
         ear_height: 1.2,
     };
 
+    // DSP Suite: Crossover, Dialogue Enhancer, Smart Upmixer, Phase Aligner
     let lfe_idx = channel_roles.iter().position(|r| *r == ChannelRole::LowFrequencyEffects);
     let center_idx = channel_roles.iter().position(|r| *r == ChannelRole::FrontCenter);
 
@@ -1666,9 +1658,13 @@ fn run_decode_stream(
         None
     };
 
+    let mut upmixer = SmartImmersiveUpmixer::new(sample_rate);
+    let mut phase_aligner = SubwooferPhaseAligner::new(sample_rate, crossover_freq, 45.0);
+
     let mut output_channels: Vec<Vec<f32>> = vec![Vec::new(); num_speakers];
     let mut total_decoded_frames = 0;
     let mut total_active_objects = 0;
+    let mut upmixed_blocks_count = 0;
 
     let chunk_size = 4096;
     let mut offset = 0;
@@ -1678,23 +1674,24 @@ fn run_decode_stream(
         let chunk = &input_bytes[offset..end];
         offset = end;
 
-        if let Some(decoded) = decoder.decode_chunk(chunk).map_err(|e| anyhow::anyhow!("Decode error: {e}"))? {
+        if let Some(decoded) = auto_switcher.decode_auto(chunk) {
             total_decoded_frames += 1;
             let frame_len = decoded.audio.frame_count;
             total_active_objects += decoded.objects.len();
 
             let mut block_channels = vec![vec![0.0_f32; frame_len]; num_speakers];
 
-            // 1. Bed channels
-            for (bed_idx, bed_samples) in decoded.audio.channels.iter().enumerate() {
-                let target_ch = bed_idx % num_speakers;
-                for (s_out, s_in) in block_channels[target_ch].iter_mut().zip(bed_samples.iter()) {
-                    *s_out += *s_in;
-                }
-            }
-
-            // 2. Dynamic 3D Objects
+            // If 3D spatial objects are present (Atmos JOC, MAT, or DTS:X), use 3D VBAP renderer
             if !decoded.objects.is_empty() {
+                // Map bed channels
+                for (bed_idx, bed_samples) in decoded.audio.channels.iter().enumerate() {
+                    let target_ch = bed_idx % num_speakers;
+                    for (s_out, s_in) in block_channels[target_ch].iter_mut().zip(bed_samples.iter()) {
+                        *s_out += *s_in;
+                    }
+                }
+
+                // Render dynamic 3D objects
                 let render_objs: Vec<RenderObject> = decoded.objects.iter().map(|obj| {
                     RenderObject {
                         position: obj.position,
@@ -1719,15 +1716,31 @@ fn run_decode_stream(
                         }
                     }
                 }
+            } else if num_speakers == 16 {
+                // Non-Atmos content (Stereo or 5.1/7.1 broadcast): Engage Smart 11.1.4 Immersive Upmixer!
+                upmixed_blocks_count += 1;
+                let _ = upmixer.upmix_to_11_1_4(&decoded.audio.channels, &mut block_channels, frame_len);
+            } else {
+                for (ch_idx, ch_samples) in decoded.audio.channels.iter().enumerate() {
+                    let target_ch = ch_idx % num_speakers;
+                    for (s_out, s_in) in block_channels[target_ch].iter_mut().zip(ch_samples.iter()) {
+                        *s_out += *s_in;
+                    }
+                }
             }
 
-            // 3. Linkwitz-Riley Crossover
+            // 1. Linkwitz-Riley 4th Order Crossover (24 dB/oct)
             if let Some(ref mut xover) = crossover {
                 xover.process_in_place(&mut block_channels, frame_len)
                     .map_err(|e| anyhow::anyhow!("Crossover DSP error: {e}"))?;
             }
 
-            // 4. Dialogue Enhancer
+            // 2. Subwoofer FIR Phase Alignment
+            if let Some(lfe_channel_index) = lfe_idx {
+                phase_aligner.process_lfe_in_place(&mut block_channels[lfe_channel_index]);
+            }
+
+            // 3. Center Channel Dialogue Enhancement
             if let Some(ref mut d_enhancer) = dialogue_enhancer {
                 let _ = d_enhancer.process_in_place(&mut block_channels, frame_len);
             }
@@ -1741,10 +1754,15 @@ fn run_decode_stream(
     if output_channels[0].is_empty() {
         println!("Warning: No complete audio frames decoded from input.");
     } else {
-        println!("Decoded {} audio blocks, total {} frames, {} active 3D objects rendered.",
-            total_decoded_frames, output_channels[0].len(), total_active_objects);
+        let stats = auto_switcher.stats();
+        println!("Stream decode complete:");
+        println!("  - Detected Format: {:?}", stats.active_format.unwrap_or(aurora_decoder_eac3_atmos::DetectedStreamFormat::Unknown));
+        println!("  - Total Audio Blocks: {}", total_decoded_frames);
+        println!("  - 3D Spatial Objects: {}", total_active_objects);
+        println!("  - 11.1.4 Upmixed Blocks: {}", upmixed_blocks_count);
+        println!("  - Zero-Click Format Transitions: {}", stats.format_transitions);
         let report = write_wav_f32_with_channel_roles(output, sample_rate, &output_channels, &channel_roles)?;
-        println!("Wrote multichannel WAV: {} (channels: {}, frames: {}, clipped: {})",
+        println!("Wrote cinema 11.1.4 WAV: {} (channels: {}, frames: {}, clipped: {})",
             output.display(), report.channel_count, report.frames_written, report.clipped);
     }
 
