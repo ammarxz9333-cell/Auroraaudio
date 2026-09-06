@@ -111,6 +111,9 @@ dependencies = [
  "anyhow",
  "aurora-audio-io",
  "aurora-core",
+ "aurora-decoder-api",
+ "aurora-decoder-eac3-atmos",
+ "aurora-decoder-iamf",
  "aurora-dsp-basic",
  "aurora-dsp-camilladsp",
  "aurora-realtime-audio-api",
@@ -156,11 +159,27 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-decoder-eac3-atmos"
+version = "0.1.0"
+dependencies = [
+ "aurora-core",
+ "aurora-decoder-api",
+ "aurora-dsp-basic",
+ "aurora-renderer-api",
+ "aurora-renderer-basic",
+ "serde",
+ "serde_json",
+ "thiserror",
+ "tracing",
+]
+
+[[package]]
 name = "aurora-decoder-iamf"
 version = "0.1.0"
 dependencies = [
  "aurora-core",
  "aurora-decoder-api",
+ "thiserror",
 ]
 
 [[package]]

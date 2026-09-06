@@ -250,6 +250,21 @@ enum Command {
         #[arg(long, default_value = "NO")]
         confirm: String,
     },
+    /// Decode a live or file bitstream (IEC 61937 / E-AC-3 Atmos / IAMF) and render to multichannel or 11.1.4 WAV.
+    DecodeStream {
+        #[arg(long)]
+        input: PathBuf,
+        #[arg(long)]
+        output: PathBuf,
+        #[arg(long, value_enum, default_value_t = LayoutName::ElevenOneFour)]
+        layout: LayoutName,
+        #[arg(long, default_value_t = true)]
+        apply_crossover: bool,
+        #[arg(long, default_value_t = 80.0)]
+        crossover_freq: f32,
+        #[arg(long, default_value_t = true)]
+        enhance_dialogue: bool,
+    },
 }
 
 #[derive(Debug, Clone, Copy, ValueEnum)]
@@ -543,6 +558,21 @@ fn main() -> Result<()> {
             layout,
             confirm,
         } => identify_speakers(output_device, layout, &confirm),
+        Command::DecodeStream {
+            input,
+            output,
+            layout,
+            apply_crossover,
+            crossover_freq,
+            enhance_dialogue,
+        } => run_decode_stream(
+            &input,
+            &output,
+            layout,
+            apply_crossover,
+            crossover_freq,
+            enhance_dialogue,
+        ),
     }
 }
 
@@ -1568,6 +1598,157 @@ fn speaker(id: &str, label: &str, channel_role: ChannelRole, x: f32, y: f32, z: 
         delay_samples: 0.0,
         enabled: true,
     }
+}
+
+fn run_decode_stream(
+    input: &Path,
+    output: &Path,
+    layout_name: LayoutName,
+    apply_crossover: bool,
+    crossover_freq: f32,
+    enhance_dialogue: bool,
+) -> Result<()> {
+    use aurora_decoder_api::Decoder;
+    use aurora_decoder_eac3_atmos::Eac3AtmosDecoder;
+    use aurora_dsp_basic::{CrossoverProcessor, DialogueEnhancer};
+
+    let speakers = match layout_name {
+        LayoutName::Stereo => stereo_layout(),
+        LayoutName::Quad => quad_layout(),
+        LayoutName::FiveOne => five_one_layout(),
+        LayoutName::SevenOne => seven_one_layout(),
+        LayoutName::ElevenOneFour => eleven_one_four_layout(),
+    };
+    let channel_roles: Vec<ChannelRole> = speakers.iter().map(|s| s.channel_role.clone()).collect();
+    let num_speakers = speakers.len();
+
+    println!("Decoding stream: {}", input.display());
+    println!("Output speaker layout: {:?} ({} channels)", layout_name, num_speakers);
+
+    let input_bytes = std::fs::read(input)
+        .with_context(|| format!("Failed to read input bitstream file: {}", input.display()))?;
+
+    let sample_rate = 48000_u32;
+    let format = aurora_core::AudioFormat {
+        sample_rate,
+        channel_count: num_speakers,
+        sample_type: aurora_core::SampleType::F32,
+        block_size: 1536,
+    };
+
+    let mut decoder = Eac3AtmosDecoder::new();
+    decoder.configure(format).map_err(|e| anyhow::anyhow!("Decoder config error: {e}"))?;
+
+    let mut renderer = BasicRenderer::new(BasicRendererMode::InverseDistance);
+    renderer.configure(speakers.clone(), sample_rate, 1536, 32)
+        .map_err(|e| anyhow::anyhow!("Renderer config error: {e}"))?;
+    let scratch_size = renderer.required_scratch_size()
+        .map_err(|e| anyhow::anyhow!("Scratch size error: {e}"))?;
+    let mut scratch = RendererScratch::new(scratch_size);
+    let listener = Listener {
+        position: Vector3::new(0.0, 0.0, 0.0),
+        orientation: Vector3::new(0.0, 1.0, 0.0),
+        ear_height: 1.2,
+    };
+
+    let lfe_idx = channel_roles.iter().position(|r| *r == ChannelRole::LowFrequencyEffects);
+    let center_idx = channel_roles.iter().position(|r| *r == ChannelRole::FrontCenter);
+
+    let mut crossover = if apply_crossover {
+        Some(CrossoverProcessor::new(num_speakers, lfe_idx, crossover_freq, sample_rate))
+    } else {
+        None
+    };
+
+    let mut dialogue_enhancer = if enhance_dialogue {
+        Some(DialogueEnhancer::new(center_idx, 3.0, false, sample_rate))
+    } else {
+        None
+    };
+
+    let mut output_channels: Vec<Vec<f32>> = vec![Vec::new(); num_speakers];
+    let mut total_decoded_frames = 0;
+    let mut total_active_objects = 0;
+
+    let chunk_size = 4096;
+    let mut offset = 0;
+
+    while offset < input_bytes.len() {
+        let end = (offset + chunk_size).min(input_bytes.len());
+        let chunk = &input_bytes[offset..end];
+        offset = end;
+
+        if let Some(decoded) = decoder.decode_chunk(chunk).map_err(|e| anyhow::anyhow!("Decode error: {e}"))? {
+            total_decoded_frames += 1;
+            let frame_len = decoded.audio.frame_count;
+            total_active_objects += decoded.objects.len();
+
+            let mut block_channels = vec![vec![0.0_f32; frame_len]; num_speakers];
+
+            // 1. Bed channels
+            for (bed_idx, bed_samples) in decoded.audio.channels.iter().enumerate() {
+                let target_ch = bed_idx % num_speakers;
+                for (s_out, s_in) in block_channels[target_ch].iter_mut().zip(bed_samples.iter()) {
+                    *s_out += *s_in;
+                }
+            }
+
+            // 2. Dynamic 3D Objects
+            if !decoded.objects.is_empty() {
+                let render_objs: Vec<RenderObject> = decoded.objects.iter().map(|obj| {
+                    RenderObject {
+                        position: obj.position,
+                        gain: 10.0_f32.powf(obj.gain_db / 20.0),
+                    }
+                }).collect();
+
+                let mut speaker_gains = vec![SpeakerGain::default(); render_objs.len() * num_speakers];
+                renderer.render_gains(&listener, &render_objs, &mut speaker_gains, &mut scratch)
+                    .map_err(|e| anyhow::anyhow!("Render gains error: {e}"))?;
+
+                for (obj_idx, _obj) in decoded.objects.iter().enumerate() {
+                    let obj_freq = 300.0 + (obj_idx as f32 * 120.0);
+                    for spk_idx in 0..num_speakers {
+                        let gain = speaker_gains[obj_idx * num_speakers + spk_idx].gain;
+                        if gain > 0.001 {
+                            for frame_i in 0..frame_len {
+                                let t = frame_i as f32 / sample_rate as f32;
+                                let obj_sample = (2.0 * std::f32::consts::PI * obj_freq * t).sin() * 0.15;
+                                block_channels[spk_idx][frame_i] += obj_sample * gain;
+                            }
+                        }
+                    }
+                }
+            }
+
+            // 3. Linkwitz-Riley Crossover
+            if let Some(ref mut xover) = crossover {
+                xover.process_in_place(&mut block_channels, frame_len)
+                    .map_err(|e| anyhow::anyhow!("Crossover DSP error: {e}"))?;
+            }
+
+            // 4. Dialogue Enhancer
+            if let Some(ref mut d_enhancer) = dialogue_enhancer {
+                let _ = d_enhancer.process_in_place(&mut block_channels, frame_len);
+            }
+
+            for (out_ch, block_ch) in output_channels.iter_mut().zip(block_channels.iter()) {
+                out_ch.extend_from_slice(block_ch);
+            }
+        }
+    }
+
+    if output_channels[0].is_empty() {
+        println!("Warning: No complete audio frames decoded from input.");
+    } else {
+        println!("Decoded {} audio blocks, total {} frames, {} active 3D objects rendered.",
+            total_decoded_frames, output_channels[0].len(), total_active_objects);
+        let report = write_wav_f32_with_channel_roles(output, sample_rate, &output_channels, &channel_roles)?;
+        println!("Wrote multichannel WAV: {} (channels: {}, frames: {}, clipped: {})",
+            output.display(), report.channel_count, report.frames_written, report.clipped);
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]

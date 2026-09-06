@@ -32,6 +32,9 @@ simulation = ["dep:aurora-realtime-audio-sim", "dep:aurora-realtime-engine"]
 anyhow.workspace = true
 aurora-audio-io = { path = "../aurora-audio-io" }
 aurora-core = { path = "../aurora-core" }
+aurora-decoder-api = { path = "../aurora-decoder-api" }
+aurora-decoder-eac3-atmos = { path = "../aurora-decoder-eac3-atmos" }
+aurora-decoder-iamf = { path = "../aurora-decoder-iamf" }
 aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-dsp-camilladsp = { path = "../aurora-dsp-camilladsp", optional = true }
 aurora-renderer-api = { path = "../aurora-renderer-api" }
