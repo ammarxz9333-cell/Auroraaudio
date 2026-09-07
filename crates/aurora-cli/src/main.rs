@@ -1,9 +1,11 @@
 use std::io::Write;
 use std::path::{Path, PathBuf};
+#[cfg(feature = "realtime")]
 use std::sync::{
     atomic::{AtomicU64, Ordering},
     Arc,
 };
+#[cfg(feature = "realtime")]
 use std::time::{Duration, Instant};
 
 use anyhow::{bail, Context, Result};
@@ -269,6 +271,7 @@ enum CliTestSignal {
     RotatingSine,
 }
 
+#[cfg(feature = "realtime")]
 impl From<CliTestSignal> for TestSignal {
     fn from(value: CliTestSignal) -> Self {
         match value {
@@ -1054,6 +1057,7 @@ fn simulate_output_validation_command(
     bail!("simulation feature is disabled")
 }
 
+#[cfg(feature = "realtime")]
 #[derive(Debug, Default)]
 struct RealtimeCounters {
     callback_count: AtomicU64,

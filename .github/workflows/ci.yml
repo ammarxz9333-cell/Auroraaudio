@@ -36,6 +36,10 @@ jobs:
             ${{ runner.os }}-cargo-
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+      - name: Test CLI without optional features
+        run: cargo test -p aurora-cli --bin aurora-cli --no-default-features --locked
+      - name: Test CLI with simulation only
+        run: cargo test -p aurora-cli --bin aurora-cli --no-default-features --features simulation --locked
       - name: Verify diagnostics schemas and deterministic output
         run: cargo test -p aurora-diagnostics --test contracts
       - name: Verify configuration schemas, fixtures, and deterministic output
