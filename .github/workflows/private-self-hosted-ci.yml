@@ -61,6 +61,14 @@ jobs:
           --profile minimal --component rustfmt,clippy
       - name: Verify formatting
         run: cargo +stable-x86_64-pc-windows-gnu fmt --all --check
+      - name: Test CLI without optional features
+        run: >-
+          cargo +stable-x86_64-pc-windows-gnu test
+          -p aurora-cli --bin aurora-cli --no-default-features --locked
+      - name: Test CLI with simulation only
+        run: >-
+          cargo +stable-x86_64-pc-windows-gnu test
+          -p aurora-cli --bin aurora-cli --no-default-features --features simulation --locked
       - name: Lint all targets and features
         run: >-
           cargo +stable-x86_64-pc-windows-gnu clippy
