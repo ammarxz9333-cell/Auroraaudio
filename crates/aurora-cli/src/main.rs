@@ -875,6 +875,7 @@ fn run_realtime(
     _speed_of_sound: f32,
     _test_signal: CliTestSignal,
     _duration_seconds: u64,
+    _renderer_mode: BasicRendererMode,
 ) -> Result<()> {
     bail!("real-time audio feature is disabled")
 }
