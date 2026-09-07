@@ -50,12 +50,20 @@ pub fn replace_readme_capability_section(readme: &str) -> Result<String> {
         .context("README capability end marker is missing")?;
     let end = after_begin + relative_end;
     let table = render_capabilities(CapabilityOutputFormat::Markdown)?;
+    let newline = if readme[after_begin..].starts_with("\r\n") {
+        "\r\n"
+    } else {
+        "\n"
+    };
+    let table = table.replace('\n', newline);
 
     let mut output = String::with_capacity(readme.len() + table.len());
     output.push_str(&readme[..after_begin]);
-    output.push_str("\n\n");
+    output.push_str(newline);
+    output.push_str(newline);
     output.push_str(&table);
-    output.push_str("\n\n");
+    output.push_str(newline);
+    output.push_str(newline);
     output.push_str(&readme[end..]);
     Ok(output)
 }
@@ -215,6 +223,24 @@ mod tests {
         assert!(output.contains("| `iamf` — IAMF decoder adapter | adapter-placeholder |"));
         assert!(output.contains("| `loudspeaker-3d` — 3D loudspeaker renderer | not-implemented |"));
         assert!(!output.contains("| yes |"));
+    }
+
+    #[test]
+    fn readme_verification_accepts_crlf_and_preserves_line_endings() {
+        let source = format!(
+            "before\r\n{}\r\n\r\nstale table\r\n\r\n{}\r\nafter\r\n",
+            README_CAPABILITIES_BEGIN, README_CAPABILITIES_END
+        );
+        let generated = replace_readme_capability_section(&source).unwrap();
+        verify_readme_capability_section(&generated).unwrap();
+        assert!(!generated.replace("\r\n", "").contains('\n'));
+        assert_eq!(
+            replace_readme_capability_section(&generated).unwrap(),
+            generated
+        );
+
+        let overstated = generated.replace("| no |", "| yes |");
+        assert!(verify_readme_capability_section(&overstated).is_err());
     }
 
     #[test]
