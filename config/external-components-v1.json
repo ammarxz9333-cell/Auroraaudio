@@ -7,15 +7,37 @@
   },
   "components": [
     {
+      "id": "oxideav-ac3",
+      "upstream": "https://github.com/OxideAV/oxideav-ac3",
+      "decision": "adopted-open-native",
+      "integration": "rust-dependency",
+      "tested_version": "0.0.11",
+      "roles": ["ac3-decode", "eac3-decode", "joc-admission-reference"],
+      "object_metadata": "validation-only-at-aurora-boundary",
+      "production_ready": false,
+      "evidence": ["crates/aurora-decoder-open", "THIRD_PARTY_LICENSES.md"]
+    },
+    {
+      "id": "openjoc",
+      "upstream": "https://github.com/chyinan/OpenJOC",
+      "decision": "adopted-open-native",
+      "integration": "rust-dependency",
+      "tested_version": "0.16.0",
+      "roles": ["joc-access-unit-framing", "joc-oamd-decode", "joc-reconstruction", "speaker-render"],
+      "object_metadata": "native-open",
+      "production_ready": false,
+      "evidence": ["crates/aurora-decoder-open", "THIRD_PARTY_LICENSES.md"]
+    },
+    {
       "id": "ffmpeg",
       "upstream": "https://github.com/FFmpeg/FFmpeg",
       "decision": "adopted",
       "integration": "external-process",
       "tested_version": "6.1.1",
-      "roles": ["channel-bed-decode", "resample", "format-conversion"],
+      "roles": ["channel-bed-decode", "resample", "format-conversion", "universal-open-codec-fallback"],
       "object_metadata": "unsupported",
       "production_ready": false,
-      "evidence": ["platform/s6/THIRD_PARTY.md"]
+      "evidence": ["platform/s6/THIRD_PARTY.md", "crates/aurora-decoder-open"]
     },
     {
       "id": "camilladsp",
