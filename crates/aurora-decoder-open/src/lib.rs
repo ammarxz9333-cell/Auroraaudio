@@ -3,13 +3,16 @@
 //! Design goals:
 //! - no proprietary codec DLLs/blobs or paid runtime licences;
 //! - byte-level auto detection for raw/eARC input;
-//! - native Rust AC-3/E-AC-3 path, including an open JOC reference path;
+//! - independent open implementations for E-AC-3/JOC admission and rendering;
 //! - one Aurora-owned PCM/object boundary for every backend;
 //! - backend replacement without changing the realtime/DSP/output engine.
 
 pub mod framing;
 pub mod iec61937;
+pub mod joc_access_unit;
+pub mod joc_probe;
 pub mod native_ac3;
+pub mod openjoc_native;
 pub mod sniff;
 pub mod worker;
 
@@ -19,8 +22,11 @@ use aurora_core::AudioFormat;
 use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
 use framing::SyncFramer;
 use iec61937::Iec61937Depacketizer;
+use joc_access_unit::JocAccessUnitAssembler;
+use joc_probe::{JocAdmission, JocAdmissionProbe};
 use native_ac3::{JocPresentation, NativeAc3Decoder};
-use sniff::{probe, CodecKind, Encapsulation};
+use openjoc_native::{JocRenderInfo, OpenJocNativeRenderer};
+use sniff::{CodecKind, Encapsulation, probe};
 use worker::OpenWorkerDecoder;
 
 pub use sniff::{CodecKind as OpenCodecKind, Encapsulation as OpenEncapsulation, ProbeResult};
@@ -75,9 +81,12 @@ pub struct OpenDecoderConfig {
     /// The transport is still probed, so a hinted E-AC-3 stream arriving in
     /// IEC 61937 is depacketized correctly rather than treated as raw E-AC-3.
     pub codec_hint: Option<CodecKind>,
-    /// If true, 2-channel JOC validation can use OxideAV's standards-derived
-    /// stereo speaker renderer. The immersive product path keeps this false.
+    /// If true, 2-channel JOC validation can additionally use OxideAV's open
+    /// stereo reference renderer. Normal immersive playback keeps this false.
     pub joc_stereo_reference: bool,
+    /// Optional OpenJOC preset such as `7.1.4`, `9.1.6` or `22.2`. `None`
+    /// derives an unambiguous standard preset from the Aurora channel count.
+    pub joc_layout_hint: Option<&'static str>,
 }
 
 impl Default for OpenDecoderConfig {
@@ -85,6 +94,7 @@ impl Default for OpenDecoderConfig {
         Self {
             codec_hint: None,
             joc_stereo_reference: false,
+            joc_layout_hint: None,
         }
     }
 }
@@ -106,6 +116,10 @@ pub struct UniversalOpenDecoder {
     framer: Option<SyncFramer>,
     native: Option<NativeAc3Decoder>,
     worker: Option<OpenWorkerDecoder>,
+    joc_assembler: Option<JocAccessUnitAssembler>,
+    joc_probe: JocAdmissionProbe,
+    joc_renderer: Option<OpenJocNativeRenderer>,
+    last_joc_error: Option<String>,
     pending: VecDeque<DecodedFrame>,
 }
 
@@ -120,6 +134,10 @@ impl UniversalOpenDecoder {
             framer: None,
             native: None,
             worker: None,
+            joc_assembler: None,
+            joc_probe: JocAdmissionProbe::new(),
+            joc_renderer: None,
+            last_joc_error: None,
             pending: VecDeque::new(),
         }
     }
@@ -130,6 +148,19 @@ impl UniversalOpenDecoder {
 
     pub fn detected_encapsulation(&self) -> Encapsulation {
         self.encapsulation
+    }
+
+    /// Diagnostics from the admitted immersive renderer, if JOC has actually
+    /// passed validation and produced an OpenJOC session.
+    pub fn joc_render_info(&self) -> Option<&JocRenderInfo> {
+        self.joc_renderer.as_ref().map(OpenJocNativeRenderer::render_info)
+    }
+
+    /// Most recent JOC admission/render failure. A non-empty value means Aurora
+    /// deliberately fell back to the ordinary E-AC-3 bed instead of claiming
+    /// Atmos/JOC output.
+    pub fn last_joc_error(&self) -> Option<&str> {
+        self.last_joc_error.as_deref()
     }
 
     fn ensure_codec(&mut self, data: &[u8]) -> Result<(), DecoderError> {
@@ -175,6 +206,9 @@ impl UniversalOpenDecoder {
         self.native = None;
         self.worker = None;
         self.framer = None;
+        self.joc_assembler = None;
+        self.joc_renderer = None;
+        self.joc_probe.reset();
         match backend_class(codec) {
             BackendClass::NativeOpen => {
                 let joc = if self.config.joc_stereo_reference {
@@ -187,7 +221,11 @@ impl UniversalOpenDecoder {
                     decoder.configure(format)?;
                 }
                 self.native = Some(decoder);
-                self.framer = Some(SyncFramer::new(codec));
+                if codec == CodecKind::Ac3 {
+                    self.framer = Some(SyncFramer::new(CodecKind::Ac3));
+                } else {
+                    self.joc_assembler = Some(JocAccessUnitAssembler::new());
+                }
                 Ok(())
             }
             BackendClass::OpenWorker => {
@@ -231,27 +269,118 @@ impl UniversalOpenDecoder {
         Ok(())
     }
 
+    fn process_eac3_stream(&mut self, bytes: &[u8]) -> Result<(), DecoderError> {
+        let units = self
+            .joc_assembler
+            .as_mut()
+            .ok_or(DecoderError::Unavailable("E-AC-3 access-unit assembler missing"))?
+            .push(bytes)?;
+        for unit in units {
+            self.process_eac3_access_unit(&unit)?;
+        }
+        Ok(())
+    }
+
+    fn process_eac3_access_unit(&mut self, unit: &[u8]) -> Result<(), DecoderError> {
+        match self.joc_probe.inspect(unit) {
+            JocAdmission::Validated => {
+                let output = self
+                    .output_format
+                    .ok_or(DecoderError::Unavailable("decoder is not configured"))?;
+                if self.joc_renderer.is_none() {
+                    match OpenJocNativeRenderer::new(output, self.config.joc_layout_hint) {
+                        Ok(renderer) => self.joc_renderer = Some(renderer),
+                        Err(error) => {
+                            self.last_joc_error = Some(error.to_string());
+                            self.codec = Some(CodecKind::Eac3);
+                            return self.decode_eac3_bed_access_unit(unit);
+                        }
+                    }
+                }
+                let render = self
+                    .joc_renderer
+                    .as_mut()
+                    .expect("renderer initialized above")
+                    .push_access_unit(unit);
+                match render {
+                    Ok(()) => {
+                        self.codec = Some(CodecKind::Eac3Joc);
+                        self.last_joc_error = None;
+                        let renderer = self.joc_renderer.as_mut().expect("renderer exists");
+                        while let Some(frame) = renderer.take_block() {
+                            self.pending.push_back(frame);
+                        }
+                        Ok(())
+                    }
+                    Err(error) => {
+                        self.last_joc_error = Some(error.to_string());
+                        self.joc_renderer = None;
+                        self.codec = Some(CodecKind::Eac3);
+                        self.decode_eac3_bed_access_unit(unit)
+                    }
+                }
+            }
+            JocAdmission::SignalledButInvalid => {
+                self.last_joc_error = Some(
+                    "EC-3 Extension Type A was present but EMDF/OAMD/JOC validation failed"
+                        .to_owned(),
+                );
+                self.joc_renderer = None;
+                self.codec = Some(CodecKind::Eac3);
+                self.decode_eac3_bed_access_unit(unit)
+            }
+            JocAdmission::NotJoc => {
+                if self.codec == Some(CodecKind::Eac3Joc) {
+                    self.joc_renderer = None;
+                }
+                self.codec = Some(CodecKind::Eac3);
+                self.decode_eac3_bed_access_unit(unit)
+            }
+        }
+    }
+
+    fn decode_eac3_bed_access_unit(&mut self, unit: &[u8]) -> Result<(), DecoderError> {
+        // OxideAV consumes an independent frame plus its dependents. Split a
+        // six-block AU into those programme sets without changing the live
+        // Aurora decoder state between sets.
+        let mut framer = SyncFramer::new(CodecKind::Eac3);
+        let mut packets = framer.push(unit);
+        packets.extend(framer.flush());
+        if packets.is_empty() {
+            return Err(DecoderError::UnsupportedInput(
+                "E-AC-3 access unit contained no decodable programme set",
+            ));
+        }
+        for packet in packets {
+            self.decode_native_packet(&packet)?;
+        }
+        Ok(())
+    }
+
     fn process_elementary(&mut self, bytes: &[u8]) -> Result<(), DecoderError> {
         let codec = self.codec.expect("ensure_codec sets codec");
-        match backend_class(codec) {
-            BackendClass::NativeOpen => {
+        match codec {
+            CodecKind::Ac3 => {
                 let packets = self
                     .framer
                     .as_mut()
-                    .ok_or(DecoderError::Unavailable("sync framer missing"))?
+                    .ok_or(DecoderError::Unavailable("AC-3 sync framer missing"))?
                     .push(bytes);
                 for packet in packets {
                     self.decode_native_packet(&packet)?;
                 }
                 Ok(())
             }
-            BackendClass::OpenWorker => self.process_worker(bytes),
-            BackendClass::Passthrough => Err(DecoderError::Unavailable(
-                "raw PCM passthrough adapter is not initialized",
-            )),
-            BackendClass::Unavailable => Err(DecoderError::UnsupportedInput(
-                "unsupported elementary audio path",
-            )),
+            CodecKind::Eac3 | CodecKind::Eac3Joc => self.process_eac3_stream(bytes),
+            _ => match backend_class(codec) {
+                BackendClass::OpenWorker => self.process_worker(bytes),
+                BackendClass::Passthrough => Err(DecoderError::Unavailable(
+                    "raw PCM passthrough adapter is not initialized",
+                )),
+                BackendClass::NativeOpen | BackendClass::Unavailable => Err(
+                    DecoderError::UnsupportedInput("unsupported elementary audio path"),
+                ),
+            },
         }
     }
 
@@ -264,31 +393,45 @@ impl UniversalOpenDecoder {
             if burst.codec == CodecKind::Unknown {
                 continue;
             }
-            if self.codec != Some(burst.codec) {
+            if !same_codec_family(self.codec, burst.codec) {
                 // The carrier can switch format at runtime. Rebuild exactly one
                 // codec backend while preserving the single final PCM owner.
                 self.codec = Some(burst.codec);
                 self.initialize_backend(burst.codec, Encapsulation::Elementary)?;
             }
-            match backend_class(burst.codec) {
-                BackendClass::NativeOpen => self.decode_native_packet(&burst.payload)?,
-                BackendClass::OpenWorker => self.process_worker(&burst.payload)?,
-                BackendClass::Passthrough | BackendClass::Unavailable => {}
+            match burst.codec {
+                CodecKind::Eac3 | CodecKind::Eac3Joc => {
+                    self.process_eac3_stream(&burst.payload)?;
+                }
+                CodecKind::Ac3 => self.decode_native_packet(&burst.payload)?,
+                codec if backend_class(codec) == BackendClass::OpenWorker => {
+                    self.process_worker(&burst.payload)?;
+                }
+                _ => {}
             }
         }
         Ok(())
     }
 
-    /// Flush complete codec packets retained by the elementary-stream framer
-    /// and flush any delayed samples from the open worker.
+    /// Flush complete codec packets retained by the streaming frontends and
+    /// flush delayed samples from the native JOC/open-worker renderers.
     pub fn flush_packets(&mut self) -> Result<(), DecoderError> {
-        let packets = self
-            .framer
-            .as_mut()
-            .map(SyncFramer::flush)
-            .unwrap_or_default();
-        for packet in packets {
-            self.decode_native_packet(&packet)?;
+        if let Some(framer) = self.framer.as_mut() {
+            let packets = framer.flush();
+            for packet in packets {
+                self.decode_native_packet(&packet)?;
+            }
+        }
+        if let Some(assembler) = self.joc_assembler.as_mut() {
+            let units = assembler.finish()?;
+            for unit in units {
+                self.process_eac3_access_unit(&unit)?;
+            }
+        }
+        if let Some(renderer) = self.joc_renderer.as_mut() {
+            for frame in renderer.drain()? {
+                self.pending.push_back(frame);
+            }
         }
         if let Some(worker) = self.worker.as_mut() {
             for frame in worker.finish()? {
@@ -304,7 +447,7 @@ impl Decoder for UniversalOpenDecoder {
         DecoderInfo {
             name: "Aurora universal open decoder fabric",
             production_ready: false,
-            maturity: "native-ac3-eac3-plus-open-worker",
+            maturity: "dual-open-joc-plus-open-worker",
         }
     }
 
@@ -321,6 +464,11 @@ impl Decoder for UniversalOpenDecoder {
             return Ok(Some(frame));
         }
         if input.is_empty() {
+            if let Some(renderer) = self.joc_renderer.as_mut() {
+                if let Some(frame) = renderer.take_block() {
+                    return Ok(Some(frame));
+                }
+            }
             if let Some(worker) = self.worker.as_mut() {
                 if let Some(frame) = worker.poll()? {
                     return Ok(Some(frame));
@@ -347,7 +495,19 @@ impl Decoder for UniversalOpenDecoder {
         self.framer = None;
         self.native = None;
         self.worker = None;
+        self.joc_assembler = None;
+        self.joc_probe.reset();
+        self.joc_renderer = None;
+        self.last_joc_error = None;
         self.pending.clear();
+    }
+}
+
+fn same_codec_family(current: Option<CodecKind>, incoming: CodecKind) -> bool {
+    match (current, incoming) {
+        (Some(CodecKind::Eac3 | CodecKind::Eac3Joc), CodecKind::Eac3 | CodecKind::Eac3Joc) => true,
+        (Some(current), incoming) => current == incoming,
+        (None, _) => false,
     }
 }
 
@@ -412,19 +572,9 @@ mod tests {
     }
 
     #[test]
-    fn codec_hint_does_not_disable_iec_transport_detection() {
-        let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig {
-            codec_hint: Some(CodecKind::Eac3),
-            joc_stereo_reference: false,
-        });
-        decoder.output_format = Some(AudioFormat {
-            sample_rate: 48_000,
-            channel_count: 12,
-            sample_type: SampleType::F32,
-            block_size: 40,
-        });
-        // Avoid backend init by checking the same probe decision directly.
-        let p = probe(&[0x72, 0xF8, 0x1F, 0x4E, 0x15, 0, 0, 0]);
-        assert_eq!(p.encapsulation, Encapsulation::Iec61937);
+    fn eac3_and_joc_are_one_transport_family() {
+        assert!(same_codec_family(Some(CodecKind::Eac3Joc), CodecKind::Eac3));
+        assert!(same_codec_family(Some(CodecKind::Eac3), CodecKind::Eac3Joc));
+        assert!(!same_codec_family(Some(CodecKind::Ac3), CodecKind::Eac3));
     }
 }
