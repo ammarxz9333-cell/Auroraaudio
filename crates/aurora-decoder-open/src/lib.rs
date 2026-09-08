@@ -11,6 +11,7 @@ pub mod framing;
 pub mod iec61937;
 pub mod native_ac3;
 pub mod sniff;
+pub mod worker;
 
 use std::collections::VecDeque;
 
@@ -20,6 +21,7 @@ use framing::SyncFramer;
 use iec61937::Iec61937Depacketizer;
 use native_ac3::{JocPresentation, NativeAc3Decoder};
 use sniff::{probe, CodecKind, Encapsulation};
+use worker::OpenWorkerDecoder;
 
 pub use sniff::{CodecKind as OpenCodecKind, Encapsulation as OpenEncapsulation, ProbeResult};
 
@@ -29,7 +31,7 @@ pub enum BackendClass {
     NativeOpen,
     /// Open-source external worker (FFmpeg/libavcodec class).
     OpenWorker,
-    /// Raw PCM needs no codec decode.
+    /// Raw PCM can bypass codec decode when its exact format is declared.
     Passthrough,
     /// No admitted open backend is wired yet.
     Unavailable,
@@ -40,8 +42,8 @@ pub enum BackendClass {
 pub const fn backend_class(codec: CodecKind) -> BackendClass {
     match codec {
         CodecKind::Ac3 | CodecKind::Eac3 | CodecKind::Eac3Joc => BackendClass::NativeOpen,
-        CodecKind::Pcm => BackendClass::Passthrough,
-        CodecKind::TrueHd
+        CodecKind::Pcm
+        | CodecKind::TrueHd
         | CodecKind::Mlp
         | CodecKind::DolbyMat
         | CodecKind::Dts
@@ -70,6 +72,8 @@ pub const fn backend_class(codec: CodecKind) -> BackendClass {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenDecoderConfig {
     /// Optional caller-supplied codec hint. `None` enables byte probing.
+    /// The transport is still probed, so a hinted E-AC-3 stream arriving in
+    /// IEC 61937 is depacketized correctly rather than treated as raw E-AC-3.
     pub codec_hint: Option<CodecKind>,
     /// If true, 2-channel JOC validation can use OxideAV's standards-derived
     /// stereo speaker renderer. The immersive product path keeps this false.
@@ -97,9 +101,11 @@ pub struct UniversalOpenDecoder {
     config: OpenDecoderConfig,
     output_format: Option<AudioFormat>,
     codec: Option<CodecKind>,
+    encapsulation: Encapsulation,
     transport: Transport,
     framer: Option<SyncFramer>,
     native: Option<NativeAc3Decoder>,
+    worker: Option<OpenWorkerDecoder>,
     pending: VecDeque<DecodedFrame>,
 }
 
@@ -109,9 +115,11 @@ impl UniversalOpenDecoder {
             codec: config.codec_hint,
             config,
             output_format: None,
+            encapsulation: Encapsulation::Unknown,
             transport: Transport::Undecided,
             framer: None,
             native: None,
+            worker: None,
             pending: VecDeque::new(),
         }
     }
@@ -120,35 +128,53 @@ impl UniversalOpenDecoder {
         self.codec
     }
 
+    pub fn detected_encapsulation(&self) -> Encapsulation {
+        self.encapsulation
+    }
+
     fn ensure_codec(&mut self, data: &[u8]) -> Result<(), DecoderError> {
         if self.codec.is_some() && !matches!(self.transport, Transport::Undecided) {
             return Ok(());
         }
 
-        let result = if let Some(codec) = self.codec {
-            sniff::ProbeResult {
-                codec,
-                encapsulation: Encapsulation::Elementary,
-                confidence: 100,
-                iec61937_data_type: None,
-            }
-        } else {
-            probe(data)
-        };
-        if result.codec == CodecKind::Unknown {
+        let probed = probe(data);
+        let codec = self.config.codec_hint.unwrap_or(probed.codec);
+        if codec == CodecKind::Unknown {
             return Err(DecoderError::UnsupportedInput(
                 "unable to identify compressed audio codec from input prefix",
             ));
         }
-        self.codec = Some(result.codec);
-        self.transport = match result.encapsulation {
-            Encapsulation::Iec61937 => Transport::Iec61937(Iec61937Depacketizer::new()),
-            _ => Transport::Elementary,
+        let encapsulation = if probed.encapsulation == Encapsulation::Iec61937 {
+            Encapsulation::Iec61937
+        } else if probed.encapsulation != Encapsulation::Unknown {
+            probed.encapsulation
+        } else {
+            Encapsulation::Elementary
         };
-        self.initialize_backend(result.codec)
+        self.codec = Some(codec);
+        self.encapsulation = encapsulation;
+        self.transport = if encapsulation == Encapsulation::Iec61937 {
+            Transport::Iec61937(Iec61937Depacketizer::new())
+        } else {
+            Transport::Elementary
+        };
+        // An IEC burst is depacketized before the codec backend sees it.
+        let backend_encapsulation = if encapsulation == Encapsulation::Iec61937 {
+            Encapsulation::Elementary
+        } else {
+            encapsulation
+        };
+        self.initialize_backend(codec, backend_encapsulation)
     }
 
-    fn initialize_backend(&mut self, codec: CodecKind) -> Result<(), DecoderError> {
+    fn initialize_backend(
+        &mut self,
+        codec: CodecKind,
+        encapsulation: Encapsulation,
+    ) -> Result<(), DecoderError> {
+        self.native = None;
+        self.worker = None;
+        self.framer = None;
         match backend_class(codec) {
             BackendClass::NativeOpen => {
                 let joc = if self.config.joc_stereo_reference {
@@ -164,11 +190,15 @@ impl UniversalOpenDecoder {
                 self.framer = Some(SyncFramer::new(codec));
                 Ok(())
             }
-            BackendClass::OpenWorker => Err(DecoderError::Unavailable(
-                "codec identified and routed to the open-worker class, but worker backend is not initialized",
-            )),
+            BackendClass::OpenWorker => {
+                let output = self
+                    .output_format
+                    .ok_or(DecoderError::Unavailable("decoder is not configured"))?;
+                self.worker = Some(OpenWorkerDecoder::spawn(codec, encapsulation, output)?);
+                Ok(())
+            }
             BackendClass::Passthrough => Err(DecoderError::Unavailable(
-                "PCM passthrough is handled by Aurora audio I/O, not compressed decoder",
+                "raw PCM passthrough requires an explicit sample-format adapter",
             )),
             BackendClass::Unavailable => Err(DecoderError::UnsupportedInput(
                 "no admitted open decoder backend for this codec",
@@ -182,6 +212,20 @@ impl UniversalOpenDecoder {
             .as_mut()
             .ok_or(DecoderError::Unavailable("native backend is not initialized"))?;
         if let Some(frame) = native.decode_chunk(packet)? {
+            self.pending.push_back(frame);
+        }
+        Ok(())
+    }
+
+    fn process_worker(&mut self, bytes: &[u8]) -> Result<(), DecoderError> {
+        let worker = self
+            .worker
+            .as_mut()
+            .ok_or(DecoderError::Unavailable("open worker backend is not initialized"))?;
+        if let Some(frame) = worker.push(bytes)? {
+            self.pending.push_back(frame);
+        }
+        while let Some(frame) = worker.poll()? {
             self.pending.push_back(frame);
         }
         Ok(())
@@ -201,10 +245,13 @@ impl UniversalOpenDecoder {
                 }
                 Ok(())
             }
-            BackendClass::OpenWorker => Err(DecoderError::Unavailable(
-                "open worker backend not initialized",
+            BackendClass::OpenWorker => self.process_worker(bytes),
+            BackendClass::Passthrough => Err(DecoderError::Unavailable(
+                "raw PCM passthrough adapter is not initialized",
             )),
-            _ => Err(DecoderError::UnsupportedInput("unsupported elementary audio path")),
+            BackendClass::Unavailable => Err(DecoderError::UnsupportedInput(
+                "unsupported elementary audio path",
+            )),
         }
     }
 
@@ -218,26 +265,22 @@ impl UniversalOpenDecoder {
                 continue;
             }
             if self.codec != Some(burst.codec) {
-                // Carrier format may legitimately switch at runtime (PCM/DD+/etc.).
+                // The carrier can switch format at runtime. Rebuild exactly one
+                // codec backend while preserving the single final PCM owner.
                 self.codec = Some(burst.codec);
-                self.native = None;
-                self.framer = None;
-                self.initialize_backend(burst.codec)?;
+                self.initialize_backend(burst.codec, Encapsulation::Elementary)?;
             }
             match backend_class(burst.codec) {
                 BackendClass::NativeOpen => self.decode_native_packet(&burst.payload)?,
-                BackendClass::OpenWorker => {
-                    return Err(DecoderError::Unavailable(
-                        "IEC61937 codec requires open worker backend that is not initialized",
-                    ));
-                }
-                _ => {}
+                BackendClass::OpenWorker => self.process_worker(&burst.payload)?,
+                BackendClass::Passthrough | BackendClass::Unavailable => {}
             }
         }
         Ok(())
     }
 
-    /// Flush complete codec packets retained by the elementary-stream framer.
+    /// Flush complete codec packets retained by the elementary-stream framer
+    /// and flush any delayed samples from the open worker.
     pub fn flush_packets(&mut self) -> Result<(), DecoderError> {
         let packets = self
             .framer
@@ -246,6 +289,11 @@ impl UniversalOpenDecoder {
             .unwrap_or_default();
         for packet in packets {
             self.decode_native_packet(&packet)?;
+        }
+        if let Some(worker) = self.worker.as_mut() {
+            for frame in worker.finish()? {
+                self.pending.push_back(frame);
+            }
         }
         Ok(())
     }
@@ -256,7 +304,7 @@ impl Decoder for UniversalOpenDecoder {
         DecoderInfo {
             name: "Aurora universal open decoder fabric",
             production_ready: false,
-            maturity: "native-ac3-eac3-wired-open-worker-next",
+            maturity: "native-ac3-eac3-plus-open-worker",
         }
     }
 
@@ -273,6 +321,11 @@ impl Decoder for UniversalOpenDecoder {
             return Ok(Some(frame));
         }
         if input.is_empty() {
+            if let Some(worker) = self.worker.as_mut() {
+                if let Some(frame) = worker.poll()? {
+                    return Ok(Some(frame));
+                }
+            }
             return Ok(None);
         }
         if self.output_format.is_none() {
@@ -289,9 +342,11 @@ impl Decoder for UniversalOpenDecoder {
 
     fn reset(&mut self) {
         self.codec = self.config.codec_hint;
+        self.encapsulation = Encapsulation::Unknown;
         self.transport = Transport::Undecided;
         self.framer = None;
         self.native = None;
+        self.worker = None;
         self.pending.clear();
     }
 }
@@ -337,7 +392,9 @@ mod tests {
     #[test]
     fn universal_decoder_requires_configuration_before_audio() {
         let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig::default());
-        let err = decoder.decode_chunk(&[0x0B, 0x77, 0, 0, 0, 16 << 3]).unwrap_err();
+        let err = decoder
+            .decode_chunk(&[0x0B, 0x77, 0, 0, 0, 16 << 3])
+            .unwrap_err();
         assert!(err.to_string().contains("not configured"));
     }
 
@@ -352,5 +409,22 @@ mod tests {
                 block_size: 40,
             })
             .unwrap();
+    }
+
+    #[test]
+    fn codec_hint_does_not_disable_iec_transport_detection() {
+        let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig {
+            codec_hint: Some(CodecKind::Eac3),
+            joc_stereo_reference: false,
+        });
+        decoder.output_format = Some(AudioFormat {
+            sample_rate: 48_000,
+            channel_count: 12,
+            sample_type: SampleType::F32,
+            block_size: 40,
+        });
+        // Avoid backend init by checking the same probe decision directly.
+        let p = probe(&[0x72, 0xF8, 0x1F, 0x4E, 0x15, 0, 0, 0]);
+        assert_eq!(p.encapsulation, Encapsulation::Iec61937);
     }
 }
