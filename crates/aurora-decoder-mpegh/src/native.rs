@@ -4,7 +4,9 @@ use thiserror::Error;
 
 use crate::ffi::{
     self, IaMpeghdApiStruct, EXTERNAL_METADATA_BYTES, EXTERNAL_PCM_BYTES, MEMTYPE_INPUT,
+    MEMTYPE_OUTPUT,
 };
+use crate::MpeghRenderedPcm;
 
 const NO_ERROR: i32 = 0x0000_0000;
 const INIT_NEED_MORE_INPUT: i32 = 0x0000_1000;
@@ -15,6 +17,7 @@ const DEFAULT_CICP_LAYOUT: i32 = 0;
 const DEFAULT_EFFECT: i32 = 0;
 const DEFAULT_PRESET: i8 = -1;
 const MAX_PENDING_BYTES: usize = 16 * 1024 * 1024;
+const MAX_RENDERED_CHANNELS: usize = 32;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MpeghExternalFrame {
@@ -45,9 +48,11 @@ pub struct MpeghSpeaker {
 
 /// Safe streaming owner for libmpegh's external-render interface.
 ///
-/// Compressed bytes remain Aurora-owned until libmpegh explicitly reports them
-/// consumed. External metadata/PCM buffers have stable addresses for the entire
-/// decoder lifetime and are copied into owned Rust values before the next call.
+/// One successful execute preserves two independent products from the same
+/// compressed access unit:
+/// - [`MpeghExternalFrame`]: pre-render channel/object/HOA scene material;
+/// - [`MpeghRenderedPcm`]: libmpegh's final speaker render for immediate
+///   fallback playback and conformance comparison.
 pub struct NativeMpeghDecoder {
     api: Box<IaMpeghdApiStruct>,
     channel_metadata: Box<[u8]>,
@@ -58,6 +63,7 @@ pub struct NativeMpeghDecoder {
     pending_start: usize,
     created: bool,
     initialized: bool,
+    last_rendered_pcm: Option<MpeghRenderedPcm>,
 }
 
 impl NativeMpeghDecoder {
@@ -118,6 +124,7 @@ impl NativeMpeghDecoder {
             pending_start: 0,
             created: true,
             initialized: false,
+            last_rendered_pcm: None,
         })
     }
 
@@ -129,8 +136,13 @@ impl NativeMpeghDecoder {
         self.pending.len().saturating_sub(self.pending_start)
     }
 
-    /// Append arbitrary compressed fragments and emit at most one decoded
-    /// external-render frame. Call with an empty slice to drain buffered input.
+    /// Take the final speaker-rendered PCM produced by the most recent
+    /// successful execute. It is deliberately separate from the pre-render
+    /// scene so callers cannot accidentally treat one as the other.
+    pub fn take_rendered_pcm(&mut self) -> Option<MpeghRenderedPcm> {
+        self.last_rendered_pcm.take()
+    }
+
     pub fn push(&mut self, input: &[u8]) -> Result<Option<MpeghExternalFrame>, MpeghNativeError> {
         self.append_input(input)?;
         if !self.initialized && !self.drive_initialization()? {
@@ -168,7 +180,6 @@ impl NativeMpeghDecoder {
                 )
             };
             let consumed = self.consume_reported_bytes(provided)?;
-
             match code {
                 NO_ERROR | INIT_NEED_MORE_INPUT => {}
                 other => return Err(MpeghNativeError::InitFailed { code: other }),
@@ -185,6 +196,7 @@ impl NativeMpeghDecoder {
     }
 
     fn execute_one(&mut self) -> Result<Option<MpeghExternalFrame>, MpeghNativeError> {
+        self.last_rendered_pcm = None;
         if self.pending_bytes() == 0 {
             return Ok(None);
         }
@@ -201,7 +213,10 @@ impl NativeMpeghDecoder {
         self.consume_reported_bytes(provided)?;
 
         match code {
-            NO_ERROR => self.copy_external_frame(),
+            NO_ERROR => {
+                self.last_rendered_pcm = self.copy_rendered_pcm()?;
+                self.copy_external_frame()
+            }
             EXEC_NEED_MORE_INPUT => Ok(None),
             other => Err(MpeghNativeError::ExecuteFailed { code: other }),
         }
@@ -324,6 +339,72 @@ impl NativeMpeghDecoder {
             },
         }))
     }
+
+    fn copy_rendered_pcm(&self) -> Result<Option<MpeghRenderedPcm>, MpeghNativeError> {
+        let output = &self.api.output_config;
+        if output.num_out_bytes == 0 {
+            return Ok(None);
+        }
+        let table = &output.mem_info_table[MEMTYPE_OUTPUT];
+        let capacity = usize::try_from(table.ui_size).map_err(|_| {
+            MpeghNativeError::InvalidLibraryState("rendered-output buffer capacity overflow")
+        })?;
+        let length = checked_len("rendered PCM", output.num_out_bytes, capacity)?;
+        if length == 0 {
+            return Ok(None);
+        }
+        if table.mem_ptr.is_null() {
+            return Err(MpeghNativeError::InvalidLibraryState(
+                "rendered-output buffer is null with non-zero output length",
+            ));
+        }
+
+        let bit_depth = u8::try_from(output.i_pcm_wd_sz)
+            .map_err(|_| MpeghNativeError::InvalidRenderedBitDepth(output.i_pcm_wd_sz))?;
+        let bytes_per_sample = match bit_depth {
+            16 => 2usize,
+            24 => 3usize,
+            32 => 4usize,
+            _ => return Err(MpeghNativeError::InvalidRenderedBitDepth(output.i_pcm_wd_sz)),
+        };
+        let channel_count = usize::try_from(output.i_num_chan)
+            .ok()
+            .filter(|channels| (1..=MAX_RENDERED_CHANNELS).contains(channels))
+            .ok_or(MpeghNativeError::InvalidRenderedChannelCount(output.i_num_chan))?;
+        let sample_rate = u32::try_from(output.i_samp_freq)
+            .ok()
+            .filter(|rate| *rate > 0)
+            .ok_or(MpeghNativeError::InvalidRenderedSampleRate(output.i_samp_freq))?;
+        let bytes_per_frame = channel_count
+            .checked_mul(bytes_per_sample)
+            .ok_or(MpeghNativeError::RenderedGeometryOverflow)?;
+        if length % bytes_per_frame != 0 {
+            return Err(MpeghNativeError::MisalignedRenderedPcm {
+                bytes: length,
+                channels: channel_count,
+                bit_depth,
+            });
+        }
+        let frame_count = length / bytes_per_frame;
+        if frame_count == 0 {
+            return Ok(None);
+        }
+        let bytes = unsafe {
+            core::slice::from_raw_parts(table.mem_ptr.cast::<u8>(), length)
+        }
+        .to_vec();
+        let rendered = MpeghRenderedPcm {
+            bytes,
+            bit_depth,
+            channel_count,
+            frame_count,
+            sample_rate,
+        };
+        rendered
+            .validate()
+            .map_err(|error| MpeghNativeError::InvalidRenderedPcm(error.to_string()))?;
+        Ok(Some(rendered))
+    }
 }
 
 impl Drop for NativeMpeghDecoder {
@@ -351,6 +432,7 @@ fn clear_external_lengths(api: &mut IaMpeghdApiStruct) {
     output.oam_md_payload_length = 0;
     output.hoa_md_payload_length = 0;
     output.pcm_payload_length = 0;
+    output.num_out_bytes = 0;
 }
 
 fn checked_len(
@@ -421,6 +503,22 @@ pub enum MpeghNativeError {
     },
     #[error("libmpegh reported invalid speaker count {0}")]
     InvalidSpeakerCount(i32),
+    #[error("libmpegh reported unsupported rendered PCM bit depth {0}")]
+    InvalidRenderedBitDepth(i32),
+    #[error("libmpegh reported invalid rendered channel count {0}")]
+    InvalidRenderedChannelCount(i32),
+    #[error("libmpegh reported invalid rendered sample rate {0}")]
+    InvalidRenderedSampleRate(i32),
+    #[error("rendered PCM geometry arithmetic overflow")]
+    RenderedGeometryOverflow,
+    #[error("rendered PCM byte length {bytes} is not aligned to {channels} channels at {bit_depth} bits")]
+    MisalignedRenderedPcm {
+        bytes: usize,
+        channels: usize,
+        bit_depth: u8,
+    },
+    #[error("rendered PCM failed Aurora validation: {0}")]
+    InvalidRenderedPcm(String),
 }
 
 #[cfg(test)]
