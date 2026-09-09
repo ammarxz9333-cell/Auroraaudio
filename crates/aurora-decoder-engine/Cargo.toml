@@ -10,4 +10,6 @@ publish = false
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-decoder-open = { path = "../aurora-decoder-open" }
+oxideav-ac4 = "0.0.8"
+oxideav-core = "0.1"
 thiserror = { workspace = true }

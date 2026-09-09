@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod catalog;
+mod native_ac4;
 pub mod policy;
 
 use aurora_core::AudioFormat;
@@ -14,11 +15,15 @@ use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
 use aurora_decoder_open::{OpenDecoderConfig, UniversalOpenDecoder};
 
 use crate::catalog::{CodecId, DecoderCatalog};
+use crate::native_ac4::{looks_like_ac4_sync, NativeAc4Decoder};
 use crate::policy::{BackendDecision, DecoderPolicy};
 
 #[derive(Debug, Clone, Copy)]
 pub struct EngineConfig {
     pub open_decoder: OpenDecoderConfig,
+    /// Extended codec hint used for formats not yet represented by the open
+    /// decoder's probe enum. The first admitted use is packetized raw AC-4.
+    pub codec_hint: Option<CodecId>,
     pub policy: DecoderPolicy,
 }
 
@@ -26,6 +31,7 @@ impl Default for EngineConfig {
     fn default() -> Self {
         Self {
             open_decoder: OpenDecoderConfig::default(),
+            codec_hint: None,
             policy: DecoderPolicy::default(),
         }
     }
@@ -33,23 +39,27 @@ impl Default for EngineConfig {
 
 /// Aurora-owned front door for all codec backends.
 ///
-/// The first implementation slice wraps the already-integrated open decoder
-/// fabric while adding a deterministic policy layer. New native decoders are
-/// promoted into the catalog only after conformance/evidence gates pass.
+/// The engine owns routing while codec implementations stay replaceable. Native
+/// codecs are promoted only after they are wired and their evidence gates are
+/// explicit in the catalog.
 pub struct AuroraDecoderEngine {
     config: EngineConfig,
     catalog: DecoderCatalog,
-    inner: UniversalOpenDecoder,
+    open: UniversalOpenDecoder,
+    ac4: NativeAc4Decoder,
     active: Option<BackendDecision>,
+    active_codec: Option<CodecId>,
 }
 
 impl AuroraDecoderEngine {
     pub fn new(config: EngineConfig) -> Self {
         Self {
-            inner: UniversalOpenDecoder::new(config.open_decoder),
+            open: UniversalOpenDecoder::new(config.open_decoder),
+            ac4: NativeAc4Decoder::new(),
             catalog: DecoderCatalog::default(),
             config,
             active: None,
+            active_codec: None,
         }
     }
 
@@ -77,7 +87,21 @@ impl AuroraDecoderEngine {
                 "Aurora policy found no integrated backend admitted for this codec",
             ));
         }
+        self.active_codec = Some(codec);
         Ok(())
+    }
+
+    fn requested_codec(&self, input: &[u8]) -> CodecId {
+        if self.config.codec_hint == Some(CodecId::Ac4) {
+            return CodecId::Ac4;
+        }
+        if looks_like_ac4_sync(input) {
+            return CodecId::Ac4;
+        }
+        if let Some(codec) = self.open.detected_codec() {
+            return CodecId::from(codec);
+        }
+        CodecId::from(aurora_decoder_open::sniff::probe(input).codec)
     }
 }
 
@@ -86,42 +110,55 @@ impl Decoder for AuroraDecoderEngine {
         DecoderInfo {
             name: "Aurora Decoder Engine",
             production_ready: false,
-            maturity: "proprietary-policy-engine-v1",
+            maturity: "proprietary-policy-engine-native-ac4-v1",
         }
     }
 
     fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError> {
-        self.inner.configure(output_format)
+        self.open.configure(output_format)?;
+        self.ac4.configure(output_format);
+        Ok(())
     }
 
     fn decode_chunk(&mut self, input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
-        if !input.is_empty() && self.inner.detected_codec().is_none() {
-            let probe = aurora_decoder_open::sniff::probe(input);
-            let codec = CodecId::from(probe.codec);
-            if codec != CodecId::Unknown {
-                self.refresh_decision(codec)?;
-            }
+        if input.is_empty() {
+            return if self.active_codec == Some(CodecId::Ac4) {
+                self.ac4.poll()
+            } else {
+                self.open.decode_chunk(input)
+            };
         }
 
-        let frame = self.inner.decode_chunk(input)?;
+        let requested = self.requested_codec(input);
+        if requested == CodecId::Ac4 {
+            if self.active_codec != Some(CodecId::Ac4) {
+                self.refresh_decision(CodecId::Ac4)?;
+            }
+            let packetized_raw = self.config.codec_hint == Some(CodecId::Ac4)
+                && !looks_like_ac4_sync(input);
+            return self.ac4.push(input, packetized_raw);
+        }
 
-        if let Some(codec) = self.inner.detected_codec() {
+        let frame = self.open.decode_chunk(input)?;
+        if let Some(codec) = self.open.detected_codec() {
             let codec = CodecId::from(codec);
             let changed = self
                 .active
                 .map(|decision| !decision.backend.supports(codec))
-                .unwrap_or(true);
+                .unwrap_or(true)
+                || self.active_codec != Some(codec);
             if changed {
                 self.refresh_decision(codec)?;
             }
         }
-
         Ok(frame)
     }
 
     fn reset(&mut self) {
-        self.inner.reset();
+        self.open.reset();
+        self.ac4.reset();
         self.active = None;
+        self.active_codec = None;
     }
 }
 
@@ -145,6 +182,13 @@ mod tests {
         assert_eq!(ranked.first().map(|d| d.backend.id), Some(BackendId::TrueHdNative));
         let active = engine.config.policy.rank(engine.catalog(), CodecId::TrueHd, true);
         assert_eq!(active.first().map(|d| d.backend.id), Some(BackendId::FfmpegWorker));
+    }
+
+    #[test]
+    fn ac4_is_now_an_integrated_native_route() {
+        let engine = AuroraDecoderEngine::new(EngineConfig::default());
+        let active = engine.config.policy.rank(engine.catalog(), CodecId::Ac4, true);
+        assert_eq!(active.first().map(|d| d.backend.id), Some(BackendId::OxideAc4));
     }
 
     #[test]

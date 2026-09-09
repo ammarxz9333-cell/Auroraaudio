@@ -32,6 +32,9 @@ pub enum DecoderError {
     /// Input format is unsupported by this adapter.
     #[error("unsupported decoder input: {0}")]
     UnsupportedInput(&'static str),
+    /// A native/in-process codec backend rejected or failed to decode input.
+    #[error("native decoder failed: {0}")]
+    Decode(String),
     /// External decoder process failed.
     #[error("external decoder process failed: {0}")]
     ExternalProcess(String),

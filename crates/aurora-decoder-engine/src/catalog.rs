@@ -93,6 +93,11 @@ pub enum LicenseClass {
     ReviewRequired,
 }
 
+/// Static policy metadata for a backend.
+///
+/// The numeric fields are initial routing weights (0..=100), not published
+/// quality measurements. A later evidence pipeline will replace heuristic
+/// weights with measured conformance, fuzz, latency and metadata scores.
 #[derive(Debug, Clone, Copy)]
 pub struct BackendDescriptor {
     pub id: BackendId,
@@ -195,7 +200,7 @@ const BACKENDS: &[BackendDescriptor] = &[
         name: "OxideAV AC-4",
         execution: ExecutionClass::NativeRust,
         license: LicenseClass::ProprietaryCompatiblePermissive,
-        integrated: false,
+        integrated: true,
         closed_core_compatible: true,
         object_metadata: false,
         max_channels: 24,

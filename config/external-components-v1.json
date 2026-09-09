@@ -29,6 +29,17 @@
       "evidence": ["crates/aurora-decoder-open", "THIRD_PARTY_LICENSES.md"]
     },
     {
+      "id": "oxideav-ac4",
+      "upstream": "https://github.com/OxideAV/oxideav-ac4",
+      "decision": "adopted-open-native",
+      "integration": "rust-dependency",
+      "tested_version": "0.0.8",
+      "roles": ["ac4-decode", "ac4-immersive-pcm-render", "ac4-ajoc-pcm-render"],
+      "object_metadata": "rendered-to-pcm-not-exported-at-aurora-boundary",
+      "production_ready": false,
+      "evidence": ["crates/aurora-decoder-engine", "THIRD_PARTY_LICENSES.md"]
+    },
+    {
       "id": "ffmpeg",
       "upstream": "https://github.com/FFmpeg/FFmpeg",
       "decision": "adopted",

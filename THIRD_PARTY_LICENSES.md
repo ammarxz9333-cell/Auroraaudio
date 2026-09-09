@@ -1,8 +1,18 @@
 # Third-Party Licenses
 
-Aurora keeps third-party components behind crate, adapter, process, or configuration boundaries where practical.
+Aurora keeps third-party components behind crate, adapter, process, or configuration boundaries where practical. The proprietary `crates/aurora-decoder-engine/**` subtree does not relicense any dependency listed here.
 
-Current Rust dependencies:
+## Decoder dependencies in the experimental decoder stack
+
+| Dependency | Purpose | License posture |
+| --- | --- | --- |
+| OpenJOC 0.16.0 | Native E-AC-3 JOC admission, reconstruction and speaker rendering | Apache-2.0; third-party notices must be retained; no Dolby certification, trademark, or patent rights are implied |
+| `oxideav-ac3` 0.0.11 | Native AC-3 / E-AC-3 decode | MIT |
+| `oxideav-ac4` 0.0.8 | Native AC-4 decode, including upstream immersive/A-JOC-to-PCM paths | MIT; Aurora integration is experimental and does not yet export AC-4 object metadata at the Aurora boundary |
+| `oxideav-core` 0.1 | Shared OxideAV packet/frame/decoder abstractions | MIT |
+| FFmpeg | Compatibility fallback for codec families without an admitted native backend | External executable only; license depends on the shipped FFmpeg build (commonly LGPL-2.1-or-later, potentially GPL when configured with GPL components) |
+
+## Other current Rust dependencies
 
 | Dependency | Purpose | License posture |
 | --- | --- | --- |
@@ -16,15 +26,16 @@ Current Rust dependencies:
 | `serde` | Data-model serialization support | Permissive Rust ecosystem dependency |
 | `serde_json` | JSON scene fixture loading | MIT OR Apache-2.0 |
 | `thiserror` | Structured library error types | Permissive Rust ecosystem dependency |
-| `tracing` | Logging facade for future runtime diagnostics | Permissive Rust ecosystem dependency |
+| `tracing` | Logging facade for runtime diagnostics | Permissive Rust ecosystem dependency |
 
-Adapter candidates:
+## Adapter candidates
 
 | Adapter | Dependency status | License / risk posture |
 | --- | --- | --- |
-| CamillaDSP | Not vendored, not linked, external executable only | Functional offline process adapter; review license and redistribution obligations before use |
-| libiamf | Not vendored, not linked, disabled by default | Preferred open immersive-audio decoder candidate; review codec and patent posture before product use |
-| truehdd | Not vendored, not linked, disabled by default | Experimental/offline-only; high commercial risk pending legal review |
-| Cavern | Not vendored, not linked, disabled by default | Disabled pending license review; high commercial risk until cleared |
+| CamillaDSP | Not vendored, not linked, external executable only | Review redistribution obligations before product shipment |
+| IAMF reference/tooling | Not vendored, not linked, disabled by default | Preferred open immersive-audio candidate; review source license and AOM patent-license conditions before product use |
+| `truehdd` | Not vendored into Aurora decoder engine; disabled by default | Apache-2.0 source candidate; codec patent/trademark/product-distribution posture still requires review and technical acceptance |
+| Cavern | Not vendored, not linked, disabled by default | Disabled pending license review |
+| Symphonia | Not integrated into the proprietary decoder engine by default | MPL-2.0 file-level copyleft; may be isolated/evaluated but Aurora proprietary files must remain separately licensed |
 
-No Dolby, DTS, HDMI, HDCP, Cavern, `truehdd`, CamillaDSP, libiamf, or wireless-speaker dependencies are required to build or test Aurora core. The CPAL backend is isolated in `aurora-realtime-audio-cpal` and is not exposed through Aurora core APIs.
+Codec implementations, standards documents, trademarks, certification programs, and codec-essential patents are separate legal layers. A permissive source-code license does not by itself grant all patent or trademark rights that a commercial media product may need.
