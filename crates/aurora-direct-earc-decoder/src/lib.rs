@@ -203,6 +203,20 @@ impl DirectEarcDecoder {
         Ok(batch)
     }
 
+    /// Validates the finite carrier stream, flushes codec/framer/renderer state,
+    /// and returns every remaining decoded PCM frame without accepting new input.
+    pub fn finish(&mut self) -> Result<DirectEarcDecodeBatch, DecoderError> {
+        self.parser.finish().map_err(|error| {
+            DecoderError::Decode(format!(
+                "IEC61937 end-of-stream validation failed: {error}"
+            ))
+        })?;
+        self.engine.flush_pending()?;
+        let mut batch = DirectEarcDecodeBatch::default();
+        self.collect_ready_frames(None, &mut batch.frames)?;
+        Ok(batch)
+    }
+
     /// Explicitly resets transport and decoder state.
     pub fn reset(&mut self) {
         self.begin_new_epoch();
@@ -285,6 +299,7 @@ mod tests {
             }
         );
         assert!(!direct.engine().joc_status().codec_classified_joc);
+        assert!(direct.finish().unwrap().frames.is_empty());
     }
 
     #[test]
@@ -323,5 +338,32 @@ mod tests {
         assert_eq!(health.malformed_headers, 0);
         assert!(!health.iec61937_locked);
         assert_eq!(health.observation_epoch, 1);
+    }
+
+    #[test]
+    fn finish_accepts_idle_padding_and_clears_pending_transport_tail() {
+        let mut direct = DirectEarcDecoder::new(EngineConfig::default());
+        direct.configure(format()).unwrap();
+        direct.push_carrier(&[0; 8], false).unwrap();
+        assert_eq!(direct.pending_carrier_bytes(), 3);
+
+        let final_batch = direct.finish().unwrap();
+
+        assert!(final_batch.frames.is_empty());
+        assert_eq!(direct.pending_carrier_bytes(), 0);
+        assert_eq!(direct.transport_telemetry().discarded_bytes, 8);
+    }
+
+    #[test]
+    fn finish_rejects_truncated_iec61937_preamble() {
+        let mut direct = DirectEarcDecoder::new(EngineConfig::default());
+        direct.configure(format()).unwrap();
+        direct.push_carrier(&[0x72, 0xF8], false).unwrap();
+
+        let error = direct.finish().unwrap_err();
+
+        assert!(matches!(error, DecoderError::Decode(_)));
+        assert!(error.to_string().contains("end-of-stream"));
+        assert_eq!(direct.pending_carrier_bytes(), 2);
     }
 }
