@@ -16,8 +16,6 @@ const DEFAULT_EFFECT: i32 = 0;
 const DEFAULT_PRESET: i8 = -1;
 const MAX_PENDING_BYTES: usize = 16 * 1024 * 1024;
 
-/// One native MPEG-H external-render result copied out of libmpegh-owned or
-/// caller-owned C buffers before the next decoder call can overwrite them.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MpeghExternalFrame {
     pub channel_metadata: Vec<u8>,
@@ -45,11 +43,11 @@ pub struct MpeghSpeaker {
     pub elevation_degrees: i16,
 }
 
-/// Streaming wrapper around libmpegh's external-render API.
+/// Safe streaming owner for libmpegh's external-render interface.
 ///
-/// All unsafe C interaction stays inside this module. Compressed bytes remain
-/// owned by Aurora until libmpegh reports them consumed, so fragmented network
-/// or IEC61937 delivery cannot lose an access-unit tail.
+/// Compressed bytes remain Aurora-owned until libmpegh explicitly reports them
+/// consumed. External metadata/PCM buffers have stable addresses for the entire
+/// decoder lifetime and are copied into owned Rust values before the next call.
 pub struct NativeMpeghDecoder {
     api: Box<IaMpeghdApiStruct>,
     channel_metadata: Box<[u8]>,
@@ -57,6 +55,7 @@ pub struct NativeMpeghDecoder {
     hoa_metadata: Box<[u8]>,
     prerender_pcm: Box<[u8]>,
     pending: Vec<u8>,
+    pending_start: usize,
     created: bool,
     initialized: bool,
 }
@@ -91,26 +90,19 @@ impl NativeMpeghDecoder {
         if create_code != NO_ERROR {
             return Err(MpeghNativeError::CreateFailed { code: create_code });
         }
+
         if api.output_config.pv_ia_process_api_obj.is_null() {
-            // create succeeded, so delete before returning the invariant error.
-            unsafe {
-                let _ = ffi::ia_mpegh_dec_delete(
-                    (&mut api.output_config as *mut _) as *mut c_void,
-                );
-            }
+            delete_after_failed_create(&mut api);
             return Err(MpeghNativeError::InvalidLibraryState(
                 "create returned a null process object",
             ));
         }
-        let input_table = api.output_config.mem_info_table.get(MEMTYPE_INPUT).ok_or(
-            MpeghNativeError::InvalidLibraryState("input memory table is unavailable"),
-        )?;
-        if input_table.mem_ptr.is_null() || api.output_config.ui_inp_buf_size == 0 {
-            unsafe {
-                let _ = ffi::ia_mpegh_dec_delete(
-                    (&mut api.output_config as *mut _) as *mut c_void,
-                );
-            }
+        let input_table = &api.output_config.mem_info_table[MEMTYPE_INPUT];
+        if input_table.mem_ptr.is_null()
+            || input_table.ui_size == 0
+            || api.output_config.ui_inp_buf_size == 0
+        {
+            delete_after_failed_create(&mut api);
             return Err(MpeghNativeError::InvalidLibraryState(
                 "create did not provide a usable compressed-input buffer",
             ));
@@ -123,6 +115,7 @@ impl NativeMpeghDecoder {
             hoa_metadata,
             prerender_pcm,
             pending: Vec::new(),
+            pending_start: 0,
             created: true,
             initialized: false,
         })
@@ -133,70 +126,74 @@ impl NativeMpeghDecoder {
     }
 
     pub fn pending_bytes(&self) -> usize {
-        self.pending.len()
+        self.pending.len().saturating_sub(self.pending_start)
     }
 
-    /// Append arbitrary compressed fragments and return at most one decoded
-    /// external-render frame. Call again with an empty slice to drain buffered
-    /// compressed data.
+    /// Append arbitrary compressed fragments and emit at most one decoded
+    /// external-render frame. Call with an empty slice to drain buffered input.
     pub fn push(&mut self, input: &[u8]) -> Result<Option<MpeghExternalFrame>, MpeghNativeError> {
-        if self.pending.len().saturating_add(input.len()) > MAX_PENDING_BYTES {
-            return Err(MpeghNativeError::PendingInputLimitExceeded {
-                limit: MAX_PENDING_BYTES,
-            });
-        }
-        self.pending.extend_from_slice(input);
-
+        self.append_input(input)?;
         if !self.initialized && !self.drive_initialization()? {
             return Ok(None);
         }
         self.execute_one()
     }
 
+    fn append_input(&mut self, input: &[u8]) -> Result<(), MpeghNativeError> {
+        if input.is_empty() {
+            return Ok(());
+        }
+        self.compact_pending_if_useful();
+        if self.pending_bytes().saturating_add(input.len()) > MAX_PENDING_BYTES {
+            return Err(MpeghNativeError::PendingInputLimitExceeded {
+                limit: MAX_PENDING_BYTES,
+            });
+        }
+        self.pending.extend_from_slice(input);
+        Ok(())
+    }
+
     fn drive_initialization(&mut self) -> Result<bool, MpeghNativeError> {
         while !self.initialized {
-            if self.pending.is_empty() {
+            if self.pending_bytes() == 0 {
                 return Ok(false);
             }
             let provided = self.fill_c_input()?;
-            let module = self.api.output_config.pv_ia_process_api_obj;
             self.api.output_config.i_bytes_consumed = 0;
             let code = unsafe {
                 ffi::ia_mpegh_dec_init(
-                    module,
+                    self.api.output_config.pv_ia_process_api_obj,
                     (&mut self.api.input_config as *mut _) as *mut c_void,
                     (&mut self.api.output_config as *mut _) as *mut c_void,
                 )
             };
-            self.consume_reported_bytes(provided)?;
+            let consumed = self.consume_reported_bytes(provided)?;
 
-            if self.api.output_config.ui_init_done != 0 {
-                self.initialized = true;
-                break;
-            }
             match code {
-                NO_ERROR | INIT_NEED_MORE_INPUT => {
-                    if self.api.output_config.i_bytes_consumed == 0 {
-                        return Ok(false);
-                    }
-                }
+                NO_ERROR | INIT_NEED_MORE_INPUT => {}
                 other => return Err(MpeghNativeError::InitFailed { code: other }),
             }
+            if self.api.output_config.ui_init_done != 0 {
+                self.initialized = true;
+                return Ok(true);
+            }
+            if consumed == 0 {
+                return Ok(false);
+            }
         }
-        Ok(self.initialized)
+        Ok(true)
     }
 
     fn execute_one(&mut self) -> Result<Option<MpeghExternalFrame>, MpeghNativeError> {
-        if self.pending.is_empty() {
+        if self.pending_bytes() == 0 {
             return Ok(None);
         }
         let provided = self.fill_c_input()?;
-        let module = self.api.output_config.pv_ia_process_api_obj;
         self.api.output_config.i_bytes_consumed = 0;
         clear_external_lengths(&mut self.api);
         let code = unsafe {
             ffi::ia_mpegh_dec_execute(
-                module,
+                self.api.output_config.pv_ia_process_api_obj,
                 (&mut self.api.input_config as *mut _) as *mut c_void,
                 (&mut self.api.output_config as *mut _) as *mut c_void,
             )
@@ -204,27 +201,33 @@ impl NativeMpeghDecoder {
         self.consume_reported_bytes(provided)?;
 
         match code {
-            NO_ERROR => {}
-            EXEC_NEED_MORE_INPUT => return Ok(None),
-            other => return Err(MpeghNativeError::ExecuteFailed { code: other }),
+            NO_ERROR => self.copy_external_frame(),
+            EXEC_NEED_MORE_INPUT => Ok(None),
+            other => Err(MpeghNativeError::ExecuteFailed { code: other }),
         }
-        self.copy_external_frame()
     }
 
     fn fill_c_input(&mut self) -> Result<usize, MpeghNativeError> {
-        let capacity = usize::try_from(self.api.output_config.ui_inp_buf_size).map_err(|_| {
-            MpeghNativeError::InvalidLibraryState("compressed-input capacity overflow")
+        let api_capacity = usize::try_from(self.api.output_config.ui_inp_buf_size).map_err(|_| {
+            MpeghNativeError::InvalidLibraryState("compressed-input API capacity overflow")
         })?;
         let input_table = &self.api.output_config.mem_info_table[MEMTYPE_INPUT];
-        if input_table.mem_ptr.is_null() || capacity == 0 {
+        let table_capacity = usize::try_from(input_table.ui_size).map_err(|_| {
+            MpeghNativeError::InvalidLibraryState("compressed-input table capacity overflow")
+        })?;
+        if input_table.mem_ptr.is_null() || api_capacity == 0 || table_capacity == 0 {
             return Err(MpeghNativeError::InvalidLibraryState(
-                "compressed-input buffer disappeared after initialization",
+                "compressed-input buffer disappeared after create",
             ));
         }
-        let provided = capacity.min(self.pending.len());
+        let available = self.pending_bytes();
+        let provided = api_capacity.min(table_capacity).min(available);
+        if provided == 0 {
+            return Ok(0);
+        }
         unsafe {
             core::ptr::copy_nonoverlapping(
-                self.pending.as_ptr(),
+                self.pending.as_ptr().add(self.pending_start),
                 input_table.mem_ptr.cast::<u8>(),
                 provided,
             );
@@ -234,23 +237,33 @@ impl NativeMpeghDecoder {
         Ok(provided)
     }
 
-    fn consume_reported_bytes(&mut self, provided: usize) -> Result<(), MpeghNativeError> {
-        let consumed = usize::try_from(self.api.output_config.i_bytes_consumed).map_err(|_| {
-            MpeghNativeError::InvalidConsumption {
-                provided,
-                reported: self.api.output_config.i_bytes_consumed,
-            }
-        })?;
+    fn consume_reported_bytes(&mut self, provided: usize) -> Result<usize, MpeghNativeError> {
+        let reported = self.api.output_config.i_bytes_consumed;
+        let consumed = usize::try_from(reported)
+            .map_err(|_| MpeghNativeError::InvalidConsumption { provided, reported })?;
         if consumed > provided {
-            return Err(MpeghNativeError::InvalidConsumption {
-                provided,
-                reported: self.api.output_config.i_bytes_consumed,
-            });
+            return Err(MpeghNativeError::InvalidConsumption { provided, reported });
         }
-        if consumed > 0 {
-            self.pending.drain(..consumed);
+        self.pending_start = self.pending_start.saturating_add(consumed);
+        if self.pending_start == self.pending.len() {
+            self.pending.clear();
+            self.pending_start = 0;
+        } else {
+            self.compact_pending_if_useful();
         }
-        Ok(())
+        Ok(consumed)
+    }
+
+    fn compact_pending_if_useful(&mut self) {
+        if self.pending_start == 0 {
+            return;
+        }
+        if self.pending_start >= 64 * 1024 || self.pending_start * 2 >= self.pending.len() {
+            self.pending.copy_within(self.pending_start.., 0);
+            let remaining = self.pending.len() - self.pending_start;
+            self.pending.truncate(remaining);
+            self.pending_start = 0;
+        }
     }
 
     fn copy_external_frame(&self) -> Result<Option<MpeghExternalFrame>, MpeghNativeError> {
@@ -273,8 +286,11 @@ impl NativeMpeghDecoder {
             output.hoa_md_payload_length,
             self.hoa_metadata.len(),
         )?;
-        let pcm_len = checked_len("pre-render PCM", output.pcm_payload_length, self.prerender_pcm.len())?;
-
+        let pcm_len = checked_len(
+            "pre-render PCM",
+            output.pcm_payload_length,
+            self.prerender_pcm.len(),
+        )?;
         if ch_len == 0 && oam_len == 0 && hoa_len == 0 && pcm_len == 0 {
             return Ok(None);
         }
@@ -323,6 +339,12 @@ impl Drop for NativeMpeghDecoder {
     }
 }
 
+fn delete_after_failed_create(api: &mut IaMpeghdApiStruct) {
+    unsafe {
+        let _ = ffi::ia_mpegh_dec_delete((&mut api.output_config as *mut _) as *mut c_void);
+    }
+}
+
 fn clear_external_lengths(api: &mut IaMpeghdApiStruct) {
     let output = &mut api.output_config;
     output.ch_md_payload_length = 0;
@@ -336,8 +358,11 @@ fn checked_len(
     reported: i32,
     capacity: usize,
 ) -> Result<usize, MpeghNativeError> {
-    let len = usize::try_from(reported)
-        .map_err(|_| MpeghNativeError::InvalidPayloadLength { plane, reported, capacity })?;
+    let len = usize::try_from(reported).map_err(|_| MpeghNativeError::InvalidPayloadLength {
+        plane,
+        reported,
+        capacity,
+    })?;
     if len > capacity {
         return Err(MpeghNativeError::InvalidPayloadLength {
             plane,
@@ -355,14 +380,17 @@ fn validated_payload_len(
     capacity: usize,
 ) -> Result<usize, MpeghNativeError> {
     if present == 0 {
-        return Ok(0);
+        Ok(0)
+    } else {
+        checked_len(plane, reported, capacity)
     }
-    checked_len(plane, reported, capacity)
 }
 
 unsafe extern "C" fn malloc_mpegh(size: u32, alignment: u32) -> *mut c_void {
-    let bytes = size.saturating_add(alignment) as usize;
-    unsafe { libc::malloc(bytes) }
+    let Some(bytes) = size.checked_add(alignment) else {
+        return core::ptr::null_mut();
+    };
+    unsafe { libc::malloc(bytes as usize) }
 }
 
 unsafe extern "C" fn free_mpegh(pointer: *mut c_void) {
@@ -410,5 +438,14 @@ mod tests {
         assert_eq!(checked_len("x", 5, 8).unwrap(), 5);
         assert!(checked_len("x", -1, 8).is_err());
         assert!(checked_len("x", 9, 8).is_err());
+    }
+
+    #[test]
+    fn pending_cursor_compacts_without_losing_bytes() {
+        let mut pending = b"abcdef".to_vec();
+        let start = 3;
+        pending.copy_within(start.., 0);
+        pending.truncate(pending.len() - start);
+        assert_eq!(&pending, b"def");
     }
 }
