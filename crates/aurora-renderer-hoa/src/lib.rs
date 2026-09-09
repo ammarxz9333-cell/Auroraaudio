@@ -7,9 +7,16 @@
 
 #![forbid(unsafe_code)]
 
+mod matrix_generator;
+
 use aurora_core::AudioBlock;
 use aurora_hoa_ir::{HoaCoefficientConvention, HoaCoefficientFrame};
 use thiserror::Error;
+
+pub use matrix_generator::{
+    generate_regularized_mode_matching_matrix, real_n3d_spherical_harmonic,
+    HoaMatrixGenerationError, SpeakerDirection,
+};
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct HoaDecodeMatrix {
