@@ -106,6 +106,34 @@ impl EncodedInput {
         }))
     }
 
+    /// Pushes complete native ALSA S32_LE slot samples directly.
+    ///
+    /// This is the preferred direct-eARC hardware path because it avoids an
+    /// intermediate i32 -> byte-vector allocation before carrier normalization.
+    /// The sample count must contain complete serial-audio frames.
+    pub fn push_direct_s32_words(
+        &mut self,
+        samples: &[i32],
+    ) -> Result<Option<CarrierBatch>, EncodedInputError> {
+        let InputState::DirectEarc(normalizer) = &mut self.state else {
+            return Err(EncodedInputError::WrongSource {
+                configured: self.kind,
+                attempted: EncodedInputKind::DirectEarc,
+            });
+        };
+        let carrier = normalizer
+            .push_s32_words(samples)
+            .map_err(EncodedInputError::Carrier)?;
+        if carrier.is_empty() {
+            return Ok(None);
+        }
+        Ok(Some(CarrierBatch {
+            carrier,
+            discontinuity: false,
+            pts_48k: None,
+        }))
+    }
+
     /// Pushes one complete Aurora USB v1 SOCK_SEQPACKET packet from the legacy
     /// STM32 bridge. Non-encoded control/clock/PCM packets are ignored here;
     /// ENCODED_IEC61937 payload bytes are returned byte-for-byte.
@@ -242,6 +270,34 @@ mod tests {
         assert!(!batch.discontinuity);
         assert_eq!(batch.pts_48k, None);
         input.finish().unwrap();
+    }
+
+    #[test]
+    fn direct_native_words_match_byte_oriented_normalization() {
+        let samples = [
+            (u32::from(0xF872_u16) << 16) as i32,
+            (u32::from(0x4E1F_u16) << 16) as i32,
+        ];
+        let mut native = EncodedInput::new(EncodedInputConfig::DirectEarc {
+            slots: 2,
+            word_half: CarrierWordHalf::High,
+        })
+        .unwrap();
+        let batch = native
+            .push_direct_s32_words(&samples)
+            .unwrap()
+            .unwrap();
+        assert_eq!(batch.carrier, [0x72, 0xF8, 0x1F, 0x4E]);
+        native.finish().unwrap();
+    }
+
+    #[test]
+    fn native_word_path_rejects_wrong_source() {
+        let mut input = EncodedInput::new(EncodedInputConfig::LegacyUsb).unwrap();
+        assert!(matches!(
+            input.push_direct_s32_words(&[0, 0]),
+            Err(EncodedInputError::WrongSource { .. })
+        ));
     }
 
     #[test]
