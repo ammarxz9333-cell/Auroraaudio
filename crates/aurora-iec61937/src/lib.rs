@@ -98,6 +98,10 @@ pub struct FormatChange {
 pub struct BurstObservation {
     pub burst: Burst,
     pub format_change: Option<FormatChange>,
+    /// Absolute byte offset of Pa in the canonical S16_LE carrier stream for the
+    /// current parser epoch. This includes idle/padding bytes and therefore lets
+    /// callers derive exact burst-to-burst spacing independently of process time.
+    pub carrier_offset_bytes: u64,
 }
 
 /// End-of-stream validation failure for the canonical IEC61937 carrier.
@@ -143,6 +147,8 @@ impl Error for BurstFinishError {}
 pub struct BurstParser {
     filter: CodecFilter,
     buffer: Vec<u8>,
+    /// Absolute offset represented by buffer[0] inside the current parser epoch.
+    stream_offset_bytes: u64,
     last_codec: Option<TransportCodec>,
     discarded_bytes: u64,
     malformed_headers: u64,
@@ -153,6 +159,7 @@ impl BurstParser {
         Self {
             filter,
             buffer: Vec::with_capacity(32 * 1024),
+            stream_offset_bytes: 0,
             last_codec: None,
             discarded_bytes: 0,
             malformed_headers: 0,
@@ -173,6 +180,9 @@ impl BurstParser {
 
             if sync_offset > 0 {
                 self.discarded_bytes = self.discarded_bytes.saturating_add(sync_offset as u64);
+                self.stream_offset_bytes = self
+                    .stream_offset_bytes
+                    .saturating_add(sync_offset as u64);
                 self.buffer.drain(..sync_offset);
             }
             if self.buffer.len() < 8 {
@@ -187,6 +197,7 @@ impl BurstParser {
             if payload_bytes == 0 || payload_bytes > MAX_PAYLOAD_BYTES {
                 self.malformed_headers = self.malformed_headers.saturating_add(1);
                 self.discarded_bytes = self.discarded_bytes.saturating_add(2);
+                self.stream_offset_bytes = self.stream_offset_bytes.saturating_add(2);
                 self.buffer.drain(..2);
                 continue;
             }
@@ -200,6 +211,7 @@ impl BurstParser {
                 break;
             }
 
+            let carrier_offset_bytes = self.stream_offset_bytes;
             if self.filter.accepts(data_type) {
                 let mut payload = self.buffer[8..total].to_vec();
                 for word in payload.chunks_exact_mut(2) {
@@ -224,9 +236,11 @@ impl BurstParser {
                         payload,
                     },
                     format_change,
+                    carrier_offset_bytes,
                 });
             }
 
+            self.stream_offset_bytes = self.stream_offset_bytes.saturating_add(total as u64);
             self.buffer.drain(..total);
         }
 
@@ -275,6 +289,9 @@ impl BurstParser {
         self.discarded_bytes = self
             .discarded_bytes
             .saturating_add(self.buffer.len() as u64);
+        self.stream_offset_bytes = self
+            .stream_offset_bytes
+            .saturating_add(self.buffer.len() as u64);
         self.buffer.clear();
         Ok(())
     }
@@ -283,6 +300,7 @@ impl BurstParser {
     /// discontinuity, xrun, eARC unlock or capture-device restart.
     pub fn reset(&mut self) {
         self.buffer.clear();
+        self.stream_offset_bytes = 0;
         self.last_codec = None;
     }
 
@@ -303,6 +321,7 @@ impl BurstParser {
         if self.buffer.len() > MAX_SYNC_STRADDLE {
             let discard = self.buffer.len() - MAX_SYNC_STRADDLE;
             self.discarded_bytes = self.discarded_bytes.saturating_add(discard as u64);
+            self.stream_offset_bytes = self.stream_offset_bytes.saturating_add(discard as u64);
             self.buffer.drain(..discard);
         }
     }
@@ -348,6 +367,7 @@ mod tests {
         assert_eq!(out[0].burst.data_type, DATA_TYPE_EAC3);
         assert_eq!(out[0].burst.codec, TransportCodec::Eac3);
         assert_eq!(out[0].burst.payload, native);
+        assert_eq!(out[0].carrier_offset_bytes, 0);
         assert!(out[0].format_change.is_none());
         parser.finish().unwrap();
     }
@@ -365,6 +385,7 @@ mod tests {
 
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].burst.payload, native);
+        assert_eq!(out[0].carrier_offset_bytes, 0);
         parser.finish().unwrap();
     }
 
@@ -378,6 +399,24 @@ mod tests {
 
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].burst.payload, native);
+    }
+
+    #[test]
+    fn carrier_offsets_preserve_exact_padding_between_bursts() {
+        const EAC3_PERIOD_BYTES: usize = 24_576;
+        let first = make_burst(DATA_TYPE_EAC3, &[0x0B, 0x77, 0x10, 0x20]);
+        let second = make_burst(DATA_TYPE_EAC3, &[0x0B, 0x77, 0x30, 0x40]);
+        assert!(first.len() < EAC3_PERIOD_BYTES);
+        let mut carrier = first;
+        carrier.resize(EAC3_PERIOD_BYTES, 0);
+        carrier.extend_from_slice(&second);
+
+        let mut parser = BurstParser::new(CodecFilter::All);
+        let out = parser.push(&carrier);
+
+        assert_eq!(out.len(), 2);
+        assert_eq!(out[0].carrier_offset_bytes, 0);
+        assert_eq!(out[1].carrier_offset_bytes, EAC3_PERIOD_BYTES as u64);
     }
 
     #[test]
@@ -410,6 +449,7 @@ mod tests {
         let after_reset = parser.push(&ac3);
 
         assert!(after_reset[0].format_change.is_none());
+        assert_eq!(after_reset[0].carrier_offset_bytes, 0);
     }
 
     #[test]
@@ -430,11 +470,14 @@ mod tests {
         assert_eq!(parser.malformed_headers(), 1);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].burst.codec, TransportCodec::Eac3);
+        assert_eq!(out[0].carrier_offset_bytes, 8);
     }
 
     #[test]
-    fn ac3_pd_remains_bit_count() {
+    fn pd_units_match_iec61937_codec_family_contract() {
         assert_eq!(payload_length_bytes(DATA_TYPE_AC3, 20_480), 2_560);
+        assert_eq!(payload_length_bytes(DATA_TYPE_EAC3, 2_560), 2_560);
+        assert_eq!(payload_length_bytes(DATA_TYPE_MAT, 61_424), 61_424);
     }
 
     #[test]
