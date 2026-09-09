@@ -6,11 +6,11 @@ use thiserror::Error;
 use crate::{
     candidate_family_for_domain, decode_native_paired_chunk,
     evaluate_exact_mpegh_scene_candidate, evaluate_mpegh_hoa_candidate,
-    mpegh_reference_audio_block, MpeghCandidateDispatchError, MpeghCandidateFamily,
-    MpeghConformancePolicy, MpeghEvidenceGateOutcome, MpeghHoaCandidateDecision,
-    MpeghHoaCandidateGateError, MpeghNativePairError, MpeghPairedEvidence,
-    MpeghPairedPlaybackDecision, MpeghPlaybackChoice, MpeghRenderedPcmError,
-    NativeMpeghDecoder,
+    evaluate_mpegh_non_hoa_candidate, mpegh_reference_audio_block,
+    MpeghCandidateDispatchError, MpeghCandidateFamily, MpeghConformancePolicy,
+    MpeghEvidenceGateOutcome, MpeghHoaCandidateDecision, MpeghHoaCandidateGateError,
+    MpeghNativePairError, MpeghPairedEvidence, MpeghPairedPlaybackDecision,
+    MpeghPlaybackChoice, MpeghRenderedPcmError, NativeMpeghDecoder,
 };
 
 /// Uniform Aurora candidate decision for one native MPEG-H immersive access
@@ -68,13 +68,13 @@ pub struct NativeMpeghImmersiveEvaluation {
 /// Evaluate already-paired MPEG-H evidence through the strongest currently
 /// admitted Aurora candidate path for its exact transport domain.
 ///
+/// * bed / objects / bed+objects without HOA -> non-HOA candidate renderer
 /// * pure HOA / Bed+HOA -> HOA candidate renderer
 /// * Objects+HOA / Bed+Objects+HOA -> exact-per-sample object + HOA renderer
 ///
 /// Candidate-rendering failures are not playback failures when the same access
 /// unit has a valid libmpegh reference render. They select that reference with a
-/// diagnostic rejection reason. Non-HOA domains still fail dispatch because
-/// this evaluator is specifically anchored to the HOA coefficient observer.
+/// diagnostic rejection reason.
 pub fn evaluate_native_mpegh_immersive_evidence(
     evidence: &MpeghPairedEvidence,
     regularization: f64,
@@ -82,6 +82,16 @@ pub fn evaluate_native_mpegh_immersive_evidence(
 ) -> Result<NativeMpeghImmersiveDecision, NativeMpeghImmersiveEvaluationError> {
     let family = candidate_family_for_domain(evidence.scene.domain)?;
     match family {
+        MpeghCandidateFamily::NonHoa => {
+            match evaluate_mpegh_non_hoa_candidate(evidence, policy) {
+                Ok(decision) => Ok(NativeMpeghImmersiveDecision {
+                    family,
+                    candidate: Some(decision.candidate),
+                    playback: decision.playback,
+                }),
+                Err(error) => reference_fallback(evidence, family, error.to_string()),
+            }
+        }
         MpeghCandidateFamily::Hoa => {
             match evaluate_mpegh_hoa_candidate(evidence, regularization, policy) {
                 Ok(decision) => Ok(NativeMpeghImmersiveDecision {
@@ -137,9 +147,9 @@ fn reference_fallback(
 }
 
 /// Decode and evaluate one admitted MPEG-H immersive access unit in one native
-/// pass. Scene transport, observed ACN/N3D HOA coefficients, libmpegh reference
-/// PCM, Aurora candidate rendering, and evidence-gated playback all refer to the
-/// same successful decoder execute.
+/// pass. Scene transport, optional observed ACN/N3D HOA coefficients, libmpegh
+/// reference PCM, Aurora candidate rendering, and evidence-gated playback all
+/// refer to the same successful decoder execute.
 pub fn decode_and_evaluate_native_mpegh_immersive_chunk(
     decoder: &mut NativeMpeghDecoder,
     input: &[u8],
@@ -245,7 +255,7 @@ mod tests {
     #[test]
     fn selected_audio_obeys_aurora_candidate_choice() {
         let decision = NativeMpeghImmersiveDecision {
-            family: MpeghCandidateFamily::Hoa,
+            family: MpeghCandidateFamily::NonHoa,
             candidate: Some(block(0.25)),
             playback: MpeghPairedPlaybackDecision {
                 evidence: outcome(MpeghPlaybackChoice::AuroraCandidate),
