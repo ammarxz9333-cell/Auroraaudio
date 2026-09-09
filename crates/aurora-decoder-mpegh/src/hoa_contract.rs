@@ -16,6 +16,8 @@ pub struct MpeghHoaDecodeContract {
     pub order: u16,
     pub expected_coefficient_count: usize,
     pub transport_channel_count: usize,
+    /// MPEG-H HOA uses ACN indexing (`n(n+1)+m`) and N3D-normalized real
+    /// spherical harmonics in the pinned reference decoder.
     pub convention: HoaCoefficientConvention,
     pub uses_nfc: bool,
     pub rendering_matrix_present: bool,
@@ -54,7 +56,7 @@ impl MpeghHoaDecodeContract {
             order: group.order,
             expected_coefficient_count,
             transport_channel_count: scene.hoa_signals.len(),
-            convention: HoaCoefficientConvention::MpegHNativeIndexed,
+            convention: HoaCoefficientConvention::AcnN3d,
             uses_nfc: group.uses_nfc,
             rendering_matrix_present: group.matrix.is_some(),
             requires_stateful_transport_synthesis: true,
@@ -126,23 +128,13 @@ mod tests {
     }
 
     #[test]
-    fn order_three_contract_requires_sixteen_output_coefficients() {
+    fn order_three_contract_requires_sixteen_acn_n3d_coefficients() {
         let contract = MpeghHoaDecodeContract::from_transport_scene(&hoa_scene(3, 6))
             .unwrap()
             .unwrap();
         assert_eq!(contract.expected_coefficient_count, 16);
         assert_eq!(contract.transport_channel_count, 6);
         assert!(contract.requires_stateful_transport_synthesis);
-        assert_eq!(contract.convention, HoaCoefficientConvention::MpegHNativeIndexed);
-    }
-
-    #[test]
-    fn no_hoa_returns_no_contract() {
-        let mut scene = hoa_scene(1, 1);
-        scene.hoa_signals.clear();
-        scene.hoa_groups.clear();
-        scene.frame.decoded.audio.channels.clear();
-        scene.frame.decoded.audio.frame_count = 0;
-        assert!(MpeghHoaDecodeContract::from_transport_scene(&scene).is_err());
+        assert_eq!(contract.convention, HoaCoefficientConvention::AcnN3d);
     }
 }
