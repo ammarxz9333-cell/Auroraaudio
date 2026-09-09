@@ -122,8 +122,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu check -p aurora-cli --bin aurora-encoded-runtime
+          cargo +stable-x86_64-pc-windows-gnu check -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu test -p aurora-cli --bin aurora-encoded-runtime
+          cargo +stable-x86_64-pc-windows-gnu test -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-cli --bin aurora-encoded-runtime -- -D warnings
+          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
