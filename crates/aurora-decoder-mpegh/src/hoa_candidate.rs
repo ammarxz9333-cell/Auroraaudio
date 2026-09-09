@@ -158,12 +158,17 @@ fn mix_bed_into_reference_order(
                 }
                 unique_role_destination(cached_roles.as_ref().expect("set above"), &role)?
             }
-            ResolvedBedSignalTarget::Geometry(geometry) => unique_geometry_destination(
-                speakers,
-                f64::from(geometry.azimuth_degrees),
-                f64::from(geometry.elevation_degrees),
-                geometry.is_lfe,
-            )?,
+            ResolvedBedSignalTarget::Geometry(geometry) => {
+                if geometry.screen_relative {
+                    return Err(MpeghHoaCandidateError::ScreenRelativeBedUnsupported);
+                }
+                unique_geometry_destination(
+                    speakers,
+                    f64::from(geometry.azimuth_degrees),
+                    f64::from(geometry.elevation_degrees),
+                    geometry.is_lfe,
+                )?
+            }
         };
 
         if !destinations.insert(destination) {
@@ -190,8 +195,25 @@ fn mix_bed_into_reference_order(
         let destination_plane = output
             .get_mut(destination)
             .ok_or(MpeghHoaCandidateError::BedDestinationOutOfRange { destination })?;
-        for (out, sample) in destination_plane.iter_mut().zip(source.iter().copied()) {
-            *out += sample;
+        for (sample_index, (out, sample)) in destination_plane
+            .iter_mut()
+            .zip(source.iter().copied())
+            .enumerate()
+        {
+            if !sample.is_finite() {
+                return Err(MpeghHoaCandidateError::NonFiniteBedSample {
+                    lane: bed.pcm_channel_index,
+                    sample_index,
+                });
+            }
+            let mixed = *out + sample;
+            if !mixed.is_finite() {
+                return Err(MpeghHoaCandidateError::NonFiniteBedMix {
+                    destination,
+                    sample_index,
+                });
+            }
+            *out = mixed;
         }
     }
     Ok(())
@@ -330,6 +352,8 @@ pub enum MpeghHoaCandidateError {
     FrameCountMismatch { scene: usize, hoa: usize },
     #[error("MPEG-H bed target failed resolution: {0}")]
     InvalidBedTarget(SpatialTransportError),
+    #[error("screen-relative MPEG-H bed geometry is not admitted by the current candidate renderer")]
+    ScreenRelativeBedUnsupported,
     #[error("MPEG-H reference semantic roles cannot be resolved losslessly: {0}")]
     ReferenceRoles(MpeghRoleConformanceError),
     #[error("MPEG-H reference layout has no destination for bed role '{role}'")]
@@ -357,6 +381,16 @@ pub enum MpeghHoaCandidateError {
         lane: usize,
         expected: usize,
         actual: usize,
+    },
+    #[error("MPEG-H bed PCM lane {lane} contains a non-finite sample at index {sample_index}")]
+    NonFiniteBedSample {
+        lane: usize,
+        sample_index: usize,
+    },
+    #[error("MPEG-H bed/HOA mix became non-finite at destination {destination} sample {sample_index}")]
+    NonFiniteBedMix {
+        destination: usize,
+        sample_index: usize,
     },
     #[error("MPEG-H bed destination {destination} is outside candidate output")]
     BedDestinationOutOfRange { destination: usize },
