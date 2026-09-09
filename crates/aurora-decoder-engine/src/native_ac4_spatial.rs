@@ -21,6 +21,14 @@ struct QuantizedObjectPosition {
     z: i16,
 }
 
+const DEFAULT_RENDER_POSITION: QuantizedObjectPosition = QuantizedObjectPosition {
+    x: 31,
+    y: 31,
+    z: 0,
+};
+const STATUS_DEFAULT_GAIN_DB: f32 = f32::NEG_INFINITY;
+const STATUS_DEFAULT_PRIORITY: f32 = 0.0;
+
 #[derive(Debug, Clone, Copy)]
 struct ResolvedObjectState {
     position: Option<QuantizedObjectPosition>,
@@ -283,6 +291,11 @@ impl NativeAc4SpatialDecoder {
             });
         }
 
+        // Match the stronger transactional scene-state model: parse and resolve
+        // the entire AU against a candidate copy, then commit only if every
+        // object update succeeds. A malformed later object can never leave
+        // Aurora with half-applied metadata history.
+        let mut next_state = self.state.clone();
         let mut updates = Vec::new();
         for block_index in 0..max_blocks.max(1) {
             let (offset, ramp) = timing_for_block(timing, block_index)?;
@@ -315,42 +328,27 @@ impl NativeAc4SpatialDecoder {
                     }
                 }
 
-                let state = self.state.get_mut(object_index).ok_or_else(|| {
+                let state = next_state.get_mut(object_index).ok_or_else(|| {
                     DecoderError::Decode("A-JOC object state index is out of range".into())
                 })?;
-                if block.b_object_not_active {
-                    let was_active = state.active;
-                    state.active = false;
-                    previous_object_gain = Some(state.gain_db);
-                    if was_active {
-                        let position = state.position.ok_or_else(|| {
-                            DecoderError::Decode(
-                                "active A-JOC object became inactive without a resolved position".into(),
-                            )
-                        })?;
-                        let (x, y, z) = position_to_room_normalized(position);
-                        updates.push(SpatialObjectUpdate {
-                            object_id: object_id(object_index),
-                            active: false,
-                            coordinate_space: CoordinateSpace::RoomNormalized,
-                            position: SpatialPosition::Cartesian { x, y, z },
-                            gain_db: state.gain_db,
-                            spread: 0.0,
-                            metadata_sample_offset: offset,
-                            ramp_duration_samples: ramp,
-                            priority: state.priority,
-                        });
-                    }
-                    continue;
-                }
-                state.active = true;
+                let was_active = state.active;
+                state.active = !block.b_object_not_active;
 
                 match block.basic_status {
                     InfoStatus::Default => {
-                        state.gain_db = 0.0;
-                        state.priority = Some(1.0);
+                        // AC-4 status DEFAULT is not the same thing as an
+                        // ALL_NEW ObjectBasicInfo carrying b_default=true.
+                        // The independent OAMD state machine resolves status
+                        // DEFAULT to minimum priority and negative-infinity gain.
+                        state.gain_db = STATUS_DEFAULT_GAIN_DB;
+                        state.priority = Some(STATUS_DEFAULT_PRIORITY);
                     }
-                    InfoStatus::Reuse | InfoStatus::PartReuse => {}
+                    InfoStatus::Reuse => {}
+                    InfoStatus::PartReuse => {
+                        return Err(DecoderError::UnsupportedInput(
+                            "AC-4 basic-info PART_REUSE has no admitted semantics",
+                        ));
+                    }
                     InfoStatus::AllNew => {
                         let basic = block.basic_info.as_ref().ok_or_else(|| {
                             DecoderError::Decode(
@@ -386,16 +384,60 @@ impl NativeAc4SpatialDecoder {
                 }
 
                 match block.render_status {
-                    InfoStatus::Default | InfoStatus::Reuse => {}
-                    InfoStatus::AllNew | InfoStatus::PartReuse => {
-                        if let Some(render) = block.render_info.as_ref() {
-                            if let Some(position) = render.position {
-                                state.position = Some(resolve_quantized_position(state.position, position)?);
-                            }
+                    InfoStatus::Default => {
+                        // DEFAULT explicitly restores the complete render state
+                        // to the centred codec default; it is not REUSE.
+                        state.position = Some(DEFAULT_RENDER_POSITION);
+                    }
+                    InfoStatus::Reuse => {}
+                    InfoStatus::AllNew => {
+                        let render = block.render_info.as_ref().ok_or_else(|| {
+                            DecoderError::Decode(
+                                "A-JOC ALL_NEW render-info status has no payload".into(),
+                            )
+                        })?;
+                        let position = render.position.ok_or_else(|| {
+                            DecoderError::Decode(
+                                "A-JOC ALL_NEW render-info has no position".into(),
+                            )
+                        })?;
+                        state.position = Some(resolve_quantized_position(state.position, position)?);
+                    }
+                    InfoStatus::PartReuse => {
+                        let render = block.render_info.as_ref().ok_or_else(|| {
+                            DecoderError::Decode(
+                                "A-JOC PART_REUSE render-info status has no payload".into(),
+                            )
+                        })?;
+                        if let Some(position) = render.position {
+                            state.position = Some(resolve_quantized_position(state.position, position)?);
                         }
                     }
                 }
                 previous_object_gain = Some(state.gain_db);
+
+                if !state.active {
+                    if was_active {
+                        let position = state.position.ok_or_else(|| {
+                            DecoderError::Decode(
+                                "active A-JOC object became inactive without a resolved position".into(),
+                            )
+                        })?;
+                        let (x, y, z) = position_to_room_normalized(position);
+                        updates.push(SpatialObjectUpdate {
+                            object_id: object_id(object_index),
+                            active: false,
+                            coordinate_space: CoordinateSpace::RoomNormalized,
+                            position: SpatialPosition::Cartesian { x, y, z },
+                            gain_db: state.gain_db,
+                            spread: 0.0,
+                            metadata_sample_offset: offset,
+                            ramp_duration_samples: ramp,
+                            priority: state.priority,
+                        });
+                    }
+                    continue;
+                }
 
                 let position = state.position.ok_or(DecoderError::UnsupportedInput(
                     "active AC-4 dynamic object has no resolved position",
@@ -417,6 +459,7 @@ impl NativeAc4SpatialDecoder {
             }
         }
         updates.sort_by_key(|update| update.metadata_sample_offset);
+        self.state = next_state;
 
         let mut bed_signals = Vec::new();
         if params.b_lfe {
@@ -518,6 +561,14 @@ fn timing_for_block(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn status_default_semantics_match_independent_oamd_state_machine() {
+        assert_eq!(STATUS_DEFAULT_GAIN_DB, f32::NEG_INFINITY);
+        assert_eq!(STATUS_DEFAULT_PRIORITY, 0.0);
+        assert_eq!(DEFAULT_RENDER_POSITION, QuantizedObjectPosition { x: 31, y: 31, z: 0 });
+        assert_eq!(position_to_room_normalized(DEFAULT_RENDER_POSITION), (0.5, 0.5, 0.0));
+    }
 
     #[test]
     fn absolute_ac4_position_maps_y_with_codec_front_back_orientation() {
