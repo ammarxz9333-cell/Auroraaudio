@@ -59,12 +59,12 @@ pub struct ObjectRenderState {
     pub priority: Option<f32>,
 }
 
-/// One analytic object trajectory valid for a render span.
+/// One analytic object trajectory segment valid for a render span.
 ///
-/// Renderers can evaluate between `from` and `to` without losing a ramp that
-/// crosses an access-unit boundary. Aurora currently exposes linear metadata
-/// interpolation as the deterministic baseline; codec-specific conformance can
-/// replace this evaluator without changing the scene-plan shape.
+/// `transition_*` are the boundaries of this already-resolved segment, not the
+/// original codec ramp. `from` and `to` are therefore exact endpoint states for
+/// the same interval. This prevents a partial codec ramp from being interpolated
+/// a second time after the scene planner has clipped it to an access-unit span.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ObjectRenderCurve {
     pub object_id: String,
@@ -328,8 +328,8 @@ impl SceneTimeline {
             result.push(ObjectRenderCurve {
                 object_id: id.clone(),
                 pcm_channel_index: lane,
-                transition_start_absolute_sample: curve.start_absolute_sample,
-                transition_end_absolute_sample: curve.end_absolute_sample,
+                transition_start_absolute_sample: span_start,
+                transition_end_absolute_sample: span_end,
                 from: curve.state_at(span_start),
                 to: curve.state_at(span_end),
             });
@@ -544,7 +544,9 @@ mod tests {
         let second_curve = &second.spans[0].objects[0];
         assert!((first_curve.from.position_meters.x - 0.0).abs() < 0.0001);
         assert!((first_curve.to.position_meters.x - 2.0).abs() < 0.0001);
+        assert!((first_curve.state_at_absolute_sample(60).position_meters.x - 1.0).abs() < 0.0001);
         assert!((second_curve.from.position_meters.x - 2.0).abs() < 0.0001);
         assert!((second_curve.to.position_meters.x - 4.0).abs() < 0.0001);
+        assert!((second_curve.state_at_absolute_sample(100).position_meters.x - 3.0).abs() < 0.0001);
     }
 }
