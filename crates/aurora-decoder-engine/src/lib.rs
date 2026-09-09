@@ -21,8 +21,10 @@ use aurora_decoder_open::{OpenDecoderConfig, UniversalOpenDecoder};
 
 use crate::catalog::{BackendId, CodecId, DecoderCatalog};
 use crate::native_ac4::{looks_like_ac4_sync, NativeAc4Decoder};
+use crate::native_ac4_spatial::NativeAc4SpatialDecoder;
 use crate::native_dts::{looks_like_dts_sync, NativeDtsDecoder};
 use crate::policy::{BackendDecision, DecoderPolicy};
+use crate::spatial_ir::SpatialDecodedFrame;
 use crate::telemetry::EngineTelemetry;
 
 #[derive(Debug, Clone, Copy)]
@@ -51,6 +53,7 @@ pub struct AuroraDecoderEngine {
     catalog: DecoderCatalog,
     open: UniversalOpenDecoder,
     ac4: NativeAc4Decoder,
+    ac4_spatial: NativeAc4SpatialDecoder,
     dts: NativeDtsDecoder,
     active: Option<BackendDecision>,
     active_codec: Option<CodecId>,
@@ -62,6 +65,7 @@ impl AuroraDecoderEngine {
         Self {
             open: UniversalOpenDecoder::new(config.open_decoder),
             ac4: NativeAc4Decoder::new(),
+            ac4_spatial: NativeAc4SpatialDecoder::new(),
             dts: NativeDtsDecoder::new(),
             catalog: DecoderCatalog::default(),
             config,
@@ -94,6 +98,40 @@ impl AuroraDecoderEngine {
 
     pub fn reset_telemetry(&mut self) {
         self.telemetry = EngineTelemetry::default();
+    }
+
+    /// Decode one complete object-capable access unit into Aurora's pre-render
+    /// Spatial IR rather than speaker channels.
+    ///
+    /// This API is intentionally separate from [`Decoder::decode_chunk`]: a
+    /// caller must explicitly choose the object-preserving path so an A-JOC
+    /// object lane can never be mistaken for a physical loudspeaker lane.
+    pub fn decode_spatial_access_unit(
+        &mut self,
+        codec: CodecId,
+        input: &[u8],
+    ) -> Result<Option<SpatialDecodedFrame>, DecoderError> {
+        self.telemetry.observe_input(input);
+        if codec != CodecId::Ac4 {
+            let error = DecoderError::UnsupportedInput(
+                "Aurora Spatial IR front door currently admits native AC-4 A-JOC only",
+            );
+            self.telemetry.observe_error(&error);
+            return Err(error);
+        }
+        if self.active_codec != Some(CodecId::Ac4) {
+            if let Err(error) = self.refresh_decision(CodecId::Ac4) {
+                self.telemetry.observe_error(&error);
+                return Err(error);
+            }
+        }
+        let result = self.ac4_spatial.decode_access_unit(input);
+        match &result {
+            Ok(Some(frame)) => self.telemetry.observe_spatial_frame(frame),
+            Ok(None) => {}
+            Err(error) => self.telemetry.observe_error(error),
+        }
+        result
     }
 
     fn refresh_decision(&mut self, codec: CodecId) -> Result<(), DecoderError> {
@@ -164,6 +202,7 @@ impl Decoder for AuroraDecoderEngine {
     fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError> {
         self.open.configure(output_format)?;
         self.ac4.configure(output_format);
+        self.ac4_spatial.configure(output_format.sample_rate)?;
         self.dts.configure(output_format);
         Ok(())
     }
@@ -225,6 +264,7 @@ impl Decoder for AuroraDecoderEngine {
     fn reset(&mut self) {
         self.open.reset();
         self.ac4.reset();
+        self.ac4_spatial.reset();
         self.dts.reset();
         self.active = None;
         self.active_codec = None;
@@ -236,6 +276,15 @@ mod tests {
     use super::*;
     use crate::catalog::BackendId;
     use aurora_core::SampleType;
+
+    fn format(channels: usize) -> AudioFormat {
+        AudioFormat {
+            sample_rate: 48_000,
+            channel_count: channels,
+            sample_type: SampleType::F32,
+            block_size: 40,
+        }
+    }
 
     #[test]
     fn joc_prefers_openjoc_over_bed_decoder() {
@@ -277,15 +326,35 @@ mod tests {
     #[test]
     fn engine_keeps_aurora_40_frame_contract() {
         let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
-        engine
-            .configure(AudioFormat {
-                sample_rate: 48_000,
-                channel_count: 12,
-                sample_type: SampleType::F32,
-                block_size: 40,
-            })
-            .unwrap();
+        engine.configure(format(12)).unwrap();
         assert_eq!(engine.telemetry().input_chunks, 0);
+    }
+
+    #[test]
+    fn spatial_front_door_rejects_non_ac4_without_fabricating_output() {
+        let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
+        engine.configure(format(12)).unwrap();
+        let error = engine
+            .decode_spatial_access_unit(CodecId::Dts, &[0x7f, 0xfe, 0x80, 0x01])
+            .unwrap_err();
+        assert!(matches!(error, DecoderError::UnsupportedInput(_)));
+        let telemetry = engine.telemetry();
+        assert_eq!(telemetry.input_chunks, 1);
+        assert_eq!(telemetry.unsupported_errors, 1);
+        assert_eq!(telemetry.frames_emitted, 0);
+    }
+
+    #[test]
+    fn empty_spatial_ac4_access_unit_does_not_fabricate_a_frame() {
+        let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
+        engine.configure(format(12)).unwrap();
+        assert!(engine
+            .decode_spatial_access_unit(CodecId::Ac4, &[])
+            .unwrap()
+            .is_none());
+        let telemetry = engine.telemetry();
+        assert_eq!(telemetry.poll_calls, 1);
+        assert_eq!(telemetry.frames_emitted, 0);
     }
 
     #[test]
@@ -296,14 +365,7 @@ mod tests {
             ..EngineConfig::default()
         };
         let mut engine = AuroraDecoderEngine::new(config);
-        engine
-            .configure(AudioFormat {
-                sample_rate: 48_000,
-                channel_count: 6,
-                sample_type: SampleType::F32,
-                block_size: 40,
-            })
-            .unwrap();
+        engine.configure(format(6)).unwrap();
         let error = engine.decode_chunk(&[0x7F, 0xFE, 0x80, 0x01]).unwrap_err();
         assert!(matches!(error, DecoderError::UnsupportedInput(_)));
         let telemetry = engine.telemetry();
