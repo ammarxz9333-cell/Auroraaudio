@@ -8,6 +8,8 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-iec61937/**"
+      - "crates/aurora-decoder-open/**"
+      - "crates/aurora-decoder-engine/**"
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-input/**"
       - "crates/aurora-encoded-runtime/**"
@@ -15,7 +17,6 @@ on:
       - "crates/aurora-alsa-output/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-spatial-runtime/**"
-      - "crates/aurora-decoder-engine/Cargo.toml"
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
@@ -33,6 +34,7 @@ concurrency:
 env:
   CARGO_TERM_COLOR: always
   RUST_BACKTRACE: "1"
+  AURORA_RUST_TOOLCHAIN: "1.85.0-x86_64-pc-windows-gnu"
 
 defaults:
   run:
@@ -42,7 +44,7 @@ jobs:
   direct-earc-windows:
     if: github.actor == github.repository_owner
     runs-on: [self-hosted, Windows, X64, aurora-private-ci]
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - name: Configure verified portable GNU linker tools
         run: |
@@ -58,18 +60,25 @@ jobs:
           fetch-depth: 1
           persist-credentials: false
 
-      - name: Provision stable GNU Rust toolchain
+      - name: Provision exact GNU Rust toolchain
         run: >-
-          rustup toolchain install stable-x86_64-pc-windows-gnu
+          rustup toolchain install $env:AURORA_RUST_TOOLCHAIN
           --profile minimal --component rustfmt,clippy
 
-      - name: Resolve workspace lockfile
-        run: cargo +stable-x86_64-pc-windows-gnu generate-lockfile
+      - name: Verify committed workspace lockfile
+        run: |
+          cargo +$env:AURORA_RUST_TOOLCHAIN metadata --format-version 1 --locked | Out-Null
+          if ($LASTEXITCODE -ne 0) {
+            Write-Error "Cargo.lock is stale or incomplete; regenerate and commit the exact dependency graph."
+            exit $LASTEXITCODE
+          }
 
       - name: Verify direct eARC formatting
         run: >-
-          cargo +stable-x86_64-pc-windows-gnu fmt
+          cargo +$env:AURORA_RUST_TOOLCHAIN fmt
           --package aurora-iec61937
+          --package aurora-decoder-open
+          --package aurora-decoder-engine
           --package aurora-direct-earc-decoder
           --package aurora-encoded-input
           --package aurora-encoded-runtime
@@ -80,74 +89,92 @@ jobs:
 
       - name: Check and test reusable IEC61937 parser
         run: |
-          cargo +stable-x86_64-pc-windows-gnu check -p aurora-iec61937 --all-targets
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-iec61937 --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu test -p aurora-iec61937
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-iec61937
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-iec61937 --all-targets -- -D warnings
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-iec61937 --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Check and test open AC3 EAC3 JOC decoder adapter
+        run: |
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-decoder-open --all-targets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-decoder-open
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Check and test decoder engine lifecycle
+        run: |
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-decoder-engine --all-targets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-decoder-engine
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-decoder-engine --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test direct eARC decoder bridge
         run: |
-          cargo +stable-x86_64-pc-windows-gnu check -p aurora-direct-earc-decoder --all-targets
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-direct-earc-decoder --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu test -p aurora-direct-earc-decoder
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-direct-earc-decoder
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-direct-earc-decoder --all-targets -- -D warnings
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-direct-earc-decoder --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test unified encoded input selector
         run: |
-          cargo +stable-x86_64-pc-windows-gnu check -p aurora-encoded-input --all-targets
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-encoded-input --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu test -p aurora-encoded-input
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-encoded-input
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-encoded-input --all-targets -- -D warnings
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-encoded-input --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test unified encoded runtime
         run: |
-          cargo +stable-x86_64-pc-windows-gnu check -p aurora-encoded-runtime --all-targets
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-encoded-runtime --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu test -p aurora-encoded-runtime
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-encoded-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-encoded-runtime --all-targets -- -D warnings
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-encoded-runtime --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test native ALSA input portability layer
         run: |
-          cargo +stable-x86_64-pc-windows-gnu check -p aurora-alsa-input --all-targets
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-alsa-input --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu test -p aurora-alsa-input
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-alsa-input
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-alsa-input --all-targets -- -D warnings
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-alsa-input --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test native ALSA output portability layer
         run: |
-          cargo +stable-x86_64-pc-windows-gnu check -p aurora-alsa-output --all-targets
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-alsa-output --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu test -p aurora-alsa-output
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-alsa-output
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-alsa-output --all-targets -- -D warnings
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-alsa-output --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test direct eARC binaries
         run: |
-          cargo +stable-x86_64-pc-windows-gnu check -p aurora-cli --bin aurora-direct-earc-ingest
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-cli --bin aurora-direct-earc-ingest
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu test -p aurora-cli --bin aurora-direct-earc-ingest
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-cli --bin aurora-direct-earc-ingest
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu check -p aurora-cli --bin aurora-direct-earc-probe
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-cli --bin aurora-direct-earc-probe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu test -p aurora-cli --bin aurora-direct-earc-probe
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-cli --bin aurora-direct-earc-probe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu check -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
+          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu test -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
+          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
+          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
