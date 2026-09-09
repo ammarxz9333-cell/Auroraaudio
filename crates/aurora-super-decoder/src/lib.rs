@@ -12,13 +12,14 @@ use aurora_core::AudioFormat;
 use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
 use aurora_decoder_engine::catalog::CodecId;
 use aurora_decoder_engine::{AuroraDecoderEngine, EngineConfig};
+use aurora_decoder_mpegh::MpeghExternalFrame;
 use aurora_spatial_ir::SpatialDecodedFrame;
 use aurora_spatial_ir_v2::SpatialDecodedFrame as SpatialDecodedFrameV2;
 
 #[cfg(feature = "iamf")]
 use aurora_decoder_iamf::IamfDecoderAdapter;
 #[cfg(feature = "native-mpegh")]
-use aurora_decoder_mpegh::{MpeghExternalFrame, NativeMpeghDecoder};
+use aurora_decoder_mpegh::NativeMpeghDecoder;
 #[cfg(feature = "native-truehd")]
 use aurora_decoder_truehdd::{TruehddDecoderAdapter, TruehddV2DecoderAdapter};
 
@@ -39,8 +40,6 @@ pub struct AuroraSuperDecoder {
     truehd: TruehddDecoderAdapter,
     #[cfg(feature = "native-truehd")]
     truehd_v2: TruehddV2DecoderAdapter,
-    /// libmpegh is created lazily because the native C backend is optional and
-    /// must never prevent unrelated codecs from constructing the super decoder.
     #[cfg(feature = "native-mpegh")]
     mpegh: Option<NativeMpeghDecoder>,
     active_route: ActiveRoute,
@@ -71,9 +70,6 @@ impl AuroraSuperDecoder {
         &self.core
     }
 
-    /// Decode using an explicit container/transport codec identity. This is the
-    /// preferred API for streaming systems because fragmented packets may not
-    /// contain enough sync bytes for reliable probing.
     pub fn decode_chunk_for(
         &mut self,
         codec: CodecId,
@@ -92,7 +88,6 @@ impl AuroraSuperDecoder {
         }
     }
 
-    /// Legacy object-preserving V1 path retained during migration.
     pub fn decode_spatial_chunk_for(
         &mut self,
         codec: CodecId,
@@ -116,11 +111,6 @@ impl AuroraSuperDecoder {
         }
     }
 
-    /// Rich object-preserving Spatial IR V2 path.
-    ///
-    /// AC-4 currently upgrades losslessly from its V1 scene contract. TrueHD
-    /// uses the dedicated native V2 adapter so distance, extent, zone, screen,
-    /// snap, headphone/dialogue intent and trim bypass are not discarded.
     pub fn decode_spatial_v2_chunk_for(
         &mut self,
         codec: CodecId,
@@ -146,10 +136,8 @@ impl AuroraSuperDecoder {
         }
     }
 
-    /// Decode one MPEG-H external-render packet without forcing an early
-    /// loudspeaker render. The packet preserves channel metadata, OAM object
-    /// metadata, HOA metadata and pre-render PCM exactly as libmpegh exposes
-    /// them. A later adapter maps those planes into Spatial IR V2.
+    /// Stable MPEG-H external-render API. The packet type exists in baseline
+    /// builds too; only the native decoder implementation is feature-gated.
     #[cfg(feature = "native-mpegh")]
     pub fn decode_mpegh_external_chunk(
         &mut self,
@@ -172,7 +160,7 @@ impl AuroraSuperDecoder {
     pub fn decode_mpegh_external_chunk(
         &mut self,
         _input: &[u8],
-    ) -> Result<Option<()>, DecoderError> {
+    ) -> Result<Option<MpeghExternalFrame>, DecoderError> {
         Err(DecoderError::Unavailable(
             "Aurora super decoder was built without the native-mpegh backend",
         ))
@@ -361,11 +349,10 @@ mod tests {
 
     #[cfg(not(feature = "native-mpegh"))]
     #[test]
-    fn disabled_mpegh_backend_fails_explicitly() {
+    fn disabled_mpegh_backend_fails_explicitly_with_stable_packet_type() {
         let mut decoder = AuroraSuperDecoder::new(EngineConfig::default());
-        assert!(matches!(
-            decoder.decode_mpegh_external_chunk(&[]),
-            Err(DecoderError::Unavailable(_))
-        ));
+        let result: Result<Option<MpeghExternalFrame>, DecoderError> =
+            decoder.decode_mpegh_external_chunk(&[]);
+        assert!(matches!(result, Err(DecoderError::Unavailable(_))));
     }
 }
