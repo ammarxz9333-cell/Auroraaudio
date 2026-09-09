@@ -8,6 +8,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-iec61937/**"
+      - "crates/aurora-decoder-open/**"
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-input/**"
       - "crates/aurora-encoded-runtime/**"
@@ -27,6 +28,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-iec61937/**"
+      - "crates/aurora-decoder-open/**"
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-input/**"
       - "crates/aurora-encoded-runtime/**"
@@ -73,7 +75,7 @@ jobs:
           cargo metadata --format-version 1 --locked > /tmp/aurora-metadata.json
           cargo tree --target x86_64-unknown-linux-gnu -i alsa-sys
           cargo tree --target x86_64-unknown-linux-gnu -p aurora-realtime-audio-cpal
-          if cargo tree --target x86_64-unknown-linux-gnu -p aurora-realtime-audio-cpal | grep -q '^.*cpal v'; then
+          if cargo tree --target x86_64-unknown-linux-gnu -p aurora-realtime-audio-cpal --prefix none | grep -Eq '^cpal v[0-9]'; then
             echo 'CPAL unexpectedly entered the Linux dependency graph' >&2
             exit 1
           fi
@@ -82,6 +84,7 @@ jobs:
         run: >-
           cargo fmt
           --package aurora-iec61937
+          --package aurora-decoder-open
           --package aurora-direct-earc-decoder
           --package aurora-encoded-input
           --package aurora-encoded-runtime
@@ -99,6 +102,15 @@ jobs:
 
       - name: Clippy reusable IEC61937 parser
         run: cargo clippy -p aurora-iec61937 --all-targets -- -D warnings
+
+      - name: Check open AC3/EAC3/JOC decoder adapter
+        run: cargo check -p aurora-decoder-open --all-targets
+
+      - name: Test open AC3/EAC3/JOC decoder adapter
+        run: cargo test -p aurora-decoder-open
+
+      - name: Clippy open AC3/EAC3/JOC decoder adapter
+        run: cargo clippy -p aurora-decoder-open --all-targets -- -D warnings
 
       - name: Check direct eARC decoder bridge
         run: cargo check -p aurora-direct-earc-decoder --all-targets
