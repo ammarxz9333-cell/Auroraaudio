@@ -13,3 +13,6 @@ aurora-decoder-engine = { path = "../aurora-decoder-engine" }
 aurora-renderer-api = { path = "../aurora-renderer-api" }
 aurora-renderer-vbap = { path = "../aurora-renderer-vbap" }
 thiserror.workspace = true
+
+[dev-dependencies]
+aurora-decoder-api = { path = "../aurora-decoder-api" }
