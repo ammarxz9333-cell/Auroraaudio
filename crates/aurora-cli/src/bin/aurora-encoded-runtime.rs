@@ -1,19 +1,19 @@
 //! Single-process Aurora encoded input -> decode -> speaker DSP -> hardware output.
 //!
-//! Direct eARC can now use Aurora-owned native ALSA capture instead of an
-//! `arecord` subprocess. A stdin S32_LE path remains for fixtures/evidence.
-//! Legacy STM32/USB remains an explicit fallback and converges on the same
-//! IEC61937/decoder/DSP/output runtime.
+//! Direct eARC can use Aurora-owned native ALSA capture. A stdin S32_LE path
+//! remains for fixtures/evidence. Legacy STM32/USB remains an explicit fallback
+//! and converges on the same IEC61937/decoder/DSP/output runtime.
 //!
-//! Final speaker PCM can remain canonical 12-channel interleaved F32 on stdout
-//! or go to Aurora's native ALSA S32_LE playback backend. Wider TDM layouts are
-//! zero-padded only; no extra channels are synthesized and no Atmos/JOC claim is
-//! inferred from IEC61937 transport type alone.
+//! Native ALSA i32 slot samples enter the carrier normalizer directly, avoiding
+//! a redundant i32 -> byte staging vector. Final speaker PCM can remain canonical
+//! 12-channel interleaved F32 on stdout or go to Aurora's native ALSA S32_LE
+//! playback backend. Wider TDM layouts are zero-padded only; no extra channels
+//! are synthesized and no Atmos/JOC claim is inferred from transport type alone.
 
 use std::io::{self, Read, Write};
 
 use anyhow::{bail, Context, Result};
-use aurora_alsa_input::{interleaved_i32_to_le_bytes, AlsaInputConfig, NativeAlsaCapture};
+use aurora_alsa_input::{AlsaInputConfig, NativeAlsaCapture};
 use aurora_alsa_output::{AlsaOutputConfig, NativeAlsaPlayback};
 use aurora_core::{AudioFormat, SampleType};
 use aurora_decoder_engine::EngineConfig;
@@ -202,8 +202,9 @@ fn main() -> Result<()> {
         }
     };
 
+    let transport = runtime.encoded().decoder().transport_telemetry();
     eprintln!(
-        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={}",
+        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={}",
         args.input,
         args.output,
         stats.carrier_bursts,
@@ -212,7 +213,10 @@ fn main() -> Result<()> {
         stats.decoded_pcm_frames,
         stats.transport_discontinuities,
         stats.capture_xruns,
-        stats.capture_recoveries
+        stats.capture_recoveries,
+        transport.pending_carrier_bytes,
+        transport.discarded_bytes,
+        transport.malformed_headers
     );
     Ok(())
 }
@@ -310,17 +314,16 @@ fn run_direct_native_alsa<S: SpeakerSink>(
             .read_block()
             .context("native ALSA direct-eARC capture failed")?;
         if block.discontinuity {
-            // Clear partial S32 carrier bytes, IEC61937 parser, codec state,
-            // speaker DSP and queued physical output at one transport boundary.
+            // Clear partial carrier/parser/codec/DSP state and queued physical
+            // output at one transport epoch boundary.
             runtime.reset();
             sink.reset_for_transport_discontinuity()?;
             stats.transport_discontinuities = stats.transport_discontinuities.saturating_add(1);
         }
 
-        let carrier_slots = interleaved_i32_to_le_bytes(&block.interleaved_s32);
         let batch = runtime
-            .push_direct_s32(&carrier_slots)
-            .context("native direct-eARC playback runtime ingest failed")?;
+            .push_direct_s32_words(&block.interleaved_s32)
+            .context("native direct-eARC S32-word ingest failed")?;
         consume_batch(batch, sink, &mut stats)?;
 
         let telemetry = capture.telemetry();
