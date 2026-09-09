@@ -9,8 +9,10 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-decoder-api/**"
+      - "crates/aurora-spatial-ir/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
+      - "crates/aurora-decoder-truehdd/**"
       - "crates/aurora-spatial-runtime/**"
       - "crates/aurora-renderer-api/**"
       - "crates/aurora-renderer-vbap/**"
@@ -22,8 +24,10 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-decoder-api/**"
+      - "crates/aurora-spatial-ir/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
+      - "crates/aurora-decoder-truehdd/**"
       - "crates/aurora-spatial-runtime/**"
       - "crates/aurora-renderer-api/**"
       - "crates/aurora-renderer-vbap/**"
@@ -51,10 +55,16 @@ jobs:
         run: python3 scripts/check_external_components.py
       - name: Resolve workspace lockfile
         run: cargo generate-lockfile
+      - name: Check Spatial IR
+        run: cargo check -p aurora-spatial-ir --all-targets
       - name: Check decoder engine
         run: cargo check -p aurora-decoder-engine --all-targets
       - name: Check spatial runtime
         run: cargo check -p aurora-spatial-runtime --all-targets
+      - name: Check disabled TrueHD boundary on baseline toolchain
+        run: cargo check -p aurora-decoder-truehdd --all-targets
+      - name: Test Spatial IR
+        run: cargo test -p aurora-spatial-ir
       - name: Test decoder engine
         run: cargo test -p aurora-decoder-engine
       - name: Test spatial runtime
@@ -70,6 +80,31 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: decoder-spatial-lock-${{ github.sha }}
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
+
+  native-truehd:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.88.0
+        with:
+          components: rustfmt, clippy
+      - name: Resolve workspace lockfile
+        run: cargo generate-lockfile
+      - name: Check native TrueHD adapter
+        run: cargo check -p aurora-decoder-truehdd --features native-truehd --all-targets
+      - name: Test native TrueHD adapter
+        run: cargo test -p aurora-decoder-truehdd --features native-truehd
+      - name: Strict native TrueHD clippy
+        run: cargo clippy -p aurora-decoder-truehdd --features native-truehd --all-targets -- -D warnings
+      - name: Upload native TrueHD lockfile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-truehd-lock-${{ github.sha }}
           path: Cargo.lock
           if-no-files-found: error
           retention-days: 7
