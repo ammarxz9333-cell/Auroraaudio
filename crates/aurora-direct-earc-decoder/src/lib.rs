@@ -29,7 +29,7 @@ pub struct DirectEarcDecodeBatch {
     pub transport_codecs: Vec<TransportCodec>,
 }
 
-/// Read-only IEC61937/parser/decoder health used during direct-eARC bring-up.
+/// Read-only IEC61937 parser health used during direct-eARC bring-up.
 ///
 /// `discarded_bytes` includes ordinary non-preamble carrier bytes such as idle
 /// padding, so it must not be interpreted by itself as an eARC unlock. A rising
@@ -37,9 +37,7 @@ pub struct DirectEarcDecodeBatch {
 /// followed by an invalid length/header. `iec61937_locked` is a parser-level
 /// observation only: it becomes true after a valid IEC61937 burst and is cleared
 /// only by an explicit transport discontinuity/reset. It is not a claim about
-/// the physical HDMI/eARC electrical link.
-///
-/// JOC fields come from the decoder itself, never from IEC61937 data type 0x15.
+/// the physical HDMI/eARC electrical link, and it never carries JOC state.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DirectEarcTransportTelemetry {
     /// Incomplete canonical carrier bytes currently retained by the parser.
@@ -50,7 +48,7 @@ pub struct DirectEarcTransportTelemetry {
     pub malformed_headers: u64,
     /// True after at least one valid IEC61937 burst in the current observation epoch.
     pub iec61937_locked: bool,
-    /// Decode/transport observation epoch. Incremented on explicit reset/discontinuity.
+    /// Transport observation epoch. Incremented on explicit reset/discontinuity.
     pub observation_epoch: u64,
     /// Total valid IEC61937 bursts observed since decoder creation.
     pub total_bursts: u64,
@@ -62,20 +60,6 @@ pub struct DirectEarcTransportTelemetry {
     pub relocks: u64,
     /// Milliseconds since the most recent valid IEC61937 burst, when one exists.
     pub last_valid_burst_age_ms: Option<u64>,
-    /// True only after the elementary stream itself is classified as E-AC-3 JOC.
-    pub joc_codec_classified: bool,
-    /// True only while an admitted OpenJOC speaker renderer exists.
-    pub joc_speaker_render_active: bool,
-    /// Admitted JOC speaker-render output channel count.
-    pub joc_channel_count: Option<usize>,
-    /// Renderer-reported JOC latency in samples.
-    pub joc_latency_samples: Option<usize>,
-    /// Most recently observed OpenJOC object count.
-    pub joc_object_count: Option<u16>,
-    /// Most recently observed OpenJOC complexity index.
-    pub joc_complexity_index: Option<u8>,
-    /// True when JOC admission/render failed and Aurora fell back to the bed path.
-    pub joc_fallback_present: bool,
 }
 
 /// Stateful direct-eARC front end.
@@ -204,13 +188,13 @@ impl DirectEarcDecoder {
         self.parser.pending_bytes()
     }
 
-    /// Snapshot of transport-parser and JOC decoder health counters.
+    /// Snapshot of transport/parser health only. JOC status is available from
+    /// `engine().joc_status()` and is intentionally kept out of this structure.
     pub fn transport_telemetry(&self) -> DirectEarcTransportTelemetry {
         let last_valid_burst_age_ms = self.last_valid_burst.map(|instant| {
             let millis = instant.elapsed().as_millis();
             millis.min(u128::from(u64::MAX)) as u64
         });
-        let joc = self.engine.joc_status();
         DirectEarcTransportTelemetry {
             pending_carrier_bytes: self.parser.pending_bytes(),
             discarded_bytes: self.parser.discarded_bytes(),
@@ -222,13 +206,6 @@ impl DirectEarcDecoder {
             total_format_changes: self.total_format_changes,
             relocks: self.relocks,
             last_valid_burst_age_ms,
-            joc_codec_classified: joc.codec_classified_joc,
-            joc_speaker_render_active: joc.speaker_render_active,
-            joc_channel_count: joc.channel_count,
-            joc_latency_samples: joc.latency_samples,
-            joc_object_count: joc.object_count,
-            joc_complexity_index: joc.complexity_index,
-            joc_fallback_present: joc.fallback_reason.is_some(),
         }
     }
 }
@@ -248,7 +225,7 @@ mod tests {
     }
 
     #[test]
-    fn empty_carrier_never_fabricates_output_or_joc_state() {
+    fn empty_carrier_never_fabricates_output_or_transport_lock() {
         let mut direct = DirectEarcDecoder::new(EngineConfig::default());
         direct.configure(format()).unwrap();
 
@@ -270,15 +247,9 @@ mod tests {
                 total_format_changes: 0,
                 relocks: 0,
                 last_valid_burst_age_ms: None,
-                joc_codec_classified: false,
-                joc_speaker_render_active: false,
-                joc_channel_count: None,
-                joc_latency_samples: None,
-                joc_object_count: None,
-                joc_complexity_index: None,
-                joc_fallback_present: false,
             }
         );
+        assert!(!direct.engine().joc_status().codec_classified_joc);
     }
 
     #[test]
@@ -299,12 +270,11 @@ mod tests {
         assert_eq!(health.observation_epoch, 2);
         assert!(!health.iec61937_locked);
         assert_eq!(health.bursts_since_lock, 0);
-        assert!(!health.joc_codec_classified);
-        assert!(!health.joc_speaker_render_active);
+        assert!(!direct.engine().joc_status().codec_classified_joc);
     }
 
     #[test]
-    fn carrier_padding_does_not_claim_or_clear_parser_or_joc_lock() {
+    fn carrier_padding_does_not_claim_or_clear_parser_lock() {
         let mut direct = DirectEarcDecoder::new(EngineConfig::default());
         direct.configure(format()).unwrap();
 
@@ -317,7 +287,6 @@ mod tests {
         assert_eq!(health.discarded_bytes, 5);
         assert_eq!(health.malformed_headers, 0);
         assert!(!health.iec61937_locked);
-        assert!(!health.joc_codec_classified);
         assert_eq!(health.observation_epoch, 1);
     }
 }
