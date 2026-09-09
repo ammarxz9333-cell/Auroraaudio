@@ -7,12 +7,17 @@
 
 #![cfg_attr(not(feature = "native-mpegh"), forbid(unsafe_code))]
 
+mod conformance;
 mod external_channels;
 mod external_hoa;
 mod external_oam;
 mod external_pcm;
 mod rendered_pcm;
 mod spatial_transport;
+pub use conformance::{
+    compare_mpegh_render_to_reference, MpeghChannelConformance, MpeghConformanceError,
+    MpeghConformancePolicy, MpeghConformanceReport,
+};
 pub use external_channels::{
     parse_external_channel_metadata, MpeghAngularPrecision, MpeghChannelGroup,
     MpeghChannelMetadataPacket, MpeghChannelParseError, MpeghExplicitSpeaker,
