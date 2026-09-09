@@ -7,6 +7,7 @@ members = [
     "crates/aurora-renderer-basic",
     "crates/aurora-renderer-vbap",
     "crates/aurora-renderer-cavern",
+    "crates/aurora-renderer-hoa",
     "crates/aurora-decoder-api",
     "crates/aurora-spatial-ir",
     "crates/aurora-spatial-ir-v2",
