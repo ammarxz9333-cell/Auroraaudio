@@ -151,9 +151,17 @@ impl AuroraEncodedRuntime {
         self.decoder.reset();
     }
 
-    /// Checks source-local end-of-stream invariants.
-    pub fn finish(&self) -> Result<(), RuntimeError> {
-        self.input.finish().map_err(RuntimeError::Input)
+    /// Validates source-local framing and drains every remaining decoder frame.
+    pub fn finish(&mut self) -> Result<RuntimeBatch, RuntimeError> {
+        self.input.finish().map_err(RuntimeError::Input)?;
+        let decoded = self.decoder.finish().map_err(RuntimeError::Decoder)?;
+        Ok(RuntimeBatch {
+            frames: decoded.frames,
+            bursts: decoded.bursts,
+            format_changes: decoded.format_changes,
+            discontinuity: decoded.discontinuity,
+            pts_48k: None,
+        })
     }
 
     pub fn decoder(&self) -> &DirectEarcDecoder {
@@ -307,8 +315,10 @@ impl AuroraPlaybackRuntime {
         self.output.reset();
     }
 
-    pub fn finish(&self) -> Result<(), RuntimeError> {
-        self.encoded.finish()
+    /// Drain the finite encoded stream through the same canonical speaker DSP.
+    pub fn finish(&mut self) -> Result<PlaybackBatch, RuntimeError> {
+        let batch = self.encoded.finish()?;
+        self.process_batch(batch)
     }
 
     pub fn encoded(&self) -> &AuroraEncodedRuntime {
@@ -522,7 +532,7 @@ mod tests {
         assert_eq!(batch.bursts, 0);
         assert!(batch.frames.is_empty());
         runtime.reset();
-        runtime.finish().unwrap();
+        assert!(runtime.finish().unwrap().frames.is_empty());
     }
 
     #[test]
@@ -548,6 +558,7 @@ mod tests {
         assert_eq!(batch.bursts, 0);
         assert!(batch.frames.is_empty());
         assert_eq!(runtime.decoder().pending_carrier_bytes(), 4);
+        assert!(matches!(runtime.finish(), Err(RuntimeError::Decoder(_))));
     }
 
     #[test]
@@ -563,6 +574,7 @@ mod tests {
         assert_eq!(runtime.input_kind(), EncodedInputKind::LegacyUsb);
         assert_eq!(batch.bursts, 0);
         assert!(batch.frames.is_empty());
+        assert!(runtime.finish().unwrap().frames.is_empty());
     }
 
     #[test]
@@ -578,6 +590,7 @@ mod tests {
         assert!(batch.discontinuity);
         assert_eq!(batch.bursts, 0);
         assert!(batch.frames.is_empty());
+        assert!(matches!(runtime.finish(), Err(RuntimeError::Decoder(_))));
     }
 
     #[test]
@@ -674,6 +687,20 @@ mod tests {
         let batch = runtime.push_direct_s32_words(&[0_i32, 0_i32]).unwrap();
         assert!(batch.frames.is_empty());
         assert_eq!(batch.bursts, 0);
+        assert!(runtime.finish().unwrap().frames.is_empty());
+    }
+
+    #[test]
+    fn output_stage_accepts_a_final_short_block() {
+        let mut output = SpeakerOutputStage::new(format(), OutputDspConfig::default()).unwrap();
+        let mut frame = decoded_frame(OUTPUT_CHANNELS, Vec::new());
+        frame.audio.frame_count = 17;
+        for channel in &mut frame.audio.channels {
+            channel.truncate(17);
+        }
+        let processed = output.process_decoded_frame(frame).unwrap();
+        assert_eq!(processed.frame_count, 17);
+        assert_eq!(processed.interleaved_f32.len(), 17 * OUTPUT_CHANNELS);
     }
 
     #[test]
