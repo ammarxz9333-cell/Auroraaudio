@@ -13,6 +13,13 @@ fn publication_and_coalescing_allocate_nothing_after_startup() {
             pending_carrier_bytes: 0,
             discarded_bytes: 0,
             malformed_headers: 0,
+            iec61937_locked: false,
+            observation_epoch: 1,
+            total_bursts: 0,
+            bursts_since_lock: 0,
+            total_format_changes: 0,
+            relocks: 0,
+            last_valid_burst_age_ms: None,
         },
         None,
     );
