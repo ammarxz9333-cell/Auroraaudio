@@ -11,6 +11,8 @@ on:
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-input/**"
       - "crates/aurora-encoded-runtime/**"
+      - "crates/aurora-dsp-basic/**"
+      - "crates/aurora-spatial-runtime/**"
       - "crates/aurora-decoder-engine/Cargo.toml"
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
