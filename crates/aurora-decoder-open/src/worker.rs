@@ -110,6 +110,17 @@ pub const fn ffmpeg_input_format(codec: CodecKind) -> Option<&'static str> {
     }
 }
 
+fn decode_worker_sample(bytes: [u8; 4]) -> Result<f32, DecoderError> {
+    let sample = f32::from_le_bytes(bytes);
+    if !sample.is_finite() {
+        return Err(DecoderError::Decode(
+            "FFmpeg worker returned non-finite PCM; refusing to sanitize corrupted decoder output"
+                .to_owned(),
+        ));
+    }
+    Ok(sample)
+}
+
 pub struct OpenWorkerDecoder {
     codec: CodecKind,
     encapsulation: Encapsulation,
@@ -268,13 +279,13 @@ impl OpenWorkerDecoder {
             let base = frame * bytes_per_frame;
             for channel in 0..self.decoded_channels {
                 let at = base + channel * 4;
-                let sample = f32::from_le_bytes([
+                let sample = decode_worker_sample([
                     block[at],
                     block[at + 1],
                     block[at + 2],
                     block[at + 3],
-                ]);
-                planar[channel][frame] = if sample.is_finite() { sample } else { 0.0 };
+                ])?;
+                planar[channel][frame] = sample;
             }
         }
         let pts = self.emitted_frames as f64 / f64::from(self.output.sample_rate);
@@ -336,5 +347,14 @@ mod tests {
     #[test]
     fn dts_hd_uses_dts_demuxer() {
         assert_eq!(ffmpeg_input_format(CodecKind::DtsHd), Some("dts"));
+    }
+
+    #[test]
+    fn worker_pcm_rejects_non_finite_samples_instead_of_silencing_them() {
+        assert_eq!(decode_worker_sample(0.25_f32.to_le_bytes()).unwrap(), 0.25);
+        for sample in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let error = decode_worker_sample(sample.to_le_bytes()).unwrap_err();
+            assert!(matches!(error, DecoderError::Decode(_)));
+        }
     }
 }
