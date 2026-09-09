@@ -9,6 +9,7 @@ use std::io::{self, Read, Write};
 use std::process::{Child, Command, Stdio};
 
 use anyhow::{bail, Context, Result};
+use aurora_iec61937::{CarrierWordHalf, S32LeCarrierNormalizer};
 use clap::{Parser, ValueEnum};
 
 const DEFAULT_CARRIER_RATE_HZ: u32 = 192_000;
@@ -16,11 +17,20 @@ const DEFAULT_SLOTS_PER_FRAME: usize = 2;
 const IEC61937_SYNC: [u8; 4] = [0x72, 0xf8, 0x1f, 0x4e];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
-enum CarrierWordHalf {
+enum CarrierWordHalfArg {
     /// Reference SiI9437 path: useful IEC61937 word occupies bits 31..16.
     High,
     /// Alternate packing for bring-up only.
     Low,
+}
+
+impl From<CarrierWordHalfArg> for CarrierWordHalf {
+    fn from(value: CarrierWordHalfArg) -> Self {
+        match value {
+            CarrierWordHalfArg::High => CarrierWordHalf::High,
+            CarrierWordHalfArg::Low => CarrierWordHalf::Low,
+        }
+    }
 }
 
 #[derive(Debug, Parser)]
@@ -43,8 +53,8 @@ struct Args {
     slots: usize,
 
     /// Select which 16-bit half of each S32_LE slot contains IEC61937.
-    #[arg(long, value_enum, default_value_t = CarrierWordHalf::High)]
-    word_half: CarrierWordHalf,
+    #[arg(long, value_enum, default_value_t = CarrierWordHalfArg::High)]
+    word_half: CarrierWordHalfArg,
 
     /// Internal read size. Arbitrary read boundaries are handled safely.
     #[arg(long, default_value_t = 16_384)]
@@ -77,7 +87,7 @@ fn main() -> Result<()> {
             capture_stdout,
             &mut output,
             args.slots,
-            args.word_half,
+            args.word_half.into(),
             args.read_bytes,
         )?
     } else {
@@ -86,7 +96,7 @@ fn main() -> Result<()> {
             stdin.lock(),
             &mut output,
             args.slots,
-            args.word_half,
+            args.word_half.into(),
             args.read_bytes,
         )?
     };
@@ -158,20 +168,13 @@ fn process_stream<R: Read, W: Write>(
     word_half: CarrierWordHalf,
     read_bytes: usize,
 ) -> Result<IngestStats> {
-    if slots == 0 {
-        bail!("slot count must be greater than zero");
-    }
     if read_bytes == 0 {
         bail!("read size must be greater than zero");
     }
 
-    let carrier_frame_bytes = slots
-        .checked_mul(4)
-        .context("carrier frame byte count overflow")?;
+    let mut normalizer = S32LeCarrierNormalizer::new(slots, word_half)?;
     let mut read_buffer = vec![0_u8; read_bytes];
-    let mut pending = Vec::<u8>::with_capacity(read_bytes + carrier_frame_bytes);
     let mut scanner = Iec61937SyncScanner::default();
-    let mut stats = IngestStats::default();
 
     loop {
         let count = input
@@ -180,66 +183,23 @@ fn process_stream<R: Read, W: Write>(
         if count == 0 {
             break;
         }
-        pending.extend_from_slice(&read_buffer[..count]);
 
-        let complete_bytes = pending.len() / carrier_frame_bytes * carrier_frame_bytes;
-        if complete_bytes == 0 {
+        let normalized = normalizer.push(&read_buffer[..count]);
+        if normalized.is_empty() {
             continue;
         }
-
-        let normalized = normalize_s32le_carrier(&pending[..complete_bytes], slots, word_half)?;
         scanner.feed(&normalized);
         output
             .write_all(&normalized)
             .context("failed writing canonical IEC61937 bytes")?;
-
-        let frames = complete_bytes / carrier_frame_bytes;
-        stats.carrier_frames = stats.carrier_frames.saturating_add(frames as u64);
-        stats.output_words = stats
-            .output_words
-            .saturating_add((frames.saturating_mul(slots)) as u64);
-        pending.drain(..complete_bytes);
     }
 
-    if !pending.is_empty() {
-        bail!(
-            "capture ended with {} trailing bytes; expected complete {}-byte carrier frames",
-            pending.len(),
-            carrier_frame_bytes
-        );
-    }
-
-    stats.sync_bursts = scanner.sync_bursts;
-    Ok(stats)
-}
-
-fn normalize_s32le_carrier(
-    input: &[u8],
-    slots: usize,
-    word_half: CarrierWordHalf,
-) -> Result<Vec<u8>> {
-    if slots == 0 {
-        bail!("slot count must be greater than zero");
-    }
-    let frame_bytes = slots.checked_mul(4).context("carrier frame overflow")?;
-    if input.len() % frame_bytes != 0 {
-        bail!(
-            "carrier input length {} is not a multiple of {} bytes",
-            input.len(),
-            frame_bytes
-        );
-    }
-
-    let mut output = Vec::with_capacity(input.len() / 2);
-    for raw in input.chunks_exact(4) {
-        let word = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]);
-        let iec_word = match word_half {
-            CarrierWordHalf::High => (word >> 16) as u16,
-            CarrierWordHalf::Low => word as u16,
-        };
-        output.extend_from_slice(&iec_word.to_le_bytes());
-    }
-    Ok(output)
+    normalizer.finish()?;
+    Ok(IngestStats {
+        carrier_frames: normalizer.carrier_frames(),
+        output_words: normalizer.output_words(),
+        sync_bursts: scanner.sync_bursts,
+    })
 }
 
 #[derive(Debug, Default)]
@@ -276,26 +236,6 @@ mod tests {
 
     fn s32_with_high_word(word: u16) -> [u8; 4] {
         (u32::from(word) << 16).to_le_bytes()
-    }
-
-    #[test]
-    fn reference_high_half_preserves_iec61937_sync_words_bit_exactly() {
-        let mut input = Vec::new();
-        input.extend_from_slice(&s32_with_high_word(0xf872));
-        input.extend_from_slice(&s32_with_high_word(0x4e1f));
-
-        let output = normalize_s32le_carrier(&input, 2, CarrierWordHalf::High).unwrap();
-        assert_eq!(output, IEC61937_SYNC);
-    }
-
-    #[test]
-    fn low_half_mode_is_explicit_and_bit_exact() {
-        let mut input = Vec::new();
-        input.extend_from_slice(&0x1234_abcd_u32.to_le_bytes());
-        input.extend_from_slice(&0x5678_ef01_u32.to_le_bytes());
-
-        let output = normalize_s32le_carrier(&input, 2, CarrierWordHalf::Low).unwrap();
-        assert_eq!(output, [0xcd, 0xab, 0x01, 0xef]);
     }
 
     #[test]
