@@ -112,35 +112,13 @@ impl OpenJocNativeRenderer {
     /// are queued. A 1536-sample JOC AU is therefore reblocked losslessly into
     /// the 40-frame realtime cadence without resampling.
     pub fn take_block(&mut self) -> Option<DecodedFrame> {
-        let block = self.output.block_size.max(1);
-        if self.channels.iter().any(|channel| channel.len() < block) {
-            return None;
-        }
-        let mut planar = Vec::with_capacity(self.channels.len());
-        for channel in &mut self.channels {
-            let mut samples = Vec::with_capacity(block);
-            for _ in 0..block {
-                samples.push(channel.pop_front().expect("length checked above"));
-            }
-            planar.push(samples);
-        }
-        let pts = self.emitted_frames as f64 / f64::from(self.output.sample_rate);
-        self.emitted_frames = self.emitted_frames.saturating_add(block as u64);
-        let discontinuity = std::mem::replace(&mut self.discontinuity, false);
-        Some(DecodedFrame {
-            audio: AudioBlock {
-                channels: planar,
-                frame_count: block,
-                presentation_time_seconds: pts,
-                discontinuity,
-            },
-            // OpenJOC has already rendered the decoded object scene to the
-            // requested physical layout. Aurora object telemetry is attached by
-            // the metadata observer, not duplicated as a second renderer input.
-            objects: Vec::new(),
-        })
+        self.take_frames(self.output.block_size.max(1))
     }
 
+    /// Finalize OpenJOC and return every remaining PCM sample. Full realtime
+    /// blocks are emitted first; a final short block is emitted without padding
+    /// so finite files/fixtures do not lose up to `block_size - 1` samples and
+    /// the presentation timeline is not extended with synthetic silence.
     pub fn drain(&mut self) -> Result<Vec<DecodedFrame>, DecoderError> {
         self.session
             .drain()
@@ -150,9 +128,19 @@ impl OpenJocNativeRenderer {
         while let Some(frame) = self.take_block() {
             frames.push(frame);
         }
-        // Keep a short tail rather than silently padding it into the live
-        // timeline; the caller can discard it on a seek/reset or a future API
-        // can expose an explicit final-short-block contract.
+
+        let remaining = self.channels.first().map(VecDeque::len).unwrap_or(0);
+        if self.channels.iter().any(|channel| channel.len() != remaining) {
+            return Err(DecoderError::Decode(
+                "OpenJOC channel queues diverged while draining final PCM".to_owned(),
+            ));
+        }
+        if remaining > 0 {
+            frames.push(
+                self.take_frames(remaining)
+                    .expect("all channel queues were checked above"),
+            );
+        }
         Ok(frames)
     }
 
@@ -166,6 +154,35 @@ impl OpenJocNativeRenderer {
         self.last_info.object_count = None;
         self.last_info.complexity_index = None;
         Ok(())
+    }
+
+    fn take_frames(&mut self, frame_count: usize) -> Option<DecodedFrame> {
+        if frame_count == 0 || self.channels.iter().any(|channel| channel.len() < frame_count) {
+            return None;
+        }
+        let mut planar = Vec::with_capacity(self.channels.len());
+        for channel in &mut self.channels {
+            let mut samples = Vec::with_capacity(frame_count);
+            for _ in 0..frame_count {
+                samples.push(channel.pop_front().expect("length checked above"));
+            }
+            planar.push(samples);
+        }
+        let pts = self.emitted_frames as f64 / f64::from(self.output.sample_rate);
+        self.emitted_frames = self.emitted_frames.saturating_add(frame_count as u64);
+        let discontinuity = std::mem::replace(&mut self.discontinuity, false);
+        Some(DecodedFrame {
+            audio: AudioBlock {
+                channels: planar,
+                frame_count,
+                presentation_time_seconds: pts,
+                discontinuity,
+            },
+            // OpenJOC has already rendered the decoded object scene to the
+            // requested physical layout. Aurora object telemetry is attached by
+            // the metadata observer, not duplicated as a second renderer input.
+            objects: Vec::new(),
+        })
     }
 
     fn collect_output(&mut self) -> Result<(), DecoderError> {
