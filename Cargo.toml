@@ -11,6 +11,7 @@ members = [
     "crates/aurora-spatial-ir",
     "crates/aurora-spatial-ir-v2",
     "crates/aurora-spatial-transport-v2",
+    "crates/aurora-hoa-ir",
     "crates/aurora-decoder-open",
     "crates/aurora-decoder-engine",
     "crates/aurora-decoder-iamf",
