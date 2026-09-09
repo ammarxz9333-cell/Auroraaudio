@@ -92,3 +92,27 @@ impl AuroraSuperDecoder {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use aurora_decoder_engine::EngineConfig;
+
+    use super::*;
+    use crate::ActiveRoute;
+
+    #[test]
+    fn empty_input_initializes_native_route_without_emitting_fake_evidence() {
+        let mut decoder = AuroraSuperDecoder::new(EngineConfig::default());
+        let result = decoder
+            .decode_and_evaluate_mpegh_immersive_chunk(
+                &[],
+                1.0e-6,
+                MpeghConformancePolicy::near_reference(),
+            )
+            .unwrap();
+        assert!(result.is_none());
+        assert_eq!(decoder.active_route(), ActiveRoute::MpegHNative);
+        assert_eq!(decoder.mpegh_sample_cursor, 0);
+        assert!(decoder.mpegh_discontinuity);
+    }
+}
