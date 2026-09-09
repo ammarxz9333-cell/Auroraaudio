@@ -6,11 +6,15 @@
 
 #![forbid(unsafe_code)]
 
+use std::error::Error;
+use std::fmt;
+
 mod carrier;
 pub use carrier::{CarrierNormalizeError, CarrierWordHalf, S32LeCarrierNormalizer};
 
 const PA_LE: [u8; 2] = [0x72, 0xF8];
 const PB_LE: [u8; 2] = [0x1F, 0x4E];
+const PREAMBLE_LE: [u8; 4] = [PA_LE[0], PA_LE[1], PB_LE[0], PB_LE[1]];
 const MAX_PAYLOAD_BYTES: usize = 256 * 1024;
 
 /// IEC 61937 data type for AC-3.
@@ -95,6 +99,44 @@ pub struct BurstObservation {
     pub burst: Burst,
     pub format_change: Option<FormatChange>,
 }
+
+/// End-of-stream validation failure for the canonical IEC61937 carrier.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum BurstFinishError {
+    /// The stream ended after only the beginning of the Pa/Pb sync preamble.
+    TruncatedPreamble { matched_bytes: usize },
+    /// A complete Pa/Pb preamble was present but Pc/Pd was incomplete.
+    TruncatedHeader { pending_bytes: usize },
+    /// Pc/Pd declared a payload that did not fully arrive before EOF.
+    TruncatedPayload {
+        pending_bytes: usize,
+        expected_bytes: usize,
+    },
+}
+
+impl fmt::Display for BurstFinishError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::TruncatedPreamble { matched_bytes } => write!(
+                formatter,
+                "IEC61937 stream ended after {matched_bytes} byte(s) of the Pa/Pb preamble"
+            ),
+            Self::TruncatedHeader { pending_bytes } => write!(
+                formatter,
+                "IEC61937 stream ended with a {pending_bytes}-byte incomplete burst header"
+            ),
+            Self::TruncatedPayload {
+                pending_bytes,
+                expected_bytes,
+            } => write!(
+                formatter,
+                "IEC61937 stream ended with {pending_bytes} bytes of a burst requiring {expected_bytes} bytes"
+            ),
+        }
+    }
+}
+
+impl Error for BurstFinishError {}
 
 /// Stateful IEC 61937 parser for canonical S16_LE carrier bytes.
 #[derive(Debug)]
@@ -191,6 +233,52 @@ impl BurstParser {
         observations
     }
 
+    /// Validates EOF without treating ordinary carrier padding as a truncation.
+    ///
+    /// During streaming the parser deliberately retains up to three trailing
+    /// non-sync bytes so a Pa/Pb preamble can straddle the next read boundary.
+    /// At EOF such bytes are harmless padding unless a suffix is an actual prefix
+    /// of Pa/Pb. A complete Pa/Pb candidate must have its full Pc/Pd and payload.
+    pub fn finish(&mut self) -> Result<(), BurstFinishError> {
+        if self.buffer.is_empty() {
+            return Ok(());
+        }
+
+        if let Some(sync_offset) = find_sync(&self.buffer) {
+            let burst = &self.buffer[sync_offset..];
+            if burst.len() < 8 {
+                return Err(BurstFinishError::TruncatedHeader {
+                    pending_bytes: burst.len(),
+                });
+            }
+
+            let pc = u16::from_le_bytes([burst[4], burst[5]]);
+            let pd = u16::from_le_bytes([burst[6], burst[7]]);
+            let data_type = (pc & 0x7F) as u8;
+            let payload_bytes = payload_length_bytes(data_type, pd);
+            let carrier_payload_bytes = payload_bytes.saturating_add(payload_bytes & 1);
+            let expected = 8usize.saturating_add(carrier_payload_bytes);
+            if burst.len() < expected {
+                return Err(BurstFinishError::TruncatedPayload {
+                    pending_bytes: burst.len(),
+                    expected_bytes: expected,
+                });
+            }
+        }
+
+        if let Some(matched_bytes) = trailing_sync_prefix_len(&self.buffer) {
+            return Err(BurstFinishError::TruncatedPreamble { matched_bytes });
+        }
+
+        // A successful EOF may leave only idle/padding bytes. Account and clear
+        // them so post-finish telemetry reports no pending transport state.
+        self.discarded_bytes = self
+            .discarded_bytes
+            .saturating_add(self.buffer.len() as u64);
+        self.buffer.clear();
+        Ok(())
+    }
+
     /// Clears pending carrier bytes and stream-format history after a real source
     /// discontinuity, xrun, eARC unlock or capture-device restart.
     pub fn reset(&mut self) {
@@ -234,9 +322,14 @@ pub fn payload_length_bytes(data_type: u8, pd: u16) -> usize {
 }
 
 fn find_sync(buffer: &[u8]) -> Option<usize> {
-    buffer.windows(4).position(|window| {
-        window[0..2] == PA_LE && window[2..4] == PB_LE
-    })
+    buffer.windows(4).position(|window| window == PREAMBLE_LE)
+}
+
+fn trailing_sync_prefix_len(buffer: &[u8]) -> Option<usize> {
+    let max = buffer.len().min(PREAMBLE_LE.len().saturating_sub(1));
+    (1..=max)
+        .rev()
+        .find(|&len| buffer[buffer.len() - len..] == PREAMBLE_LE[..len])
 }
 
 #[cfg(test)]
@@ -256,6 +349,7 @@ mod tests {
         assert_eq!(out[0].burst.codec, TransportCodec::Eac3);
         assert_eq!(out[0].burst.payload, native);
         assert!(out[0].format_change.is_none());
+        parser.finish().unwrap();
     }
 
     #[test]
@@ -271,6 +365,7 @@ mod tests {
 
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].burst.payload, native);
+        parser.finish().unwrap();
     }
 
     #[test]
@@ -340,6 +435,41 @@ mod tests {
     #[test]
     fn ac3_pd_remains_bit_count() {
         assert_eq!(payload_length_bytes(DATA_TYPE_AC3, 20_480), 2_560);
+    }
+
+    #[test]
+    fn eof_discards_idle_padding_but_rejects_partial_preamble() {
+        let mut padding = BurstParser::new(CodecFilter::All);
+        assert!(padding.push(&[0, 0, 0, 0, 0]).is_empty());
+        assert_eq!(padding.pending_bytes(), 3);
+        padding.finish().unwrap();
+        assert_eq!(padding.pending_bytes(), 0);
+        assert_eq!(padding.discarded_bytes(), 5);
+
+        let mut partial = BurstParser::new(CodecFilter::All);
+        assert!(partial.push(&[0, 0, PREAMBLE_LE[0], PREAMBLE_LE[1]]).is_empty());
+        assert_eq!(
+            partial.finish(),
+            Err(BurstFinishError::TruncatedPreamble { matched_bytes: 2 })
+        );
+    }
+
+    #[test]
+    fn eof_rejects_incomplete_header_and_payload() {
+        let mut header = BurstParser::new(CodecFilter::All);
+        assert!(header.push(&PREAMBLE_LE).is_empty());
+        assert_eq!(
+            header.finish(),
+            Err(BurstFinishError::TruncatedHeader { pending_bytes: 4 })
+        );
+
+        let full = make_burst(DATA_TYPE_EAC3, &[0x0B, 0x77, 0x12, 0x34, 0x56, 0x78]);
+        let mut payload = BurstParser::new(CodecFilter::All);
+        assert!(payload.push(&full[..full.len() - 2]).is_empty());
+        assert!(matches!(
+            payload.finish(),
+            Err(BurstFinishError::TruncatedPayload { .. })
+        ));
     }
 
     fn make_burst(data_type: u8, native_payload: &[u8]) -> Vec<u8> {
