@@ -27,6 +27,7 @@ mod hoa_inverse_dyn;
 mod immersive_evaluation;
 mod non_hoa_candidate;
 mod object_candidate;
+mod object_stateful_candidate;
 mod object_timeline_candidate;
 mod objects_hoa_candidate;
 mod paired_gate;
@@ -101,6 +102,9 @@ pub use non_hoa_candidate::{
     MpeghNonHoaCandidateDecision, MpeghNonHoaCandidateError,
 };
 pub use object_candidate::{render_static_mpegh_object_plane, MpeghObjectCandidateError};
+pub use object_stateful_candidate::{
+    render_stateful_mpegh_object_plane, MpeghObjectStateCache, MpeghStatefulObjectError,
+};
 pub use object_timeline_candidate::{render_exact_mpegh_object_plane, MpeghObjectTimelineError};
 pub use objects_hoa_candidate::{
     evaluate_static_mpegh_objects_hoa_candidate, render_static_mpegh_objects_hoa_candidate,
@@ -135,7 +139,7 @@ pub struct MpeghSpeakerLayout {
 }
 
 #[cfg(not(feature = "native-mpegh"))]
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy,PartialEq, Eq)]
 pub struct MpeghSpeaker {
     pub is_lfe: bool,
     pub azimuth_degrees: i16,
