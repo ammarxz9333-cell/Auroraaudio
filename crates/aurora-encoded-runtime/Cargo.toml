@@ -12,3 +12,7 @@ aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-decoder-engine = { path = "../aurora-decoder-engine" }
 aurora-direct-earc-decoder = { path = "../aurora-direct-earc-decoder" }
 aurora-encoded-input = { path = "../aurora-encoded-input" }
+
+[dev-dependencies]
+aurora-iec61937 = { path = "../aurora-iec61937" }
+aurora-usb-protocol = { path = "../aurora-usb-protocol" }
