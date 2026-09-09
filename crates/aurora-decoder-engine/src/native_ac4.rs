@@ -4,6 +4,7 @@ use aurora_core::{AudioBlock, AudioFormat};
 use aurora_decoder_api::{DecodedFrame, DecoderError};
 use oxideav_ac4::decoder::Ac4Decoder;
 use oxideav_ac4::sync::{parse_sync_frame_at_start, SYNC_WORD_CRC, SYNC_WORD_PLAIN};
+use oxideav_ac4::toc::Ac4FrameInfo;
 use oxideav_core::{CodecId, CodecParameters, Decoder as OxideDecoder, Frame, Packet, TimeBase};
 
 const MAX_COMPRESSED_BUFFER: usize = 8 * 1024 * 1024;
@@ -143,15 +144,25 @@ impl NativeAc4Decoder {
         if samples == 0 {
             return Ok(());
         }
-        let source_rate = self
+        let info = self
             .decoder
             .last_info
             .as_ref()
-            .map(|info| info.sample_rate)
-            .unwrap_or(output.sample_rate);
+            .ok_or_else(|| DecoderError::Decode("AC-4 frame has no parsed TOC info".into()))?;
+        let source_rate = info.sample_rate;
         if source_rate != output.sample_rate {
             return Err(DecoderError::UnsupportedInput(
                 "native AC-4 sample-rate conversion is not wired yet",
+            ));
+        }
+
+        // OxideAV's A-JOC path currently emits reconstructed object signals as
+        // PCM lanes. Those are NOT speaker channels and must never be wired
+        // directly to Aurora outputs. Until the object coordinates/OAMD side
+        // channel is exported into Aurora's scene model, fail closed.
+        if !info.ajoc_substreams.is_empty() || !info.obj_substreams.is_empty() {
+            return Err(DecoderError::UnsupportedInput(
+                "AC-4 object-coded presentation requires Aurora object-metadata/render integration",
             ));
         }
 
@@ -161,7 +172,7 @@ impl NativeAc4Decoder {
         let bytes_per_sample = 2usize;
         let frame_bytes = samples
             .checked_mul(bytes_per_sample)
-            .ok_or(DecoderError::Decode("AC-4 frame size overflow".into()))?;
+            .ok_or_else(|| DecoderError::Decode("AC-4 frame size overflow".into()))?;
         if frame_bytes == 0 || interleaved.len() % frame_bytes != 0 {
             return Err(DecoderError::Decode(
                 "AC-4 S16 output has inconsistent frame geometry".into(),
@@ -171,23 +182,19 @@ impl NativeAc4Decoder {
         if source_channels == 0 {
             return Err(DecoderError::Decode("AC-4 decoded zero channels".into()));
         }
-        if source_channels > output.channel_count {
-            return Err(DecoderError::UnsupportedInput(
-                "AC-4 source has more channels than configured Aurora output; layout renderer required",
-            ));
-        }
 
+        let map = ac4_target_map(info, source_channels, output.channel_count)?;
         self.ensure_pcm_channels();
         for frame_index in 0..samples {
-            for channel in 0..output.channel_count {
-                let sample = if channel < source_channels {
-                    let offset = (frame_index * source_channels + channel) * 2;
+            for (target, source) in map.iter().enumerate() {
+                let sample = if let Some(source) = source {
+                    let offset = (frame_index * source_channels + *source) * 2;
                     let value = i16::from_le_bytes([interleaved[offset], interleaved[offset + 1]]);
                     f32::from(value) / 32768.0
                 } else {
                     0.0
                 };
-                self.pcm[channel].push_back(sample);
+                self.pcm[target].push_back(sample);
             }
         }
         Ok(())
@@ -237,6 +244,60 @@ impl Default for NativeAc4Decoder {
     fn default() -> Self {
         Self::new()
     }
+}
+
+/// Return one source index per Aurora output channel. `None` means silence.
+///
+/// This adapter intentionally supports only layouts whose upstream lane order
+/// is explicit and unambiguous. Unknown layouts fail closed rather than routing
+/// a valid decode to the wrong loudspeakers.
+fn ac4_target_map(
+    info: &Ac4FrameInfo,
+    source_channels: usize,
+    output_channels: usize,
+) -> Result<Vec<Option<usize>>, DecoderError> {
+    if source_channels > output_channels {
+        return Err(DecoderError::UnsupportedInput(
+            "AC-4 source has more channels than configured Aurora output",
+        ));
+    }
+
+    // Mono/stereo are unambiguous and map to the first Aurora front lanes.
+    if source_channels <= 2 {
+        let mut map = vec![None; output_channels];
+        for index in 0..source_channels {
+            map[index] = Some(index);
+        }
+        return Ok(map);
+    }
+
+    // OxideAV immersive 7.1.4 output is explicitly documented as
+    // [LFE, L, R, C, Ls, Rs, Lb, Rb, Tfl, Tfr, Tbl, Tbr]. Aurora's
+    // canonical 7.1.4 order is
+    // [FL, FR, C, LFE, SL, SR, BL, BR, TFL, TFR, TBL, TBR].
+    if info.first_chan_mode.map(|mode| mode.ch_mode) == Some(12)
+        && source_channels == 12
+        && output_channels == 12
+    {
+        return Ok(vec![
+            Some(1),
+            Some(2),
+            Some(3),
+            Some(0),
+            Some(4),
+            Some(5),
+            Some(6),
+            Some(7),
+            Some(8),
+            Some(9),
+            Some(10),
+            Some(11),
+        ]);
+    }
+
+    Err(DecoderError::UnsupportedInput(
+        "AC-4 decoded layout has no accepted Aurora channel-order mapping yet",
+    ))
 }
 
 fn find_next_sync_prefix(data: &[u8]) -> Option<usize> {

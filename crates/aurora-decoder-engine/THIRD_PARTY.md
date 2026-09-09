@@ -6,13 +6,13 @@
 
 - OpenJOC — Apache-2.0. Native Rust E-AC-3 JOC decode/reconstruction/render integration through `aurora-decoder-open`.
 - OxideAV `oxideav-ac3` — MIT. Native Rust AC-3/E-AC-3 decode through `aurora-decoder-open`.
-- OxideAV `oxideav-ac4` — MIT. Native Rust AC-4 integration in the proprietary engine. The current Aurora adapter accepts Annex-G sync-framed input (including CRC verification) or packetized raw AC-4 with an explicit hint, converts the upstream S16 output to Aurora F32, and reblocks it to the configured Aurora block size. Upstream immersive/A-JOC decoding is rendered to PCM; Aurora does not yet export AC-4 object metadata as `AudioObject` values, so object-preserving AC-4 is not claimed.
+- OxideAV `oxideav-ac4` — MIT. Experimental native Rust AC-4 integration. The Aurora adapter accepts Annex-G sync-framed input (including CRC verification) or packetized raw AC-4 with an explicit hint, converts S16 to Aurora F32, and reblocks to the configured Aurora block size. Mono/stereo are mapped conservatively; the documented immersive 7.1.4 lane order is normalized into Aurora canonical order. A-JOC/direct-object presentations currently fail closed because upstream object-signal PCM is not a speaker layout and Aurora has not yet exported the associated object/OAMD metadata into its scene renderer. Unknown multichannel layouts also fail closed rather than risking a channel-order error.
 - FFmpeg — normally LGPL-2.1-or-later unless built with GPL components. Aurora invokes it as a replaceable external worker and does not vendor or relabel FFmpeg code.
 
 ## Preferred native candidates
 
-- `truehdd/truehdd` — Apache-2.0. Candidate for native TrueHD and Atmos metadata extraction after toolchain, production-quality and corpus validation.
-- OxideAV `oxideav-dts` — MIT. Candidate for DTS Core only; current upstream explicitly excludes EXSS/XLL and therefore must not be claimed as DTS-HD MA or DTS:X support.
+- `truehdd/truehdd` — Apache-2.0. Candidate for native TrueHD and Atmos metadata extraction. Current `truehd` requires Rust 1.88 and the full `truehdd` package requires Rust 1.95, while Aurora currently targets Rust 1.85; therefore it stays isolated until the toolchain boundary is resolved.
+- OxideAV `oxideav-dts` — MIT / Rust 1.80. Candidate for DTS Core only; current upstream explicitly excludes DTS-HD extension substreams, so it must not be claimed as DTS-HD MA or DTS:X support.
 - OxideAV AAC/Opus family — MIT. Candidates for replacing compatibility-worker decode on common codecs after corpus/fuzz/performance gates.
 - AOM IAMF tools — permissive source terms plus an AOM patent license. Candidate for IAMF after legal-notice and patent-condition review.
 
