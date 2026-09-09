@@ -1,9 +1,7 @@
 use std::collections::HashMap;
 
 use aurora_core::ChannelRole;
-use aurora_spatial_transport_v2::{
-    cicp_layout_member_semantic_role, cicp_layout_members,
-};
+use aurora_spatial_transport_v2::{cicp_layout_member_speaker_index, cicp_layout_members};
 use thiserror::Error;
 
 use crate::{
@@ -75,7 +73,7 @@ pub fn reference_roles(
             if members.len() == channel_count {
                 let mut roles = Vec::with_capacity(channel_count);
                 for member_index in 0..members.len() {
-                    let role = cicp_layout_member_semantic_role(
+                    let speaker_index = cicp_layout_member_speaker_index(
                         cicp_index,
                         member_index as u16,
                     )
@@ -83,6 +81,12 @@ pub fn reference_roles(
                         cicp_index,
                         member_index,
                     })?;
+                    let role = semantic_role_from_cicp_speaker(speaker_index).ok_or(
+                        MpeghRoleConformanceError::UnresolvedCicpRole {
+                            cicp_index,
+                            member_index,
+                        },
+                    )?;
                     roles.push(role);
                 }
                 ensure_unique_reference_roles(&roles)?;
@@ -128,6 +132,24 @@ fn ensure_unique_reference_roles(
         }
     }
     Ok(())
+}
+
+fn semantic_role_from_cicp_speaker(index: u8) -> Option<ChannelRole> {
+    Some(match index {
+        0 => ChannelRole::FrontLeft,
+        1 => ChannelRole::FrontRight,
+        2 => ChannelRole::FrontCenter,
+        3 | 26 | 36 => ChannelRole::LowFrequencyEffects,
+        4 | 13 => ChannelRole::SurroundLeft,
+        5 | 14 => ChannelRole::SurroundRight,
+        8 | 41 => ChannelRole::SurroundBackLeft,
+        9 | 42 => ChannelRole::SurroundBackRight,
+        17 | 32 => ChannelRole::TopFrontLeft,
+        18 | 33 => ChannelRole::TopFrontRight,
+        20 | 30 => ChannelRole::TopRearLeft,
+        21 | 31 => ChannelRole::TopRearRight,
+        _ => return None,
+    })
 }
 
 fn semantic_role_from_geometry(speaker: MpeghSpeaker) -> Option<ChannelRole> {
