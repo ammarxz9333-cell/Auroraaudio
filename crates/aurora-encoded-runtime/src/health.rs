@@ -270,6 +270,9 @@ mod tests {
             total_format_changes: 1,
             relocks: 1,
             last_valid_burst_age_ms: None,
+            last_burst_spacing_bytes: Some(24_576),
+            min_burst_spacing_bytes: Some(24_576),
+            max_burst_spacing_bytes: Some(24_584),
         }
     }
 
