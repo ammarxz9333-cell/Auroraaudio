@@ -8,6 +8,9 @@
 
 #![forbid(unsafe_code)]
 
+#[cfg(feature = "native-mpegh")]
+mod mpegh_immersive;
+
 use aurora_core::AudioFormat;
 use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
 use aurora_decoder_engine::catalog::CodecId;
