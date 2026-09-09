@@ -12,7 +12,7 @@ use aurora_core::AudioFormat;
 use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
 use aurora_decoder_engine::catalog::CodecId;
 use aurora_decoder_engine::{AuroraDecoderEngine, EngineConfig};
-use aurora_decoder_mpegh::MpeghExternalFrame;
+use aurora_decoder_mpegh::{MpeghExternalFrame, MpeghRenderedPcm};
 use aurora_spatial_ir::SpatialDecodedFrame;
 use aurora_spatial_ir_v2::SpatialDecodedFrame as SpatialDecodedFrameV2;
 use aurora_spatial_transport_v2::SpatialTransportFrame;
@@ -30,6 +30,15 @@ pub enum ActiveRoute {
     IamfRust,
     TrueHdNative,
     MpegHNative,
+}
+
+/// One MPEG-H access unit represented both as Aurora's lossless pre-render
+/// transport scene and, when libmpegh produced one, its final speaker-rendered
+/// PCM companion from the exact same execute call.
+#[derive(Debug)]
+pub struct MpeghTransportEvidenceFrame {
+    pub scene: SpatialTransportFrame,
+    pub reference: Option<MpeghRenderedPcm>,
 }
 
 pub struct AuroraSuperDecoder {
@@ -175,35 +184,48 @@ impl AuroraSuperDecoder {
         ))
     }
 
-    /// Preferred MPEG-H front door. Converts the native external-render packet
-    /// into Aurora Spatial Transport V2 with sample-clocked bed/object/HOA lane
-    /// ownership. Conversion failures mark a discontinuity rather than falling
-    /// back to a lossy speaker mix.
+    /// One-shot access to the libmpegh speaker render captured by the most
+    /// recent successful native execute. `decode_mpegh_transport_with_reference_chunk`
+    /// is preferred because it binds the scene and reference into one value.
     #[cfg(feature = "native-mpegh")]
-    pub fn decode_mpegh_transport_chunk(
+    pub fn take_mpegh_reference_pcm(&mut self) -> Option<MpeghRenderedPcm> {
+        self.mpegh
+            .as_mut()
+            .and_then(NativeMpeghDecoder::take_rendered_pcm)
+    }
+
+    #[cfg(not(feature = "native-mpegh"))]
+    pub fn take_mpegh_reference_pcm(&mut self) -> Option<MpeghRenderedPcm> {
+        None
+    }
+
+    /// Preferred evidence front door for MPEG-H. It decodes the compressed
+    /// access unit exactly once and returns Aurora's pre-render scene together
+    /// with libmpegh's final speaker render from that same execute call.
+    #[cfg(feature = "native-mpegh")]
+    pub fn decode_mpegh_transport_with_reference_chunk(
         &mut self,
         input: &[u8],
-    ) -> Result<Option<SpatialTransportFrame>, DecoderError> {
+    ) -> Result<Option<MpeghTransportEvidenceFrame>, DecoderError> {
         let Some(external) = self.decode_mpegh_external_chunk(input)? else {
             return Ok(None);
         };
-        let sample_rate = u32::try_from(external.sample_rate)
+        let reference = self.take_mpegh_reference_pcm();
+        let sample_rate = match u32::try_from(external.sample_rate)
             .ok()
             .filter(|rate| *rate > 0)
-            .ok_or_else(|| {
+        {
+            Some(rate) => rate,
+            None => {
                 self.mpegh_discontinuity = true;
-                DecoderError::Decode(format!(
+                return Err(DecoderError::Decode(format!(
                     "MPEG-H external frame reported invalid sample rate {}",
                     external.sample_rate
-                ))
-            })?;
+                )));
+            }
+        };
         let presentation_time_seconds = self.mpegh_sample_cursor as f64 / f64::from(sample_rate);
-        let frame_count = external
-            .prerender_pcm
-            .len()
-            .checked_div(3 * 1024)
-            .map(|_| 1024u64)
-            .unwrap_or(1024);
+        let fallback_frame_count = 1024u64;
         match external.to_spatial_transport_v2(
             presentation_time_seconds,
             self.mpegh_discontinuity,
@@ -213,13 +235,15 @@ impl AuroraSuperDecoder {
                     .mpegh_sample_cursor
                     .saturating_add(scene.frame.decoded.audio.frame_count as u64);
                 self.mpegh_discontinuity = false;
-                Ok(Some(scene))
+                Ok(Some(MpeghTransportEvidenceFrame { scene, reference }))
             }
             Err(error) => {
-                // The compressed access unit was already consumed by libmpegh;
-                // keep transport time monotonic and force the next admitted
-                // frame to declare a discontinuity.
-                self.mpegh_sample_cursor = self.mpegh_sample_cursor.saturating_add(frame_count);
+                // The compressed access unit and its reference render were
+                // already consumed. Drop the paired reference with this failed
+                // scene rather than letting it be mistaken for the next frame.
+                self.mpegh_sample_cursor = self
+                    .mpegh_sample_cursor
+                    .saturating_add(fallback_frame_count);
                 self.mpegh_discontinuity = true;
                 Err(DecoderError::Decode(format!(
                     "MPEG-H Spatial Transport V2 conversion failed: {error}"
@@ -229,13 +253,24 @@ impl AuroraSuperDecoder {
     }
 
     #[cfg(not(feature = "native-mpegh"))]
-    pub fn decode_mpegh_transport_chunk(
+    pub fn decode_mpegh_transport_with_reference_chunk(
         &mut self,
         _input: &[u8],
-    ) -> Result<Option<SpatialTransportFrame>, DecoderError> {
+    ) -> Result<Option<MpeghTransportEvidenceFrame>, DecoderError> {
         Err(DecoderError::Unavailable(
             "Aurora super decoder was built without the native-mpegh backend",
         ))
+    }
+
+    /// Backwards-compatible scene-only MPEG-H front door. Internally it uses
+    /// the paired evidence path, so no compressed access unit is ever decoded
+    /// twice merely to obtain a reference render.
+    pub fn decode_mpegh_transport_chunk(
+        &mut self,
+        input: &[u8],
+    ) -> Result<Option<SpatialTransportFrame>, DecoderError> {
+        self.decode_mpegh_transport_with_reference_chunk(input)
+            .map(|frame| frame.map(|pair| pair.scene))
     }
 
     #[cfg(feature = "iamf")]
@@ -431,5 +466,9 @@ mod tests {
         let transport: Result<Option<SpatialTransportFrame>, DecoderError> =
             decoder.decode_mpegh_transport_chunk(&[]);
         assert!(matches!(transport, Err(DecoderError::Unavailable(_))));
+        let evidence: Result<Option<MpeghTransportEvidenceFrame>, DecoderError> =
+            decoder.decode_mpegh_transport_with_reference_chunk(&[]);
+        assert!(matches!(evidence, Err(DecoderError::Unavailable(_))));
+        assert!(decoder.take_mpegh_reference_pcm().is_none());
     }
 }
