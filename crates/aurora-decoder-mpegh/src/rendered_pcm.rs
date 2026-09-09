@@ -1,7 +1,5 @@
 use thiserror::Error;
 
-use crate::MpeghSpeakerLayout;
-
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MpeghRenderedPcm {
     /// Interleaved little-endian speaker-rendered PCM from the same libmpegh
@@ -11,10 +9,6 @@ pub struct MpeghRenderedPcm {
     pub channel_count: usize,
     pub frame_count: usize,
     pub sample_rate: u32,
-    /// Exact speaker layout reported by libmpegh for this render. Native
-    /// captures populate this field from the same execute call. `None` is kept
-    /// only for synthetic/baseline fixtures that have no native geometry.
-    pub speaker_layout: Option<MpeghSpeakerLayout>,
 }
 
 impl MpeghRenderedPcm {
@@ -24,14 +18,6 @@ impl MpeghRenderedPcm {
         }
         if self.channel_count == 0 {
             return Err(MpeghRenderedPcmError::InvalidChannelCount);
-        }
-        if let Some(layout) = &self.speaker_layout {
-            if !layout.speakers.is_empty() && layout.speakers.len() != self.channel_count {
-                return Err(MpeghRenderedPcmError::SpeakerLayoutChannelMismatch {
-                    speakers: layout.speakers.len(),
-                    channels: self.channel_count,
-                });
-            }
         }
         let bytes_per_sample = bytes_per_sample(self.bit_depth)?;
         let expected = self
@@ -113,8 +99,6 @@ pub enum MpeghRenderedPcmError {
     InvalidSampleRate,
     #[error("rendered MPEG-H PCM channel count is zero")]
     InvalidChannelCount,
-    #[error("rendered MPEG-H speaker layout has {speakers} speakers for {channels} PCM channels")]
-    SpeakerLayoutChannelMismatch { speakers: usize, channels: usize },
     #[error("rendered MPEG-H PCM stores {bytes} bytes but geometry requires {expected}")]
     ByteLengthMismatch { bytes: usize, expected: usize },
     #[error("rendered MPEG-H PCM geometry arithmetic overflow")]
@@ -133,7 +117,6 @@ mod tests {
             channel_count: 2,
             frame_count: 1,
             sample_rate: 48_000,
-            speaker_layout: None,
         };
         let planar = pcm.decode_planar_f32().unwrap();
         assert!((planar[0][0] - 0.5).abs() < 1.0e-6);
@@ -148,7 +131,6 @@ mod tests {
             channel_count: 2,
             frame_count: 1,
             sample_rate: 48_000,
-            speaker_layout: None,
         };
         assert!(matches!(
             pcm.validate(),
