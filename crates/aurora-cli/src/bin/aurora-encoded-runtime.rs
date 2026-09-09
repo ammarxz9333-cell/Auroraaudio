@@ -1,22 +1,19 @@
-//! Single-process prototype for Aurora encoded input -> decode -> speaker DSP -> output.
+//! Single-process Aurora encoded input -> decode -> speaker DSP -> hardware output.
 //!
-//! Direct eARC mode captures S32_LE from ALSA (or stdin), normalizes it and
-//! decodes in one process. Legacy mode consumes complete Aurora USB v1
-//! SOCK_SEQPACKET messages from the existing STM32 bridge socket and feeds the
-//! exact ENCODED_IEC61937 payload into the same runtime.
+//! Direct eARC can now use Aurora-owned native ALSA capture instead of an
+//! `arecord` subprocess. A stdin S32_LE path remains for fixtures/evidence.
+//! Legacy STM32/USB remains an explicit fallback and converges on the same
+//! IEC61937/decoder/DSP/output runtime.
 //!
-//! The final speaker stream can remain raw canonical 12-channel interleaved F32
-//! on stdout for evidence/inspection or be sent to Aurora's native Linux ALSA
-//! backend as exact S32_LE. Wider physical TDM layouts are zero-padded only; no
-//! extra channels are synthesized.
+//! Final speaker PCM can remain canonical 12-channel interleaved F32 on stdout
+//! or go to Aurora's native ALSA S32_LE playback backend. Wider TDM layouts are
+//! zero-padded only; no extra channels are synthesized and no Atmos/JOC claim is
+//! inferred from IEC61937 transport type alone.
 
 use std::io::{self, Read, Write};
-use std::process::Child;
-
-#[cfg(target_os = "linux")]
-use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
+use aurora_alsa_input::{interleaved_i32_to_le_bytes, AlsaInputConfig, NativeAlsaCapture};
 use aurora_alsa_output::{AlsaOutputConfig, NativeAlsaPlayback};
 use aurora_core::{AudioFormat, SampleType};
 use aurora_decoder_engine::EngineConfig;
@@ -32,6 +29,8 @@ const DEFAULT_CARRIER_RATE_HZ: u32 = 192_000;
 const DEFAULT_SLOTS: usize = 2;
 const DEFAULT_BRIDGE_SOCKET: &str = "/run/aurora/usb-bridge.sock";
 const LEGACY_PACKET_BUFFER_BYTES: usize = 512 * 1024;
+const DEFAULT_INPUT_PERIOD_FRAMES: usize = 256;
+const DEFAULT_INPUT_BUFFER_FRAMES: usize = 1_024;
 const DEFAULT_OUTPUT_PERIOD_FRAMES: usize = 256;
 const DEFAULT_OUTPUT_BUFFER_FRAMES: usize = 1_024;
 
@@ -67,16 +66,25 @@ impl From<WordHalfArg> for CarrierWordHalf {
 #[derive(Debug, Parser)]
 #[command(
     name = "aurora-encoded-runtime",
-    about = "Run direct eARC or legacy STM32/USB through Aurora decode, DSP and output"
+    about = "Run direct eARC or legacy STM32/USB through Aurora decode, DSP and native output"
 )]
 struct Args {
     /// Select the physical encoded input explicitly. Aurora never auto-switches.
     #[arg(long, value_enum, default_value = "direct-earc")]
     input: InputMode,
 
-    /// ALSA capture device for direct eARC, e.g. hw:0,0. Omit to read S32_LE from stdin.
+    /// Native ALSA capture device for direct eARC, e.g. hw:0,0.
+    /// Omit to read raw interleaved S32_LE carrier slots from stdin.
     #[arg(long)]
     alsa_device: Option<String>,
+
+    /// Preferred native ALSA capture period size in carrier frames.
+    #[arg(long, default_value_t = DEFAULT_INPUT_PERIOD_FRAMES)]
+    input_period_frames: usize,
+
+    /// Preferred native ALSA capture buffer size in carrier frames.
+    #[arg(long, default_value_t = DEFAULT_INPUT_BUFFER_FRAMES)]
+    input_buffer_frames: usize,
 
     /// Select the final speaker sink.
     #[arg(long, value_enum, default_value = "stdout-f32")]
@@ -92,11 +100,11 @@ struct Args {
     #[arg(long, default_value_t = OUTPUT_CHANNELS)]
     hardware_output_channels: usize,
 
-    /// Preferred ALSA hardware period size. The device may negotiate a nearby value.
+    /// Preferred ALSA playback period size. The device may negotiate nearby.
     #[arg(long, default_value_t = DEFAULT_OUTPUT_PERIOD_FRAMES)]
     output_period_frames: usize,
 
-    /// Preferred ALSA hardware buffer size. Must be at least two periods.
+    /// Preferred ALSA playback buffer size. Must be at least two periods.
     #[arg(long, default_value_t = DEFAULT_OUTPUT_BUFFER_FRAMES)]
     output_buffer_frames: usize,
 
@@ -104,7 +112,7 @@ struct Args {
     #[arg(long, default_value_t = DEFAULT_CARRIER_RATE_HZ)]
     carrier_rate: u32,
 
-    /// S32_LE serial-audio slots per direct-eARC frame.
+    /// S32_LE serial-audio slots per direct-eARC carrier frame.
     #[arg(long, default_value_t = DEFAULT_SLOTS)]
     slots: usize,
 
@@ -116,7 +124,7 @@ struct Args {
     #[arg(long, default_value = DEFAULT_BRIDGE_SOCKET)]
     bridge_socket: String,
 
-    /// Process read size for direct eARC capture.
+    /// Process read size when direct eARC carrier bytes are supplied on stdin.
     #[arg(long, default_value_t = 16_384)]
     read_bytes: usize,
 
@@ -124,7 +132,7 @@ struct Args {
     #[arg(long, default_value_t = OUTPUT_SAMPLE_RATE)]
     output_rate: u32,
 
-    /// Logical output channel count. Integrated speaker DSP requires canonical 7.1.4 = 12.
+    /// Logical output channel count. Integrated speaker DSP requires 7.1.4 = 12.
     #[arg(long, default_value_t = OUTPUT_CHANNELS)]
     output_channels: usize,
 
@@ -139,6 +147,9 @@ struct RuntimeStats {
     format_changes: u64,
     decoded_frames: u64,
     decoded_pcm_frames: u64,
+    transport_discontinuities: u64,
+    capture_xruns: u64,
+    capture_recoveries: u64,
 }
 
 fn main() -> Result<()> {
@@ -176,14 +187,15 @@ fn main() -> Result<()> {
         }
         OutputMode::AlsaS32 => {
             let device = args.output_device.as_deref().unwrap_or("default");
-            let mut sink = NativeAlsaSink::open(AlsaOutputConfig {
+            let config = AlsaOutputConfig {
                 device: device.to_owned(),
                 sample_rate: args.output_rate,
                 logical_channels: OUTPUT_CHANNELS,
                 hardware_channels: args.hardware_output_channels,
                 period_frames: args.output_period_frames,
                 buffer_frames: args.output_buffer_frames,
-            })?;
+            };
+            let mut sink = NativeAlsaSink::open(config)?;
             let stats = run_selected_input(&args, &mut runtime, &mut sink)?;
             sink.finish()?;
             stats
@@ -191,13 +203,16 @@ fn main() -> Result<()> {
     };
 
     eprintln!(
-        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={}",
+        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={}",
         args.input,
         args.output,
         stats.carrier_bursts,
         stats.format_changes,
         stats.decoded_frames,
-        stats.decoded_pcm_frames
+        stats.decoded_pcm_frames,
+        stats.transport_discontinuities,
+        stats.capture_xruns,
+        stats.capture_recoveries
     );
     Ok(())
 }
@@ -210,10 +225,16 @@ fn validate_args(args: &Args) -> Result<()> {
         bail!("slot count must be greater than zero");
     }
     if args.read_bytes == 0 {
-        bail!("read size must be greater than zero");
+        bail!("stdin read size must be greater than zero");
     }
     if args.block_size == 0 {
         bail!("decoder output block size must be greater than zero");
+    }
+    if args.input_period_frames == 0 {
+        bail!("ALSA input period must be greater than zero");
+    }
+    if args.input_buffer_frames < args.input_period_frames.saturating_mul(2) {
+        bail!("ALSA input buffer must be at least two periods");
     }
     if args.output_rate != OUTPUT_SAMPLE_RATE || args.output_channels != OUTPUT_CHANNELS {
         bail!(
@@ -261,24 +282,54 @@ fn run_direct<S: SpeakerSink>(
     sink: &mut S,
 ) -> Result<RuntimeStats> {
     if let Some(device) = args.alsa_device.as_deref() {
-        let mut child = spawn_arecord(device, args.carrier_rate, args.slots)?;
-        let capture_stdout = child
-            .stdout
-            .take()
-            .context("arecord stdout was not captured")?;
-        let stats = run_direct_stream(capture_stdout, runtime, sink, args.read_bytes)?;
-        let status = child.wait().context("failed waiting for arecord")?;
-        if !status.success() {
-            bail!("arecord exited with status {status}");
-        }
-        Ok(stats)
+        run_direct_native_alsa(args, device, runtime, sink)
     } else {
         let stdin = io::stdin();
-        run_direct_stream(stdin.lock(), runtime, sink, args.read_bytes)
+        run_direct_stdin(stdin.lock(), runtime, sink, args.read_bytes)
     }
 }
 
-fn run_direct_stream<R: Read, S: SpeakerSink>(
+fn run_direct_native_alsa<S: SpeakerSink>(
+    args: &Args,
+    device: &str,
+    runtime: &mut AuroraPlaybackRuntime,
+    sink: &mut S,
+) -> Result<RuntimeStats> {
+    let mut capture = NativeAlsaCapture::open(AlsaInputConfig {
+        device: device.to_owned(),
+        sample_rate: args.carrier_rate,
+        channels: args.slots,
+        period_frames: args.input_period_frames,
+        buffer_frames: args.input_buffer_frames,
+    })
+    .context("failed to open Aurora native ALSA direct-eARC capture")?;
+    let mut stats = RuntimeStats::default();
+
+    loop {
+        let block = capture
+            .read_block()
+            .context("native ALSA direct-eARC capture failed")?;
+        if block.discontinuity {
+            // Clear partial S32 carrier bytes, IEC61937 parser, codec state,
+            // speaker DSP and queued physical output at one transport boundary.
+            runtime.reset();
+            sink.reset_for_transport_discontinuity()?;
+            stats.transport_discontinuities = stats.transport_discontinuities.saturating_add(1);
+        }
+
+        let carrier_slots = interleaved_i32_to_le_bytes(&block.interleaved_s32);
+        let batch = runtime
+            .push_direct_s32(&carrier_slots)
+            .context("native direct-eARC playback runtime ingest failed")?;
+        consume_batch(batch, sink, &mut stats)?;
+
+        let telemetry = capture.telemetry();
+        stats.capture_xruns = telemetry.xruns;
+        stats.capture_recoveries = telemetry.recoveries;
+    }
+}
+
+fn run_direct_stdin<R: Read, S: SpeakerSink>(
     mut input: R,
     runtime: &mut AuroraPlaybackRuntime,
     sink: &mut S,
@@ -289,7 +340,7 @@ fn run_direct_stream<R: Read, S: SpeakerSink>(
     loop {
         let count = input
             .read(&mut read_buffer)
-            .context("failed reading direct eARC capture")?;
+            .context("failed reading direct eARC S32_LE carrier from stdin")?;
         if count == 0 {
             break;
         }
@@ -300,39 +351,8 @@ fn run_direct_stream<R: Read, S: SpeakerSink>(
     }
     runtime
         .finish()
-        .context("direct eARC capture ended on an incomplete serial-audio frame")?;
+        .context("direct eARC stdin ended on an incomplete serial-audio frame")?;
     Ok(stats)
-}
-
-fn spawn_arecord(device: &str, carrier_rate: u32, slots: usize) -> Result<Child> {
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (device, carrier_rate, slots);
-        bail!("--alsa-device direct eARC capture is supported only on Linux");
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("arecord")
-            .args([
-                "-q",
-                "-D",
-                device,
-                "-t",
-                "raw",
-                "-f",
-                "S32_LE",
-                "-r",
-                &carrier_rate.to_string(),
-                "-c",
-                &slots.to_string(),
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .with_context(|| format!("failed to start arecord for ALSA device {device}"))
-    }
 }
 
 #[cfg(unix)]
@@ -379,6 +399,10 @@ fn consume_batch<S: SpeakerSink>(
     stats.format_changes = stats
         .format_changes
         .saturating_add(batch.format_changes as u64);
+    if batch.discontinuity {
+        sink.reset_for_transport_discontinuity()?;
+        stats.transport_discontinuities = stats.transport_discontinuities.saturating_add(1);
+    }
 
     for frame in batch.frames {
         sink.write_frame(&frame)?;
@@ -392,6 +416,12 @@ fn consume_batch<S: SpeakerSink>(
 
 trait SpeakerSink {
     fn write_frame(&mut self, frame: &SpeakerOutputFrame) -> Result<()>;
+
+    /// Flushes old physical-output presentation state after a real source break.
+    fn reset_for_transport_discontinuity(&mut self) -> Result<()> {
+        Ok(())
+    }
+
     fn finish(&mut self) -> Result<()>;
 }
 
@@ -428,13 +458,19 @@ impl<W: Write> SpeakerSink for StdoutF32Sink<W> {
 
 struct NativeAlsaSink {
     playback: NativeAlsaPlayback,
+    config: AlsaOutputConfig,
+    transport_reopens: u64,
 }
 
 impl NativeAlsaSink {
     fn open(config: AlsaOutputConfig) -> Result<Self> {
-        let playback = NativeAlsaPlayback::open(config)
+        let playback = NativeAlsaPlayback::open(config.clone())
             .context("failed to open Aurora native ALSA speaker output")?;
-        Ok(Self { playback })
+        Ok(Self {
+            playback,
+            config,
+            transport_reopens: 0,
+        })
     }
 }
 
@@ -446,6 +482,16 @@ impl SpeakerSink for NativeAlsaSink {
             .context("native ALSA speaker write failed")
     }
 
+    fn reset_for_transport_discontinuity(&mut self) -> Result<()> {
+        // Reopening the PCM handle is deliberately conservative: it guarantees
+        // queued pre-break audio cannot leak across an eARC unlock/xrun epoch.
+        let replacement = NativeAlsaPlayback::open(self.config.clone())
+            .context("failed reopening native ALSA output after transport discontinuity")?;
+        self.playback = replacement;
+        self.transport_reopens = self.transport_reopens.saturating_add(1);
+        Ok(())
+    }
+
     fn finish(&mut self) -> Result<()> {
         self.playback
             .drain()
@@ -454,7 +500,7 @@ impl SpeakerSink for NativeAlsaSink {
         {
             let telemetry = self.playback.telemetry();
             eprintln!(
-                "aurora-alsa-output: device={} rate={} channels={} period={} buffer={} frames_written={} xruns={} recoveries={} discontinuity_resets={}",
+                "aurora-alsa-output: device={} rate={} channels={} period={} buffer={} frames_written={} xruns={} recoveries={} discontinuity_resets={} transport_reopens={}",
                 telemetry.device,
                 telemetry.sample_rate,
                 telemetry.hardware_channels,
@@ -463,7 +509,8 @@ impl SpeakerSink for NativeAlsaSink {
                 telemetry.frames_written,
                 telemetry.xruns,
                 telemetry.recoveries,
-                telemetry.discontinuity_resets
+                telemetry.discontinuity_resets,
+                self.transport_reopens
             );
         }
         Ok(())
@@ -569,13 +616,15 @@ mod tests {
         Args {
             input: InputMode::DirectEarc,
             alsa_device: None,
+            input_period_frames: DEFAULT_INPUT_PERIOD_FRAMES,
+            input_buffer_frames: DEFAULT_INPUT_BUFFER_FRAMES,
             output: OutputMode::StdoutF32,
             output_device: None,
             hardware_output_channels: OUTPUT_CHANNELS,
             output_period_frames: DEFAULT_OUTPUT_PERIOD_FRAMES,
             output_buffer_frames: DEFAULT_OUTPUT_BUFFER_FRAMES,
-            carrier_rate: 192_000,
-            slots: 2,
+            carrier_rate: DEFAULT_CARRIER_RATE_HZ,
+            slots: DEFAULT_SLOTS,
             word_half: WordHalfArg::High,
             bridge_socket: DEFAULT_BRIDGE_SOCKET.to_owned(),
             read_bytes: 16_384,
@@ -593,6 +642,14 @@ mod tests {
 
         let mut args = valid_args();
         args.output_rate = 96_000;
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_native_capture_buffer_geometry() {
+        let mut args = valid_args();
+        args.input_period_frames = 256;
+        args.input_buffer_frames = 256;
         assert!(validate_args(&args).is_err());
     }
 
