@@ -148,9 +148,7 @@ impl OpenJocNativeRenderer {
     }
 
     pub fn reset(&mut self) -> Result<(), DecoderError> {
-        self.session
-            .reset()
-            .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC reset failed: {e}")))?;
+        self.session.reset();
         for channel in &mut self.channels {
             channel.clear();
         }
