@@ -9,6 +9,7 @@ on:
       - "Cargo.lock"
       - "crates/aurora-iec61937/**"
       - "crates/aurora-decoder-open/**"
+      - "crates/aurora-decoder-engine/**"
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-input/**"
       - "crates/aurora-encoded-runtime/**"
@@ -17,7 +18,6 @@ on:
       - "crates/aurora-realtime-audio-cpal/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-spatial-runtime/**"
-      - "crates/aurora-decoder-engine/**"
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
@@ -29,6 +29,7 @@ on:
       - "Cargo.lock"
       - "crates/aurora-iec61937/**"
       - "crates/aurora-decoder-open/**"
+      - "crates/aurora-decoder-engine/**"
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-input/**"
       - "crates/aurora-encoded-runtime/**"
@@ -37,7 +38,6 @@ on:
       - "crates/aurora-realtime-audio-cpal/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-spatial-runtime/**"
-      - "crates/aurora-decoder-engine/**"
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
@@ -67,9 +67,14 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes libasound2-dev pkg-config
 
-      - name: Verify committed workspace lockfile
+      - name: Generate validation lockfile and expose committed drift
         run: |
+          cargo generate-lockfile
           cargo metadata --format-version 1 --locked > /tmp/aurora-metadata.json
+          if ! git diff --quiet -- Cargo.lock; then
+            echo '::warning file=Cargo.lock::Committed Cargo.lock is stale. Validation will continue against the freshly generated lockfile; the final lockfile gate will remain red until the generated file is committed.'
+            git diff --stat -- Cargo.lock
+          fi
 
       - name: Validate Linux dependency graph
         run: |
@@ -193,3 +198,11 @@ jobs:
           cargo clippy --locked -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
           cargo clippy --locked -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
           cargo clippy --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
+
+      - name: Enforce committed workspace lockfile
+        if: always()
+        run: |
+          if ! git diff --quiet -- Cargo.lock; then
+            echo 'Cargo.lock is stale. Commit the lockfile produced by cargo generate-lockfile.' >&2
+            exit 1
+          fi
