@@ -26,6 +26,8 @@ pub struct JocRenderInfo {
 pub struct OpenJocNativeRenderer {
     session: OpenJocSession,
     output: AudioFormat,
+    /// Aurora output index -> OpenJOC source index.
+    channel_map: Vec<usize>,
     channels: Vec<VecDeque<f32>>,
     emitted_frames: u64,
     discontinuity: bool,
@@ -54,6 +56,7 @@ impl OpenJocNativeRenderer {
                 "selected JOC layout channel count does not match Aurora output format",
             ));
         }
+        let channel_map = aurora_channel_map(&info.layout_name, info.channel_count)?;
         let last_info = JocRenderInfo {
             layout_name: info.layout_name,
             channel_count: info.channel_count,
@@ -64,6 +67,7 @@ impl OpenJocNativeRenderer {
         Ok(Self {
             session,
             output,
+            channel_map,
             channels: (0..output.channel_count).map(|_| VecDeque::new()).collect(),
             emitted_frames: 0,
             discontinuity: true,
@@ -181,14 +185,50 @@ impl OpenJocNativeRenderer {
                         .to_owned(),
                 ));
             }
-            for sample in frame.interleaved_f32.chunks_exact(frame.channel_count) {
-                for (channel, value) in self.channels.iter_mut().zip(sample.iter().copied()) {
-                    channel.push_back(value);
+            for source_frame in frame.interleaved_f32.chunks_exact(frame.channel_count) {
+                for (destination, source_index) in
+                    self.channels.iter_mut().zip(self.channel_map.iter().copied())
+                {
+                    destination.push_back(source_frame[source_index]);
                 }
             }
         }
         Ok(())
     }
+}
+
+/// Returns Aurora output index -> OpenJOC source index.
+///
+/// OpenJOC's 7.1-family presets use `FL FR FC LFE Lb Rb Ls Rs ...`, while
+/// Aurora's canonical 7.1/7.1.4 order is `FL FR FC LFE SL SR SBL SBR ...`.
+/// The explicit permutation keeps side/back calibration, bass management and
+/// physical routing attached to the correct semantic speakers.
+fn aurora_channel_map(layout: &str, channels: usize) -> Result<Vec<usize>, DecoderError> {
+    let map: Vec<usize> = match (layout, channels) {
+        ("7.1", 8) => vec![0, 1, 2, 3, 6, 7, 4, 5],
+        ("7.1.4", 12) => vec![0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11],
+        // These admitted presets already match Aurora's corresponding semantic
+        // order for the channel roles Aurora currently names explicitly.
+        ("2.0", 2) | ("5.1", 6) | ("5.1.4", 10) => (0..channels).collect(),
+        // Other layouts are usable only as explicitly selected non-canonical
+        // targets. Aurora has no complete semantic role contract for them yet,
+        // so preserve the renderer-owned order rather than guessing a mapping.
+        (_, count) => (0..count).collect(),
+    };
+    if map.len() != channels
+        || map.iter().any(|&index| index >= channels)
+        || {
+            let mut sorted = map.clone();
+            sorted.sort_unstable();
+            sorted.dedup();
+            sorted.len() != channels
+        }
+    {
+        return Err(DecoderError::UnsupportedInput(
+            "OpenJOC-to-Aurora channel map is not a complete permutation",
+        ));
+    }
+    Ok(map)
 }
 
 pub const fn default_layout_for_channels(channels: usize) -> Option<&'static str> {
@@ -212,6 +252,22 @@ mod tests {
     #[test]
     fn aurora_7_1_4_maps_to_openjoc_7_1_4() {
         assert_eq!(default_layout_for_channels(12), Some("7.1.4"));
+    }
+
+    #[test]
+    fn openjoc_7_1_4_side_back_order_is_normalized_to_aurora() {
+        assert_eq!(
+            aurora_channel_map("7.1.4", 12).unwrap(),
+            vec![0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11]
+        );
+    }
+
+    #[test]
+    fn openjoc_7_1_side_back_order_is_normalized_to_aurora() {
+        assert_eq!(
+            aurora_channel_map("7.1", 8).unwrap(),
+            vec![0, 1, 2, 3, 6, 7, 4, 5]
+        );
     }
 
     #[test]
