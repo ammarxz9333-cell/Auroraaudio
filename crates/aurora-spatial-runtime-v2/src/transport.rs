@@ -28,6 +28,21 @@ impl NativeV2SpatialRuntime {
         self.render_frame(&projected)
             .map_err(TransportV2RuntimeError::NativeV2)
     }
+
+    /// Render only the bed/object portion of a mixed transport scene.
+    ///
+    /// HOA-owned PCM lanes are removed and all remaining signal bindings are
+    /// remapped before the native V2 renderer sees the frame. This method does
+    /// not render, decode or silently consume HOA; callers must independently
+    /// render the decoded coefficient plane and combine both speaker outputs.
+    pub fn render_transport_non_hoa_frame(
+        &mut self,
+        frame: &SpatialTransportFrame,
+    ) -> Result<AudioBlock, TransportV2RuntimeError> {
+        let projected = project_transport_non_hoa_to_spatial_v2(frame)?;
+        self.render_frame(&projected)
+            .map_err(TransportV2RuntimeError::NativeV2)
+    }
 }
 
 pub fn project_transport_to_spatial_v2(
@@ -44,7 +59,57 @@ pub fn project_transport_to_spatial_v2(
         });
     }
 
+    project_transport_non_hoa_validated(frame)
+}
+
+/// Losslessly project the non-HOA portion of a mixed Transport V2 scene into
+/// Spatial IR V2.
+///
+/// The source transport frame remains authoritative. HOA-owned PCM lanes are
+/// omitted, while bed and object lanes are copied in original PCM order and all
+/// affected bindings are remapped. Object metadata and its exact sample timing
+/// remain unchanged.
+pub fn project_transport_non_hoa_to_spatial_v2(
+    frame: &SpatialTransportFrame,
+) -> Result<SpatialDecodedFrameV2, TransportV2RuntimeError> {
+    frame
+        .validate()
+        .map_err(|error| TransportV2RuntimeError::InvalidTransport(error.to_string()))?;
+    project_transport_non_hoa_validated(frame)
+}
+
+fn project_transport_non_hoa_validated(
+    frame: &SpatialTransportFrame,
+) -> Result<SpatialDecodedFrameV2, TransportV2RuntimeError> {
+    let source_channel_count = frame.frame.decoded.audio.channels.len();
+    let mut retained = vec![false; source_channel_count];
+    for bed in &frame.bed_signals {
+        retained[bed.pcm_channel_index] = true;
+    }
+    for object in &frame.frame.spatial.object_signals {
+        retained[object.pcm_channel_index] = true;
+    }
+
+    if !retained.iter().any(|value| *value) {
+        return Err(TransportV2RuntimeError::NoNonHoaSignals);
+    }
+
+    let mut lane_map = vec![None; source_channel_count];
+    let mut channels = Vec::with_capacity(retained.iter().filter(|value| **value).count());
+    for (source_index, keep) in retained.iter().copied().enumerate() {
+        if keep {
+            lane_map[source_index] = Some(channels.len());
+            channels.push(frame.frame.decoded.audio.channels[source_index].clone());
+        }
+    }
+
     let mut projected = frame.frame.clone();
+    projected.decoded.audio.channels = channels;
+
+    for object in &mut projected.spatial.object_signals {
+        object.pcm_channel_index = remapped_lane(&lane_map, object.pcm_channel_index)?;
+    }
+
     let mut roles = HashSet::with_capacity(frame.bed_signals.len());
     let mut beds = Vec::with_capacity(frame.bed_signals.len());
     for bed in &frame.bed_signals {
@@ -55,7 +120,7 @@ pub fn project_transport_to_spatial_v2(
             });
         }
         beds.push(BedSignalBinding {
-            pcm_channel_index: bed.pcm_channel_index,
+            pcm_channel_index: remapped_lane(&lane_map, bed.pcm_channel_index)?,
             role,
         });
     }
@@ -64,6 +129,19 @@ pub fn project_transport_to_spatial_v2(
         .validate()
         .map_err(|error| TransportV2RuntimeError::InvalidProjectedV2(error.to_string()))?;
     Ok(projected)
+}
+
+fn remapped_lane(
+    lane_map: &[Option<usize>],
+    source_lane: usize,
+) -> Result<usize, TransportV2RuntimeError> {
+    lane_map
+        .get(source_lane)
+        .copied()
+        .flatten()
+        .ok_or(TransportV2RuntimeError::MissingRetainedLane {
+            source_lane,
+        })
 }
 
 fn semantic_role_for_target(
@@ -125,6 +203,10 @@ pub enum TransportV2RuntimeError {
     InvalidProjectedV2(String),
     #[error("HOA transport requires a native HOA transport decoder before Aurora speaker rendering ({signals} signals across {groups} groups)")]
     HoaTransportRequiresNativeDecoder { signals: usize, groups: usize },
+    #[error("transport scene contains no bed/object signal after HOA lanes are removed")]
+    NoNonHoaSignals,
+    #[error("transport PCM lane {source_lane} was expected to survive HOA removal but was not retained")]
+    MissingRetainedLane { source_lane: usize },
     #[error("CICP speaker index {index} has no lossless Aurora semantic-role projection")]
     UnsupportedCicpSpeaker { index: u8 },
     #[error("CICP layout {layout_index} member {member_index} is unknown")]
@@ -151,7 +233,10 @@ mod tests {
     use super::*;
     use aurora_core::AudioBlock;
     use aurora_decoder_api::DecodedFrame;
-    use aurora_spatial_ir_v2::{SpatialDomain, SpatialFrameMetadata};
+    use aurora_spatial_ir_v2::{
+        CoordinateSpace, ObjectSignalBinding, SpatialDomain, SpatialFrameMetadata,
+        SpatialObjectUpdate, SpatialPosition, SpatialRenderingProperties,
+    };
     use aurora_spatial_transport_v2::{
         HoaGroupBinding, HoaSignalBinding, SpatialTransportFrame, TransportBedSignalBinding,
         TransportSceneDomain,
@@ -188,6 +273,64 @@ mod tests {
                 .collect(),
             hoa_signals: Vec::new(),
             hoa_groups: Vec::new(),
+            codec_metadata: Vec::new(),
+        }
+    }
+
+    fn objects_and_hoa_transport() -> SpatialTransportFrame {
+        SpatialTransportFrame {
+            frame: SpatialDecodedFrameV2 {
+                decoded: DecodedFrame {
+                    audio: AudioBlock {
+                        channels: vec![vec![1.0; 40], vec![2.0; 40]],
+                        frame_count: 40,
+                        presentation_time_seconds: 1.5,
+                        discontinuity: false,
+                    },
+                    objects: Vec::new(),
+                },
+                spatial: SpatialFrameMetadata {
+                    domain: SpatialDomain::ObjectSignals,
+                    bed_signals: Vec::new(),
+                    object_signals: vec![ObjectSignalBinding {
+                        id: "o0".into(),
+                        pcm_channel_index: 0,
+                    }],
+                    object_updates: vec![SpatialObjectUpdate {
+                        object_id: "o0".into(),
+                        active: true,
+                        coordinate_space: CoordinateSpace::AuroraMeters,
+                        position: SpatialPosition::Cartesian {
+                            x: 1.0,
+                            y: 0.0,
+                            z: 0.5,
+                        },
+                        gain_db: 0.0,
+                        spread: 0.0,
+                        metadata_sample_offset: 7,
+                        ramp_duration_samples: 3,
+                        priority: None,
+                        rendering: SpatialRenderingProperties::default(),
+                    }],
+                },
+            },
+            domain: TransportSceneDomain::ObjectsAndHoa,
+            bed_signals: Vec::new(),
+            hoa_signals: vec![HoaSignalBinding {
+                pcm_channel_index: 1,
+                transport_index: 0,
+            }],
+            hoa_groups: vec![HoaGroupBinding {
+                group_index: 0,
+                transport_indices: vec![0],
+                order: 0,
+                fixed_position: false,
+                priority: 0,
+                uses_nfc: false,
+                nfc_reference_distance_raw: None,
+                matrix: None,
+                screen_relative: false,
+            }],
             codec_metadata: Vec::new(),
         }
     }
@@ -231,7 +374,7 @@ mod tests {
     }
 
     #[test]
-    fn hoa_transport_fails_before_speaker_rendering() {
+    fn legacy_projection_still_rejects_hoa_transport() {
         let mut frame = transport_bed(2, 2);
         frame.frame.decoded.audio.channels.push(vec![0.0; 40]);
         frame.hoa_signals.push(HoaSignalBinding {
@@ -253,6 +396,33 @@ mod tests {
         assert!(matches!(
             project_transport_to_spatial_v2(&frame),
             Err(TransportV2RuntimeError::HoaTransportRequiresNativeDecoder { .. })
+        ));
+    }
+
+    #[test]
+    fn mixed_projection_removes_hoa_lane_and_remaps_object_signal() {
+        let frame = objects_and_hoa_transport();
+        let projected = project_transport_non_hoa_to_spatial_v2(&frame).unwrap();
+        assert_eq!(projected.decoded.audio.channels.len(), 1);
+        assert_eq!(projected.decoded.audio.channels[0], vec![1.0; 40]);
+        assert_eq!(projected.spatial.object_signals[0].pcm_channel_index, 0);
+        assert_eq!(projected.spatial.object_updates[0].metadata_sample_offset, 7);
+        assert_eq!(projected.spatial.object_updates[0].ramp_duration_samples, 3);
+        assert_eq!(projected.decoded.audio.presentation_time_seconds, 1.5);
+    }
+
+    #[test]
+    fn pure_hoa_has_no_non_hoa_projection() {
+        let mut frame = objects_and_hoa_transport();
+        frame.frame.decoded.audio.channels.remove(0);
+        frame.frame.spatial.object_signals.clear();
+        frame.frame.spatial.object_updates.clear();
+        frame.frame.spatial.domain = SpatialDomain::DiscreteBed;
+        frame.hoa_signals[0].pcm_channel_index = 0;
+        frame.domain = TransportSceneDomain::HoaTransport;
+        assert!(matches!(
+            project_transport_non_hoa_to_spatial_v2(&frame),
+            Err(TransportV2RuntimeError::NoNonHoaSignals)
         ));
     }
 }
