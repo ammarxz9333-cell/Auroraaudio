@@ -1,6 +1,7 @@
 use aurora_decoder_api::{DecodedFrame, DecoderError};
 
 use crate::catalog::{BackendId, CodecId};
+use crate::spatial_ir::SpatialDecodedFrame;
 
 /// Cumulative health counters for one Aurora decoder-engine instance.
 ///
@@ -14,7 +15,11 @@ pub struct EngineTelemetry {
     pub input_bytes: u64,
     pub frames_emitted: u64,
     pub samples_emitted: u64,
+    /// Logical renderable objects emitted. For legacy frames this is
+    /// `DecodedFrame.objects`; for Spatial IR this is the stable object-signal
+    /// count, not the number of metadata events.
     pub objects_emitted: u64,
+    pub spatial_updates_emitted: u64,
     pub discontinuities: u64,
     pub backend_selections: u64,
     pub backend_switches: u64,
@@ -39,14 +44,29 @@ impl EngineTelemetry {
     }
 
     pub(crate) fn observe_frame(&mut self, frame: &DecodedFrame) {
-        self.frames_emitted = self.frames_emitted.saturating_add(1);
-        self.samples_emitted = self
-            .samples_emitted
-            .saturating_add(frame.audio.frame_count as u64);
+        self.observe_audio(frame.audio.frame_count, frame.audio.discontinuity);
         self.objects_emitted = self
             .objects_emitted
             .saturating_add(frame.objects.len() as u64);
-        if frame.audio.discontinuity {
+    }
+
+    pub(crate) fn observe_spatial_frame(&mut self, frame: &SpatialDecodedFrame) {
+        self.observe_audio(
+            frame.decoded.audio.frame_count,
+            frame.decoded.audio.discontinuity,
+        );
+        self.objects_emitted = self
+            .objects_emitted
+            .saturating_add(frame.spatial.object_signals.len() as u64);
+        self.spatial_updates_emitted = self
+            .spatial_updates_emitted
+            .saturating_add(frame.spatial.object_updates.len() as u64);
+    }
+
+    fn observe_audio(&mut self, frame_count: usize, discontinuity: bool) {
+        self.frames_emitted = self.frames_emitted.saturating_add(1);
+        self.samples_emitted = self.samples_emitted.saturating_add(frame_count as u64);
+        if discontinuity {
             self.discontinuities = self.discontinuities.saturating_add(1);
         }
     }
@@ -88,6 +108,11 @@ impl EngineTelemetry {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::spatial_ir::{
+        CoordinateSpace, ObjectSignalBinding, SpatialDomain, SpatialFrameMetadata,
+        SpatialObjectUpdate, SpatialPosition,
+    };
+    use aurora_core::AudioBlock;
 
     #[test]
     fn errors_are_classified_without_collapsing_failure_domains() {
@@ -111,5 +136,67 @@ mod tests {
         telemetry.observe_selection(Some(BackendId::OxideDtsCore), Some(BackendId::FfmpegWorker));
         assert_eq!(telemetry.backend_selections, 2);
         assert_eq!(telemetry.backend_switches, 1);
+    }
+
+    #[test]
+    fn spatial_telemetry_counts_signals_once_and_updates_separately() {
+        let frame = SpatialDecodedFrame {
+            decoded: DecodedFrame {
+                audio: AudioBlock {
+                    channels: vec![vec![0.0; 40]],
+                    frame_count: 40,
+                    presentation_time_seconds: 0.0,
+                    discontinuity: true,
+                },
+                objects: Vec::new(),
+            },
+            spatial: SpatialFrameMetadata {
+                domain: SpatialDomain::ObjectSignals,
+                bed_signals: Vec::new(),
+                object_signals: vec![ObjectSignalBinding {
+                    id: "o0".into(),
+                    pcm_channel_index: 0,
+                }],
+                object_updates: vec![
+                    SpatialObjectUpdate {
+                        object_id: "o0".into(),
+                        active: true,
+                        coordinate_space: CoordinateSpace::RoomNormalized,
+                        position: SpatialPosition::Cartesian {
+                            x: 0.5,
+                            y: 0.5,
+                            z: 0.0,
+                        },
+                        gain_db: 0.0,
+                        spread: 0.0,
+                        metadata_sample_offset: 0,
+                        ramp_duration_samples: 0,
+                        priority: Some(1.0),
+                    },
+                    SpatialObjectUpdate {
+                        object_id: "o0".into(),
+                        active: true,
+                        coordinate_space: CoordinateSpace::RoomNormalized,
+                        position: SpatialPosition::Cartesian {
+                            x: 0.6,
+                            y: 0.5,
+                            z: 0.0,
+                        },
+                        gain_db: 0.0,
+                        spread: 0.0,
+                        metadata_sample_offset: 20,
+                        ramp_duration_samples: 20,
+                        priority: Some(1.0),
+                    },
+                ],
+            },
+        };
+        let mut telemetry = EngineTelemetry::default();
+        telemetry.observe_spatial_frame(&frame);
+        assert_eq!(telemetry.frames_emitted, 1);
+        assert_eq!(telemetry.samples_emitted, 40);
+        assert_eq!(telemetry.objects_emitted, 1);
+        assert_eq!(telemetry.spatial_updates_emitted, 2);
+        assert_eq!(telemetry.discontinuities, 1);
     }
 }
