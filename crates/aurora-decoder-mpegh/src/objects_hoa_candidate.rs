@@ -20,14 +20,20 @@ pub struct MpeghObjectsHoaCandidateDecision {
     pub playback: MpeghPairedPlaybackDecision,
 }
 
-/// Render the currently admitted static-point Objects+HOA subset and evidence-
-/// gate the full speaker result against libmpegh's render of the same access
-/// unit. This never authorizes Aurora playback without a passing comparison.
+/// Render the admitted static point-object + HOA contribution and evidence-gate
+/// it when used as the complete Objects+HOA scene. For Bed+Objects+HOA this
+/// routine intentionally omits bed signals so a higher-level full-scene mixer
+/// can add them exactly once.
 pub fn evaluate_static_mpegh_objects_hoa_candidate(
     pair: &MpeghPairedEvidence,
     regularization: f64,
     policy: MpeghConformancePolicy,
 ) -> Result<MpeghObjectsHoaCandidateDecision, MpeghObjectsHoaCandidateError> {
+    if pair.scene.domain != TransportSceneDomain::ObjectsAndHoa {
+        return Err(MpeghObjectsHoaCandidateError::IncompleteSceneCannotBeGated {
+            domain: format!("{:?}", pair.scene.domain),
+        });
+    }
     let reference = pair
         .reference
         .as_ref()
@@ -48,10 +54,13 @@ pub fn render_static_mpegh_objects_hoa_candidate(
     pair: &MpeghPairedEvidence,
     regularization: f64,
 ) -> Result<AudioBlock, MpeghObjectsHoaCandidateError> {
-    if pair.scene.domain != TransportSceneDomain::ObjectsAndHoa {
-        return Err(MpeghObjectsHoaCandidateError::UnsupportedDomain {
-            domain: format!("{:?}", pair.scene.domain),
-        });
+    match pair.scene.domain {
+        TransportSceneDomain::ObjectsAndHoa | TransportSceneDomain::BedObjectsAndHoa => {}
+        domain => {
+            return Err(MpeghObjectsHoaCandidateError::UnsupportedDomain {
+                domain: format!("{domain:?}"),
+            })
+        }
     }
     let object_plane = render_static_mpegh_object_plane(pair)?;
     let hoa_plane = render_hoa_plane(pair, regularization)?;
@@ -67,11 +76,7 @@ pub fn render_static_mpegh_objects_hoa_candidate(
     }
 
     let mut candidate = hoa_plane;
-    for (destination, source) in candidate
-        .channels
-        .iter_mut()
-        .zip(object_plane.channels.iter())
-    {
+    for (destination, source) in candidate.channels.iter_mut().zip(object_plane.channels.iter()) {
         for (out, sample) in destination.iter_mut().zip(source.iter().copied()) {
             *out += sample;
         }
@@ -166,8 +171,10 @@ fn reference_speakers(
 
 #[derive(Debug, Error)]
 pub enum MpeghObjectsHoaCandidateError {
-    #[error("MPEG-H static Objects+HOA candidate requires ObjectsAndHoa, got {domain}")]
+    #[error("MPEG-H static object+HOA plane does not support scene domain {domain}")]
     UnsupportedDomain { domain: String },
+    #[error("object+HOA is only a partial contribution for scene domain {domain}; full-scene evidence gating is required")]
+    IncompleteSceneCannotBeGated { domain: String },
     #[error("paired MPEG-H evidence has no decoded HOA coefficient frame")]
     MissingHoaCoefficients,
     #[error("paired MPEG-H evidence has no libmpegh reference render")]
@@ -190,7 +197,7 @@ pub enum MpeghObjectsHoaCandidateError {
         object_frames: usize,
         hoa_frames: usize,
     },
-    #[error("combined MPEG-H Objects+HOA candidate has invalid output geometry")]
+    #[error("combined MPEG-H object+HOA candidate has invalid output geometry")]
     InvalidRenderedGeometry,
     #[error(transparent)]
     Object(#[from] MpeghObjectCandidateError),
