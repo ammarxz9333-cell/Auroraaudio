@@ -26,7 +26,7 @@ use joc_access_unit::JocAccessUnitAssembler;
 use joc_probe::{JocAdmission, JocAdmissionProbe};
 use native_ac3::{JocPresentation, NativeAc3Decoder};
 use openjoc_native::{JocRenderInfo, OpenJocNativeRenderer};
-use sniff::{CodecKind, Encapsulation, probe};
+use sniff::{probe, CodecKind, Encapsulation};
 use worker::OpenWorkerDecoder;
 
 pub use sniff::{CodecKind as OpenCodecKind, Encapsulation as OpenEncapsulation, ProbeResult};
@@ -153,7 +153,9 @@ impl UniversalOpenDecoder {
     /// Diagnostics from the admitted immersive renderer, if JOC has actually
     /// passed validation and produced an OpenJOC session.
     pub fn joc_render_info(&self) -> Option<&JocRenderInfo> {
-        self.joc_renderer.as_ref().map(OpenJocNativeRenderer::render_info)
+        self.joc_renderer
+            .as_ref()
+            .map(OpenJocNativeRenderer::render_info)
     }
 
     /// Most recent JOC admission/render failure. A non-empty value means Aurora
@@ -259,7 +261,9 @@ impl UniversalOpenDecoder {
         let worker = self
             .worker
             .as_mut()
-            .ok_or(DecoderError::Unavailable("open worker backend is not initialized"))?;
+            .ok_or(DecoderError::Unavailable(
+                "open worker backend is not initialized",
+            ))?;
         if let Some(frame) = worker.push(bytes)? {
             self.pending.push_back(frame);
         }
@@ -273,7 +277,9 @@ impl UniversalOpenDecoder {
         let units = self
             .joc_assembler
             .as_mut()
-            .ok_or(DecoderError::Unavailable("E-AC-3 access-unit assembler missing"))?
+            .ok_or(DecoderError::Unavailable(
+                "E-AC-3 access-unit assembler missing",
+            ))?
             .push(bytes)?;
         for unit in units {
             self.process_eac3_access_unit(&unit)?;
@@ -330,9 +336,11 @@ impl UniversalOpenDecoder {
                 self.decode_eac3_bed_access_unit(unit)
             }
             JocAdmission::NotJoc => {
-                if self.codec == Some(CodecKind::Eac3Joc) {
-                    self.joc_renderer = None;
-                }
+                // Ordinary E-AC-3 starts a non-JOC state immediately. Do not
+                // leave an earlier malformed-JOC fallback reason or renderer
+                // attached to the current stream classification.
+                self.last_joc_error = None;
+                self.joc_renderer = None;
                 self.codec = Some(CodecKind::Eac3);
                 self.decode_eac3_bed_access_unit(unit)
             }
@@ -505,7 +513,10 @@ impl Decoder for UniversalOpenDecoder {
 
 fn same_codec_family(current: Option<CodecKind>, incoming: CodecKind) -> bool {
     match (current, incoming) {
-        (Some(CodecKind::Eac3 | CodecKind::Eac3Joc), CodecKind::Eac3 | CodecKind::Eac3Joc) => true,
+        (
+            Some(CodecKind::Eac3 | CodecKind::Eac3Joc),
+            CodecKind::Eac3 | CodecKind::Eac3Joc,
+        ) => true,
         (Some(current), incoming) => current == incoming,
         (None, _) => false,
     }
@@ -573,8 +584,14 @@ mod tests {
 
     #[test]
     fn eac3_and_joc_are_one_transport_family() {
-        assert!(same_codec_family(Some(CodecKind::Eac3Joc), CodecKind::Eac3));
-        assert!(same_codec_family(Some(CodecKind::Eac3), CodecKind::Eac3Joc));
+        assert!(same_codec_family(
+            Some(CodecKind::Eac3Joc),
+            CodecKind::Eac3
+        ));
+        assert!(same_codec_family(
+            Some(CodecKind::Eac3),
+            CodecKind::Eac3Joc
+        ));
         assert!(!same_codec_family(Some(CodecKind::Ac3), CodecKind::Eac3));
     }
 }
