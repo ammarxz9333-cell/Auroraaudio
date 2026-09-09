@@ -6,6 +6,9 @@
 
 #![forbid(unsafe_code)]
 
+mod carrier;
+pub use carrier::{CarrierNormalizeError, CarrierWordHalf, S32LeCarrierNormalizer};
+
 const PA_LE: [u8; 2] = [0x72, 0xF8];
 const PB_LE: [u8; 2] = [0x1F, 0x4E];
 const MAX_PAYLOAD_BYTES: usize = 256 * 1024;
