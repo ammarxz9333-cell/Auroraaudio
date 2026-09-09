@@ -17,6 +17,7 @@ on:
       - "crates/aurora-decoder-truehdd/**"
       - "crates/aurora-super-decoder/**"
       - "crates/aurora-spatial-runtime/**"
+      - "crates/aurora-spatial-runtime-v2/**"
       - "crates/aurora-renderer-api/**"
       - "crates/aurora-renderer-vbap/**"
       - "config/external-components-v1.json"
@@ -35,6 +36,7 @@ on:
       - "crates/aurora-decoder-truehdd/**"
       - "crates/aurora-super-decoder/**"
       - "crates/aurora-spatial-runtime/**"
+      - "crates/aurora-spatial-runtime-v2/**"
       - "crates/aurora-renderer-api/**"
       - "crates/aurora-renderer-vbap/**"
       - "config/external-components-v1.json"
@@ -71,8 +73,10 @@ jobs:
         run: cargo check -p aurora-decoder-iamf --all-targets
       - name: Check Aurora super decoder
         run: cargo check -p aurora-super-decoder --all-targets
-      - name: Check spatial runtime
+      - name: Check spatial runtime V1
         run: cargo check -p aurora-spatial-runtime --all-targets
+      - name: Check spatial runtime V2 bridge
+        run: cargo check -p aurora-spatial-runtime-v2 --all-targets
       - name: Check disabled TrueHD boundary on baseline toolchain
         run: cargo check -p aurora-decoder-truehdd --all-targets
       - name: Test Spatial IR V1
@@ -85,8 +89,10 @@ jobs:
         run: cargo test -p aurora-decoder-iamf
       - name: Test Aurora super decoder
         run: cargo test -p aurora-super-decoder
-      - name: Test spatial runtime
+      - name: Test spatial runtime V1
         run: cargo test -p aurora-spatial-runtime
+      - name: Test spatial runtime V2 bridge
+        run: cargo test -p aurora-spatial-runtime-v2
       - name: Strict Spatial IR V2 clippy
         run: cargo clippy -p aurora-spatial-ir-v2 --all-targets -- -D warnings
       - name: Strict decoder clippy
@@ -95,8 +101,10 @@ jobs:
         run: cargo clippy -p aurora-decoder-iamf --all-targets -- -D warnings
       - name: Strict super decoder clippy
         run: cargo clippy -p aurora-super-decoder --all-targets -- -D warnings
-      - name: Strict spatial runtime clippy
+      - name: Strict spatial runtime V1 clippy
         run: cargo clippy -p aurora-spatial-runtime --all-targets -- -D warnings
+      - name: Strict spatial runtime V2 clippy
+        run: cargo clippy -p aurora-spatial-runtime-v2 --all-targets -- -D warnings
       - name: Formatting
         run: cargo fmt --all --check
       - name: Upload resolved lockfile
@@ -120,6 +128,8 @@ jobs:
         run: cargo generate-lockfile
       - name: Check Spatial IR V2
         run: cargo check -p aurora-spatial-ir-v2 --all-targets
+      - name: Check Spatial runtime V2 bridge
+        run: cargo check -p aurora-spatial-runtime-v2 --all-targets
       - name: Check native TrueHD V1 and V2 adapters
         run: cargo check -p aurora-decoder-truehdd --features native-truehd --all-targets
       - name: Check super decoder with native TrueHD V2
@@ -128,10 +138,14 @@ jobs:
         run: cargo test -p aurora-decoder-truehdd --features native-truehd
       - name: Test super decoder with native TrueHD V2
         run: cargo test -p aurora-super-decoder --features native-truehd
+      - name: Test Spatial runtime V2 bridge
+        run: cargo test -p aurora-spatial-runtime-v2
       - name: Strict native TrueHD V1 and V2 clippy
         run: cargo clippy -p aurora-decoder-truehdd --features native-truehd --all-targets -- -D warnings
       - name: Strict super decoder TrueHD V2 clippy
         run: cargo clippy -p aurora-super-decoder --features native-truehd --all-targets -- -D warnings
+      - name: Strict spatial runtime V2 clippy
+        run: cargo clippy -p aurora-spatial-runtime-v2 --all-targets -- -D warnings
       - name: Formatting
         run: cargo fmt --all --check
       - name: Upload native TrueHD lockfile
