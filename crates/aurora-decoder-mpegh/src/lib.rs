@@ -10,6 +10,7 @@
 mod conformance;
 mod conformance_roles;
 mod evidence_gate;
+mod evidence_pair;
 mod external_channels;
 mod external_hoa;
 mod external_oam;
@@ -26,6 +27,9 @@ pub use conformance_roles::{
 pub use evidence_gate::{
     evaluate_mpegh_render_evidence, mpegh_reference_audio_block, MpeghEvidenceGateOutcome,
     MpeghPlaybackChoice,
+};
+pub use evidence_pair::{
+    pair_mpegh_external_evidence, MpeghEvidencePairError, MpeghPairedEvidence,
 };
 pub use external_channels::{
     parse_external_channel_metadata, MpeghAngularPrecision, MpeghChannelGroup,
