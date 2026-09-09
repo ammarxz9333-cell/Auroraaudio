@@ -65,12 +65,16 @@ jobs:
           rustup toolchain install $env:AURORA_RUST_TOOLCHAIN
           --profile minimal --component rustfmt,clippy
 
-      - name: Verify committed workspace lockfile
+      - name: Generate validation lockfile and expose committed drift
         run: |
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" generate-lockfile
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo "+$env:AURORA_RUST_TOOLCHAIN" metadata --format-version 1 --locked | Out-Null
-          if ($LASTEXITCODE -ne 0) {
-            Write-Error "Cargo.lock is stale or incomplete; regenerate and commit the exact dependency graph."
-            exit $LASTEXITCODE
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $lockDrift = git status --porcelain -- Cargo.lock
+          if (-not [string]::IsNullOrWhiteSpace(($lockDrift -join "`n"))) {
+            Write-Warning "Committed Cargo.lock is stale. Validation continues against the freshly generated lockfile; the final lockfile gate remains red until it is committed."
+            git diff --stat -- Cargo.lock
           }
 
       - name: Verify direct eARC formatting
@@ -178,3 +182,13 @@ jobs:
           cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Enforce committed workspace lockfile
+        if: always()
+        run: |
+          $lockDrift = git status --porcelain -- Cargo.lock
+          if (-not [string]::IsNullOrWhiteSpace(($lockDrift -join "`n"))) {
+            Write-Error "Cargo.lock is stale. Commit the lockfile produced by cargo generate-lockfile."
+            exit 1
+          }
