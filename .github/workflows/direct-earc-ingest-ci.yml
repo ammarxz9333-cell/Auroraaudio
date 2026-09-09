@@ -1,0 +1,76 @@
+name: Direct eARC Ingest CI
+
+on:
+  push:
+    branches:
+      - feature/direct-earc-linux-ingest
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/aurora-iec61937/**"
+      - "crates/aurora-cli/Cargo.toml"
+      - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
+      - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
+      - ".github/workflows/direct-earc-ingest-ci.yml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/aurora-iec61937/**"
+      - "crates/aurora-cli/Cargo.toml"
+      - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
+      - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
+      - ".github/workflows/direct-earc-ingest-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: direct-earc-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  direct-earc:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Linux audio build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev pkg-config
+
+      - name: Resolve workspace lockfile
+        run: cargo generate-lockfile
+
+      - name: Check formatting for direct eARC crates
+        run: cargo fmt --package aurora-iec61937 --package aurora-cli -- --check
+
+      - name: Check reusable IEC61937 parser
+        run: cargo check -p aurora-iec61937 --all-targets
+
+      - name: Test reusable IEC61937 parser
+        run: cargo test -p aurora-iec61937
+
+      - name: Clippy reusable IEC61937 parser
+        run: cargo clippy -p aurora-iec61937 --all-targets -- -D warnings
+
+      - name: Check direct eARC binaries
+        run: |
+          cargo check -p aurora-cli --bin aurora-direct-earc-ingest
+          cargo check -p aurora-cli --bin aurora-direct-earc-probe
+
+      - name: Test direct eARC binaries
+        run: |
+          cargo test -p aurora-cli --bin aurora-direct-earc-ingest
+          cargo test -p aurora-cli --bin aurora-direct-earc-probe
+
+      - name: Clippy direct eARC binaries
+        run: |
+          cargo clippy -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
+          cargo clippy -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
