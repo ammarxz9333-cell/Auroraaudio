@@ -11,5 +11,7 @@ bench = false
 
 [dependencies]
 aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api" }
-cpal.workspace = true
 thiserror.workspace = true
+
+[target.'cfg(not(target_os = "linux"))'.dependencies]
+cpal.workspace = true
