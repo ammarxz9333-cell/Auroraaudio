@@ -12,6 +12,7 @@ members = [
     "crates/aurora-decoder-engine",
     "crates/aurora-decoder-iamf",
     "crates/aurora-decoder-truehdd",
+    "crates/aurora-spatial-runtime",
     "crates/aurora-dsp-api",
     "crates/aurora-dsp-basic",
     "crates/aurora-dsp-camilladsp",
