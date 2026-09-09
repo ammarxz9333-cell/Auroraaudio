@@ -11,6 +11,7 @@ on:
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-input/**"
       - "crates/aurora-encoded-runtime/**"
+      - "crates/aurora-alsa-input/**"
       - "crates/aurora-alsa-output/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-spatial-runtime/**"
@@ -72,6 +73,7 @@ jobs:
           --package aurora-direct-earc-decoder
           --package aurora-encoded-input
           --package aurora-encoded-runtime
+          --package aurora-alsa-input
           --package aurora-alsa-output
           --package aurora-cli
           -- --check
@@ -110,6 +112,15 @@ jobs:
           cargo +stable-x86_64-pc-windows-gnu test -p aurora-encoded-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-encoded-runtime --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Check and test native ALSA input portability layer
+        run: |
+          cargo +stable-x86_64-pc-windows-gnu check -p aurora-alsa-input --all-targets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu test -p aurora-alsa-input
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-alsa-input --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test native ALSA output portability layer
