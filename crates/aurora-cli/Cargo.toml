@@ -32,6 +32,11 @@ name = "aurora-direct-earc-probe"
 path = "src/bin/aurora-direct-earc-probe.rs"
 bench = false
 
+[[bin]]
+name = "aurora-encoded-runtime"
+path = "src/bin/aurora-encoded-runtime.rs"
+bench = false
+
 [features]
 default = ["camilladsp", "realtime", "simulation"]
 camilladsp = ["dep:aurora-dsp-camilladsp", "aurora-dsp-camilladsp/camilladsp-process"]
@@ -42,8 +47,11 @@ simulation = ["dep:aurora-realtime-audio-sim", "dep:aurora-realtime-engine"]
 anyhow.workspace = true
 aurora-audio-io = { path = "../aurora-audio-io" }
 aurora-core = { path = "../aurora-core" }
+aurora-decoder-engine = { path = "../aurora-decoder-engine" }
 aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-dsp-camilladsp = { path = "../aurora-dsp-camilladsp", optional = true }
+aurora-encoded-input = { path = "../aurora-encoded-input" }
+aurora-encoded-runtime = { path = "../aurora-encoded-runtime" }
 aurora-iec61937 = { path = "../aurora-iec61937" }
 aurora-renderer-api = { path = "../aurora-renderer-api" }
 aurora-renderer-basic = { path = "../aurora-renderer-basic" }
@@ -59,7 +67,6 @@ tracing.workspace = true
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"
-
 
 [dev-dependencies]
 aurora-test-alloc = { path = "../aurora-test-alloc" }
