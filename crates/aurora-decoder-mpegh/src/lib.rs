@@ -11,6 +11,7 @@ mod conformance;
 mod conformance_roles;
 mod evidence_gate;
 mod evidence_pair;
+mod exact_scene_candidate;
 mod external_channels;
 mod external_hoa;
 mod external_oam;
@@ -42,6 +43,10 @@ pub use evidence_gate::{
 pub use evidence_pair::{
     pair_mpegh_external_evidence, pair_mpegh_external_evidence_with_hoa,
     MpeghEvidencePairError, MpeghPairedEvidence,
+};
+pub use exact_scene_candidate::{
+    evaluate_exact_mpegh_scene_candidate, render_exact_mpegh_scene_candidate,
+    MpeghExactSceneDecision, MpeghExactSceneError,
 };
 pub use external_channels::{
     parse_external_channel_metadata, MpeghAngularPrecision, MpeghChannelGroup,
