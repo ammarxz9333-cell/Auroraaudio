@@ -97,6 +97,24 @@ impl AuroraEncodedRuntime {
         self.decode_carrier(carrier.carrier, carrier.discontinuity, carrier.pts_48k)
     }
 
+    /// Feeds complete native ALSA S32 slot samples from direct eARC capture.
+    ///
+    /// This path avoids the redundant intermediate i32 -> byte staging vector
+    /// while preserving the exact signed 32-bit slot bit pattern.
+    pub fn push_direct_s32_words(
+        &mut self,
+        samples: &[i32],
+    ) -> Result<RuntimeBatch, RuntimeError> {
+        let Some(carrier) = self
+            .input
+            .push_direct_s32_words(samples)
+            .map_err(RuntimeError::Input)?
+        else {
+            return Ok(RuntimeBatch::default());
+        };
+        self.decode_carrier(carrier.carrier, carrier.discontinuity, carrier.pts_48k)
+    }
+
     /// Feeds one complete Aurora USB v1 packet from the legacy STM32 bridge.
     /// Control/clock/output packets intentionally produce an empty batch.
     pub fn push_legacy_usb_packet(
@@ -247,6 +265,15 @@ impl AuroraPlaybackRuntime {
 
     pub fn push_direct_s32(&mut self, bytes: &[u8]) -> Result<PlaybackBatch, RuntimeError> {
         let batch = self.encoded.push_direct_s32(bytes)?;
+        self.process_batch(batch)
+    }
+
+    /// Feeds native ALSA S32 slot words without a byte-staging allocation.
+    pub fn push_direct_s32_words(
+        &mut self,
+        samples: &[i32],
+    ) -> Result<PlaybackBatch, RuntimeError> {
+        let batch = self.encoded.push_direct_s32_words(samples)?;
         self.process_batch(batch)
     }
 
@@ -505,6 +532,31 @@ mod tests {
     }
 
     #[test]
+    fn native_s32_word_path_enters_same_transport_parser() {
+        let mut runtime = AuroraEncodedRuntime::new(
+            EncodedInputConfig::DirectEarc {
+                slots: 2,
+                word_half: CarrierWordHalf::High,
+            },
+            EngineConfig::default(),
+            format(),
+        )
+        .unwrap();
+        let samples = [
+            (u32::from(0xF872_u16) << 16) as i32,
+            (u32::from(0x4E1F_u16) << 16) as i32,
+        ];
+
+        let batch = runtime.push_direct_s32_words(&samples).unwrap();
+
+        // Preamble-only input is not a complete IEC61937 burst, but it proves
+        // the native-word path reaches the same parser without fabricating PCM.
+        assert_eq!(batch.bursts, 0);
+        assert!(batch.frames.is_empty());
+        assert_eq!(runtime.decoder().pending_carrier_bytes(), 4);
+    }
+
+    #[test]
     fn legacy_control_packets_do_not_enter_decoder() {
         let mut runtime = AuroraEncodedRuntime::new(
             EncodedInputConfig::LegacyUsb,
@@ -548,6 +600,10 @@ mod tests {
         .unwrap();
         assert!(matches!(
             runtime.push_direct_s32(&[0_u8; 8]),
+            Err(RuntimeError::Input(EncodedInputError::WrongSource { .. }))
+        ));
+        assert!(matches!(
+            runtime.push_direct_s32_words(&[0_i32; 2]),
             Err(RuntimeError::Input(EncodedInputError::WrongSource { .. }))
         ));
     }
@@ -609,6 +665,23 @@ mod tests {
         )
         .unwrap();
         let batch = runtime.push_direct_s32(&[1, 2, 3]).unwrap();
+        assert!(batch.frames.is_empty());
+        assert_eq!(batch.bursts, 0);
+    }
+
+    #[test]
+    fn playback_runtime_accepts_native_direct_words() {
+        let mut runtime = AuroraPlaybackRuntime::new(
+            EncodedInputConfig::DirectEarc {
+                slots: 2,
+                word_half: CarrierWordHalf::High,
+            },
+            EngineConfig::default(),
+            format(),
+            OutputDspConfig::default(),
+        )
+        .unwrap();
+        let batch = runtime.push_direct_s32_words(&[0_i32, 0_i32]).unwrap();
         assert!(batch.frames.is_empty());
         assert_eq!(batch.bursts, 0);
     }
