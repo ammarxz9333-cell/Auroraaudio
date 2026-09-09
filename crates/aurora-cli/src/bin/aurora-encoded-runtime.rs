@@ -4,11 +4,11 @@
 //! remains for fixtures/evidence. Legacy STM32/USB remains an explicit fallback
 //! and converges on the same IEC61937/decoder/DSP/output runtime.
 //!
-//! Native ALSA i32 slot samples enter the carrier normalizer directly, avoiding
-//! a redundant i32 -> byte staging vector. Final speaker PCM can remain canonical
-//! 12-channel interleaved F32 on stdout or go to Aurora's native ALSA S32_LE
-//! playback backend. Wider TDM layouts are zero-padded only; no extra channels
-//! are synthesized and no Atmos/JOC claim is inferred from transport type alone.
+//! Native ALSA i32 slot samples enter the carrier normalizer directly. Final
+//! speaker PCM can remain canonical 12-channel interleaved F32 on stdout or go
+//! to Aurora's native ALSA S32_LE playback backend. Wider TDM layouts are
+//! zero-padded only; no extra channels are synthesized and no Atmos/JOC claim is
+//! inferred from transport type alone.
 
 use std::io::{self, Read, Write};
 use std::time::Duration;
@@ -307,8 +307,6 @@ fn run_selected_input<S: SpeakerSink>(
         initial,
         move |health, age| {
             let stats = health.counters;
-            // Formatting and potentially blocking stderr I/O live only here.
-            // A write failure disables neither capture nor fail-closed decoding.
             let _ = writeln!(
                 io::stderr(),
                 "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_fallback_present={} output_xruns={:?} output_recoveries={:?}",
@@ -389,8 +387,6 @@ fn run_direct_native_alsa<S: SpeakerSink>(
             .read_block()
             .context("native ALSA direct-eARC capture failed")?;
         if block.discontinuity {
-            // Clear partial carrier/parser/codec/DSP state and queued physical
-            // output at one transport epoch boundary.
             runtime.reset();
             sink.reset_for_transport_discontinuity()?;
             stats.transport_discontinuities = stats.transport_discontinuities.saturating_add(1);
@@ -406,11 +402,10 @@ fn run_direct_native_alsa<S: SpeakerSink>(
         stats.capture_recoveries = telemetry.recoveries;
         stats.capture_discontinuities = telemetry.discontinuities;
         let decoder = runtime.encoded().decoder();
-        let joc = decoder.engine().joc_health();
         reporter.publish(stats.snapshot_with_joc(
             decoder.transport_telemetry(),
             sink.output_health(),
-            joc,
+            decoder.engine().joc_health(),
         ));
     }
 }
@@ -436,11 +431,10 @@ fn run_direct_stdin<R: Read, S: SpeakerSink>(
             .context("direct eARC playback runtime ingest failed")?;
         consume_batch(batch, sink, &mut stats)?;
         let decoder = runtime.encoded().decoder();
-        let joc = decoder.engine().joc_health();
         reporter.publish(stats.snapshot_with_joc(
             decoder.transport_telemetry(),
             sink.output_health(),
-            joc,
+            decoder.engine().joc_health(),
         ));
     }
     let final_batch = runtime
@@ -480,11 +474,10 @@ fn run_legacy<S: SpeakerSink>(
             .context("legacy STM32/USB playback runtime ingest failed")?;
         consume_batch(batch, sink, &mut stats)?;
         let decoder = runtime.encoded().decoder();
-        let joc = decoder.engine().joc_health();
         reporter.publish(stats.snapshot_with_joc(
             decoder.transport_telemetry(),
             sink.output_health(),
-            joc,
+            decoder.engine().joc_health(),
         ));
     }
     let final_batch = runtime.finish().context("legacy runtime finalization failed")?;
@@ -518,7 +511,6 @@ fn consume_batch<S: SpeakerSink>(
     if batch.discontinuity {
         sink.reset_for_transport_discontinuity()?;
     }
-
     for frame in batch.frames {
         sink.write_frame(&frame)?;
     }
@@ -573,21 +565,13 @@ impl<W: Write> SpeakerSink for StdoutF32Sink<W> {
 
 struct NativeAlsaSink {
     playback: NativeAlsaPlayback,
-    config: AlsaOutputConfig,
-    transport_reopens: u64,
-    retired_output_health: OutputHealth,
 }
 
 impl NativeAlsaSink {
     fn open(config: AlsaOutputConfig) -> Result<Self> {
-        let playback = NativeAlsaPlayback::open(config.clone())
+        let playback = NativeAlsaPlayback::open(config)
             .context("failed to open Aurora native ALSA speaker output")?;
-        Ok(Self {
-            playback,
-            config,
-            transport_reopens: 0,
-            retired_output_health: OutputHealth::default(),
-        })
+        Ok(Self { playback })
     }
 }
 
@@ -596,10 +580,10 @@ impl SpeakerSink for NativeAlsaSink {
         #[cfg(target_os = "linux")]
         {
             let telemetry = self.playback.telemetry();
-            Some(self.retired_output_health.plus(OutputHealth {
+            Some(OutputHealth {
                 xruns: telemetry.xruns,
                 recoveries: telemetry.recoveries,
-            }))
+            })
         }
         #[cfg(not(target_os = "linux"))]
         {
@@ -615,14 +599,9 @@ impl SpeakerSink for NativeAlsaSink {
     }
 
     fn reset_for_transport_discontinuity(&mut self) -> Result<()> {
-        // Reopening the PCM handle is deliberately conservative: it guarantees
-        // queued pre-break audio cannot leak across an eARC unlock/xrun epoch.
-        let replacement = NativeAlsaPlayback::open(self.config.clone())
-            .context("failed reopening native ALSA output after transport discontinuity")?;
-        self.retired_output_health = self.output_health().unwrap_or_default();
-        self.playback = replacement;
-        self.transport_reopens = self.transport_reopens.saturating_add(1);
-        Ok(())
+        self.playback
+            .reset_for_discontinuity()
+            .context("failed resetting native ALSA output after transport discontinuity")
     }
 
     fn finish(&mut self) -> Result<()> {
@@ -632,19 +611,17 @@ impl SpeakerSink for NativeAlsaSink {
         #[cfg(target_os = "linux")]
         {
             let telemetry = self.playback.telemetry();
-            let totals = self.output_health().unwrap_or_default();
             eprintln!(
-                "aurora-alsa-output: device={} rate={} channels={} period={} buffer={} frames_written={} xruns={} recoveries={} discontinuity_resets={} transport_reopens={}",
+                "aurora-alsa-output: device={} rate={} channels={} period={} buffer={} frames_written={} xruns={} recoveries={} discontinuity_resets={}",
                 telemetry.device,
                 telemetry.sample_rate,
                 telemetry.hardware_channels,
                 telemetry.period_frames,
                 telemetry.buffer_frames,
                 telemetry.frames_written,
-                totals.xruns,
-                totals.recoveries,
+                telemetry.xruns,
+                telemetry.recoveries,
                 telemetry.discontinuity_resets,
-                self.transport_reopens
             );
         }
         Ok(())
@@ -682,7 +659,6 @@ impl SeqPacketSocket {
                 "bridge socket path contains NUL",
             ));
         }
-
         let raw_fd =
             unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_SEQPACKET | libc::SOCK_CLOEXEC, 0) };
         if raw_fd < 0 {
