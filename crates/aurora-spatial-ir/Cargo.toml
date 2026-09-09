@@ -1,0 +1,13 @@
+[package]
+name = "aurora-spatial-ir"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+aurora-core = { path = "../aurora-core" }
+aurora-decoder-api = { path = "../aurora-decoder-api" }
+thiserror = { workspace = true }
