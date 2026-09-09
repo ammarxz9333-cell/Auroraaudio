@@ -35,7 +35,7 @@
       "integration": "rust-dependency",
       "tested_version": "0.0.8",
       "roles": ["ac4-decode", "ac4-immersive-pcm-render", "ac4-ajoc-pcm-render"],
-      "object_metadata": "rendered-to-pcm-not-exported-at-aurora-boundary",
+      "object_metadata": "aurora-object-preserving-adapter-experimental",
       "production_ready": false,
       "evidence": ["crates/aurora-decoder-engine", "THIRD_PARTY_LICENSES.md"]
     },
@@ -50,6 +50,42 @@
       "object_metadata": "not-applicable-core-only",
       "production_ready": false,
       "evidence": ["crates/aurora-decoder-engine", "THIRD_PARTY_LICENSES.md"]
+    },
+    {
+      "id": "iamf-rs",
+      "upstream": "https://github.com/baylesj/iamf-rs",
+      "decision": "adopted-open-native",
+      "integration": "rust-git-dependency",
+      "tested_version": "af36a32854e56b67edfec79fdbb3144ee1c8630b",
+      "pinned_commit": "af36a32854e56b67edfec79fdbb3144ee1c8630b",
+      "roles": ["iamf-streaming-decode", "iamf-native-render", "iamf-runtime-primary"],
+      "object_metadata": "pre-render-scene-export-pending",
+      "production_ready": false,
+      "evidence": ["crates/aurora-decoder-iamf", "crates/aurora-super-decoder"]
+    },
+    {
+      "id": "truehd",
+      "upstream": "https://github.com/truehdd/truehdd",
+      "decision": "adopted-open-native",
+      "integration": "rust-git-dependency-optional-rust-1.88",
+      "tested_version": "0.7.1@b54f2097166ca736cc8a7f3cb6157c62440284ce",
+      "pinned_commit": "b54f2097166ca736cc8a7f3cb6157c62440284ce",
+      "roles": ["truehd-decode", "truehd-atmos-oamd", "object-preserving-spatial-ir-v2"],
+      "object_metadata": "rich-spatial-ir-v2-experimental",
+      "production_ready": false,
+      "evidence": ["crates/aurora-decoder-truehdd", "crates/aurora-spatial-ir-v2"]
+    },
+    {
+      "id": "libmpegh",
+      "upstream": "https://github.com/ittiam-systems/libmpegh",
+      "decision": "adopted",
+      "integration": "feature-gated-static-library-ffi",
+      "tested_version": "f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8",
+      "pinned_commit": "f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8",
+      "roles": ["mpegh-3d-decode", "external-render-prerender-pcm", "channel-metadata", "oam-metadata", "hoa-metadata"],
+      "object_metadata": "spatial-transport-v2-experimental",
+      "production_ready": false,
+      "evidence": ["crates/aurora-decoder-mpegh", "crates/aurora-spatial-transport-v2", "crates/aurora-super-decoder"]
     },
     {
       "id": "ffmpeg",
@@ -101,11 +137,11 @@
       "id": "libiamf",
       "upstream": "https://github.com/AOMediaCodec/libiamf",
       "decision": "evaluate",
-      "integration": "external-process-or-ffi-adapter",
-      "roles": ["open-immersive-audio"],
-      "object_metadata": "candidate",
+      "integration": "conformance-oracle",
+      "roles": ["iamf-reference-decoder", "iamf-conformance-oracle"],
+      "object_metadata": "oracle",
       "production_ready": false,
-      "evidence": ["docs/adapters.md"]
+      "evidence": ["crates/aurora-decoder-iamf"]
     },
     {
       "id": "libmysofa",
