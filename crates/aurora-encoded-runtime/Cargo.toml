@@ -7,6 +7,7 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+crossbeam-queue.workspace = true
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-decoder-engine = { path = "../aurora-decoder-engine" }
@@ -16,5 +17,6 @@ aurora-encoded-input = { path = "../aurora-encoded-input" }
 aurora-spatial-runtime = { path = "../aurora-spatial-runtime" }
 
 [dev-dependencies]
+aurora-test-alloc = { path = "../aurora-test-alloc" }
 aurora-iec61937 = { path = "../aurora-iec61937" }
 aurora-usb-protocol = { path = "../aurora-usb-protocol" }

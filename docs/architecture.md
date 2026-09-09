@@ -239,3 +239,40 @@ IEC61937 stream and emits the same canonical 48 kHz, 12-channel raw-f32 output
 into Aurora's existing postprocessor and managed source gate. The default
 `objects` mode remains separate; failure never silently selects an upmixer.
 See [the surround-upmix adapter](surround-upmix.md) for semantics and evidence.
+## Encoded runtime health observations
+
+`aurora-encoded-runtime::health` provides a reusable fixed-size
+`RuntimeHealthSnapshot`: session capture XRUN/recovery/discontinuity counts,
+transport discontinuities, successful burst/format-change/decode counts,
+IEC61937 pending/discarded/malformed observations, and optional cumulative native
+output XRUN/recovery counts. Output totals retain retired ALSA handles' counters
+across transport-triggered reopen. `None` denotes unavailable native output
+telemetry (stdout), rather than a hardware success measurement.
+
+The `aurora-encoded-runtime` CLI starts a dedicated reporter with
+`--health-interval-ms 5000` by default; `0` disables it without creating a worker.
+Native S32 capture, stdin fixtures and legacy STM32/USB all publish through the
+same preallocated one-slot lock-free mailbox after successful ingest/output.
+Publication performs no allocation, formatting or diagnostic I/O. New snapshots
+replace older unconsumed observations rather than growing a log queue. The
+reporter alone formats and writes periodic `aurora-runtime-health` lines to stderr;
+PCM stdout is unchanged. Slow or failed diagnostic writes do not block audio
+publication, and reporter teardown does not join a possibly blocked writer.
+The existing synchronous final exit summaries remain in place.
+
+Intervals use monotonic elapsed time. Spurious wakes are gated and delayed reports
+do not produce catch-up bursts. While an input read or output write stalls, the
+reporter keeps emitting the last completed observation with `snapshot_age_ms`;
+this is snapshot freshness, not measured latency or physical link status. The
+reporter does not inspect an ALSA handle concurrently with capture/playback, so
+in-progress recovery counters become visible at the next completed ingest boundary.
+Decode counters describe successfully returned batches; fatal decode errors still
+terminate via the existing fail-closed path rather than being counted as success.
+
+Parser pending bytes are a gauge, while discarded/malformed counts remain
+cumulative across parser resets. Ordinary carrier padding can increase discarded
+bytes: this never increments transport discontinuities or asserts physical eARC
+unlock. Reporting does not change source selection, recovery, decoder policy or
+the legacy STM32 fallback, and IEC61937 type 0x15 is never promoted to Atmos/JOC
+proof. Hardware lock/relock, sustained XRUN and loudspeaker acceptance remain
+separate physical tests.

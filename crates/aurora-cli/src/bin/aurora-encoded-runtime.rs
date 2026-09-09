@@ -11,6 +11,7 @@
 //! are synthesized and no Atmos/JOC claim is inferred from transport type alone.
 
 use std::io::{self, Read, Write};
+use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
 use aurora_alsa_input::{AlsaInputConfig, NativeAlsaCapture};
@@ -21,6 +22,9 @@ use aurora_dsp_basic::output::{
     OutputDspConfig, CHANNELS as OUTPUT_CHANNELS, SAMPLE_RATE as OUTPUT_SAMPLE_RATE,
 };
 use aurora_encoded_input::EncodedInputConfig;
+use aurora_encoded_runtime::health::{
+    HealthReporter, OutputHealth, RuntimeCounters as RuntimeStats, DEFAULT_HEALTH_INTERVAL,
+};
 use aurora_encoded_runtime::{AuroraPlaybackRuntime, PlaybackBatch, SpeakerOutputFrame};
 use aurora_iec61937::CarrierWordHalf;
 use clap::{Parser, ValueEnum};
@@ -28,6 +32,7 @@ use clap::{Parser, ValueEnum};
 const DEFAULT_CARRIER_RATE_HZ: u32 = 192_000;
 const DEFAULT_SLOTS: usize = 2;
 const DEFAULT_BRIDGE_SOCKET: &str = "/run/aurora/usb-bridge.sock";
+#[cfg(unix)]
 const LEGACY_PACKET_BUFFER_BYTES: usize = 512 * 1024;
 const DEFAULT_INPUT_PERIOD_FRAMES: usize = 256;
 const DEFAULT_INPUT_BUFFER_FRAMES: usize = 1_024;
@@ -136,20 +141,13 @@ struct Args {
     #[arg(long, default_value_t = OUTPUT_CHANNELS)]
     output_channels: usize,
 
+    /// Periodic stderr health interval in milliseconds; 0 disables the reporter.
+    #[arg(long, default_value_t = DEFAULT_HEALTH_INTERVAL.as_millis() as u64)]
+    health_interval_ms: u64,
+
     /// Decoder preferred output block size.
     #[arg(long, default_value_t = 40)]
     block_size: usize,
-}
-
-#[derive(Debug, Default)]
-struct RuntimeStats {
-    carrier_bursts: u64,
-    format_changes: u64,
-    decoded_frames: u64,
-    decoded_pcm_frames: u64,
-    transport_discontinuities: u64,
-    capture_xruns: u64,
-    capture_recoveries: u64,
 }
 
 fn main() -> Result<()> {
@@ -274,9 +272,30 @@ fn run_selected_input<S: SpeakerSink>(
     runtime: &mut AuroraPlaybackRuntime,
     sink: &mut S,
 ) -> Result<RuntimeStats> {
+    let input = args.input;
+    let output = args.output;
+    let native_capture = args.alsa_device.is_some();
+    let initial = RuntimeStats::default().snapshot(
+        runtime.encoded().decoder().transport_telemetry(),
+        sink.output_health(),
+    );
+    let reporter = HealthReporter::start(Duration::from_millis(args.health_interval_ms), initial,
+        move |health, age| {
+            let stats = health.counters;
+            // Formatting and potentially blocking stderr I/O live only here.
+            // A write failure disables neither capture nor fail-closed decoding.
+            let _ = writeln!(io::stderr(),
+                "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} output_xruns={:?} output_recoveries={:?}",
+                age.as_millis(), stats.carrier_bursts, stats.format_changes,
+                stats.decoded_frames, stats.decoded_pcm_frames, stats.transport_discontinuities,
+                stats.capture_xruns, stats.capture_recoveries, stats.capture_discontinuities,
+                health.parser.pending_carrier_bytes, health.parser.discarded_bytes,
+                health.parser.malformed_headers, health.output.map(|o| o.xruns),
+                health.output.map(|o| o.recoveries));
+        }).context("failed to start runtime health reporter")?;
     match args.input {
-        InputMode::DirectEarc => run_direct(args, runtime, sink),
-        InputMode::LegacyUsb => run_legacy(args, runtime, sink),
+        InputMode::DirectEarc => run_direct(args, runtime, sink, &reporter),
+        InputMode::LegacyUsb => run_legacy(args, runtime, sink, &reporter),
     }
 }
 
@@ -284,12 +303,13 @@ fn run_direct<S: SpeakerSink>(
     args: &Args,
     runtime: &mut AuroraPlaybackRuntime,
     sink: &mut S,
+    reporter: &HealthReporter,
 ) -> Result<RuntimeStats> {
     if let Some(device) = args.alsa_device.as_deref() {
-        run_direct_native_alsa(args, device, runtime, sink)
+        run_direct_native_alsa(args, device, runtime, sink, reporter)
     } else {
         let stdin = io::stdin();
-        run_direct_stdin(stdin.lock(), runtime, sink, args.read_bytes)
+        run_direct_stdin(stdin.lock(), runtime, sink, args.read_bytes, reporter)
     }
 }
 
@@ -298,6 +318,7 @@ fn run_direct_native_alsa<S: SpeakerSink>(
     device: &str,
     runtime: &mut AuroraPlaybackRuntime,
     sink: &mut S,
+    reporter: &HealthReporter,
 ) -> Result<RuntimeStats> {
     let mut capture = NativeAlsaCapture::open(AlsaInputConfig {
         device: device.to_owned(),
@@ -329,6 +350,11 @@ fn run_direct_native_alsa<S: SpeakerSink>(
         let telemetry = capture.telemetry();
         stats.capture_xruns = telemetry.xruns;
         stats.capture_recoveries = telemetry.recoveries;
+        stats.capture_discontinuities = telemetry.discontinuities;
+        reporter.publish(stats.snapshot(
+            runtime.encoded().decoder().transport_telemetry(),
+            sink.output_health(),
+        ));
     }
 }
 
@@ -337,6 +363,7 @@ fn run_direct_stdin<R: Read, S: SpeakerSink>(
     runtime: &mut AuroraPlaybackRuntime,
     sink: &mut S,
     read_bytes: usize,
+    reporter: &HealthReporter,
 ) -> Result<RuntimeStats> {
     let mut read_buffer = vec![0_u8; read_bytes];
     let mut stats = RuntimeStats::default();
@@ -351,6 +378,10 @@ fn run_direct_stdin<R: Read, S: SpeakerSink>(
             .push_direct_s32(&read_buffer[..count])
             .context("direct eARC playback runtime ingest failed")?;
         consume_batch(batch, sink, &mut stats)?;
+        reporter.publish(stats.snapshot(
+            runtime.encoded().decoder().transport_telemetry(),
+            sink.output_health(),
+        ));
     }
     runtime
         .finish()
@@ -363,6 +394,7 @@ fn run_legacy<S: SpeakerSink>(
     args: &Args,
     runtime: &mut AuroraPlaybackRuntime,
     sink: &mut S,
+    reporter: &HealthReporter,
 ) -> Result<RuntimeStats> {
     let socket = SeqPacketSocket::connect(&args.bridge_socket)
         .with_context(|| format!("failed to connect legacy bridge {}", args.bridge_socket))?;
@@ -370,7 +402,9 @@ fn run_legacy<S: SpeakerSink>(
     let mut stats = RuntimeStats::default();
 
     loop {
-        let count = socket.recv(&mut packet).context("legacy bridge receive failed")?;
+        let count = socket
+            .recv(&mut packet)
+            .context("legacy bridge receive failed")?;
         if count == 0 {
             break;
         }
@@ -378,8 +412,14 @@ fn run_legacy<S: SpeakerSink>(
             .push_legacy_usb_packet(&packet[..count])
             .context("legacy STM32/USB playback runtime ingest failed")?;
         consume_batch(batch, sink, &mut stats)?;
+        reporter.publish(stats.snapshot(
+            runtime.encoded().decoder().transport_telemetry(),
+            sink.output_health(),
+        ));
     }
-    runtime.finish().context("legacy runtime finalization failed")?;
+    runtime
+        .finish()
+        .context("legacy runtime finalization failed")?;
     Ok(stats)
 }
 
@@ -388,8 +428,9 @@ fn run_legacy<S: SpeakerSink>(
     args: &Args,
     _runtime: &mut AuroraPlaybackRuntime,
     _sink: &mut S,
+    reporter: &HealthReporter,
 ) -> Result<RuntimeStats> {
-    let _ = args;
+    let _ = (args, reporter);
     bail!("legacy STM32/USB bridge socket mode currently requires Unix/Linux")
 }
 
@@ -398,26 +439,22 @@ fn consume_batch<S: SpeakerSink>(
     sink: &mut S,
     stats: &mut RuntimeStats,
 ) -> Result<()> {
-    stats.carrier_bursts = stats.carrier_bursts.saturating_add(batch.bursts as u64);
-    stats.format_changes = stats
-        .format_changes
-        .saturating_add(batch.format_changes as u64);
+    stats.record_batch(&batch);
     if batch.discontinuity {
         sink.reset_for_transport_discontinuity()?;
-        stats.transport_discontinuities = stats.transport_discontinuities.saturating_add(1);
     }
 
     for frame in batch.frames {
         sink.write_frame(&frame)?;
-        stats.decoded_frames = stats.decoded_frames.saturating_add(1);
-        stats.decoded_pcm_frames = stats
-            .decoded_pcm_frames
-            .saturating_add(frame.frame_count as u64);
     }
     Ok(())
 }
 
 trait SpeakerSink {
+    fn output_health(&self) -> Option<OutputHealth> {
+        None
+    }
+
     fn write_frame(&mut self, frame: &SpeakerOutputFrame) -> Result<()>;
 
     /// Flushes old physical-output presentation state after a real source break.
@@ -463,6 +500,7 @@ struct NativeAlsaSink {
     playback: NativeAlsaPlayback,
     config: AlsaOutputConfig,
     transport_reopens: u64,
+    retired_output_health: OutputHealth,
 }
 
 impl NativeAlsaSink {
@@ -473,11 +511,27 @@ impl NativeAlsaSink {
             playback,
             config,
             transport_reopens: 0,
+            retired_output_health: OutputHealth::default(),
         })
     }
 }
 
 impl SpeakerSink for NativeAlsaSink {
+    fn output_health(&self) -> Option<OutputHealth> {
+        #[cfg(target_os = "linux")]
+        {
+            let telemetry = self.playback.telemetry();
+            Some(self.retired_output_health.plus(OutputHealth {
+                xruns: telemetry.xruns,
+                recoveries: telemetry.recoveries,
+            }))
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            None
+        }
+    }
+
     fn write_frame(&mut self, frame: &SpeakerOutputFrame) -> Result<()> {
         validate_speaker_frame(frame)?;
         self.playback
@@ -490,6 +544,7 @@ impl SpeakerSink for NativeAlsaSink {
         // queued pre-break audio cannot leak across an eARC unlock/xrun epoch.
         let replacement = NativeAlsaPlayback::open(self.config.clone())
             .context("failed reopening native ALSA output after transport discontinuity")?;
+        self.retired_output_health = self.output_health().unwrap_or_default();
         self.playback = replacement;
         self.transport_reopens = self.transport_reopens.saturating_add(1);
         Ok(())
@@ -502,6 +557,7 @@ impl SpeakerSink for NativeAlsaSink {
         #[cfg(target_os = "linux")]
         {
             let telemetry = self.playback.telemetry();
+            let totals = self.output_health().unwrap_or_default();
             eprintln!(
                 "aurora-alsa-output: device={} rate={} channels={} period={} buffer={} frames_written={} xruns={} recoveries={} discontinuity_resets={} transport_reopens={}",
                 telemetry.device,
@@ -510,8 +566,8 @@ impl SpeakerSink for NativeAlsaSink {
                 telemetry.period_frames,
                 telemetry.buffer_frames,
                 telemetry.frames_written,
-                telemetry.xruns,
-                telemetry.recoveries,
+                totals.xruns,
+                totals.recoveries,
                 telemetry.discontinuity_resets,
                 self.transport_reopens
             );
@@ -552,13 +608,8 @@ impl SeqPacketSocket {
             ));
         }
 
-        let raw_fd = unsafe {
-            libc::socket(
-                libc::AF_UNIX,
-                libc::SOCK_SEQPACKET | libc::SOCK_CLOEXEC,
-                0,
-            )
-        };
+        let raw_fd =
+            unsafe { libc::socket(libc::AF_UNIX, libc::SOCK_SEQPACKET | libc::SOCK_CLOEXEC, 0) };
         if raw_fd < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -615,6 +666,24 @@ impl SeqPacketSocket {
 mod tests {
     use super::*;
 
+    #[test]
+    fn health_interval_cli_defaults_override_disable_and_reject_invalid() {
+        assert_eq!(
+            Args::try_parse_from(["runtime"])
+                .unwrap()
+                .health_interval_ms,
+            5000
+        );
+        for value in ["0", "250", "10000"] {
+            let args = Args::try_parse_from(["runtime", "--health-interval-ms", value]).unwrap();
+            assert_eq!(args.health_interval_ms, value.parse::<u64>().unwrap());
+            validate_args(&args).unwrap();
+        }
+        for value in ["-1", "NaN", "1.5"] {
+            assert!(Args::try_parse_from(["runtime", "--health-interval-ms", value]).is_err());
+        }
+    }
+
     fn valid_args() -> Args {
         Args {
             input: InputMode::DirectEarc,
@@ -634,6 +703,7 @@ mod tests {
             output_rate: OUTPUT_SAMPLE_RATE,
             output_channels: OUTPUT_CHANNELS,
             block_size: 40,
+            health_interval_ms: 5000,
         }
     }
 

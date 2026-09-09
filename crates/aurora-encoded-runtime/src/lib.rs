@@ -13,6 +13,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod health;
+
 use std::error::Error;
 use std::fmt;
 
@@ -24,9 +26,7 @@ use aurora_dsp_basic::output::{
     OutputDspConfig, OutputShapeError, SpeakerPostProcessor, CHANNELS as OUTPUT_CHANNELS,
     SAMPLE_RATE as OUTPUT_SAMPLE_RATE,
 };
-use aurora_encoded_input::{
-    EncodedInput, EncodedInputConfig, EncodedInputError, EncodedInputKind,
-};
+use aurora_encoded_input::{EncodedInput, EncodedInputConfig, EncodedInputError, EncodedInputKind};
 use aurora_spatial_runtime::{SpatialRuntimeConfig, SpatialRuntimeError, VbapSpatialRuntime};
 
 /// Decoder output produced by one source-ingest call.
@@ -101,10 +101,7 @@ impl AuroraEncodedRuntime {
     ///
     /// This path avoids the redundant intermediate i32 -> byte staging vector
     /// while preserving the exact signed 32-bit slot bit pattern.
-    pub fn push_direct_s32_words(
-        &mut self,
-        samples: &[i32],
-    ) -> Result<RuntimeBatch, RuntimeError> {
+    pub fn push_direct_s32_words(&mut self, samples: &[i32]) -> Result<RuntimeBatch, RuntimeError> {
         let Some(carrier) = self
             .input
             .push_direct_s32_words(samples)
@@ -117,10 +114,7 @@ impl AuroraEncodedRuntime {
 
     /// Feeds one complete Aurora USB v1 packet from the legacy STM32 bridge.
     /// Control/clock/output packets intentionally produce an empty batch.
-    pub fn push_legacy_usb_packet(
-        &mut self,
-        packet: &[u8],
-    ) -> Result<RuntimeBatch, RuntimeError> {
+    pub fn push_legacy_usb_packet(&mut self, packet: &[u8]) -> Result<RuntimeBatch, RuntimeError> {
         let Some(carrier) = self
             .input
             .push_legacy_usb_packet(packet)
@@ -186,7 +180,10 @@ impl SpeakerOutputStage {
     }
 
     fn validate_decoded_frame(&self, frame: &DecodedFrame) -> Result<(), RuntimeError> {
-        frame.audio.validate().map_err(RuntimeError::InvalidAudioBlock)?;
+        frame
+            .audio
+            .validate()
+            .map_err(RuntimeError::InvalidAudioBlock)?;
         if !frame.objects.is_empty() {
             return Err(RuntimeError::ObjectSignalBindingsRequired {
                 object_count: frame.objects.len(),
@@ -277,10 +274,7 @@ impl AuroraPlaybackRuntime {
         self.process_batch(batch)
     }
 
-    pub fn push_legacy_usb_packet(
-        &mut self,
-        packet: &[u8],
-    ) -> Result<PlaybackBatch, RuntimeError> {
+    pub fn push_legacy_usb_packet(&mut self, packet: &[u8]) -> Result<PlaybackBatch, RuntimeError> {
         let batch = self.encoded.push_legacy_usb_packet(packet)?;
         self.process_batch(batch)
     }
@@ -579,11 +573,7 @@ mod tests {
             format(),
         )
         .unwrap();
-        let packet = usb_packet(
-            Kind::EncodedIec61937,
-            FLAG_DISCONTINUITY,
-            &[0x72, 0xF8],
-        );
+        let packet = usb_packet(Kind::EncodedIec61937, FLAG_DISCONTINUITY, &[0x72, 0xF8]);
         let batch = runtime.push_legacy_usb_packet(&packet).unwrap();
         assert!(batch.discontinuity);
         assert_eq!(batch.bursts, 0);
@@ -610,20 +600,21 @@ mod tests {
 
     #[test]
     fn canonical_speaker_pcm_runs_through_output_dsp() {
-        let mut output =
-            SpeakerOutputStage::new(format(), OutputDspConfig::default()).unwrap();
+        let mut output = SpeakerOutputStage::new(format(), OutputDspConfig::default()).unwrap();
         let processed = output
             .process_decoded_frame(decoded_frame(OUTPUT_CHANNELS, Vec::new()))
             .unwrap();
         assert_eq!(processed.frame_count, 40);
         assert_eq!(processed.interleaved_f32.len(), 40 * OUTPUT_CHANNELS);
-        assert!(processed.interleaved_f32.iter().all(|sample| sample.is_finite()));
+        assert!(processed
+            .interleaved_f32
+            .iter()
+            .all(|sample| sample.is_finite()));
     }
 
     #[test]
     fn generic_object_metadata_without_signal_bindings_fails_closed() {
-        let mut output =
-            SpeakerOutputStage::new(format(), OutputDspConfig::default()).unwrap();
+        let mut output = SpeakerOutputStage::new(format(), OutputDspConfig::default()).unwrap();
         let object = AudioObject {
             id: "object-0".to_owned(),
             position: Vector3::ZERO,
@@ -641,8 +632,7 @@ mod tests {
 
     #[test]
     fn noncanonical_channel_count_fails_before_output_dsp() {
-        let mut output =
-            SpeakerOutputStage::new(format(), OutputDspConfig::default()).unwrap();
+        let mut output = SpeakerOutputStage::new(format(), OutputDspConfig::default()).unwrap();
         assert!(matches!(
             output.process_decoded_frame(decoded_frame(8, Vec::new())),
             Err(RuntimeError::OutputChannelCount {
