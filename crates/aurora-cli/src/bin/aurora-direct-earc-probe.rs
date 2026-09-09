@@ -13,6 +13,11 @@ use aurora_iec61937::{
 };
 use clap::{Parser, ValueEnum};
 
+/// Standard Pa-to-Pa period of a canonical E-AC-3 IEC61937 burst stream.
+/// This is observational only: a mismatch is reported, never promoted to a
+/// physical eARC unlock or JOC/Atmos failure by the probe.
+const EAC3_IEC61937_PERIOD_BYTES: u64 = 24_576;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum FilterArg {
     All,
@@ -70,6 +75,13 @@ struct ProbeStats {
     other: u64,
     format_changes: u64,
     payload_bytes_emitted: u64,
+    previous_codec: Option<TransportCodec>,
+    previous_carrier_offset: Option<u64>,
+    eac3_last_spacing_bytes: Option<u64>,
+    eac3_min_spacing_bytes: Option<u64>,
+    eac3_max_spacing_bytes: Option<u64>,
+    eac3_nominal_period_matches: u64,
+    eac3_period_mismatches: u64,
 }
 
 fn main() -> Result<()> {
@@ -95,7 +107,11 @@ fn main() -> Result<()> {
         }
 
         for observation in parser.push(&read_buffer[..count]) {
-            observe_burst(&mut stats, observation.burst.codec);
+            observe_burst(
+                &mut stats,
+                observation.burst.codec,
+                observation.carrier_offset_bytes,
+            );
 
             if let Some(change) = observation.format_change {
                 stats.format_changes = stats.format_changes.saturating_add(1);
@@ -125,7 +141,7 @@ fn main() -> Result<()> {
     output.flush().context("failed to flush extracted payload")?;
 
     eprintln!(
-        "aurora-direct-earc-probe: bursts={} eac3={} ac3={} mat={} dts={} other={} format_changes={} payload_bytes={} discarded_carrier_bytes={} malformed_headers={} pending_bytes={}",
+        "aurora-direct-earc-probe: bursts={} eac3={} ac3={} mat={} dts={} other={} format_changes={} payload_bytes={} discarded_carrier_bytes={} malformed_headers={} pending_bytes={} eac3_nominal_period_bytes={} eac3_last_spacing_bytes={:?} eac3_min_spacing_bytes={:?} eac3_max_spacing_bytes={:?} eac3_nominal_period_matches={} eac3_period_mismatches={}",
         stats.bursts,
         stats.eac3,
         stats.ac3,
@@ -137,12 +153,18 @@ fn main() -> Result<()> {
         parser.discarded_bytes(),
         parser.malformed_headers(),
         parser.pending_bytes(),
+        EAC3_IEC61937_PERIOD_BYTES,
+        stats.eac3_last_spacing_bytes,
+        stats.eac3_min_spacing_bytes,
+        stats.eac3_max_spacing_bytes,
+        stats.eac3_nominal_period_matches,
+        stats.eac3_period_mismatches,
     );
 
     Ok(())
 }
 
-fn observe_burst(stats: &mut ProbeStats, codec: TransportCodec) {
+fn observe_burst(stats: &mut ProbeStats, codec: TransportCodec, carrier_offset_bytes: u64) {
     stats.bursts = stats.bursts.saturating_add(1);
     match codec {
         TransportCodec::Ac3 => stats.ac3 = stats.ac3.saturating_add(1),
@@ -151,6 +173,33 @@ fn observe_burst(stats: &mut ProbeStats, codec: TransportCodec) {
         TransportCodec::DtsCore => stats.dts = stats.dts.saturating_add(1),
         TransportCodec::Other(_) => stats.other = stats.other.saturating_add(1),
     }
+
+    // Compare only consecutive E-AC-3 bursts. A source-format transition must
+    // not turn another codec's repetition period into a false E-AC-3 mismatch.
+    if codec == TransportCodec::Eac3 && stats.previous_codec == Some(TransportCodec::Eac3) {
+        if let Some(previous_offset) = stats.previous_carrier_offset {
+            let spacing = carrier_offset_bytes.saturating_sub(previous_offset);
+            stats.eac3_last_spacing_bytes = Some(spacing);
+            stats.eac3_min_spacing_bytes = Some(
+                stats
+                    .eac3_min_spacing_bytes
+                    .map_or(spacing, |current| current.min(spacing)),
+            );
+            stats.eac3_max_spacing_bytes = Some(
+                stats
+                    .eac3_max_spacing_bytes
+                    .map_or(spacing, |current| current.max(spacing)),
+            );
+            if spacing == EAC3_IEC61937_PERIOD_BYTES {
+                stats.eac3_nominal_period_matches =
+                    stats.eac3_nominal_period_matches.saturating_add(1);
+            } else {
+                stats.eac3_period_mismatches = stats.eac3_period_mismatches.saturating_add(1);
+            }
+        }
+    }
+    stats.previous_codec = Some(codec);
+    stats.previous_carrier_offset = Some(carrier_offset_bytes);
 }
 
 fn should_extract(mode: ExtractArg, data_type: u8) -> bool {
@@ -175,9 +224,44 @@ mod tests {
     #[test]
     fn telemetry_keeps_eac3_as_transport_only_classification() {
         let mut stats = ProbeStats::default();
-        observe_burst(&mut stats, TransportCodec::Eac3);
+        observe_burst(&mut stats, TransportCodec::Eac3, 0);
         assert_eq!(stats.eac3, 1);
         assert_eq!(stats.bursts, 1);
+        assert_eq!(stats.eac3_last_spacing_bytes, None);
+    }
+
+    #[test]
+    fn consecutive_eac3_cadence_counts_exact_nominal_and_mismatch_periods() {
+        let mut stats = ProbeStats::default();
+        observe_burst(&mut stats, TransportCodec::Eac3, 0);
+        observe_burst(
+            &mut stats,
+            TransportCodec::Eac3,
+            EAC3_IEC61937_PERIOD_BYTES,
+        );
+        observe_burst(
+            &mut stats,
+            TransportCodec::Eac3,
+            EAC3_IEC61937_PERIOD_BYTES * 2 + 8,
+        );
+
+        assert_eq!(stats.eac3_nominal_period_matches, 1);
+        assert_eq!(stats.eac3_period_mismatches, 1);
+        assert_eq!(stats.eac3_last_spacing_bytes, Some(24_584));
+        assert_eq!(stats.eac3_min_spacing_bytes, Some(24_576));
+        assert_eq!(stats.eac3_max_spacing_bytes, Some(24_584));
+    }
+
+    #[test]
+    fn non_eac3_burst_breaks_eac3_cadence_comparison() {
+        let mut stats = ProbeStats::default();
+        observe_burst(&mut stats, TransportCodec::Eac3, 0);
+        observe_burst(&mut stats, TransportCodec::Ac3, 24_576);
+        observe_burst(&mut stats, TransportCodec::Eac3, 30_000);
+
+        assert_eq!(stats.eac3_nominal_period_matches, 0);
+        assert_eq!(stats.eac3_period_mismatches, 0);
+        assert_eq!(stats.eac3_last_spacing_bytes, None);
     }
 
     #[test]
