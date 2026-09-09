@@ -1,5 +1,6 @@
-use crate::catalog::{BackendDescriptor, DecoderCatalog, ExecutionClass, LicenseClass};
 use crate::catalog::CodecId;
+use crate::catalog::{BackendDescriptor, DecoderCatalog, ExecutionClass, LicenseClass};
+use crate::evidence::{evidence_for, EvidenceTier};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FidelityMode {
@@ -24,6 +25,10 @@ pub struct DecoderPolicy {
     pub require_closed_core_compatible: bool,
     pub allow_external_worker: bool,
     pub allow_file_level_copyleft: bool,
+    /// Minimum retained evidence required before a backend is admitted.
+    /// Development defaults to `Catalogued`; active routing separately asks
+    /// for integrated backends. Product policy can raise this to ProductReady.
+    pub minimum_evidence: EvidenceTier,
 }
 
 impl Default for DecoderPolicy {
@@ -35,6 +40,18 @@ impl Default for DecoderPolicy {
             require_closed_core_compatible: true,
             allow_external_worker: true,
             allow_file_level_copyleft: false,
+            minimum_evidence: EvidenceTier::Catalogued,
+        }
+    }
+}
+
+impl DecoderPolicy {
+    /// Strict release policy. At the current development stage this may admit
+    /// no backend, which is intentional: release readiness is evidence-driven.
+    pub fn product() -> Self {
+        Self {
+            minimum_evidence: EvidenceTier::ProductReady,
+            ..Self::default()
         }
     }
 }
@@ -68,6 +85,9 @@ impl DecoderPolicy {
     }
 
     fn admits(&self, backend: &BackendDescriptor) -> bool {
+        if !evidence_for(backend.id).satisfies(self.minimum_evidence) {
+            return false;
+        }
         if self.require_closed_core_compatible && !backend.closed_core_compatible {
             return false;
         }
@@ -136,6 +156,10 @@ impl DecoderPolicy {
             score += 25;
         }
 
+        // Evidence is a deterministic tiebreaking signal, never a substitute
+        // for actual codec fidelity. Higher proven maturity gets a modest bonus.
+        score += i32::from(evidence_for(backend.id).tier as u8) * 10;
+
         Some(score)
     }
 }
@@ -172,5 +196,24 @@ mod tests {
         let catalog = DecoderCatalog::default();
         let ranked = policy.rank(&catalog, CodecId::Flac, false);
         assert!(ranked.iter().all(|d| d.backend.id != BackendId::Symphonia));
+    }
+
+    #[test]
+    fn build_verified_floor_rejects_unverified_current_branch() {
+        let policy = DecoderPolicy {
+            minimum_evidence: EvidenceTier::BuildVerified,
+            ..DecoderPolicy::default()
+        };
+        let catalog = DecoderCatalog::default();
+        assert!(policy.rank(&catalog, CodecId::Dts, true).is_empty());
+        assert!(policy.rank(&catalog, CodecId::Ac4, true).is_empty());
+    }
+
+    #[test]
+    fn product_policy_fails_closed_until_release_evidence_exists() {
+        let policy = DecoderPolicy::product();
+        let catalog = DecoderCatalog::default();
+        assert!(policy.rank(&catalog, CodecId::Eac3Joc, true).is_empty());
+        assert!(policy.rank(&catalog, CodecId::TrueHd, true).is_empty());
     }
 }

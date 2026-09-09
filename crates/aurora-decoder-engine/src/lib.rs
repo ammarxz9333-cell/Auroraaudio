@@ -7,6 +7,7 @@
 #![forbid(unsafe_code)]
 
 pub mod catalog;
+pub mod evidence;
 mod native_ac4;
 mod native_dts;
 pub mod policy;
