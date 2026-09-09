@@ -204,7 +204,7 @@ fn main() -> Result<()> {
     let transport = decoder.transport_telemetry();
     let joc = decoder.engine().joc_status();
     eprintln!(
-        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} joc_classified={} joc_render_active={} joc_layout={:?} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_fallback={:?}",
+        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_layout={:?} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_fallback={:?}",
         args.input,
         args.output,
         stats.carrier_bursts,
@@ -224,6 +224,9 @@ fn main() -> Result<()> {
         transport.total_format_changes,
         transport.relocks,
         transport.last_valid_burst_age_ms,
+        transport.last_burst_spacing_bytes,
+        transport.min_burst_spacing_bytes,
+        transport.max_burst_spacing_bytes,
         joc.codec_classified_joc,
         joc.speaker_render_active,
         joc.layout_name,
@@ -308,7 +311,7 @@ fn run_selected_input<S: SpeakerSink>(
             // A write failure disables neither capture nor fail-closed decoding.
             let _ = writeln!(
                 io::stderr(),
-                "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} joc_classified={} joc_render_active={} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_fallback_present={} output_xruns={:?} output_recoveries={:?}",
+                "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_fallback_present={} output_xruns={:?} output_recoveries={:?}",
                 age.as_millis(),
                 stats.carrier_bursts,
                 stats.format_changes,
@@ -328,6 +331,9 @@ fn run_selected_input<S: SpeakerSink>(
                 health.parser.total_format_changes,
                 health.parser.relocks,
                 health.parser.last_valid_burst_age_ms,
+                health.parser.last_burst_spacing_bytes,
+                health.parser.min_burst_spacing_bytes,
+                health.parser.max_burst_spacing_bytes,
                 health.joc.codec_classified_joc,
                 health.joc.speaker_render_active,
                 health.joc.channel_count,
