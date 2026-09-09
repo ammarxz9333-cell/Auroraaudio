@@ -175,9 +175,15 @@ impl OpenJocNativeRenderer {
                     "OpenJOC output format changed or returned malformed PCM",
                 ));
             }
+            if frame.interleaved_f32.iter().any(|sample| !sample.is_finite()) {
+                return Err(DecoderError::Decode(
+                    "OpenJOC returned non-finite PCM; refusing to sanitize corrupted decoder output"
+                        .to_owned(),
+                ));
+            }
             for sample in frame.interleaved_f32.chunks_exact(frame.channel_count) {
                 for (channel, value) in self.channels.iter_mut().zip(sample.iter().copied()) {
-                    channel.push_back(if value.is_finite() { value } else { 0.0 });
+                    channel.push_back(value);
                 }
             }
         }
