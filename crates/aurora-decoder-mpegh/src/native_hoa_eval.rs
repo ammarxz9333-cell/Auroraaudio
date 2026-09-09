@@ -6,20 +6,20 @@ use thiserror::Error;
 use crate::{
     candidate_family_for_domain, decode_native_paired_chunk,
     evaluate_exact_mpegh_scene_candidate, evaluate_mpegh_hoa_candidate,
-    MpeghCandidateDispatchError, MpeghCandidateFamily, MpeghConformancePolicy,
-    MpeghExactSceneError, MpeghHoaCandidateDecision, MpeghHoaCandidateGateError,
-    MpeghNativePairError, MpeghPairedEvidence, MpeghPairedPlaybackDecision,
-    NativeMpeghDecoder,
+    mpegh_reference_audio_block, MpeghCandidateDispatchError, MpeghCandidateFamily,
+    MpeghConformancePolicy, MpeghEvidenceGateOutcome, MpeghExactSceneError,
+    MpeghHoaCandidateDecision, MpeghHoaCandidateGateError, MpeghNativePairError,
+    MpeghPairedEvidence, MpeghPairedPlaybackDecision, MpeghPlaybackChoice,
+    MpeghRenderedPcmError, NativeMpeghDecoder,
 };
 
 /// Uniform Aurora candidate decision for one native MPEG-H immersive access
-/// unit. The compressed input has been decoded exactly once; `playback` still
-/// decides whether the Aurora candidate is admitted or the paired libmpegh
-/// reference must be used.
+/// unit. `candidate` is absent when Aurora deliberately fails closed and the
+/// paired libmpegh reference is selected instead.
 #[derive(Debug)]
 pub struct NativeMpeghImmersiveDecision {
     pub family: MpeghCandidateFamily,
-    pub candidate: AudioBlock,
+    pub candidate: Option<AudioBlock>,
     pub playback: MpeghPairedPlaybackDecision,
 }
 
@@ -35,9 +35,10 @@ pub struct NativeMpeghImmersiveEvaluation {
 /// * pure HOA / Bed+HOA -> HOA candidate renderer
 /// * Objects+HOA / Bed+Objects+HOA -> exact-per-sample object + HOA renderer
 ///
-/// Non-HOA domains fail closed because this evidence path is anchored to the
-/// post-spatial ACN/N3D coefficient observer and same-access-unit libmpegh
-/// speaker reference.
+/// Candidate-rendering failures are not playback failures when the same access
+/// unit has a valid libmpegh reference render. They select that reference with a
+/// diagnostic rejection reason. Non-HOA domains still fail dispatch because
+/// this evaluator is specifically anchored to the HOA coefficient observer.
 pub fn evaluate_native_mpegh_immersive_evidence(
     evidence: &MpeghPairedEvidence,
     regularization: f64,
@@ -46,22 +47,57 @@ pub fn evaluate_native_mpegh_immersive_evidence(
     let family = candidate_family_for_domain(evidence.scene.domain)?;
     match family {
         MpeghCandidateFamily::Hoa => {
-            let decision = evaluate_mpegh_hoa_candidate(evidence, regularization, policy)?;
-            Ok(NativeMpeghImmersiveDecision {
-                family,
-                candidate: decision.candidate,
-                playback: decision.playback,
-            })
+            match evaluate_mpegh_hoa_candidate(evidence, regularization, policy) {
+                Ok(decision) => Ok(NativeMpeghImmersiveDecision {
+                    family,
+                    candidate: Some(decision.candidate),
+                    playback: decision.playback,
+                }),
+                Err(error) => reference_fallback(evidence, family, error.to_string()),
+            }
         }
         MpeghCandidateFamily::ExactScene => {
-            let decision = evaluate_exact_mpegh_scene_candidate(evidence, regularization, policy)?;
-            Ok(NativeMpeghImmersiveDecision {
-                family,
-                candidate: decision.candidate,
-                playback: decision.playback,
-            })
+            match evaluate_exact_mpegh_scene_candidate(evidence, regularization, policy) {
+                Ok(decision) => Ok(NativeMpeghImmersiveDecision {
+                    family,
+                    candidate: Some(decision.candidate),
+                    playback: decision.playback,
+                }),
+                Err(error) => reference_fallback(evidence, family, error.to_string()),
+            }
         }
     }
+}
+
+fn reference_fallback(
+    evidence: &MpeghPairedEvidence,
+    family: MpeghCandidateFamily,
+    reason: String,
+) -> Result<NativeMpeghImmersiveDecision, NativeMpeghImmersiveEvaluationError> {
+    let reference = evidence
+        .reference
+        .as_ref()
+        .ok_or(NativeMpeghImmersiveEvaluationError::MissingReferenceRender)?;
+    let source = &evidence.scene.frame.decoded.audio;
+    let fallback = mpegh_reference_audio_block(
+        reference,
+        source.presentation_time_seconds,
+        source.discontinuity,
+    )?;
+    Ok(NativeMpeghImmersiveDecision {
+        family,
+        candidate: None,
+        playback: MpeghPairedPlaybackDecision {
+            evidence: MpeghEvidenceGateOutcome {
+                choice: MpeghPlaybackChoice::LibmpeghReference,
+                report: None,
+                rejection_reason: Some(format!(
+                    "Aurora {family:?} candidate was not admitted: {reason}"
+                )),
+            },
+            reference_fallback: Some(fallback),
+        },
+    })
 }
 
 /// Decode and evaluate one admitted MPEG-H immersive access unit in one native
@@ -127,10 +163,10 @@ pub enum NativeMpeghImmersiveEvaluationError {
     NativePair(#[from] MpeghNativePairError),
     #[error(transparent)]
     Dispatch(#[from] MpeghCandidateDispatchError),
+    #[error("paired MPEG-H evidence has no libmpegh reference render for fail-closed playback")]
+    MissingReferenceRender,
     #[error(transparent)]
-    HoaCandidate(#[from] MpeghHoaCandidateGateError),
-    #[error(transparent)]
-    ExactScene(#[from] MpeghExactSceneError),
+    Reference(#[from] MpeghRenderedPcmError),
 }
 
 #[derive(Debug, Error)]
