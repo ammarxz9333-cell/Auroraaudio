@@ -58,9 +58,12 @@ pub use external_pcm::{
     MpeghPrerenderPcm,
 };
 pub use hoa_ambience::{synthesize_hoa_ambience, MpeghHoaAmbienceError};
-pub use hoa_candidate::{render_pure_mpegh_hoa_candidate, MpeghHoaCandidateError};
+pub use hoa_candidate::{
+    render_mpegh_hoa_candidate, render_pure_mpegh_hoa_candidate, MpeghHoaCandidateError,
+};
 pub use hoa_candidate_gate::{
-    evaluate_pure_mpegh_hoa_candidate, MpeghHoaCandidateDecision, MpeghHoaCandidateGateError,
+    evaluate_mpegh_hoa_candidate, evaluate_pure_mpegh_hoa_candidate,
+    MpeghHoaCandidateDecision, MpeghHoaCandidateGateError,
 };
 pub use hoa_channel_reassignment::{
     clear_non_predominant_additional_coders, MpeghHoaChannelReassignmentError,
