@@ -11,6 +11,7 @@ on:
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-input/**"
       - "crates/aurora-encoded-runtime/**"
+      - "crates/aurora-alsa-input/**"
       - "crates/aurora-alsa-output/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-spatial-runtime/**"
@@ -28,6 +29,7 @@ on:
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-input/**"
       - "crates/aurora-encoded-runtime/**"
+      - "crates/aurora-alsa-input/**"
       - "crates/aurora-alsa-output/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-spatial-runtime/**"
@@ -71,6 +73,7 @@ jobs:
           --package aurora-direct-earc-decoder
           --package aurora-encoded-input
           --package aurora-encoded-runtime
+          --package aurora-alsa-input
           --package aurora-alsa-output
           --package aurora-cli
           -- --check
@@ -110,6 +113,15 @@ jobs:
 
       - name: Clippy unified encoded runtime
         run: cargo clippy -p aurora-encoded-runtime --all-targets -- -D warnings
+
+      - name: Check native ALSA input backend
+        run: cargo check -p aurora-alsa-input --all-targets
+
+      - name: Test native ALSA input backend
+        run: cargo test -p aurora-alsa-input
+
+      - name: Clippy native ALSA input backend
+        run: cargo clippy -p aurora-alsa-input --all-targets -- -D warnings
 
       - name: Check native ALSA output backend
         run: cargo check -p aurora-alsa-output --all-targets
