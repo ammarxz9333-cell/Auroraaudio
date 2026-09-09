@@ -232,7 +232,7 @@ const BACKENDS: &[BackendDescriptor] = &[
         name: "OxideAV DTS Core",
         execution: ExecutionClass::NativeRust,
         license: LicenseClass::ProprietaryCompatiblePermissive,
-        integrated: false,
+        integrated: true,
         closed_core_compatible: true,
         object_metadata: false,
         max_channels: 6,

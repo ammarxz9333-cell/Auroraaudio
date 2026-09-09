@@ -8,6 +8,7 @@
 
 pub mod catalog;
 mod native_ac4;
+mod native_dts;
 pub mod policy;
 
 use aurora_core::AudioFormat;
@@ -16,13 +17,15 @@ use aurora_decoder_open::{OpenDecoderConfig, UniversalOpenDecoder};
 
 use crate::catalog::{CodecId, DecoderCatalog};
 use crate::native_ac4::{looks_like_ac4_sync, NativeAc4Decoder};
+use crate::native_dts::{looks_like_dts_sync, NativeDtsDecoder};
 use crate::policy::{BackendDecision, DecoderPolicy};
 
 #[derive(Debug, Clone, Copy)]
 pub struct EngineConfig {
     pub open_decoder: OpenDecoderConfig,
-    /// Extended codec hint used for formats not yet represented by the open
-    /// decoder's probe enum. The first admitted use is packetized raw AC-4.
+    /// Explicit transport/container hint. Hints select an admitted native
+    /// backend before byte probing and are especially useful when a stream is
+    /// delivered in fragments smaller than its codec sync word.
     pub codec_hint: Option<CodecId>,
     pub policy: DecoderPolicy,
 }
@@ -47,6 +50,7 @@ pub struct AuroraDecoderEngine {
     catalog: DecoderCatalog,
     open: UniversalOpenDecoder,
     ac4: NativeAc4Decoder,
+    dts: NativeDtsDecoder,
     active: Option<BackendDecision>,
     active_codec: Option<CodecId>,
 }
@@ -56,6 +60,7 @@ impl AuroraDecoderEngine {
         Self {
             open: UniversalOpenDecoder::new(config.open_decoder),
             ac4: NativeAc4Decoder::new(),
+            dts: NativeDtsDecoder::new(),
             catalog: DecoderCatalog::default(),
             config,
             active: None,
@@ -92,11 +97,14 @@ impl AuroraDecoderEngine {
     }
 
     fn requested_codec(&self, input: &[u8]) -> CodecId {
-        if self.config.codec_hint == Some(CodecId::Ac4) {
-            return CodecId::Ac4;
+        if let Some(codec) = self.config.codec_hint {
+            return codec;
         }
         if looks_like_ac4_sync(input) {
             return CodecId::Ac4;
+        }
+        if looks_like_dts_sync(input) {
+            return CodecId::Dts;
         }
         if let Some(codec) = self.open.detected_codec() {
             return CodecId::from(codec);
@@ -110,22 +118,23 @@ impl Decoder for AuroraDecoderEngine {
         DecoderInfo {
             name: "Aurora Decoder Engine",
             production_ready: false,
-            maturity: "proprietary-policy-engine-native-ac4-v1",
+            maturity: "proprietary-policy-engine-native-ac4-dts-v1",
         }
     }
 
     fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError> {
         self.open.configure(output_format)?;
         self.ac4.configure(output_format);
+        self.dts.configure(output_format);
         Ok(())
     }
 
     fn decode_chunk(&mut self, input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
         if input.is_empty() {
-            return if self.active_codec == Some(CodecId::Ac4) {
-                self.ac4.poll()
-            } else {
-                self.open.decode_chunk(input)
+            return match self.active_codec {
+                Some(CodecId::Ac4) => self.ac4.poll(),
+                Some(CodecId::Dts) => self.dts.poll(),
+                _ => self.open.decode_chunk(input),
             };
         }
 
@@ -137,6 +146,12 @@ impl Decoder for AuroraDecoderEngine {
             let packetized_raw = self.config.codec_hint == Some(CodecId::Ac4)
                 && !looks_like_ac4_sync(input);
             return self.ac4.push(input, packetized_raw);
+        }
+        if requested == CodecId::Dts {
+            if self.active_codec != Some(CodecId::Dts) {
+                self.refresh_decision(CodecId::Dts)?;
+            }
+            return self.dts.push(input);
         }
 
         let frame = self.open.decode_chunk(input)?;
@@ -157,6 +172,7 @@ impl Decoder for AuroraDecoderEngine {
     fn reset(&mut self) {
         self.open.reset();
         self.ac4.reset();
+        self.dts.reset();
         self.active = None;
         self.active_codec = None;
     }
@@ -185,10 +201,24 @@ mod tests {
     }
 
     #[test]
-    fn ac4_is_now_an_integrated_native_route() {
+    fn ac4_is_an_integrated_native_route() {
         let engine = AuroraDecoderEngine::new(EngineConfig::default());
         let active = engine.config.policy.rank(engine.catalog(), CodecId::Ac4, true);
         assert_eq!(active.first().map(|d| d.backend.id), Some(BackendId::OxideAc4));
+    }
+
+    #[test]
+    fn dts_core_is_an_integrated_native_route() {
+        let engine = AuroraDecoderEngine::new(EngineConfig::default());
+        let active = engine.config.policy.rank(engine.catalog(), CodecId::Dts, true);
+        assert_eq!(active.first().map(|d| d.backend.id), Some(BackendId::OxideDtsCore));
+    }
+
+    #[test]
+    fn dts_hd_stays_on_compatibility_fallback() {
+        let engine = AuroraDecoderEngine::new(EngineConfig::default());
+        let active = engine.config.policy.rank(engine.catalog(), CodecId::DtsHd, true);
+        assert_eq!(active.first().map(|d| d.backend.id), Some(BackendId::FfmpegWorker));
     }
 
     #[test]

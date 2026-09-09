@@ -40,6 +40,18 @@
       "evidence": ["crates/aurora-decoder-engine", "THIRD_PARTY_LICENSES.md"]
     },
     {
+      "id": "oxideav-dts",
+      "upstream": "https://github.com/OxideAV/oxideav-dts",
+      "decision": "adopted-open-native",
+      "integration": "rust-git-dependency",
+      "tested_version": "0.0.1@951b4221969b742b1b330149106931f8be416d47",
+      "pinned_commit": "951b4221969b742b1b330149106931f8be416d47",
+      "roles": ["dts-core-decode", "dts-core-14bit-normalize", "dts-core-persistent-qmf"],
+      "object_metadata": "not-applicable-core-only",
+      "production_ready": false,
+      "evidence": ["crates/aurora-decoder-engine", "THIRD_PARTY_LICENSES.md"]
+    },
+    {
       "id": "ffmpeg",
       "upstream": "https://github.com/FFmpeg/FFmpeg",
       "decision": "adopted",
