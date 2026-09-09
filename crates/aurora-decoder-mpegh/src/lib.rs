@@ -15,6 +15,8 @@ mod external_channels;
 mod external_hoa;
 mod external_oam;
 mod external_pcm;
+mod hoa_ambience;
+mod hoa_channel_reassignment;
 mod hoa_contract;
 mod hoa_inverse_dyn;
 mod paired_gate;
@@ -51,6 +53,10 @@ pub use external_oam::{
 pub use external_pcm::{
     decode_prerender_pcm, MpeghExternalLane, MpeghExternalTopology, MpeghPcmTopologyError,
     MpeghPrerenderPcm,
+};
+pub use hoa_ambience::{synthesize_hoa_ambience, MpeghHoaAmbienceError};
+pub use hoa_channel_reassignment::{
+    clear_non_predominant_additional_coders, MpeghHoaChannelReassignmentError,
 };
 pub use hoa_contract::{MpeghHoaContractError, MpeghHoaDecodeContract};
 pub use hoa_inverse_dyn::{
