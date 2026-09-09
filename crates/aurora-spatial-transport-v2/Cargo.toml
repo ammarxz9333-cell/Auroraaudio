@@ -9,5 +9,6 @@ publish = false
 
 [dependencies]
 aurora-core = { path = "../aurora-core" }
+aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-spatial-ir-v2 = { path = "../aurora-spatial-ir-v2" }
 thiserror.workspace = true
