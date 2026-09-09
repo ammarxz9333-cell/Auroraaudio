@@ -3,7 +3,7 @@
 use thiserror::Error;
 
 use crate::{
-    decode_native_paired_chunk, evaluate_pure_mpegh_hoa_candidate, MpeghConformancePolicy,
+    decode_native_paired_chunk, evaluate_mpegh_hoa_candidate, MpeghConformancePolicy,
     MpeghHoaCandidateDecision, MpeghHoaCandidateGateError, MpeghNativePairError,
     MpeghPairedEvidence, NativeMpeghDecoder,
 };
@@ -14,11 +14,14 @@ pub struct NativeMpeghHoaEvaluation {
     pub decision: MpeghHoaCandidateDecision,
 }
 
-/// Decode and evaluate a pure-HOA MPEG-H access unit in one native decode pass.
+/// Decode and evaluate an admitted MPEG-H HOA access unit in one native pass.
 ///
 /// The compressed input is decoded once. The same access unit yields the
 /// transport scene, observed ACN/N3D coefficients, libmpegh reference PCM,
-/// Aurora candidate HOA render, and the conformance-gated playback decision.
+/// Aurora candidate render, and the conformance-gated playback decision.
+/// Current admitted scene domains are pure HOA and Bed+HOA; object-bearing HOA
+/// scenes remain fail-closed until an independent Aurora object renderer is
+/// wired into the same candidate mix.
 pub fn decode_and_evaluate_native_mpegh_hoa_chunk(
     decoder: &mut NativeMpeghDecoder,
     input: &[u8],
@@ -36,7 +39,7 @@ pub fn decode_and_evaluate_native_mpegh_hoa_chunk(
         return Ok(None);
     };
 
-    let decision = evaluate_pure_mpegh_hoa_candidate(&evidence, regularization, policy)?;
+    let decision = evaluate_mpegh_hoa_candidate(&evidence, regularization, policy)?;
     Ok(Some(NativeMpeghHoaEvaluation { evidence, decision }))
 }
 
