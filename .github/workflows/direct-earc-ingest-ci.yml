@@ -108,16 +108,16 @@ jobs:
         run: |
           cargo check -p aurora-cli --bin aurora-direct-earc-ingest
           cargo check -p aurora-cli --bin aurora-direct-earc-probe
-          cargo check -p aurora-cli --bin aurora-encoded-runtime
+          cargo check -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
 
       - name: Test direct eARC binaries
         run: |
           cargo test -p aurora-cli --bin aurora-direct-earc-ingest
           cargo test -p aurora-cli --bin aurora-direct-earc-probe
-          cargo test -p aurora-cli --bin aurora-encoded-runtime
+          cargo test -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
 
       - name: Clippy direct eARC binaries
         run: |
           cargo clippy -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
           cargo clippy -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
-          cargo clippy -p aurora-cli --bin aurora-encoded-runtime -- -D warnings
+          cargo clippy -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
