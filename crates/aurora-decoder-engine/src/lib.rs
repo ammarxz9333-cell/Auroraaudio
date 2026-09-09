@@ -9,6 +9,7 @@
 pub mod catalog;
 pub mod evidence;
 mod native_ac4;
+pub mod native_ac4_spatial;
 mod native_dts;
 pub mod policy;
 pub mod spatial_ir;
@@ -45,10 +46,6 @@ impl Default for EngineConfig {
 }
 
 /// Aurora-owned front door for all codec backends.
-///
-/// The engine owns routing while codec implementations stay replaceable. Native
-/// codecs are promoted only after they are wired and their evidence gates are
-/// explicit in the catalog.
 pub struct AuroraDecoderEngine {
     config: EngineConfig,
     catalog: DecoderCatalog,
@@ -86,9 +83,6 @@ impl AuroraDecoderEngine {
         self.config.policy.rank(&self.catalog, codec, false)
     }
 
-    /// Return a point-in-time health snapshot. The cumulative counters stay on
-    /// the engine across stream resets; callers can explicitly clear them with
-    /// `reset_telemetry` when starting a new measurement interval.
     pub fn telemetry(&self) -> EngineTelemetry {
         let mut snapshot = self.telemetry;
         snapshot.ac4_dropped_bytes = self.ac4.dropped_bytes();
@@ -163,7 +157,7 @@ impl Decoder for AuroraDecoderEngine {
         DecoderInfo {
             name: "Aurora Decoder Engine",
             production_ready: false,
-            maturity: "proprietary-policy-engine-native-ac4-dts-evidence-telemetry-v1",
+            maturity: "proprietary-policy-engine-native-ac4-dts-spatial-ir-evidence-telemetry-v1",
         }
     }
 
