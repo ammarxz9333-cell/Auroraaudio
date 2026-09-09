@@ -24,6 +24,7 @@ mod hoa_candidate_gate;
 mod hoa_channel_reassignment;
 mod hoa_contract;
 mod hoa_inverse_dyn;
+mod immersive_evaluation;
 mod non_hoa_candidate;
 mod object_candidate;
 mod object_timeline_candidate;
@@ -90,6 +91,10 @@ pub use hoa_channel_reassignment::{
 pub use hoa_contract::{MpeghHoaContractError, MpeghHoaDecodeContract};
 pub use hoa_inverse_dyn::{
     decode_gain_correction_exponent, MpeghHoaInverseDynCorrection, MpeghHoaInverseDynError,
+};
+pub use immersive_evaluation::{
+    evaluate_mpegh_immersive_evidence, MpeghImmersiveDecision,
+    MpeghImmersiveEvaluationError, MpeghPlaybackSelectionError,
 };
 pub use non_hoa_candidate::{
     evaluate_mpegh_non_hoa_candidate, render_mpegh_non_hoa_candidate,
