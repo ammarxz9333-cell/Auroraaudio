@@ -143,12 +143,22 @@ impl AuroraDecoderEngine {
         self.telemetry = EngineTelemetry::default();
     }
 
+    /// Flushes finite-stream state before the caller drains ready PCM with
+    /// ordinary empty `decode_chunk` polls.
+    ///
+    /// Open codecs may retain a partial codec frame/access unit, renderer delay,
+    /// or FFmpeg worker output that only becomes available at EOF. AC-4 and DTS
+    /// currently expose ready output solely through their normal poll path and
+    /// therefore have no separate finite-stream flush primitive here.
+    pub fn flush_pending(&mut self) -> Result<(), DecoderError> {
+        if matches!(self.active_codec, Some(CodecId::Ac4 | CodecId::Dts)) {
+            return Ok(());
+        }
+        self.open.flush_packets()
+    }
+
     /// Decode one complete object-capable access unit into Aurora's pre-render
     /// Spatial IR rather than speaker channels.
-    ///
-    /// This API is intentionally separate from [`Decoder::decode_chunk`]: a
-    /// caller must explicitly choose the object-preserving path so an A-JOC
-    /// object lane can never be mistaken for a physical loudspeaker lane.
     pub fn decode_spatial_access_unit(
         &mut self,
         codec: CodecId,
@@ -340,6 +350,12 @@ mod tests {
     fn empty_engine_has_no_joc_claim() {
         let engine = AuroraDecoderEngine::new(EngineConfig::default());
         assert_eq!(engine.joc_status(), JocDecoderStatus::default());
+    }
+
+    #[test]
+    fn empty_engine_flush_is_a_noop() {
+        let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
+        engine.flush_pending().unwrap();
     }
 
     #[test]
