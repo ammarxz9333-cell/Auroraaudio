@@ -1,0 +1,16 @@
+[package]
+name = "aurora-spatial-runtime-v2"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[dependencies]
+aurora-core = { path = "../aurora-core" }
+aurora-decoder-api = { path = "../aurora-decoder-api" }
+aurora-spatial-ir = { path = "../aurora-spatial-ir" }
+aurora-spatial-ir-v2 = { path = "../aurora-spatial-ir-v2" }
+aurora-spatial-runtime = { path = "../aurora-spatial-runtime" }
+thiserror.workspace = true
