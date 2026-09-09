@@ -8,6 +8,7 @@
 #![cfg_attr(not(feature = "native-mpegh"), forbid(unsafe_code))]
 
 mod conformance;
+mod conformance_roles;
 mod external_channels;
 mod external_hoa;
 mod external_oam;
@@ -17,6 +18,9 @@ mod spatial_transport;
 pub use conformance::{
     compare_mpegh_render_to_reference, MpeghChannelConformance, MpeghConformanceError,
     MpeghConformancePolicy, MpeghConformanceReport,
+};
+pub use conformance_roles::{
+    compare_mpegh_render_to_reference_by_role, reference_roles, MpeghRoleConformanceError,
 };
 pub use external_channels::{
     parse_external_channel_metadata, MpeghAngularPrecision, MpeghChannelGroup,
