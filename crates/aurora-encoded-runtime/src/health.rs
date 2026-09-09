@@ -54,8 +54,8 @@ impl RuntimeCounters {
     ) -> RuntimeHealthSnapshot {
         RuntimeHealthSnapshot {
             counters: self,
+            joc: JocHealth::from_transport(&parser),
             parser,
-            joc: JocHealth::default(),
             output,
         }
     }
@@ -103,6 +103,20 @@ pub struct JocHealth {
     pub object_count: Option<u16>,
     pub complexity_index: Option<u8>,
     pub fallback_present: bool,
+}
+
+impl JocHealth {
+    fn from_transport(transport: &DirectEarcTransportTelemetry) -> Self {
+        Self {
+            codec_classified_joc: transport.joc_codec_classified,
+            speaker_render_active: transport.joc_speaker_render_active,
+            channel_count: transport.joc_channel_count,
+            latency_samples: transport.joc_latency_samples,
+            object_count: transport.joc_object_count,
+            complexity_index: transport.joc_complexity_index,
+            fallback_present: transport.joc_fallback_present,
+        }
+    }
 }
 
 impl From<&JocDecoderStatus> for JocHealth {
@@ -244,6 +258,13 @@ mod tests {
             total_format_changes: 1,
             relocks: 1,
             last_valid_burst_age_ms: None,
+            joc_codec_classified: false,
+            joc_speaker_render_active: false,
+            joc_channel_count: None,
+            joc_latency_samples: None,
+            joc_object_count: None,
+            joc_complexity_index: None,
+            joc_fallback_present: false,
         }
     }
 
@@ -293,6 +314,20 @@ mod tests {
             ..PlaybackBatch::default()
         });
         assert_eq!(counters.transport_discontinuities, 1);
+    }
+
+    #[test]
+    fn parser_joc_status_flows_into_periodic_health() {
+        let mut parser = parser_snapshot();
+        parser.joc_codec_classified = true;
+        parser.joc_speaker_render_active = true;
+        parser.joc_channel_count = Some(12);
+        parser.joc_object_count = Some(15);
+        let health = RuntimeCounters::default().snapshot(parser, None);
+        assert!(health.joc.codec_classified_joc);
+        assert!(health.joc.speaker_render_active);
+        assert_eq!(health.joc.channel_count, Some(12));
+        assert_eq!(health.joc.object_count, Some(15));
     }
 
     #[test]
