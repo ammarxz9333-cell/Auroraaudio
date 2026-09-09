@@ -9,6 +9,7 @@ members = [
     "crates/aurora-renderer-cavern",
     "crates/aurora-decoder-api",
     "crates/aurora-spatial-ir",
+    "crates/aurora-spatial-ir-v2",
     "crates/aurora-decoder-open",
     "crates/aurora-decoder-engine",
     "crates/aurora-decoder-iamf",
