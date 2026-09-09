@@ -70,10 +70,11 @@ pub struct MpeghExplicitSpeaker {
     pub azimuth_angle_index: u8,
     pub azimuth_negative: bool,
     pub is_lfe: bool,
-    /// The external-render bitstream can encode a symmetric companion without
-    /// repeating its complete descriptor. Aurora expands that companion into a
-    /// second descriptor and marks it here so lane counts remain deterministic.
-    pub symmetric_companion: bool,
+    /// Exact external-render flag emitted after a non-axial explicit speaker.
+    /// libmpegh's external writer/reader currently serializes this bit but does
+    /// not synthesize an additional speaker descriptor from it. Aurora mirrors
+    /// that behavior and never invents an extra PCM lane.
+    pub also_add_symmetric_pair: bool,
 }
 
 impl MpeghExplicitSpeaker {
@@ -101,6 +102,12 @@ pub fn parse_external_channel_metadata(
 ) -> Result<MpeghChannelMetadataPacket, MpeghChannelParseError> {
     let mut bits = BitReader::new(bytes);
     let frame_units = bits.read_u32(6)? as u16;
+    let frame_length_samples = frame_units
+        .checked_mul(64)
+        .ok_or(MpeghChannelParseError::NumericOverflow)?;
+    if frame_length_samples == 0 {
+        return Err(MpeghChannelParseError::InvalidFrameLength);
+    }
     let audio_truncation_code = bits.read_u32(2)? as u8;
     let truncated_samples = if audio_truncation_code > 0 {
         Some(bits.read_u32(13)? as u16)
@@ -183,7 +190,7 @@ pub fn parse_external_channel_metadata(
     }
 
     Ok(MpeghChannelMetadataPacket {
-        frame_length_samples: frame_units.saturating_mul(64),
+        frame_length_samples,
         audio_truncation_code,
         truncated_samples,
         groups,
@@ -191,7 +198,9 @@ pub fn parse_external_channel_metadata(
     })
 }
 
-fn parse_speaker_config(bits: &mut BitReader<'_>) -> Result<MpeghSpeakerConfig, MpeghChannelParseError> {
+fn parse_speaker_config(
+    bits: &mut BitReader<'_>,
+) -> Result<MpeghSpeakerConfig, MpeghChannelParseError> {
     match bits.read_u32(2)? {
         0 => Ok(MpeghSpeakerConfig::CicpLayout {
             cicp_layout_index: bits.read_u32(6)? as u8,
@@ -237,33 +246,8 @@ fn parse_flexible_speaker_config(
         MpeghAngularPrecision::FiveDegrees
     };
     let mut speakers = Vec::with_capacity(count);
-    while speakers.len() < count {
-        let speaker = parse_flexible_speaker(bits, precision, false)?;
-        let azimuth = match &speaker {
-            MpeghFlexibleSpeaker::Cicp { .. } => None,
-            MpeghFlexibleSpeaker::Explicit(value) => Some(value.azimuth_degrees(precision)),
-        };
-        speakers.push(speaker.clone());
-
-        if let Some(azimuth) = azimuth {
-            if azimuth != 0 && azimuth.unsigned_abs() != 180 {
-                let add_pair = bits.read_bool()?;
-                if add_pair {
-                    if speakers.len() >= count {
-                        return Err(MpeghChannelParseError::SymmetricPairExceedsSpeakerCount);
-                    }
-                    let pair = match speaker {
-                        MpeghFlexibleSpeaker::Explicit(mut value) => {
-                            value.azimuth_negative = !value.azimuth_negative;
-                            value.symmetric_companion = true;
-                            MpeghFlexibleSpeaker::Explicit(value)
-                        }
-                        MpeghFlexibleSpeaker::Cicp { .. } => unreachable!("CICP branch has no explicit azimuth"),
-                    };
-                    speakers.push(pair);
-                }
-            }
-        }
+    for _ in 0..count {
+        speakers.push(parse_flexible_speaker(bits, precision)?);
     }
     Ok(MpeghSpeakerConfig::Flexible {
         angular_precision: precision,
@@ -274,9 +258,10 @@ fn parse_flexible_speaker_config(
 fn parse_flexible_speaker(
     bits: &mut BitReader<'_>,
     precision: MpeghAngularPrecision,
-    symmetric_companion: bool,
 ) -> Result<MpeghFlexibleSpeaker, MpeghChannelParseError> {
     if bits.read_bool()? {
+        // The external-render writer leaves its local azimuth at zero for a
+        // CICP descriptor, therefore it emits no symmetric-pair bit here.
         return Ok(MpeghFlexibleSpeaker::Cicp {
             speaker_index: bits.read_u32(7)? as u8,
         });
@@ -320,12 +305,14 @@ fn parse_flexible_speaker(
             maximum: azimuth_maximum,
         });
     }
-    let azimuth_negative = if azimuth_angle_index != 0 && azimuth_angle_index != azimuth_maximum {
+    let has_direction = azimuth_angle_index != 0 && azimuth_angle_index != azimuth_maximum;
+    let azimuth_negative = if has_direction { bits.read_bool()? } else { false };
+    let is_lfe = bits.read_bool()?;
+    let also_add_symmetric_pair = if has_direction {
         bits.read_bool()?
     } else {
         false
     };
-    let is_lfe = bits.read_bool()?;
 
     Ok(MpeghFlexibleSpeaker::Explicit(MpeghExplicitSpeaker {
         elevation_class,
@@ -334,7 +321,7 @@ fn parse_flexible_speaker(
         azimuth_angle_index,
         azimuth_negative,
         is_lfe,
-        symmetric_companion,
+        also_add_symmetric_pair,
     }))
 }
 
@@ -394,7 +381,10 @@ struct BitReader<'a> {
 
 impl<'a> BitReader<'a> {
     fn new(bytes: &'a [u8]) -> Self {
-        Self { bytes, bit_position: 0 }
+        Self {
+            bytes,
+            bit_position: 0,
+        }
     }
 
     fn position(&self) -> usize {
@@ -445,14 +435,14 @@ pub enum MpeghChannelParseError {
         actual: usize,
         maximum: usize,
     },
+    #[error("external channel metadata frame length is zero")]
+    InvalidFrameLength,
     #[error("reserved MPEG-H external speaker layout type {0}")]
     ReservedSpeakerLayoutType(u8),
     #[error("flexible speaker elevation index {index} exceeds {maximum}")]
     InvalidElevationIndex { index: u8, maximum: u8 },
     #[error("flexible speaker azimuth index {index} exceeds {maximum}")]
     InvalidAzimuthIndex { index: u8, maximum: u8 },
-    #[error("flexible speaker symmetric pair exceeds declared speaker count")]
-    SymmetricPairExceedsSpeakerCount,
     #[error("speaker layout declares {speakers} speakers for {signals} channel signals")]
     SpeakerSignalCountMismatch { speakers: usize, signals: usize },
     #[error("channel metadata contains a downmix configuration; mirrored parser not admitted yet")]
@@ -467,12 +457,24 @@ pub enum MpeghChannelParseError {
 mod tests {
     use super::*;
 
-    struct BitWriter { bytes: Vec<u8>, bits: usize }
+    struct BitWriter {
+        bytes: Vec<u8>,
+        bits: usize,
+    }
+
     impl BitWriter {
-        fn new() -> Self { Self { bytes: Vec::new(), bits: 0 } }
+        fn new() -> Self {
+            Self {
+                bytes: Vec::new(),
+                bits: 0,
+            }
+        }
+
         fn push(&mut self, value: u32, width: usize) {
             for shift in (0..width).rev() {
-                if self.bits % 8 == 0 { self.bytes.push(0); }
+                if self.bits % 8 == 0 {
+                    self.bytes.push(0);
+                }
                 let bit = ((value >> shift) & 1) as u8;
                 if bit != 0 {
                     let last = self.bytes.len() - 1;
@@ -505,28 +507,44 @@ mod tests {
         assert_eq!(parsed.total_signal_count(), 2);
         assert!(matches!(
             parsed.groups[0].layout,
-            MpeghSpeakerConfig::CicpLayout { cicp_layout_index: 2 }
+            MpeghSpeakerConfig::CicpLayout {
+                cicp_layout_index: 2
+            }
         ));
     }
 
     #[test]
-    fn parses_flexible_explicit_speaker_and_symmetric_companion() {
+    fn symmetric_pair_flag_is_preserved_without_inventing_a_lane() {
         let mut w = BitWriter::new();
         w.push(16, 6);
         w.push(0, 2);
         w.push(1, 9);
         w.push(2, 16);
         w.push(2, 2); // flexible layout
-        w.push(1, 5); // escape value 1 -> two speakers
+        w.push(1, 5); // escape value 1 -> two explicitly serialized speakers
         w.push(1, 1); // one-degree precision
-        w.push(0, 1); // explicit speaker
-        w.push(3, 2); // explicit elevation class
+
+        // Speaker 0: explicit +30 elevation, +45 azimuth, pair flag set.
+        w.push(0, 1);
+        w.push(3, 2);
         w.push(30, 7);
-        w.push(0, 1); // +30 elevation
+        w.push(0, 1);
         w.push(45, 8);
-        w.push(0, 1); // +45 azimuth
-        w.push(0, 1); // not LFE
-        w.push(1, 1); // add symmetric companion
+        w.push(0, 1);
+        w.push(0, 1);
+        w.push(1, 1);
+
+        // Speaker 1 is still serialized independently; the preceding pair bit
+        // does not synthesize or consume this declared descriptor.
+        w.push(0, 1);
+        w.push(3, 2);
+        w.push(20, 7);
+        w.push(1, 1); // -20 elevation
+        w.push(60, 8);
+        w.push(1, 1); // -60 azimuth
+        w.push(0, 1);
+        w.push(0, 1); // no pair flag
+
         w.push(0, 9);
         w.push(1, 9);
         w.push(0, 1);
@@ -536,13 +554,54 @@ mod tests {
         w.push(0, 3);
 
         let parsed = parse_external_channel_metadata(&w.bytes).unwrap();
-        let MpeghSpeakerConfig::Flexible { angular_precision, speakers } = &parsed.groups[0].layout else { panic!() };
+        let MpeghSpeakerConfig::Flexible {
+            angular_precision,
+            speakers,
+        } = &parsed.groups[0].layout
+        else {
+            panic!()
+        };
         assert_eq!(*angular_precision, MpeghAngularPrecision::OneDegree);
         assert_eq!(speakers.len(), 2);
-        let MpeghFlexibleSpeaker::Explicit(first) = &speakers[0] else { panic!() };
-        let MpeghFlexibleSpeaker::Explicit(second) = &speakers[1] else { panic!() };
+        let MpeghFlexibleSpeaker::Explicit(first) = &speakers[0] else {
+            panic!()
+        };
+        let MpeghFlexibleSpeaker::Explicit(second) = &speakers[1] else {
+            panic!()
+        };
         assert_eq!(first.azimuth_degrees(*angular_precision), 45);
-        assert_eq!(second.azimuth_degrees(*angular_precision), -45);
-        assert!(second.symmetric_companion);
+        assert!(first.also_add_symmetric_pair);
+        assert_eq!(second.azimuth_degrees(*angular_precision), -60);
+        assert!(!second.also_add_symmetric_pair);
+    }
+
+    #[test]
+    fn flexible_cicp_descriptor_consumes_no_pair_bit_in_external_interface() {
+        let mut w = BitWriter::new();
+        w.push(16, 6);
+        w.push(0, 2);
+        w.push(1, 9);
+        w.push(1, 16);
+        w.push(2, 2);
+        w.push(0, 5); // one flexible speaker
+        w.push(0, 1); // five-degree precision
+        w.push(1, 1); // CICP descriptor
+        w.push(3, 7); // CICP speaker index
+        // No symmetric-pair bit is emitted by libmpegh external writer here.
+        w.push(0, 9);
+        w.push(0, 1);
+        w.push(0, 3);
+        w.push(96, 8);
+        w.push(0, 1);
+        w.push(0, 3);
+
+        let parsed = parse_external_channel_metadata(&w.bytes).unwrap();
+        let MpeghSpeakerConfig::Flexible { speakers, .. } = &parsed.groups[0].layout else {
+            panic!()
+        };
+        assert!(matches!(
+            speakers.as_slice(),
+            [MpeghFlexibleSpeaker::Cicp { speaker_index: 3 }]
+        ));
     }
 }
