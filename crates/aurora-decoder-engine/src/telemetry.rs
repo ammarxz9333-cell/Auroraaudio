@@ -64,6 +64,19 @@ impl AuroraDecoderEngine {
             fallback_present: self.open.last_joc_error().is_some(),
         }
     }
+
+    /// Finalizes codecs that own explicit packet/framer/worker drain state.
+    ///
+    /// AC-4 and DTS currently expose their ready output through ordinary empty
+    /// `decode_chunk` polls and have no separate finite-stream flush primitive.
+    /// Open codecs, including E-AC-3/JOC and worker-backed formats, must flush
+    /// their assemblers/renderers before the caller performs those final polls.
+    pub fn flush_pending(&mut self) -> Result<(), DecoderError> {
+        if matches!(self.active_codec, Some(CodecId::Ac4 | CodecId::Dts)) {
+            return Ok(());
+        }
+        self.open.flush_packets()
+    }
 }
 
 impl EngineTelemetry {
@@ -177,6 +190,12 @@ mod tests {
         let engine = AuroraDecoderEngine::new(EngineConfig::default());
         assert_eq!(engine.joc_health(), JocDecoderHealth::default());
         assert!(std::mem::size_of::<JocDecoderHealth>() <= 64);
+    }
+
+    #[test]
+    fn empty_engine_flush_is_a_noop() {
+        let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
+        engine.flush_pending().unwrap();
     }
 
     #[test]
