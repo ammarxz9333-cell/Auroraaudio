@@ -11,10 +11,12 @@ pub const MEMTYPE_INPUT: usize = 2;
 pub const MEMTYPE_OUTPUT: usize = 3;
 pub const EXTERNAL_METADATA_BYTES: usize = 768;
 pub const EXTERNAL_PCM_BYTES: usize = 1024 * 32 * 4;
-pub const MAX_HOA_ORDER: usize = 6;
-pub const MAX_HOA_COEFFICIENTS: usize = (MAX_HOA_ORDER + 1) * (MAX_HOA_ORDER + 1);
+pub const MAX_HOA_ORDER: u32 = 6;
+pub const MAX_HOA_COEFFICIENTS: usize =
+    ((MAX_HOA_ORDER as usize) + 1) * ((MAX_HOA_ORDER as usize) + 1);
 pub const MAX_HOA_FRAME_LENGTH: usize = 1024;
 pub const HOA_OBSERVER_FLOATS: usize = MAX_HOA_COEFFICIENTS * MAX_HOA_FRAME_LENGTH;
+pub const MAX_HOA_COEFFICIENT_FLOATS: usize = HOA_OBSERVER_FLOATS;
 
 pub type MallocFn = unsafe extern "C" fn(u32, u32) -> *mut c_void;
 pub type FreeFn = unsafe extern "C" fn(*mut c_void);
@@ -221,5 +223,6 @@ mod abi_tests {
         assert_eq!(MAX_HOA_COEFFICIENTS, 49);
         assert_eq!(MAX_HOA_FRAME_LENGTH, 1024);
         assert_eq!(HOA_OBSERVER_FLOATS, 50_176);
+        assert_eq!(MAX_HOA_COEFFICIENT_FLOATS, 50_176);
     }
 }
