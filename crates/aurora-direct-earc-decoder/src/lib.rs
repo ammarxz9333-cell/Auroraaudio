@@ -14,6 +14,8 @@ use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError};
 use aurora_decoder_engine::{AuroraDecoderEngine, EngineConfig};
 use aurora_iec61937::{BurstParser, CodecFilter, TransportCodec};
 
+const MAX_READY_FRAMES_PER_BURST: usize = 4096;
+
 /// Result of processing one arbitrary chunk of canonical IEC 61937 carrier.
 #[derive(Debug, Default)]
 pub struct DirectEarcDecodeBatch {
@@ -127,6 +129,38 @@ impl DirectEarcDecoder {
         self.last_valid_burst = Some(Instant::now());
     }
 
+    /// Drain every PCM frame already made ready by exactly one encoded input
+    /// burst. This is required because one E-AC-3/JOC access unit can yield many
+    /// Aurora 40-frame blocks. Leaving any queued frame behind before the next
+    /// encoded burst would allow a decoder that returns pending output first to
+    /// skip consuming that new burst.
+    fn collect_ready_frames(
+        &mut self,
+        first: Option<DecodedFrame>,
+        frames: &mut Vec<DecodedFrame>,
+    ) -> Result<(), DecoderError> {
+        let mut emitted = 0usize;
+        if let Some(frame) = first {
+            frames.push(frame);
+            emitted = 1;
+        }
+        loop {
+            if emitted >= MAX_READY_FRAMES_PER_BURST {
+                return Err(DecoderError::Decode(
+                    "decoder produced an unbounded ready-frame sequence for one IEC61937 burst"
+                        .to_owned(),
+                ));
+            }
+            match self.engine.decode_chunk(&[])? {
+                Some(frame) => {
+                    frames.push(frame);
+                    emitted += 1;
+                }
+                None => return Ok(()),
+            }
+        }
+    }
+
     /// Pushes arbitrary canonical S16_LE IEC 61937 carrier bytes.
     ///
     /// `discontinuity` must be true after a real ALSA xrun, eARC unlock/relock,
@@ -160,9 +194,10 @@ impl DirectEarcDecoder {
                 batch.format_changes += 1;
             }
 
-            if let Some(frame) = self.engine.decode_chunk(&observation.burst.payload)? {
-                batch.frames.push(frame);
-            }
+            // Consume this encoded burst exactly once, then drain all PCM made
+            // ready by it before another encoded burst can enter the decoder.
+            let first = self.engine.decode_chunk(&observation.burst.payload)?;
+            self.collect_ready_frames(first, &mut batch.frames)?;
         }
 
         Ok(batch)
