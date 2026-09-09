@@ -15,6 +15,7 @@ mod external_channels;
 mod external_hoa;
 mod external_oam;
 mod external_pcm;
+mod paired_gate;
 mod rendered_pcm;
 mod spatial_transport;
 pub use conformance::{
@@ -48,6 +49,9 @@ pub use external_oam::{
 pub use external_pcm::{
     decode_prerender_pcm, MpeghExternalLane, MpeghExternalTopology, MpeghPcmTopologyError,
     MpeghPrerenderPcm,
+};
+pub use paired_gate::{
+    evaluate_paired_mpegh_candidate, MpeghPairedGateError, MpeghPairedPlaybackDecision,
 };
 pub use rendered_pcm::{MpeghRenderedPcm, MpeghRenderedPcmError};
 pub use spatial_transport::{build_spatial_transport_v2, MpeghSpatialTransportError};
