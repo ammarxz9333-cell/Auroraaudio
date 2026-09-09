@@ -10,7 +10,10 @@
 mod native;
 mod transport;
 pub use native::{NativeV2SpatialRuntime, NativeV2SpatialRuntimeError};
-pub use transport::{project_transport_to_spatial_v2, TransportV2RuntimeError};
+pub use transport::{
+    project_transport_non_hoa_to_spatial_v2, project_transport_to_spatial_v2,
+    TransportV2RuntimeError,
+};
 
 use aurora_core::AudioBlock;
 use aurora_spatial_ir::{
