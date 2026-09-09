@@ -1,4 +1,4 @@
-name: Decoder Engine CI
+name: Decoder Engine + Spatial Runtime CI
 
 on:
   workflow_dispatch:
@@ -11,6 +11,9 @@ on:
       - "crates/aurora-decoder-api/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
+      - "crates/aurora-spatial-runtime/**"
+      - "crates/aurora-renderer-api/**"
+      - "crates/aurora-renderer-vbap/**"
       - "config/external-components-v1.json"
       - "scripts/check_external_components.py"
       - ".github/workflows/decoder-engine-ci.yml"
@@ -21,6 +24,9 @@ on:
       - "crates/aurora-decoder-api/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
+      - "crates/aurora-spatial-runtime/**"
+      - "crates/aurora-renderer-api/**"
+      - "crates/aurora-renderer-vbap/**"
       - "config/external-components-v1.json"
       - "scripts/check_external_components.py"
       - ".github/workflows/decoder-engine-ci.yml"
@@ -29,13 +35,13 @@ permissions:
   contents: read
 
 concurrency:
-  group: decoder-engine-${{ github.workflow }}-${{ github.ref }}
+  group: decoder-spatial-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
-  decoder-engine:
+  decoder-spatial:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.85.0
@@ -47,17 +53,23 @@ jobs:
         run: cargo generate-lockfile
       - name: Check decoder engine
         run: cargo check -p aurora-decoder-engine --all-targets
+      - name: Check spatial runtime
+        run: cargo check -p aurora-spatial-runtime --all-targets
       - name: Test decoder engine
         run: cargo test -p aurora-decoder-engine
-      - name: Strict clippy
+      - name: Test spatial runtime
+        run: cargo test -p aurora-spatial-runtime
+      - name: Strict decoder clippy
         run: cargo clippy -p aurora-decoder-engine --all-targets -- -D warnings
+      - name: Strict spatial runtime clippy
+        run: cargo clippy -p aurora-spatial-runtime --all-targets -- -D warnings
       - name: Formatting
         run: cargo fmt --all --check
       - name: Upload resolved lockfile
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: decoder-engine-lock-${{ github.sha }}
+          name: decoder-spatial-lock-${{ github.sha }}
           path: Cargo.lock
           if-no-files-found: error
           retention-days: 7
