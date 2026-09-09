@@ -2,6 +2,7 @@ use aurora_decoder_api::{DecodedFrame, DecoderError};
 
 use crate::catalog::{BackendId, CodecId};
 use crate::spatial_ir::SpatialDecodedFrame;
+use crate::AuroraDecoderEngine;
 
 /// Cumulative health counters for one Aurora decoder-engine instance.
 ///
@@ -31,6 +32,38 @@ pub struct EngineTelemetry {
     pub dts_dropped_bytes: u64,
     pub active_backend: Option<BackendId>,
     pub active_codec: Option<CodecId>,
+}
+
+/// Allocation-free JOC state for the live health path.
+///
+/// This intentionally omits layout/fallback strings. Those remain available
+/// through `AuroraDecoderEngine::joc_status()` for setup/final diagnostics.
+/// Nothing here is inferred from IEC61937 type 0x15.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct JocDecoderHealth {
+    pub codec_classified_joc: bool,
+    pub speaker_render_active: bool,
+    pub channel_count: Option<usize>,
+    pub latency_samples: Option<usize>,
+    pub object_count: Option<u16>,
+    pub complexity_index: Option<u8>,
+    pub fallback_present: bool,
+}
+
+impl AuroraDecoderEngine {
+    /// Returns a fixed-size JOC observation without cloning strings or allocating.
+    pub fn joc_health(&self) -> JocDecoderHealth {
+        let render = self.open.joc_render_info();
+        JocDecoderHealth {
+            codec_classified_joc: self.active_codec == Some(CodecId::Eac3Joc),
+            speaker_render_active: render.is_some(),
+            channel_count: render.map(|info| info.channel_count),
+            latency_samples: render.map(|info| info.latency_samples),
+            object_count: render.and_then(|info| info.object_count),
+            complexity_index: render.and_then(|info| info.complexity_index),
+            fallback_present: self.open.last_joc_error().is_some(),
+        }
+    }
 }
 
 impl EngineTelemetry {
@@ -112,6 +145,7 @@ mod tests {
         CoordinateSpace, ObjectSignalBinding, SpatialDomain, SpatialFrameMetadata,
         SpatialObjectUpdate, SpatialPosition,
     };
+    use crate::EngineConfig;
     use aurora_core::AudioBlock;
 
     #[test]
@@ -136,6 +170,13 @@ mod tests {
         telemetry.observe_selection(Some(BackendId::OxideDtsCore), Some(BackendId::FfmpegWorker));
         assert_eq!(telemetry.backend_selections, 2);
         assert_eq!(telemetry.backend_switches, 1);
+    }
+
+    #[test]
+    fn empty_engine_joc_health_is_fixed_size_and_has_no_claim() {
+        let engine = AuroraDecoderEngine::new(EngineConfig::default());
+        assert_eq!(engine.joc_health(), JocDecoderHealth::default());
+        assert!(std::mem::size_of::<JocDecoderHealth>() <= 64);
     }
 
     #[test]
