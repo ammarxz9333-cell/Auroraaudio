@@ -8,7 +8,7 @@ use std::time::{Duration, Instant};
 use crossbeam_queue::ArrayQueue;
 
 use crate::PlaybackBatch;
-use aurora_decoder_engine::JocDecoderStatus;
+use aurora_decoder_engine::telemetry::JocDecoderHealth;
 use aurora_direct_earc_decoder::DirectEarcTransportTelemetry;
 
 pub const DEFAULT_HEALTH_INTERVAL: Duration = Duration::from_secs(5);
@@ -48,7 +48,7 @@ impl RuntimeCounters {
     }
 
     /// Builds a transport-only snapshot. This is retained for callers that do
-    /// not own a decoder status handle; it never guesses JOC from IEC61937.
+    /// not own a decoder health handle; it never guesses JOC from IEC61937.
     pub fn snapshot(
         self,
         parser: DirectEarcTransportTelemetry,
@@ -62,13 +62,14 @@ impl RuntimeCounters {
         }
     }
 
-    /// Builds a coherent transport + decoder snapshot. JOC status comes only
-    /// from the decoder engine and is never derived from IEC61937 data type 0x15.
+    /// Builds a coherent transport + decoder snapshot without allocating.
+    /// JOC state comes only from the decoder engine and is never derived from
+    /// IEC61937 data type 0x15.
     pub fn snapshot_with_joc(
         self,
         parser: DirectEarcTransportTelemetry,
         output: Option<OutputHealth>,
-        joc: &JocDecoderStatus,
+        joc: JocDecoderHealth,
     ) -> RuntimeHealthSnapshot {
         RuntimeHealthSnapshot {
             counters: self,
@@ -95,7 +96,7 @@ impl OutputHealth {
     }
 }
 
-/// Allocation-free subset of JOC decoder status suitable for the one-slot
+/// Allocation-free subset of JOC decoder state suitable for the one-slot
 /// periodic health mailbox. Detailed layout/fallback strings remain available
 /// through `AuroraDecoderEngine::joc_status()` outside the realtime snapshot.
 #[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
@@ -109,8 +110,8 @@ pub struct JocHealth {
     pub fallback_present: bool,
 }
 
-impl From<&JocDecoderStatus> for JocHealth {
-    fn from(status: &JocDecoderStatus) -> Self {
+impl From<JocDecoderHealth> for JocHealth {
+    fn from(status: JocDecoderHealth) -> Self {
         Self {
             codec_classified_joc: status.codec_classified_joc,
             speaker_render_active: status.speaker_render_active,
@@ -118,7 +119,7 @@ impl From<&JocDecoderStatus> for JocHealth {
             latency_samples: status.latency_samples,
             object_count: status.object_count,
             complexity_index: status.complexity_index,
-            fallback_present: status.fallback_reason.is_some(),
+            fallback_present: status.fallback_present,
         }
     }
 }
@@ -306,21 +307,20 @@ mod tests {
     }
 
     #[test]
-    fn joc_status_is_reduced_to_allocation_free_health_fields() {
-        let detailed = JocDecoderStatus {
+    fn joc_health_remains_copy_only_and_allocation_free() {
+        let detailed = JocDecoderHealth {
             codec_classified_joc: true,
             speaker_render_active: true,
-            layout_name: Some("7.1.4".to_owned()),
             channel_count: Some(12),
             latency_samples: Some(256),
             object_count: Some(15),
             complexity_index: Some(8),
-            fallback_reason: None,
+            fallback_present: false,
         };
         let health = RuntimeCounters::default().snapshot_with_joc(
             parser_snapshot(),
             None,
-            &detailed,
+            detailed,
         );
         assert!(health.joc.codec_classified_joc);
         assert!(health.joc.speaker_render_active);
