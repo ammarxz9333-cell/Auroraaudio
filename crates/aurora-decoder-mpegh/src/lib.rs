@@ -11,6 +11,7 @@ mod external_channels;
 mod external_hoa;
 mod external_oam;
 mod external_pcm;
+mod rendered_pcm;
 mod spatial_transport;
 pub use external_channels::{
     parse_external_channel_metadata, MpeghAngularPrecision, MpeghChannelGroup,
@@ -30,6 +31,7 @@ pub use external_pcm::{
     decode_prerender_pcm, MpeghExternalLane, MpeghExternalTopology, MpeghPcmTopologyError,
     MpeghPrerenderPcm,
 };
+pub use rendered_pcm::{MpeghRenderedPcm, MpeghRenderedPcmError};
 pub use spatial_transport::{build_spatial_transport_v2, MpeghSpatialTransportError};
 
 #[cfg(not(feature = "native-mpegh"))]
@@ -41,11 +43,7 @@ pub struct MpeghExternalFrame {
     pub prerender_pcm: Vec<u8>,
     pub pcm_bit_depth: i32,
     pub sample_rate: i32,
-    /// Upstream calls this a sample offset, but libmpegh assigns `ch_offset`:
-    /// it is the first object PCM lane index in the pre-render buffer.
     pub oam_sample_offset: i32,
-    /// Upstream calls this a sample offset, but it is the first HOA transport
-    /// PCM lane index in the pre-render buffer.
     pub hoa_sample_offset: i32,
     pub speaker_layout: MpeghSpeakerLayout,
 }
@@ -78,28 +76,21 @@ pub use native::{
 };
 
 impl MpeghExternalFrame {
-    /// Parse libmpegh's external-render OAM plane using the exact bit layout
-    /// mirrored from its official writer/reader utilities.
     pub fn parse_object_metadata(&self) -> Result<MpeghOamPacket, MpeghOamParseError> {
         parse_external_oam(&self.object_metadata)
     }
 
-    /// Parse libmpegh's external-render channel metadata without collapsing
-    /// CICP/flexible geometry into Aurora speaker roles prematurely.
     pub fn parse_channel_metadata(
         &self,
     ) -> Result<MpeghChannelMetadataPacket, MpeghChannelParseError> {
         parse_external_channel_metadata(&self.channel_metadata)
     }
 
-    /// Parse libmpegh's external-render HOA plane. Matrix coefficient syntax is
-    /// retained as bounded raw bits while order/NFC/screen semantics are exposed.
     pub fn parse_hoa_metadata(&self) -> Result<MpeghHoaPacket, MpeghHoaParseError> {
         parse_external_hoa(&self.hoa_metadata)
     }
 }
 
-/// Whether this build contains the native libmpegh external-render backend.
 pub const fn native_backend_enabled() -> bool {
     cfg!(feature = "native-mpegh")
 }
