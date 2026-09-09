@@ -1,11 +1,14 @@
 //! Spatial IR V2 runtime bridge.
 //!
-//! This crate provides a migration-safe front door for rich immersive metadata.
-//! V2 frames are rendered by the validated V1 VBAP runtime only when the
-//! downgrade is provably lossless. Any non-default V2 renderer property is
-//! rejected explicitly until a native V2 renderer implements that semantic.
+//! This crate now exposes two paths:
+//! - a lossless compatibility bridge into the proven V1 runtime, and
+//! - a native V2 reference renderer that consumes admitted rich metadata
+//!   directly instead of stripping it.
 
 #![forbid(unsafe_code)]
+
+mod native;
+pub use native::{NativeV2SpatialRuntime, NativeV2SpatialRuntimeError};
 
 use aurora_core::AudioBlock;
 use aurora_spatial_ir::{
@@ -19,7 +22,8 @@ use aurora_spatial_ir_v2::{
 use aurora_spatial_runtime::{SpatialRuntimeConfig, SpatialRuntimeError, VbapSpatialRuntime};
 use thiserror::Error;
 
-/// V2-aware runtime that refuses to discard rich metadata silently.
+/// Migration-safe V2 wrapper. Use [`NativeV2SpatialRuntime`] when rich metadata
+/// should be consumed rather than rejected.
 pub struct V2SpatialRuntime {
     inner: VbapSpatialRuntime,
 }
@@ -49,10 +53,6 @@ impl V2SpatialRuntime {
 }
 
 /// Convert V2 to V1 only if no V2-only semantics would be discarded.
-///
-/// This is deliberately public so decoder and renderer tests can assert that a
-/// scene is safe to feed into the legacy runtime. It is not a generic V2->V1
-/// conversion: rich frames fail closed.
 pub fn downgrade_when_lossless(
     frame: &SpatialDecodedFrameV2,
 ) -> Result<SpatialDecodedFrameV1, V2SpatialRuntimeError> {
