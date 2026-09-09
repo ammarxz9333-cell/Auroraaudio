@@ -11,6 +11,10 @@ pub const MEMTYPE_INPUT: usize = 2;
 pub const MEMTYPE_OUTPUT: usize = 3;
 pub const EXTERNAL_METADATA_BYTES: usize = 768;
 pub const EXTERNAL_PCM_BYTES: usize = 1024 * 32 * 4;
+pub const MAX_HOA_ORDER: usize = 6;
+pub const MAX_HOA_COEFFICIENTS: usize = (MAX_HOA_ORDER + 1) * (MAX_HOA_ORDER + 1);
+pub const MAX_HOA_FRAME_LENGTH: usize = 1024;
+pub const HOA_OBSERVER_FLOATS: usize = MAX_HOA_COEFFICIENTS * MAX_HOA_FRAME_LENGTH;
 
 pub type MallocFn = unsafe extern "C" fn(u32, u32) -> *mut c_void;
 pub type FreeFn = unsafe extern "C" fn(*mut c_void);
@@ -155,6 +159,14 @@ unsafe extern "C" {
         output: *mut c_void,
     ) -> IaErrorCode;
     pub fn ia_mpegh_dec_delete(output: *mut c_void) -> IaErrorCode;
+    pub fn aurora_mpegh_set_hoa_coeff_observer(
+        process_api_obj: *mut c_void,
+        buffer: *mut f32,
+        capacity_floats: u32,
+        written_floats: *mut u32,
+        order: *mut u32,
+        frame_length: *mut u32,
+    ) -> i32;
 }
 
 #[cfg(all(test, target_pointer_width = "64"))]
@@ -201,5 +213,13 @@ mod abi_tests {
         assert_eq!(size_of::<IaMpeghdApiStruct>(), 1456);
         assert_eq!(align_of::<IaMpeghdApiStruct>(), 8);
         assert_eq!(offset_of!(IaMpeghdApiStruct, output_config), 208);
+    }
+
+    #[test]
+    fn hoa_observer_capacity_matches_pinned_runtime_limits() {
+        assert_eq!(MAX_HOA_ORDER, 6);
+        assert_eq!(MAX_HOA_COEFFICIENTS, 49);
+        assert_eq!(MAX_HOA_FRAME_LENGTH, 1024);
+        assert_eq!(HOA_OBSERVER_FLOATS, 50_176);
     }
 }
