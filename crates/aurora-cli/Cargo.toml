@@ -22,6 +22,11 @@ path = "src/bin/aurora-s6-postprocess.rs"
 bench = false
 required-features = ["realtime"]
 
+[[bin]]
+name = "aurora-direct-earc-ingest"
+path = "src/bin/aurora-direct-earc-ingest.rs"
+bench = false
+
 [features]
 default = ["camilladsp", "realtime", "simulation"]
 camilladsp = ["dep:aurora-dsp-camilladsp", "aurora-dsp-camilladsp/camilladsp-process"]
