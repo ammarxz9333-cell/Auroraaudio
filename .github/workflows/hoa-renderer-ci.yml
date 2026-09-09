@@ -1,0 +1,45 @@
+name: HOA Renderer CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - feature/aurora-decoder-engine-v1
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/aurora-core/**"
+      - "crates/aurora-hoa-ir/**"
+      - "crates/aurora-renderer-hoa/**"
+      - ".github/workflows/hoa-renderer-ci.yml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/aurora-core/**"
+      - "crates/aurora-hoa-ir/**"
+      - "crates/aurora-renderer-hoa/**"
+      - ".github/workflows/hoa-renderer-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  hoa-renderer:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: rustfmt, clippy
+      - name: Resolve workspace lockfile
+        run: cargo generate-lockfile
+      - name: Check HOA renderer
+        run: cargo check -p aurora-renderer-hoa --all-targets
+      - name: Test HOA renderer
+        run: cargo test -p aurora-renderer-hoa
+      - name: Strict HOA renderer clippy
+        run: cargo clippy -p aurora-renderer-hoa --all-targets -- -D warnings
+      - name: Formatting
+        run: cargo fmt --all --check
