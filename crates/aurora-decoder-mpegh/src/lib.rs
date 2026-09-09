@@ -153,6 +153,7 @@ pub use native_hoa_eval::{
     evaluate_native_mpegh_immersive_evidence, NativeMpeghHoaEvaluation,
     NativeMpeghHoaEvaluationError, NativeMpeghImmersiveDecision,
     NativeMpeghImmersiveEvaluation, NativeMpeghImmersiveEvaluationError,
+    NativeMpeghPlaybackSelectionError,
 };
 #[cfg(feature = "native-mpegh")]
 pub use native_pair::{decode_native_paired_chunk, MpeghNativePairError};
