@@ -7,8 +7,14 @@
 
 #![cfg_attr(not(feature = "native-mpegh"), forbid(unsafe_code))]
 
+mod external_channels;
 mod external_oam;
 mod external_pcm;
+pub use external_channels::{
+    parse_external_channel_metadata, MpeghAngularPrecision, MpeghChannelGroup,
+    MpeghChannelMetadataPacket, MpeghChannelParseError, MpeghExplicitSpeaker,
+    MpeghFlexibleSpeaker, MpeghSpeakerConfig,
+};
 pub use external_oam::{
     parse_external_oam, MpeghExclusionSector, MpeghOamExtension, MpeghOamObject,
     MpeghOamObjectFrame, MpeghOamPacket, MpeghOamParseError, MpeghOamRawCodes,
@@ -68,6 +74,14 @@ impl MpeghExternalFrame {
     /// mirrored from its official writer/reader utilities.
     pub fn parse_object_metadata(&self) -> Result<MpeghOamPacket, MpeghOamParseError> {
         parse_external_oam(&self.object_metadata)
+    }
+
+    /// Parse libmpegh's external-render channel metadata without collapsing
+    /// CICP/flexible geometry into Aurora speaker roles prematurely.
+    pub fn parse_channel_metadata(
+        &self,
+    ) -> Result<MpeghChannelMetadataPacket, MpeghChannelParseError> {
+        parse_external_channel_metadata(&self.channel_metadata)
     }
 }
 
