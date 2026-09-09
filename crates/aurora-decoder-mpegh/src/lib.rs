@@ -34,7 +34,8 @@ pub use evidence_gate::{
     MpeghPlaybackChoice,
 };
 pub use evidence_pair::{
-    pair_mpegh_external_evidence, MpeghEvidencePairError, MpeghPairedEvidence,
+    pair_mpegh_external_evidence, pair_mpegh_external_evidence_with_hoa,
+    MpeghEvidencePairError, MpeghPairedEvidence,
 };
 pub use external_channels::{
     parse_external_channel_metadata, MpeghAngularPrecision, MpeghChannelGroup,
@@ -102,12 +103,16 @@ pub struct MpeghSpeaker {
 mod ffi;
 #[cfg(feature = "native-mpegh")]
 mod native;
+#[cfg(feature = "native-mpegh")]
+mod native_pair;
 
 #[cfg(feature = "native-mpegh")]
 pub use native::{
     MpeghExternalFrame, MpeghNativeError, MpeghSpeaker, MpeghSpeakerLayout,
     NativeMpeghDecoder,
 };
+#[cfg(feature = "native-mpegh")]
+pub use native_pair::{decode_native_paired_chunk, MpeghNativePairError};
 
 impl MpeghExternalFrame {
     pub fn parse_object_metadata(&self) -> Result<MpeghOamPacket, MpeghOamParseError> {
