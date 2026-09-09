@@ -12,6 +12,7 @@ mod native_ac4;
 pub mod native_ac4_spatial;
 mod native_dts;
 pub mod policy;
+pub mod scene_timeline;
 pub mod spatial_ir;
 pub mod telemetry;
 
