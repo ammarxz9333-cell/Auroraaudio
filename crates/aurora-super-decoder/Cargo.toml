@@ -1,0 +1,21 @@
+[package]
+name = "aurora-super-decoder"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+rust-version.workspace = true
+publish = false
+
+[features]
+default = ["iamf"]
+iamf = ["dep:aurora-decoder-iamf"]
+native-truehd = ["dep:aurora-decoder-truehdd", "aurora-decoder-truehdd/native-truehd"]
+
+[dependencies]
+aurora-core = { path = "../aurora-core" }
+aurora-decoder-api = { path = "../aurora-decoder-api" }
+aurora-decoder-engine = { path = "../aurora-decoder-engine" }
+aurora-spatial-ir = { path = "../aurora-spatial-ir" }
+aurora-decoder-iamf = { path = "../aurora-decoder-iamf", optional = true }
+aurora-decoder-truehdd = { path = "../aurora-decoder-truehdd", optional = true }
