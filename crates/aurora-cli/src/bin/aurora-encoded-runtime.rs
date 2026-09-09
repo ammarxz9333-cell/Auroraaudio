@@ -74,78 +74,40 @@ impl From<WordHalfArg> for CarrierWordHalf {
     about = "Run direct eARC or legacy STM32/USB through Aurora decode, DSP and native output"
 )]
 struct Args {
-    /// Select the physical encoded input explicitly. Aurora never auto-switches.
     #[arg(long, value_enum, default_value = "direct-earc")]
     input: InputMode,
-
-    /// Native ALSA capture device for direct eARC, e.g. hw:0,0.
-    /// Omit to read raw interleaved S32_LE carrier slots from stdin.
     #[arg(long)]
     alsa_device: Option<String>,
-
-    /// Preferred native ALSA capture period size in carrier frames.
     #[arg(long, default_value_t = DEFAULT_INPUT_PERIOD_FRAMES)]
     input_period_frames: usize,
-
-    /// Preferred native ALSA capture buffer size in carrier frames.
     #[arg(long, default_value_t = DEFAULT_INPUT_BUFFER_FRAMES)]
     input_buffer_frames: usize,
-
-    /// Select the final speaker sink.
     #[arg(long, value_enum, default_value = "stdout-f32")]
     output: OutputMode,
-
-    /// ALSA playback device for --output alsa-s32, for example hw:1,0.
-    /// Omit to use ALSA's `default` device.
     #[arg(long)]
     output_device: Option<String>,
-
-    /// Physical ALSA playback channel count. Values above 12 zero-pad Aurora's
-    /// canonical 7.1.4 output, allowing a 12-channel render to drive TDM16.
     #[arg(long, default_value_t = OUTPUT_CHANNELS)]
     hardware_output_channels: usize,
-
-    /// Preferred ALSA playback period size. The device may negotiate nearby.
     #[arg(long, default_value_t = DEFAULT_OUTPUT_PERIOD_FRAMES)]
     output_period_frames: usize,
-
-    /// Preferred ALSA playback buffer size. Must be at least two periods.
     #[arg(long, default_value_t = DEFAULT_OUTPUT_BUFFER_FRAMES)]
     output_buffer_frames: usize,
-
-    /// Recovered direct-eARC carrier frame rate.
     #[arg(long, default_value_t = DEFAULT_CARRIER_RATE_HZ)]
     carrier_rate: u32,
-
-    /// S32_LE serial-audio slots per direct-eARC carrier frame.
     #[arg(long, default_value_t = DEFAULT_SLOTS)]
     slots: usize,
-
-    /// 16-bit half of each S32_LE slot containing the IEC61937 carrier word.
     #[arg(long, value_enum, default_value = "high")]
     word_half: WordHalfArg,
-
-    /// Existing Aurora USB bridge SOCK_SEQPACKET path for legacy STM32 fallback.
     #[arg(long, default_value = DEFAULT_BRIDGE_SOCKET)]
     bridge_socket: String,
-
-    /// Process read size when direct eARC carrier bytes are supplied on stdin.
     #[arg(long, default_value_t = 16_384)]
     read_bytes: usize,
-
-    /// Decoder/output sample rate. Integrated speaker DSP currently requires 48 kHz.
     #[arg(long, default_value_t = OUTPUT_SAMPLE_RATE)]
     output_rate: u32,
-
-    /// Logical output channel count. Integrated speaker DSP requires 7.1.4 = 12.
     #[arg(long, default_value_t = OUTPUT_CHANNELS)]
     output_channels: usize,
-
-    /// Periodic stderr health interval in milliseconds; 0 disables the reporter.
     #[arg(long, default_value_t = DEFAULT_HEALTH_INTERVAL.as_millis() as u64)]
     health_interval_ms: u64,
-
-    /// Decoder preferred output block size.
     #[arg(long, default_value_t = 40)]
     block_size: usize,
 }
@@ -296,11 +258,10 @@ fn run_selected_input<S: SpeakerSink>(
     let output = args.output;
     let native_capture = args.alsa_device.is_some();
     let decoder = runtime.encoded().decoder();
-    let joc = decoder.engine().joc_health();
     let initial = RuntimeStats::default().snapshot_with_joc(
         decoder.transport_telemetry(),
         sink.output_health(),
-        joc,
+        decoder.engine().joc_health(),
     );
     let reporter = HealthReporter::start(
         Duration::from_millis(args.health_interval_ms),
@@ -391,7 +352,6 @@ fn run_direct_native_alsa<S: SpeakerSink>(
             sink.reset_for_transport_discontinuity()?;
             stats.transport_discontinuities = stats.transport_discontinuities.saturating_add(1);
         }
-
         let batch = runtime
             .push_direct_s32_words(&block.interleaved_s32)
             .context("native direct-eARC S32-word ingest failed")?;
@@ -521,14 +481,10 @@ trait SpeakerSink {
     fn output_health(&self) -> Option<OutputHealth> {
         None
     }
-
     fn write_frame(&mut self, frame: &SpeakerOutputFrame) -> Result<()>;
-
-    /// Flushes old physical-output presentation state after a real source break.
     fn reset_for_transport_discontinuity(&mut self) -> Result<()> {
         Ok(())
     }
-
     fn finish(&mut self) -> Result<()>;
 }
 
@@ -565,13 +521,20 @@ impl<W: Write> SpeakerSink for StdoutF32Sink<W> {
 
 struct NativeAlsaSink {
     playback: NativeAlsaPlayback,
+    /// True after the PCM queue was already dropped at a batch/transport
+    /// boundary. The decoder commonly marks the first new PCM frame as a
+    /// discontinuity too; consume that duplicate marker without a second reset.
+    suppress_next_frame_discontinuity: bool,
 }
 
 impl NativeAlsaSink {
     fn open(config: AlsaOutputConfig) -> Result<Self> {
         let playback = NativeAlsaPlayback::open(config)
             .context("failed to open Aurora native ALSA speaker output")?;
-        Ok(Self { playback })
+        Ok(Self {
+            playback,
+            suppress_next_frame_discontinuity: false,
+        })
     }
 }
 
@@ -593,15 +556,19 @@ impl SpeakerSink for NativeAlsaSink {
 
     fn write_frame(&mut self, frame: &SpeakerOutputFrame) -> Result<()> {
         validate_speaker_frame(frame)?;
+        let already_reset = std::mem::take(&mut self.suppress_next_frame_discontinuity);
+        let frame_discontinuity = frame.discontinuity && !already_reset;
         self.playback
-            .write_interleaved_f32(&frame.interleaved_f32, frame.discontinuity)
+            .write_interleaved_f32(&frame.interleaved_f32, frame_discontinuity)
             .context("native ALSA speaker write failed")
     }
 
     fn reset_for_transport_discontinuity(&mut self) -> Result<()> {
         self.playback
             .reset_for_discontinuity()
-            .context("failed resetting native ALSA output after transport discontinuity")
+            .context("failed resetting native ALSA output after transport discontinuity")?;
+        self.suppress_next_frame_discontinuity = true;
+        Ok(())
     }
 
     fn finish(&mut self) -> Result<()> {
@@ -680,7 +647,6 @@ impl SeqPacketSocket {
         {
             *destination = source as libc::c_char;
         }
-
         let rc = unsafe {
             libc::connect(
                 fd.as_raw_fd(),
@@ -696,7 +662,6 @@ impl SeqPacketSocket {
 
     fn recv(&self, buffer: &mut [u8]) -> io::Result<usize> {
         use std::os::fd::AsRawFd;
-
         let count = unsafe {
             libc::recv(
                 self.fd.as_raw_fd(),
@@ -763,7 +728,6 @@ mod tests {
         let mut args = valid_args();
         args.output_channels = 8;
         assert!(validate_args(&args).is_err());
-
         let mut args = valid_args();
         args.output_rate = 96_000;
         assert!(validate_args(&args).is_err());
