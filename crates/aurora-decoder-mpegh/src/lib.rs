@@ -15,6 +15,7 @@ mod external_channels;
 mod external_hoa;
 mod external_oam;
 mod external_pcm;
+mod full_scene_candidate;
 mod hoa_ambience;
 mod hoa_candidate;
 mod hoa_candidate_gate;
@@ -58,6 +59,10 @@ pub use external_oam::{
 pub use external_pcm::{
     decode_prerender_pcm, MpeghExternalLane, MpeghExternalTopology, MpeghPcmTopologyError,
     MpeghPrerenderPcm,
+};
+pub use full_scene_candidate::{
+    evaluate_static_mpegh_full_scene_candidate, render_static_mpegh_full_scene_candidate,
+    MpeghFullSceneCandidateDecision, MpeghFullSceneCandidateError,
 };
 pub use hoa_ambience::{synthesize_hoa_ambience, MpeghHoaAmbienceError};
 pub use hoa_candidate::{
