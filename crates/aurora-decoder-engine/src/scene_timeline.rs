@@ -354,8 +354,8 @@ pub enum SceneTimelineError {
     ActiveObjectMissingSignal { id: String },
     #[error("active object '{id}' has no resolved render state")]
     ActiveObjectMissingState { id: String },
-    #[error("spherical Spatial IR is not mapped into Aurora meter space yet")]
-    SphericalCoordinatesUnsupported,
+    #[error("spherical coordinates require finite azimuth/distance, elevation -90..90 degrees, and non-negative distance")]
+    InvalidSphericalCoordinates,
     #[error("RoomNormalized coordinates are outside the admitted x/y=0..1, z=-1..1 bounds")]
     NormalizedCoordinatesOutOfRange,
 }
@@ -381,9 +381,14 @@ fn update_to_state(
             }
             room.normalized_to_meters(x, y, z)
         }
-        (CoordinateSpace::SphericalDegrees, SpatialPosition::Spherical { .. }) => {
-            return Err(SceneTimelineError::SphericalCoordinatesUnsupported)
-        }
+        (
+            CoordinateSpace::SphericalDegrees,
+            SpatialPosition::Spherical {
+                azimuth_degrees,
+                elevation_degrees,
+                distance,
+            },
+        ) => spherical_to_meters(azimuth_degrees, elevation_degrees, distance)?,
         _ => {
             return Err(SceneTimelineError::InvalidSpatialIr(
                 "coordinate representation changed after Spatial IR validation".into(),
@@ -396,6 +401,32 @@ fn update_to_state(
         spread: update.spread,
         priority: update.priority,
     })
+}
+
+/// Listener-relative spherical convention shared by MPEG-H/CICP and Aurora:
+/// azimuth 0° points forward (+Y), positive azimuth points left (-X), negative
+/// azimuth points right (+X), and positive elevation points upward (+Z).
+fn spherical_to_meters(
+    azimuth_degrees: f32,
+    elevation_degrees: f32,
+    distance: f32,
+) -> Result<Vector3, SceneTimelineError> {
+    if !azimuth_degrees.is_finite()
+        || !elevation_degrees.is_finite()
+        || !distance.is_finite()
+        || !(-90.0..=90.0).contains(&elevation_degrees)
+        || distance < 0.0
+    {
+        return Err(SceneTimelineError::InvalidSphericalCoordinates);
+    }
+    let azimuth = azimuth_degrees.to_radians();
+    let elevation = elevation_degrees.to_radians();
+    let horizontal = elevation.cos() * distance;
+    Ok(Vector3::new(
+        -azimuth.sin() * horizontal,
+        azimuth.cos() * horizontal,
+        elevation.sin() * distance,
+    ))
 }
 
 fn interpolate_state(
@@ -468,6 +499,31 @@ mod tests {
         }
     }
 
+    fn spherical_update(
+        id: &str,
+        offset: u32,
+        ramp: u32,
+        azimuth_degrees: f32,
+        elevation_degrees: f32,
+        distance: f32,
+    ) -> SpatialObjectUpdate {
+        SpatialObjectUpdate {
+            object_id: id.into(),
+            active: true,
+            coordinate_space: CoordinateSpace::SphericalDegrees,
+            position: SpatialPosition::Spherical {
+                azimuth_degrees,
+                elevation_degrees,
+                distance,
+            },
+            gain_db: 0.0,
+            spread: 0.0,
+            metadata_sample_offset: offset,
+            ramp_duration_samples: ramp,
+            priority: Some(1.0),
+        }
+    }
+
     fn frame(
         frame_count: usize,
         discontinuity: bool,
@@ -499,6 +555,51 @@ mod tests {
     fn normalized_room_transform_is_explicit_and_bounded() {
         let transformed = room().normalized_to_meters(0.5, 1.0, 0.0);
         assert_eq!(transformed, Vector3::new(2.0, 6.0, 1.5));
+    }
+
+    #[test]
+    fn spherical_coordinates_follow_mpegh_listener_axes() {
+        let front = spherical_to_meters(0.0, 0.0, 2.0).unwrap();
+        let left = spherical_to_meters(90.0, 0.0, 2.0).unwrap();
+        let right = spherical_to_meters(-90.0, 0.0, 2.0).unwrap();
+        let top = spherical_to_meters(0.0, 90.0, 2.0).unwrap();
+        assert!((front.x - 0.0).abs() < 0.0001 && (front.y - 2.0).abs() < 0.0001);
+        assert!((left.x + 2.0).abs() < 0.0001 && left.y.abs() < 0.0001);
+        assert!((right.x - 2.0).abs() < 0.0001 && right.y.abs() < 0.0001);
+        assert!((top.z - 2.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn invalid_spherical_coordinates_fail_closed() {
+        assert_eq!(
+            spherical_to_meters(0.0, 91.0, 1.0),
+            Err(SceneTimelineError::InvalidSphericalCoordinates)
+        );
+        assert_eq!(
+            spherical_to_meters(0.0, 0.0, -1.0),
+            Err(SceneTimelineError::InvalidSphericalCoordinates)
+        );
+    }
+
+    #[test]
+    fn spherical_object_uses_same_timeline_and_ramp_path() {
+        let mut timeline = SceneTimeline::new();
+        timeline
+            .plan_frame(
+                &frame(40, true, vec![spherical_update("object-0", 0, 0, 0.0, 0.0, 1.0)]),
+                room(),
+            )
+            .unwrap();
+        let plan = timeline
+            .plan_frame(
+                &frame(40, false, vec![spherical_update("object-0", 0, 40, 90.0, 0.0, 1.0)]),
+                room(),
+            )
+            .unwrap();
+        let curve = &plan.spans[0].objects[0];
+        let halfway = curve.state_at_absolute_sample(plan.absolute_start_sample + 20);
+        assert!((halfway.position_meters.x + 0.5).abs() < 0.0001);
+        assert!((halfway.position_meters.y - 0.5).abs() < 0.0001);
     }
 
     #[test]
