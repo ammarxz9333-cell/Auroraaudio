@@ -75,16 +75,21 @@ impl OpenJocNativeRenderer {
         &self.last_info
     }
 
-    /// Push one complete six-block E-AC-3 JOC access unit.
+    /// Push one complete E-AC-3/JOC access unit.
     pub fn push_access_unit(&mut self, bytes: &[u8]) -> Result<(), DecoderError> {
         if bytes.is_empty() {
             return Ok(());
         }
+        // Direct eARC currently reaches this boundary without a source-domain
+        // sample PTS. Do not synthesize one from `emitted_frames`: Aurora
+        // reblocks 1536-sample E-AC-3 access units into 40-frame output blocks,
+        // so emitted output lags the input timeline whenever a short tail remains
+        // queued. OpenJOC supports `None` and maintains decode sequence internally.
         let status = self
             .session
             .push_packet(OpenJocPacket {
                 data: bytes,
-                pts_samples: Some(self.emitted_frames.min(i64::MAX as u64) as i64),
+                pts_samples: None,
                 discontinuity: false,
                 preroll: false,
             })
