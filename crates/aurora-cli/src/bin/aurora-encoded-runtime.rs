@@ -293,11 +293,11 @@ fn run_selected_input<S: SpeakerSink>(
     let output = args.output;
     let native_capture = args.alsa_device.is_some();
     let decoder = runtime.encoded().decoder();
-    let joc = decoder.engine().joc_status();
+    let joc = decoder.engine().joc_health();
     let initial = RuntimeStats::default().snapshot_with_joc(
         decoder.transport_telemetry(),
         sink.output_health(),
-        &joc,
+        joc,
     );
     let reporter = HealthReporter::start(
         Duration::from_millis(args.health_interval_ms),
@@ -400,11 +400,11 @@ fn run_direct_native_alsa<S: SpeakerSink>(
         stats.capture_recoveries = telemetry.recoveries;
         stats.capture_discontinuities = telemetry.discontinuities;
         let decoder = runtime.encoded().decoder();
-        let joc = decoder.engine().joc_status();
+        let joc = decoder.engine().joc_health();
         reporter.publish(stats.snapshot_with_joc(
             decoder.transport_telemetry(),
             sink.output_health(),
-            &joc,
+            joc,
         ));
     }
 }
@@ -430,11 +430,11 @@ fn run_direct_stdin<R: Read, S: SpeakerSink>(
             .context("direct eARC playback runtime ingest failed")?;
         consume_batch(batch, sink, &mut stats)?;
         let decoder = runtime.encoded().decoder();
-        let joc = decoder.engine().joc_status();
+        let joc = decoder.engine().joc_health();
         reporter.publish(stats.snapshot_with_joc(
             decoder.transport_telemetry(),
             sink.output_health(),
-            &joc,
+            joc,
         ));
     }
     runtime
@@ -467,11 +467,11 @@ fn run_legacy<S: SpeakerSink>(
             .context("legacy STM32/USB playback runtime ingest failed")?;
         consume_batch(batch, sink, &mut stats)?;
         let decoder = runtime.encoded().decoder();
-        let joc = decoder.engine().joc_status();
+        let joc = decoder.engine().joc_health();
         reporter.publish(stats.snapshot_with_joc(
             decoder.transport_telemetry(),
             sink.output_health(),
-            &joc,
+            joc,
         ));
     }
     runtime
