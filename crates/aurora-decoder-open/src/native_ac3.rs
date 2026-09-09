@@ -179,7 +179,11 @@ impl Decoder for NativeAc3Decoder {
         if self.inner.is_none() {
             self.inner = Some(self.build_inner(output)?);
         }
-        let packet = Packet::new(0, TimeBase::new(1, output.sample_rate), input.to_vec());
+        let packet = Packet::new(
+            0,
+            TimeBase::new(1, i64::from(output.sample_rate)),
+            input.to_vec(),
+        );
         let inner = self.inner.as_mut().expect("decoder initialized above");
         inner
             .send_packet(&packet)
