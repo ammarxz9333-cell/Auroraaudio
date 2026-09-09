@@ -8,6 +8,8 @@ use oxideav_ac4::toc::Ac4FrameInfo;
 use oxideav_core::{CodecId, CodecParameters, Decoder as OxideDecoder, Frame, Packet, TimeBase};
 
 const MAX_COMPRESSED_BUFFER: usize = 8 * 1024 * 1024;
+const MAX_QUEUE_BLOCKS: usize = 4;
+const MAX_PCM_QUEUE_FRAMES: usize = 8_192;
 
 pub fn looks_like_ac4_sync(input: &[u8]) -> bool {
     if input.len() < 2 {
@@ -23,6 +25,7 @@ pub struct NativeAc4Decoder {
     compressed: Vec<u8>,
     pcm: Vec<VecDeque<f32>>,
     emitted_frames: u64,
+    dropped_bytes: u64,
     discontinuity: bool,
 }
 
@@ -35,6 +38,7 @@ impl NativeAc4Decoder {
             compressed: Vec::new(),
             pcm: Vec::new(),
             emitted_frames: 0,
+            dropped_bytes: 0,
             discontinuity: true,
         }
     }
@@ -50,19 +54,33 @@ impl NativeAc4Decoder {
         packetized_raw: bool,
     ) -> Result<Option<DecodedFrame>, DecoderError> {
         if input.is_empty() {
-            return self.take_block(false);
+            return self.poll();
+        }
+        if input.len() > MAX_COMPRESSED_BUFFER {
+            return Err(DecoderError::Decode(
+                "AC-4 input packet exceeded bounded compressed size".into(),
+            ));
         }
 
         if packetized_raw && !looks_like_ac4_sync(input) {
             self.decode_packet(input.to_vec())?;
         } else {
             self.compressed.extend_from_slice(input);
+            if self.compressed.len() > MAX_COMPRESSED_BUFFER {
+                return Err(DecoderError::Decode(
+                    "AC-4 compressed input exceeded bounded buffer".into(),
+                ));
+            }
             self.process_sync_stream()?;
         }
         self.take_block(false)
     }
 
     pub fn poll(&mut self) -> Result<Option<DecodedFrame>, DecoderError> {
+        // A prior push may have stopped at the PCM high-water mark while
+        // retaining complete compressed frames. Once the consumer drains a
+        // block, polling must resume decode from that retained backlog.
+        self.process_sync_stream()?;
         self.take_block(false)
     }
 
@@ -74,6 +92,10 @@ impl NativeAc4Decoder {
         }
     }
 
+    pub fn dropped_bytes(&self) -> u64 {
+        self.dropped_bytes
+    }
+
     fn ensure_pcm_channels(&mut self) {
         let channels = self.output.map(|f| f.channel_count).unwrap_or(0);
         if self.pcm.len() != channels {
@@ -81,18 +103,39 @@ impl NativeAc4Decoder {
         }
     }
 
+    fn queued_frames(&self) -> usize {
+        self.pcm.iter().map(VecDeque::len).min().unwrap_or(0)
+    }
+
+    fn queue_high_watermark(&self) -> usize {
+        self.output
+            .map(|format| format.block_size.max(1).saturating_mul(MAX_QUEUE_BLOCKS))
+            .unwrap_or(160)
+    }
+
     fn process_sync_stream(&mut self) -> Result<(), DecoderError> {
         loop {
+            if self.queued_frames() >= self.queue_high_watermark() {
+                break;
+            }
             if self.compressed.len() < 2 {
                 break;
             }
 
             if !looks_like_ac4_sync(&self.compressed) {
                 if let Some(offset) = find_next_sync_prefix(&self.compressed) {
+                    self.dropped_bytes = self.dropped_bytes.saturating_add(offset as u64);
+                    self.discontinuity = true;
                     self.compressed.drain(..offset);
                     continue;
                 }
                 let keep_trailing_ac = self.compressed.last() == Some(&0xAC);
+                let keep = usize::from(keep_trailing_ac);
+                let drop = self.compressed.len().saturating_sub(keep);
+                self.dropped_bytes = self.dropped_bytes.saturating_add(drop as u64);
+                if drop > 0 {
+                    self.discontinuity = true;
+                }
                 self.compressed.clear();
                 if keep_trailing_ac {
                     self.compressed.push(0xAC);
@@ -101,11 +144,9 @@ impl NativeAc4Decoder {
             }
 
             let Some(frame) = parse_sync_frame_at_start(&self.compressed) else {
-                if self.compressed.len() > MAX_COMPRESSED_BUFFER {
-                    return Err(DecoderError::Decode(
-                        "AC-4 sync frame exceeded bounded compressed buffer".into(),
-                    ));
-                }
+                // Sync is plausible but the complete frame has not arrived yet.
+                // The outer input bound prevents an attacker from growing this
+                // indefinitely while advertising an impossible frame.
                 break;
             };
 
@@ -115,6 +156,11 @@ impl NativeAc4Decoder {
                 ));
             }
             let total_len = frame.total_len;
+            if total_len == 0 || total_len > MAX_COMPRESSED_BUFFER {
+                return Err(DecoderError::Decode(
+                    "AC-4 sync frame declared an invalid bounded size".into(),
+                ));
+            }
             let packet = self.compressed[..total_len].to_vec();
             self.compressed.drain(..total_len);
             self.decode_packet(packet)?;
@@ -143,6 +189,11 @@ impl NativeAc4Decoder {
         let samples = audio.samples as usize;
         if samples == 0 {
             return Ok(());
+        }
+        if self.queued_frames().saturating_add(samples) > MAX_PCM_QUEUE_FRAMES {
+            return Err(DecoderError::Decode(
+                "AC-4 decoded PCM exceeded bounded queue".into(),
+            ));
         }
         let info = self
             .decoder
@@ -207,7 +258,7 @@ impl NativeAc4Decoder {
         if self.pcm.is_empty() {
             return Ok(None);
         }
-        let available = self.pcm.iter().map(VecDeque::len).min().unwrap_or(0);
+        let available = self.queued_frames();
         let wanted = output.block_size.max(1);
         if available < wanted && !allow_short {
             return Ok(None);
@@ -327,11 +378,26 @@ mod tests {
             sample_type: SampleType::F32,
             block_size: 40,
         });
+        assert_eq!(decoder.queue_high_watermark(), 160);
         assert!(decoder.poll().unwrap().is_none());
     }
 
     #[test]
     fn resynchronizer_finds_ac4_after_noise() {
         assert_eq!(find_next_sync_prefix(&[1, 2, 3, 0xAC, 0x40, 0]), Some(3));
+    }
+
+    #[test]
+    fn resynchronization_counts_dropped_bytes_and_keeps_split_sync_prefix() {
+        let mut decoder = NativeAc4Decoder::new();
+        decoder.configure(AudioFormat {
+            sample_rate: 48_000,
+            channel_count: 2,
+            sample_type: SampleType::F32,
+            block_size: 40,
+        });
+        assert!(decoder.push(&[1, 2, 3, 0xAC], false).unwrap().is_none());
+        assert_eq!(decoder.dropped_bytes(), 3);
+        assert_eq!(decoder.compressed, vec![0xAC]);
     }
 }
