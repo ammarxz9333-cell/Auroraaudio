@@ -14,9 +14,9 @@ use thiserror::Error;
 /// Coefficient indexing/normalization convention carried by a decoded HOA frame.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HoaCoefficientConvention {
-    /// MPEG-H decoder-native coefficient order. This is intentionally distinct
-    /// from ACN/SN3D until the exact public convention has been proven.
-    MpegHNativeIndexed,
+    /// Codec-native indexing whose public normalization/order has not yet been
+    /// proven. Keep this explicit rather than silently assuming ACN.
+    CodecNativeIndexed,
     /// ACN channel ordering with SN3D normalization.
     AcnSn3d,
     /// ACN channel ordering with N3D normalization.
@@ -104,12 +104,54 @@ pub fn coefficient_count_for_order(order: u16) -> Result<usize, HoaIrError> {
     side.checked_mul(side).ok_or(HoaIrError::NumericOverflow)
 }
 
+/// Ambisonic Channel Number (ACN): `index = n(n+1) + m`.
+pub fn acn_index(order: u16, degree: i16) -> Result<usize, HoaIrError> {
+    let n = i32::from(order);
+    let m = i32::from(degree);
+    if m < -n || m > n {
+        return Err(HoaIrError::InvalidAcnDegree { order, degree });
+    }
+    let index = n
+        .checked_mul(n + 1)
+        .and_then(|value| value.checked_add(m))
+        .ok_or(HoaIrError::NumericOverflow)?;
+    usize::try_from(index).map_err(|_| HoaIrError::NumericOverflow)
+}
+
+/// Inverse ACN mapping. ACN indices for order `n` occupy `n^2..(n+1)^2`.
+pub fn acn_order_degree(index: usize) -> Result<(u16, i16), HoaIrError> {
+    let mut order = 0usize;
+    loop {
+        let next = order
+            .checked_add(1)
+            .ok_or(HoaIrError::NumericOverflow)?;
+        let next_square = next
+            .checked_mul(next)
+            .ok_or(HoaIrError::NumericOverflow)?;
+        if next_square > index {
+            break;
+        }
+        order = next;
+    }
+    let n = i64::try_from(order).map_err(|_| HoaIrError::NumericOverflow)?;
+    let idx = i64::try_from(index).map_err(|_| HoaIrError::NumericOverflow)?;
+    let degree = idx
+        .checked_sub(n.checked_mul(n + 1).ok_or(HoaIrError::NumericOverflow)?)
+        .ok_or(HoaIrError::NumericOverflow)?;
+    Ok((
+        u16::try_from(order).map_err(|_| HoaIrError::NumericOverflow)?,
+        i16::try_from(degree).map_err(|_| HoaIrError::NumericOverflow)?,
+    ))
+}
+
 #[derive(Debug, Error, Clone, PartialEq, Eq)]
 pub enum HoaIrError {
     #[error("HOA coefficient audio block is internally inconsistent")]
     InvalidAudioGeometry,
     #[error("HOA order arithmetic overflow")]
     NumericOverflow,
+    #[error("ACN degree {degree} is invalid for order {order}")]
+    InvalidAcnDegree { order: u16, degree: i16 },
     #[error("HOA order requires {expected} coefficient bindings but frame contains {actual}")]
     CoefficientCountMismatch { expected: usize, actual: usize },
     #[error("HOA order requires {expected} PCM lanes but frame contains {actual}")]
@@ -136,7 +178,17 @@ mod tests {
     }
 
     #[test]
-    fn native_indexed_frame_requires_complete_unique_ownership() {
+    fn acn_round_trip_matches_n_n_plus_one_plus_m() {
+        for n in 0..=6u16 {
+            for m in -(n as i16)..=(n as i16) {
+                let index = acn_index(n, m).unwrap();
+                assert_eq!(acn_order_degree(index).unwrap(), (n, m));
+            }
+        }
+    }
+
+    #[test]
+    fn acn_n3d_frame_requires_complete_unique_ownership() {
         let frame = HoaCoefficientFrame {
             audio: AudioBlock {
                 channels: vec![vec![0.0; 40]; 4],
@@ -145,7 +197,7 @@ mod tests {
                 discontinuity: false,
             },
             order: 1,
-            convention: HoaCoefficientConvention::MpegHNativeIndexed,
+            convention: HoaCoefficientConvention::AcnN3d,
             coefficients: (0..4)
                 .map(|index| HoaCoefficientBinding {
                     pcm_channel_index: index,
@@ -166,7 +218,7 @@ mod tests {
                 discontinuity: false,
             },
             order: 1,
-            convention: HoaCoefficientConvention::MpegHNativeIndexed,
+            convention: HoaCoefficientConvention::AcnN3d,
             coefficients: vec![
                 HoaCoefficientBinding { pcm_channel_index: 0, coefficient_index: 0 },
                 HoaCoefficientBinding { pcm_channel_index: 1, coefficient_index: 1 },
