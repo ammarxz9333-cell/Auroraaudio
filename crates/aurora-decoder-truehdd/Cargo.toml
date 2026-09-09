@@ -5,14 +5,22 @@ edition.workspace = true
 license.workspace = true
 repository.workspace = true
 rust-version.workspace = true
+publish = false
 
 [lib]
 bench = false
 
 [features]
 default = []
-truehdd-process = []
+# The upstream truehd library requires Rust >=1.88. Keeping it optional preserves
+# the Aurora workspace's 1.85 baseline while allowing the best native TrueHD
+# path to be built by a dedicated decoder toolchain.
+native-truehd = ["dep:truehd"]
+# Backwards-compatible feature name used by older Aurora scripts.
+truehdd-process = ["native-truehd"]
 
 [dependencies]
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
+aurora-spatial-ir = { path = "../aurora-spatial-ir" }
+truehd = { git = "https://github.com/truehdd/truehdd", rev = "b54f2097166ca736cc8a7f3cb6157c62440284ce", package = "truehd", optional = true }
