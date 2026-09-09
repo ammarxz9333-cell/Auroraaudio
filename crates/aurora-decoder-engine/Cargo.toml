@@ -10,7 +10,7 @@ publish = false
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-decoder-open = { path = "../aurora-decoder-open" }
-oxideav-ac4 = "0.0.8"
+oxideav-ac4 = { git = "https://github.com/OxideAV/oxideav-ac4", rev = "08a570fa60dea25d426260ad396763c3827ec969" }
 oxideav-core = "0.1"
 oxideav-dts = { git = "https://github.com/OxideAV/oxideav-dts", rev = "951b4221969b742b1b330149106931f8be416d47", default-features = false }
 thiserror = { workspace = true }
