@@ -15,6 +15,7 @@ use aurora_decoder_engine::{AuroraDecoderEngine, EngineConfig};
 use aurora_decoder_mpegh::MpeghExternalFrame;
 use aurora_spatial_ir::SpatialDecodedFrame;
 use aurora_spatial_ir_v2::SpatialDecodedFrame as SpatialDecodedFrameV2;
+use aurora_spatial_transport_v2::SpatialTransportFrame;
 
 #[cfg(feature = "iamf")]
 use aurora_decoder_iamf::IamfDecoderAdapter;
@@ -42,6 +43,10 @@ pub struct AuroraSuperDecoder {
     truehd_v2: TruehddV2DecoderAdapter,
     #[cfg(feature = "native-mpegh")]
     mpegh: Option<NativeMpeghDecoder>,
+    #[cfg(feature = "native-mpegh")]
+    mpegh_sample_cursor: u64,
+    #[cfg(feature = "native-mpegh")]
+    mpegh_discontinuity: bool,
     active_route: ActiveRoute,
 }
 
@@ -58,6 +63,10 @@ impl AuroraSuperDecoder {
             truehd_v2: TruehddV2DecoderAdapter::new(),
             #[cfg(feature = "native-mpegh")]
             mpegh: None,
+            #[cfg(feature = "native-mpegh")]
+            mpegh_sample_cursor: 0,
+            #[cfg(feature = "native-mpegh")]
+            mpegh_discontinuity: true,
             active_route: ActiveRoute::Core,
         }
     }
@@ -79,7 +88,7 @@ impl AuroraSuperDecoder {
             CodecId::Iamf => self.decode_iamf(input),
             CodecId::TrueHd | CodecId::TrueHdAtmos => self.decode_truehd(input),
             CodecId::MpegH3d => Err(DecoderError::UnsupportedInput(
-                "MPEG-H native external-render output is pre-render PCM plus channel/OAM/HOA metadata; use decode_mpegh_external_chunk instead of flattening it into DecodedFrame",
+                "MPEG-H native external-render output preserves bed/object/HOA transport signals; use decode_mpegh_transport_chunk instead of flattening it into DecodedFrame",
             )),
             _ => {
                 self.active_route = ActiveRoute::Core;
@@ -103,7 +112,7 @@ impl AuroraSuperDecoder {
                 "IAMF pre-render scene export is not admitted yet; the native runtime currently exposes rendered speaker PCM only",
             )),
             CodecId::MpegH3d => Err(DecoderError::UnsupportedInput(
-                "MPEG-H uses the external-render packet path until OAM/HOA metadata is mapped into Aurora Spatial IR V2",
+                "MPEG-H may contain explicit bed geometry and HOA transport lanes that Spatial IR V1 cannot represent; use decode_mpegh_transport_chunk",
             )),
             _ => Err(DecoderError::UnsupportedInput(
                 "selected codec has no admitted object-preserving Aurora Spatial IR V1 path",
@@ -128,7 +137,7 @@ impl AuroraSuperDecoder {
                 "IAMF Spatial IR V2 pre-render scene export is not admitted yet",
             )),
             CodecId::MpegH3d => Err(DecoderError::UnsupportedInput(
-                "MPEG-H external-render OAM/HOA parsing into Spatial IR V2 is the next admission gate; raw scene packets are available through decode_mpegh_external_chunk",
+                "MPEG-H uses Spatial Transport V2 because plain Spatial IR V2 cannot represent HOA and flexible bed geometry losslessly; use decode_mpegh_transport_chunk",
             )),
             _ => Err(DecoderError::UnsupportedInput(
                 "selected codec has no admitted object-preserving Aurora Spatial IR V2 path",
@@ -161,6 +170,69 @@ impl AuroraSuperDecoder {
         &mut self,
         _input: &[u8],
     ) -> Result<Option<MpeghExternalFrame>, DecoderError> {
+        Err(DecoderError::Unavailable(
+            "Aurora super decoder was built without the native-mpegh backend",
+        ))
+    }
+
+    /// Preferred MPEG-H front door. Converts the native external-render packet
+    /// into Aurora Spatial Transport V2 with sample-clocked bed/object/HOA lane
+    /// ownership. Conversion failures mark a discontinuity rather than falling
+    /// back to a lossy speaker mix.
+    #[cfg(feature = "native-mpegh")]
+    pub fn decode_mpegh_transport_chunk(
+        &mut self,
+        input: &[u8],
+    ) -> Result<Option<SpatialTransportFrame>, DecoderError> {
+        let Some(external) = self.decode_mpegh_external_chunk(input)? else {
+            return Ok(None);
+        };
+        let sample_rate = u32::try_from(external.sample_rate)
+            .ok()
+            .filter(|rate| *rate > 0)
+            .ok_or_else(|| {
+                self.mpegh_discontinuity = true;
+                DecoderError::Decode(format!(
+                    "MPEG-H external frame reported invalid sample rate {}",
+                    external.sample_rate
+                ))
+            })?;
+        let presentation_time_seconds = self.mpegh_sample_cursor as f64 / f64::from(sample_rate);
+        let frame_count = external
+            .prerender_pcm
+            .len()
+            .checked_div(3 * 1024)
+            .map(|_| 1024u64)
+            .unwrap_or(1024);
+        match external.to_spatial_transport_v2(
+            presentation_time_seconds,
+            self.mpegh_discontinuity,
+        ) {
+            Ok(scene) => {
+                self.mpegh_sample_cursor = self
+                    .mpegh_sample_cursor
+                    .saturating_add(scene.frame.decoded.audio.frame_count as u64);
+                self.mpegh_discontinuity = false;
+                Ok(Some(scene))
+            }
+            Err(error) => {
+                // The compressed access unit was already consumed by libmpegh;
+                // keep transport time monotonic and force the next admitted
+                // frame to declare a discontinuity.
+                self.mpegh_sample_cursor = self.mpegh_sample_cursor.saturating_add(frame_count);
+                self.mpegh_discontinuity = true;
+                Err(DecoderError::Decode(format!(
+                    "MPEG-H Spatial Transport V2 conversion failed: {error}"
+                )))
+            }
+        }
+    }
+
+    #[cfg(not(feature = "native-mpegh"))]
+    pub fn decode_mpegh_transport_chunk(
+        &mut self,
+        _input: &[u8],
+    ) -> Result<Option<SpatialTransportFrame>, DecoderError> {
         Err(DecoderError::Unavailable(
             "Aurora super decoder was built without the native-mpegh backend",
         ))
@@ -235,7 +307,7 @@ impl Decoder for AuroraSuperDecoder {
         DecoderInfo {
             name: "Aurora Super Decoder",
             production_ready: false,
-            maturity: "best-of-breed-composite-spatial-ir-v2-experimental",
+            maturity: "best-of-breed-composite-spatial-transport-v2-experimental",
         }
     }
 
@@ -271,6 +343,8 @@ impl Decoder for AuroraSuperDecoder {
         #[cfg(feature = "native-mpegh")]
         {
             self.mpegh = None;
+            self.mpegh_sample_cursor = 0;
+            self.mpegh_discontinuity = true;
         }
         self.active_route = ActiveRoute::Core;
     }
@@ -354,5 +428,8 @@ mod tests {
         let result: Result<Option<MpeghExternalFrame>, DecoderError> =
             decoder.decode_mpegh_external_chunk(&[]);
         assert!(matches!(result, Err(DecoderError::Unavailable(_))));
+        let transport: Result<Option<SpatialTransportFrame>, DecoderError> =
+            decoder.decode_mpegh_transport_chunk(&[]);
+        assert!(matches!(transport, Err(DecoderError::Unavailable(_))));
     }
 }
