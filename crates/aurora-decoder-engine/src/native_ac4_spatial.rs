@@ -10,9 +10,20 @@ use crate::spatial_ir::{
     SpatialDomain, SpatialFrameMetadata, SpatialObjectUpdate, SpatialPosition,
 };
 
+/// Standard-precision AC-4 OAMD position retained in quantized code space.
+///
+/// Keeping integer state matches the codec state machine, avoids cumulative
+/// floating-point drift across differential updates and makes clipping explicit.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct QuantizedObjectPosition {
+    x: i16,
+    y: i16,
+    z: i16,
+}
+
 #[derive(Debug, Clone, Copy)]
 struct ResolvedObjectState {
-    position: Option<(f32, f32, f32)>,
+    position: Option<QuantizedObjectPosition>,
     gain_db: f32,
     priority: Option<f32>,
     active: bool,
@@ -312,11 +323,12 @@ impl NativeAc4SpatialDecoder {
                     state.active = false;
                     previous_object_gain = Some(state.gain_db);
                     if was_active {
-                        let (x, y, z) = state.position.ok_or_else(|| {
+                        let position = state.position.ok_or_else(|| {
                             DecoderError::Decode(
                                 "active A-JOC object became inactive without a resolved position".into(),
                             )
                         })?;
+                        let (x, y, z) = position_to_room_normalized(position);
                         updates.push(SpatialObjectUpdate {
                             object_id: object_id(object_index),
                             active: false,
@@ -378,18 +390,17 @@ impl NativeAc4SpatialDecoder {
                     InfoStatus::AllNew | InfoStatus::PartReuse => {
                         if let Some(render) = block.render_info.as_ref() {
                             if let Some(position) = render.position {
-                                state.position = Some(resolve_position(state.position, position)?);
+                                state.position = Some(resolve_quantized_position(state.position, position)?);
                             }
                         }
                     }
                 }
                 previous_object_gain = Some(state.gain_db);
 
-                let Some((x, y, z)) = state.position else {
-                    return Err(DecoderError::UnsupportedInput(
-                        "active AC-4 dynamic object has no resolved position",
-                    ));
-                };
+                let position = state.position.ok_or(DecoderError::UnsupportedInput(
+                    "active AC-4 dynamic object has no resolved position",
+                ))?;
+                let (x, y, z) = position_to_room_normalized(position);
                 updates.push(SpatialObjectUpdate {
                     object_id: object_id(object_index),
                     active: true,
@@ -437,43 +448,49 @@ fn object_id(index: usize) -> String {
     format!("ac4-object-{index}")
 }
 
-fn resolve_position(
-    previous: Option<(f32, f32, f32)>,
+/// Resolve AC-4 standard-precision position state exactly in quantized space.
+///
+/// AC-4 differential values update the quantized X/Y/Z codes and the effective
+/// codes saturate to X/Y=0..62 and Z=-15..15. This independently matches the
+/// scene-state behavior used by MacinDecode's conformance-oriented assembler.
+fn resolve_quantized_position(
+    previous: Option<QuantizedObjectPosition>,
     position: RenderPosition,
-) -> Result<(f32, f32, f32), DecoderError> {
-    let resolved = match position {
-        RenderPosition::Abs { x, y, z_sign, z } => (
-            f32::from(x) / 62.0,
-            f32::from(y) / 62.0,
-            if z_sign {
-                f32::from(z) / 15.0
+) -> Result<QuantizedObjectPosition, DecoderError> {
+    Ok(match position {
+        RenderPosition::Abs { x, y, z_sign, z } => QuantizedObjectPosition {
+            x: i16::from(x).clamp(0, 62),
+            y: i16::from(y).clamp(0, 62),
+            z: if z_sign {
+                i16::from(z).clamp(0, 15)
             } else {
-                -f32::from(z) / 15.0
+                -i16::from(z).clamp(0, 15)
             },
-        ),
+        },
         RenderPosition::Diff { x, y, z } => {
-            let (px, py, pz) = previous.ok_or(DecoderError::UnsupportedInput(
+            let previous = previous.ok_or(DecoderError::UnsupportedInput(
                 "AC-4 differential object position has no previous state",
             ))?;
-            (
-                px + f32::from(x) / 62.0,
-                py + f32::from(y) / 62.0,
-                pz + f32::from(z) / 15.0,
-            )
+            QuantizedObjectPosition {
+                x: (previous.x + i16::from(x)).clamp(0, 62),
+                y: (previous.y + i16::from(y)).clamp(0, 62),
+                z: (previous.z + i16::from(z)).clamp(-15, 15),
+            }
         }
-    };
-    if !resolved.0.is_finite()
-        || !resolved.1.is_finite()
-        || !resolved.2.is_finite()
-        || !(0.0..=1.0).contains(&resolved.0)
-        || !(0.0..=1.0).contains(&resolved.1)
-        || !(-1.0..=1.0).contains(&resolved.2)
-    {
-        return Err(DecoderError::Decode(
-            "AC-4 object position resolved outside normalized room bounds".into(),
-        ));
-    }
-    Ok(resolved)
+    })
+}
+
+/// Map AC-4 room-anchored codes into Aurora's 0..1 X/Y, -1..1 Z room space.
+///
+/// AC-4 semantic scene coordinates are X = x/31-1 and Y = 1-y/31. Aurora's
+/// room-normalized X/Y are the equivalent affine 0..1 representation, so X is
+/// x/62 while Y must be *reversed* as 1-y/62. Z stays signed around zero.
+fn position_to_room_normalized(position: QuantizedObjectPosition) -> (f32, f32, f32) {
+    (
+        f32::from(position.x) / 62.0,
+        1.0 - f32::from(position.y) / 62.0,
+        f32::from(position.z) / 15.0,
+    )
 }
 
 fn timing_for_block(
@@ -503,22 +520,61 @@ mod tests {
     use super::*;
 
     #[test]
-    fn absolute_ac4_position_maps_to_room_normalized_coordinates() {
-        let p = resolve_position(
+    fn absolute_ac4_position_maps_y_with_codec_front_back_orientation() {
+        let quantized = resolve_quantized_position(
             None,
             RenderPosition::Abs {
                 x: 31,
-                y: 62,
+                y: 0,
                 z_sign: true,
                 z: 15,
             },
         )
         .unwrap();
+        let p = position_to_room_normalized(quantized);
         assert_eq!(p, (0.5, 1.0, 1.0));
     }
 
     #[test]
+    fn positive_quantized_y_delta_moves_toward_lower_aurora_room_y() {
+        let previous = QuantizedObjectPosition { x: 31, y: 31, z: 0 };
+        let next = resolve_quantized_position(
+            Some(previous),
+            RenderPosition::Diff { x: 0, y: 1, z: 0 },
+        )
+        .unwrap();
+        let before = position_to_room_normalized(previous);
+        let after = position_to_room_normalized(next);
+        assert!(after.1 < before.1);
+    }
+
+    #[test]
     fn differential_position_requires_previous_state() {
-        assert!(resolve_position(None, RenderPosition::Diff { x: 1, y: 0, z: 0 }).is_err());
+        assert!(resolve_quantized_position(
+            None,
+            RenderPosition::Diff { x: 1, y: 0, z: 0 }
+        )
+        .is_err());
+    }
+
+    #[test]
+    fn standard_precision_position_saturates_to_codec_bounds() {
+        let absolute = resolve_quantized_position(
+            None,
+            RenderPosition::Abs {
+                x: 63,
+                y: 63,
+                z_sign: true,
+                z: 15,
+            },
+        )
+        .unwrap();
+        assert_eq!(absolute, QuantizedObjectPosition { x: 62, y: 62, z: 15 });
+        let saturated = resolve_quantized_position(
+            Some(absolute),
+            RenderPosition::Diff { x: 3, y: 3, z: 3 },
+        )
+        .unwrap();
+        assert_eq!(saturated, absolute);
     }
 }
