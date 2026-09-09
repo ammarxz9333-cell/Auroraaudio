@@ -19,6 +19,7 @@ aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-decoder-engine = { path = "../aurora-decoder-engine" }
 aurora-spatial-ir = { path = "../aurora-spatial-ir" }
 aurora-spatial-ir-v2 = { path = "../aurora-spatial-ir-v2" }
+aurora-spatial-transport-v2 = { path = "../aurora-spatial-transport-v2" }
 aurora-decoder-iamf = { path = "../aurora-decoder-iamf", optional = true }
 aurora-decoder-truehdd = { path = "../aurora-decoder-truehdd", optional = true }
 aurora-decoder-mpegh = { path = "../aurora-decoder-mpegh" }
