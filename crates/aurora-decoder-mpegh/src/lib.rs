@@ -7,6 +7,12 @@
 
 #![cfg_attr(not(feature = "native-mpegh"), forbid(unsafe_code))]
 
+mod external_oam;
+pub use external_oam::{
+    parse_external_oam, MpeghExclusionSector, MpeghOamExtension, MpeghOamObject,
+    MpeghOamObjectFrame, MpeghOamPacket, MpeghOamParseError, MpeghOamRawCodes,
+};
+
 #[cfg(not(feature = "native-mpegh"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MpeghExternalFrame {
@@ -47,6 +53,14 @@ pub use native::{
     MpeghExternalFrame, MpeghNativeError, MpeghSpeaker, MpeghSpeakerLayout,
     NativeMpeghDecoder,
 };
+
+impl MpeghExternalFrame {
+    /// Parse libmpegh's external-render OAM plane using the exact bit layout
+    /// mirrored from its official writer/reader utilities.
+    pub fn parse_object_metadata(&self) -> Result<MpeghOamPacket, MpeghOamParseError> {
+        parse_external_oam(&self.object_metadata)
+    }
+}
 
 /// Whether this build contains the native libmpegh external-render backend.
 pub const fn native_backend_enabled() -> bool {
