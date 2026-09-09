@@ -1,22 +1,29 @@
-//! Single-process prototype for Aurora encoded input -> decoder operation.
+//! Single-process prototype for Aurora encoded input -> decode -> speaker DSP.
 //!
 //! Direct eARC mode captures S32_LE from ALSA (or stdin), normalizes it and
 //! decodes in one process. Legacy mode consumes complete Aurora USB v1
 //! SOCK_SEQPACKET messages from the existing STM32 bridge socket and feeds the
 //! exact ENCODED_IEC61937 payload into the same runtime.
 //!
-//! This binary intentionally stops before Aurora's object renderer/output
-//! device. If a decoded frame contains object metadata, it fails closed rather
-//! than silently discarding objects or presenting bed PCM as Atmos output.
+//! Speaker-rendered decoder PCM continues through Aurora's canonical 48 kHz
+//! 7.1.4 output DSP before stdout. Generic object metadata without object-signal
+//! PCM bindings still fails closed; the runtime never guesses bindings, drops
+//! objects, or treats IEC61937 E-AC-3 type 0x15 as proof of JOC/Atmos.
 
 use std::io::{self, Read, Write};
-use std::process::{Child, Command, Stdio};
+use std::process::Child;
+
+#[cfg(target_os = "linux")]
+use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 use aurora_core::{AudioFormat, SampleType};
 use aurora_decoder_engine::EngineConfig;
+use aurora_dsp_basic::output::{
+    OutputDspConfig, CHANNELS as OUTPUT_CHANNELS, SAMPLE_RATE as OUTPUT_SAMPLE_RATE,
+};
 use aurora_encoded_input::EncodedInputConfig;
-use aurora_encoded_runtime::{AuroraEncodedRuntime, RuntimeBatch};
+use aurora_encoded_runtime::{AuroraPlaybackRuntime, PlaybackBatch};
 use aurora_iec61937::CarrierWordHalf;
 use clap::{Parser, ValueEnum};
 
@@ -49,7 +56,7 @@ impl From<WordHalfArg> for CarrierWordHalf {
 #[derive(Debug, Parser)]
 #[command(
     name = "aurora-encoded-runtime",
-    about = "Run direct eARC or legacy STM32/USB encoded input through one Aurora decoder runtime"
+    about = "Run direct eARC or legacy STM32/USB through one Aurora decode and speaker-DSP runtime"
 )]
 struct Args {
     /// Select the physical encoded input explicitly. Aurora never auto-switches.
@@ -80,12 +87,12 @@ struct Args {
     #[arg(long, default_value_t = 16_384)]
     read_bytes: usize,
 
-    /// Decoder output sample rate.
-    #[arg(long, default_value_t = 48_000)]
+    /// Decoder/output sample rate. Integrated speaker DSP currently requires 48 kHz.
+    #[arg(long, default_value_t = OUTPUT_SAMPLE_RATE)]
     output_rate: u32,
 
-    /// Decoder output channel count. Prototype default is canonical 7.1.4 = 12.
-    #[arg(long, default_value_t = 12)]
+    /// Output channel count. Integrated speaker DSP currently requires canonical 7.1.4 = 12.
+    #[arg(long, default_value_t = OUTPUT_CHANNELS)]
     output_channels: usize,
 
     /// Decoder preferred output block size.
@@ -118,12 +125,13 @@ fn main() -> Result<()> {
         sample_type: SampleType::F32,
         block_size: args.block_size,
     };
-    let mut runtime = AuroraEncodedRuntime::new(
+    let mut runtime = AuroraPlaybackRuntime::new(
         input_config,
         EngineConfig::default(),
         output_format,
+        OutputDspConfig::default(),
     )
-    .context("failed to initialize Aurora encoded runtime")?;
+    .context("failed to initialize Aurora encoded playback runtime")?;
 
     let stdout = io::stdout();
     let mut output = stdout.lock();
@@ -131,7 +139,9 @@ fn main() -> Result<()> {
         InputMode::DirectEarc => run_direct(&args, &mut runtime, &mut output)?,
         InputMode::LegacyUsb => run_legacy(&args, &mut runtime, &mut output)?,
     };
-    output.flush().context("failed to flush decoded PCM output")?;
+    output
+        .flush()
+        .context("failed to flush processed speaker PCM output")?;
 
     eprintln!(
         "aurora-encoded-runtime: input={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={}",
@@ -154,8 +164,15 @@ fn validate_args(args: &Args) -> Result<()> {
     if args.read_bytes == 0 {
         bail!("read size must be greater than zero");
     }
-    if args.output_rate == 0 || args.output_channels == 0 || args.block_size == 0 {
-        bail!("decoder output rate, channels and block size must be greater than zero");
+    if args.block_size == 0 {
+        bail!("decoder output block size must be greater than zero");
+    }
+    if args.output_rate != OUTPUT_SAMPLE_RATE || args.output_channels != OUTPUT_CHANNELS {
+        bail!(
+            "integrated Aurora speaker DSP currently requires {} Hz and {} canonical 7.1.4 channels",
+            OUTPUT_SAMPLE_RATE,
+            OUTPUT_CHANNELS
+        );
     }
     if matches!(args.input, InputMode::LegacyUsb) && args.alsa_device.is_some() {
         bail!("--alsa-device is valid only with --input direct-earc");
@@ -165,7 +182,7 @@ fn validate_args(args: &Args) -> Result<()> {
 
 fn run_direct<W: Write>(
     args: &Args,
-    runtime: &mut AuroraEncodedRuntime,
+    runtime: &mut AuroraPlaybackRuntime,
     output: &mut W,
 ) -> Result<RuntimeStats> {
     if let Some(device) = args.alsa_device.as_deref() {
@@ -174,7 +191,7 @@ fn run_direct<W: Write>(
             .stdout
             .take()
             .context("arecord stdout was not captured")?;
-        let stats = run_direct_stream(capture_stdout, runtime, output, args.read_bytes, args.output_channels)?;
+        let stats = run_direct_stream(capture_stdout, runtime, output, args.read_bytes)?;
         let status = child.wait().context("failed waiting for arecord")?;
         if !status.success() {
             bail!("arecord exited with status {status}");
@@ -182,22 +199,15 @@ fn run_direct<W: Write>(
         Ok(stats)
     } else {
         let stdin = io::stdin();
-        run_direct_stream(
-            stdin.lock(),
-            runtime,
-            output,
-            args.read_bytes,
-            args.output_channels,
-        )
+        run_direct_stream(stdin.lock(), runtime, output, args.read_bytes)
     }
 }
 
 fn run_direct_stream<R: Read, W: Write>(
     mut input: R,
-    runtime: &mut AuroraEncodedRuntime,
+    runtime: &mut AuroraPlaybackRuntime,
     output: &mut W,
     read_bytes: usize,
-    expected_channels: usize,
 ) -> Result<RuntimeStats> {
     let mut read_buffer = vec![0_u8; read_bytes];
     let mut stats = RuntimeStats::default();
@@ -210,8 +220,8 @@ fn run_direct_stream<R: Read, W: Write>(
         }
         let batch = runtime
             .push_direct_s32(&read_buffer[..count])
-            .context("direct eARC runtime ingest failed")?;
-        consume_batch(batch, output, expected_channels, &mut stats)?;
+            .context("direct eARC playback runtime ingest failed")?;
+        consume_batch(batch, output, &mut stats)?;
     }
     runtime
         .finish()
@@ -253,7 +263,7 @@ fn spawn_arecord(device: &str, carrier_rate: u32, slots: usize) -> Result<Child>
 #[cfg(unix)]
 fn run_legacy<W: Write>(
     args: &Args,
-    runtime: &mut AuroraEncodedRuntime,
+    runtime: &mut AuroraPlaybackRuntime,
     output: &mut W,
 ) -> Result<RuntimeStats> {
     let socket = SeqPacketSocket::connect(&args.bridge_socket)
@@ -268,8 +278,8 @@ fn run_legacy<W: Write>(
         }
         let batch = runtime
             .push_legacy_usb_packet(&packet[..count])
-            .context("legacy STM32/USB runtime ingest failed")?;
-        consume_batch(batch, output, args.output_channels, &mut stats)?;
+            .context("legacy STM32/USB playback runtime ingest failed")?;
+        consume_batch(batch, output, &mut stats)?;
     }
     runtime.finish().context("legacy runtime finalization failed")?;
     Ok(stats)
@@ -278,7 +288,7 @@ fn run_legacy<W: Write>(
 #[cfg(not(unix))]
 fn run_legacy<W: Write>(
     args: &Args,
-    _runtime: &mut AuroraEncodedRuntime,
+    _runtime: &mut AuroraPlaybackRuntime,
     _output: &mut W,
 ) -> Result<RuntimeStats> {
     let _ = args;
@@ -286,9 +296,8 @@ fn run_legacy<W: Write>(
 }
 
 fn consume_batch<W: Write>(
-    batch: RuntimeBatch,
+    batch: PlaybackBatch,
     output: &mut W,
-    expected_channels: usize,
     stats: &mut RuntimeStats,
 ) -> Result<()> {
     stats.carrier_bursts = stats.carrier_bursts.saturating_add(batch.bursts as u64);
@@ -297,35 +306,15 @@ fn consume_batch<W: Write>(
         .saturating_add(batch.format_changes as u64);
 
     for frame in batch.frames {
-        frame
-            .audio
-            .validate()
-            .context("decoder returned an invalid AudioBlock")?;
-        if !frame.objects.is_empty() {
-            bail!(
-                "decoder produced {} object metadata records; speaker renderer integration is required before PCM output, refusing to drop objects",
-                frame.objects.len()
-            );
-        }
-        if frame.audio.channels.len() != expected_channels {
-            bail!(
-                "decoder returned {} PCM channels, expected {}",
-                frame.audio.channels.len(),
-                expected_channels
-            );
-        }
-
-        for frame_index in 0..frame.audio.frame_count {
-            for channel in &frame.audio.channels {
-                output
-                    .write_all(&channel[frame_index].to_le_bytes())
-                    .context("failed writing interleaved decoded F32 PCM")?;
-            }
+        for sample in frame.interleaved_f32 {
+            output
+                .write_all(&sample.to_le_bytes())
+                .context("failed writing interleaved processed F32 speaker PCM")?;
         }
         stats.decoded_frames = stats.decoded_frames.saturating_add(1);
         stats.decoded_pcm_frames = stats
             .decoded_pcm_frames
-            .saturating_add(frame.audio.frame_count as u64);
+            .saturating_add(frame.frame_count as u64);
     }
     Ok(())
 }
@@ -411,9 +400,8 @@ impl SeqPacketSocket {
 mod tests {
     use super::*;
 
-    #[test]
-    fn rejects_zero_runtime_shape() {
-        let args = Args {
+    fn valid_args() -> Args {
+        Args {
             input: InputMode::DirectEarc,
             alsa_device: None,
             carrier_rate: 192_000,
@@ -421,27 +409,28 @@ mod tests {
             word_half: WordHalfArg::High,
             bridge_socket: DEFAULT_BRIDGE_SOCKET.to_owned(),
             read_bytes: 16_384,
-            output_rate: 48_000,
-            output_channels: 0,
+            output_rate: OUTPUT_SAMPLE_RATE,
+            output_channels: OUTPUT_CHANNELS,
             block_size: 40,
-        };
+        }
+    }
+
+    #[test]
+    fn rejects_noncanonical_runtime_shape() {
+        let mut args = valid_args();
+        args.output_channels = 8;
+        assert!(validate_args(&args).is_err());
+
+        let mut args = valid_args();
+        args.output_rate = 96_000;
         assert!(validate_args(&args).is_err());
     }
 
     #[test]
     fn legacy_mode_rejects_alsa_device() {
-        let args = Args {
-            input: InputMode::LegacyUsb,
-            alsa_device: Some("hw:0,0".to_owned()),
-            carrier_rate: 192_000,
-            slots: 2,
-            word_half: WordHalfArg::High,
-            bridge_socket: DEFAULT_BRIDGE_SOCKET.to_owned(),
-            read_bytes: 16_384,
-            output_rate: 48_000,
-            output_channels: 12,
-            block_size: 40,
-        };
+        let mut args = valid_args();
+        args.input = InputMode::LegacyUsb;
+        args.alsa_device = Some("hw:0,0".to_owned());
         assert!(validate_args(&args).is_err());
     }
 }
