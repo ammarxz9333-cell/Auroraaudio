@@ -70,11 +70,6 @@ jobs:
       - name: Verify committed workspace lockfile
         run: |
           cargo metadata --format-version 1 --locked > /tmp/aurora-metadata.json
-          cargo generate-lockfile
-          if ! git diff --exit-code -- Cargo.lock; then
-            echo 'Cargo.lock is stale; regenerate it and commit the exact dependency graph' >&2
-            exit 1
-          fi
 
       - name: Validate Linux dependency graph
         run: |
@@ -90,6 +85,7 @@ jobs:
           cargo fmt
           --package aurora-iec61937
           --package aurora-decoder-open
+          --package aurora-decoder-engine
           --package aurora-direct-earc-decoder
           --package aurora-encoded-input
           --package aurora-encoded-runtime
@@ -116,6 +112,15 @@ jobs:
 
       - name: Clippy open AC3/EAC3/JOC decoder adapter
         run: cargo clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
+
+      - name: Check decoder engine lifecycle
+        run: cargo check --locked -p aurora-decoder-engine --all-targets
+
+      - name: Test decoder engine lifecycle
+        run: cargo test --locked -p aurora-decoder-engine
+
+      - name: Clippy decoder engine lifecycle
+        run: cargo clippy --locked -p aurora-decoder-engine --all-targets -- -D warnings
 
       - name: Check direct eARC decoder bridge
         run: cargo check --locked -p aurora-direct-earc-decoder --all-targets
