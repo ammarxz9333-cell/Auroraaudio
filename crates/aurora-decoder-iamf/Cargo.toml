@@ -10,9 +10,12 @@ rust-version.workspace = true
 bench = false
 
 [features]
-default = []
-libiamf-process = []
+default = ["iamf-rs-native"]
+iamf-rs-native = ["dep:iamf-dec", "dep:iamf-codecs", "dep:iamf-obu"]
 
 [dependencies]
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
+iamf-dec = { git = "https://github.com/baylesj/iamf-rs", rev = "af36a32854e56b67edfec79fdbb3144ee1c8630b", package = "iamf-dec", default-features = false, optional = true }
+iamf-codecs = { git = "https://github.com/baylesj/iamf-rs", rev = "af36a32854e56b67edfec79fdbb3144ee1c8630b", package = "iamf-codecs", optional = true }
+iamf-obu = { git = "https://github.com/baylesj/iamf-rs", rev = "af36a32854e56b67edfec79fdbb3144ee1c8630b", package = "iamf-obu", optional = true }
