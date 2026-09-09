@@ -11,6 +11,7 @@ publish = false
 default = ["iamf"]
 iamf = ["dep:aurora-decoder-iamf"]
 native-truehd = ["dep:aurora-decoder-truehdd", "aurora-decoder-truehdd/native-truehd"]
+native-mpegh = ["dep:aurora-decoder-mpegh", "aurora-decoder-mpegh/native-mpegh"]
 
 [dependencies]
 aurora-core = { path = "../aurora-core" }
@@ -20,3 +21,4 @@ aurora-spatial-ir = { path = "../aurora-spatial-ir" }
 aurora-spatial-ir-v2 = { path = "../aurora-spatial-ir-v2" }
 aurora-decoder-iamf = { path = "../aurora-decoder-iamf", optional = true }
 aurora-decoder-truehdd = { path = "../aurora-decoder-truehdd", optional = true }
+aurora-decoder-mpegh = { path = "../aurora-decoder-mpegh", optional = true }
