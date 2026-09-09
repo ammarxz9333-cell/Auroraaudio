@@ -7,6 +7,8 @@
 
 #![forbid(unsafe_code)]
 
+use std::time::Instant;
+
 use aurora_core::AudioFormat;
 use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError};
 use aurora_decoder_engine::{AuroraDecoderEngine, EngineConfig};
@@ -32,8 +34,10 @@ pub struct DirectEarcDecodeBatch {
 /// `discarded_bytes` includes ordinary non-preamble carrier bytes such as idle
 /// padding, so it must not be interpreted by itself as an eARC unlock. A rising
 /// `malformed_headers` count is stronger evidence that a Pa/Pb candidate was
-/// followed by an invalid length/header. Physical unlock/xrun events remain an
-/// explicit responsibility of the ALSA/eARC capture layer.
+/// followed by an invalid length/header. `iec61937_locked` is a parser-level
+/// observation only: it becomes true after a valid IEC61937 burst and is cleared
+/// only by an explicit transport discontinuity/reset. It is not a claim about
+/// the physical HDMI/eARC electrical link.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct DirectEarcTransportTelemetry {
     /// Incomplete canonical carrier bytes currently retained by the parser.
@@ -42,6 +46,20 @@ pub struct DirectEarcTransportTelemetry {
     pub discarded_bytes: u64,
     /// Pa/Pb candidates rejected because their payload length was impossible.
     pub malformed_headers: u64,
+    /// True after at least one valid IEC61937 burst in the current observation epoch.
+    pub iec61937_locked: bool,
+    /// Decode/transport observation epoch. Incremented on explicit reset/discontinuity.
+    pub observation_epoch: u64,
+    /// Total valid IEC61937 bursts observed since decoder creation.
+    pub total_bursts: u64,
+    /// Valid bursts observed since the current parser lock was acquired.
+    pub bursts_since_lock: u64,
+    /// Total compressed transport-format transitions observed.
+    pub total_format_changes: u64,
+    /// Number of parser lock acquisitions after the first successful lock.
+    pub relocks: u64,
+    /// Milliseconds since the most recent valid IEC61937 burst, when one exists.
+    pub last_valid_burst_age_ms: Option<u64>,
 }
 
 /// Stateful direct-eARC front end.
@@ -53,6 +71,14 @@ pub struct DirectEarcTransportTelemetry {
 pub struct DirectEarcDecoder {
     parser: BurstParser,
     engine: AuroraDecoderEngine,
+    observation_epoch: u64,
+    iec61937_locked: bool,
+    ever_locked: bool,
+    total_bursts: u64,
+    bursts_since_lock: u64,
+    total_format_changes: u64,
+    relocks: u64,
+    last_valid_burst: Option<Instant>,
 }
 
 impl DirectEarcDecoder {
@@ -62,12 +88,43 @@ impl DirectEarcDecoder {
         Self {
             parser: BurstParser::new(CodecFilter::All),
             engine: AuroraDecoderEngine::new(engine_config),
+            observation_epoch: 1,
+            iec61937_locked: false,
+            ever_locked: false,
+            total_bursts: 0,
+            bursts_since_lock: 0,
+            total_format_changes: 0,
+            relocks: 0,
+            last_valid_burst: None,
         }
     }
 
     /// Configures the downstream decoder output format.
     pub fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError> {
         self.engine.configure(output_format)
+    }
+
+    fn begin_new_epoch(&mut self) {
+        self.parser.reset();
+        self.engine.reset();
+        self.observation_epoch = self.observation_epoch.saturating_add(1);
+        self.iec61937_locked = false;
+        self.bursts_since_lock = 0;
+        self.last_valid_burst = None;
+    }
+
+    fn observe_valid_burst(&mut self) {
+        if !self.iec61937_locked {
+            if self.ever_locked {
+                self.relocks = self.relocks.saturating_add(1);
+            }
+            self.ever_locked = true;
+            self.iec61937_locked = true;
+            self.bursts_since_lock = 0;
+        }
+        self.total_bursts = self.total_bursts.saturating_add(1);
+        self.bursts_since_lock = self.bursts_since_lock.saturating_add(1);
+        self.last_valid_burst = Some(Instant::now());
     }
 
     /// Pushes arbitrary canonical S16_LE IEC 61937 carrier bytes.
@@ -81,8 +138,7 @@ impl DirectEarcDecoder {
         discontinuity: bool,
     ) -> Result<DirectEarcDecodeBatch, DecoderError> {
         if discontinuity {
-            self.parser.reset();
-            self.engine.reset();
+            self.begin_new_epoch();
         }
 
         let observations = self.parser.push(carrier);
@@ -92,6 +148,7 @@ impl DirectEarcDecoder {
         };
 
         for observation in observations {
+            self.observe_valid_burst();
             batch.bursts += 1;
             batch.transport_codecs.push(observation.burst.codec);
 
@@ -99,6 +156,7 @@ impl DirectEarcDecoder {
                 // Never let buffered state from one compressed format leak into
                 // another when the TV switches source or output mode.
                 self.engine.reset();
+                self.total_format_changes = self.total_format_changes.saturating_add(1);
                 batch.format_changes += 1;
             }
 
@@ -112,8 +170,7 @@ impl DirectEarcDecoder {
 
     /// Explicitly resets transport and decoder state.
     pub fn reset(&mut self) {
-        self.parser.reset();
-        self.engine.reset();
+        self.begin_new_epoch();
     }
 
     /// Provides read-only access to decoder policy/telemetry for diagnostics.
@@ -133,10 +190,21 @@ impl DirectEarcDecoder {
 
     /// Snapshot of transport-parser health counters for bring-up diagnostics.
     pub fn transport_telemetry(&self) -> DirectEarcTransportTelemetry {
+        let last_valid_burst_age_ms = self.last_valid_burst.map(|instant| {
+            let millis = instant.elapsed().as_millis();
+            millis.min(u128::from(u64::MAX)) as u64
+        });
         DirectEarcTransportTelemetry {
             pending_carrier_bytes: self.parser.pending_bytes(),
             discarded_bytes: self.parser.discarded_bytes(),
             malformed_headers: self.parser.malformed_headers(),
+            iec61937_locked: self.iec61937_locked,
+            observation_epoch: self.observation_epoch,
+            total_bursts: self.total_bursts,
+            bursts_since_lock: self.bursts_since_lock,
+            total_format_changes: self.total_format_changes,
+            relocks: self.relocks,
+            last_valid_burst_age_ms,
         }
     }
 }
@@ -171,12 +239,19 @@ mod tests {
                 pending_carrier_bytes: 0,
                 discarded_bytes: 0,
                 malformed_headers: 0,
+                iec61937_locked: false,
+                observation_epoch: 1,
+                total_bursts: 0,
+                bursts_since_lock: 0,
+                total_format_changes: 0,
+                relocks: 0,
+                last_valid_burst_age_ms: None,
             }
         );
     }
 
     #[test]
-    fn discontinuity_clears_partial_transport_state() {
+    fn discontinuity_clears_partial_transport_state_and_starts_new_epoch() {
         let mut direct = DirectEarcDecoder::new(EngineConfig::default());
         direct.configure(format()).unwrap();
 
@@ -189,10 +264,14 @@ mod tests {
         assert!(after.discontinuity);
         assert_eq!(direct.pending_carrier_bytes(), 0);
         assert!(after.frames.is_empty());
+        let health = direct.transport_telemetry();
+        assert_eq!(health.observation_epoch, 2);
+        assert!(!health.iec61937_locked);
+        assert_eq!(health.bursts_since_lock, 0);
     }
 
     #[test]
-    fn transport_telemetry_reports_discarded_carrier_bytes() {
+    fn carrier_padding_does_not_claim_or_clear_parser_lock() {
         let mut direct = DirectEarcDecoder::new(EngineConfig::default());
         direct.configure(format()).unwrap();
 
@@ -200,9 +279,11 @@ mod tests {
         let health = direct.transport_telemetry();
 
         // The parser retains up to three bytes so a Pa/Pb preamble may straddle
-        // the next read boundary; the rest are explicitly accounted as discard.
+        // the next read boundary; ordinary padding is accounted as discard only.
         assert_eq!(health.pending_carrier_bytes, 3);
         assert_eq!(health.discarded_bytes, 5);
         assert_eq!(health.malformed_headers, 0);
+        assert!(!health.iec61937_locked);
+        assert_eq!(health.observation_epoch, 1);
     }
 }
