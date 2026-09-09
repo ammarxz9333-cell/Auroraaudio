@@ -27,6 +27,23 @@ pub struct DirectEarcDecodeBatch {
     pub transport_codecs: Vec<TransportCodec>,
 }
 
+/// Read-only IEC61937 parser health used during direct-eARC hardware bring-up.
+///
+/// `discarded_bytes` includes ordinary non-preamble carrier bytes such as idle
+/// padding, so it must not be interpreted by itself as an eARC unlock. A rising
+/// `malformed_headers` count is stronger evidence that a Pa/Pb candidate was
+/// followed by an invalid length/header. Physical unlock/xrun events remain an
+/// explicit responsibility of the ALSA/eARC capture layer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DirectEarcTransportTelemetry {
+    /// Incomplete canonical carrier bytes currently retained by the parser.
+    pub pending_carrier_bytes: usize,
+    /// Non-preamble bytes discarded while searching for the next Pa/Pb sync.
+    pub discarded_bytes: u64,
+    /// Pa/Pb candidates rejected because their payload length was impossible.
+    pub malformed_headers: u64,
+}
+
 /// Stateful direct-eARC front end.
 ///
 /// The wrapper deliberately clears any fixed codec hint supplied in
@@ -113,6 +130,15 @@ impl DirectEarcDecoder {
     pub fn pending_carrier_bytes(&self) -> usize {
         self.parser.pending_bytes()
     }
+
+    /// Snapshot of transport-parser health counters for bring-up diagnostics.
+    pub fn transport_telemetry(&self) -> DirectEarcTransportTelemetry {
+        DirectEarcTransportTelemetry {
+            pending_carrier_bytes: self.parser.pending_bytes(),
+            discarded_bytes: self.parser.discarded_bytes(),
+            malformed_headers: self.parser.malformed_headers(),
+        }
+    }
 }
 
 #[cfg(test)]
@@ -139,6 +165,14 @@ mod tests {
         assert_eq!(batch.bursts, 0);
         assert!(batch.frames.is_empty());
         assert_eq!(direct.pending_carrier_bytes(), 0);
+        assert_eq!(
+            direct.transport_telemetry(),
+            DirectEarcTransportTelemetry {
+                pending_carrier_bytes: 0,
+                discarded_bytes: 0,
+                malformed_headers: 0,
+            }
+        );
     }
 
     #[test]
@@ -155,5 +189,20 @@ mod tests {
         assert!(after.discontinuity);
         assert_eq!(direct.pending_carrier_bytes(), 0);
         assert!(after.frames.is_empty());
+    }
+
+    #[test]
+    fn transport_telemetry_reports_discarded_carrier_bytes() {
+        let mut direct = DirectEarcDecoder::new(EngineConfig::default());
+        direct.configure(format()).unwrap();
+
+        direct.push_carrier(&[0, 0, 0, 0, 0, 0, 0, 0], false).unwrap();
+        let health = direct.transport_telemetry();
+
+        // The parser retains up to three bytes so a Pa/Pb preamble may straddle
+        // the next read boundary; the rest are explicitly accounted as discard.
+        assert_eq!(health.pending_carrier_bytes, 3);
+        assert_eq!(health.discarded_bytes, 5);
+        assert_eq!(health.malformed_headers, 0);
     }
 }
