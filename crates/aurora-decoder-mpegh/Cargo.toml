@@ -16,5 +16,6 @@ native-mpegh = ["dep:libc"]
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-spatial-ir-v2 = { path = "../aurora-spatial-ir-v2" }
+aurora-spatial-transport-v2 = { path = "../aurora-spatial-transport-v2" }
 libc = { version = "0.2", optional = true }
 thiserror.workspace = true
