@@ -29,6 +29,7 @@ members = [
     "crates/aurora-iec61937",
     "crates/aurora-encoded-input",
     "crates/aurora-encoded-runtime",
+    "crates/aurora-alsa-input",
     "crates/aurora-alsa-output",
     "crates/aurora-realtime-audio-api",
     "crates/aurora-realtime-audio-cpal",
