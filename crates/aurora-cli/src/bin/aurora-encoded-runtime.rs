@@ -437,9 +437,16 @@ fn run_direct_stdin<R: Read, S: SpeakerSink>(
             joc,
         ));
     }
-    runtime
+    let final_batch = runtime
         .finish()
-        .context("direct eARC stdin ended on an incomplete serial-audio frame")?;
+        .context("direct eARC stdin finalization failed")?;
+    consume_batch(final_batch, sink, &mut stats)?;
+    let decoder = runtime.encoded().decoder();
+    reporter.publish(stats.snapshot_with_joc(
+        decoder.transport_telemetry(),
+        sink.output_health(),
+        decoder.engine().joc_health(),
+    ));
     Ok(stats)
 }
 
@@ -474,9 +481,14 @@ fn run_legacy<S: SpeakerSink>(
             joc,
         ));
     }
-    runtime
-        .finish()
-        .context("legacy runtime finalization failed")?;
+    let final_batch = runtime.finish().context("legacy runtime finalization failed")?;
+    consume_batch(final_batch, sink, &mut stats)?;
+    let decoder = runtime.encoded().decoder();
+    reporter.publish(stats.snapshot_with_joc(
+        decoder.transport_telemetry(),
+        sink.output_health(),
+        decoder.engine().joc_health(),
+    ));
     Ok(stats)
 }
 
