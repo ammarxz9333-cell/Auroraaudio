@@ -7,10 +7,10 @@ use crate::{
     candidate_family_for_domain, decode_native_paired_chunk,
     evaluate_exact_mpegh_scene_candidate, evaluate_mpegh_hoa_candidate,
     mpegh_reference_audio_block, MpeghCandidateDispatchError, MpeghCandidateFamily,
-    MpeghConformancePolicy, MpeghEvidenceGateOutcome, MpeghExactSceneError,
-    MpeghHoaCandidateDecision, MpeghHoaCandidateGateError, MpeghNativePairError,
-    MpeghPairedEvidence, MpeghPairedPlaybackDecision, MpeghPlaybackChoice,
-    MpeghRenderedPcmError, NativeMpeghDecoder,
+    MpeghConformancePolicy, MpeghEvidenceGateOutcome, MpeghHoaCandidateDecision,
+    MpeghHoaCandidateGateError, MpeghNativePairError, MpeghPairedEvidence,
+    MpeghPairedPlaybackDecision, MpeghPlaybackChoice, MpeghRenderedPcmError,
+    NativeMpeghDecoder,
 };
 
 /// Uniform Aurora candidate decision for one native MPEG-H immersive access
