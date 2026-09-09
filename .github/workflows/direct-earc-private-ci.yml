@@ -8,6 +8,8 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-iec61937/**"
+      - "crates/aurora-direct-earc-decoder/**"
+      - "crates/aurora-decoder-engine/Cargo.toml"
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
@@ -60,7 +62,7 @@ jobs:
       - name: Verify direct eARC formatting
         run: >-
           cargo +stable-x86_64-pc-windows-gnu fmt
-          --package aurora-iec61937 --package aurora-cli -- --check
+          --package aurora-iec61937 --package aurora-direct-earc-decoder --package aurora-cli -- --check
 
       - name: Check and test reusable IEC61937 parser
         run: |
@@ -69,6 +71,15 @@ jobs:
           cargo +stable-x86_64-pc-windows-gnu test -p aurora-iec61937
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-iec61937 --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Check and test direct eARC decoder bridge
+        run: |
+          cargo +stable-x86_64-pc-windows-gnu check -p aurora-direct-earc-decoder --all-targets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu test -p aurora-direct-earc-decoder
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-direct-earc-decoder --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test direct eARC binaries
