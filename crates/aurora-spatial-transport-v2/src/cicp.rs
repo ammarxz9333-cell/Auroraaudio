@@ -93,6 +93,9 @@ const LAYOUT_19: &[u8] = &[0, 1, 2, 3, 8, 9, 13, 14, 17, 18, 20, 21];
 const LAYOUT_20: &[u8] = &[0, 1, 2, 3, 8, 9, 13, 14, 32, 33, 20, 21, 37, 38];
 
 pub fn cicp_speaker_geometry(index: u8) -> Option<CicpSpeakerGeometry> {
+    if matches!(index, 11 | 12) {
+        return None;
+    }
     SPEAKERS.get(usize::from(index)).copied()
 }
 
@@ -163,6 +166,12 @@ mod tests {
     fn immersive_layout_13_has_24_members() {
         assert_eq!(cicp_layout_members(13).unwrap().len(), 24);
         assert!(cicp_layout_members(8).is_none());
+    }
+
+    #[test]
+    fn reserved_speaker_indices_do_not_resolve() {
+        assert!(cicp_speaker_geometry(11).is_none());
+        assert!(cicp_speaker_geometry(12).is_none());
     }
 
     #[test]
