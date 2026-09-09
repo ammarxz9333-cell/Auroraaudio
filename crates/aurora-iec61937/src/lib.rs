@@ -315,12 +315,12 @@ mod tests {
     }
 
     #[test]
-    fn malformed_huge_length_resynchronizes_without_allocating_payload() {
+    fn zero_length_header_resynchronizes_to_next_valid_burst() {
         let mut input = Vec::new();
         input.extend_from_slice(&PA_LE);
         input.extend_from_slice(&PB_LE);
-        input.extend_from_slice(&u16::from(DATA_TYPE_AC3).to_le_bytes());
-        input.extend_from_slice(&u16::MAX.to_le_bytes());
+        input.extend_from_slice(&u16::from(DATA_TYPE_EAC3).to_le_bytes());
+        input.extend_from_slice(&0_u16.to_le_bytes());
         input.extend_from_slice(&make_burst(
             DATA_TYPE_EAC3,
             &[0x0B, 0x77, 0x12, 0x34],
