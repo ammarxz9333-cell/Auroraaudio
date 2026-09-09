@@ -10,6 +10,7 @@
 mod external_channels;
 mod external_oam;
 mod external_pcm;
+mod spatial_transport;
 pub use external_channels::{
     parse_external_channel_metadata, MpeghAngularPrecision, MpeghChannelGroup,
     MpeghChannelMetadataPacket, MpeghChannelParseError, MpeghExplicitSpeaker,
@@ -23,6 +24,7 @@ pub use external_pcm::{
     decode_prerender_pcm, MpeghExternalLane, MpeghExternalTopology, MpeghPcmTopologyError,
     MpeghPrerenderPcm,
 };
+pub use spatial_transport::{build_spatial_transport_v2, MpeghSpatialTransportError};
 
 #[cfg(not(feature = "native-mpegh"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
