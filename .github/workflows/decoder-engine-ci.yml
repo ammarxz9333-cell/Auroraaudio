@@ -12,7 +12,9 @@ on:
       - "crates/aurora-spatial-ir/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
+      - "crates/aurora-decoder-iamf/**"
       - "crates/aurora-decoder-truehdd/**"
+      - "crates/aurora-super-decoder/**"
       - "crates/aurora-spatial-runtime/**"
       - "crates/aurora-renderer-api/**"
       - "crates/aurora-renderer-vbap/**"
@@ -27,7 +29,9 @@ on:
       - "crates/aurora-spatial-ir/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
+      - "crates/aurora-decoder-iamf/**"
       - "crates/aurora-decoder-truehdd/**"
+      - "crates/aurora-super-decoder/**"
       - "crates/aurora-spatial-runtime/**"
       - "crates/aurora-renderer-api/**"
       - "crates/aurora-renderer-vbap/**"
@@ -59,6 +63,10 @@ jobs:
         run: cargo check -p aurora-spatial-ir --all-targets
       - name: Check decoder engine
         run: cargo check -p aurora-decoder-engine --all-targets
+      - name: Check native IAMF adapter
+        run: cargo check -p aurora-decoder-iamf --all-targets
+      - name: Check Aurora super decoder
+        run: cargo check -p aurora-super-decoder --all-targets
       - name: Check spatial runtime
         run: cargo check -p aurora-spatial-runtime --all-targets
       - name: Check disabled TrueHD boundary on baseline toolchain
@@ -67,10 +75,18 @@ jobs:
         run: cargo test -p aurora-spatial-ir
       - name: Test decoder engine
         run: cargo test -p aurora-decoder-engine
+      - name: Test native IAMF adapter
+        run: cargo test -p aurora-decoder-iamf
+      - name: Test Aurora super decoder
+        run: cargo test -p aurora-super-decoder
       - name: Test spatial runtime
         run: cargo test -p aurora-spatial-runtime
       - name: Strict decoder clippy
         run: cargo clippy -p aurora-decoder-engine --all-targets -- -D warnings
+      - name: Strict IAMF clippy
+        run: cargo clippy -p aurora-decoder-iamf --all-targets -- -D warnings
+      - name: Strict super decoder clippy
+        run: cargo clippy -p aurora-super-decoder --all-targets -- -D warnings
       - name: Strict spatial runtime clippy
         run: cargo clippy -p aurora-spatial-runtime --all-targets -- -D warnings
       - name: Formatting
@@ -96,10 +112,16 @@ jobs:
         run: cargo generate-lockfile
       - name: Check native TrueHD adapter
         run: cargo check -p aurora-decoder-truehdd --features native-truehd --all-targets
+      - name: Check super decoder with native TrueHD
+        run: cargo check -p aurora-super-decoder --features native-truehd --all-targets
       - name: Test native TrueHD adapter
         run: cargo test -p aurora-decoder-truehdd --features native-truehd
+      - name: Test super decoder with native TrueHD
+        run: cargo test -p aurora-super-decoder --features native-truehd
       - name: Strict native TrueHD clippy
         run: cargo clippy -p aurora-decoder-truehdd --features native-truehd --all-targets -- -D warnings
+      - name: Strict super decoder TrueHD clippy
+        run: cargo clippy -p aurora-super-decoder --features native-truehd --all-targets -- -D warnings
       - name: Upload native TrueHD lockfile
         if: always()
         uses: actions/upload-artifact@v4
