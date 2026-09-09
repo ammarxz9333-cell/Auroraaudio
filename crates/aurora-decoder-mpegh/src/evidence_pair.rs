@@ -51,6 +51,8 @@ pub fn pair_mpegh_external_evidence_with_hoa(
     validate_reference(external, reference.as_ref())?;
 
     let scene = external.to_spatial_transport_v2(presentation_time_seconds, discontinuity)?;
+    validate_oam_span(external, scene.frame.decoded.audio.frame_count)?;
+
     if let Some(coefficients) = &hoa_coefficients {
         coefficients
             .validate()
@@ -81,6 +83,21 @@ pub fn pair_mpegh_external_evidence_with_hoa(
         reference,
         reference_layout: external.speaker_layout.clone(),
     })
+}
+
+fn validate_oam_span(
+    external: &MpeghExternalFrame,
+    decoded_frame_count: usize,
+) -> Result<(), MpeghEvidencePairError> {
+    if external.object_metadata.is_empty() {
+        return Ok(());
+    }
+    let packet = external
+        .parse_object_metadata()
+        .map_err(|error| MpeghEvidencePairError::InvalidOamSpan(error.to_string()))?;
+    packet
+        .validate_access_unit_span(decoded_frame_count)
+        .map_err(|error| MpeghEvidencePairError::InvalidOamSpan(error.to_string()))
 }
 
 fn validate_reference(
@@ -126,6 +143,8 @@ pub enum MpeghEvidencePairError {
     ReferenceSampleRateMismatch { external: u32, reference: u32 },
     #[error("MPEG-H reference layout has {speakers} speakers for {channels} rendered PCM channels")]
     ReferenceLayoutChannelMismatch { speakers: usize, channels: usize },
+    #[error("MPEG-H OAM subframe geometry is inconsistent with decoded PCM: {0}")]
+    InvalidOamSpan(String),
     #[error("MPEG-H HOA observer frame failed validation: {0}")]
     InvalidHoaCoefficients(String),
     #[error("MPEG-H HOA observer emitted coefficients with a convention other than ACN/N3D")]
