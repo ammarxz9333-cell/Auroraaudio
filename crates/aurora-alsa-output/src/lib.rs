@@ -277,7 +277,10 @@ impl NativeAlsaPlayback {
         Ok(())
     }
 
-    fn reset_for_discontinuity(&mut self) -> Result<(), AlsaOutputError> {
+    /// Discards queued pre-break PCM and prepares the same ALSA handle for the
+    /// next presentation epoch. Keeping one handle avoids a second-open `EBUSY`
+    /// failure on exclusive `hw:X,Y` devices and preserves cumulative telemetry.
+    pub fn reset_for_discontinuity(&mut self) -> Result<(), AlsaOutputError> {
         use alsa::pcm::State;
 
         match self.pcm.state() {
@@ -354,6 +357,10 @@ impl NativeAlsaPlayback {
         _interleaved_f32: &[f32],
         _discontinuity: bool,
     ) -> Result<(), AlsaOutputError> {
+        Err(AlsaOutputError::UnsupportedPlatform)
+    }
+
+    pub fn reset_for_discontinuity(&mut self) -> Result<(), AlsaOutputError> {
         Err(AlsaOutputError::UnsupportedPlatform)
     }
 
