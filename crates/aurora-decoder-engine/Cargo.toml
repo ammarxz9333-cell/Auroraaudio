@@ -10,7 +10,6 @@ publish = false
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-decoder-open = { path = "../aurora-decoder-open" }
-aurora-iec61937 = { path = "../aurora-iec61937" }
 aurora-spatial-ir = { path = "../aurora-spatial-ir" }
 oxideav-ac4 = { git = "https://github.com/OxideAV/oxideav-ac4", rev = "08a570fa60dea25d426260ad396763c3827ec969" }
 oxideav-core = "0.1"
