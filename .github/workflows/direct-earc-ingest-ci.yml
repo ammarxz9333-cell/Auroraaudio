@@ -13,6 +13,7 @@ on:
       - "crates/aurora-encoded-runtime/**"
       - "crates/aurora-alsa-input/**"
       - "crates/aurora-alsa-output/**"
+      - "crates/aurora-realtime-audio-cpal/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-spatial-runtime/**"
       - "crates/aurora-decoder-engine/Cargo.toml"
@@ -31,6 +32,7 @@ on:
       - "crates/aurora-encoded-runtime/**"
       - "crates/aurora-alsa-input/**"
       - "crates/aurora-alsa-output/**"
+      - "crates/aurora-realtime-audio-cpal/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-spatial-runtime/**"
       - "crates/aurora-decoder-engine/Cargo.toml"
@@ -66,6 +68,16 @@ jobs:
       - name: Resolve workspace lockfile
         run: cargo generate-lockfile
 
+      - name: Validate Linux dependency graph
+        run: |
+          cargo metadata --format-version 1 --locked > /tmp/aurora-metadata.json
+          cargo tree --target x86_64-unknown-linux-gnu -i alsa-sys
+          cargo tree --target x86_64-unknown-linux-gnu -p aurora-realtime-audio-cpal
+          if cargo tree --target x86_64-unknown-linux-gnu -p aurora-realtime-audio-cpal | grep -q '^.*cpal v'; then
+            echo 'CPAL unexpectedly entered the Linux dependency graph' >&2
+            exit 1
+          fi
+
       - name: Check formatting for direct eARC crates
         run: >-
           cargo fmt
@@ -75,6 +87,7 @@ jobs:
           --package aurora-encoded-runtime
           --package aurora-alsa-input
           --package aurora-alsa-output
+          --package aurora-realtime-audio-cpal
           --package aurora-cli
           -- --check
 
@@ -131,6 +144,15 @@ jobs:
 
       - name: Clippy native ALSA output backend
         run: cargo clippy -p aurora-alsa-output --all-targets -- -D warnings
+
+      - name: Check Linux CPAL compatibility stub
+        run: cargo check -p aurora-realtime-audio-cpal --all-targets
+
+      - name: Test Linux CPAL compatibility stub
+        run: cargo test -p aurora-realtime-audio-cpal
+
+      - name: Clippy Linux CPAL compatibility stub
+        run: cargo clippy -p aurora-realtime-audio-cpal --all-targets -- -D warnings
 
       - name: Check direct eARC binaries
         run: |
