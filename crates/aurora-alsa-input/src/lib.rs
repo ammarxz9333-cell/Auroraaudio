@@ -249,13 +249,23 @@ impl NativeAlsaCapture {
 }
 
 #[cfg(not(target_os = "linux"))]
-pub struct NativeAlsaCapture;
+pub struct NativeAlsaCapture {
+    telemetry: AlsaInputTelemetry,
+}
 
 #[cfg(not(target_os = "linux"))]
 impl NativeAlsaCapture {
     pub fn open(config: AlsaInputConfig) -> Result<Self, AlsaInputError> {
         validate_config(&config)?;
         Err(AlsaInputError::UnsupportedPlatform)
+    }
+
+    pub fn read_block(&mut self) -> Result<CaptureBlock, AlsaInputError> {
+        Err(AlsaInputError::UnsupportedPlatform)
+    }
+
+    pub fn telemetry(&self) -> &AlsaInputTelemetry {
+        &self.telemetry
     }
 }
 
