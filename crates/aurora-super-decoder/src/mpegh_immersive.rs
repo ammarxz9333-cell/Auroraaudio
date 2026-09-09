@@ -1,5 +1,6 @@
 #![cfg(feature = "native-mpegh")]
 
+use aurora_core::AudioBlock;
 use aurora_decoder_api::DecoderError;
 use aurora_decoder_mpegh::{
     evaluate_native_mpegh_immersive_evidence, pair_mpegh_external_evidence_with_hoa,
@@ -91,6 +92,34 @@ impl AuroraSuperDecoder {
             }
         }
     }
+
+    /// Decode one MPEG-H access unit and return only the speaker block that the
+    /// evidence gate authorizes for playback. A caller using this front door
+    /// cannot accidentally bypass the libmpegh fallback decision.
+    pub fn decode_mpegh_playback_chunk(
+        &mut self,
+        input: &[u8],
+        regularization: f64,
+        policy: MpeghConformancePolicy,
+    ) -> Result<Option<AudioBlock>, DecoderError> {
+        let Some(evaluation) = self.decode_and_evaluate_mpegh_immersive_chunk(
+            input,
+            regularization,
+            policy,
+        )? else {
+            return Ok(None);
+        };
+        evaluation
+            .decision
+            .into_selected_audio()
+            .map(Some)
+            .map_err(|error| {
+                self.mpegh_discontinuity = true;
+                DecoderError::Decode(format!(
+                    "MPEG-H evidence-gated playback selection failed: {error}"
+                ))
+            })
+    }
 }
 
 #[cfg(test)]
@@ -114,5 +143,19 @@ mod tests {
         assert_eq!(decoder.active_route(), ActiveRoute::MpegHNative);
         assert_eq!(decoder.mpegh_sample_cursor, 0);
         assert!(decoder.mpegh_discontinuity);
+    }
+
+    #[test]
+    fn playback_front_door_never_fabricates_audio_for_empty_input() {
+        let mut decoder = AuroraSuperDecoder::new(EngineConfig::default());
+        let result = decoder
+            .decode_mpegh_playback_chunk(
+                &[],
+                1.0e-6,
+                MpeghConformancePolicy::near_reference(),
+            )
+            .unwrap();
+        assert!(result.is_none());
+        assert_eq!(decoder.active_route(), ActiveRoute::MpegHNative);
     }
 }
