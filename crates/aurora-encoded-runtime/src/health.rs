@@ -8,6 +8,7 @@ use std::time::{Duration, Instant};
 use crossbeam_queue::ArrayQueue;
 
 use crate::PlaybackBatch;
+use aurora_decoder_engine::JocDecoderStatus;
 use aurora_direct_earc_decoder::DirectEarcTransportTelemetry;
 
 pub const DEFAULT_HEALTH_INTERVAL: Duration = Duration::from_secs(5);
@@ -54,6 +55,21 @@ impl RuntimeCounters {
         RuntimeHealthSnapshot {
             counters: self,
             parser,
+            joc: JocHealth::default(),
+            output,
+        }
+    }
+
+    pub fn snapshot_with_joc(
+        self,
+        parser: DirectEarcTransportTelemetry,
+        output: Option<OutputHealth>,
+        joc: &JocDecoderStatus,
+    ) -> RuntimeHealthSnapshot {
+        RuntimeHealthSnapshot {
+            counters: self,
+            parser,
+            joc: JocHealth::from(joc),
             output,
         }
     }
@@ -75,6 +91,34 @@ impl OutputHealth {
     }
 }
 
+/// Allocation-free subset of JOC decoder status suitable for the one-slot
+/// periodic health mailbox. Detailed layout/fallback strings remain available
+/// through `AuroraDecoderEngine::joc_status()` outside the realtime snapshot.
+#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
+pub struct JocHealth {
+    pub codec_classified_joc: bool,
+    pub speaker_render_active: bool,
+    pub channel_count: Option<usize>,
+    pub latency_samples: Option<usize>,
+    pub object_count: Option<u16>,
+    pub complexity_index: Option<u8>,
+    pub fallback_present: bool,
+}
+
+impl From<&JocDecoderStatus> for JocHealth {
+    fn from(status: &JocDecoderStatus) -> Self {
+        Self {
+            codec_classified_joc: status.codec_classified_joc,
+            speaker_render_active: status.speaker_render_active,
+            channel_count: status.channel_count,
+            latency_samples: status.latency_samples,
+            object_count: status.object_count,
+            complexity_index: status.complexity_index,
+            fallback_present: status.fallback_reason.is_some(),
+        }
+    }
+}
+
 /// Fixed-size, coherent observation at an ingest boundary. `None` means native
 /// output telemetry is unavailable (for example stdout), not zero XRUNs.
 /// Parser discarded bytes include carrier padding and NEVER imply eARC unlock.
@@ -83,6 +127,7 @@ impl OutputHealth {
 pub struct RuntimeHealthSnapshot {
     pub counters: RuntimeCounters,
     pub parser: DirectEarcTransportTelemetry,
+    pub joc: JocHealth,
     pub output: Option<OutputHealth>,
 }
 
@@ -187,15 +232,23 @@ mod tests {
     use super::*;
     use crate::SpeakerOutputFrame;
 
+    fn parser_snapshot() -> DirectEarcTransportTelemetry {
+        DirectEarcTransportTelemetry {
+            pending_carrier_bytes: 7,
+            discarded_bytes: 800,
+            malformed_headers: 2,
+            iec61937_locked: false,
+            observation_epoch: 3,
+            total_bursts: 11,
+            bursts_since_lock: 0,
+            total_format_changes: 1,
+            relocks: 1,
+            last_valid_burst_age_ms: None,
+        }
+    }
+
     fn snapshot() -> RuntimeHealthSnapshot {
-        RuntimeCounters::default().snapshot(
-            DirectEarcTransportTelemetry {
-                pending_carrier_bytes: 7,
-                discarded_bytes: 800,
-                malformed_headers: 2,
-            },
-            None,
-        )
+        RuntimeCounters::default().snapshot(parser_snapshot(), None)
     }
 
     #[test]
@@ -233,12 +286,37 @@ mod tests {
         assert_eq!(health.counters.capture_recoveries, 4);
         assert_eq!(health.counters.capture_discontinuities, 1);
         assert_eq!(health.parser, snapshot().parser);
+        assert_eq!(health.joc, JocHealth::default());
         assert_eq!(health.output.unwrap().xruns, 5);
         counters.record_batch(&PlaybackBatch {
             discontinuity: true,
             ..PlaybackBatch::default()
         });
         assert_eq!(counters.transport_discontinuities, 1);
+    }
+
+    #[test]
+    fn joc_status_is_reduced_to_allocation_free_health_fields() {
+        let detailed = JocDecoderStatus {
+            codec_classified_joc: true,
+            speaker_render_active: true,
+            layout_name: Some("7.1.4".to_owned()),
+            channel_count: Some(12),
+            latency_samples: Some(256),
+            object_count: Some(15),
+            complexity_index: Some(8),
+            fallback_reason: None,
+        };
+        let health = RuntimeCounters::default().snapshot_with_joc(
+            parser_snapshot(),
+            None,
+            &detailed,
+        );
+        assert!(health.joc.codec_classified_joc);
+        assert!(health.joc.speaker_render_active);
+        assert_eq!(health.joc.channel_count, Some(12));
+        assert_eq!(health.joc.object_count, Some(15));
+        assert!(!health.joc.fallback_present);
     }
 
     #[test]
