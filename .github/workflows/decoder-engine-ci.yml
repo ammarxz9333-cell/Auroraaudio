@@ -11,10 +11,12 @@ on:
       - "crates/aurora-decoder-api/**"
       - "crates/aurora-spatial-ir/**"
       - "crates/aurora-spatial-ir-v2/**"
+      - "crates/aurora-spatial-transport-v2/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
       - "crates/aurora-decoder-iamf/**"
       - "crates/aurora-decoder-truehdd/**"
+      - "crates/aurora-decoder-mpegh/**"
       - "crates/aurora-super-decoder/**"
       - "crates/aurora-spatial-runtime/**"
       - "crates/aurora-spatial-runtime-v2/**"
@@ -30,10 +32,12 @@ on:
       - "crates/aurora-decoder-api/**"
       - "crates/aurora-spatial-ir/**"
       - "crates/aurora-spatial-ir-v2/**"
+      - "crates/aurora-spatial-transport-v2/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
       - "crates/aurora-decoder-iamf/**"
       - "crates/aurora-decoder-truehdd/**"
+      - "crates/aurora-decoder-mpegh/**"
       - "crates/aurora-super-decoder/**"
       - "crates/aurora-spatial-runtime/**"
       - "crates/aurora-spatial-runtime-v2/**"
@@ -67,10 +71,14 @@ jobs:
         run: cargo check -p aurora-spatial-ir --all-targets
       - name: Check Spatial IR V2
         run: cargo check -p aurora-spatial-ir-v2 --all-targets
+      - name: Check Spatial Transport V2
+        run: cargo check -p aurora-spatial-transport-v2 --all-targets
       - name: Check decoder engine
         run: cargo check -p aurora-decoder-engine --all-targets
       - name: Check native IAMF adapter
         run: cargo check -p aurora-decoder-iamf --all-targets
+      - name: Check MPEG-H metadata and transport adapter without native linkage
+        run: cargo check -p aurora-decoder-mpegh --all-targets
       - name: Check Aurora super decoder
         run: cargo check -p aurora-super-decoder --all-targets
       - name: Check spatial runtime V1
@@ -83,10 +91,14 @@ jobs:
         run: cargo test -p aurora-spatial-ir
       - name: Test Spatial IR V2
         run: cargo test -p aurora-spatial-ir-v2
+      - name: Test Spatial Transport V2
+        run: cargo test -p aurora-spatial-transport-v2
       - name: Test decoder engine
         run: cargo test -p aurora-decoder-engine
       - name: Test native IAMF adapter
         run: cargo test -p aurora-decoder-iamf
+      - name: Test MPEG-H metadata and transport adapter
+        run: cargo test -p aurora-decoder-mpegh
       - name: Test Aurora super decoder
         run: cargo test -p aurora-super-decoder
       - name: Test spatial runtime V1
@@ -95,10 +107,14 @@ jobs:
         run: cargo test -p aurora-spatial-runtime-v2
       - name: Strict Spatial IR V2 clippy
         run: cargo clippy -p aurora-spatial-ir-v2 --all-targets -- -D warnings
+      - name: Strict Spatial Transport V2 clippy
+        run: cargo clippy -p aurora-spatial-transport-v2 --all-targets -- -D warnings
       - name: Strict decoder clippy
         run: cargo clippy -p aurora-decoder-engine --all-targets -- -D warnings
       - name: Strict IAMF clippy
         run: cargo clippy -p aurora-decoder-iamf --all-targets -- -D warnings
+      - name: Strict MPEG-H parser/transport clippy
+        run: cargo clippy -p aurora-decoder-mpegh --all-targets -- -D warnings
       - name: Strict super decoder clippy
         run: cargo clippy -p aurora-super-decoder --all-targets -- -D warnings
       - name: Strict spatial runtime V1 clippy
