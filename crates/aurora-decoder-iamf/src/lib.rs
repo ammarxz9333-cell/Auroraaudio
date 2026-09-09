@@ -1,60 +1,72 @@
-//! IAMF decoder adapter boundary.
+//! Aurora IAMF decoder adapter.
 //!
-//! This crate does not contain libiamf source. The intended integration path is
-//! an out-of-process libiamf-compatible decoder invoked by an Aurora adapter.
+//! The preferred runtime is the pinned pure-Rust `iamf-rs` implementation.
+//! It stays isolated behind Aurora's decoder boundary so the reference
+//! `libiamf` and `iamf-tools` implementations can remain independent
+//! conformance oracles rather than runtime dependencies.
 
-use aurora_core::AudioFormat;
-use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
+#[cfg(feature = "iamf-rs-native")]
+mod native;
 
-/// Preferred open immersive-audio decoder adapter placeholder.
-#[derive(Debug, Default, Clone)]
-pub struct IamfDecoderAdapter {
-    configured_format: Option<AudioFormat>,
-}
+#[cfg(feature = "iamf-rs-native")]
+pub use native::IamfDecoderAdapter;
 
-impl IamfDecoderAdapter {
-    /// Creates an IAMF adapter boundary.
-    pub fn new() -> Self {
-        Self::default()
+#[cfg(not(feature = "iamf-rs-native"))]
+mod disabled {
+    use aurora_core::AudioFormat;
+    use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
+
+    #[derive(Debug, Default, Clone)]
+    pub struct IamfDecoderAdapter {
+        configured_format: Option<AudioFormat>,
     }
-}
 
-impl Decoder for IamfDecoderAdapter {
-    fn info(&self) -> DecoderInfo {
-        DecoderInfo {
-            name: "libiamf out-of-process adapter",
-            production_ready: false,
-            maturity: "preferred-open-planned",
+    impl IamfDecoderAdapter {
+        pub fn new() -> Self {
+            Self::default()
         }
     }
 
-    fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError> {
-        self.configured_format = Some(output_format);
-        Ok(())
-    }
+    impl Decoder for IamfDecoderAdapter {
+        fn info(&self) -> DecoderInfo {
+            DecoderInfo {
+                name: "Aurora iamf-rs adapter (disabled)",
+                production_ready: false,
+                maturity: "feature-disabled",
+            }
+        }
 
-    fn decode_chunk(&mut self, _input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
-        Err(DecoderError::Unavailable(
-            "libiamf process integration is not enabled in Milestone 0D",
-        ))
-    }
+        fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError> {
+            self.configured_format = Some(output_format);
+            Ok(())
+        }
 
-    fn reset(&mut self) {
-        self.configured_format = None;
+        fn decode_chunk(&mut self, _input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
+            Err(DecoderError::Unavailable(
+                "native IAMF backend requires the iamf-rs-native feature",
+            ))
+        }
+
+        fn reset(&mut self) {
+            let configured = self.configured_format;
+            *self = Self::default();
+            self.configured_format = configured;
+        }
     }
 }
+
+#[cfg(not(feature = "iamf-rs-native"))]
+pub use disabled::IamfDecoderAdapter;
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use aurora_decoder_api::Decoder;
 
+    #[cfg(not(feature = "iamf-rs-native"))]
     #[test]
-    fn iamf_adapter_reports_preferred_open_status() {
+    fn disabled_adapter_reports_feature_boundary_truthfully() {
         let adapter = IamfDecoderAdapter::new();
-        let info = adapter.info();
-
-        assert_eq!(info.maturity, "preferred-open-planned");
-        assert!(!info.production_ready);
+        assert_eq!(adapter.info().maturity, "feature-disabled");
     }
 }
