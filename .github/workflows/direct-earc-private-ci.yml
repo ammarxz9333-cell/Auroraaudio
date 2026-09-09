@@ -67,7 +67,7 @@ jobs:
 
       - name: Verify committed workspace lockfile
         run: |
-          cargo +$env:AURORA_RUST_TOOLCHAIN metadata --format-version 1 --locked | Out-Null
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" metadata --format-version 1 --locked | Out-Null
           if ($LASTEXITCODE -ne 0) {
             Write-Error "Cargo.lock is stale or incomplete; regenerate and commit the exact dependency graph."
             exit $LASTEXITCODE
@@ -75,7 +75,7 @@ jobs:
 
       - name: Verify direct eARC formatting
         run: >-
-          cargo +$env:AURORA_RUST_TOOLCHAIN fmt
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" fmt
           --package aurora-iec61937
           --package aurora-decoder-open
           --package aurora-decoder-engine
@@ -89,92 +89,92 @@ jobs:
 
       - name: Check and test reusable IEC61937 parser
         run: |
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-iec61937 --all-targets
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-iec61937 --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-iec61937
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-iec61937
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-iec61937 --all-targets -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-iec61937 --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test open AC3 EAC3 JOC decoder adapter
         run: |
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-decoder-open --all-targets
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-decoder-open --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-decoder-open
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-decoder-open
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test decoder engine lifecycle
         run: |
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-decoder-engine --all-targets
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-decoder-engine --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-decoder-engine
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-decoder-engine
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-decoder-engine --all-targets -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-decoder-engine --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test direct eARC decoder bridge
         run: |
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-direct-earc-decoder --all-targets
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-direct-earc-decoder --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-direct-earc-decoder
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-direct-earc-decoder
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-direct-earc-decoder --all-targets -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-direct-earc-decoder --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test unified encoded input selector
         run: |
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-encoded-input --all-targets
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-encoded-input --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-encoded-input
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-encoded-input
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-encoded-input --all-targets -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-encoded-input --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test unified encoded runtime
         run: |
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-encoded-runtime --all-targets
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-encoded-runtime --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-encoded-runtime
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-encoded-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-encoded-runtime --all-targets -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-encoded-runtime --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test native ALSA input portability layer
         run: |
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-alsa-input --all-targets
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-alsa-input --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-alsa-input
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-alsa-input
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-alsa-input --all-targets -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-alsa-input --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test native ALSA output portability layer
         run: |
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-alsa-output --all-targets
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-alsa-output --all-targets
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-alsa-output
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-alsa-output
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-alsa-output --all-targets -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-alsa-output --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test direct eARC binaries
         run: |
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-cli --bin aurora-direct-earc-ingest
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-cli --bin aurora-direct-earc-ingest
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-cli --bin aurora-direct-earc-ingest
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-cli --bin aurora-direct-earc-ingest
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-cli --bin aurora-direct-earc-probe
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-cli --bin aurora-direct-earc-probe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-cli --bin aurora-direct-earc-probe
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-cli --bin aurora-direct-earc-probe
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN check --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN test --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          cargo +$env:AURORA_RUST_TOOLCHAIN clippy --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
