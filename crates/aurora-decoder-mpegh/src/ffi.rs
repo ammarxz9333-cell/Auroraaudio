@@ -81,8 +81,6 @@ pub struct IaInputConfig {
 
 impl Default for IaInputConfig {
     fn default() -> Self {
-        // The C testbench zero-initializes the full structure before applying
-        // documented defaults. Zero is therefore the ABI-safe baseline.
         unsafe { core::mem::zeroed() }
     }
 }
@@ -157,4 +155,51 @@ unsafe extern "C" {
         output: *mut c_void,
     ) -> IaErrorCode;
     pub fn ia_mpegh_dec_delete(output: *mut c_void) -> IaErrorCode;
+}
+
+#[cfg(all(test, target_pointer_width = "64"))]
+mod abi_tests {
+    use super::*;
+    use core::mem::{align_of, offset_of, size_of};
+
+    #[test]
+    fn mem_info_table_matches_pinned_c_header() {
+        assert_eq!(size_of::<IaMemInfoTable>(), 24);
+        assert_eq!(align_of::<IaMemInfoTable>(), 8);
+        assert_eq!(offset_of!(IaMemInfoTable, mem_ptr), 16);
+    }
+
+    #[test]
+    fn input_config_matches_pinned_c_header() {
+        assert_eq!(size_of::<IaInputConfig>(), 208);
+        assert_eq!(align_of::<IaInputConfig>(), 8);
+        assert_eq!(offset_of!(IaInputConfig, i_preset_id), 28);
+        assert_eq!(offset_of!(IaInputConfig, num_inp_bytes), 32);
+        assert_eq!(offset_of!(IaInputConfig, ptr_ei_buf), 64);
+        assert_eq!(offset_of!(IaInputConfig, ptr_brir_buf), 192);
+        assert_eq!(offset_of!(IaInputConfig, enable_resamp), 200);
+        assert_eq!(offset_of!(IaInputConfig, out_samp_freq), 204);
+    }
+
+    #[test]
+    fn output_config_matches_pinned_c_header() {
+        assert_eq!(size_of::<IaOutputConfig>(), 1248);
+        assert_eq!(align_of::<IaOutputConfig>(), 8);
+        assert_eq!(offset_of!(IaOutputConfig, pv_ia_process_api_obj), 56);
+        assert_eq!(offset_of!(IaOutputConfig, arr_alloc_memory), 64);
+        assert_eq!(offset_of!(IaOutputConfig, p_lib_name), 864);
+        assert_eq!(offset_of!(IaOutputConfig, mem_info_table), 904);
+        assert_eq!(offset_of!(IaOutputConfig, oam_data_present), 1000);
+        assert_eq!(offset_of!(IaOutputConfig, num_speakers), 1040);
+        assert_eq!(offset_of!(IaOutputConfig, is_lfe), 1056);
+        assert_eq!(offset_of!(IaOutputConfig, azimuth), 1152);
+        assert_eq!(offset_of!(IaOutputConfig, elevation), 1200);
+    }
+
+    #[test]
+    fn top_level_api_layout_matches_pinned_c_header() {
+        assert_eq!(size_of::<IaMpeghdApiStruct>(), 1456);
+        assert_eq!(align_of::<IaMpeghdApiStruct>(), 8);
+        assert_eq!(offset_of!(IaMpeghdApiStruct, output_config), 208);
+    }
 }
