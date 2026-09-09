@@ -3,9 +3,7 @@ use std::collections::HashMap;
 use aurora_core::{AudioBlock, Listener, Speaker, Vector3};
 use aurora_renderer_api::{RenderObject, Renderer, RendererError, RendererScratch, SpeakerGain};
 use aurora_renderer_vbap::Vbap3dRenderer;
-use aurora_spatial_ir_v2::{
-    CoordinateSpace, SpatialPosition, SpatialRenderingProperties,
-};
+use aurora_spatial_ir_v2::{CoordinateSpace, SpatialPosition, SpatialRenderingProperties};
 use aurora_spatial_transport_v2::{
     cicp_layout_member_geometry, cicp_layout_members, TransportSceneDomain,
 };
@@ -15,24 +13,24 @@ use crate::{reference_roles, MpeghPairedEvidence, MpeghRoleConformanceError};
 
 const EPSILON: f32 = 1.0e-8;
 
-/// Render the object contribution of a conservative MPEG-H Objects+HOA scene.
+/// Render only the object contribution of a conservative MPEG-H HOA scene.
 ///
-/// Admission is intentionally narrow: every object must be active for the whole
+/// Admitted transport domains are Objects+HOA and Bed+Objects+HOA; bed and HOA
+/// contributions are deliberately ignored by this plane renderer and are mixed
+/// by higher-level candidate paths. Every object must be active for the whole
 /// access unit, have exactly one metadata update at sample zero, carry no ramp,
 /// spread, zone/exclusion, snap, screen or other V2-only render property, and
-/// use listener-relative MPEG-H spherical coordinates. Dynamic/rich OAM remains
-/// on the libmpegh reference path until Aurora's stateful object renderer is
-/// admitted for the same semantics.
+/// use listener-relative MPEG-H spherical coordinates.
 pub fn render_static_mpegh_object_plane(
     pair: &MpeghPairedEvidence,
 ) -> Result<AudioBlock, MpeghObjectCandidateError> {
-    if pair.scene.domain != TransportSceneDomain::ObjectsAndHoa {
-        return Err(MpeghObjectCandidateError::UnsupportedDomain {
-            domain: format!("{:?}", pair.scene.domain),
-        });
-    }
-    if !pair.scene.bed_signals.is_empty() {
-        return Err(MpeghObjectCandidateError::BedStatePresent);
+    match pair.scene.domain {
+        TransportSceneDomain::ObjectsAndHoa | TransportSceneDomain::BedObjectsAndHoa => {}
+        domain => {
+            return Err(MpeghObjectCandidateError::UnsupportedDomain {
+                domain: format!("{domain:?}"),
+            })
+        }
     }
     pair.scene
         .validate()
@@ -73,12 +71,7 @@ pub fn render_static_mpegh_object_plane(
     };
     let frame_count = frame.decoded.audio.frame_count;
     let mut renderer = Vbap3dRenderer::new().with_smoothing(1.0);
-    renderer.configure(
-        speakers,
-        48_000,
-        frame_count.max(1),
-        object_count,
-    )?;
+    renderer.configure(speakers, 48_000, frame_count.max(1), object_count)?;
     renderer.prepare_listener(&listener)?;
     let mut scratch = RendererScratch::new(renderer.required_scratch_size()?);
     let speaker_count = renderer.output_channel_count();
@@ -101,11 +94,7 @@ pub fn render_static_mpegh_object_plane(
                     elevation_degrees,
                     distance,
                 },
-            ) => spherical_direction_to_cartesian(
-                azimuth_degrees,
-                elevation_degrees,
-                distance.max(EPSILON),
-            ),
+            ) => spherical_direction_to_cartesian(azimuth_degrees, elevation_degrees, distance),
             _ => {
                 return Err(MpeghObjectCandidateError::UnsupportedCoordinateSpace {
                     id: signal.id.clone(),
@@ -189,7 +178,9 @@ fn static_object_updates<'a>(
     Ok(updates)
 }
 
-fn reference_speakers(pair: &MpeghPairedEvidence) -> Result<Vec<crate::MpeghSpeaker>, MpeghObjectCandidateError> {
+fn reference_speakers(
+    pair: &MpeghPairedEvidence,
+) -> Result<Vec<crate::MpeghSpeaker>, MpeghObjectCandidateError> {
     if !pair.reference_layout.speakers.is_empty() {
         return Ok(pair.reference_layout.speakers.clone());
     }
@@ -239,14 +230,12 @@ fn db_to_linear(db: f32) -> f32 {
 
 #[derive(Debug, Error)]
 pub enum MpeghObjectCandidateError {
-    #[error("MPEG-H point-object candidate currently requires ObjectsAndHoa, got {domain}")]
+    #[error("MPEG-H point-object plane does not support scene domain {domain}")]
     UnsupportedDomain { domain: String },
-    #[error("MPEG-H ObjectsAndHoa candidate unexpectedly contains bed signals")]
-    BedStatePresent,
+    #[error("MPEG-H scene contains no object signals")]
+    NoObjects,
     #[error("MPEG-H transport scene failed validation: {0}")]
     InvalidTransport(String),
-    #[error("MPEG-H ObjectsAndHoa scene contains no objects")]
-    NoObjects,
     #[error("paired MPEG-H evidence has no resolvable reference speaker layout")]
     MissingReferenceSpeakerLayout,
     #[error("CICP layout {cicp_index} member {member_index} has no speaker geometry")]
