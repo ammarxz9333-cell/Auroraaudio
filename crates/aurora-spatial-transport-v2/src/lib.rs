@@ -8,11 +8,18 @@
 
 #![forbid(unsafe_code)]
 
+mod cicp;
+
 use std::collections::HashSet;
 
 use aurora_core::ChannelRole;
 use aurora_spatial_ir_v2::{SpatialDecodedFrame, SpatialDomain};
 use thiserror::Error;
+
+pub use cicp::{
+    cicp_layout_member_geometry, cicp_layout_member_speaker_index, cicp_layout_members,
+    cicp_speaker_geometry, CicpSpeakerGeometry,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportSceneDomain {
@@ -42,13 +49,17 @@ pub struct TransportBedSignalBinding {
     pub target: BedSignalTarget,
 }
 
+impl TransportBedSignalBinding {
+    pub fn resolved_target(&self) -> Result<ResolvedBedSignalTarget, SpatialTransportError> {
+        resolve_bed_target(&self.target)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq)]
 pub enum BedSignalTarget {
     /// Existing Aurora semantic bed target.
     SemanticRole(ChannelRole),
-    /// One member of a standardized CICP loudspeaker layout. The member index
-    /// is preserved even when Aurora does not yet carry the corresponding CICP
-    /// geometry table.
+    /// One member of a standardized CICP loudspeaker layout.
     CicpLayoutMember {
         layout_index: u8,
         member_index: u16,
@@ -57,6 +68,20 @@ pub enum BedSignalTarget {
     CicpSpeakerIndex(u8),
     /// Explicit/flexible speaker description.
     ExplicitGeometry(ExplicitSpeakerGeometry),
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum ResolvedBedSignalTarget {
+    SemanticRole(ChannelRole),
+    Geometry(ResolvedSpeakerGeometry),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ResolvedSpeakerGeometry {
+    pub azimuth_degrees: f32,
+    pub elevation_degrees: f32,
+    pub is_lfe: bool,
+    pub screen_relative: bool,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -153,6 +178,60 @@ impl SpatialTransportFrame {
     }
 }
 
+pub fn resolve_bed_target(
+    target: &BedSignalTarget,
+) -> Result<ResolvedBedSignalTarget, SpatialTransportError> {
+    match target {
+        BedSignalTarget::SemanticRole(role) => {
+            Ok(ResolvedBedSignalTarget::SemanticRole(role.clone()))
+        }
+        BedSignalTarget::CicpLayoutMember {
+            layout_index,
+            member_index,
+        } => {
+            let geometry = cicp_layout_member_geometry(*layout_index, *member_index).ok_or(
+                SpatialTransportError::UnknownCicpLayoutMember {
+                    layout_index: *layout_index,
+                    member_index: *member_index,
+                },
+            )?;
+            Ok(ResolvedBedSignalTarget::Geometry(cicp_to_resolved(geometry)))
+        }
+        BedSignalTarget::CicpSpeakerIndex(index) => {
+            let geometry = cicp_speaker_geometry(*index)
+                .ok_or(SpatialTransportError::UnknownCicpSpeakerIndex(*index))?;
+            Ok(ResolvedBedSignalTarget::Geometry(cicp_to_resolved(geometry)))
+        }
+        BedSignalTarget::ExplicitGeometry(geometry) => {
+            validate_explicit_geometry(geometry)?;
+            let elevation_degrees = match &geometry.elevation {
+                SpeakerElevation::Degrees(value) => *value,
+                SpeakerElevation::CodecClass { codec, class } => {
+                    return Err(SpatialTransportError::UnresolvedCodecElevationClass {
+                        codec: codec.clone(),
+                        class: *class,
+                    })
+                }
+            };
+            Ok(ResolvedBedSignalTarget::Geometry(ResolvedSpeakerGeometry {
+                azimuth_degrees: geometry.azimuth_degrees,
+                elevation_degrees,
+                is_lfe: geometry.is_lfe,
+                screen_relative: false,
+            }))
+        }
+    }
+}
+
+fn cicp_to_resolved(geometry: CicpSpeakerGeometry) -> ResolvedSpeakerGeometry {
+    ResolvedSpeakerGeometry {
+        azimuth_degrees: f32::from(geometry.azimuth_degrees),
+        elevation_degrees: f32::from(geometry.elevation_degrees),
+        is_lfe: geometry.is_lfe,
+        screen_relative: geometry.screen_relative,
+    }
+}
+
 fn validate_lane(
     lane: usize,
     channels: usize,
@@ -170,40 +249,53 @@ fn validate_lane(
 fn validate_bed_target(target: &BedSignalTarget) -> Result<(), SpatialTransportError> {
     match target {
         BedSignalTarget::SemanticRole(_) => Ok(()),
-        BedSignalTarget::CicpLayoutMember { layout_index, .. } => {
-            if *layout_index == 0 || *layout_index > 63 {
-                return Err(SpatialTransportError::InvalidCicpLayoutIndex(*layout_index));
+        BedSignalTarget::CicpLayoutMember {
+            layout_index,
+            member_index,
+        } => {
+            if cicp_layout_members(*layout_index).is_none() {
+                return Err(SpatialTransportError::UnknownCicpLayout(*layout_index));
+            }
+            if cicp_layout_member_geometry(*layout_index, *member_index).is_none() {
+                return Err(SpatialTransportError::UnknownCicpLayoutMember {
+                    layout_index: *layout_index,
+                    member_index: *member_index,
+                });
             }
             Ok(())
         }
         BedSignalTarget::CicpSpeakerIndex(index) => {
-            if *index > 127 {
-                return Err(SpatialTransportError::InvalidCicpSpeakerIndex(*index));
+            if cicp_speaker_geometry(*index).is_none() {
+                return Err(SpatialTransportError::UnknownCicpSpeakerIndex(*index));
             }
             Ok(())
         }
-        BedSignalTarget::ExplicitGeometry(geometry) => {
-            if !geometry.azimuth_degrees.is_finite()
-                || !(-180.0..=180.0).contains(&geometry.azimuth_degrees)
-            {
-                return Err(SpatialTransportError::InvalidExplicitAzimuth(
-                    geometry.azimuth_degrees,
-                ));
-            }
-            match &geometry.elevation {
-                SpeakerElevation::Degrees(value)
-                    if value.is_finite() && (-90.0..=90.0).contains(value) => {}
-                SpeakerElevation::Degrees(value) => {
-                    return Err(SpatialTransportError::InvalidExplicitElevation(*value))
-                }
-                SpeakerElevation::CodecClass { codec, .. } if codec.trim().is_empty() => {
-                    return Err(SpatialTransportError::EmptyCodecClassName)
-                }
-                SpeakerElevation::CodecClass { .. } => {}
-            }
-            Ok(())
-        }
+        BedSignalTarget::ExplicitGeometry(geometry) => validate_explicit_geometry(geometry),
     }
+}
+
+fn validate_explicit_geometry(
+    geometry: &ExplicitSpeakerGeometry,
+) -> Result<(), SpatialTransportError> {
+    if !geometry.azimuth_degrees.is_finite()
+        || !(-180.0..=180.0).contains(&geometry.azimuth_degrees)
+    {
+        return Err(SpatialTransportError::InvalidExplicitAzimuth(
+            geometry.azimuth_degrees,
+        ));
+    }
+    match &geometry.elevation {
+        SpeakerElevation::Degrees(value)
+            if value.is_finite() && (-90.0..=90.0).contains(value) => {}
+        SpeakerElevation::Degrees(value) => {
+            return Err(SpatialTransportError::InvalidExplicitElevation(*value))
+        }
+        SpeakerElevation::CodecClass { codec, .. } if codec.trim().is_empty() => {
+            return Err(SpatialTransportError::EmptyCodecClassName)
+        }
+        SpeakerElevation::CodecClass { .. } => {}
+    }
+    Ok(())
 }
 
 fn derive_domain(
@@ -249,16 +341,23 @@ pub enum SpatialTransportError {
         declared: SpatialDomain,
         expected: SpatialDomain,
     },
-    #[error("invalid CICP layout index {0}")]
-    InvalidCicpLayoutIndex(u8),
-    #[error("invalid CICP speaker index {0}")]
-    InvalidCicpSpeakerIndex(u8),
+    #[error("CICP layout {0} is not present in the admitted geometry table")]
+    UnknownCicpLayout(u8),
+    #[error("CICP layout {layout_index} has no resolvable member {member_index}")]
+    UnknownCicpLayoutMember {
+        layout_index: u8,
+        member_index: u16,
+    },
+    #[error("CICP speaker index {0} is unknown or reserved")]
+    UnknownCicpSpeakerIndex(u8),
     #[error("explicit speaker azimuth {0} is invalid")]
     InvalidExplicitAzimuth(f32),
     #[error("explicit speaker elevation {0} is invalid")]
     InvalidExplicitElevation(f32),
     #[error("codec-specific elevation class has an empty codec name")]
     EmptyCodecClassName,
+    #[error("codec-specific elevation class {class} from '{codec}' has no admitted degree mapping")]
+    UnresolvedCodecElevationClass { codec: String, class: u8 },
 }
 
 #[cfg(test)]
@@ -342,6 +441,46 @@ mod tests {
         assert!(matches!(
             frame.validate(),
             Err(SpatialTransportError::UnownedPcmLanes { .. })
+        ));
+    }
+
+    #[test]
+    fn resolves_cicp_layout_member_to_physical_geometry() {
+        let resolved = resolve_bed_target(&BedSignalTarget::CicpLayoutMember {
+            layout_index: 6,
+            member_index: 4,
+        })
+        .unwrap();
+        let ResolvedBedSignalTarget::Geometry(geometry) = resolved else {
+            panic!("expected CICP geometry")
+        };
+        assert_eq!(geometry.azimuth_degrees, 110.0);
+        assert_eq!(geometry.elevation_degrees, 0.0);
+        assert!(!geometry.is_lfe);
+    }
+
+    #[test]
+    fn rejects_reserved_cicp_speaker_index() {
+        assert!(matches!(
+            resolve_bed_target(&BedSignalTarget::CicpSpeakerIndex(11)),
+            Err(SpatialTransportError::UnknownCicpSpeakerIndex(11))
+        ));
+    }
+
+    #[test]
+    fn codec_elevation_class_is_preserved_but_not_guessed() {
+        let target = BedSignalTarget::ExplicitGeometry(ExplicitSpeakerGeometry {
+            azimuth_degrees: 0.0,
+            elevation: SpeakerElevation::CodecClass {
+                codec: "mpeg-h".into(),
+                class: 2,
+            },
+            is_lfe: false,
+        });
+        assert!(validate_bed_target(&target).is_ok());
+        assert!(matches!(
+            resolve_bed_target(&target),
+            Err(SpatialTransportError::UnresolvedCodecElevationClass { .. })
         ));
     }
 }
