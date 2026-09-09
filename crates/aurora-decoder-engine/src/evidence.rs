@@ -9,20 +9,12 @@ use crate::catalog::BackendId;
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum EvidenceTier {
-    /// Known candidate only; no Aurora integration is claimed.
     Catalogued = 0,
-    /// Wired behind the Aurora boundary, but current-branch compile/conformance
-    /// evidence has not yet passed all gates.
     Integrated = 1,
-    /// Reproducible build/test evidence exists for the pinned revision.
     BuildVerified = 2,
-    /// Deterministic corpus comparison against an independent reference passed.
     CorpusVerified = 3,
-    /// Corruption/fuzz/panic-safety acceptance gates passed.
     FuzzVerified = 4,
-    /// Realtime latency, allocation and continuity gates passed on target class.
     RealtimeVerified = 5,
-    /// All required technical and product release gates are satisfied.
     ProductReady = 6,
 }
 
@@ -64,8 +56,6 @@ const fn catalogued(backend: BackendId) -> BackendEvidence {
     }
 }
 
-/// Evidence state for the exact Aurora branch, not a claim about the upstream
-/// project in isolation. Tiers only move upward when artifacts are retained.
 pub const fn evidence_for(backend: BackendId) -> BackendEvidence {
     match backend {
         BackendId::OpenJoc => integrated(backend, true),
@@ -73,6 +63,7 @@ pub const fn evidence_for(backend: BackendId) -> BackendEvidence {
         BackendId::OxideAc4 => integrated(backend, true),
         BackendId::OxideDtsCore => integrated(backend, true),
         BackendId::FfmpegDtsHd => integrated(backend, true),
+        BackendId::IamfRust => integrated(backend, true),
         BackendId::FfmpegWorker => integrated(backend, true),
         BackendId::TrueHdNative
         | BackendId::OxideAac
@@ -96,6 +87,7 @@ mod tests {
             BackendId::OxideAc4,
             BackendId::OxideDtsCore,
             BackendId::FfmpegDtsHd,
+            BackendId::IamfRust,
             BackendId::FfmpegWorker,
         ] {
             let evidence = evidence_for(backend);
@@ -106,7 +98,7 @@ mod tests {
     }
 
     #[test]
-    fn best_of_breed_candidates_do_not_fake_integration() {
+    fn best_of_breed_reference_candidates_do_not_fake_integration() {
         for backend in [
             BackendId::TrueHdNative,
             BackendId::LibIamfReference,
