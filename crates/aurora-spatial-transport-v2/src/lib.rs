@@ -2,9 +2,9 @@
 //!
 //! Spatial IR V2 remains the object/render-intent contract used by existing
 //! AC-4 and TrueHD paths. This layer adds signal ownership that V2 could not
-//! represent losslessly: CICP/flexible bed targets and raw HOA transport lanes.
-//! It is deliberately fail-closed and requires every decoded PCM lane to have a
-//! unique owner.
+//! represent losslessly: CICP/flexible bed targets, HOA transport groups, and
+//! opaque codec metadata planes. It is deliberately fail-closed and requires
+//! every decoded PCM lane to have a unique owner.
 
 #![forbid(unsafe_code)]
 
@@ -41,6 +41,11 @@ pub struct SpatialTransportFrame {
     pub domain: TransportSceneDomain,
     pub bed_signals: Vec<TransportBedSignalBinding>,
     pub hoa_signals: Vec<HoaSignalBinding>,
+    pub hoa_groups: Vec<HoaGroupBinding>,
+    /// Lossless original metadata planes. These are not renderer inputs; they
+    /// allow future Aurora revisions to recover codec-specific semantics that
+    /// the current generic scene model does not yet interpret.
+    pub codec_metadata: Vec<OpaqueCodecMetadata>,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -57,16 +62,12 @@ impl TransportBedSignalBinding {
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum BedSignalTarget {
-    /// Existing Aurora semantic bed target.
     SemanticRole(ChannelRole),
-    /// One member of a standardized CICP loudspeaker layout.
     CicpLayoutMember {
         layout_index: u8,
         member_index: u16,
     },
-    /// Direct CICP loudspeaker index.
     CicpSpeakerIndex(u8),
-    /// Explicit/flexible speaker description.
     ExplicitGeometry(ExplicitSpeakerGeometry),
 }
 
@@ -94,16 +95,40 @@ pub struct ExplicitSpeakerGeometry {
 #[derive(Debug, Clone, PartialEq)]
 pub enum SpeakerElevation {
     Degrees(f32),
-    /// Some immersive formats encode an elevation class rather than an explicit
-    /// angle. Preserve the class losslessly until a codec/CICP geometry table
-    /// maps it into degrees.
     CodecClass { codec: String, class: u8 },
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct HoaSignalBinding {
     pub pcm_channel_index: usize,
     pub transport_index: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HoaGroupBinding {
+    pub group_index: usize,
+    /// HOA transport indices (not PCM lane indices) owned by this group.
+    pub transport_indices: Vec<usize>,
+    pub order: u16,
+    pub fixed_position: bool,
+    pub priority: u8,
+    pub uses_nfc: bool,
+    pub nfc_reference_distance_raw: Option<u32>,
+    pub matrix: Option<OpaqueBitPayload>,
+    pub screen_relative: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpaqueBitPayload {
+    pub bit_length: usize,
+    pub bytes: Vec<u8>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpaqueCodecMetadata {
+    pub codec: String,
+    pub kind: String,
+    pub bytes: Vec<u8>,
 }
 
 impl SpatialTransportFrame {
@@ -138,6 +163,8 @@ impl SpatialTransportFrame {
                 });
             }
         }
+        validate_hoa_groups(&self.hoa_groups, &hoa_indices)?;
+        validate_codec_metadata(&self.codec_metadata)?;
 
         if lanes.len() != channels {
             return Err(SpatialTransportError::UnownedPcmLanes {
@@ -158,8 +185,6 @@ impl SpatialTransportFrame {
             });
         }
 
-        // The embedded V2 domain is a compatibility projection only. Validate
-        // that it does not contradict the object signal set carried by V2.
         let projected = if object_ids.is_empty() {
             SpatialDomain::DiscreteBed
         } else if self.bed_signals.is_empty() {
@@ -298,6 +323,94 @@ fn validate_explicit_geometry(
     Ok(())
 }
 
+fn validate_hoa_groups(
+    groups: &[HoaGroupBinding],
+    hoa_indices: &HashSet<usize>,
+) -> Result<(), SpatialTransportError> {
+    if hoa_indices.is_empty() {
+        if !groups.is_empty() {
+            return Err(SpatialTransportError::HoaGroupsWithoutSignals);
+        }
+        return Ok(());
+    }
+    if groups.is_empty() {
+        return Err(SpatialTransportError::HoaSignalsWithoutGroups);
+    }
+
+    let mut group_ids = HashSet::with_capacity(groups.len());
+    let mut assigned = HashSet::with_capacity(hoa_indices.len());
+    for group in groups {
+        if !group_ids.insert(group.group_index) {
+            return Err(SpatialTransportError::DuplicateHoaGroupIndex {
+                index: group.group_index,
+            });
+        }
+        if group.transport_indices.is_empty() {
+            return Err(SpatialTransportError::EmptyHoaGroup {
+                index: group.group_index,
+            });
+        }
+        if group.priority > 7 {
+            return Err(SpatialTransportError::InvalidHoaPriority {
+                index: group.group_index,
+                priority: group.priority,
+            });
+        }
+        if group.uses_nfc != group.nfc_reference_distance_raw.is_some() {
+            return Err(SpatialTransportError::InvalidHoaNfcState {
+                index: group.group_index,
+            });
+        }
+        if let Some(matrix) = &group.matrix {
+            validate_opaque_bits(matrix)?;
+        }
+        for transport_index in &group.transport_indices {
+            if !hoa_indices.contains(transport_index) {
+                return Err(SpatialTransportError::HoaGroupReferencesUnknownTransport {
+                    group_index: group.group_index,
+                    transport_index: *transport_index,
+                });
+            }
+            if !assigned.insert(*transport_index) {
+                return Err(SpatialTransportError::HoaTransportAssignedTwice {
+                    transport_index: *transport_index,
+                });
+            }
+        }
+    }
+    if assigned != *hoa_indices {
+        return Err(SpatialTransportError::UnassignedHoaTransportIndices);
+    }
+    Ok(())
+}
+
+fn validate_opaque_bits(payload: &OpaqueBitPayload) -> Result<(), SpatialTransportError> {
+    if payload.bit_length == 0 {
+        return Err(SpatialTransportError::EmptyOpaqueBitPayload);
+    }
+    let expected_bytes = payload
+        .bit_length
+        .checked_add(7)
+        .ok_or(SpatialTransportError::NumericOverflow)?
+        / 8;
+    if payload.bytes.len() != expected_bytes {
+        return Err(SpatialTransportError::OpaqueBitPayloadLengthMismatch {
+            bits: payload.bit_length,
+            bytes: payload.bytes.len(),
+        });
+    }
+    Ok(())
+}
+
+fn validate_codec_metadata(metadata: &[OpaqueCodecMetadata]) -> Result<(), SpatialTransportError> {
+    for plane in metadata {
+        if plane.codec.trim().is_empty() || plane.kind.trim().is_empty() {
+            return Err(SpatialTransportError::InvalidOpaqueCodecMetadataIdentity);
+        }
+    }
+    Ok(())
+}
+
 fn derive_domain(
     bed: bool,
     objects: bool,
@@ -358,6 +471,35 @@ pub enum SpatialTransportError {
     EmptyCodecClassName,
     #[error("codec-specific elevation class {class} from '{codec}' has no admitted degree mapping")]
     UnresolvedCodecElevationClass { codec: String, class: u8 },
+    #[error("HOA groups exist without HOA signal lanes")]
+    HoaGroupsWithoutSignals,
+    #[error("HOA signal lanes exist without HOA group metadata")]
+    HoaSignalsWithoutGroups,
+    #[error("HOA group index {index} is duplicated")]
+    DuplicateHoaGroupIndex { index: usize },
+    #[error("HOA group {index} owns no transport channels")]
+    EmptyHoaGroup { index: usize },
+    #[error("HOA group {index} priority {priority} is outside 0..=7")]
+    InvalidHoaPriority { index: usize, priority: u8 },
+    #[error("HOA group {index} NFC presence and reference-distance state disagree")]
+    InvalidHoaNfcState { index: usize },
+    #[error("HOA group {group_index} references unknown transport index {transport_index}")]
+    HoaGroupReferencesUnknownTransport {
+        group_index: usize,
+        transport_index: usize,
+    },
+    #[error("HOA transport index {transport_index} is assigned to multiple groups")]
+    HoaTransportAssignedTwice { transport_index: usize },
+    #[error("one or more HOA transport indices are not assigned to a HOA group")]
+    UnassignedHoaTransportIndices,
+    #[error("opaque bit payload is empty")]
+    EmptyOpaqueBitPayload,
+    #[error("opaque bit payload declares {bits} bits but stores {bytes} bytes")]
+    OpaqueBitPayloadLengthMismatch { bits: usize, bytes: usize },
+    #[error("opaque codec metadata requires non-empty codec and kind identifiers")]
+    InvalidOpaqueCodecMetadataIdentity,
+    #[error("transport arithmetic overflow")]
+    NumericOverflow,
 }
 
 #[cfg(test)]
@@ -415,6 +557,18 @@ mod tests {
                     transport_index: 1,
                 },
             ],
+            hoa_groups: vec![HoaGroupBinding {
+                group_index: 0,
+                transport_indices: vec![0, 1],
+                order: 1,
+                fixed_position: false,
+                priority: 0,
+                uses_nfc: false,
+                nfc_reference_distance_raw: None,
+                matrix: None,
+                screen_relative: false,
+            }],
+            codec_metadata: Vec::new(),
         };
         assert_eq!(frame.validate(), Ok(()));
     }
@@ -437,6 +591,8 @@ mod tests {
                 target: BedSignalTarget::SemanticRole(ChannelRole::FrontLeft),
             }],
             hoa_signals: Vec::new(),
+            hoa_groups: Vec::new(),
+            codec_metadata: Vec::new(),
         };
         assert!(matches!(
             frame.validate(),
@@ -482,5 +638,25 @@ mod tests {
             resolve_bed_target(&target),
             Err(SpatialTransportError::UnresolvedCodecElevationClass { .. })
         ));
+    }
+
+    #[test]
+    fn rejects_hoa_group_that_does_not_cover_all_transport_indices() {
+        let hoa_indices = HashSet::from([0usize, 1usize]);
+        let groups = vec![HoaGroupBinding {
+            group_index: 0,
+            transport_indices: vec![0],
+            order: 1,
+            fixed_position: false,
+            priority: 0,
+            uses_nfc: false,
+            nfc_reference_distance_raw: None,
+            matrix: None,
+            screen_relative: false,
+        }];
+        assert_eq!(
+            validate_hoa_groups(&groups, &hoa_indices),
+            Err(SpatialTransportError::UnassignedHoaTransportIndices)
+        );
     }
 }
