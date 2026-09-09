@@ -54,21 +54,13 @@ impl Default for EngineConfig {
 /// OpenJOC speaker render. IEC61937 type 0x15 alone never sets either field.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct JocDecoderStatus {
-    /// The open decoder has classified the current elementary stream as E-AC-3 JOC.
     pub codec_classified_joc: bool,
-    /// A validated OpenJOC speaker-mode renderer currently exists.
     pub speaker_render_active: bool,
-    /// Renderer layout selected after successful JOC admission.
     pub layout_name: Option<String>,
-    /// Physical speaker-channel count returned by the admitted renderer.
     pub channel_count: Option<usize>,
-    /// Renderer-reported algorithmic latency in samples.
     pub latency_samples: Option<usize>,
-    /// Most recently observed decoded object count, when reported by OpenJOC.
     pub object_count: Option<u16>,
-    /// Most recently observed JOC complexity index, when reported by OpenJOC.
     pub complexity_index: Option<u8>,
-    /// Most recent JOC admission/render failure that caused a truthful bed fallback.
     pub fallback_reason: Option<String>,
 }
 
@@ -121,14 +113,13 @@ impl AuroraDecoderEngine {
         snapshot
     }
 
-    /// Returns JOC state without promoting transport-level DD+ evidence into an
-    /// Atmos/JOC claim. A populated renderer section means admission succeeded;
-    /// otherwise the fallback reason, when present, explains why Aurora stayed
-    /// on the ordinary E-AC-3 bed path.
+    /// Decoder-level JOC state. A transport-level E-AC-3 burst is insufficient;
+    /// the open decoder itself must classify the elementary stream as JOC.
     pub fn joc_status(&self) -> JocDecoderStatus {
         let render = self.open.joc_render_info();
         JocDecoderStatus {
-            codec_classified_joc: self.active_codec == Some(CodecId::Eac3Joc),
+            codec_classified_joc: self.open.detected_codec().map(CodecId::from)
+                == Some(CodecId::Eac3Joc),
             speaker_render_active: render.is_some(),
             layout_name: render.map(|info| info.layout_name.clone()),
             channel_count: render.map(|info| info.channel_count),
@@ -157,8 +148,6 @@ impl AuroraDecoderEngine {
         self.open.flush_packets()
     }
 
-    /// Decode one complete object-capable access unit into Aurora's pre-render
-    /// Spatial IR rather than speaker channels.
     pub fn decode_spatial_access_unit(
         &mut self,
         codec: CodecId,
