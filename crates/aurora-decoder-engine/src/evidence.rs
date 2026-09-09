@@ -3,8 +3,9 @@ use crate::catalog::BackendId;
 /// Evidence maturity for a decoder backend.
 ///
 /// This is deliberately separate from source-code availability or licensing.
-/// A permissively licensed backend can still be immature, and a backend does
-/// not become production-ready merely because it compiles or is integrated.
+/// A backend does not become production-ready merely because it exists,
+/// compiles upstream, or has a strong reputation; Aurora promotes it only when
+/// the exact pinned integration passes retained gates.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum EvidenceTier {
@@ -41,64 +42,45 @@ impl BackendEvidence {
     }
 }
 
+const fn integrated(backend: BackendId, pinned_revision: bool) -> BackendEvidence {
+    BackendEvidence {
+        backend,
+        tier: EvidenceTier::Integrated,
+        pinned_revision,
+        independent_reference: false,
+        fuzz_gate: false,
+        realtime_gate: false,
+    }
+}
+
+const fn catalogued(backend: BackendId) -> BackendEvidence {
+    BackendEvidence {
+        backend,
+        tier: EvidenceTier::Catalogued,
+        pinned_revision: false,
+        independent_reference: false,
+        fuzz_gate: false,
+        realtime_gate: false,
+    }
+}
+
 /// Evidence state for the exact Aurora branch, not a claim about the upstream
 /// project in isolation. Tiers only move upward when artifacts are retained.
 pub const fn evidence_for(backend: BackendId) -> BackendEvidence {
     match backend {
-        BackendId::OpenJoc => BackendEvidence {
-            backend,
-            tier: EvidenceTier::Integrated,
-            pinned_revision: true,
-            independent_reference: false,
-            fuzz_gate: false,
-            realtime_gate: false,
-        },
-        BackendId::OxideAc3 => BackendEvidence {
-            backend,
-            tier: EvidenceTier::Integrated,
-            pinned_revision: true,
-            independent_reference: false,
-            fuzz_gate: false,
-            realtime_gate: false,
-        },
-        BackendId::OxideAc4 => BackendEvidence {
-            backend,
-            tier: EvidenceTier::Integrated,
-            pinned_revision: true,
-            independent_reference: false,
-            fuzz_gate: false,
-            realtime_gate: false,
-        },
-        BackendId::OxideDtsCore => BackendEvidence {
-            backend,
-            tier: EvidenceTier::Integrated,
-            pinned_revision: true,
-            // Upstream has independent-reference evidence, but Aurora's own
-            // adapter corpus still has to pass before this tier is promoted.
-            independent_reference: false,
-            fuzz_gate: false,
-            realtime_gate: false,
-        },
-        BackendId::FfmpegWorker => BackendEvidence {
-            backend,
-            tier: EvidenceTier::Integrated,
-            pinned_revision: true,
-            independent_reference: false,
-            fuzz_gate: false,
-            realtime_gate: false,
-        },
+        BackendId::OpenJoc => integrated(backend, true),
+        BackendId::OxideAc3 => integrated(backend, true),
+        BackendId::OxideAc4 => integrated(backend, true),
+        BackendId::OxideDtsCore => integrated(backend, true),
+        BackendId::FfmpegDtsHd => integrated(backend, true),
+        BackendId::FfmpegWorker => integrated(backend, true),
         BackendId::TrueHdNative
         | BackendId::OxideAac
         | BackendId::OxideOpus
+        | BackendId::LibIamfReference
         | BackendId::IamfTools
-        | BackendId::Symphonia => BackendEvidence {
-            backend,
-            tier: EvidenceTier::Catalogued,
-            pinned_revision: false,
-            independent_reference: false,
-            fuzz_gate: false,
-            realtime_gate: false,
-        },
+        | BackendId::LibMpegH
+        | BackendId::Symphonia => catalogued(backend),
     }
 }
 
@@ -113,6 +95,7 @@ mod tests {
             BackendId::OxideAc3,
             BackendId::OxideAc4,
             BackendId::OxideDtsCore,
+            BackendId::FfmpegDtsHd,
             BackendId::FfmpegWorker,
         ] {
             let evidence = evidence_for(backend);
@@ -123,8 +106,14 @@ mod tests {
     }
 
     #[test]
-    fn candidates_do_not_pass_integration_floor() {
-        assert!(!evidence_for(BackendId::TrueHdNative).satisfies(EvidenceTier::Integrated));
-        assert!(!evidence_for(BackendId::IamfTools).satisfies(EvidenceTier::Integrated));
+    fn best_of_breed_candidates_do_not_fake_integration() {
+        for backend in [
+            BackendId::TrueHdNative,
+            BackendId::LibIamfReference,
+            BackendId::IamfTools,
+            BackendId::LibMpegH,
+        ] {
+            assert!(!evidence_for(backend).satisfies(EvidenceTier::Integrated));
+        }
     }
 }
