@@ -15,6 +15,7 @@ members = [
     "crates/aurora-hoa-ir",
     "crates/aurora-decoder-open",
     "crates/aurora-decoder-engine",
+    "crates/aurora-direct-earc-decoder",
     "crates/aurora-decoder-iamf",
     "crates/aurora-decoder-truehdd",
     "crates/aurora-decoder-mpegh",
