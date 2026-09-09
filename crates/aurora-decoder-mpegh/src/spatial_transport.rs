@@ -6,14 +6,16 @@ use aurora_spatial_ir_v2::{
     SpatialPosition, SpatialRenderingProperties, ZoneConstraint,
 };
 use aurora_spatial_transport_v2::{
-    BedSignalTarget, ExplicitSpeakerGeometry, HoaSignalBinding, SpeakerElevation,
-    SpatialTransportFrame, TransportBedSignalBinding, TransportSceneDomain,
+    BedSignalTarget, ExplicitSpeakerGeometry, HoaGroupBinding, HoaSignalBinding,
+    OpaqueBitPayload, OpaqueCodecMetadata, SpeakerElevation, SpatialTransportFrame,
+    TransportBedSignalBinding, TransportSceneDomain,
 };
 use thiserror::Error;
 
 use crate::{
     MpeghChannelMetadataPacket, MpeghExternalFrame, MpeghExternalLane, MpeghFlexibleSpeaker,
-    MpeghOamObject, MpeghOamObjectFrame, MpeghPcmTopologyError, MpeghSpeakerConfig,
+    MpeghHoaPacket, MpeghOamObject, MpeghOamObjectFrame, MpeghPcmTopologyError,
+    MpeghSpeakerConfig,
 };
 
 impl MpeghExternalFrame {
@@ -51,12 +53,41 @@ pub fn build_spatial_transport_v2(
             MpeghSpatialTransportError::InvalidChannelMetadata(error.to_string())
         })?)
     };
+    if let Some(metadata) = &channel_metadata {
+        if usize::from(metadata.frame_length_samples) != pcm.frame_count {
+            return Err(MpeghSpatialTransportError::MetadataFrameLengthMismatch {
+                plane: "channel",
+                metadata: usize::from(metadata.frame_length_samples),
+                pcm: pcm.frame_count,
+            });
+        }
+    }
+
     let oam = if pcm.topology.object_lane_count == 0 {
         None
     } else {
         Some(source.parse_object_metadata().map_err(|error| {
             MpeghSpatialTransportError::InvalidObjectMetadataPacket(error.to_string())
         })?)
+    };
+
+    let hoa = if pcm.topology.hoa_lane_count == 0 {
+        None
+    } else {
+        if source.hoa_metadata.is_empty() {
+            return Err(MpeghSpatialTransportError::MissingHoaMetadata);
+        }
+        let parsed = source.parse_hoa_metadata().map_err(|error| {
+            MpeghSpatialTransportError::InvalidHoaMetadata(error.to_string())
+        })?;
+        if usize::from(parsed.frame_length_samples) != pcm.frame_count {
+            return Err(MpeghSpatialTransportError::MetadataFrameLengthMismatch {
+                plane: "hoa",
+                metadata: usize::from(parsed.frame_length_samples),
+                pcm: pcm.frame_count,
+            });
+        }
+        Some(parsed)
     };
 
     let bed_signals = match channel_metadata.as_ref() {
@@ -87,6 +118,10 @@ pub fn build_spatial_transport_v2(
             _ => None,
         })
         .collect::<Vec<_>>();
+    let hoa_groups = match hoa.as_ref() {
+        Some(packet) => hoa_groups_from_metadata(packet, &hoa_signals)?,
+        None => Vec::new(),
+    };
 
     let has_bed = !bed_signals.is_empty();
     let has_objects = !object_signals.is_empty();
@@ -114,7 +149,6 @@ pub fn build_spatial_transport_v2(
         },
         spatial: SpatialFrameMetadata {
             domain: compatibility_domain,
-            // Geometry-aware bed ownership is carried by Transport V2.
             bed_signals: Vec::new(),
             object_signals,
             object_updates,
@@ -126,6 +160,8 @@ pub fn build_spatial_transport_v2(
         domain,
         bed_signals,
         hoa_signals,
+        hoa_groups,
+        codec_metadata: opaque_codec_planes(source),
     };
     scene.validate().map_err(|error| {
         MpeghSpatialTransportError::TransportValidation(error.to_string())
@@ -146,9 +182,8 @@ fn beds_from_channel_metadata(
                         pcm_channel_index: lane,
                         target: BedSignalTarget::CicpLayoutMember {
                             layout_index: *cicp_layout_index,
-                            member_index: u16::try_from(member_index).map_err(|_| {
-                                MpeghSpatialTransportError::NumericOverflow
-                            })?,
+                            member_index: u16::try_from(member_index)
+                                .map_err(|_| MpeghSpatialTransportError::NumericOverflow)?,
                         },
                     });
                     lane += 1;
@@ -213,6 +248,66 @@ fn beds_from_channel_metadata(
         }
     }
     Ok(beds)
+}
+
+fn hoa_groups_from_metadata(
+    packet: &MpeghHoaPacket,
+    signals: &[HoaSignalBinding],
+) -> Result<Vec<HoaGroupBinding>, MpeghSpatialTransportError> {
+    if packet.groups.len() != 1 {
+        return Err(MpeghSpatialTransportError::MultipleHoaGroupsNeedSignalMapping {
+            groups: packet.groups.len(),
+        });
+    }
+    let group = &packet.groups[0];
+    let transport_indices = signals
+        .iter()
+        .map(|signal| signal.transport_index)
+        .collect::<Vec<_>>();
+    if transport_indices.is_empty() {
+        return Err(MpeghSpatialTransportError::HoaMetadataWithoutTransportSignals);
+    }
+    let matrix = group.matrix.as_ref().map(|matrix| OpaqueBitPayload {
+        bit_length: matrix.bit_length,
+        bytes: matrix.bits.bytes.clone(),
+    });
+    Ok(vec![HoaGroupBinding {
+        group_index: 0,
+        transport_indices,
+        order: group.order,
+        fixed_position: group.fixed_position,
+        priority: group.priority,
+        uses_nfc: group.uses_nfc,
+        nfc_reference_distance_raw: group.nfc_reference_distance_raw,
+        matrix,
+        screen_relative: group.screen_relative,
+    }])
+}
+
+fn opaque_codec_planes(source: &MpeghExternalFrame) -> Vec<OpaqueCodecMetadata> {
+    let mut planes = Vec::with_capacity(3);
+    if !source.channel_metadata.is_empty() {
+        planes.push(OpaqueCodecMetadata {
+            codec: "mpeg-h".into(),
+            kind: "external-channel-metadata".into(),
+            bytes: source.channel_metadata.clone(),
+        });
+    }
+    if !source.object_metadata.is_empty() {
+        planes.push(OpaqueCodecMetadata {
+            codec: "mpeg-h".into(),
+            kind: "external-oam-metadata".into(),
+            bytes: source.object_metadata.clone(),
+        });
+    }
+    if !source.hoa_metadata.is_empty() {
+        planes.push(OpaqueCodecMetadata {
+            codec: "mpeg-h".into(),
+            kind: "external-hoa-metadata".into(),
+            bytes: source.hoa_metadata.clone(),
+        });
+    }
+    planes
 }
 
 fn objects_from_oam(
@@ -343,8 +438,6 @@ fn update_from_oam_frame(
         gain_db,
         spread,
         metadata_sample_offset,
-        // The external-render packet carries absolute sub-frame states but no
-        // renderer interpolation contract. Do not invent one.
         ramp_duration_samples: 0,
         priority: Some(priority),
         rendering: SpatialRenderingProperties {
@@ -357,8 +450,6 @@ fn update_from_oam_frame(
             zone: if object.exclusion_sectors.is_empty() {
                 ZoneConstraint::All
             } else {
-                // Exact exclusion sectors remain codec metadata; the generic V2
-                // renderer does not have a lossless multi-sector zone model yet.
                 ZoneConstraint::CodecSpecific(0x80)
             },
             elevation_enabled: true,
@@ -411,6 +502,16 @@ pub enum MpeghSpatialTransportError {
     InvalidChannelMetadata(String),
     #[error("external object metadata packet is invalid: {0}")]
     InvalidObjectMetadataPacket(String),
+    #[error("MPEG-H HOA lanes exist but external HOA metadata is absent")]
+    MissingHoaMetadata,
+    #[error("external HOA metadata is invalid: {0}")]
+    InvalidHoaMetadata(String),
+    #[error("{plane} metadata frame length {metadata} does not match decoded PCM frame length {pcm}")]
+    MetadataFrameLengthMismatch {
+        plane: &'static str,
+        metadata: usize,
+        pcm: usize,
+    },
     #[error("channel metadata produced {metadata} bed bindings for {pcm} proved PCM channel lanes")]
     BedLaneCountMismatch { metadata: usize, pcm: usize },
     #[error("speaker layout contains {speakers} speakers for {signals} signals")]
@@ -433,6 +534,10 @@ pub enum MpeghSpatialTransportError {
     },
     #[error("object spread value {0} is invalid")]
     InvalidSpreadValue(f32),
+    #[error("MPEG-H external metadata contains {groups} HOA groups; per-group transport-lane mapping is not admitted yet")]
+    MultipleHoaGroupsNeedSignalMapping { groups: usize },
+    #[error("HOA metadata is present but no HOA transport signals were proved")]
+    HoaMetadataWithoutTransportSignals,
     #[error("MPEG-H transport scene contains no signals")]
     EmptyScene,
     #[error("Spatial Transport V2 rejected MPEG-H scene: {0}")]
