@@ -1,5 +1,3 @@
-use std::f64::consts::PI;
-
 use crate::{HoaDecodeMatrix, HoaRendererError};
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -52,7 +50,6 @@ pub fn generate_regularized_mode_matching_matrix(
     }
 
     let decoder = if speaker_count >= coefficient_count {
-        // D = Y (Y^T Y + λI)^-1
         let gram = transpose_times_self(&basis, speaker_count, coefficient_count)?;
         let regularized = add_diagonal(gram, coefficient_count, regularization)?;
         let inverse = invert_square(regularized, coefficient_count)?;
@@ -65,7 +62,6 @@ pub fn generate_regularized_mode_matching_matrix(
             coefficient_count,
         )?
     } else {
-        // D = (Y Y^T + λI)^-1 Y
         let gram = self_times_transpose(&basis, speaker_count, coefficient_count)?;
         let regularized = add_diagonal(gram, speaker_count, regularization)?;
         let inverse = invert_square(regularized, speaker_count)?;
