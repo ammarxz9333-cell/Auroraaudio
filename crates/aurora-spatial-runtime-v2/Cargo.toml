@@ -10,6 +10,9 @@ publish = false
 [dependencies]
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
+aurora-decoder-engine = { path = "../aurora-decoder-engine" }
+aurora-renderer-api = { path = "../aurora-renderer-api" }
+aurora-renderer-vbap = { path = "../aurora-renderer-vbap" }
 aurora-spatial-ir = { path = "../aurora-spatial-ir" }
 aurora-spatial-ir-v2 = { path = "../aurora-spatial-ir-v2" }
 aurora-spatial-runtime = { path = "../aurora-spatial-runtime" }
