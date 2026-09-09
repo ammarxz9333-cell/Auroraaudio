@@ -1,14 +1,19 @@
-use aurora_core::AudioBlock;
+use std::collections::HashSet;
+
+use aurora_core::{AudioBlock, ChannelRole};
 use aurora_renderer_hoa::{
     generate_regularized_mode_matching_matrix, render_hoa_coefficients, HoaMatrixGenerationError,
     HoaRendererError, SpeakerDirection,
 };
 use aurora_spatial_transport_v2::{
-    cicp_layout_member_geometry, cicp_layout_members, TransportSceneDomain,
+    cicp_layout_member_geometry, cicp_layout_members, ResolvedBedSignalTarget,
+    SpatialTransportError, TransportSceneDomain,
 };
 use thiserror::Error;
 
-use crate::MpeghPairedEvidence;
+use crate::{reference_roles, MpeghPairedEvidence, MpeghRoleConformanceError};
+
+const BED_GEOMETRY_TOLERANCE_DEGREES: f64 = 0.25;
 
 #[derive(Debug, Clone, Copy)]
 struct CandidateSpeaker {
@@ -16,13 +21,10 @@ struct CandidateSpeaker {
     is_lfe: bool,
 }
 
-/// Render the HOA plane of a *pure HOA* MPEG-H scene to the exact speaker order
-/// exposed by libmpegh's reference layout.
+/// Render a pure-HOA MPEG-H scene to libmpegh's exact reference speaker order.
 ///
-/// Full-range speakers participate in the candidate decode matrix. LFE rows are
-/// explicitly zero because spherical-harmonic coefficients are not sent to LFE
-/// by this candidate path. Mixed bed/object/HOA scenes are rejected until their
-/// independent contributions can be combined losslessly before comparison.
+/// This compatibility wrapper intentionally keeps its original pure-HOA
+/// contract. Use [`render_mpegh_hoa_candidate`] for the admitted Bed+HOA path.
 pub fn render_pure_mpegh_hoa_candidate(
     pair: &MpeghPairedEvidence,
     regularization: f64,
@@ -32,12 +34,42 @@ pub fn render_pure_mpegh_hoa_candidate(
             domain: format!("{:?}", pair.scene.domain),
         });
     }
-    if !pair.scene.bed_signals.is_empty()
-        || !pair.scene.frame.spatial.object_signals.is_empty()
+    render_mpegh_hoa_candidate(pair, regularization)
+}
+
+/// Render the admitted MPEG-H HOA scene classes into the exact speaker order
+/// used by the paired libmpegh reference render.
+///
+/// Supported domains are pure HOA and Bed+HOA. Objects are deliberately
+/// rejected until Aurora can render their metadata independently. HOA never
+/// contributes to LFE; a signalled bed LFE remains a direct PCM passthrough.
+pub fn render_mpegh_hoa_candidate(
+    pair: &MpeghPairedEvidence,
+    regularization: f64,
+) -> Result<AudioBlock, MpeghHoaCandidateError> {
+    match pair.scene.domain {
+        TransportSceneDomain::HoaTransport | TransportSceneDomain::BedAndHoa => {}
+        domain => {
+            return Err(MpeghHoaCandidateError::MixedSceneUnsupported {
+                domain: format!("{domain:?}"),
+            })
+        }
+    }
+    if !pair.scene.frame.spatial.object_signals.is_empty()
         || !pair.scene.frame.spatial.object_updates.is_empty()
     {
-        return Err(MpeghHoaCandidateError::MixedSceneStatePresent);
+        return Err(MpeghHoaCandidateError::ObjectStatePresent);
     }
+    if pair.scene.domain == TransportSceneDomain::HoaTransport && !pair.scene.bed_signals.is_empty() {
+        return Err(MpeghHoaCandidateError::DomainStateMismatch);
+    }
+    if pair.scene.domain == TransportSceneDomain::BedAndHoa && pair.scene.bed_signals.is_empty() {
+        return Err(MpeghHoaCandidateError::DomainStateMismatch);
+    }
+
+    pair.scene
+        .validate()
+        .map_err(MpeghHoaCandidateError::InvalidTransportScene)?;
 
     let coefficients = pair
         .hoa_coefficients
@@ -75,9 +107,20 @@ pub fn render_pure_mpegh_hoa_candidate(
 
     let full_range_render = render_hoa_coefficients(&timed_coefficients, &matrix)?;
     let frame_count = full_range_render.frame_count;
+    if pair.scene.frame.decoded.audio.frame_count != frame_count {
+        return Err(MpeghHoaCandidateError::FrameCountMismatch {
+            scene: pair.scene.frame.decoded.audio.frame_count,
+            hoa: frame_count,
+        });
+    }
+
     let mut channels = vec![vec![0.0_f32; frame_count]; speakers.len()];
     for (rendered_index, (reference_index, _)) in full_range.iter().enumerate() {
         channels[*reference_index].copy_from_slice(&full_range_render.channels[rendered_index]);
+    }
+
+    if pair.scene.domain == TransportSceneDomain::BedAndHoa {
+        mix_bed_into_reference_order(pair, &speakers, &mut channels)?;
     }
 
     let rendered = AudioBlock {
@@ -90,6 +133,133 @@ pub fn render_pure_mpegh_hoa_candidate(
         .validate()
         .map_err(|_| MpeghHoaCandidateError::InvalidRenderedGeometry)?;
     Ok(rendered)
+}
+
+fn mix_bed_into_reference_order(
+    pair: &MpeghPairedEvidence,
+    speakers: &[CandidateSpeaker],
+    output: &mut [Vec<f32>],
+) -> Result<(), MpeghHoaCandidateError> {
+    let frame_count = pair.scene.frame.decoded.audio.frame_count;
+    let mut destinations = HashSet::with_capacity(pair.scene.bed_signals.len());
+    let mut cached_roles: Option<Vec<ChannelRole>> = None;
+
+    for bed in &pair.scene.bed_signals {
+        let destination = match bed
+            .resolved_target()
+            .map_err(MpeghHoaCandidateError::InvalidBedTarget)?
+        {
+            ResolvedBedSignalTarget::SemanticRole(role) => {
+                if cached_roles.is_none() {
+                    cached_roles = Some(
+                        reference_roles(&pair.reference_layout, speakers.len())
+                            .map_err(MpeghHoaCandidateError::ReferenceRoles)?,
+                    );
+                }
+                unique_role_destination(cached_roles.as_ref().expect("set above"), &role)?
+            }
+            ResolvedBedSignalTarget::Geometry(geometry) => unique_geometry_destination(
+                speakers,
+                f64::from(geometry.azimuth_degrees),
+                f64::from(geometry.elevation_degrees),
+                geometry.is_lfe,
+            )?,
+        };
+
+        if !destinations.insert(destination) {
+            return Err(MpeghHoaCandidateError::DuplicateBedDestination { destination });
+        }
+
+        let source = pair
+            .scene
+            .frame
+            .decoded
+            .audio
+            .channels
+            .get(bed.pcm_channel_index)
+            .ok_or(MpeghHoaCandidateError::BedLaneOutOfRange {
+                lane: bed.pcm_channel_index,
+            })?;
+        if source.len() != frame_count {
+            return Err(MpeghHoaCandidateError::InvalidBedPlaneLength {
+                lane: bed.pcm_channel_index,
+                expected: frame_count,
+                actual: source.len(),
+            });
+        }
+        let destination_plane = output
+            .get_mut(destination)
+            .ok_or(MpeghHoaCandidateError::BedDestinationOutOfRange { destination })?;
+        for (out, sample) in destination_plane.iter_mut().zip(source.iter().copied()) {
+            *out += sample;
+        }
+    }
+    Ok(())
+}
+
+fn unique_role_destination(
+    roles: &[ChannelRole],
+    requested: &ChannelRole,
+) -> Result<usize, MpeghHoaCandidateError> {
+    let matches = roles
+        .iter()
+        .enumerate()
+        .filter_map(|(index, role)| (role == requested).then_some(index))
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [index] => Ok(*index),
+        [] => Err(MpeghHoaCandidateError::MissingBedRole {
+            role: requested.clone(),
+        }),
+        _ => Err(MpeghHoaCandidateError::AmbiguousBedRole {
+            role: requested.clone(),
+        }),
+    }
+}
+
+fn unique_geometry_destination(
+    speakers: &[CandidateSpeaker],
+    azimuth_degrees: f64,
+    elevation_degrees: f64,
+    is_lfe: bool,
+) -> Result<usize, MpeghHoaCandidateError> {
+    let matches = speakers
+        .iter()
+        .enumerate()
+        .filter_map(|(index, speaker)| {
+            let azimuth_error = angular_distance_degrees(
+                speaker.direction.azimuth_degrees,
+                azimuth_degrees,
+            );
+            let elevation_error =
+                (speaker.direction.elevation_degrees - elevation_degrees).abs();
+            (speaker.is_lfe == is_lfe
+                && azimuth_error <= BED_GEOMETRY_TOLERANCE_DEGREES
+                && elevation_error <= BED_GEOMETRY_TOLERANCE_DEGREES)
+                .then_some(index)
+        })
+        .collect::<Vec<_>>();
+    match matches.as_slice() {
+        [index] => Ok(*index),
+        [] => Err(MpeghHoaCandidateError::MissingBedGeometry {
+            azimuth_degrees,
+            elevation_degrees,
+            is_lfe,
+        }),
+        _ => Err(MpeghHoaCandidateError::AmbiguousBedGeometry {
+            azimuth_degrees,
+            elevation_degrees,
+            is_lfe,
+        }),
+    }
+}
+
+fn angular_distance_degrees(a: f64, b: f64) -> f64 {
+    let mut delta = (a - b).rem_euclid(360.0);
+    if delta > 180.0 {
+        delta = 360.0 - delta;
+    }
+    delta
 }
 
 fn candidate_speakers(
@@ -135,10 +305,14 @@ fn candidate_speakers(
 
 #[derive(Debug, Error, Clone, PartialEq)]
 pub enum MpeghHoaCandidateError {
-    #[error("MPEG-H HOA candidate rendering currently requires a pure HOA scene, got {domain}")]
+    #[error("MPEG-H HOA candidate rendering does not support scene domain {domain}")]
     MixedSceneUnsupported { domain: String },
-    #[error("MPEG-H scene declares pure HOA but still contains bed/object render state")]
-    MixedSceneStatePresent,
+    #[error("MPEG-H HOA candidate scene contains object signals or object updates")]
+    ObjectStatePresent,
+    #[error("MPEG-H HOA candidate domain does not match its bed/HOA state")]
+    DomainStateMismatch,
+    #[error("MPEG-H transport scene failed validation: {0}")]
+    InvalidTransportScene(SpatialTransportError),
     #[error("paired MPEG-H evidence has no decoded HOA coefficient frame")]
     MissingHoaCoefficients,
     #[error("paired MPEG-H HOA coefficients failed validation: {0}")]
@@ -152,6 +326,40 @@ pub enum MpeghHoaCandidateError {
     },
     #[error("MPEG-H reference layout contains no full-range speakers")]
     NoFullRangeSpeakers,
+    #[error("MPEG-H scene contains {scene} samples but HOA coefficients contain {hoa}")]
+    FrameCountMismatch { scene: usize, hoa: usize },
+    #[error("MPEG-H bed target failed resolution: {0}")]
+    InvalidBedTarget(SpatialTransportError),
+    #[error("MPEG-H reference semantic roles cannot be resolved losslessly: {0}")]
+    ReferenceRoles(MpeghRoleConformanceError),
+    #[error("MPEG-H reference layout has no destination for bed role '{role}'")]
+    MissingBedRole { role: ChannelRole },
+    #[error("MPEG-H reference layout maps bed role '{role}' ambiguously")]
+    AmbiguousBedRole { role: ChannelRole },
+    #[error("MPEG-H reference layout has no speaker at lfe={is_lfe} az={azimuth_degrees} el={elevation_degrees}")]
+    MissingBedGeometry {
+        azimuth_degrees: f64,
+        elevation_degrees: f64,
+        is_lfe: bool,
+    },
+    #[error("MPEG-H reference layout has multiple speakers at lfe={is_lfe} az={azimuth_degrees} el={elevation_degrees}")]
+    AmbiguousBedGeometry {
+        azimuth_degrees: f64,
+        elevation_degrees: f64,
+        is_lfe: bool,
+    },
+    #[error("multiple MPEG-H bed signals target reference speaker {destination}")]
+    DuplicateBedDestination { destination: usize },
+    #[error("MPEG-H bed PCM lane {lane} is outside the scene audio block")]
+    BedLaneOutOfRange { lane: usize },
+    #[error("MPEG-H bed PCM lane {lane} has {actual} samples, expected {expected}")]
+    InvalidBedPlaneLength {
+        lane: usize,
+        expected: usize,
+        actual: usize,
+    },
+    #[error("MPEG-H bed destination {destination} is outside candidate output")]
+    BedDestinationOutOfRange { destination: usize },
     #[error(transparent)]
     Matrix(#[from] HoaMatrixGenerationError),
     #[error(transparent)]
