@@ -27,6 +27,11 @@ name = "aurora-direct-earc-ingest"
 path = "src/bin/aurora-direct-earc-ingest.rs"
 bench = false
 
+[[bin]]
+name = "aurora-direct-earc-probe"
+path = "src/bin/aurora-direct-earc-probe.rs"
+bench = false
+
 [features]
 default = ["camilladsp", "realtime", "simulation"]
 camilladsp = ["dep:aurora-dsp-camilladsp", "aurora-dsp-camilladsp/camilladsp-process"]
@@ -39,6 +44,7 @@ aurora-audio-io = { path = "../aurora-audio-io" }
 aurora-core = { path = "../aurora-core" }
 aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-dsp-camilladsp = { path = "../aurora-dsp-camilladsp", optional = true }
+aurora-iec61937 = { path = "../aurora-iec61937" }
 aurora-renderer-api = { path = "../aurora-renderer-api" }
 aurora-renderer-basic = { path = "../aurora-renderer-basic" }
 aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api", optional = true }
