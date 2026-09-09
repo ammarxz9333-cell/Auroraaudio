@@ -5,6 +5,8 @@
 //! speaker indices and layout-member positions; no reference decoder code is
 //! executed or embedded here.
 
+use aurora_core::ChannelRole;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct CicpSpeakerGeometry {
     pub azimuth_degrees: i16,
@@ -22,51 +24,22 @@ const fn g(azimuth: i16, elevation: i16, is_lfe: bool, screen_relative: bool) ->
     }
 }
 
-// CICP speaker indices 0..=42 as used by the reference MPEG-H geometry table.
 const SPEAKERS: [CicpSpeakerGeometry; 43] = [
-    g(30, 0, false, false),    // 0
-    g(-30, 0, false, false),   // 1
-    g(0, 0, false, false),     // 2
-    g(0, 0, true, false),      // 3
-    g(110, 0, false, false),   // 4
-    g(-110, 0, false, false),  // 5
-    g(22, 0, false, false),    // 6
-    g(-22, 0, false, false),   // 7
-    g(135, 0, false, false),   // 8
-    g(-135, 0, false, false),  // 9
-    g(180, 0, false, false),   // 10
-    g(0, 0, false, false),     // 11 reserved/dummy
-    g(0, 0, false, false),     // 12 reserved/dummy
-    g(90, 0, false, false),    // 13
-    g(-90, 0, false, false),   // 14
-    g(60, 0, false, false),    // 15
-    g(-60, 0, false, false),   // 16
-    g(30, 35, false, false),   // 17
-    g(-30, 35, false, false),  // 18
-    g(0, 35, false, false),    // 19
-    g(135, 35, false, false),  // 20
-    g(-135, 35, false, false), // 21
-    g(180, 35, false, false),  // 22
-    g(90, 35, false, false),   // 23
-    g(-90, 35, false, false),  // 24
-    g(0, 90, false, false),    // 25
-    g(45, -15, true, false),   // 26
-    g(45, -15, false, false),  // 27
-    g(-45, -15, false, false), // 28
-    g(0, -15, false, false),   // 29
-    g(110, 35, false, false),  // 30
-    g(-110, 35, false, false), // 31
-    g(45, 35, false, false),   // 32
-    g(-45, 35, false, false),  // 33
-    g(45, 0, false, false),    // 34
-    g(-45, 0, false, false),   // 35
-    g(-45, -15, true, false),  // 36
-    g(60, 0, false, true),     // 37
-    g(-60, 0, false, true),    // 38
-    g(30, 0, false, true),     // 39
-    g(-30, 0, false, true),    // 40
-    g(150, 0, false, false),   // 41
-    g(-150, 0, false, false),  // 42
+    g(30, 0, false, false), g(-30, 0, false, false), g(0, 0, false, false),
+    g(0, 0, true, false), g(110, 0, false, false), g(-110, 0, false, false),
+    g(22, 0, false, false), g(-22, 0, false, false), g(135, 0, false, false),
+    g(-135, 0, false, false), g(180, 0, false, false), g(0, 0, false, false),
+    g(0, 0, false, false), g(90, 0, false, false), g(-90, 0, false, false),
+    g(60, 0, false, false), g(-60, 0, false, false), g(30, 35, false, false),
+    g(-30, 35, false, false), g(0, 35, false, false), g(135, 35, false, false),
+    g(-135, 35, false, false), g(180, 35, false, false), g(90, 35, false, false),
+    g(-90, 35, false, false), g(0, 90, false, false), g(45, -15, true, false),
+    g(45, -15, false, false), g(-45, -15, false, false), g(0, -15, false, false),
+    g(110, 35, false, false), g(-110, 35, false, false), g(45, 35, false, false),
+    g(-45, 35, false, false), g(45, 0, false, false), g(-45, 0, false, false),
+    g(-45, -15, true, false), g(60, 0, false, true), g(-60, 0, false, true),
+    g(30, 0, false, true), g(-30, 0, false, true), g(150, 0, false, false),
+    g(-150, 0, false, false),
 ];
 
 const LAYOUT_1: &[u8] = &[2];
@@ -99,29 +72,37 @@ pub fn cicp_speaker_geometry(index: u8) -> Option<CicpSpeakerGeometry> {
     SPEAKERS.get(usize::from(index)).copied()
 }
 
+/// Lossless semantic projection for CICP speakers that have an exact Aurora
+/// channel role. Speakers such as front-wide, top-center, lower-layer and
+/// screen-relative channels deliberately return `None` instead of being folded
+/// into a nearby 7.1.4 role.
+pub fn cicp_speaker_semantic_role(index: u8) -> Option<ChannelRole> {
+    Some(match index {
+        0 => ChannelRole::FrontLeft,
+        1 => ChannelRole::FrontRight,
+        2 => ChannelRole::FrontCenter,
+        3 | 26 | 36 => ChannelRole::LowFrequencyEffects,
+        4 | 13 => ChannelRole::SurroundLeft,
+        5 | 14 => ChannelRole::SurroundRight,
+        8 | 41 => ChannelRole::SurroundBackLeft,
+        9 | 42 => ChannelRole::SurroundBackRight,
+        17 | 32 => ChannelRole::TopFrontLeft,
+        18 | 33 => ChannelRole::TopFrontRight,
+        20 | 30 => ChannelRole::TopRearLeft,
+        21 | 31 => ChannelRole::TopRearRight,
+        _ => return None,
+    })
+}
+
 pub fn cicp_layout_members(layout_index: u8) -> Option<&'static [u8]> {
     match layout_index {
-        1 => Some(LAYOUT_1),
-        2 => Some(LAYOUT_2),
-        3 => Some(LAYOUT_3),
-        4 => Some(LAYOUT_4),
-        5 => Some(LAYOUT_5),
-        6 => Some(LAYOUT_6),
-        7 => Some(LAYOUT_7),
-        8 => None,
-        9 => Some(LAYOUT_9),
-        10 => Some(LAYOUT_10),
-        11 => Some(LAYOUT_11),
-        12 => Some(LAYOUT_12),
-        13 => Some(LAYOUT_13),
-        14 => Some(LAYOUT_14),
-        15 => Some(LAYOUT_15),
-        16 => Some(LAYOUT_16),
-        17 => Some(LAYOUT_17),
-        18 => Some(LAYOUT_18),
-        19 => Some(LAYOUT_19),
-        20 => Some(LAYOUT_20),
-        _ => None,
+        1 => Some(LAYOUT_1), 2 => Some(LAYOUT_2), 3 => Some(LAYOUT_3),
+        4 => Some(LAYOUT_4), 5 => Some(LAYOUT_5), 6 => Some(LAYOUT_6),
+        7 => Some(LAYOUT_7), 8 => None, 9 => Some(LAYOUT_9),
+        10 => Some(LAYOUT_10), 11 => Some(LAYOUT_11), 12 => Some(LAYOUT_12),
+        13 => Some(LAYOUT_13), 14 => Some(LAYOUT_14), 15 => Some(LAYOUT_15),
+        16 => Some(LAYOUT_16), 17 => Some(LAYOUT_17), 18 => Some(LAYOUT_18),
+        19 => Some(LAYOUT_19), 20 => Some(LAYOUT_20), _ => None,
     }
 }
 
@@ -137,6 +118,16 @@ pub fn cicp_layout_member_speaker_index(layout_index: u8, member_index: u16) -> 
     cicp_layout_members(layout_index)?
         .get(usize::from(member_index))
         .copied()
+}
+
+pub fn cicp_layout_member_semantic_role(
+    layout_index: u8,
+    member_index: u16,
+) -> Option<ChannelRole> {
+    cicp_speaker_semantic_role(cicp_layout_member_speaker_index(
+        layout_index,
+        member_index,
+    )?)
 }
 
 #[cfg(test)]
@@ -158,8 +149,37 @@ mod tests {
         let members = cicp_layout_members(6).unwrap();
         assert_eq!(members, &[0, 1, 2, 3, 4, 5]);
         assert!(cicp_layout_member_geometry(6, 3).unwrap().is_lfe);
-        assert_eq!(cicp_layout_member_geometry(6, 4).unwrap().azimuth_degrees, 110);
-        assert_eq!(cicp_layout_member_geometry(6, 5).unwrap().azimuth_degrees, -110);
+        assert_eq!(cicp_layout_member_semantic_role(6, 4), Some(ChannelRole::SurroundLeft));
+        assert_eq!(cicp_layout_member_semantic_role(6, 5), Some(ChannelRole::SurroundRight));
+    }
+
+    #[test]
+    fn cicp_layout_19_projects_losslessly_to_aurora_7_1_4_roles() {
+        let expected = vec![
+            ChannelRole::FrontLeft,
+            ChannelRole::FrontRight,
+            ChannelRole::FrontCenter,
+            ChannelRole::LowFrequencyEffects,
+            ChannelRole::SurroundBackLeft,
+            ChannelRole::SurroundBackRight,
+            ChannelRole::SurroundLeft,
+            ChannelRole::SurroundRight,
+            ChannelRole::TopFrontLeft,
+            ChannelRole::TopFrontRight,
+            ChannelRole::TopRearLeft,
+            ChannelRole::TopRearRight,
+        ];
+        let actual = (0..LAYOUT_19.len())
+            .map(|index| cicp_layout_member_semantic_role(19, index as u16).unwrap())
+            .collect::<Vec<_>>();
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
+    fn unsupported_geometry_is_not_folded_into_nearest_role() {
+        assert!(cicp_speaker_semantic_role(15).is_none()); // front-wide-ish +60
+        assert!(cicp_speaker_semantic_role(25).is_none()); // top center
+        assert!(cicp_speaker_semantic_role(37).is_none()); // screen-relative
     }
 
     #[test]
