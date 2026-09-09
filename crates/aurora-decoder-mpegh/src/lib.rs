@@ -7,6 +7,7 @@
 
 #![cfg_attr(not(feature = "native-mpegh"), forbid(unsafe_code))]
 
+mod candidate_dispatch;
 mod conformance;
 mod conformance_roles;
 mod evidence_gate;
@@ -29,6 +30,10 @@ mod objects_hoa_candidate;
 mod paired_gate;
 mod rendered_pcm;
 mod spatial_transport;
+
+pub use candidate_dispatch::{
+    candidate_family_for_domain, MpeghCandidateDispatchError, MpeghCandidateFamily,
+};
 pub use conformance::{
     compare_mpegh_render_to_reference, MpeghChannelConformance, MpeghConformanceError,
     MpeghConformancePolicy, MpeghConformanceReport,
