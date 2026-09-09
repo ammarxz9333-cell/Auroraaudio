@@ -20,6 +20,9 @@ fn publication_and_coalescing_allocate_nothing_after_startup() {
             total_format_changes: 0,
             relocks: 0,
             last_valid_burst_age_ms: None,
+            last_burst_spacing_bytes: None,
+            min_burst_spacing_bytes: None,
+            max_burst_spacing_bytes: None,
         },
         None,
     );
