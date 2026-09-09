@@ -22,6 +22,7 @@ mod hoa_channel_reassignment;
 mod hoa_contract;
 mod hoa_inverse_dyn;
 mod object_candidate;
+mod objects_hoa_candidate;
 mod paired_gate;
 mod rendered_pcm;
 mod spatial_transport;
@@ -74,6 +75,10 @@ pub use hoa_inverse_dyn::{
     decode_gain_correction_exponent, MpeghHoaInverseDynCorrection, MpeghHoaInverseDynError,
 };
 pub use object_candidate::{render_static_mpegh_object_plane, MpeghObjectCandidateError};
+pub use objects_hoa_candidate::{
+    evaluate_static_mpegh_objects_hoa_candidate, render_static_mpegh_objects_hoa_candidate,
+    MpeghObjectsHoaCandidateDecision, MpeghObjectsHoaCandidateError,
+};
 pub use paired_gate::{
     evaluate_paired_mpegh_candidate, MpeghPairedGateError, MpeghPairedPlaybackDecision,
 };
