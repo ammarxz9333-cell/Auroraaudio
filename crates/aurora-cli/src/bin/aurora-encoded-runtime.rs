@@ -5,23 +5,19 @@
 //! SOCK_SEQPACKET messages from the existing STM32 bridge socket and feeds the
 //! exact ENCODED_IEC61937 payload into the same runtime.
 //!
-//! Speaker-rendered decoder PCM continues through Aurora's canonical 48 kHz
-//! 7.1.4 output DSP. The final speaker stream can remain raw interleaved F32 on
-//! stdout for inspection or be converted to interleaved S32_LE and sent to a
-//! real Linux ALSA playback device through `aplay`, including zero-padding a
-//! 12-channel Aurora layout into a wider TDM frame such as TDM16.
-//!
-//! Generic object metadata without object-signal PCM bindings still fails
-//! closed; the runtime never guesses bindings, drops objects, or treats
-//! IEC61937 E-AC-3 type 0x15 as proof of JOC/Atmos.
+//! The final speaker stream can remain raw canonical 12-channel interleaved F32
+//! on stdout for evidence/inspection or be sent to Aurora's native Linux ALSA
+//! backend as exact S32_LE. Wider physical TDM layouts are zero-padded only; no
+//! extra channels are synthesized.
 
 use std::io::{self, Read, Write};
-use std::process::{Child, ChildStdin};
+use std::process::Child;
 
 #[cfg(target_os = "linux")]
 use std::process::{Command, Stdio};
 
 use anyhow::{bail, Context, Result};
+use aurora_alsa_output::{AlsaOutputConfig, NativeAlsaPlayback};
 use aurora_core::{AudioFormat, SampleType};
 use aurora_decoder_engine::EngineConfig;
 use aurora_dsp_basic::output::{
@@ -36,6 +32,8 @@ const DEFAULT_CARRIER_RATE_HZ: u32 = 192_000;
 const DEFAULT_SLOTS: usize = 2;
 const DEFAULT_BRIDGE_SOCKET: &str = "/run/aurora/usb-bridge.sock";
 const LEGACY_PACKET_BUFFER_BYTES: usize = 512 * 1024;
+const DEFAULT_OUTPUT_PERIOD_FRAMES: usize = 256;
+const DEFAULT_OUTPUT_BUFFER_FRAMES: usize = 1_024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum InputMode {
@@ -47,7 +45,7 @@ enum InputMode {
 enum OutputMode {
     /// Write canonical 12-channel interleaved little-endian F32 to stdout.
     StdoutF32,
-    /// Write S32_LE to a Linux ALSA device via `aplay`.
+    /// Write native S32_LE directly to a Linux ALSA/ASoC endpoint.
     AlsaS32,
 }
 
@@ -69,7 +67,7 @@ impl From<WordHalfArg> for CarrierWordHalf {
 #[derive(Debug, Parser)]
 #[command(
     name = "aurora-encoded-runtime",
-    about = "Run direct eARC or legacy STM32/USB through one Aurora decode, DSP and Linux-output runtime"
+    about = "Run direct eARC or legacy STM32/USB through Aurora decode, DSP and output"
 )]
 struct Args {
     /// Select the physical encoded input explicitly. Aurora never auto-switches.
@@ -84,7 +82,7 @@ struct Args {
     #[arg(long, value_enum, default_value = "stdout-f32")]
     output: OutputMode,
 
-    /// ALSA playback device used by --output alsa-s32, e.g. hw:1,0 or plughw:1,0.
+    /// ALSA playback device for --output alsa-s32, for example hw:1,0.
     /// Omit to use ALSA's `default` device.
     #[arg(long)]
     output_device: Option<String>,
@@ -93,6 +91,14 @@ struct Args {
     /// canonical 7.1.4 output, allowing a 12-channel render to drive TDM16.
     #[arg(long, default_value_t = OUTPUT_CHANNELS)]
     hardware_output_channels: usize,
+
+    /// Preferred ALSA hardware period size. The device may negotiate a nearby value.
+    #[arg(long, default_value_t = DEFAULT_OUTPUT_PERIOD_FRAMES)]
+    output_period_frames: usize,
+
+    /// Preferred ALSA hardware buffer size. Must be at least two periods.
+    #[arg(long, default_value_t = DEFAULT_OUTPUT_BUFFER_FRAMES)]
+    output_buffer_frames: usize,
 
     /// Recovered direct-eARC carrier frame rate.
     #[arg(long, default_value_t = DEFAULT_CARRIER_RATE_HZ)]
@@ -170,11 +176,14 @@ fn main() -> Result<()> {
         }
         OutputMode::AlsaS32 => {
             let device = args.output_device.as_deref().unwrap_or("default");
-            let mut sink = AlsaS32Sink::spawn(
-                device,
-                args.output_rate,
-                args.hardware_output_channels,
-            )?;
+            let mut sink = NativeAlsaSink::open(AlsaOutputConfig {
+                device: device.to_owned(),
+                sample_rate: args.output_rate,
+                logical_channels: OUTPUT_CHANNELS,
+                hardware_channels: args.hardware_output_channels,
+                period_frames: args.output_period_frames,
+                buffer_frames: args.output_buffer_frames,
+            })?;
             let stats = run_selected_input(&args, &mut runtime, &mut sink)?;
             sink.finish()?;
             stats
@@ -219,6 +228,12 @@ fn validate_args(args: &Args) -> Result<()> {
             OUTPUT_CHANNELS,
             args.hardware_output_channels
         );
+    }
+    if args.output_period_frames == 0 {
+        bail!("ALSA output period must be greater than zero");
+    }
+    if args.output_buffer_frames < args.output_period_frames.saturating_mul(2) {
+        bail!("ALSA output buffer must be at least two periods");
     }
     if matches!(args.input, InputMode::LegacyUsb) && args.alsa_device.is_some() {
         bail!("--alsa-device is valid only with --input direct-earc");
@@ -411,90 +426,45 @@ impl<W: Write> SpeakerSink for StdoutF32Sink<W> {
     }
 }
 
-struct AlsaS32Sink {
-    child: Child,
-    stdin: Option<ChildStdin>,
-    hardware_channels: usize,
+struct NativeAlsaSink {
+    playback: NativeAlsaPlayback,
 }
 
-impl AlsaS32Sink {
-    fn spawn(device: &str, sample_rate: u32, hardware_channels: usize) -> Result<Self> {
-        #[cfg(not(target_os = "linux"))]
-        {
-            let _ = (device, sample_rate, hardware_channels);
-            bail!("--output alsa-s32 is supported only on Linux");
-        }
-
-        #[cfg(target_os = "linux")]
-        {
-            let mut child = Command::new("aplay")
-                .args([
-                    "-q",
-                    "-D",
-                    device,
-                    "-t",
-                    "raw",
-                    "-f",
-                    "S32_LE",
-                    "-r",
-                    &sample_rate.to_string(),
-                    "-c",
-                    &hardware_channels.to_string(),
-                ])
-                .stdin(Stdio::piped())
-                .stdout(Stdio::null())
-                .stderr(Stdio::inherit())
-                .spawn()
-                .with_context(|| format!("failed to start aplay for ALSA output device {device}"))?;
-            let stdin = child
-                .stdin
-                .take()
-                .context("aplay stdin was not captured")?;
-            Ok(Self {
-                child,
-                stdin: Some(stdin),
-                hardware_channels,
-            })
-        }
+impl NativeAlsaSink {
+    fn open(config: AlsaOutputConfig) -> Result<Self> {
+        let playback = NativeAlsaPlayback::open(config)
+            .context("failed to open Aurora native ALSA speaker output")?;
+        Ok(Self { playback })
     }
 }
 
-impl SpeakerSink for AlsaS32Sink {
+impl SpeakerSink for NativeAlsaSink {
     fn write_frame(&mut self, frame: &SpeakerOutputFrame) -> Result<()> {
         validate_speaker_frame(frame)?;
-        let stdin = self
-            .stdin
-            .as_mut()
-            .context("ALSA output stream is already closed")?;
-        let mut encoded = Vec::with_capacity(
-            frame
-                .frame_count
-                .saturating_mul(self.hardware_channels)
-                .saturating_mul(std::mem::size_of::<i32>()),
-        );
-        for logical_frame in frame.interleaved_f32.chunks_exact(OUTPUT_CHANNELS) {
-            for sample in logical_frame {
-                let value = f32_to_s32(*sample)?;
-                encoded.extend_from_slice(&value.to_le_bytes());
-            }
-            for _ in OUTPUT_CHANNELS..self.hardware_channels {
-                encoded.extend_from_slice(&0_i32.to_le_bytes());
-            }
-        }
-        stdin
-            .write_all(&encoded)
-            .context("failed writing S32_LE speaker PCM to aplay")?;
-        Ok(())
+        self.playback
+            .write_interleaved_f32(&frame.interleaved_f32, frame.discontinuity)
+            .context("native ALSA speaker write failed")
     }
 
     fn finish(&mut self) -> Result<()> {
-        if let Some(mut stdin) = self.stdin.take() {
-            stdin.flush().context("failed flushing aplay stdin")?;
-            drop(stdin);
-        }
-        let status = self.child.wait().context("failed waiting for aplay")?;
-        if !status.success() {
-            bail!("aplay exited with status {status}");
+        self.playback
+            .drain()
+            .context("failed draining native ALSA speaker output")?;
+        #[cfg(target_os = "linux")]
+        {
+            let telemetry = self.playback.telemetry();
+            eprintln!(
+                "aurora-alsa-output: device={} rate={} channels={} period={} buffer={} frames_written={} xruns={} recoveries={} discontinuity_resets={}",
+                telemetry.device,
+                telemetry.sample_rate,
+                telemetry.hardware_channels,
+                telemetry.period_frames,
+                telemetry.buffer_frames,
+                telemetry.frames_written,
+                telemetry.xruns,
+                telemetry.recoveries,
+                telemetry.discontinuity_resets
+            );
         }
         Ok(())
     }
@@ -512,19 +482,6 @@ fn validate_speaker_frame(frame: &SpeakerOutputFrame) -> Result<()> {
         );
     }
     Ok(())
-}
-
-fn f32_to_s32(sample: f32) -> Result<i32> {
-    if !sample.is_finite() {
-        bail!("speaker DSP produced a non-finite sample");
-    }
-    if sample <= -1.0 {
-        return Ok(i32::MIN);
-    }
-    if sample >= 1.0 {
-        return Ok(i32::MAX);
-    }
-    Ok((sample * i32::MAX as f32).round() as i32)
 }
 
 #[cfg(unix)]
@@ -615,6 +572,8 @@ mod tests {
             output: OutputMode::StdoutF32,
             output_device: None,
             hardware_output_channels: OUTPUT_CHANNELS,
+            output_period_frames: DEFAULT_OUTPUT_PERIOD_FRAMES,
+            output_buffer_frames: DEFAULT_OUTPUT_BUFFER_FRAMES,
             carrier_rate: 192_000,
             slots: 2,
             word_half: WordHalfArg::High,
@@ -645,6 +604,14 @@ mod tests {
     }
 
     #[test]
+    fn rejects_output_buffer_smaller_than_two_periods() {
+        let mut args = valid_args();
+        args.output_period_frames = 256;
+        args.output_buffer_frames = 256;
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
     fn legacy_mode_rejects_alsa_capture_device() {
         let mut args = valid_args();
         args.input = InputMode::LegacyUsb;
@@ -657,16 +624,6 @@ mod tests {
         let mut args = valid_args();
         args.output_device = Some("hw:1,0".to_owned());
         assert!(validate_args(&args).is_err());
-    }
-
-    #[test]
-    fn s32_conversion_is_saturating_and_symmetric_at_full_scale() {
-        assert_eq!(f32_to_s32(-2.0).unwrap(), i32::MIN);
-        assert_eq!(f32_to_s32(-1.0).unwrap(), i32::MIN);
-        assert_eq!(f32_to_s32(0.0).unwrap(), 0);
-        assert_eq!(f32_to_s32(1.0).unwrap(), i32::MAX);
-        assert_eq!(f32_to_s32(2.0).unwrap(), i32::MAX);
-        assert!(f32_to_s32(f32::NAN).is_err());
     }
 
     #[test]
