@@ -16,6 +16,7 @@ mod external_hoa;
 mod external_oam;
 mod external_pcm;
 mod hoa_contract;
+mod hoa_inverse_dyn;
 mod paired_gate;
 mod rendered_pcm;
 mod spatial_transport;
@@ -52,6 +53,9 @@ pub use external_pcm::{
     MpeghPrerenderPcm,
 };
 pub use hoa_contract::{MpeghHoaContractError, MpeghHoaDecodeContract};
+pub use hoa_inverse_dyn::{
+    decode_gain_correction_exponent, MpeghHoaInverseDynCorrection, MpeghHoaInverseDynError,
+};
 pub use paired_gate::{
     evaluate_paired_mpegh_candidate, MpeghPairedGateError, MpeghPairedPlaybackDecision,
 };
