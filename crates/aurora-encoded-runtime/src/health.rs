@@ -9,6 +9,7 @@ use crossbeam_queue::ArrayQueue;
 
 use crate::PlaybackBatch;
 use aurora_decoder_engine::telemetry::JocDecoderHealth;
+use aurora_decoder_engine::JocDecoderStatus;
 use aurora_direct_earc_decoder::DirectEarcTransportTelemetry;
 
 pub const DEFAULT_HEALTH_INTERVAL: Duration = Duration::from_secs(5);
@@ -24,6 +25,13 @@ pub struct RuntimeCounters {
     pub capture_xruns: u64,
     pub capture_recoveries: u64,
     pub capture_discontinuities: u64,
+}
+
+/// Inputs accepted by the health snapshot builder. `JocDecoderHealth` is the
+/// allocation-free live path; `&JocDecoderStatus` remains compatibility-only for
+/// existing callers and should not be used in the realtime ingest loop.
+pub trait IntoJocHealth {
+    fn into_joc_health(self) -> JocHealth;
 }
 
 impl RuntimeCounters {
@@ -62,19 +70,18 @@ impl RuntimeCounters {
         }
     }
 
-    /// Builds a coherent transport + decoder snapshot without allocating.
-    /// JOC state comes only from the decoder engine and is never derived from
-    /// IEC61937 data type 0x15.
-    pub fn snapshot_with_joc(
+    /// Builds a coherent transport + decoder snapshot. The preferred caller
+    /// passes `JocDecoderHealth`, which is fixed-size and allocation-free.
+    pub fn snapshot_with_joc<J: IntoJocHealth>(
         self,
         parser: DirectEarcTransportTelemetry,
         output: Option<OutputHealth>,
-        joc: JocDecoderHealth,
+        joc: J,
     ) -> RuntimeHealthSnapshot {
         RuntimeHealthSnapshot {
             counters: self,
             parser,
-            joc: JocHealth::from(joc),
+            joc: joc.into_joc_health(),
             output,
         }
     }
@@ -110,16 +117,30 @@ pub struct JocHealth {
     pub fallback_present: bool,
 }
 
-impl From<JocDecoderHealth> for JocHealth {
-    fn from(status: JocDecoderHealth) -> Self {
-        Self {
-            codec_classified_joc: status.codec_classified_joc,
-            speaker_render_active: status.speaker_render_active,
-            channel_count: status.channel_count,
-            latency_samples: status.latency_samples,
-            object_count: status.object_count,
-            complexity_index: status.complexity_index,
-            fallback_present: status.fallback_present,
+impl IntoJocHealth for JocDecoderHealth {
+    fn into_joc_health(self) -> JocHealth {
+        JocHealth {
+            codec_classified_joc: self.codec_classified_joc,
+            speaker_render_active: self.speaker_render_active,
+            channel_count: self.channel_count,
+            latency_samples: self.latency_samples,
+            object_count: self.object_count,
+            complexity_index: self.complexity_index,
+            fallback_present: self.fallback_present,
+        }
+    }
+}
+
+impl IntoJocHealth for &JocDecoderStatus {
+    fn into_joc_health(self) -> JocHealth {
+        JocHealth {
+            codec_classified_joc: self.codec_classified_joc,
+            speaker_render_active: self.speaker_render_active,
+            channel_count: self.channel_count,
+            latency_samples: self.latency_samples,
+            object_count: self.object_count,
+            complexity_index: self.complexity_index,
+            fallback_present: self.fallback_reason.is_some(),
         }
     }
 }
