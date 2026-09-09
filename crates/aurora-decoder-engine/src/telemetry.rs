@@ -55,7 +55,11 @@ impl AuroraDecoderEngine {
     pub fn joc_health(&self) -> JocDecoderHealth {
         let render = self.open.joc_render_info();
         JocDecoderHealth {
-            codec_classified_joc: self.active_codec == Some(CodecId::Eac3Joc),
+            // Read classification from the decoder itself. The open JOC lane can
+            // change classification while flushing a final access unit, after
+            // the policy-facing active_codec snapshot was last refreshed.
+            codec_classified_joc: self.open.detected_codec().map(CodecId::from)
+                == Some(CodecId::Eac3Joc),
             speaker_render_active: render.is_some(),
             channel_count: render.map(|info| info.channel_count),
             latency_samples: render.map(|info| info.latency_samples),
@@ -63,19 +67,6 @@ impl AuroraDecoderEngine {
             complexity_index: render.and_then(|info| info.complexity_index),
             fallback_present: self.open.last_joc_error().is_some(),
         }
-    }
-
-    /// Finalizes codecs that own explicit packet/framer/worker drain state.
-    ///
-    /// AC-4 and DTS currently expose their ready output through ordinary empty
-    /// `decode_chunk` polls and have no separate finite-stream flush primitive.
-    /// Open codecs, including E-AC-3/JOC and worker-backed formats, must flush
-    /// their assemblers/renderers before the caller performs those final polls.
-    pub fn flush_pending(&mut self) -> Result<(), DecoderError> {
-        if matches!(self.active_codec, Some(CodecId::Ac4 | CodecId::Dts)) {
-            return Ok(());
-        }
-        self.open.flush_packets()
     }
 }
 
