@@ -23,6 +23,42 @@ pub struct NativeMpeghImmersiveDecision {
     pub playback: MpeghPairedPlaybackDecision,
 }
 
+impl NativeMpeghImmersiveDecision {
+    /// Borrow the exact block authorized by the evidence decision. This helper
+    /// prevents callers from accidentally playing an Aurora candidate after
+    /// the gate selected libmpegh, or vice versa.
+    pub fn selected_audio(
+        &self,
+    ) -> Result<&AudioBlock, NativeMpeghPlaybackSelectionError> {
+        match self.playback.evidence.choice {
+            MpeghPlaybackChoice::AuroraCandidate => self
+                .candidate
+                .as_ref()
+                .ok_or(NativeMpeghPlaybackSelectionError::MissingAuroraCandidate),
+            MpeghPlaybackChoice::LibmpeghReference => self
+                .playback
+                .reference_fallback
+                .as_ref()
+                .ok_or(NativeMpeghPlaybackSelectionError::MissingReferenceFallback),
+        }
+    }
+
+    /// Consume the decision and return only the block authorized for playback.
+    pub fn into_selected_audio(
+        self,
+    ) -> Result<AudioBlock, NativeMpeghPlaybackSelectionError> {
+        match self.playback.evidence.choice {
+            MpeghPlaybackChoice::AuroraCandidate => self
+                .candidate
+                .ok_or(NativeMpeghPlaybackSelectionError::MissingAuroraCandidate),
+            MpeghPlaybackChoice::LibmpeghReference => self
+                .playback
+                .reference_fallback
+                .ok_or(NativeMpeghPlaybackSelectionError::MissingReferenceFallback),
+        }
+    }
+}
+
 #[derive(Debug)]
 pub struct NativeMpeghImmersiveEvaluation {
     pub evidence: MpeghPairedEvidence,
@@ -157,6 +193,14 @@ pub fn decode_and_evaluate_native_mpegh_hoa_chunk(
     Ok(Some(NativeMpeghHoaEvaluation { evidence, decision }))
 }
 
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum NativeMpeghPlaybackSelectionError {
+    #[error("MPEG-H evidence selected the Aurora candidate but no candidate block is present")]
+    MissingAuroraCandidate,
+    #[error("MPEG-H evidence selected the libmpegh reference but no reference fallback block is present")]
+    MissingReferenceFallback,
+}
+
 #[derive(Debug, Error)]
 pub enum NativeMpeghImmersiveEvaluationError {
     #[error(transparent)]
@@ -175,4 +219,68 @@ pub enum NativeMpeghHoaEvaluationError {
     NativePair(#[from] MpeghNativePairError),
     #[error(transparent)]
     CandidateGate(#[from] MpeghHoaCandidateGateError),
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn block(value: f32) -> AudioBlock {
+        AudioBlock {
+            channels: vec![vec![value; 2]],
+            frame_count: 2,
+            presentation_time_seconds: 0.0,
+            discontinuity: false,
+        }
+    }
+
+    fn outcome(choice: MpeghPlaybackChoice) -> MpeghEvidenceGateOutcome {
+        MpeghEvidenceGateOutcome {
+            choice,
+            report: None,
+            rejection_reason: None,
+        }
+    }
+
+    #[test]
+    fn selected_audio_obeys_aurora_candidate_choice() {
+        let decision = NativeMpeghImmersiveDecision {
+            family: MpeghCandidateFamily::Hoa,
+            candidate: Some(block(0.25)),
+            playback: MpeghPairedPlaybackDecision {
+                evidence: outcome(MpeghPlaybackChoice::AuroraCandidate),
+                reference_fallback: Some(block(0.75)),
+            },
+        };
+        assert_eq!(decision.selected_audio().unwrap().channels[0][0], 0.25);
+    }
+
+    #[test]
+    fn selected_audio_obeys_reference_choice() {
+        let decision = NativeMpeghImmersiveDecision {
+            family: MpeghCandidateFamily::ExactScene,
+            candidate: Some(block(0.25)),
+            playback: MpeghPairedPlaybackDecision {
+                evidence: outcome(MpeghPlaybackChoice::LibmpeghReference),
+                reference_fallback: Some(block(0.75)),
+            },
+        };
+        assert_eq!(decision.selected_audio().unwrap().channels[0][0], 0.75);
+    }
+
+    #[test]
+    fn inconsistent_playback_artifact_fails_closed() {
+        let decision = NativeMpeghImmersiveDecision {
+            family: MpeghCandidateFamily::Hoa,
+            candidate: None,
+            playback: MpeghPairedPlaybackDecision {
+                evidence: outcome(MpeghPlaybackChoice::AuroraCandidate),
+                reference_fallback: Some(block(0.75)),
+            },
+        };
+        assert!(matches!(
+            decision.selected_audio(),
+            Err(NativeMpeghPlaybackSelectionError::MissingAuroraCandidate)
+        ));
+    }
 }
