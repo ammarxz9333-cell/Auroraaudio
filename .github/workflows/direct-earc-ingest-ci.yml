@@ -67,15 +67,20 @@ jobs:
           sudo apt-get update
           sudo apt-get install --yes libasound2-dev pkg-config
 
-      - name: Resolve workspace lockfile
-        run: cargo generate-lockfile
+      - name: Verify committed workspace lockfile
+        run: |
+          cargo metadata --format-version 1 --locked > /tmp/aurora-metadata.json
+          cargo generate-lockfile
+          if ! git diff --exit-code -- Cargo.lock; then
+            echo 'Cargo.lock is stale; regenerate it and commit the exact dependency graph' >&2
+            exit 1
+          fi
 
       - name: Validate Linux dependency graph
         run: |
-          cargo metadata --format-version 1 --locked > /tmp/aurora-metadata.json
-          cargo tree --target x86_64-unknown-linux-gnu -i alsa-sys
-          cargo tree --target x86_64-unknown-linux-gnu -p aurora-realtime-audio-cpal
-          if cargo tree --target x86_64-unknown-linux-gnu -p aurora-realtime-audio-cpal --prefix none | grep -Eq '^cpal v[0-9]'; then
+          cargo tree --locked --target x86_64-unknown-linux-gnu -i alsa-sys
+          cargo tree --locked --target x86_64-unknown-linux-gnu -p aurora-realtime-audio-cpal
+          if cargo tree --locked --target x86_64-unknown-linux-gnu -p aurora-realtime-audio-cpal --prefix none | grep -Eq '^cpal v[0-9]'; then
             echo 'CPAL unexpectedly entered the Linux dependency graph' >&2
             exit 1
           fi
@@ -95,91 +100,91 @@ jobs:
           -- --check
 
       - name: Check reusable IEC61937 parser
-        run: cargo check -p aurora-iec61937 --all-targets
+        run: cargo check --locked -p aurora-iec61937 --all-targets
 
       - name: Test reusable IEC61937 parser
-        run: cargo test -p aurora-iec61937
+        run: cargo test --locked -p aurora-iec61937
 
       - name: Clippy reusable IEC61937 parser
-        run: cargo clippy -p aurora-iec61937 --all-targets -- -D warnings
+        run: cargo clippy --locked -p aurora-iec61937 --all-targets -- -D warnings
 
       - name: Check open AC3/EAC3/JOC decoder adapter
-        run: cargo check -p aurora-decoder-open --all-targets
+        run: cargo check --locked -p aurora-decoder-open --all-targets
 
       - name: Test open AC3/EAC3/JOC decoder adapter
-        run: cargo test -p aurora-decoder-open
+        run: cargo test --locked -p aurora-decoder-open
 
       - name: Clippy open AC3/EAC3/JOC decoder adapter
-        run: cargo clippy -p aurora-decoder-open --all-targets -- -D warnings
+        run: cargo clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
 
       - name: Check direct eARC decoder bridge
-        run: cargo check -p aurora-direct-earc-decoder --all-targets
+        run: cargo check --locked -p aurora-direct-earc-decoder --all-targets
 
       - name: Test direct eARC decoder bridge
-        run: cargo test -p aurora-direct-earc-decoder
+        run: cargo test --locked -p aurora-direct-earc-decoder
 
       - name: Clippy direct eARC decoder bridge
-        run: cargo clippy -p aurora-direct-earc-decoder --all-targets -- -D warnings
+        run: cargo clippy --locked -p aurora-direct-earc-decoder --all-targets -- -D warnings
 
       - name: Check unified encoded input selector
-        run: cargo check -p aurora-encoded-input --all-targets
+        run: cargo check --locked -p aurora-encoded-input --all-targets
 
       - name: Test unified encoded input selector
-        run: cargo test -p aurora-encoded-input
+        run: cargo test --locked -p aurora-encoded-input
 
       - name: Clippy unified encoded input selector
-        run: cargo clippy -p aurora-encoded-input --all-targets -- -D warnings
+        run: cargo clippy --locked -p aurora-encoded-input --all-targets -- -D warnings
 
       - name: Check unified encoded runtime
-        run: cargo check -p aurora-encoded-runtime --all-targets
+        run: cargo check --locked -p aurora-encoded-runtime --all-targets
 
       - name: Test unified encoded runtime
-        run: cargo test -p aurora-encoded-runtime
+        run: cargo test --locked -p aurora-encoded-runtime
 
       - name: Clippy unified encoded runtime
-        run: cargo clippy -p aurora-encoded-runtime --all-targets -- -D warnings
+        run: cargo clippy --locked -p aurora-encoded-runtime --all-targets -- -D warnings
 
       - name: Check native ALSA input backend
-        run: cargo check -p aurora-alsa-input --all-targets
+        run: cargo check --locked -p aurora-alsa-input --all-targets
 
       - name: Test native ALSA input backend
-        run: cargo test -p aurora-alsa-input
+        run: cargo test --locked -p aurora-alsa-input
 
       - name: Clippy native ALSA input backend
-        run: cargo clippy -p aurora-alsa-input --all-targets -- -D warnings
+        run: cargo clippy --locked -p aurora-alsa-input --all-targets -- -D warnings
 
       - name: Check native ALSA output backend
-        run: cargo check -p aurora-alsa-output --all-targets
+        run: cargo check --locked -p aurora-alsa-output --all-targets
 
       - name: Test native ALSA output backend
-        run: cargo test -p aurora-alsa-output
+        run: cargo test --locked -p aurora-alsa-output
 
       - name: Clippy native ALSA output backend
-        run: cargo clippy -p aurora-alsa-output --all-targets -- -D warnings
+        run: cargo clippy --locked -p aurora-alsa-output --all-targets -- -D warnings
 
       - name: Check Linux CPAL compatibility stub
-        run: cargo check -p aurora-realtime-audio-cpal --all-targets
+        run: cargo check --locked -p aurora-realtime-audio-cpal --all-targets
 
       - name: Test Linux CPAL compatibility stub
-        run: cargo test -p aurora-realtime-audio-cpal
+        run: cargo test --locked -p aurora-realtime-audio-cpal
 
       - name: Clippy Linux CPAL compatibility stub
-        run: cargo clippy -p aurora-realtime-audio-cpal --all-targets -- -D warnings
+        run: cargo clippy --locked -p aurora-realtime-audio-cpal --all-targets -- -D warnings
 
       - name: Check direct eARC binaries
         run: |
-          cargo check -p aurora-cli --bin aurora-direct-earc-ingest
-          cargo check -p aurora-cli --bin aurora-direct-earc-probe
-          cargo check -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
+          cargo check --locked -p aurora-cli --bin aurora-direct-earc-ingest
+          cargo check --locked -p aurora-cli --bin aurora-direct-earc-probe
+          cargo check --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
 
       - name: Test direct eARC binaries
         run: |
-          cargo test -p aurora-cli --bin aurora-direct-earc-ingest
-          cargo test -p aurora-cli --bin aurora-direct-earc-probe
-          cargo test -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
+          cargo test --locked -p aurora-cli --bin aurora-direct-earc-ingest
+          cargo test --locked -p aurora-cli --bin aurora-direct-earc-probe
+          cargo test --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
 
       - name: Clippy direct eARC binaries
         run: |
-          cargo clippy -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
-          cargo clippy -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
-          cargo clippy -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
+          cargo clippy --locked -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
+          cargo clippy --locked -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
+          cargo clippy --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
