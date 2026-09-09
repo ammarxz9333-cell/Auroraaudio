@@ -23,7 +23,10 @@ pub fn render_exact_mpegh_object_plane(
     pair: &MpeghPairedEvidence,
 ) -> Result<AudioBlock, MpeghObjectTimelineError> {
     match pair.scene.domain {
-        TransportSceneDomain::ObjectsAndHoa | TransportSceneDomain::BedObjectsAndHoa => {}
+        TransportSceneDomain::ObjectSignals
+        | TransportSceneDomain::BedAndObjects
+        | TransportSceneDomain::ObjectsAndHoa
+        | TransportSceneDomain::BedObjectsAndHoa => {}
         domain => {
             return Err(MpeghObjectTimelineError::UnsupportedDomain {
                 domain: format!("{domain:?}"),
