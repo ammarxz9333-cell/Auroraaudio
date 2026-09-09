@@ -110,12 +110,19 @@ mod ffi;
 #[cfg(feature = "native-mpegh")]
 mod native;
 #[cfg(feature = "native-mpegh")]
+mod native_hoa_eval;
+#[cfg(feature = "native-mpegh")]
 mod native_pair;
 
 #[cfg(feature = "native-mpegh")]
 pub use native::{
     MpeghExternalFrame, MpeghNativeError, MpeghSpeaker, MpeghSpeakerLayout,
     NativeMpeghDecoder,
+};
+#[cfg(feature = "native-mpegh")]
+pub use native_hoa_eval::{
+    decode_and_evaluate_native_mpegh_hoa_chunk, NativeMpeghHoaEvaluation,
+    NativeMpeghHoaEvaluationError,
 };
 #[cfg(feature = "native-mpegh")]
 pub use native_pair::{decode_native_paired_chunk, MpeghNativePairError};
