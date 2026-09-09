@@ -62,6 +62,14 @@ pub struct DirectEarcTransportTelemetry {
     pub relocks: u64,
     /// Milliseconds since the most recent valid IEC61937 burst, when one exists.
     pub last_valid_burst_age_ms: Option<u64>,
+    /// Exact Pa-to-Pa spacing in canonical carrier bytes for the latest two
+    /// accepted bursts in this observation epoch. Unlike wall time, this is
+    /// independent of read chunking and process scheduling.
+    pub last_burst_spacing_bytes: Option<u64>,
+    /// Smallest Pa-to-Pa carrier-byte spacing observed in the current epoch.
+    pub min_burst_spacing_bytes: Option<u64>,
+    /// Largest Pa-to-Pa carrier-byte spacing observed in the current epoch.
+    pub max_burst_spacing_bytes: Option<u64>,
 }
 
 /// Stateful direct-eARC front end.
@@ -81,6 +89,10 @@ pub struct DirectEarcDecoder {
     total_format_changes: u64,
     relocks: u64,
     last_valid_burst: Option<Instant>,
+    last_burst_carrier_offset: Option<u64>,
+    last_burst_spacing_bytes: Option<u64>,
+    min_burst_spacing_bytes: Option<u64>,
+    max_burst_spacing_bytes: Option<u64>,
 }
 
 impl DirectEarcDecoder {
@@ -98,6 +110,10 @@ impl DirectEarcDecoder {
             total_format_changes: 0,
             relocks: 0,
             last_valid_burst: None,
+            last_burst_carrier_offset: None,
+            last_burst_spacing_bytes: None,
+            min_burst_spacing_bytes: None,
+            max_burst_spacing_bytes: None,
         }
     }
 
@@ -113,9 +129,13 @@ impl DirectEarcDecoder {
         self.iec61937_locked = false;
         self.bursts_since_lock = 0;
         self.last_valid_burst = None;
+        self.last_burst_carrier_offset = None;
+        self.last_burst_spacing_bytes = None;
+        self.min_burst_spacing_bytes = None;
+        self.max_burst_spacing_bytes = None;
     }
 
-    fn observe_valid_burst(&mut self) {
+    fn observe_valid_burst(&mut self, carrier_offset_bytes: u64) {
         if !self.iec61937_locked {
             if self.ever_locked {
                 self.relocks = self.relocks.saturating_add(1);
@@ -124,6 +144,20 @@ impl DirectEarcDecoder {
             self.iec61937_locked = true;
             self.bursts_since_lock = 0;
         }
+
+        if let Some(previous) = self.last_burst_carrier_offset {
+            let spacing = carrier_offset_bytes.saturating_sub(previous);
+            self.last_burst_spacing_bytes = Some(spacing);
+            self.min_burst_spacing_bytes = Some(
+                self.min_burst_spacing_bytes
+                    .map_or(spacing, |current| current.min(spacing)),
+            );
+            self.max_burst_spacing_bytes = Some(
+                self.max_burst_spacing_bytes
+                    .map_or(spacing, |current| current.max(spacing)),
+            );
+        }
+        self.last_burst_carrier_offset = Some(carrier_offset_bytes);
         self.total_bursts = self.total_bursts.saturating_add(1);
         self.bursts_since_lock = self.bursts_since_lock.saturating_add(1);
         self.last_valid_burst = Some(Instant::now());
@@ -182,7 +216,7 @@ impl DirectEarcDecoder {
         };
 
         for observation in observations {
-            self.observe_valid_burst();
+            self.observe_valid_burst(observation.carrier_offset_bytes);
             batch.bursts += 1;
             batch.transport_codecs.push(observation.burst.codec);
 
@@ -255,6 +289,9 @@ impl DirectEarcDecoder {
             total_format_changes: self.total_format_changes,
             relocks: self.relocks,
             last_valid_burst_age_ms,
+            last_burst_spacing_bytes: self.last_burst_spacing_bytes,
+            min_burst_spacing_bytes: self.min_burst_spacing_bytes,
+            max_burst_spacing_bytes: self.max_burst_spacing_bytes,
         }
     }
 }
@@ -296,6 +333,9 @@ mod tests {
                 total_format_changes: 0,
                 relocks: 0,
                 last_valid_burst_age_ms: None,
+                last_burst_spacing_bytes: None,
+                min_burst_spacing_bytes: None,
+                max_burst_spacing_bytes: None,
             }
         );
         assert!(!direct.engine().joc_status().codec_classified_joc);
@@ -303,9 +343,26 @@ mod tests {
     }
 
     #[test]
+    fn cadence_tracks_exact_carrier_spacing_without_wall_clock() {
+        let mut direct = DirectEarcDecoder::new(EngineConfig::default());
+        direct.observe_valid_burst(0);
+        direct.observe_valid_burst(24_576);
+        direct.observe_valid_burst(49_160);
+
+        let health = direct.transport_telemetry();
+        assert_eq!(health.last_burst_spacing_bytes, Some(24_584));
+        assert_eq!(health.min_burst_spacing_bytes, Some(24_576));
+        assert_eq!(health.max_burst_spacing_bytes, Some(24_584));
+        assert_eq!(health.total_bursts, 3);
+    }
+
+    #[test]
     fn discontinuity_clears_partial_transport_state_and_starts_new_epoch() {
         let mut direct = DirectEarcDecoder::new(EngineConfig::default());
         direct.configure(format()).unwrap();
+        direct.observe_valid_burst(0);
+        direct.observe_valid_burst(24_576);
+        assert_eq!(direct.transport_telemetry().last_burst_spacing_bytes, Some(24_576));
 
         // First half of Pa/Pb preamble remains pending.
         let first = direct.push_carrier(&[0x72, 0xF8], false).unwrap();
@@ -320,6 +377,9 @@ mod tests {
         assert_eq!(health.observation_epoch, 2);
         assert!(!health.iec61937_locked);
         assert_eq!(health.bursts_since_lock, 0);
+        assert_eq!(health.last_burst_spacing_bytes, None);
+        assert_eq!(health.min_burst_spacing_bytes, None);
+        assert_eq!(health.max_burst_spacing_bytes, None);
         assert!(!direct.engine().joc_status().codec_classified_joc);
     }
 
