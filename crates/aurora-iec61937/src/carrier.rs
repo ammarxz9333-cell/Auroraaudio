@@ -17,6 +17,16 @@ pub enum CarrierNormalizeError {
     ZeroSlots,
     /// Slot count overflowed the byte-size calculation.
     FrameSizeOverflow,
+    /// A native ALSA sample block did not contain complete serial-audio frames.
+    IncompleteSampleFrame {
+        samples: usize,
+        slots: usize,
+    },
+    /// Byte-oriented and native-word ingestion were mixed while a partial byte
+    /// frame was still buffered. The caller must finish or reset first.
+    PendingByteFrame {
+        pending: usize,
+    },
     /// End of stream left an incomplete serial-audio frame.
     TrailingBytes {
         pending: usize,
@@ -29,6 +39,14 @@ impl fmt::Display for CarrierNormalizeError {
         match self {
             Self::ZeroSlots => write!(f, "carrier slot count must be greater than zero"),
             Self::FrameSizeOverflow => write!(f, "carrier frame byte count overflow"),
+            Self::IncompleteSampleFrame { samples, slots } => write!(
+                f,
+                "native S32 block has {samples} slot samples; expected a multiple of {slots}"
+            ),
+            Self::PendingByteFrame { pending } => write!(
+                f,
+                "cannot switch to native S32-word ingest with {pending} partial byte-oriented capture bytes pending"
+            ),
             Self::TrailingBytes {
                 pending,
                 frame_bytes,
@@ -44,9 +62,10 @@ impl Error for CarrierNormalizeError {}
 
 /// Stateful S32_LE serial-audio carrier normalizer.
 ///
-/// Linux ALSA capture boundaries do not have to align to I2S/SAI frames. This
-/// object buffers only the incomplete tail, emits complete carrier frames as
-/// canonical S16_LE IEC61937 words, and never pads missing bytes.
+/// Linux ALSA capture boundaries do not have to align to I2S/SAI frames. The
+/// byte-oriented API buffers only an incomplete tail. Native ALSA `i32` blocks
+/// can use [`Self::push_s32_words`] to avoid a redundant i32 -> byte staging
+/// allocation while preserving the exact 32-bit slot pattern.
 #[derive(Debug)]
 pub struct S32LeCarrierNormalizer {
     slots: usize,
@@ -89,19 +108,46 @@ impl S32LeCarrierNormalizer {
         let mut output = Vec::with_capacity(complete_bytes / 2);
         for raw in self.pending[..complete_bytes].chunks_exact(4) {
             let slot = u32::from_le_bytes([raw[0], raw[1], raw[2], raw[3]]);
-            let word = match self.word_half {
-                CarrierWordHalf::High => (slot >> 16) as u16,
-                CarrierWordHalf::Low => slot as u16,
-            };
-            output.extend_from_slice(&word.to_le_bytes());
+            self.push_slot_word(slot, &mut output);
         }
 
         self.pending.drain(..complete_bytes);
-        self.carrier_frames = self.carrier_frames.saturating_add(frames as u64);
-        self.output_words = self
-            .output_words
-            .saturating_add((frames.saturating_mul(self.slots)) as u64);
+        self.account_frames(frames);
         output
+    }
+
+    /// Normalizes complete native ALSA S32 slot samples directly.
+    ///
+    /// ALSA's Rust binding exposes S32_LE samples as `i32`; casting to `u32`
+    /// preserves the two's-complement bit pattern exactly. This path avoids
+    /// serializing the capture block to an intermediate byte vector before
+    /// extracting the useful 16-bit IEC61937 word from each slot.
+    pub fn push_s32_words(
+        &mut self,
+        samples: &[i32],
+    ) -> Result<Vec<u8>, CarrierNormalizeError> {
+        if !self.pending.is_empty() {
+            return Err(CarrierNormalizeError::PendingByteFrame {
+                pending: self.pending.len(),
+            });
+        }
+        if samples.len() % self.slots != 0 {
+            return Err(CarrierNormalizeError::IncompleteSampleFrame {
+                samples: samples.len(),
+                slots: self.slots,
+            });
+        }
+        if samples.is_empty() {
+            return Ok(Vec::new());
+        }
+
+        let frames = samples.len() / self.slots;
+        let mut output = Vec::with_capacity(samples.len().saturating_mul(2));
+        for &sample in samples {
+            self.push_slot_word(sample as u32, &mut output);
+        }
+        self.account_frames(frames);
+        Ok(output)
     }
 
     /// Validates that capture ended on a complete serial-audio frame.
@@ -135,6 +181,21 @@ impl S32LeCarrierNormalizer {
 
     pub fn frame_bytes(&self) -> usize {
         self.frame_bytes
+    }
+
+    fn push_slot_word(&self, slot: u32, output: &mut Vec<u8>) {
+        let word = match self.word_half {
+            CarrierWordHalf::High => (slot >> 16) as u16,
+            CarrierWordHalf::Low => slot as u16,
+        };
+        output.extend_from_slice(&word.to_le_bytes());
+    }
+
+    fn account_frames(&mut self, frames: usize) {
+        self.carrier_frames = self.carrier_frames.saturating_add(frames as u64);
+        self.output_words = self
+            .output_words
+            .saturating_add((frames.saturating_mul(self.slots)) as u64);
     }
 }
 
@@ -179,6 +240,50 @@ mod tests {
             [0x72, 0xF8, 0x1F, 0x4E, 0x15, 0x00, 0x80, 0x00]
         );
         assert_eq!(normalizer.carrier_frames(), 2);
+    }
+
+    #[test]
+    fn native_i32_path_preserves_high_half_without_byte_staging() {
+        let mut normalizer = S32LeCarrierNormalizer::new(2, CarrierWordHalf::High).unwrap();
+        let samples = [
+            (u32::from(0xF872_u16) << 16) as i32,
+            (u32::from(0x4E1F_u16) << 16) as i32,
+            (u32::from(0x0015_u16) << 16) as i32,
+            (u32::from(0x0080_u16) << 16) as i32,
+        ];
+
+        let output = normalizer.push_s32_words(&samples).unwrap();
+
+        assert_eq!(
+            output,
+            [0x72, 0xF8, 0x1F, 0x4E, 0x15, 0x00, 0x80, 0x00]
+        );
+        assert_eq!(normalizer.carrier_frames(), 2);
+        assert_eq!(normalizer.output_words(), 4);
+    }
+
+    #[test]
+    fn native_i32_path_rejects_partial_slot_frame() {
+        let mut normalizer = S32LeCarrierNormalizer::new(2, CarrierWordHalf::High).unwrap();
+        assert_eq!(
+            normalizer.push_s32_words(&[1]),
+            Err(CarrierNormalizeError::IncompleteSampleFrame {
+                samples: 1,
+                slots: 2,
+            })
+        );
+    }
+
+    #[test]
+    fn native_i32_path_refuses_to_cross_pending_byte_boundary() {
+        let mut normalizer = S32LeCarrierNormalizer::new(2, CarrierWordHalf::High).unwrap();
+        assert!(normalizer.push(&[1, 2, 3]).is_empty());
+        assert_eq!(
+            normalizer.push_s32_words(&[0, 0]),
+            Err(CarrierNormalizeError::PendingByteFrame { pending: 3 })
+        );
+        normalizer.reset();
+        assert!(normalizer.push_s32_words(&[0, 0]).is_ok());
     }
 
     #[test]
