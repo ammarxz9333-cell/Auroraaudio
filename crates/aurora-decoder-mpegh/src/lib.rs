@@ -148,8 +148,11 @@ pub use native::{
 };
 #[cfg(feature = "native-mpegh")]
 pub use native_hoa_eval::{
-    decode_and_evaluate_native_mpegh_hoa_chunk, NativeMpeghHoaEvaluation,
-    NativeMpeghHoaEvaluationError,
+    decode_and_evaluate_native_mpegh_hoa_chunk,
+    decode_and_evaluate_native_mpegh_immersive_chunk,
+    evaluate_native_mpegh_immersive_evidence, NativeMpeghHoaEvaluation,
+    NativeMpeghHoaEvaluationError, NativeMpeghImmersiveDecision,
+    NativeMpeghImmersiveEvaluation, NativeMpeghImmersiveEvaluationError,
 };
 #[cfg(feature = "native-mpegh")]
 pub use native_pair::{decode_native_paired_chunk, MpeghNativePairError};
