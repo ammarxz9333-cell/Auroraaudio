@@ -12,6 +12,7 @@ on:
       - "crates/aurora-spatial-ir/**"
       - "crates/aurora-spatial-ir-v2/**"
       - "crates/aurora-spatial-transport-v2/**"
+      - "crates/aurora-hoa-ir/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
       - "crates/aurora-decoder-iamf/**"
@@ -22,6 +23,7 @@ on:
       - "crates/aurora-spatial-runtime-v2/**"
       - "crates/aurora-renderer-api/**"
       - "crates/aurora-renderer-vbap/**"
+      - "third_party/patches/libmpegh-aurora-hoa-coefficient-observer.patch"
       - "config/external-components-v1.json"
       - "scripts/check_external_components.py"
       - ".github/workflows/decoder-engine-ci.yml"
@@ -33,6 +35,7 @@ on:
       - "crates/aurora-spatial-ir/**"
       - "crates/aurora-spatial-ir-v2/**"
       - "crates/aurora-spatial-transport-v2/**"
+      - "crates/aurora-hoa-ir/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
       - "crates/aurora-decoder-iamf/**"
@@ -43,6 +46,7 @@ on:
       - "crates/aurora-spatial-runtime-v2/**"
       - "crates/aurora-renderer-api/**"
       - "crates/aurora-renderer-vbap/**"
+      - "third_party/patches/libmpegh-aurora-hoa-coefficient-observer.patch"
       - "config/external-components-v1.json"
       - "scripts/check_external_components.py"
       - ".github/workflows/decoder-engine-ci.yml"
@@ -73,6 +77,8 @@ jobs:
         run: cargo check -p aurora-spatial-ir-v2 --all-targets
       - name: Check Spatial Transport V2
         run: cargo check -p aurora-spatial-transport-v2 --all-targets
+      - name: Check HOA coefficient IR
+        run: cargo check -p aurora-hoa-ir --all-targets
       - name: Check decoder engine
         run: cargo check -p aurora-decoder-engine --all-targets
       - name: Check native IAMF adapter
@@ -93,6 +99,8 @@ jobs:
         run: cargo test -p aurora-spatial-ir-v2
       - name: Test Spatial Transport V2
         run: cargo test -p aurora-spatial-transport-v2
+      - name: Test HOA coefficient IR
+        run: cargo test -p aurora-hoa-ir
       - name: Test decoder engine
         run: cargo test -p aurora-decoder-engine
       - name: Test native IAMF adapter
@@ -109,6 +117,8 @@ jobs:
         run: cargo clippy -p aurora-spatial-ir-v2 --all-targets -- -D warnings
       - name: Strict Spatial Transport V2 clippy
         run: cargo clippy -p aurora-spatial-transport-v2 --all-targets -- -D warnings
+      - name: Strict HOA coefficient IR clippy
+        run: cargo clippy -p aurora-hoa-ir --all-targets -- -D warnings
       - name: Strict decoder clippy
         run: cargo clippy -p aurora-decoder-engine --all-targets -- -D warnings
       - name: Strict IAMF clippy
@@ -184,21 +194,28 @@ jobs:
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
           components: rustfmt, clippy
-      - name: Build pinned libmpegh static library
+      - name: Build patched pinned libmpegh static library
         shell: bash
         run: |
           set -euo pipefail
           git clone --filter=blob:none https://github.com/ittiam-systems/libmpegh.git /tmp/libmpegh
           git -C /tmp/libmpegh checkout --detach "$LIBMPEGH_SHA"
+          git -C /tmp/libmpegh apply --check "$GITHUB_WORKSPACE/third_party/patches/libmpegh-aurora-hoa-coefficient-observer.patch"
+          git -C /tmp/libmpegh apply "$GITHUB_WORKSPACE/third_party/patches/libmpegh-aurora-hoa-coefficient-observer.patch"
           cmake -S /tmp/libmpegh -B /tmp/libmpegh/build -DCMAKE_BUILD_TYPE=Release
           cmake --build /tmp/libmpegh/build --target ia_mpeghd_lib --parallel 2
           test -f /tmp/libmpegh/build/libia_mpeghd_lib.a
+          nm -g /tmp/libmpegh/build/libia_mpeghd_lib.a | grep -q aurora_mpegh_set_hoa_coeff_observer
       - name: Resolve workspace lockfile
         run: cargo generate-lockfile
+      - name: Check HOA coefficient IR
+        run: cargo check -p aurora-hoa-ir --all-targets
       - name: Check native MPEG-H FFI and evidence path
         run: cargo check -p aurora-decoder-mpegh --features native-mpegh --all-targets
       - name: Check super decoder native MPEG-H path only
         run: cargo check -p aurora-super-decoder --no-default-features --features native-mpegh --all-targets
+      - name: Test HOA coefficient IR
+        run: cargo test -p aurora-hoa-ir
       - name: Test native MPEG-H FFI and comparator
         run: cargo test -p aurora-decoder-mpegh --features native-mpegh
       - name: Test super decoder native MPEG-H pairing
