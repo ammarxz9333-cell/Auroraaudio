@@ -3,7 +3,8 @@
 //! `aurora-decoder-engine` remains the stable core for AC-3/E-AC-3/JOC,
 //! AC-4, DTS and broad compatibility fallback. This crate composes that core
 //! with format-specialist immersive backends that are stronger when selected:
-//! native IAMF (`iamf-rs`) and optional native TrueHD/Atmos (`truehd`).
+//! native IAMF (`iamf-rs`), optional native TrueHD/Atmos (`truehd`), and an
+//! optional libmpegh external-render scene path for MPEG-H 3D Audio.
 
 #![forbid(unsafe_code)]
 
@@ -16,6 +17,8 @@ use aurora_spatial_ir_v2::SpatialDecodedFrame as SpatialDecodedFrameV2;
 
 #[cfg(feature = "iamf")]
 use aurora_decoder_iamf::IamfDecoderAdapter;
+#[cfg(feature = "native-mpegh")]
+use aurora_decoder_mpegh::{MpeghExternalFrame, NativeMpeghDecoder};
 #[cfg(feature = "native-truehd")]
 use aurora_decoder_truehdd::{TruehddDecoderAdapter, TruehddV2DecoderAdapter};
 
@@ -24,6 +27,7 @@ pub enum ActiveRoute {
     Core,
     IamfRust,
     TrueHdNative,
+    MpegHNative,
 }
 
 pub struct AuroraSuperDecoder {
@@ -35,6 +39,10 @@ pub struct AuroraSuperDecoder {
     truehd: TruehddDecoderAdapter,
     #[cfg(feature = "native-truehd")]
     truehd_v2: TruehddV2DecoderAdapter,
+    /// libmpegh is created lazily because the native C backend is optional and
+    /// must never prevent unrelated codecs from constructing the super decoder.
+    #[cfg(feature = "native-mpegh")]
+    mpegh: Option<NativeMpeghDecoder>,
     active_route: ActiveRoute,
 }
 
@@ -49,6 +57,8 @@ impl AuroraSuperDecoder {
             truehd: TruehddDecoderAdapter::new(),
             #[cfg(feature = "native-truehd")]
             truehd_v2: TruehddV2DecoderAdapter::new(),
+            #[cfg(feature = "native-mpegh")]
+            mpegh: None,
             active_route: ActiveRoute::Core,
         }
     }
@@ -72,6 +82,9 @@ impl AuroraSuperDecoder {
         match codec {
             CodecId::Iamf => self.decode_iamf(input),
             CodecId::TrueHd | CodecId::TrueHdAtmos => self.decode_truehd(input),
+            CodecId::MpegH3d => Err(DecoderError::UnsupportedInput(
+                "MPEG-H native external-render output is pre-render PCM plus channel/OAM/HOA metadata; use decode_mpegh_external_chunk instead of flattening it into DecodedFrame",
+            )),
             _ => {
                 self.active_route = ActiveRoute::Core;
                 self.core.decode_chunk(input)
@@ -93,6 +106,9 @@ impl AuroraSuperDecoder {
             CodecId::TrueHd | CodecId::TrueHdAtmos => self.decode_truehd_spatial(input),
             CodecId::Iamf => Err(DecoderError::UnsupportedInput(
                 "IAMF pre-render scene export is not admitted yet; the native runtime currently exposes rendered speaker PCM only",
+            )),
+            CodecId::MpegH3d => Err(DecoderError::UnsupportedInput(
+                "MPEG-H uses the external-render packet path until OAM/HOA metadata is mapped into Aurora Spatial IR V2",
             )),
             _ => Err(DecoderError::UnsupportedInput(
                 "selected codec has no admitted object-preserving Aurora Spatial IR V1 path",
@@ -121,10 +137,45 @@ impl AuroraSuperDecoder {
             CodecId::Iamf => Err(DecoderError::UnsupportedInput(
                 "IAMF Spatial IR V2 pre-render scene export is not admitted yet",
             )),
+            CodecId::MpegH3d => Err(DecoderError::UnsupportedInput(
+                "MPEG-H external-render OAM/HOA parsing into Spatial IR V2 is the next admission gate; raw scene packets are available through decode_mpegh_external_chunk",
+            )),
             _ => Err(DecoderError::UnsupportedInput(
                 "selected codec has no admitted object-preserving Aurora Spatial IR V2 path",
             )),
         }
+    }
+
+    /// Decode one MPEG-H external-render packet without forcing an early
+    /// loudspeaker render. The packet preserves channel metadata, OAM object
+    /// metadata, HOA metadata and pre-render PCM exactly as libmpegh exposes
+    /// them. A later adapter maps those planes into Spatial IR V2.
+    #[cfg(feature = "native-mpegh")]
+    pub fn decode_mpegh_external_chunk(
+        &mut self,
+        input: &[u8],
+    ) -> Result<Option<MpeghExternalFrame>, DecoderError> {
+        if self.mpegh.is_none() {
+            let decoder = NativeMpeghDecoder::new()
+                .map_err(|error| DecoderError::Decode(error.to_string()))?;
+            self.mpegh = Some(decoder);
+        }
+        self.active_route = ActiveRoute::MpegHNative;
+        self.mpegh
+            .as_mut()
+            .expect("MPEG-H decoder was initialized immediately above")
+            .push(input)
+            .map_err(|error| DecoderError::Decode(error.to_string()))
+    }
+
+    #[cfg(not(feature = "native-mpegh"))]
+    pub fn decode_mpegh_external_chunk(
+        &mut self,
+        _input: &[u8],
+    ) -> Result<Option<()>, DecoderError> {
+        Err(DecoderError::Unavailable(
+            "Aurora super decoder was built without the native-mpegh backend",
+        ))
     }
 
     #[cfg(feature = "iamf")]
@@ -148,8 +199,6 @@ impl AuroraSuperDecoder {
 
     #[cfg(not(feature = "native-truehd"))]
     fn decode_truehd(&mut self, input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
-        // The core still retains FFmpeg compatibility routing when the Rust
-        // 1.88 native TrueHD feature is unavailable.
         self.active_route = ActiveRoute::Core;
         self.core.decode_chunk(input)
     }
@@ -231,6 +280,10 @@ impl Decoder for AuroraSuperDecoder {
         self.truehd.reset();
         #[cfg(feature = "native-truehd")]
         self.truehd_v2.reset();
+        #[cfg(feature = "native-mpegh")]
+        {
+            self.mpegh = None;
+        }
         self.active_route = ActiveRoute::Core;
     }
 }
@@ -294,5 +347,25 @@ mod tests {
             .unwrap()
             .is_none());
         assert_eq!(decoder.active_route(), ActiveRoute::Core);
+    }
+
+    #[test]
+    fn generic_pcm_path_never_flattens_mpegh_scene_data() {
+        let mut decoder = AuroraSuperDecoder::new(EngineConfig::default());
+        decoder.configure(format(12)).unwrap();
+        assert!(matches!(
+            decoder.decode_chunk_for(CodecId::MpegH3d, &[]),
+            Err(DecoderError::UnsupportedInput(_))
+        ));
+    }
+
+    #[cfg(not(feature = "native-mpegh"))]
+    #[test]
+    fn disabled_mpegh_backend_fails_explicitly() {
+        let mut decoder = AuroraSuperDecoder::new(EngineConfig::default());
+        assert!(matches!(
+            decoder.decode_mpegh_external_chunk(&[]),
+            Err(DecoderError::Unavailable(_))
+        ));
     }
 }
