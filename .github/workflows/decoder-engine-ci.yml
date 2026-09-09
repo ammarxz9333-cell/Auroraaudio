@@ -172,3 +172,48 @@ jobs:
           path: Cargo.lock
           if-no-files-found: error
           retention-days: 7
+
+  native-mpegh:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      LIBMPEGH_SHA: f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8
+      AURORA_LIBMPEGH_LIB_DIR: /tmp/libmpegh/build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: rustfmt, clippy
+      - name: Build pinned libmpegh static library
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone --filter=blob:none https://github.com/ittiam-systems/libmpegh.git /tmp/libmpegh
+          git -C /tmp/libmpegh checkout --detach "$LIBMPEGH_SHA"
+          cmake -S /tmp/libmpegh -B /tmp/libmpegh/build -DCMAKE_BUILD_TYPE=Release
+          cmake --build /tmp/libmpegh/build --target ia_mpeghd_lib --parallel 2
+          test -f /tmp/libmpegh/build/libia_mpeghd_lib.a
+      - name: Resolve workspace lockfile
+        run: cargo generate-lockfile
+      - name: Check native MPEG-H FFI and evidence path
+        run: cargo check -p aurora-decoder-mpegh --features native-mpegh --all-targets
+      - name: Check super decoder native MPEG-H path only
+        run: cargo check -p aurora-super-decoder --no-default-features --features native-mpegh --all-targets
+      - name: Test native MPEG-H FFI and comparator
+        run: cargo test -p aurora-decoder-mpegh --features native-mpegh
+      - name: Test super decoder native MPEG-H pairing
+        run: cargo test -p aurora-super-decoder --no-default-features --features native-mpegh
+      - name: Strict native MPEG-H clippy
+        run: cargo clippy -p aurora-decoder-mpegh --features native-mpegh --all-targets -- -D warnings
+      - name: Strict super decoder MPEG-H clippy
+        run: cargo clippy -p aurora-super-decoder --no-default-features --features native-mpegh --all-targets -- -D warnings
+      - name: Formatting
+        run: cargo fmt --all --check
+      - name: Upload native MPEG-H lockfile
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: native-mpegh-lock-${{ github.sha }}
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 7
