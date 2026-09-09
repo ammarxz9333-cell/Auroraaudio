@@ -1,0 +1,86 @@
+name: Direct eARC Private CI
+
+on:
+  push:
+    branches:
+      - feature/direct-earc-linux-ingest
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/aurora-iec61937/**"
+      - "crates/aurora-cli/Cargo.toml"
+      - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
+      - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
+      - ".github/workflows/direct-earc-private-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: direct-earc-private-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: "1"
+
+defaults:
+  run:
+    shell: powershell
+
+jobs:
+  direct-earc-windows:
+    if: github.actor == github.repository_owner
+    runs-on: [self-hosted, Windows, X64, aurora-private-ci]
+    timeout-minutes: 20
+    steps:
+      - name: Configure verified portable GNU linker tools
+        run: |
+          if (-not (Test-Path -LiteralPath $env:AURORA_LLVM_MINGW_BIN)) {
+            throw "AURORA_LLVM_MINGW_BIN is not configured on this runner."
+          }
+          Add-Content -Path $env:GITHUB_PATH -Value $env:AURORA_LLVM_MINGW_BIN
+
+      - name: Check out exact revision
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803
+        with:
+          clean: true
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Provision stable GNU Rust toolchain
+        run: >-
+          rustup toolchain install stable-x86_64-pc-windows-gnu
+          --profile minimal --component rustfmt,clippy
+
+      - name: Resolve workspace lockfile
+        run: cargo +stable-x86_64-pc-windows-gnu generate-lockfile
+
+      - name: Verify direct eARC formatting
+        run: >-
+          cargo +stable-x86_64-pc-windows-gnu fmt
+          --package aurora-iec61937 --package aurora-cli -- --check
+
+      - name: Check and test reusable IEC61937 parser
+        run: |
+          cargo +stable-x86_64-pc-windows-gnu check -p aurora-iec61937 --all-targets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu test -p aurora-iec61937
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-iec61937 --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Check and test direct eARC binaries
+        run: |
+          cargo +stable-x86_64-pc-windows-gnu check -p aurora-cli --bin aurora-direct-earc-ingest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu test -p aurora-cli --bin aurora-direct-earc-ingest
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu check -p aurora-cli --bin aurora-direct-earc-probe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu test -p aurora-cli --bin aurora-direct-earc-probe
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo +stable-x86_64-pc-windows-gnu clippy -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
