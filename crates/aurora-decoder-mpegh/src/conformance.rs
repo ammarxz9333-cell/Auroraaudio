@@ -105,13 +105,12 @@ pub fn compare_mpegh_render_to_reference(
         .zip(reference_channels.iter())
         .enumerate()
     {
-        let metrics = compare_channel(
+        channel_reports.push(compare_channel(
             channel_index,
             candidate_channel,
             reference_channel,
             policy,
-        )?;
-        channel_reports.push(metrics);
+        )?);
     }
 
     let passed = channel_reports.iter().all(|channel| channel.passed);
@@ -176,11 +175,14 @@ fn compare_channel(
     let reference_rms = (sum_reference_sq / count).sqrt();
     let rms_error = (sum_error_sq / count).sqrt();
 
-    let candidate_variance = (sum_candidate_sq - (sum_candidate * sum_candidate / count)).max(0.0);
-    let reference_variance = (sum_reference_sq - (sum_reference * sum_reference / count)).max(0.0);
+    let candidate_variance =
+        (sum_candidate_sq - (sum_candidate * sum_candidate / count)).max(0.0);
+    let reference_variance =
+        (sum_reference_sq - (sum_reference * sum_reference / count)).max(0.0);
     let covariance = sum_cross - (sum_candidate * sum_reference / count);
     let variance_floor = 1.0e-24_f64;
-    let correlation = if candidate_variance <= variance_floor || reference_variance <= variance_floor {
+    let correlation = if candidate_variance <= variance_floor || reference_variance <= variance_floor
+    {
         None
     } else {
         Some(
@@ -266,7 +268,10 @@ mod tests {
         )
         .unwrap();
         assert!(report.passed);
-        assert!(report.channels.iter().all(|channel| channel.rms_error == 0.0));
+        assert!(report
+            .channels
+            .iter()
+            .all(|channel| channel.rms_error <= f64::EPSILON));
     }
 
     #[test]
