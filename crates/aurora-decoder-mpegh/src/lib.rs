@@ -8,9 +8,14 @@
 #![cfg_attr(not(feature = "native-mpegh"), forbid(unsafe_code))]
 
 mod external_oam;
+mod external_pcm;
 pub use external_oam::{
     parse_external_oam, MpeghExclusionSector, MpeghOamExtension, MpeghOamObject,
     MpeghOamObjectFrame, MpeghOamPacket, MpeghOamParseError, MpeghOamRawCodes,
+};
+pub use external_pcm::{
+    decode_prerender_pcm, MpeghExternalLane, MpeghExternalTopology, MpeghPcmTopologyError,
+    MpeghPrerenderPcm,
 };
 
 #[cfg(not(feature = "native-mpegh"))]
@@ -22,7 +27,11 @@ pub struct MpeghExternalFrame {
     pub prerender_pcm: Vec<u8>,
     pub pcm_bit_depth: i32,
     pub sample_rate: i32,
+    /// Upstream calls this a sample offset, but libmpegh assigns `ch_offset`:
+    /// it is the first object PCM lane index in the pre-render buffer.
     pub oam_sample_offset: i32,
+    /// Upstream calls this a sample offset, but it is the first HOA transport
+    /// PCM lane index in the pre-render buffer.
     pub hoa_sample_offset: i32,
     pub speaker_layout: MpeghSpeakerLayout,
 }
