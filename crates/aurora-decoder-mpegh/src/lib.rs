@@ -8,6 +8,7 @@
 #![cfg_attr(not(feature = "native-mpegh"), forbid(unsafe_code))]
 
 mod external_channels;
+mod external_hoa;
 mod external_oam;
 mod external_pcm;
 mod spatial_transport;
@@ -15,6 +16,11 @@ pub use external_channels::{
     parse_external_channel_metadata, MpeghAngularPrecision, MpeghChannelGroup,
     MpeghChannelMetadataPacket, MpeghChannelParseError, MpeghExplicitSpeaker,
     MpeghFlexibleSpeaker, MpeghSpeakerConfig,
+};
+pub use external_hoa::{
+    parse_external_hoa, MpeghHoaGroup, MpeghHoaMatrixPayload, MpeghHoaPacket,
+    MpeghHoaParseError, MpeghHoaScreenMetadata, MpeghProductionScreenExtension,
+    MpeghProductionScreenPreset, MpeghProductionScreenSize, PackedBits,
 };
 pub use external_oam::{
     parse_external_oam, MpeghExclusionSector, MpeghOamExtension, MpeghOamObject,
@@ -84,6 +90,12 @@ impl MpeghExternalFrame {
         &self,
     ) -> Result<MpeghChannelMetadataPacket, MpeghChannelParseError> {
         parse_external_channel_metadata(&self.channel_metadata)
+    }
+
+    /// Parse libmpegh's external-render HOA plane. Matrix coefficient syntax is
+    /// retained as bounded raw bits while order/NFC/screen semantics are exposed.
+    pub fn parse_hoa_metadata(&self) -> Result<MpeghHoaPacket, MpeghHoaParseError> {
+        parse_external_hoa(&self.hoa_metadata)
     }
 }
 
