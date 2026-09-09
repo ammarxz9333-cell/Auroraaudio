@@ -2,14 +2,12 @@
 //!
 //! The default workspace build carries no native C linkage. Enabling
 //! `native-mpegh` activates a narrow unsafe FFI boundary around the pinned
-//! Ittiam libmpegh external-render interface. Packet data types remain available
-//! in every build so callers do not get a feature-dependent public API.
+//! Ittiam libmpegh external-render interface. The public packet contract keeps
+//! the same names and fields in either build mode.
 
 #![cfg_attr(not(feature = "native-mpegh"), forbid(unsafe_code))]
 
-/// One external-render access unit copied out of libmpegh before the next C
-/// decoder call. These byte planes stay codec-native until Aurora admits a
-/// verified MPEG-H channel/OAM/HOA -> Spatial IR V2 mapper.
+#[cfg(not(feature = "native-mpegh"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MpeghExternalFrame {
     pub channel_metadata: Vec<u8>,
@@ -23,6 +21,7 @@ pub struct MpeghExternalFrame {
     pub speaker_layout: MpeghSpeakerLayout,
 }
 
+#[cfg(not(feature = "native-mpegh"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MpeghSpeakerLayout {
     pub cicp_index: i32,
@@ -30,6 +29,7 @@ pub struct MpeghSpeakerLayout {
     pub speakers: Vec<MpeghSpeaker>,
 }
 
+#[cfg(not(feature = "native-mpegh"))]
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct MpeghSpeaker {
     pub is_lfe: bool,
@@ -43,7 +43,10 @@ mod ffi;
 mod native;
 
 #[cfg(feature = "native-mpegh")]
-pub use native::{MpeghNativeError, NativeMpeghDecoder};
+pub use native::{
+    MpeghExternalFrame, MpeghNativeError, MpeghSpeaker, MpeghSpeakerLayout,
+    NativeMpeghDecoder,
+};
 
 /// Whether this build contains the native libmpegh external-render backend.
 pub const fn native_backend_enabled() -> bool {
@@ -59,8 +62,9 @@ mod tests {
         assert_eq!(native_backend_enabled(), cfg!(feature = "native-mpegh"));
     }
 
+    #[cfg(not(feature = "native-mpegh"))]
     #[test]
-    fn packet_types_exist_without_native_linkage() {
+    fn packet_contract_exists_without_native_linkage() {
         let frame = MpeghExternalFrame {
             channel_metadata: Vec::new(),
             object_metadata: Vec::new(),
