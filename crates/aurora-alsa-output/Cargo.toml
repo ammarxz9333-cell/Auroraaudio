@@ -10,4 +10,7 @@ rust-version.workspace = true
 thiserror.workspace = true
 
 [target.'cfg(target_os = "linux")'.dependencies]
-alsa = "0.12.1"
+# Keep one libasound wrapper generation across the workspace while CPAL remains
+# on 0.15. A dedicated CPAL upgrade can move both together after the exact Linux
+# branch is green.
+alsa = "0.9"
