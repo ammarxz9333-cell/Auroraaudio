@@ -1,0 +1,364 @@
+//! Aurora-owned IEC 61937 ingress primitives for direct eARC capture.
+//!
+//! This crate is transport-only. It does not decode Dolby, DTS, JOC or object
+//! metadata. Its job is to preserve the encoded payload exactly while removing
+//! the IEC 61937 wrapper and reporting stream-type transitions.
+
+#![forbid(unsafe_code)]
+
+const PA_LE: [u8; 2] = [0x72, 0xF8];
+const PB_LE: [u8; 2] = [0x1F, 0x4E];
+const MAX_PAYLOAD_BYTES: usize = 256 * 1024;
+
+/// IEC 61937 data type for AC-3.
+pub const DATA_TYPE_AC3: u8 = 0x01;
+/// IEC 61937 data type for E-AC-3 / Dolby Digital Plus.
+pub const DATA_TYPE_EAC3: u8 = 0x15;
+/// IEC 61937 data type for Dolby MAT / TrueHD.
+pub const DATA_TYPE_MAT: u8 = 0x16;
+
+/// Coarse transport classification derived only from IEC 61937 Pc.
+///
+/// `Eac3` does not imply JOC. JOC must be established by the codec/object
+/// decoder after the E-AC-3 payload has been extracted.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum TransportCodec {
+    Ac3,
+    Eac3,
+    MatTrueHd,
+    DtsCore,
+    Other(u8),
+}
+
+impl TransportCodec {
+    pub fn from_data_type(data_type: u8) -> Self {
+        match data_type {
+            DATA_TYPE_AC3 => Self::Ac3,
+            DATA_TYPE_EAC3 => Self::Eac3,
+            DATA_TYPE_MAT => Self::MatTrueHd,
+            0x0B..=0x0D => Self::DtsCore,
+            other => Self::Other(other),
+        }
+    }
+}
+
+/// Filter applied after a complete IEC 61937 burst has been validated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CodecFilter {
+    Ac3,
+    Eac3,
+    MatTrueHd,
+    DtsCore,
+    All,
+}
+
+impl CodecFilter {
+    pub fn accepts(self, data_type: u8) -> bool {
+        match self {
+            Self::Ac3 => data_type == DATA_TYPE_AC3,
+            Self::Eac3 => data_type == DATA_TYPE_EAC3,
+            Self::MatTrueHd => data_type == DATA_TYPE_MAT,
+            Self::DtsCore => matches!(data_type, 0x0B..=0x0D),
+            Self::All => true,
+        }
+    }
+}
+
+/// One validated IEC 61937 burst with the wrapper removed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Burst {
+    /// Full 16-bit Pc burst-info word.
+    pub pc: u16,
+    /// Full 16-bit Pd length-code word.
+    pub pd: u16,
+    /// IEC 61937 data type from Pc bits 0..6.
+    pub data_type: u8,
+    /// Transport classification. This deliberately does not infer JOC.
+    pub codec: TransportCodec,
+    /// Elementary-stream bytes restored to native byte order.
+    pub payload: Vec<u8>,
+}
+
+/// Stream-type transition observed between consecutive accepted bursts.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct FormatChange {
+    pub previous: TransportCodec,
+    pub current: TransportCodec,
+}
+
+/// One parser result plus an optional transport-format transition.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct BurstObservation {
+    pub burst: Burst,
+    pub format_change: Option<FormatChange>,
+}
+
+/// Stateful IEC 61937 parser for canonical S16_LE carrier bytes.
+#[derive(Debug)]
+pub struct BurstParser {
+    filter: CodecFilter,
+    buffer: Vec<u8>,
+    last_codec: Option<TransportCodec>,
+    discarded_bytes: u64,
+    malformed_headers: u64,
+}
+
+impl BurstParser {
+    pub fn new(filter: CodecFilter) -> Self {
+        Self {
+            filter,
+            buffer: Vec::with_capacity(32 * 1024),
+            last_codec: None,
+            discarded_bytes: 0,
+            malformed_headers: 0,
+        }
+    }
+
+    /// Adds arbitrary carrier bytes and emits every complete accepted burst.
+    /// Partial preambles and payloads remain buffered for the next call.
+    pub fn push(&mut self, input: &[u8]) -> Vec<BurstObservation> {
+        self.buffer.extend_from_slice(input);
+        let mut observations = Vec::new();
+
+        loop {
+            let Some(sync_offset) = find_sync(&self.buffer) else {
+                self.discard_non_sync_tail();
+                break;
+            };
+
+            if sync_offset > 0 {
+                self.discarded_bytes = self.discarded_bytes.saturating_add(sync_offset as u64);
+                self.buffer.drain(..sync_offset);
+            }
+            if self.buffer.len() < 8 {
+                break;
+            }
+
+            let pc = u16::from_le_bytes([self.buffer[4], self.buffer[5]]);
+            let pd = u16::from_le_bytes([self.buffer[6], self.buffer[7]]);
+            let data_type = (pc & 0x7F) as u8;
+            let payload_bytes = payload_length_bytes(data_type, pd);
+
+            if payload_bytes == 0 || payload_bytes > MAX_PAYLOAD_BYTES {
+                self.malformed_headers = self.malformed_headers.saturating_add(1);
+                self.discarded_bytes = self.discarded_bytes.saturating_add(2);
+                self.buffer.drain(..2);
+                continue;
+            }
+
+            // IEC 61937 is a 16-bit word carrier. An odd native payload consumes
+            // one extra carrier byte; the final native byte is MSB-aligned in that
+            // final word. FFmpeg's spdif muxer uses the same convention.
+            let carrier_payload_bytes = payload_bytes.saturating_add(payload_bytes & 1);
+            let total = 8usize.saturating_add(carrier_payload_bytes);
+            if self.buffer.len() < total {
+                break;
+            }
+
+            if self.filter.accepts(data_type) {
+                let mut payload = self.buffer[8..total].to_vec();
+                for word in payload.chunks_exact_mut(2) {
+                    word.swap(0, 1);
+                }
+                payload.truncate(payload_bytes);
+
+                let codec = TransportCodec::from_data_type(data_type);
+                let format_change = self.last_codec.and_then(|previous| {
+                    (previous != codec).then_some(FormatChange {
+                        previous,
+                        current: codec,
+                    })
+                });
+                self.last_codec = Some(codec);
+                observations.push(BurstObservation {
+                    burst: Burst {
+                        pc,
+                        pd,
+                        data_type,
+                        codec,
+                        payload,
+                    },
+                    format_change,
+                });
+            }
+
+            self.buffer.drain(..total);
+        }
+
+        observations
+    }
+
+    /// Clears pending carrier bytes and stream-format history after a real source
+    /// discontinuity, xrun, eARC unlock or capture-device restart.
+    pub fn reset(&mut self) {
+        self.buffer.clear();
+        self.last_codec = None;
+    }
+
+    pub fn pending_bytes(&self) -> usize {
+        self.buffer.len()
+    }
+
+    pub fn discarded_bytes(&self) -> u64 {
+        self.discarded_bytes
+    }
+
+    pub fn malformed_headers(&self) -> u64 {
+        self.malformed_headers
+    }
+
+    fn discard_non_sync_tail(&mut self) {
+        const MAX_SYNC_STRADDLE: usize = 3;
+        if self.buffer.len() > MAX_SYNC_STRADDLE {
+            let discard = self.buffer.len() - MAX_SYNC_STRADDLE;
+            self.discarded_bytes = self.discarded_bytes.saturating_add(discard as u64);
+            self.buffer.drain(..discard);
+        }
+    }
+}
+
+/// Converts IEC 61937 Pd into native payload bytes for the data types Aurora
+/// currently needs on the eARC path.
+///
+/// E-AC-3 (0x15) and MAT/TrueHD (0x16) express Pd in bytes. AC-3, DTS core and
+/// the ordinary legacy types express Pd in bits.
+pub fn payload_length_bytes(data_type: u8, pd: u16) -> usize {
+    if matches!(data_type, DATA_TYPE_EAC3 | DATA_TYPE_MAT) {
+        usize::from(pd)
+    } else {
+        usize::from(pd) / 8
+    }
+}
+
+fn find_sync(buffer: &[u8]) -> Option<usize> {
+    buffer.windows(4).position(|window| {
+        window[0..2] == PA_LE && window[2..4] == PB_LE
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn eac3_type_15_round_trips_without_calling_it_joc() {
+        let native = vec![0x0B, 0x77, 0x12, 0x34, 0xAB, 0xCD, 0xEF, 0x01];
+        let carrier = make_burst(DATA_TYPE_EAC3, &native);
+        let mut parser = BurstParser::new(CodecFilter::Eac3);
+
+        let out = parser.push(&carrier);
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].burst.data_type, DATA_TYPE_EAC3);
+        assert_eq!(out[0].burst.codec, TransportCodec::Eac3);
+        assert_eq!(out[0].burst.payload, native);
+        assert!(out[0].format_change.is_none());
+    }
+
+    #[test]
+    fn parser_survives_one_byte_read_boundaries() {
+        let native = vec![0x0B, 0x77, 0x00, 0x02, 0x44, 0x55, 0x66, 0x77];
+        let carrier = make_burst(DATA_TYPE_EAC3, &native);
+        let mut parser = BurstParser::new(CodecFilter::All);
+        let mut out = Vec::new();
+
+        for byte in carrier {
+            out.extend(parser.push(&[byte]));
+        }
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].burst.payload, native);
+    }
+
+    #[test]
+    fn odd_eac3_payload_restores_final_byte_exactly() {
+        let native = vec![0x0B, 0x77, 0x10, 0x20, 0xAA];
+        let carrier = make_burst(DATA_TYPE_EAC3, &native);
+        let mut parser = BurstParser::new(CodecFilter::All);
+
+        let out = parser.push(&carrier);
+
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].burst.payload, native);
+    }
+
+    #[test]
+    fn eac3_to_ac3_reports_one_format_change() {
+        let eac3 = make_burst(DATA_TYPE_EAC3, &[0x0B, 0x77, 0x10, 0x20]);
+        let ac3 = make_burst(DATA_TYPE_AC3, &[0x0B, 0x77, 0x30, 0x40]);
+        let mut parser = BurstParser::new(CodecFilter::All);
+
+        let first = parser.push(&eac3);
+        let second = parser.push(&ac3);
+
+        assert!(first[0].format_change.is_none());
+        assert_eq!(
+            second[0].format_change,
+            Some(FormatChange {
+                previous: TransportCodec::Eac3,
+                current: TransportCodec::Ac3,
+            })
+        );
+    }
+
+    #[test]
+    fn reset_makes_next_burst_a_fresh_stream_not_a_format_change() {
+        let eac3 = make_burst(DATA_TYPE_EAC3, &[0x0B, 0x77, 0x10, 0x20]);
+        let ac3 = make_burst(DATA_TYPE_AC3, &[0x0B, 0x77, 0x30, 0x40]);
+        let mut parser = BurstParser::new(CodecFilter::All);
+
+        assert_eq!(parser.push(&eac3).len(), 1);
+        parser.reset();
+        let after_reset = parser.push(&ac3);
+
+        assert!(after_reset[0].format_change.is_none());
+    }
+
+    #[test]
+    fn malformed_huge_length_resynchronizes_without_allocating_payload() {
+        let mut input = Vec::new();
+        input.extend_from_slice(&PA_LE);
+        input.extend_from_slice(&PB_LE);
+        input.extend_from_slice(&u16::from(DATA_TYPE_AC3).to_le_bytes());
+        input.extend_from_slice(&u16::MAX.to_le_bytes());
+        input.extend_from_slice(&make_burst(
+            DATA_TYPE_EAC3,
+            &[0x0B, 0x77, 0x12, 0x34],
+        ));
+        let mut parser = BurstParser::new(CodecFilter::All);
+
+        let out = parser.push(&input);
+
+        assert_eq!(parser.malformed_headers(), 1);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].burst.codec, TransportCodec::Eac3);
+    }
+
+    #[test]
+    fn ac3_pd_remains_bit_count() {
+        assert_eq!(payload_length_bytes(DATA_TYPE_AC3, 20_480), 2_560);
+    }
+
+    fn make_burst(data_type: u8, native_payload: &[u8]) -> Vec<u8> {
+        let pd = if matches!(data_type, DATA_TYPE_EAC3 | DATA_TYPE_MAT) {
+            native_payload.len() as u16
+        } else {
+            (native_payload.len() * 8) as u16
+        };
+
+        let mut burst = Vec::new();
+        burst.extend_from_slice(&PA_LE);
+        burst.extend_from_slice(&PB_LE);
+        burst.extend_from_slice(&u16::from(data_type).to_le_bytes());
+        burst.extend_from_slice(&pd.to_le_bytes());
+
+        for pair in native_payload.chunks(2) {
+            match pair {
+                [a, b] => burst.extend_from_slice(&[*b, *a]),
+                [a] => burst.extend_from_slice(&[0x00, *a]),
+                _ => unreachable!(),
+            }
+        }
+        burst
+    }
+}
