@@ -25,6 +25,7 @@ members = [
     "crates/aurora-dsp-basic",
     "crates/aurora-dsp-camilladsp",
     "crates/aurora-audio-io",
+    "crates/aurora-iec61937",
     "crates/aurora-realtime-audio-api",
     "crates/aurora-realtime-audio-cpal",
     "crates/aurora-realtime-audio-sim",
