@@ -16,6 +16,7 @@ mod external_hoa;
 mod external_oam;
 mod external_pcm;
 mod hoa_ambience;
+mod hoa_candidate;
 mod hoa_channel_reassignment;
 mod hoa_contract;
 mod hoa_inverse_dyn;
@@ -56,6 +57,7 @@ pub use external_pcm::{
     MpeghPrerenderPcm,
 };
 pub use hoa_ambience::{synthesize_hoa_ambience, MpeghHoaAmbienceError};
+pub use hoa_candidate::{render_pure_mpegh_hoa_candidate, MpeghHoaCandidateError};
 pub use hoa_channel_reassignment::{
     clear_non_predominant_additional_coders, MpeghHoaChannelReassignmentError,
 };
