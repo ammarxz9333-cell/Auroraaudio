@@ -9,8 +9,8 @@ publish = false
 [dependencies]
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
-openjoc-api = "0.16.0"
-openjoc-eac3 = "0.16.0"
+openjoc-api = { git = "https://github.com/chyinan/OpenJOC", rev = "77e842303d4cb9d95b29ff41a3b9ed230f246b80", package = "openjoc-api" }
+openjoc-eac3 = { git = "https://github.com/chyinan/OpenJOC", rev = "77e842303d4cb9d95b29ff41a3b9ed230f246b80", package = "openjoc-eac3" }
 oxideav-ac3 = "0.0.11"
 oxideav-core = "0.1"
 thiserror = { workspace = true }
