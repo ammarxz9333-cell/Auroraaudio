@@ -1,9 +1,15 @@
 use std::ffi::c_void;
 
+use aurora_core::AudioBlock;
+use aurora_hoa_ir::{
+    coefficient_count_for_order, HoaCoefficientBinding, HoaCoefficientConvention,
+    HoaCoefficientFrame,
+};
 use thiserror::Error;
 
 use crate::ffi::{
-    self, IaMpeghdApiStruct, EXTERNAL_METADATA_BYTES, EXTERNAL_PCM_BYTES, MEMTYPE_INPUT,
+    self, IaMpeghdApiStruct, EXTERNAL_METADATA_BYTES, EXTERNAL_PCM_BYTES,
+    MAX_HOA_COEFFICIENT_FLOATS, MAX_HOA_FRAME_LENGTH, MAX_HOA_ORDER, MEMTYPE_INPUT,
     MEMTYPE_OUTPUT,
 };
 use crate::MpeghRenderedPcm;
@@ -46,24 +52,27 @@ pub struct MpeghSpeaker {
     pub elevation_degrees: i16,
 }
 
-/// Safe streaming owner for libmpegh's external-render interface.
+/// Safe streaming owner for the pinned libmpegh decoder.
 ///
-/// One successful execute preserves two independent products from the same
-/// compressed access unit:
-/// - [`MpeghExternalFrame`]: pre-render channel/object/HOA scene material;
-/// - [`MpeghRenderedPcm`]: libmpegh's final speaker render for immediate
-///   fallback playback and conformance comparison.
+/// One successful execute can preserve three distinct products from the same
+/// access unit: external-render scene material, post-spatial/pre-speaker HOA
+/// ACN/N3D coefficients, and libmpegh's final speaker PCM reference.
 pub struct NativeMpeghDecoder {
     api: Box<IaMpeghdApiStruct>,
     channel_metadata: Box<[u8]>,
     object_metadata: Box<[u8]>,
     hoa_metadata: Box<[u8]>,
     prerender_pcm: Box<[u8]>,
+    hoa_coeff_buffer: Box<[f32]>,
+    hoa_coeff_written: Box<u32>,
+    hoa_coeff_order: Box<u32>,
+    hoa_coeff_frame_length: Box<u32>,
     pending: Vec<u8>,
     pending_start: usize,
     created: bool,
     initialized: bool,
     last_rendered_pcm: Option<MpeghRenderedPcm>,
+    last_hoa_coefficients: Option<HoaCoefficientFrame>,
 }
 
 impl NativeMpeghDecoder {
@@ -72,6 +81,11 @@ impl NativeMpeghDecoder {
         let mut object_metadata = vec![0_u8; EXTERNAL_METADATA_BYTES].into_boxed_slice();
         let mut hoa_metadata = vec![0_u8; EXTERNAL_METADATA_BYTES].into_boxed_slice();
         let mut prerender_pcm = vec![0_u8; EXTERNAL_PCM_BYTES].into_boxed_slice();
+        let mut hoa_coeff_buffer =
+            vec![0.0_f32; MAX_HOA_COEFFICIENT_FLOATS].into_boxed_slice();
+        let mut hoa_coeff_written = Box::new(0_u32);
+        let mut hoa_coeff_order = Box::new(0_u32);
+        let mut hoa_coeff_frame_length = Box::new(0_u32);
         let mut api = Box::new(IaMpeghdApiStruct::default());
 
         api.input_config.ui_mhas_flag = MHAS_ENABLED;
@@ -114,17 +128,41 @@ impl NativeMpeghDecoder {
             ));
         }
 
+        let observer_code = unsafe {
+            ffi::aurora_mpegh_set_hoa_coeff_observer(
+                api.output_config.pv_ia_process_api_obj,
+                hoa_coeff_buffer.as_mut_ptr(),
+                u32::try_from(hoa_coeff_buffer.len()).map_err(|_| {
+                    MpeghNativeError::InvalidLibraryState("HOA observer capacity overflow")
+                })?,
+                &mut *hoa_coeff_written,
+                &mut *hoa_coeff_order,
+                &mut *hoa_coeff_frame_length,
+            )
+        };
+        if observer_code != NO_ERROR {
+            delete_after_failed_create(&mut api);
+            return Err(MpeghNativeError::HoaObserverRegistrationFailed {
+                code: observer_code,
+            });
+        }
+
         Ok(Self {
             api,
             channel_metadata,
             object_metadata,
             hoa_metadata,
             prerender_pcm,
+            hoa_coeff_buffer,
+            hoa_coeff_written,
+            hoa_coeff_order,
+            hoa_coeff_frame_length,
             pending: Vec::new(),
             pending_start: 0,
             created: true,
             initialized: false,
             last_rendered_pcm: None,
+            last_hoa_coefficients: None,
         })
     }
 
@@ -136,11 +174,15 @@ impl NativeMpeghDecoder {
         self.pending.len().saturating_sub(self.pending_start)
     }
 
-    /// Take the final speaker-rendered PCM produced by the most recent
-    /// successful execute. It is deliberately separate from the pre-render
-    /// scene so callers cannot accidentally treat one as the other.
     pub fn take_rendered_pcm(&mut self) -> Option<MpeghRenderedPcm> {
         self.last_rendered_pcm.take()
+    }
+
+    /// Take the post-spatial, pre-speaker HOA coefficients produced by the
+    /// most recent successful access unit. The frame is ACN/N3D and is never
+    /// synthesized from external-render transport lanes.
+    pub fn take_hoa_coefficients(&mut self) -> Option<HoaCoefficientFrame> {
+        self.last_hoa_coefficients.take()
     }
 
     pub fn push(&mut self, input: &[u8]) -> Result<Option<MpeghExternalFrame>, MpeghNativeError> {
@@ -197,6 +239,8 @@ impl NativeMpeghDecoder {
 
     fn execute_one(&mut self) -> Result<Option<MpeghExternalFrame>, MpeghNativeError> {
         self.last_rendered_pcm = None;
+        self.last_hoa_coefficients = None;
+        self.clear_hoa_observer_state();
         if self.pending_bytes() == 0 {
             return Ok(None);
         }
@@ -215,11 +259,27 @@ impl NativeMpeghDecoder {
         match code {
             NO_ERROR => {
                 self.last_rendered_pcm = self.copy_rendered_pcm()?;
+                self.last_hoa_coefficients = self.copy_hoa_coefficients()?;
                 self.copy_external_frame()
             }
             EXEC_NEED_MORE_INPUT => Ok(None),
             other => Err(MpeghNativeError::ExecuteFailed { code: other }),
         }
+    }
+
+    fn clear_hoa_observer_state(&mut self) {
+        *self.hoa_coeff_written = 0;
+        *self.hoa_coeff_order = 0;
+        *self.hoa_coeff_frame_length = 0;
+    }
+
+    fn copy_hoa_coefficients(&self) -> Result<Option<HoaCoefficientFrame>, MpeghNativeError> {
+        hoa_frame_from_observer(
+            &self.hoa_coeff_buffer,
+            *self.hoa_coeff_written,
+            *self.hoa_coeff_order,
+            *self.hoa_coeff_frame_length,
+        )
     }
 
     fn fill_c_input(&mut self) -> Result<usize, MpeghNativeError> {
@@ -389,10 +449,8 @@ impl NativeMpeghDecoder {
         if frame_count == 0 {
             return Ok(None);
         }
-        let bytes = unsafe {
-            core::slice::from_raw_parts(table.mem_ptr.cast::<u8>(), length)
-        }
-        .to_vec();
+        let bytes = unsafe { core::slice::from_raw_parts(table.mem_ptr.cast::<u8>(), length) }
+            .to_vec();
         let rendered = MpeghRenderedPcm {
             bytes,
             bit_depth,
@@ -418,6 +476,92 @@ impl Drop for NativeMpeghDecoder {
             self.created = false;
         }
     }
+}
+
+fn hoa_frame_from_observer(
+    buffer: &[f32],
+    written_floats: u32,
+    order_raw: u32,
+    frame_length_raw: u32,
+) -> Result<Option<HoaCoefficientFrame>, MpeghNativeError> {
+    if written_floats == 0 {
+        if order_raw != 0 || frame_length_raw != 0 {
+            return Err(MpeghNativeError::InvalidHoaObserverGeometry {
+                order: order_raw,
+                frame_length: frame_length_raw,
+                written_floats,
+            });
+        }
+        return Ok(None);
+    }
+    if order_raw > MAX_HOA_ORDER {
+        return Err(MpeghNativeError::InvalidHoaObserverGeometry {
+            order: order_raw,
+            frame_length: frame_length_raw,
+            written_floats,
+        });
+    }
+    let frame_length = usize::try_from(frame_length_raw).map_err(|_| {
+        MpeghNativeError::InvalidHoaObserverGeometry {
+            order: order_raw,
+            frame_length: frame_length_raw,
+            written_floats,
+        }
+    })?;
+    if frame_length == 0 || frame_length > MAX_HOA_FRAME_LENGTH {
+        return Err(MpeghNativeError::InvalidHoaObserverGeometry {
+            order: order_raw,
+            frame_length: frame_length_raw,
+            written_floats,
+        });
+    }
+    let order = u16::try_from(order_raw).map_err(|_| MpeghNativeError::InvalidHoaObserverGeometry {
+        order: order_raw,
+        frame_length: frame_length_raw,
+        written_floats,
+    })?;
+    let coefficient_count = coefficient_count_for_order(order)
+        .map_err(|error| MpeghNativeError::InvalidHoaCoefficientFrame(error.to_string()))?;
+    let expected = coefficient_count
+        .checked_mul(frame_length)
+        .ok_or(MpeghNativeError::HoaObserverGeometryOverflow)?;
+    let written = usize::try_from(written_floats)
+        .map_err(|_| MpeghNativeError::HoaObserverGeometryOverflow)?;
+    if written != expected || written > buffer.len() {
+        return Err(MpeghNativeError::InvalidHoaObserverGeometry {
+            order: order_raw,
+            frame_length: frame_length_raw,
+            written_floats,
+        });
+    }
+
+    let channels = (0..coefficient_count)
+        .map(|index| {
+            let start = index * frame_length;
+            buffer[start..start + frame_length].to_vec()
+        })
+        .collect::<Vec<_>>();
+    let coefficients = (0..coefficient_count)
+        .map(|index| HoaCoefficientBinding {
+            pcm_channel_index: index,
+            coefficient_index: index,
+        })
+        .collect();
+    let frame = HoaCoefficientFrame {
+        audio: AudioBlock {
+            channels,
+            frame_count: frame_length,
+            presentation_time_seconds: 0.0,
+            discontinuity: false,
+        },
+        order,
+        convention: HoaCoefficientConvention::AcnN3d,
+        coefficients,
+    };
+    frame
+        .validate()
+        .map_err(|error| MpeghNativeError::InvalidHoaCoefficientFrame(error.to_string()))?;
+    Ok(Some(frame))
 }
 
 fn delete_after_failed_create(api: &mut IaMpeghdApiStruct) {
@@ -483,6 +627,8 @@ unsafe extern "C" fn free_mpegh(pointer: *mut c_void) {
 pub enum MpeghNativeError {
     #[error("libmpegh create failed with error 0x{code:08x}")]
     CreateFailed { code: i32 },
+    #[error("Aurora HOA observer registration failed with error {code}")]
+    HoaObserverRegistrationFailed { code: i32 },
     #[error("libmpegh initialization failed with error 0x{code:08x}")]
     InitFailed { code: i32 },
     #[error("libmpegh execution failed with error 0x{code:08x}")]
@@ -519,6 +665,16 @@ pub enum MpeghNativeError {
     },
     #[error("rendered PCM failed Aurora validation: {0}")]
     InvalidRenderedPcm(String),
+    #[error("HOA observer geometry overflow")]
+    HoaObserverGeometryOverflow,
+    #[error("invalid HOA observer geometry: order={order}, frame_length={frame_length}, written_floats={written_floats}")]
+    InvalidHoaObserverGeometry {
+        order: u32,
+        frame_length: u32,
+        written_floats: u32,
+    },
+    #[error("HOA coefficient frame failed Aurora validation: {0}")]
+    InvalidHoaCoefficientFrame(String),
 }
 
 #[cfg(test)]
@@ -529,6 +685,7 @@ mod tests {
     fn external_buffer_sizes_match_upstream_testbench_contract() {
         assert_eq!(EXTERNAL_METADATA_BYTES, 768);
         assert_eq!(EXTERNAL_PCM_BYTES, 131_072);
+        assert_eq!(MAX_HOA_COEFFICIENT_FLOATS, 50_176);
     }
 
     #[test]
@@ -545,5 +702,34 @@ mod tests {
         pending.copy_within(start.., 0);
         pending.truncate(pending.len() - start);
         assert_eq!(&pending, b"def");
+    }
+
+    #[test]
+    fn observer_snapshot_becomes_complete_acn_n3d_frame() {
+        let frame_length = 4usize;
+        let mut buffer = vec![0.0_f32; MAX_HOA_COEFFICIENT_FLOATS];
+        for coefficient in 0..4usize {
+            for sample in 0..frame_length {
+                buffer[coefficient * frame_length + sample] =
+                    (coefficient * 10 + sample) as f32;
+            }
+        }
+        let frame = hoa_frame_from_observer(&buffer, 16, 1, 4)
+            .unwrap()
+            .unwrap();
+        assert_eq!(frame.order, 1);
+        assert_eq!(frame.convention, HoaCoefficientConvention::AcnN3d);
+        assert_eq!(frame.audio.channels.len(), 4);
+        assert_eq!(frame.audio.channels[2], vec![20.0, 21.0, 22.0, 23.0]);
+        frame.validate().unwrap();
+    }
+
+    #[test]
+    fn observer_snapshot_rejects_partial_coefficient_payload() {
+        let buffer = vec![0.0_f32; MAX_HOA_COEFFICIENT_FLOATS];
+        assert!(matches!(
+            hoa_frame_from_observer(&buffer, 15, 1, 4),
+            Err(MpeghNativeError::InvalidHoaObserverGeometry { .. })
+        ));
     }
 }
