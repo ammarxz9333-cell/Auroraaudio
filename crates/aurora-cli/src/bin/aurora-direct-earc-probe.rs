@@ -116,6 +116,12 @@ fn main() -> Result<()> {
         }
     }
 
+    // A diagnostic/extraction tool must not report success after silently
+    // discarding a partial Pa/Pb header or declared payload. Ordinary idle
+    // carrier padding remains accepted by BurstParser::finish().
+    parser
+        .finish()
+        .context("IEC61937 stream ended on an incomplete burst")?;
     output.flush().context("failed to flush extracted payload")?;
 
     eprintln!(
@@ -172,5 +178,17 @@ mod tests {
         observe_burst(&mut stats, TransportCodec::Eac3);
         assert_eq!(stats.eac3, 1);
         assert_eq!(stats.bursts, 1);
+    }
+
+    #[test]
+    fn parser_eof_contract_rejects_partial_preamble_and_accepts_padding() {
+        let mut partial = BurstParser::new(CodecFilter::All);
+        assert!(partial.push(&[0x72, 0xF8]).is_empty());
+        assert!(partial.finish().is_err());
+
+        let mut padding = BurstParser::new(CodecFilter::All);
+        assert!(padding.push(&[0, 0, 0, 0, 0]).is_empty());
+        padding.finish().unwrap();
+        assert_eq!(padding.pending_bytes(), 0);
     }
 }
