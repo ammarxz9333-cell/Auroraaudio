@@ -10,6 +10,8 @@ use oxideav_core::{CodecId, CodecParameters, Decoder as OxideDecoder, Frame, Pac
 
 use crate::sniff::CodecKind;
 
+const AURORA_SEVEN_ONE_FOUR_CHANNELS: usize = 12;
+
 /// JOC policy for the native E-AC-3 backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JocPresentation {
@@ -57,7 +59,8 @@ impl NativeAc3Decoder {
         params.sample_rate = Some(output.sample_rate);
         // OxideAV treats Some(1/2) as an explicit compatibility downmix.
         // For immersive/multichannel Aurora targets request native channel
-        // presentation by leaving the count unspecified.
+        // presentation by leaving the count unspecified. Aurora then performs
+        // only semantic zero-extension for proven mono/stereo/5.1 beds.
         if output.channel_count <= 2 {
             params.channels = Some(output.channel_count as u16);
         }
@@ -125,6 +128,12 @@ impl NativeAc3Decoder {
             }
         }
 
+        let output_channels = self
+            .output_format
+            .map(|format| format.channel_count)
+            .unwrap_or(channels);
+        planar = normalize_bed_for_output(planar, output_channels, samples)?;
+
         let pts = self.emitted_frames as f64 / f64::from(sample_rate);
         self.emitted_frames = self.emitted_frames.saturating_add(samples as u64);
         let discontinuity = std::mem::replace(&mut self.discontinuity, false);
@@ -141,6 +150,56 @@ impl NativeAc3Decoder {
             objects: Vec::new(),
         })
     }
+}
+
+/// Preserve a proven channel bed inside Aurora's canonical 7.1.4 speaker bus.
+///
+/// OxideAV 0.0.11 emits non-extended mono/stereo/5.1 in WAVE/SMPTE order.
+/// Aurora's first six canonical 7.1.4 roles are exactly
+/// FL, FR, FC, LFE, SL, SR, so those signals can be copied losslessly and all
+/// absent back/height roles remain digital zero. This is channel preservation,
+/// not an upmix and not an Atmos/JOC claim.
+///
+/// OxideAV currently documents that dependent-substream-extended E-AC-3 (for
+/// example 7.1) can remain in a mixed bitstream/appended order. Aurora therefore
+/// rejects other source widths when the product requests twelve canonical
+/// channels instead of guessing speaker semantics.
+fn normalize_bed_for_output(
+    planar: Vec<Vec<f32>>,
+    output_channels: usize,
+    samples: usize,
+) -> Result<Vec<Vec<f32>>, DecoderError> {
+    let source_channels = planar.len();
+    if output_channels != AURORA_SEVEN_ONE_FOUR_CHANNELS {
+        return Ok(planar);
+    }
+
+    let mut output = (0..AURORA_SEVEN_ONE_FOUR_CHANNELS)
+        .map(|_| vec![0.0; samples])
+        .collect::<Vec<_>>();
+    match source_channels {
+        1 => {
+            // AC-3/E-AC-3 1/0 is front centre.
+            output[2] = planar.into_iter().next().expect("one source channel");
+        }
+        2 => {
+            for (destination, source) in output.iter_mut().take(2).zip(planar) {
+                *destination = source;
+            }
+        }
+        6 => {
+            // WAVE/SMPTE 5.1 exactly matches Aurora canonical indices 0..6.
+            for (destination, source) in output.iter_mut().take(6).zip(planar) {
+                *destination = source;
+            }
+        }
+        _ => {
+            return Err(DecoderError::UnsupportedInput(
+                "native E-AC-3 bed width has no proven mapping to Aurora canonical 7.1.4",
+            ));
+        }
+    }
+    Ok(output)
 }
 
 impl Decoder for NativeAc3Decoder {
@@ -229,5 +288,38 @@ mod tests {
             })
             .unwrap();
         assert_eq!(decoder.output_format.unwrap().block_size, 40);
+    }
+
+    #[test]
+    fn five_one_bed_is_zero_extended_without_synthetic_channels() {
+        let source = (0..6)
+            .map(|channel| vec![channel as f32 + 1.0; 4])
+            .collect::<Vec<_>>();
+        let output = normalize_bed_for_output(source, 12, 4).unwrap();
+        assert_eq!(output.len(), 12);
+        for (channel, values) in output.iter().take(6).enumerate() {
+            assert_eq!(values, &vec![channel as f32 + 1.0; 4]);
+        }
+        for values in &output[6..] {
+            assert_eq!(values, &vec![0.0; 4]);
+        }
+    }
+
+    #[test]
+    fn stereo_bed_populates_front_pair_only() {
+        let source = vec![vec![1.0; 3], vec![2.0; 3]];
+        let output = normalize_bed_for_output(source, 12, 3).unwrap();
+        assert_eq!(output[0], vec![1.0; 3]);
+        assert_eq!(output[1], vec![2.0; 3]);
+        for values in &output[2..] {
+            assert_eq!(values, &vec![0.0; 3]);
+        }
+    }
+
+    #[test]
+    fn unproven_extended_bed_mapping_fails_closed() {
+        let source = (0..8).map(|_| vec![0.0; 2]).collect::<Vec<_>>();
+        let error = normalize_bed_for_output(source, 12, 2).unwrap_err();
+        assert!(error.to_string().contains("no proven mapping"));
     }
 }
