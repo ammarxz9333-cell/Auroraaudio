@@ -8,6 +8,8 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-iec61937/**"
+      - "crates/aurora-direct-earc-decoder/**"
+      - "crates/aurora-decoder-engine/Cargo.toml"
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
@@ -17,6 +19,8 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-iec61937/**"
+      - "crates/aurora-direct-earc-decoder/**"
+      - "crates/aurora-decoder-engine/Cargo.toml"
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
@@ -49,7 +53,7 @@ jobs:
         run: cargo generate-lockfile
 
       - name: Check formatting for direct eARC crates
-        run: cargo fmt --package aurora-iec61937 --package aurora-cli -- --check
+        run: cargo fmt --package aurora-iec61937 --package aurora-direct-earc-decoder --package aurora-cli -- --check
 
       - name: Check reusable IEC61937 parser
         run: cargo check -p aurora-iec61937 --all-targets
@@ -59,6 +63,15 @@ jobs:
 
       - name: Clippy reusable IEC61937 parser
         run: cargo clippy -p aurora-iec61937 --all-targets -- -D warnings
+
+      - name: Check direct eARC decoder bridge
+        run: cargo check -p aurora-direct-earc-decoder --all-targets
+
+      - name: Test direct eARC decoder bridge
+        run: cargo test -p aurora-direct-earc-decoder
+
+      - name: Clippy direct eARC decoder bridge
+        run: cargo clippy -p aurora-direct-earc-decoder --all-targets -- -D warnings
 
       - name: Check direct eARC binaries
         run: |
