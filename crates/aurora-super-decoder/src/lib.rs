@@ -12,11 +12,12 @@ use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
 use aurora_decoder_engine::catalog::CodecId;
 use aurora_decoder_engine::{AuroraDecoderEngine, EngineConfig};
 use aurora_spatial_ir::SpatialDecodedFrame;
+use aurora_spatial_ir_v2::SpatialDecodedFrame as SpatialDecodedFrameV2;
 
 #[cfg(feature = "iamf")]
 use aurora_decoder_iamf::IamfDecoderAdapter;
 #[cfg(feature = "native-truehd")]
-use aurora_decoder_truehdd::TruehddDecoderAdapter;
+use aurora_decoder_truehdd::{TruehddDecoderAdapter, TruehddV2DecoderAdapter};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ActiveRoute {
@@ -32,6 +33,8 @@ pub struct AuroraSuperDecoder {
     iamf: IamfDecoderAdapter,
     #[cfg(feature = "native-truehd")]
     truehd: TruehddDecoderAdapter,
+    #[cfg(feature = "native-truehd")]
+    truehd_v2: TruehddV2DecoderAdapter,
     active_route: ActiveRoute,
 }
 
@@ -44,6 +47,8 @@ impl AuroraSuperDecoder {
             iamf: IamfDecoderAdapter::new(),
             #[cfg(feature = "native-truehd")]
             truehd: TruehddDecoderAdapter::new(),
+            #[cfg(feature = "native-truehd")]
+            truehd_v2: TruehddV2DecoderAdapter::new(),
             active_route: ActiveRoute::Core,
         }
     }
@@ -74,9 +79,7 @@ impl AuroraSuperDecoder {
         }
     }
 
-    /// Object-preserving immersive path. Formats are admitted here only when
-    /// the selected backend exposes pre-render signal identity plus metadata;
-    /// rendered speaker PCM is never relabeled as objects.
+    /// Legacy object-preserving V1 path retained during migration.
     pub fn decode_spatial_chunk_for(
         &mut self,
         codec: CodecId,
@@ -92,7 +95,34 @@ impl AuroraSuperDecoder {
                 "IAMF pre-render scene export is not admitted yet; the native runtime currently exposes rendered speaker PCM only",
             )),
             _ => Err(DecoderError::UnsupportedInput(
-                "selected codec has no admitted object-preserving Aurora Spatial IR path",
+                "selected codec has no admitted object-preserving Aurora Spatial IR V1 path",
+            )),
+        }
+    }
+
+    /// Rich object-preserving Spatial IR V2 path.
+    ///
+    /// AC-4 currently upgrades losslessly from its V1 scene contract. TrueHD
+    /// uses the dedicated native V2 adapter so distance, extent, zone, screen,
+    /// snap, headphone/dialogue intent and trim bypass are not discarded.
+    pub fn decode_spatial_v2_chunk_for(
+        &mut self,
+        codec: CodecId,
+        input: &[u8],
+    ) -> Result<Option<SpatialDecodedFrameV2>, DecoderError> {
+        match codec {
+            CodecId::Ac4 => {
+                self.active_route = ActiveRoute::Core;
+                self.core
+                    .decode_spatial_access_unit(codec, input)
+                    .map(|frame| frame.map(Into::into))
+            }
+            CodecId::TrueHd | CodecId::TrueHdAtmos => self.decode_truehd_spatial_v2(input),
+            CodecId::Iamf => Err(DecoderError::UnsupportedInput(
+                "IAMF Spatial IR V2 pre-render scene export is not admitted yet",
+            )),
+            _ => Err(DecoderError::UnsupportedInput(
+                "selected codec has no admitted object-preserving Aurora Spatial IR V2 path",
             )),
         }
     }
@@ -142,6 +172,25 @@ impl AuroraSuperDecoder {
             "object-preserving TrueHD requires the native-truehd feature and Rust >=1.88",
         ))
     }
+
+    #[cfg(feature = "native-truehd")]
+    fn decode_truehd_spatial_v2(
+        &mut self,
+        input: &[u8],
+    ) -> Result<Option<SpatialDecodedFrameV2>, DecoderError> {
+        self.active_route = ActiveRoute::TrueHdNative;
+        self.truehd_v2.decode_spatial_chunk_v2(input)
+    }
+
+    #[cfg(not(feature = "native-truehd"))]
+    fn decode_truehd_spatial_v2(
+        &mut self,
+        _input: &[u8],
+    ) -> Result<Option<SpatialDecodedFrameV2>, DecoderError> {
+        Err(DecoderError::Unavailable(
+            "rich TrueHD Spatial IR V2 requires the native-truehd feature and Rust >=1.88",
+        ))
+    }
 }
 
 impl Decoder for AuroraSuperDecoder {
@@ -149,7 +198,7 @@ impl Decoder for AuroraSuperDecoder {
         DecoderInfo {
             name: "Aurora Super Decoder",
             production_ready: false,
-            maturity: "best-of-breed-composite-v1",
+            maturity: "best-of-breed-composite-spatial-ir-v2-experimental",
         }
     }
 
@@ -159,6 +208,8 @@ impl Decoder for AuroraSuperDecoder {
         self.iamf.configure(output_format)?;
         #[cfg(feature = "native-truehd")]
         self.truehd.configure(output_format)?;
+        #[cfg(feature = "native-truehd")]
+        self.truehd_v2.configure(output_format)?;
         Ok(())
     }
 
@@ -178,6 +229,8 @@ impl Decoder for AuroraSuperDecoder {
         self.iamf.reset();
         #[cfg(feature = "native-truehd")]
         self.truehd.reset();
+        #[cfg(feature = "native-truehd")]
+        self.truehd_v2.reset();
         self.active_route = ActiveRoute::Core;
     }
 }
@@ -213,12 +266,33 @@ mod tests {
     }
 
     #[test]
-    fn spatial_path_refuses_to_fake_iamf_objects() {
+    fn spatial_v1_path_refuses_to_fake_iamf_objects() {
         let mut decoder = AuroraSuperDecoder::new(EngineConfig::default());
         decoder.configure(format(12)).unwrap();
         assert!(matches!(
             decoder.decode_spatial_chunk_for(CodecId::Iamf, &[]),
             Err(DecoderError::UnsupportedInput(_))
         ));
+    }
+
+    #[test]
+    fn spatial_v2_path_refuses_to_fake_iamf_objects() {
+        let mut decoder = AuroraSuperDecoder::new(EngineConfig::default());
+        decoder.configure(format(12)).unwrap();
+        assert!(matches!(
+            decoder.decode_spatial_v2_chunk_for(CodecId::Iamf, &[]),
+            Err(DecoderError::UnsupportedInput(_))
+        ));
+    }
+
+    #[test]
+    fn ac4_v2_front_door_uses_lossless_v1_upgrade() {
+        let mut decoder = AuroraSuperDecoder::new(EngineConfig::default());
+        decoder.configure(format(12)).unwrap();
+        assert!(decoder
+            .decode_spatial_v2_chunk_for(CodecId::Ac4, &[])
+            .unwrap()
+            .is_none());
+        assert_eq!(decoder.active_route(), ActiveRoute::Core);
     }
 }
