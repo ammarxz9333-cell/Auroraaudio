@@ -200,9 +200,11 @@ fn main() -> Result<()> {
         }
     };
 
-    let transport = runtime.encoded().decoder().transport_telemetry();
+    let decoder = runtime.encoded().decoder();
+    let transport = decoder.transport_telemetry();
+    let joc = decoder.engine().joc_status();
     eprintln!(
-        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={}",
+        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} joc_classified={} joc_render_active={} joc_layout={:?} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_fallback={:?}",
         args.input,
         args.output,
         stats.carrier_bursts,
@@ -214,7 +216,22 @@ fn main() -> Result<()> {
         stats.capture_recoveries,
         transport.pending_carrier_bytes,
         transport.discarded_bytes,
-        transport.malformed_headers
+        transport.malformed_headers,
+        transport.iec61937_locked,
+        transport.observation_epoch,
+        transport.total_bursts,
+        transport.bursts_since_lock,
+        transport.total_format_changes,
+        transport.relocks,
+        transport.last_valid_burst_age_ms,
+        joc.codec_classified_joc,
+        joc.speaker_render_active,
+        joc.layout_name,
+        joc.channel_count,
+        joc.latency_samples,
+        joc.object_count,
+        joc.complexity_index,
+        joc.fallback_reason
     );
     Ok(())
 }
@@ -275,24 +292,55 @@ fn run_selected_input<S: SpeakerSink>(
     let input = args.input;
     let output = args.output;
     let native_capture = args.alsa_device.is_some();
-    let initial = RuntimeStats::default().snapshot(
-        runtime.encoded().decoder().transport_telemetry(),
+    let decoder = runtime.encoded().decoder();
+    let joc = decoder.engine().joc_status();
+    let initial = RuntimeStats::default().snapshot_with_joc(
+        decoder.transport_telemetry(),
         sink.output_health(),
+        &joc,
     );
-    let reporter = HealthReporter::start(Duration::from_millis(args.health_interval_ms), initial,
+    let reporter = HealthReporter::start(
+        Duration::from_millis(args.health_interval_ms),
+        initial,
         move |health, age| {
             let stats = health.counters;
             // Formatting and potentially blocking stderr I/O live only here.
             // A write failure disables neither capture nor fail-closed decoding.
-            let _ = writeln!(io::stderr(),
-                "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} output_xruns={:?} output_recoveries={:?}",
-                age.as_millis(), stats.carrier_bursts, stats.format_changes,
-                stats.decoded_frames, stats.decoded_pcm_frames, stats.transport_discontinuities,
-                stats.capture_xruns, stats.capture_recoveries, stats.capture_discontinuities,
-                health.parser.pending_carrier_bytes, health.parser.discarded_bytes,
-                health.parser.malformed_headers, health.output.map(|o| o.xruns),
-                health.output.map(|o| o.recoveries));
-        }).context("failed to start runtime health reporter")?;
+            let _ = writeln!(
+                io::stderr(),
+                "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} joc_classified={} joc_render_active={} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_fallback_present={} output_xruns={:?} output_recoveries={:?}",
+                age.as_millis(),
+                stats.carrier_bursts,
+                stats.format_changes,
+                stats.decoded_frames,
+                stats.decoded_pcm_frames,
+                stats.transport_discontinuities,
+                stats.capture_xruns,
+                stats.capture_recoveries,
+                stats.capture_discontinuities,
+                health.parser.pending_carrier_bytes,
+                health.parser.discarded_bytes,
+                health.parser.malformed_headers,
+                health.parser.iec61937_locked,
+                health.parser.observation_epoch,
+                health.parser.total_bursts,
+                health.parser.bursts_since_lock,
+                health.parser.total_format_changes,
+                health.parser.relocks,
+                health.parser.last_valid_burst_age_ms,
+                health.joc.codec_classified_joc,
+                health.joc.speaker_render_active,
+                health.joc.channel_count,
+                health.joc.latency_samples,
+                health.joc.object_count,
+                health.joc.complexity_index,
+                health.joc.fallback_present,
+                health.output.map(|o| o.xruns),
+                health.output.map(|o| o.recoveries)
+            );
+        },
+    )
+    .context("failed to start runtime health reporter")?;
     match args.input {
         InputMode::DirectEarc => run_direct(args, runtime, sink, &reporter),
         InputMode::LegacyUsb => run_legacy(args, runtime, sink, &reporter),
@@ -351,9 +399,12 @@ fn run_direct_native_alsa<S: SpeakerSink>(
         stats.capture_xruns = telemetry.xruns;
         stats.capture_recoveries = telemetry.recoveries;
         stats.capture_discontinuities = telemetry.discontinuities;
-        reporter.publish(stats.snapshot(
-            runtime.encoded().decoder().transport_telemetry(),
+        let decoder = runtime.encoded().decoder();
+        let joc = decoder.engine().joc_status();
+        reporter.publish(stats.snapshot_with_joc(
+            decoder.transport_telemetry(),
             sink.output_health(),
+            &joc,
         ));
     }
 }
@@ -378,9 +429,12 @@ fn run_direct_stdin<R: Read, S: SpeakerSink>(
             .push_direct_s32(&read_buffer[..count])
             .context("direct eARC playback runtime ingest failed")?;
         consume_batch(batch, sink, &mut stats)?;
-        reporter.publish(stats.snapshot(
-            runtime.encoded().decoder().transport_telemetry(),
+        let decoder = runtime.encoded().decoder();
+        let joc = decoder.engine().joc_status();
+        reporter.publish(stats.snapshot_with_joc(
+            decoder.transport_telemetry(),
             sink.output_health(),
+            &joc,
         ));
     }
     runtime
@@ -412,9 +466,12 @@ fn run_legacy<S: SpeakerSink>(
             .push_legacy_usb_packet(&packet[..count])
             .context("legacy STM32/USB playback runtime ingest failed")?;
         consume_batch(batch, sink, &mut stats)?;
-        reporter.publish(stats.snapshot(
-            runtime.encoded().decoder().transport_telemetry(),
+        let decoder = runtime.encoded().decoder();
+        let joc = decoder.engine().joc_status();
+        reporter.publish(stats.snapshot_with_joc(
+            decoder.transport_telemetry(),
             sink.output_health(),
+            &joc,
         ));
     }
     runtime
