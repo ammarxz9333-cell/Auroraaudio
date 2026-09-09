@@ -14,6 +14,7 @@ members = [
     "crates/aurora-decoder-engine",
     "crates/aurora-decoder-iamf",
     "crates/aurora-decoder-truehdd",
+    "crates/aurora-decoder-mpegh",
     "crates/aurora-super-decoder",
     "crates/aurora-spatial-runtime",
     "crates/aurora-spatial-runtime-v2",
