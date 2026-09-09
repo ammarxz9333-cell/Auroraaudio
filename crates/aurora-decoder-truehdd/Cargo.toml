@@ -23,4 +23,5 @@ truehdd-process = ["native-truehd"]
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-spatial-ir = { path = "../aurora-spatial-ir" }
+aurora-spatial-ir-v2 = { path = "../aurora-spatial-ir-v2" }
 truehd = { git = "https://github.com/truehdd/truehdd", rev = "b54f2097166ca736cc8a7f3cb6157c62440284ce", package = "truehd", optional = true }
