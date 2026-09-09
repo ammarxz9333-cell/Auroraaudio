@@ -55,7 +55,7 @@ pub fn build_spatial_transport_v2(
         None
     } else {
         Some(source.parse_object_metadata().map_err(|error| {
-            MpeghSpatialTransportError::InvalidObjectMetadata(error.to_string())
+            MpeghSpatialTransportError::InvalidObjectMetadataPacket(error.to_string())
         })?)
     };
 
@@ -278,7 +278,11 @@ fn append_object_updates(
             .ok()
             .and_then(|index| index.checked_mul(metadata_frame_length))
             .ok_or(MpeghSpatialTransportError::NumericOverflow)?;
-        if usize::try_from(offset).ok().filter(|offset| *offset <= decoded_frame_count).is_none() {
+        if usize::try_from(offset)
+            .ok()
+            .filter(|offset| *offset <= decoded_frame_count)
+            .is_none()
+        {
             return Err(MpeghSpatialTransportError::ObjectMetadataOffsetOutOfRange {
                 element_id: object.element_id,
                 offset,
@@ -313,7 +317,9 @@ fn update_from_oam_frame(
         || radius < 0.0
         || !(gain_db.is_finite() || gain_db == f32::NEG_INFINITY)
     {
-        return Err(MpeghSpatialTransportError::InvalidObjectMetadata(object.element_id));
+        return Err(MpeghSpatialTransportError::InvalidObjectMetadataValue(
+            object.element_id,
+        ));
     }
 
     let width = normalized(frame.spread_width_degrees.unwrap_or(0.0), 180.0)?;
@@ -403,8 +409,8 @@ pub enum MpeghSpatialTransportError {
     MissingChannelMetadata,
     #[error("external channel metadata is invalid: {0}")]
     InvalidChannelMetadata(String),
-    #[error("external object metadata is invalid: {0}")]
-    InvalidObjectMetadata(String),
+    #[error("external object metadata packet is invalid: {0}")]
+    InvalidObjectMetadataPacket(String),
     #[error("channel metadata produced {metadata} bed bindings for {pcm} proved PCM channel lanes")]
     BedLaneCountMismatch { metadata: usize, pcm: usize },
     #[error("speaker layout contains {speakers} speakers for {signals} signals")]
@@ -415,12 +421,10 @@ pub enum MpeghSpatialTransportError {
     ObjectElementIdMismatch { topology: u16, metadata: u16 },
     #[error("object metadata contains {metadata} objects but PCM topology contains {pcm} object lanes")]
     ObjectLaneCountMismatch { metadata: usize, pcm: usize },
-    #[error("object element {element_id} contains an incomplete external metadata frame")]
+    #[error("object element {0} contains an incomplete external metadata frame")]
     IncompleteObjectMetadata(u16),
-    #[error("object element {element_id} contains invalid numeric metadata")]
-    InvalidObjectMetadataValue { element_id: u16 },
     #[error("object element {0} contains invalid numeric metadata")]
-    InvalidObjectMetadata(u16),
+    InvalidObjectMetadataValue(u16),
     #[error("object element {element_id} metadata offset {offset} exceeds decoded frame length {frame_count}")]
     ObjectMetadataOffsetOutOfRange {
         element_id: u16,
