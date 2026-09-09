@@ -7,12 +7,46 @@ const MAX_EXTENSIONS: usize = 7;
 
 #[derive(Debug, Clone, PartialEq)]
 pub struct MpeghOamPacket {
+    /// Length of one OAM metadata subframe, not the whole core-coder access
+    /// unit. libmpegh writes `obj_md_cfg.frame_length >> 6` here and writes
+    /// `cc_frame_length / frame_length` object metadata frames per access unit.
     pub frame_length_samples: u32,
     pub audio_truncation_code: u8,
     pub truncated_samples: Option<u16>,
     pub objects: Vec<MpeghOamObject>,
     pub extensions: Vec<MpeghOamExtension>,
     pub consumed_bits: usize,
+}
+
+impl MpeghOamPacket {
+    /// Validate the external writer's subframe geometry against one decoded PCM
+    /// access unit. All objects must carry the same number of OAM subframes and
+    /// `subframe_length * subframe_count` must cover the decoded frame exactly.
+    pub fn validate_access_unit_span(
+        &self,
+        decoded_frame_count: usize,
+    ) -> Result<(), MpeghOamParseError> {
+        let Some(first) = self.objects.first() else {
+            return Ok(());
+        };
+        let subframes = first.frames.len();
+        if self.objects.iter().any(|object| object.frames.len() != subframes) {
+            return Err(MpeghOamParseError::InconsistentObjectFrameCount);
+        }
+        let covered = usize::try_from(self.frame_length_samples)
+            .ok()
+            .and_then(|length| length.checked_mul(subframes))
+            .ok_or(MpeghOamParseError::NumericOverflow)?;
+        if covered != decoded_frame_count {
+            return Err(MpeghOamParseError::AccessUnitSpanMismatch {
+                subframe_length: self.frame_length_samples,
+                subframes,
+                covered,
+                decoded: decoded_frame_count,
+            });
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -70,9 +104,6 @@ pub enum MpeghExclusionSector {
 pub struct MpeghOamExtension {
     pub extension_type: u8,
     pub payload_length_bytes: u16,
-    /// Payload bits repacked MSB-first into bytes. The final byte is padded with
-    /// zeroes only when a future external interface emits a non-byte-aligned
-    /// extension, while the current libmpegh writer declares byte lengths.
     pub payload: Vec<u8>,
 }
 
@@ -379,6 +410,15 @@ pub enum MpeghOamParseError {
     TooManyObjects { actual: usize, maximum: usize },
     #[error("external OAM object declares {actual} subframes; supported range is 1..={maximum}")]
     InvalidObjectFrameCount { actual: usize, maximum: usize },
+    #[error("external OAM objects disagree on subframe count")]
+    InconsistentObjectFrameCount,
+    #[error("external OAM subframe geometry covers {covered} samples ({subframes} x {subframe_length}) but decoded PCM contains {decoded}")]
+    AccessUnitSpanMismatch {
+        subframe_length: u32,
+        subframes: usize,
+        covered: usize,
+        decoded: usize,
+    },
     #[error("external OAM declares {actual} exclusion sectors; maximum is {maximum}")]
     TooManyExclusionSectors { actual: usize, maximum: usize },
     #[error("external OAM declares {actual} extensions; maximum encoded count is {maximum}")]
@@ -420,32 +460,43 @@ mod tests {
         }
     }
 
+    fn write_minimal_metadata_frame(writer: &mut BitWriter) {
+        writer.write(1, 1); // has metadata
+        writer.signed(0, 8);
+        writer.signed(0, 6);
+        writer.write(3, 4);
+        writer.signed(32, 7);
+        writer.signed(0, 7);
+        writer.signed(0, 5);
+        writer.signed(0, 4);
+    }
+
     #[test]
     fn parses_one_object_using_libmpegh_external_scaling() {
         let mut writer = BitWriter::new();
-        writer.write(16, 6); // 1024 samples
+        writer.write(16, 6); // 1024-sample OAM subframe
         writer.write(0, 2);
-        writer.write(1, 9); // objects
-        writer.write(5, 9); // element id
-        writer.write(1, 1); // dynamic priority
-        writer.write(0, 1); // non-uniform spread
-        writer.write(1, 6); // one OAM subframe
-        writer.write(1, 1); // has metadata
-        writer.signed(60, 8); // 90 deg azimuth
-        writer.signed(10, 6); // 30 deg elevation
-        writer.write(3, 4); // radius 1.0
-        writer.signed(32, 7); // 0 dB
+        writer.write(1, 9);
+        writer.write(5, 9);
+        writer.write(1, 1);
+        writer.write(0, 1);
+        writer.write(1, 6);
+        writer.write(1, 1);
+        writer.signed(60, 8);
+        writer.signed(10, 6);
+        writer.write(3, 4);
+        writer.signed(32, 7);
         writer.write(7, 3);
-        writer.signed(20, 7); // 30 deg width
-        writer.signed(10, 5); // 30 deg height
-        writer.signed(3, 4); // depth 0.5
-        writer.write(0, 1); // fixed position
+        writer.signed(20, 7);
+        writer.signed(10, 5);
+        writer.signed(3, 4);
+        writer.write(0, 1);
         writer.write(6, 3);
-        writer.write(64, 7); // diffuseness
-        writer.write(32, 7); // divergence
+        writer.write(64, 7);
+        writer.write(32, 7);
         writer.write(12, 6);
-        writer.write(0, 4); // exclusions
-        writer.write(0, 3); // extensions
+        writer.write(0, 4);
+        writer.write(0, 3);
 
         let parsed = parse_external_oam(&writer.bytes).unwrap();
         assert_eq!(parsed.frame_length_samples, 1024);
@@ -461,6 +512,38 @@ mod tests {
         assert_eq!(frame.spread_width_degrees, Some(30.0));
         assert_eq!(frame.spread_height_degrees, Some(30.0));
         assert!((frame.spread_depth.unwrap() - 0.5).abs() < 1.0e-6);
+        parsed.validate_access_unit_span(1024).unwrap();
+    }
+
+    #[test]
+    fn four_256_sample_subframes_cover_one_1024_sample_access_unit() {
+        let mut writer = BitWriter::new();
+        writer.write(4, 6); // 4 << 6 = 256 samples per OAM subframe
+        writer.write(0, 2);
+        writer.write(1, 9);
+        writer.write(5, 9);
+        writer.write(0, 1); // no dynamic priority
+        writer.write(0, 1); // non-uniform spread
+        writer.write(4, 6); // cc_frame_length / frame_length = 1024 / 256
+        for _ in 0..4 {
+            write_minimal_metadata_frame(&mut writer);
+        }
+        writer.write(0, 1);
+        writer.write(0, 3);
+        writer.write(0, 7);
+        writer.write(0, 7);
+        writer.write(0, 6);
+        writer.write(0, 4);
+        writer.write(0, 3);
+
+        let parsed = parse_external_oam(&writer.bytes).unwrap();
+        assert_eq!(parsed.frame_length_samples, 256);
+        assert_eq!(parsed.objects[0].frames.len(), 4);
+        parsed.validate_access_unit_span(1024).unwrap();
+        assert!(matches!(
+            parsed.validate_access_unit_span(960),
+            Err(MpeghOamParseError::AccessUnitSpanMismatch { .. })
+        ));
     }
 
     #[test]
