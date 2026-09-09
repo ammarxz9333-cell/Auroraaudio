@@ -52,7 +52,9 @@ impl MpeghExternalFrame {
 
     /// Decode libmpegh's 24-bit little-endian, sample-major external-render PCM
     /// and prove the channel/object/HOA lane ranges using the authoritative
-    /// offsets returned by libmpegh itself.
+    /// offsets returned by libmpegh itself. When channel metadata is present,
+    /// its declared signal count is cross-checked against the proved channel
+    /// lane prefix before the result is admitted.
     pub fn decode_prerender_pcm(&self) -> Result<MpeghPrerenderPcm, MpeghPcmTopologyError> {
         let oam = if self.object_metadata.is_empty() {
             None
@@ -62,7 +64,31 @@ impl MpeghExternalFrame {
                     .map_err(|error| MpeghPcmTopologyError::InvalidOam(error.to_string()))?,
             )
         };
-        decode_prerender_pcm(self, oam.as_ref())
+        let channel_metadata = if self.channel_metadata.is_empty() {
+            None
+        } else {
+            Some(
+                self.parse_channel_metadata()
+                    .map_err(|error| MpeghPcmTopologyError::InvalidChannelMetadata(error.to_string()))?,
+            )
+        };
+        let decoded = decode_prerender_pcm(self, oam.as_ref())?;
+        if let Some(metadata) = channel_metadata {
+            if usize::from(metadata.frame_length_samples) != decoded.frame_count {
+                return Err(MpeghPcmTopologyError::ChannelFrameLengthMismatch {
+                    metadata: usize::from(metadata.frame_length_samples),
+                    pcm: decoded.frame_count,
+                });
+            }
+            let metadata_channels = metadata.total_signal_count();
+            if metadata_channels != decoded.topology.channel_lane_count {
+                return Err(MpeghPcmTopologyError::ChannelSignalCountMismatch {
+                    metadata: metadata_channels,
+                    pcm: decoded.topology.channel_lane_count,
+                });
+            }
+        }
+        Ok(decoded)
     }
 }
 
@@ -265,6 +291,12 @@ pub enum MpeghPcmTopologyError {
     NonCoveringLaneRanges,
     #[error("external OAM metadata is invalid: {0}")]
     InvalidOam(String),
+    #[error("external channel metadata is invalid: {0}")]
+    InvalidChannelMetadata(String),
+    #[error("external channel metadata frame length {metadata} does not match pre-render PCM frame length {pcm}")]
+    ChannelFrameLengthMismatch { metadata: usize, pcm: usize },
+    #[error("external channel metadata declares {metadata} channel signals but the proved PCM topology contains {pcm} channel lanes")]
+    ChannelSignalCountMismatch { metadata: usize, pcm: usize },
     #[error("external PCM topology arithmetic overflow")]
     NumericOverflow,
 }
