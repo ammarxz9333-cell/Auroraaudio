@@ -15,6 +15,7 @@ mod external_channels;
 mod external_hoa;
 mod external_oam;
 mod external_pcm;
+mod hoa_contract;
 mod paired_gate;
 mod rendered_pcm;
 mod spatial_transport;
@@ -50,6 +51,7 @@ pub use external_pcm::{
     decode_prerender_pcm, MpeghExternalLane, MpeghExternalTopology, MpeghPcmTopologyError,
     MpeghPrerenderPcm,
 };
+pub use hoa_contract::{MpeghHoaContractError, MpeghHoaDecodeContract};
 pub use paired_gate::{
     evaluate_paired_mpegh_candidate, MpeghPairedGateError, MpeghPairedPlaybackDecision,
 };
