@@ -308,7 +308,27 @@ impl NativeAc4SpatialDecoder {
                     DecoderError::Decode("A-JOC object state index is out of range".into())
                 })?;
                 if block.b_object_not_active {
+                    let was_active = state.active;
                     state.active = false;
+                    previous_object_gain = Some(state.gain_db);
+                    if was_active {
+                        let (x, y, z) = state.position.ok_or_else(|| {
+                            DecoderError::Decode(
+                                "active A-JOC object became inactive without a resolved position".into(),
+                            )
+                        })?;
+                        updates.push(SpatialObjectUpdate {
+                            object_id: object_id(object_index),
+                            active: false,
+                            coordinate_space: CoordinateSpace::RoomNormalized,
+                            position: SpatialPosition::Cartesian { x, y, z },
+                            gain_db: state.gain_db,
+                            spread: 0.0,
+                            metadata_sample_offset: offset,
+                            ramp_duration_samples: ramp,
+                            priority: state.priority,
+                        });
+                    }
                     continue;
                 }
                 state.active = true;
@@ -331,7 +351,11 @@ impl NativeAc4SpatialDecoder {
                         } else {
                             state.gain_db = match basic.gain {
                                 Some(ObjectGain::Value(value)) => {
-                                    if value <= 14 { (15 - value as i32) as f32 } else { (14 - value as i32) as f32 }
+                                    if value <= 14 {
+                                        (15 - value as i32) as f32
+                                    } else {
+                                        (14 - value as i32) as f32
+                                    }
                                 }
                                 Some(ObjectGain::NegInf) => f32::NEG_INFINITY,
                                 Some(ObjectGain::PrevObject) => previous_object_gain.ok_or(
@@ -421,7 +445,11 @@ fn resolve_position(
         RenderPosition::Abs { x, y, z_sign, z } => (
             f32::from(x) / 62.0,
             f32::from(y) / 62.0,
-            if z_sign { f32::from(z) / 15.0 } else { -f32::from(z) / 15.0 },
+            if z_sign {
+                f32::from(z) / 15.0
+            } else {
+                -f32::from(z) / 15.0
+            },
         ),
         RenderPosition::Diff { x, y, z } => {
             let (px, py, pz) = previous.ok_or(DecoderError::UnsupportedInput(
