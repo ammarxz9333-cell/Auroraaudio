@@ -2,6 +2,19 @@
 
 use crate::sniff::CodecKind;
 use oxideav_ac3::{eac3, syncinfo};
+use thiserror::Error;
+
+#[derive(Debug, Error, PartialEq, Eq)]
+pub enum FramingError {
+    #[error("truncated AC-3 syncword at EOF: {available} byte buffered")]
+    TruncatedAc3Syncword { available: usize },
+    #[error("truncated AC-3 syncframe header at EOF: {available} bytes buffered, need at least 5")]
+    TruncatedAc3Header { available: usize },
+    #[error(
+        "truncated AC-3 syncframe at EOF: expected {expected} bytes, only {available} buffered"
+    )]
+    TruncatedAc3Frame { expected: usize, available: usize },
+}
 
 #[derive(Debug)]
 pub struct SyncFramer {
@@ -48,10 +61,83 @@ impl SyncFramer {
         out
     }
 
+    /// Finalize a finite elementary stream.
+    ///
+    /// Streaming extraction deliberately keeps an incomplete AC-3 syncframe in
+    /// the buffer because a later `push` may complete it. At a known EOF there
+    /// can be no later bytes, so a syncword/header/payload prefix must be
+    /// reported instead of silently disappearing. Non-sync garbage remains a
+    /// resynchronization concern and is counted as dropped data rather than a
+    /// truncated frame.
+    pub fn finish_checked(&mut self) -> Result<Vec<Vec<u8>>, FramingError> {
+        let out = self.flush();
+        if self.codec == CodecKind::Ac3 {
+            self.validate_ac3_eof()?;
+        }
+        Ok(out)
+    }
+
     pub fn reset(&mut self) {
         self.buffer.clear();
         self.pending_eac3_group.clear();
         self.dropped_bytes = 0;
+    }
+
+    fn validate_ac3_eof(&mut self) -> Result<(), FramingError> {
+        if self.buffer.is_empty() {
+            return Ok(());
+        }
+
+        // A single non-sync byte can survive the streaming resynchronizer because
+        // it intentionally waits for a possible second syncword byte. At EOF it
+        // is just garbage and can be accounted for immediately.
+        if self.buffer[0] != 0x0B {
+            let dropped = self.buffer.len();
+            self.buffer.clear();
+            self.dropped_bytes = self.dropped_bytes.saturating_add(dropped as u64);
+            return Ok(());
+        }
+
+        if self.buffer.len() == 1 {
+            return Err(FramingError::TruncatedAc3Syncword { available: 1 });
+        }
+
+        if self.buffer[1] != 0x77 {
+            let dropped = self.buffer.len();
+            self.buffer.clear();
+            self.dropped_bytes = self.dropped_bytes.saturating_add(dropped as u64);
+            return Ok(());
+        }
+
+        if self.buffer.len() < 5 {
+            return Err(FramingError::TruncatedAc3Header {
+                available: self.buffer.len(),
+            });
+        }
+
+        match syncinfo::parse(&self.buffer) {
+            Ok(info) => {
+                let expected = info.frame_length as usize;
+                if self.buffer.len() < expected {
+                    Err(FramingError::TruncatedAc3Frame {
+                        expected,
+                        available: self.buffer.len(),
+                    })
+                } else {
+                    // `flush` should already have emitted every complete frame.
+                    debug_assert!(false, "complete AC-3 frame remained buffered after flush");
+                    Ok(())
+                }
+            }
+            Err(_) => {
+                // Malformed sync-looking bytes are corruption/garbage rather than
+                // a provably truncated frame. Preserve streaming resync semantics.
+                let dropped = self.buffer.len();
+                self.buffer.clear();
+                self.dropped_bytes = self.dropped_bytes.saturating_add(dropped as u64);
+                Ok(())
+            }
+        }
     }
 
     fn extract_ac3(&mut self) -> Vec<Vec<u8>> {
@@ -151,10 +237,64 @@ impl SyncFramer {
 mod tests {
     use super::*;
 
+    fn minimal_ac3_frame() -> Vec<u8> {
+        // 48 kHz (`fscod = 0`), `frmsizecod = 0` => 64 words / 128 bytes.
+        // The framer only needs syncinfo; CRC/audio-block contents are irrelevant.
+        let mut frame = vec![0_u8; 128];
+        frame[0] = 0x0B;
+        frame[1] = 0x77;
+        frame[4] = 0;
+        frame
+    }
+
     #[test]
     fn preserves_split_syncword_for_next_push() {
         let mut f = SyncFramer::new(CodecKind::Ac3);
         assert!(f.push(&[1, 2, 3, 0x0B]).is_empty());
         assert_eq!(f.buffer, vec![0x0B]);
+    }
+
+    #[test]
+    fn finite_ac3_eof_accepts_complete_final_frame() {
+        let frame = minimal_ac3_frame();
+        let mut f = SyncFramer::new(CodecKind::Ac3);
+        assert_eq!(f.push(&frame), vec![frame]);
+        assert!(f.finish_checked().unwrap().is_empty());
+    }
+
+    #[test]
+    fn finite_ac3_eof_rejects_truncated_header() {
+        let mut f = SyncFramer::new(CodecKind::Ac3);
+        assert!(f.push(&[0x0B, 0x77, 0, 0]).is_empty());
+        assert_eq!(
+            f.finish_checked(),
+            Err(FramingError::TruncatedAc3Header { available: 4 })
+        );
+    }
+
+    #[test]
+    fn finite_ac3_eof_rejects_truncated_payload() {
+        let frame = minimal_ac3_frame();
+        let partial = &frame[..20];
+        let mut f = SyncFramer::new(CodecKind::Ac3);
+        assert!(f.push(partial).is_empty());
+        assert_eq!(
+            f.finish_checked(),
+            Err(FramingError::TruncatedAc3Frame {
+                expected: 128,
+                available: 20,
+            })
+        );
+    }
+
+    #[test]
+    fn finite_ac3_eof_drops_non_sync_garbage_tail() {
+        let frame = minimal_ac3_frame();
+        let mut input = frame.clone();
+        input.push(0xAA);
+        let mut f = SyncFramer::new(CodecKind::Ac3);
+        assert_eq!(f.push(&input), vec![frame]);
+        assert!(f.finish_checked().unwrap().is_empty());
+        assert_eq!(f.dropped_bytes(), 1);
     }
 }
