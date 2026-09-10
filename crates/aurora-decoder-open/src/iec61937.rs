@@ -15,7 +15,6 @@ const MAX_PAYLOAD_BYTES: usize = 256 * 1024;
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Iec61937Burst {
     pub codec: CodecKind,
-    /// Full Pc data-type/sub-data-type value from bits 0..6.
     pub data_type: u8,
     pub payload: Vec<u8>,
 }
@@ -35,15 +34,11 @@ impl Iec61937Depacketizer {
         self.dropped_bytes
     }
 
-    /// Push arbitrary canonical S16_LE carrier bytes and return every complete
-    /// burst. Fragmented preambles/payloads are retained for the next call.
     pub fn push(&mut self, bytes: &[u8]) -> Vec<Iec61937Burst> {
         self.buffer.extend_from_slice(bytes);
         let mut out = Vec::new();
         loop {
             let Some(start) = find_preamble(&self.buffer) else {
-                // Keep at most the final 3 bytes because a preamble may straddle
-                // the next input chunk.
                 let keep = self.buffer.len().min(PREAMBLE_LE.len() - 1);
                 let drop = self.buffer.len().saturating_sub(keep);
                 if drop > 0 {
@@ -66,15 +61,11 @@ impl Iec61937Depacketizer {
             let codec = codec_from_data_type(data_type);
             let payload_bytes = payload_length_bytes(data_type, pd);
             if payload_bytes == 0 || payload_bytes > MAX_PAYLOAD_BYTES {
-                // Invalid/empty burst: advance one 16-bit word and resync.
                 self.dropped_bytes = self.dropped_bytes.saturating_add(2);
                 self.buffer.drain(..2);
                 continue;
             }
 
-            // IEC61937 carries byte-oriented payloads in 16-bit words. An odd
-            // native payload therefore consumes a padded final carrier word;
-            // swap the complete carrier words first, then remove that pad byte.
             let carrier_payload_bytes = payload_bytes.saturating_add(payload_bytes & 1);
             let need = 8usize.saturating_add(carrier_payload_bytes);
             if self.buffer.len() < need {
@@ -102,14 +93,15 @@ impl Iec61937Depacketizer {
     }
 }
 
-/// IEC61937 uses byte counts for E-AC-3 and MAT. Legacy burst types use a bit
-/// length code; round those up to the containing byte while retaining the
-/// canonical two-byte carrier-word padding separately.
+/// Match the product parser exactly: E-AC-3/MAT use byte counts; legacy
+/// bit-count types must be byte-aligned or the header is rejected.
 const fn payload_length_bytes(data_type: u8, pd: u16) -> usize {
     if data_type == DATA_TYPE_EAC3 || data_type == DATA_TYPE_MAT {
         pd as usize
+    } else if pd & 7 != 0 {
+        0
     } else {
-        (pd as usize).saturating_add(7) / 8
+        pd as usize / 8
     }
 }
 
@@ -119,8 +111,6 @@ pub const fn codec_from_data_type(data_type: u8) -> CodecKind {
         0x0B | 0x0C | 0x0D => CodecKind::Dts,
         0x11 => CodecKind::DtsHd,
         0x15 => CodecKind::Eac3,
-        // MAT is a transport/container contract, not a raw TrueHD elementary
-        // stream. Keep it distinct so a dedicated MAT adapter must own it.
         0x16 => CodecKind::DolbyMat,
         _ => CodecKind::Unknown,
     }
@@ -131,8 +121,6 @@ fn find_preamble(data: &[u8]) -> Option<usize> {
         .position(|window| window == PREAMBLE_LE)
 }
 
-/// The transport sniffer uses this helper to make clear that an IEC burst is
-/// transport, not a codec by itself.
 pub const fn encapsulation() -> Encapsulation {
     Encapsulation::Iec61937
 }
@@ -166,7 +154,6 @@ mod tests {
     fn extracts_fragmented_eac3_burst_using_byte_length_pd() {
         let payload = [0x0B, 0x77, 1, 2, 3, 4];
         let bytes = burst(DATA_TYPE_EAC3, &payload);
-        // E-AC-3 Pd is bytes, not bits.
         assert_eq!(u16::from_le_bytes([bytes[6], bytes[7]]), payload.len() as u16);
 
         let mut d = Iec61937Depacketizer::new();
@@ -185,6 +172,19 @@ mod tests {
         let mut d = Iec61937Depacketizer::new();
         let out = d.push(&bytes);
         assert_eq!(out[0].payload, payload);
+    }
+
+    #[test]
+    fn non_byte_aligned_legacy_pd_is_rejected_and_resynchronizes() {
+        let mut bytes = PREAMBLE_LE.to_vec();
+        bytes.extend_from_slice(&1_u16.to_le_bytes());
+        bytes.extend_from_slice(&9_u16.to_le_bytes());
+        bytes.extend_from_slice(&burst(DATA_TYPE_EAC3, &[0x0B, 0x77, 0x11, 0x22]));
+        let mut d = Iec61937Depacketizer::new();
+        let out = d.push(&bytes);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].codec, CodecKind::Eac3);
+        assert!(d.dropped_bytes() >= 8);
     }
 
     #[test]
