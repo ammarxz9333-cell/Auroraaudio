@@ -365,7 +365,53 @@ impl UniversalOpenDecoder {
         Ok(())
     }
 
+    /// Send one access unit to an already-created OpenJOC session. OpenJOC owns
+    /// its own complete-AU validation, so once Aurora has positively admitted
+    /// and successfully rendered JOC, repeating the separate admission parser
+    /// on every subsequent AU only duplicates parsing work. A renderer rejection
+    /// still retires already-produced PCM and falls back to the ordinary DD+ bed.
+    fn render_active_joc_access_unit(&mut self, unit: &[u8]) -> Result<(), DecoderError> {
+        let render = self
+            .joc_renderer
+            .as_mut()
+            .ok_or(DecoderError::Unavailable("JOC renderer is not initialized"))?
+            .push_access_unit(unit);
+        match render {
+            Ok(()) => {
+                self.codec = Some(CodecKind::Eac3Joc);
+                self.last_joc_error = None;
+                let renderer = self
+                    .joc_renderer
+                    .as_mut()
+                    .expect("renderer exists after successful JOC render");
+                while let Some(frame) = renderer.take_block() {
+                    self.pending.push_back(frame);
+                }
+                Ok(())
+            }
+            Err(error) => {
+                let render_error = error.to_string();
+                if let Err(retire_error) = self.salvage_and_retire_joc_renderer() {
+                    self.last_joc_error = Some(format!(
+                        "{render_error}; buffered JOC retirement failed: {retire_error}"
+                    ));
+                    return Err(retire_error);
+                }
+                self.last_joc_error = Some(render_error);
+                self.codec = Some(CodecKind::Eac3);
+                self.decode_eac3_bed_access_unit(unit)
+            }
+        }
+    }
+
     fn process_eac3_access_unit(&mut self, unit: &[u8]) -> Result<(), DecoderError> {
+        // Once a real OpenJOC session has successfully rendered this E-AC-3
+        // presentation, let that session validate following AUs directly. This
+        // removes duplicate complete-AU parsing from the steady-state Atmos path.
+        if self.codec == Some(CodecKind::Eac3Joc) && self.joc_renderer.is_some() {
+            return self.render_active_joc_access_unit(unit);
+        }
+
         match self.joc_probe.inspect(unit) {
             JocAdmission::Validated => {
                 let output = self
@@ -381,34 +427,7 @@ impl UniversalOpenDecoder {
                         }
                     }
                 }
-                let render = self
-                    .joc_renderer
-                    .as_mut()
-                    .expect("renderer initialized above")
-                    .push_access_unit(unit);
-                match render {
-                    Ok(()) => {
-                        self.codec = Some(CodecKind::Eac3Joc);
-                        self.last_joc_error = None;
-                        let renderer = self.joc_renderer.as_mut().expect("renderer exists");
-                        while let Some(frame) = renderer.take_block() {
-                            self.pending.push_back(frame);
-                        }
-                        Ok(())
-                    }
-                    Err(error) => {
-                        let render_error = error.to_string();
-                        if let Err(retire_error) = self.salvage_and_retire_joc_renderer() {
-                            self.last_joc_error = Some(format!(
-                                "{render_error}; buffered JOC retirement failed: {retire_error}"
-                            ));
-                            return Err(retire_error);
-                        }
-                        self.last_joc_error = Some(render_error);
-                        self.codec = Some(CodecKind::Eac3);
-                        self.decode_eac3_bed_access_unit(unit)
-                    }
-                }
+                self.render_active_joc_access_unit(unit)
             }
             JocAdmission::SignalledButInvalid => {
                 self.drain_and_retire_joc_renderer()?;
