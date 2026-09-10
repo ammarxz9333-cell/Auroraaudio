@@ -82,6 +82,13 @@ impl AuroraDecoderEngine {
             max_total_time_us: render.and_then(|info| info.max_total_time_us),
         }
     }
+
+    /// Return a consumed decoded frame to any active backend-specific recycler.
+    /// OpenJOC uses this to reuse 40-frame planar buffers; non-JOC frames simply
+    /// fall through and are dropped normally by the backend hook.
+    pub fn recycle_decoded_frame(&mut self, frame: DecodedFrame) {
+        self.open.recycle_decoded_frame(frame);
+    }
 }
 
 impl EngineTelemetry {
