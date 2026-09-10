@@ -114,7 +114,11 @@ fn encode_f32_to_s32_padded_into(
     let required = frames.saturating_mul(hardware_channels);
     encoded.clear();
     if encoded.capacity() < required {
-        encoded.reserve(required - encoded.capacity());
+        // `Vec::reserve` guarantees capacity for `len + additional`; after the
+        // clear above len is zero, so request the full target rather than the
+        // capacity delta. Requesting only `required - capacity` could legally
+        // leave the vector undersized and force a growth during the sample loop.
+        encoded.reserve(required);
     }
     for frame in interleaved_f32.chunks_exact(logical_channels) {
         for &sample in frame {
@@ -282,9 +286,8 @@ impl NativeAlsaPlayback {
             recoveries: 0,
             discontinuity_resets: 0,
         };
-        let encoded_scratch = Vec::with_capacity(
-            period_frames.saturating_mul(negotiated_channels),
-        );
+        let encoded_scratch =
+            Vec::with_capacity(period_frames.saturating_mul(negotiated_channels));
 
         Ok(Self {
             pcm,
