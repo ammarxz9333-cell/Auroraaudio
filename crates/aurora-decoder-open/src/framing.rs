@@ -313,6 +313,20 @@ mod tests {
         frame
     }
 
+    fn minimal_eac3_frame() -> Vec<u8> {
+        // Independent substream 0, 128-byte frame (`frmsiz = 63`), 48 kHz,
+        // six audio blocks, stereo, no LFE, bsid 16. The remainder can stay
+        // zero because EOF framing only needs a parseable mandatory BSI prefix.
+        let mut frame = vec![0_u8; 128];
+        frame[0] = 0x0B;
+        frame[1] = 0x77;
+        frame[2] = 0x00;
+        frame[3] = 0x3F;
+        frame[4] = 0x34;
+        frame[5] = 0x80;
+        frame
+    }
+
     #[test]
     fn preserves_split_syncword_for_next_push() {
         let mut f = SyncFramer::new(CodecKind::Ac3);
@@ -381,6 +395,21 @@ mod tests {
         assert_eq!(
             f.finish_checked(),
             Err(FramingError::TruncatedEac3Header { available: 5 })
+        );
+    }
+
+    #[test]
+    fn finite_eac3_eof_rejects_truncated_payload() {
+        let frame = minimal_eac3_frame();
+        let partial = &frame[..20];
+        let mut f = SyncFramer::new(CodecKind::Eac3);
+        assert!(f.push(partial).is_empty());
+        assert_eq!(
+            f.finish_checked(),
+            Err(FramingError::TruncatedEac3Frame {
+                expected: 128,
+                available: 20,
+            })
         );
     }
 }
