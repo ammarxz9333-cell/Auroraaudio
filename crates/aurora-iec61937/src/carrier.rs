@@ -119,13 +119,27 @@ impl S32LeCarrierNormalizer {
     /// Normalizes complete native ALSA S32 slot samples directly.
     ///
     /// ALSA's Rust binding exposes S32_LE samples as `i32`; casting to `u32`
-    /// preserves the two's-complement bit pattern exactly. This path avoids
-    /// serializing the capture block to an intermediate byte vector before
-    /// extracting the useful 16-bit IEC61937 word from each slot.
+    /// preserves the two's-complement bit pattern exactly. This compatibility
+    /// API returns an owned vector; realtime callers should prefer
+    /// [`Self::push_s32_words_into`] to reuse caller-owned storage.
     pub fn push_s32_words(
         &mut self,
         samples: &[i32],
     ) -> Result<Vec<u8>, CarrierNormalizeError> {
+        let mut output = Vec::with_capacity(samples.len().saturating_mul(2));
+        self.push_s32_words_into(samples, &mut output)?;
+        Ok(output)
+    }
+
+    /// Normalizes native S32 slot samples into reusable caller-owned storage.
+    /// The output is cleared before every call, including error paths, so stale
+    /// carrier bytes can never be mistaken for newly captured transport data.
+    pub fn push_s32_words_into(
+        &mut self,
+        samples: &[i32],
+        output: &mut Vec<u8>,
+    ) -> Result<(), CarrierNormalizeError> {
+        output.clear();
         if !self.pending.is_empty() {
             return Err(CarrierNormalizeError::PendingByteFrame {
                 pending: self.pending.len(),
@@ -138,16 +152,20 @@ impl S32LeCarrierNormalizer {
             });
         }
         if samples.is_empty() {
-            return Ok(Vec::new());
+            return Ok(());
         }
 
+        let output_bytes = samples
+            .len()
+            .checked_mul(2)
+            .ok_or(CarrierNormalizeError::FrameSizeOverflow)?;
+        output.reserve(output_bytes);
         let frames = samples.len() / self.slots;
-        let mut output = Vec::with_capacity(samples.len().saturating_mul(2));
         for &sample in samples {
-            self.push_slot_word(sample as u32, &mut output);
+            self.push_slot_word(sample as u32, output);
         }
         self.account_frames(frames);
-        Ok(output)
+        Ok(())
     }
 
     /// Validates that capture ended on a complete serial-audio frame.
@@ -260,6 +278,35 @@ mod tests {
         );
         assert_eq!(normalizer.carrier_frames(), 2);
         assert_eq!(normalizer.output_words(), 4);
+    }
+
+    #[test]
+    fn reusable_native_output_keeps_capacity_and_overwrites_stale_bytes() {
+        let mut normalizer = S32LeCarrierNormalizer::new(2, CarrierWordHalf::High).unwrap();
+        let first = [
+            (u32::from(0xF872_u16) << 16) as i32,
+            (u32::from(0x4E1F_u16) << 16) as i32,
+        ];
+        let second = [
+            (u32::from(0x0015_u16) << 16) as i32,
+            (u32::from(0x0080_u16) << 16) as i32,
+        ];
+        let mut output = Vec::with_capacity(16);
+        let capacity = output.capacity();
+
+        normalizer.push_s32_words_into(&first, &mut output).unwrap();
+        assert_eq!(output, [0x72, 0xF8, 0x1F, 0x4E]);
+        normalizer.push_s32_words_into(&second, &mut output).unwrap();
+        assert_eq!(output, [0x15, 0x00, 0x80, 0x00]);
+        assert_eq!(output.capacity(), capacity);
+    }
+
+    #[test]
+    fn reusable_native_output_is_empty_after_error() {
+        let mut normalizer = S32LeCarrierNormalizer::new(2, CarrierWordHalf::High).unwrap();
+        let mut output = vec![1, 2, 3, 4];
+        assert!(normalizer.push_s32_words_into(&[1], &mut output).is_err());
+        assert!(output.is_empty());
     }
 
     #[test]
