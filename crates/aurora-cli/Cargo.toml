@@ -33,7 +33,7 @@ path = "src/bin/aurora-direct-earc-probe.rs"
 bench = false
 
 [[bin]]
-name = "aurora-direct-earc-sim"
+name = "aurora-sim-source"
 path = "src/bin/aurora-direct-earc-sim.rs"
 bench = false
 required-features = ["earc-sim"]
