@@ -115,6 +115,25 @@ jobs:
       - name: Test open AC3/EAC3/JOC decoder adapter
         run: cargo test --locked -p aurora-decoder-open
 
+      - name: Test exact OpenJOC 0.17 synthetic JOC fixture
+        env:
+          OPENJOC_REV: e7e03bc834ac0483770933cdc50ac058b100d1e2
+          OPENJOC_FIXTURE_BLOB: 4a47d79c1af717c7007e0398d01266867a3a9a49
+          AURORA_OPENJOC_SYNTHETIC_FIXTURE: /tmp/openjoc-joc.ec3
+        run: |
+          curl --fail --location --retry 3 \
+            --output "$AURORA_OPENJOC_SYNTHETIC_FIXTURE" \
+            "https://raw.githubusercontent.com/chyinan/OpenJOC/$OPENJOC_REV/crates/openjoc-wasm/testdata/joc.ec3"
+          actual_blob="$(git hash-object "$AURORA_OPENJOC_SYNTHETIC_FIXTURE")"
+          test "$actual_blob" = "$OPENJOC_FIXTURE_BLOB" || {
+            echo "OpenJOC synthetic fixture identity mismatch: expected $OPENJOC_FIXTURE_BLOB got $actual_blob" >&2
+            exit 1
+          }
+          cargo test --locked -p aurora-decoder-open \
+            --test openjoc_synthetic_fixture \
+            synthetic_openjoc_fixture_renders_aurora_7_1_4 \
+            -- --ignored --exact
+
       - name: Clippy open AC3/EAC3/JOC decoder adapter
         run: cargo clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
 
