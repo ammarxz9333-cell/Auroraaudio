@@ -7,6 +7,8 @@
 #![forbid(unsafe_code)]
 
 use aurora_iec61937::DATA_TYPE_EAC3;
+use openjoc_eac3::{AccessUnitParse, parse_access_unit_bounds};
+pub use openjoc_eac3::Eac3Error;
 use std::error::Error;
 use std::fmt;
 
@@ -22,9 +24,20 @@ pub const EAC3_MAX_PAYLOAD_BYTES: usize = 24_560;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimSourceError {
-    IncorrectPeriodSize { expected: usize, actual: usize },
+    IncorrectPeriodSize {
+        expected: usize,
+        actual: usize,
+    },
     EmptyPayload,
-    PayloadTooLarge { maximum: usize, actual: usize },
+    PayloadTooLarge {
+        maximum: usize,
+        actual: usize,
+    },
+    InvalidFaultRange {
+        offset: usize,
+        count: usize,
+        carrier_bytes: usize,
+    },
 }
 
 impl fmt::Display for SimSourceError {
@@ -39,11 +52,129 @@ impl fmt::Display for SimSourceError {
                 formatter,
                 "IEC61937 E-AC-3 payload is {actual} bytes; maximum is {maximum}"
             ),
+            Self::InvalidFaultRange {
+                offset,
+                count,
+                carrier_bytes,
+            } => write!(
+                formatter,
+                "carrier fault range {offset}..+{count} exceeds {carrier_bytes} input bytes"
+            ),
         }
     }
 }
 
 impl Error for SimSourceError {}
+
+/// A deterministic mutation applied to generated carrier bytes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CarrierFault {
+    /// Deletes exactly `count` bytes beginning at the absolute carrier byte `offset`.
+    DeleteBytes { offset: usize, count: usize },
+}
+
+/// Incremental E-AC-3 access-unit framer backed by Aurora's pinned OpenJOC revision.
+///
+/// A complete six-block E-AC-3 unit may require the following independent-frame
+/// header, or finite EOS, to prove its boundary. Consequently `push()` can retain a
+/// complete-looking final unit until more input arrives; `finish()` supplies that
+/// finite-EOS proof and rejects a truncated final unit.
+#[derive(Debug, Default)]
+pub struct Eac3AccessUnitFramer {
+    pending: Vec<u8>,
+}
+
+impl Eac3AccessUnitFramer {
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Adds elementary-stream bytes and emits every access unit whose boundary is proven.
+    ///
+    /// # Errors
+    /// Returns the exact checked OpenJOC framing error for malformed or impossible
+    /// E-AC-3 access-unit structure.
+    pub fn push(&mut self, input: &[u8]) -> Result<Vec<Vec<u8>>, Eac3Error> {
+        self.pending.extend_from_slice(input);
+        self.drain_complete(false)
+    }
+
+    /// Finalizes a finite elementary stream and emits its final complete access unit.
+    ///
+    /// # Errors
+    /// Returns the exact checked OpenJOC framing error if EOS leaves a truncated or
+    /// structurally invalid access unit.
+    pub fn finish(&mut self) -> Result<Vec<Vec<u8>>, Eac3Error> {
+        let output = self.drain_complete(true)?;
+        if self.pending.is_empty() {
+            Ok(output)
+        } else {
+            Err(Eac3Error::InvalidAccessUnitRange)
+        }
+    }
+
+    #[must_use]
+    pub fn pending_bytes(&self) -> usize {
+        self.pending.len()
+    }
+
+    fn drain_complete(&mut self, eos: bool) -> Result<Vec<Vec<u8>>, Eac3Error> {
+        let mut output = Vec::new();
+        loop {
+            if self.pending.is_empty() {
+                break;
+            }
+            match parse_access_unit_bounds(&self.pending, eos)? {
+                AccessUnitParse::NeedMore => break,
+                AccessUnitParse::Complete(length) => {
+                    if length == 0 || length > self.pending.len() {
+                        return Err(Eac3Error::InvalidAccessUnitRange);
+                    }
+                    output.push(self.pending.drain(..length).collect());
+                }
+            }
+        }
+        Ok(output)
+    }
+}
+
+/// Applies one deterministic carrier mutation and returns the mutated byte stream.
+///
+/// This injector deliberately operates below IEC61937 parsing. It can therefore model
+/// byte loss that a transport parser cannot authenticate by itself and lets downstream
+/// E-AC-3 validation prove whether corruption is detected.
+///
+/// # Errors
+/// Returns [`SimSourceError::InvalidFaultRange`] when the requested mutation is outside
+/// the supplied carrier stream.
+pub fn inject_carrier_fault(
+    carrier: &[u8],
+    fault: CarrierFault,
+) -> Result<Vec<u8>, SimSourceError> {
+    match fault {
+        CarrierFault::DeleteBytes { offset, count } => {
+            let Some(end) = offset.checked_add(count) else {
+                return Err(SimSourceError::InvalidFaultRange {
+                    offset,
+                    count,
+                    carrier_bytes: carrier.len(),
+                });
+            };
+            if end > carrier.len() {
+                return Err(SimSourceError::InvalidFaultRange {
+                    offset,
+                    count,
+                    carrier_bytes: carrier.len(),
+                });
+            }
+            let mut mutated = Vec::with_capacity(carrier.len().saturating_sub(count));
+            mutated.extend_from_slice(&carrier[..offset]);
+            mutated.extend_from_slice(&carrier[end..]);
+            Ok(mutated)
+        }
+    }
+}
 
 /// Writes one complete, zero-padded IEC61937 E-AC-3 carrier period.
 ///
@@ -103,6 +234,21 @@ mod tests {
         (0..length)
             .map(|index| seed.wrapping_add((index as u8).wrapping_mul(37)))
             .collect()
+    }
+
+    fn minimal_eac3_frame(marker: u8) -> Vec<u8> {
+        // Independent substream 0, 128-byte frame (`frmsiz = 63`), 48 kHz,
+        // six audio blocks, stereo, no LFE, bsid 16. Long-form AU framing only
+        // needs the acquisition header; the marker distinguishes test units.
+        let mut frame = vec![0_u8; 128];
+        frame[0] = 0x0B;
+        frame[1] = 0x77;
+        frame[2] = 0x00;
+        frame[3] = 0x3F;
+        frame[4] = 0x34;
+        frame[5] = 0x80;
+        frame[127] = marker;
+        frame
     }
 
     #[test]
@@ -167,7 +313,10 @@ mod tests {
         let mut period = [0u8; EAC3_BURST_PERIOD_BYTES];
         write_eac3_period(&payload, &mut period).unwrap();
 
-        assert_eq!(&period[HEADER_BYTES..HEADER_BYTES + 6], &[0x77, 0x0B, 0xBB, 0xAA, 0x00, 0xCC]);
+        assert_eq!(
+            &period[HEADER_BYTES..HEADER_BYTES + 6],
+            &[0x77, 0x0B, 0xBB, 0xAA, 0x00, 0xCC]
+        );
 
         let mut parser = BurstParser::new(CodecFilter::All);
         let observations = parser.push(&period);
@@ -176,7 +325,59 @@ mod tests {
     }
 
     #[test]
-    fn invalid_generator_inputs_fail_closed() {
+    fn pinned_openjoc_framer_proves_boundaries_across_incremental_input() {
+        let first = minimal_eac3_frame(0x11);
+        let second = minimal_eac3_frame(0x22);
+        let mut framer = Eac3AccessUnitFramer::new();
+
+        assert!(framer.push(&first[..37]).unwrap().is_empty());
+        assert!(framer.push(&first[37..]).unwrap().is_empty());
+        assert_eq!(framer.pending_bytes(), first.len());
+
+        let emitted = framer.push(&second[..8]).unwrap();
+        assert_eq!(emitted, vec![first.clone()]);
+        assert_eq!(framer.pending_bytes(), 8);
+
+        assert!(framer.push(&second[8..]).unwrap().is_empty());
+        assert_eq!(framer.finish().unwrap(), vec![second]);
+        assert_eq!(framer.pending_bytes(), 0);
+    }
+
+    #[test]
+    fn deleted_carrier_header_word_is_transport_parseable_but_au_invalid() {
+        let payload = minimal_eac3_frame(0x5A);
+        let mut period = [0u8; EAC3_BURST_PERIOD_BYTES];
+        write_eac3_period(&payload, &mut period).unwrap();
+
+        // Delete the second encoded 16-bit word, after Pa/Pb/Pc/Pd. IEC61937 has
+        // no payload integrity field, so the parser still returns `Pd` bytes by
+        // consuming two zero-padding bytes. OpenJOC must reject the damaged AU.
+        let damaged = inject_carrier_fault(
+            &period,
+            CarrierFault::DeleteBytes {
+                offset: HEADER_BYTES + 2,
+                count: 2,
+            },
+        )
+        .unwrap();
+
+        let mut parser = BurstParser::new(CodecFilter::Eac3);
+        let observations = parser.push(&damaged);
+        assert_eq!(observations.len(), 1);
+        assert_eq!(observations[0].burst.pd as usize, payload.len());
+        assert_ne!(observations[0].burst.payload, payload);
+        assert_eq!(parser.malformed_headers(), 0);
+        parser.finish().unwrap();
+
+        let mut framer = Eac3AccessUnitFramer::new();
+        assert!(matches!(
+            framer.push(&observations[0].burst.payload),
+            Err(Eac3Error::MissingIndependentSubstreamZero { frame: 0 })
+        ));
+    }
+
+    #[test]
+    fn invalid_generator_and_fault_inputs_fail_closed() {
         let mut period = [0u8; EAC3_BURST_PERIOD_BYTES];
         assert_eq!(
             write_eac3_period(&[], &mut period),
@@ -198,6 +399,21 @@ mod tests {
             Err(SimSourceError::IncorrectPeriodSize {
                 expected: EAC3_BURST_PERIOD_BYTES,
                 actual: short_period.len(),
+            })
+        );
+
+        assert_eq!(
+            inject_carrier_fault(
+                &[1, 2, 3],
+                CarrierFault::DeleteBytes {
+                    offset: 2,
+                    count: 2,
+                },
+            ),
+            Err(SimSourceError::InvalidFaultRange {
+                offset: 2,
+                count: 2,
+                carrier_bytes: 3,
             })
         );
     }
