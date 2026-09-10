@@ -175,7 +175,7 @@ fn main() -> Result<()> {
     let joc = decoder.engine().joc_status();
     let joc_health = decoder.engine().joc_health();
     eprintln!(
-        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_layout={:?} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_last_decode_us={:?} joc_last_render_us={:?} joc_last_total_us={:?} joc_max_total_us={:?} joc_fallback={:?}",
+        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_queue_starvations={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_layout={:?} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_last_decode_us={:?} joc_last_render_us={:?} joc_last_total_us={:?} joc_max_total_us={:?} joc_fallback={:?}",
         args.input,
         args.output,
         stats.carrier_bursts,
@@ -185,6 +185,7 @@ fn main() -> Result<()> {
         stats.transport_discontinuities,
         stats.capture_xruns,
         stats.capture_recoveries,
+        stats.capture_queue_starvations,
         transport.pending_carrier_bytes,
         transport.discarded_bytes,
         transport.malformed_headers,
@@ -290,7 +291,7 @@ fn run_selected_input<S: SpeakerSink>(
             let stats = health.counters;
             let _ = writeln!(
                 io::stderr(),
-                "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_last_decode_us={:?} joc_last_render_us={:?} joc_last_total_us={:?} joc_max_total_us={:?} joc_fallback_present={} output_xruns={:?} output_recoveries={:?}",
+                "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} capture_queue_starvations={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_last_decode_us={:?} joc_last_render_us={:?} joc_last_total_us={:?} joc_max_total_us={:?} joc_fallback_present={} output_xruns={:?} output_recoveries={:?}",
                 age.as_millis(),
                 stats.carrier_bursts,
                 stats.format_changes,
@@ -300,6 +301,7 @@ fn run_selected_input<S: SpeakerSink>(
                 stats.capture_xruns,
                 stats.capture_recoveries,
                 stats.capture_discontinuities,
+                stats.capture_queue_starvations,
                 health.parser.pending_carrier_bytes,
                 health.parser.discarded_bytes,
                 health.parser.malformed_headers,
