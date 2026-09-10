@@ -129,10 +129,11 @@ impl AuroraDecoderEngine {
     }
 
     pub fn flush_pending(&mut self) -> Result<(), DecoderError> {
-        if matches!(self.active_codec, Some(CodecId::Ac4 | CodecId::Dts)) {
-            return Ok(());
+        match self.active_codec {
+            Some(CodecId::Ac4) => self.ac4.finish_pending(),
+            Some(CodecId::Dts) => self.dts.finish_pending(),
+            _ => self.open.flush_packets(),
         }
-        self.open.flush_packets()
     }
 
     /// Decode one complete E-AC-3 access unit whose boundary was authenticated
@@ -367,6 +368,32 @@ mod tests {
     fn empty_engine_flush_is_a_noop() {
         let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
         engine.flush_pending().unwrap();
+    }
+
+    #[test]
+    fn finite_dts_flush_rejects_truncated_sync_prefix() {
+        let mut engine = AuroraDecoderEngine::new(EngineConfig {
+            codec_hint: Some(CodecId::Dts),
+            ..EngineConfig::default()
+        });
+        engine.configure(format(12)).unwrap();
+        assert!(engine.decode_chunk(&[0x7F, 0xFE]).unwrap().is_none());
+
+        let error = engine.flush_pending().unwrap_err();
+        assert!(error.to_string().contains("truncated DTS syncword"));
+    }
+
+    #[test]
+    fn finite_ac4_flush_rejects_truncated_sync_frame() {
+        let mut engine = AuroraDecoderEngine::new(EngineConfig {
+            codec_hint: Some(CodecId::Ac4),
+            ..EngineConfig::default()
+        });
+        engine.configure(format(12)).unwrap();
+        assert!(engine.decode_chunk(&[0xAC, 0x40]).unwrap().is_none());
+
+        let error = engine.flush_pending().unwrap_err();
+        assert!(error.to_string().contains("truncated AC-4 sync frame"));
     }
 
     #[test]
