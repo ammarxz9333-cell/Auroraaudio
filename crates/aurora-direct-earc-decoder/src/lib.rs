@@ -74,10 +74,10 @@ pub struct DirectEarcTransportTelemetry {
 
 /// Stateful direct-eARC front end.
 ///
-/// The wrapper deliberately clears any fixed codec hint supplied in
-/// [`EngineConfig`]. eARC type 0x15 only proves E-AC-3/DD+, not JOC. The existing
+/// The wrapper deliberately clears any fixed codec hint supplied through either
+/// layer of [`EngineConfig`]. eARC type 0x15 only proves E-AC-3/DD+, not JOC. The
 /// decoder sniffing/policy layer must make any stronger codec classification from
-/// the native payload itself.
+/// the native payload itself and remain free to follow transport format changes.
 pub struct DirectEarcDecoder {
     parser: BurstParser,
     engine: AuroraDecoderEngine,
@@ -99,6 +99,7 @@ impl DirectEarcDecoder {
     /// Creates a direct-eARC decoder using all IEC 61937 transport types.
     pub fn new(mut engine_config: EngineConfig) -> Self {
         engine_config.codec_hint = None;
+        engine_config.open_decoder.codec_hint = None;
         Self {
             parser: BurstParser::new(CodecFilter::All),
             engine: AuroraDecoderEngine::new(engine_config),
