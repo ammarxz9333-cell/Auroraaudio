@@ -129,11 +129,15 @@ impl AuroraDecoderEngine {
     }
 
     pub fn flush_pending(&mut self) -> Result<(), DecoderError> {
-        match self.active_codec {
+        let result = match self.active_codec {
             Some(CodecId::Ac4) => self.ac4.finish_pending(),
             Some(CodecId::Dts) => self.dts.finish_pending(),
             _ => self.open.flush_packets(),
+        };
+        if let Err(error) = &result {
+            self.telemetry.observe_error(error);
         }
+        result
     }
 
     /// Decode one complete E-AC-3 access unit whose boundary was authenticated
@@ -381,6 +385,7 @@ mod tests {
 
         let error = engine.flush_pending().unwrap_err();
         assert!(error.to_string().contains("truncated DTS syncword"));
+        assert_eq!(engine.telemetry().native_decode_errors, 1);
     }
 
     #[test]
@@ -394,6 +399,7 @@ mod tests {
 
         let error = engine.flush_pending().unwrap_err();
         assert!(error.to_string().contains("truncated AC-4 sync frame"));
+        assert_eq!(engine.telemetry().native_decode_errors, 1);
     }
 
     #[test]
