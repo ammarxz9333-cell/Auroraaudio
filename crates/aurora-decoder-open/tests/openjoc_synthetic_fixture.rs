@@ -12,6 +12,7 @@ use std::{fs, path::PathBuf};
 use aurora_core::{AudioFormat, SampleType};
 use aurora_decoder_api::{DecodedFrame, Decoder};
 use aurora_decoder_open::{OpenCodecKind, OpenDecoderConfig, UniversalOpenDecoder};
+use openjoc_api::trace_access_units;
 
 const FIXTURE_ENV: &str = "AURORA_OPENJOC_SYNTHETIC_FIXTURE";
 const EXPECTED_BYTES: usize = 32_768;
@@ -76,6 +77,16 @@ fn synthetic_openjoc_fixture_renders_aurora_7_1_4() {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     assert_eq!(fixture.len(), EXPECTED_BYTES, "unexpected fixture size");
 
+    // Derive the expected decoded sample count from OpenJOC's public AU trace
+    // API at the same exact revision as the decoder. Aurora must emit exactly
+    // that many PCM frames after final drain: no dropped renderer tail and no
+    // synthetic padding are allowed.
+    let trace = trace_access_units(&fixture, None).expect("trace synthetic JOC access units");
+    assert!(!trace.is_empty(), "synthetic fixture contains no access units");
+    let expected_output_frames = trace.iter().fold(0_usize, |total, unit| {
+        total.saturating_add(usize::from(unit.sample_count))
+    });
+
     // Start with an ordinary E-AC-3 hint. Aurora must upgrade the live codec
     // state to Eac3Joc only after authoritative positive JOC admission and a
     // successful OpenJOC speaker render.
@@ -121,7 +132,10 @@ fn synthetic_openjoc_fixture_renders_aurora_7_1_4() {
         .expect("finalize synthetic JOC stream without dropping renderer tail");
     drain_ready(&mut decoder, &mut output_frames, &mut full_blocks);
 
-    assert!(output_frames > 0, "synthetic JOC path produced no PCM");
     assert!(full_blocks > 0, "Aurora never emitted its 40-frame realtime block");
+    assert_eq!(
+        output_frames, expected_output_frames,
+        "Aurora must preserve the complete decoded JOC sample timeline without dropping tail PCM or padding the stream"
+    );
     assert_eq!(decoder.detected_codec(), Some(OpenCodecKind::Eac3Joc));
 }
