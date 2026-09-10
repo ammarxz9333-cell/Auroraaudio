@@ -8,6 +8,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-iec61937/**"
+      - "crates/aurora-sim-source/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
       - "crates/aurora-direct-earc-decoder/**"
@@ -28,6 +29,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-iec61937/**"
+      - "crates/aurora-sim-source/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-decoder-engine/**"
       - "crates/aurora-direct-earc-decoder/**"
@@ -97,6 +99,7 @@ jobs:
         run: >-
           cargo fmt
           --package aurora-iec61937
+          --package aurora-sim-source
           --package aurora-decoder-open
           --package aurora-decoder-engine
           --package aurora-direct-earc-decoder
@@ -116,6 +119,15 @@ jobs:
 
       - name: Clippy reusable IEC61937 parser
         run: cargo clippy --locked -p aurora-iec61937 --all-targets -- -D warnings
+
+      - name: Check deterministic eARC simulator source
+        run: cargo check --locked -p aurora-sim-source --all-targets
+
+      - name: Test deterministic eARC simulator source
+        run: cargo test --locked -p aurora-sim-source
+
+      - name: Clippy deterministic eARC simulator source
+        run: cargo clippy --locked -p aurora-sim-source --all-targets -- -D warnings
 
       - name: Check open AC3/EAC3/JOC decoder adapter
         run: cargo check --locked -p aurora-decoder-open --all-targets
