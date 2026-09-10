@@ -129,9 +129,11 @@ impl UniversalOpenDecoder {
             ));
         }
 
-        let length = match parse_access_unit_bounds(unit, true)
-            .map_err(|e| DecoderError::ExternalProcess(format!("transport E-AC-3 AU validation failed: {e}")))?
-        {
+        let length = match parse_access_unit_bounds(unit, true).map_err(|error| {
+            DecoderError::ExternalProcess(format!(
+                "transport E-AC-3 AU validation failed: {error}"
+            ))
+        })? {
             AccessUnitParse::Complete(length) => length,
             AccessUnitParse::NeedMore => {
                 return Err(DecoderError::UnsupportedInput(
