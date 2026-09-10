@@ -28,17 +28,25 @@ impl Default for AlsaInputConfig {
             device: "default".to_owned(),
             sample_rate: 192_000,
             channels: 2,
-            period_frames: 256,
-            buffer_frames: 1_024,
+            // At the 192-kHz eARC carrier rate this is 5.33 ms, matching a
+            // 256-frame period at Aurora's 48-kHz speaker rate while reducing
+            // capture syscalls versus the previous 256-carrier-frame period.
+            period_frames: 1_024,
+            // 42.67 ms of carrier headroom at 192 kHz. Buffer size does not add
+            // read latency by itself; it protects the single-process prototype
+            // while a burst occasionally spends time in JOC decode/render.
+            buffer_frames: 8_192,
         }
     }
 }
 
-/// One captured interleaved S32_LE block.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct CaptureBlock {
+/// One captured interleaved S32_LE block borrowed from the capture object's
+/// preallocated period buffer. The slice remains valid until the next mutable
+/// operation on the same `NativeAlsaCapture`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CaptureBlock<'a> {
     /// Interleaved signed 32-bit slot values in ALSA channel order.
-    pub interleaved_s32: Vec<i32>,
+    pub interleaved_s32: &'a [i32],
     /// Number of complete carrier frames in this block.
     pub frame_count: usize,
     /// True when a capture fault was recovered immediately before this block.
@@ -120,6 +128,7 @@ pub struct NativeAlsaCapture {
     config: AlsaInputConfig,
     telemetry: AlsaInputTelemetry,
     pending_discontinuity: bool,
+    samples: Vec<i32>,
 }
 
 #[cfg(target_os = "linux")]
@@ -169,6 +178,26 @@ impl NativeAlsaCapture {
                 "requested S32_LE but device negotiated {negotiated_format:?}"
             )));
         }
+        if period_frames == 0 || buffer_frames < period_frames.saturating_mul(2) {
+            return Err(AlsaInputError::Negotiation(format!(
+                "device negotiated period={period_frames} buffer={buffer_frames}; Aurora requires a buffer of at least two periods"
+            )));
+        }
+
+        let sample_count = period_frames
+            .checked_mul(negotiated_channels)
+            .ok_or_else(|| {
+                AlsaInputError::Negotiation(
+                    "negotiated capture period/channel product overflowed usize".to_owned(),
+                )
+            })?;
+        let mut samples = Vec::new();
+        samples.try_reserve_exact(sample_count).map_err(|_| {
+            AlsaInputError::InvalidConfig(
+                "unable to reserve the native capture period buffer".to_owned(),
+            )
+        })?;
+        samples.resize(sample_count, 0_i32);
 
         let sw = pcm.sw_params_current()?;
         sw.set_avail_min(period_frames as i64)?;
@@ -194,25 +223,35 @@ impl NativeAlsaCapture {
             config,
             telemetry,
             pending_discontinuity: false,
+            samples,
         })
     }
 
-    /// Reads one block. Recoverable ALSA faults are repaired in place, and the
-    /// next successful block is explicitly marked as a discontinuity.
-    pub fn read_block(&mut self) -> Result<CaptureBlock, AlsaInputError> {
+    /// Reads one block into the capture object's preallocated period storage.
+    /// Recoverable ALSA faults are repaired in place, and the next successful
+    /// block is explicitly marked as a discontinuity.
+    pub fn read_block(&mut self) -> Result<CaptureBlock<'_>, AlsaInputError> {
         let channels = self.config.channels;
-        let requested_frames = self.telemetry.period_frames.max(1);
-        let mut samples = vec![0_i32; requested_frames.saturating_mul(channels)];
 
         loop {
             let result = {
                 let io = self.pcm.io_i32()?;
-                io.readi(&mut samples)
+                io.readi(&mut self.samples)
             };
             match result {
                 Ok(0) => return Err(AlsaInputError::NoForwardProgress),
                 Ok(frames) => {
-                    samples.truncate(frames.saturating_mul(channels));
+                    let sample_count = frames.checked_mul(channels).ok_or_else(|| {
+                        AlsaInputError::Negotiation(
+                            "captured frame/channel product overflowed usize".to_owned(),
+                        )
+                    })?;
+                    if sample_count > self.samples.len() {
+                        return Err(AlsaInputError::Negotiation(
+                            "ALSA returned more capture frames than the negotiated period buffer"
+                                .to_owned(),
+                        ));
+                    }
                     self.telemetry.frames_captured = self
                         .telemetry
                         .frames_captured
@@ -223,7 +262,7 @@ impl NativeAlsaCapture {
                             self.telemetry.discontinuities.saturating_add(1);
                     }
                     return Ok(CaptureBlock {
-                        interleaved_s32: samples,
+                        interleaved_s32: &self.samples[..sample_count],
                         frame_count: frames,
                         discontinuity,
                     });
@@ -260,7 +299,7 @@ impl NativeAlsaCapture {
         Err(AlsaInputError::UnsupportedPlatform)
     }
 
-    pub fn read_block(&mut self) -> Result<CaptureBlock, AlsaInputError> {
+    pub fn read_block(&mut self) -> Result<CaptureBlock<'_>, AlsaInputError> {
         Err(AlsaInputError::UnsupportedPlatform)
     }
 
@@ -281,6 +320,15 @@ mod tests {
         for (word, encoded) in words.iter().zip(bytes.chunks_exact(4)) {
             assert_eq!(*word, i32::from_le_bytes(encoded.try_into().unwrap()));
         }
+    }
+
+    #[test]
+    fn default_geometry_has_realtime_headroom_at_192k() {
+        let config = AlsaInputConfig::default();
+        assert_eq!(config.sample_rate, 192_000);
+        assert_eq!(config.period_frames, 1_024);
+        assert_eq!(config.buffer_frames, 8_192);
+        assert_eq!(config.buffer_frames / config.period_frames, 8);
     }
 
     #[test]
@@ -313,11 +361,9 @@ mod tests {
             ..AlsaInputConfig::default()
         })
         .unwrap();
+        let channels = capture.telemetry().channels;
         let block = capture.read_block().unwrap();
         assert!(block.frame_count > 0);
-        assert_eq!(
-            block.interleaved_s32.len(),
-            block.frame_count * capture.telemetry().channels
-        );
+        assert_eq!(block.interleaved_s32.len(), block.frame_count * channels);
     }
 }
