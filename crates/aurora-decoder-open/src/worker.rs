@@ -21,6 +21,10 @@ const MAX_WORKER_CHANNELS: usize = 12;
 const MAX_WAV_HEADER_BYTES: usize = 64 * 1024;
 const WAVE_FORMAT_IEEE_FLOAT: u16 = 0x0003;
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
+const IEEE_FLOAT_SUBFORMAT_GUID: [u8; 16] = [
+    0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B,
+    0x71,
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkerCommand {
@@ -53,7 +57,10 @@ pub fn build_worker_command(
     encapsulation: Encapsulation,
     output: AudioFormat,
 ) -> Result<WorkerCommand, DecoderError> {
-    if output.sample_rate == 0 || output.channel_count == 0 || output.channel_count > MAX_WORKER_CHANNELS {
+    if output.sample_rate == 0
+        || output.channel_count == 0
+        || output.channel_count > MAX_WORKER_CHANNELS
+    {
         return Err(DecoderError::UnsupportedInput(
             "FFmpeg worker requires a non-zero output rate and at most twelve Aurora channels",
         ));
@@ -288,8 +295,10 @@ fn parse_wav_fmt_chunk(
             let extension_size = u16::from_le_bytes([fmt[16], fmt[17]]);
             let valid_bits = u16::from_le_bytes([fmt[18], fmt[19]]);
             let mask = u32::from_le_bytes([fmt[20], fmt[21], fmt[22], fmt[23]]);
-            let subformat = u32::from_le_bytes([fmt[24], fmt[25], fmt[26], fmt[27]]);
-            if extension_size < 22 || valid_bits != 32 || subformat != u32::from(WAVE_FORMAT_IEEE_FLOAT) {
+            if extension_size < 22
+                || valid_bits != 32
+                || &fmt[24..40] != IEEE_FLOAT_SUBFORMAT_GUID.as_slice()
+            {
                 return Err(DecoderError::UnsupportedInput(
                     "FFmpeg WAV extensible format is not 32-bit IEEE float",
                 ));
@@ -695,10 +704,7 @@ mod tests {
             fmt.extend_from_slice(&22u16.to_le_bytes());
             fmt.extend_from_slice(&32u16.to_le_bytes());
             fmt.extend_from_slice(&mask.to_le_bytes());
-            fmt.extend_from_slice(&3u32.to_le_bytes());
-            fmt.extend_from_slice(&0x0010u16.to_le_bytes());
-            fmt.extend_from_slice(&0x0000u16.to_le_bytes());
-            fmt.extend_from_slice(&[0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71]);
+            fmt.extend_from_slice(&IEEE_FLOAT_SUBFORMAT_GUID);
         } else {
             fmt.extend_from_slice(&WAVE_FORMAT_IEEE_FLOAT.to_le_bytes());
             fmt.extend_from_slice(&channels.to_le_bytes());
@@ -731,7 +737,10 @@ mod tests {
         assert!(cmd.args.windows(2).any(|p| p == ["-f", "truehd"]));
         assert!(cmd.args.windows(2).any(|p| p == ["-f", "wav"]));
         assert!(cmd.args.windows(2).any(|p| p == ["-rf64", "never"]));
-        assert!(cmd.args.windows(2).any(|p| p == ["-map_metadata", "-1"]));
+        assert!(cmd
+            .args
+            .windows(2)
+            .any(|p| p == ["-map_metadata", "-1"]));
         assert!(!cmd.args.iter().any(|arg| arg == "-ac"));
         assert!(!cmd.args.iter().any(|arg| arg == "-channel_layout"));
         assert_eq!(cmd.decoded_channels, 0);
@@ -785,8 +794,6 @@ mod tests {
 
     #[test]
     fn wav_unknown_speaker_role_fails_closed() {
-        // FL + FR + front-left-of-center. Aurora has no semantic output role for
-        // FLC, so accepting this by index would be an incorrect speaker mapping.
         let wav = wav_header(3, Some(0x0000_0043));
         assert!(matches!(
             parse_wav_stream_header(&wav, fmt(12)),
@@ -797,7 +804,36 @@ mod tests {
     #[test]
     fn fragmented_wav_header_waits_for_more_bytes() {
         let wav = wav_header(8, Some(0x0000_063F));
-        assert_eq!(parse_wav_stream_header(&wav[..20], fmt(12)).unwrap(), None);
+        assert_eq!(
+            parse_wav_stream_header(&wav[..20], fmt(12)).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn wav_parser_skips_unknown_padded_header_chunks() {
+        let mut wav = wav_header(6, Some(0x0000_060F));
+        let data = wav.split_off(wav.len() - 8);
+        wav.extend_from_slice(b"LIST");
+        wav.extend_from_slice(&3u32.to_le_bytes());
+        wav.extend_from_slice(&[1, 2, 3]);
+        wav.push(0);
+        wav.extend_from_slice(&data);
+
+        let (header_bytes, contract) = parse_wav_stream_header(&wav, fmt(12)).unwrap().unwrap();
+        assert_eq!(header_bytes, wav.len());
+        assert_eq!(&contract.channel_map[..6], &[0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn wav_extensible_requires_exact_ieee_float_guid() {
+        let mut wav = wav_header(6, Some(0x0000_060F));
+        let guid_offset = 12 + 8 + 24;
+        wav[guid_offset + 15] ^= 1;
+        assert!(matches!(
+            parse_wav_stream_header(&wav, fmt(12)),
+            Err(DecoderError::UnsupportedInput(_))
+        ));
     }
 
     #[test]
