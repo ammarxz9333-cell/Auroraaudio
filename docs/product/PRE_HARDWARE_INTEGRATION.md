@@ -139,6 +139,21 @@ in WAVE order `FL FR FC LFE Ls Rs`, matching Aurora's first six canonical lanes.
 These checks support the mapping policy but do not replace an exact-head Cargo/CI
 run of Aurora itself.
 
+The new `aurora-sim-source` crate and feature-gated `aurora-direct-earc-sim`
+binary provide a deterministic pre-hardware E-AC-3 source. The simulator uses
+the same pinned OpenJOC `parse_access_unit_bounds()` contract to frame raw finite
+`.ec3` input, then emits one fixed 24,576-byte IEC61937 type-`0x15` period per
+proven access unit using Aurora's byte-count `Pd` and 16-bit word-swap contract.
+Regression coverage pins the accepted E-AC-3 transport payload boundary at
+24,560 bytes and rejects 24,561 bytes. Carrier byte-deletion faults can model
+payload corruption that remains IEC61937-parseable as well as padding loss that
+moves the next Pa/Pb preamble early without changing either compressed payload.
+The Direct eARC CI is prepared to run the pinned OpenJOC JOC fixture through
+`.ec3 -> simulator -> IEC61937 -> probe -> extracted .ec3` and require a
+byte-for-byte `cmp` before decoder/render fixture tests. These are software
+transport tests only; `docs/product/DIRECT_EARC_SIMULATOR.md` records the exact
+commands and physical truth boundary.
+
 IEC61937 data type `0x15` remains transport evidence only. It establishes an
 E-AC-3 burst classification, not Atmos/JOC. Software JOC evidence requires
 successful JOC admission and successful OpenJOC speaker rendering. Physical
@@ -156,16 +171,20 @@ must not be hand-edited or reconstructed from an older branch.
 
 The Direct eARC workflow runs `cargo generate-lockfile`, validates with
 `--locked`, and is prepared to upload the resolver-generated `Cargo.lock` as a
-short-lived artifact before the final committed-lockfile gate. This provides an
-exact recovery path once a GitHub-hosted runner actually starts.
+short-lived artifact before the final committed-lockfile gate. Its direct-eARC
+scope now explicitly includes `aurora-sim-source` and the simulator CLI in path
+filters plus `fmt`/`check`/`test`/`clippy` gates. This provides an exact recovery
+path once a GitHub-hosted runner actually starts.
 
 As of the current 2026-09-10 branch series, GitHub Actions jobs for this
-repository are still failing before step execution. A recent Direct eARC Ingest
-CI run `34524783855` created job `103030908452`, but the job has no step list and
-no logs. Independent HOA Renderer, Decoder Engine + Spatial Runtime and S6
-Appliance workflows continue to show the same pre-step failure signature.
-Therefore no current commit may be called CI-green, and the failure must not be
-attributed to Rust build/test code until a runner actually executes the workflow.
+repository are still failing before step execution. Direct eARC Ingest run
+`34532178818` on commit `820d63c6e4cbb06077049687f6119fa592d7f118`
+created job `103055289705`, but the job has no step list and no logs. Independent
+HOA Renderer, Decoder Engine + Spatial Runtime and S6 Appliance workflows on the
+same commit show the same pre-step failure signature. The later documentation
+and transport-limit commits do not provide executed Cargo evidence. Therefore no
+current commit may be called CI-green, and the failure must not be attributed to
+Rust build/test code until a runner actually executes the workflow.
 Repository/account Actions provisioning, quota, billing or policy must be checked
 outside the source tree. The connected API does not expose the annotation text,
 so the exact account-side reason is not claimed.
@@ -176,6 +195,8 @@ so the exact account-side reason is not claimed.
   execute the direct-eARC `fmt`/`check`/`test`/`clippy` gates with `--locked`.
 - Restore executable GitHub Actions runner service for this repository and retain
   logs/artifacts from an actually executed validation run.
+- Execute the prepared pinned-JOC simulator/probe byte-for-byte round trip and
+  the simulator transport-limit/corruption regressions under that exact-head run.
 - Profile the complete decode -> OpenJOC/bed -> speaker DSP -> ALSA path on the
   target host for CPU budget, allocator activity, queue starvation and worst-case
   stage timing. Known planar/interleaved/staging buffers are now recycled, but
