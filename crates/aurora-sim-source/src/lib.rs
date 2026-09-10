@@ -22,6 +22,16 @@ pub const EAC3_BURST_PERIOD_BYTES: usize = 24_576;
 /// Mirrors the bounded E-AC-3 ingress payload accepted by `aurora-iec61937`.
 pub const EAC3_MAX_PAYLOAD_BYTES: usize = 24_560;
 
+/// Canonical two-slot IEC61937 carrier rate used by the historical Aurora capture.
+pub const EAC3_CARRIER_RATE_HZ: usize = 192_000;
+/// Canonical carrier slot count.
+pub const EAC3_CARRIER_CHANNELS: usize = 2;
+/// Canonical carrier bytes per S16 sample.
+pub const EAC3_CARRIER_BYTES_PER_SAMPLE: usize = 2;
+/// Number of canonical carrier bytes representing one millisecond of wall time.
+pub const EAC3_CARRIER_BYTES_PER_MS: usize =
+    EAC3_CARRIER_RATE_HZ * EAC3_CARRIER_CHANNELS * EAC3_CARRIER_BYTES_PER_SAMPLE / 1_000;
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SimSourceError {
     IncorrectPeriodSize {
@@ -36,6 +46,10 @@ pub enum SimSourceError {
     InvalidFaultRange {
         offset: usize,
         count: usize,
+        carrier_bytes: usize,
+    },
+    InvalidTruncateLength {
+        requested: usize,
         carrier_bytes: usize,
     },
 }
@@ -60,6 +74,13 @@ impl fmt::Display for SimSourceError {
                 formatter,
                 "carrier fault range {offset}..+{count} exceeds {carrier_bytes} input bytes"
             ),
+            Self::InvalidTruncateLength {
+                requested,
+                carrier_bytes,
+            } => write!(
+                formatter,
+                "carrier truncate length {requested} must be smaller than {carrier_bytes} bytes"
+            ),
         }
     }
 }
@@ -71,6 +92,10 @@ impl Error for SimSourceError {}
 pub enum CarrierFault {
     /// Deletes exactly `count` bytes beginning at the absolute carrier byte `offset`.
     DeleteBytes { offset: usize, count: usize },
+    /// Damages Pa while leaving the remainder of the period byte-for-byte intact.
+    CorruptPa,
+    /// Keeps only the first `length` bytes of the selected period.
+    Truncate { length: usize },
 }
 
 /// Incremental E-AC-3 access-unit framer backed by Aurora's pinned OpenJOC revision.
@@ -146,8 +171,8 @@ impl Eac3AccessUnitFramer {
 /// E-AC-3 validation prove whether corruption is detected.
 ///
 /// # Errors
-/// Returns [`SimSourceError::InvalidFaultRange`] when the requested mutation is outside
-/// the supplied carrier stream.
+/// Returns a checked range error when the requested mutation is outside the supplied
+/// carrier stream.
 pub fn inject_carrier_fault(
     carrier: &[u8],
     fault: CarrierFault,
@@ -173,7 +198,46 @@ pub fn inject_carrier_fault(
             mutated.extend_from_slice(&carrier[end..]);
             Ok(mutated)
         }
+        CarrierFault::CorruptPa => {
+            if carrier.len() < PA_LE.len() {
+                return Err(SimSourceError::InvalidFaultRange {
+                    offset: 0,
+                    count: PA_LE.len(),
+                    carrier_bytes: carrier.len(),
+                });
+            }
+            let mut mutated = carrier.to_vec();
+            mutated[0] ^= 0x01;
+            Ok(mutated)
+        }
+        CarrierFault::Truncate { length } => {
+            if length >= carrier.len() {
+                return Err(SimSourceError::InvalidTruncateLength {
+                    requested: length,
+                    carrier_bytes: carrier.len(),
+                });
+            }
+            Ok(carrier[..length].to_vec())
+        }
     }
+}
+
+/// Writes one period of non-IEC61937 idle/silence carrier while preserving wall-time.
+///
+/// This is used for dropped-burst/gap simulation. It deliberately contains no Pa/Pb
+/// preamble and performs no heap allocation.
+///
+/// # Errors
+/// Returns [`SimSourceError::IncorrectPeriodSize`] for a noncanonical period buffer.
+pub fn write_idle_period(out: &mut [u8]) -> Result<(), SimSourceError> {
+    if out.len() != EAC3_BURST_PERIOD_BYTES {
+        return Err(SimSourceError::IncorrectPeriodSize {
+            expected: EAC3_BURST_PERIOD_BYTES,
+            actual: out.len(),
+        });
+    }
+    out.fill(0);
+    Ok(())
 }
 
 /// Writes one complete, zero-padded IEC61937 E-AC-3 carrier period.
@@ -228,7 +292,7 @@ pub fn write_eac3_period(payload: &[u8], out: &mut [u8]) -> Result<(), SimSource
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aurora_iec61937::{BurstParser, CodecFilter, TransportCodec};
+    use aurora_iec61937::{BurstFinishError, BurstParser, CodecFilter, TransportCodec};
 
     fn deterministic_payload(length: usize, seed: u8) -> Vec<u8> {
         (0..length)
@@ -305,6 +369,81 @@ mod tests {
             EAC3_BURST_PERIOD_BYTES as u64
         );
         assert_eq!(parser.malformed_headers(), 0);
+    }
+
+    #[test]
+    fn corrupt_pa_resyncs_at_following_period_without_fabricating_payload() {
+        let first_payload = minimal_eac3_frame(0x11);
+        let second_payload = minimal_eac3_frame(0x22);
+        let mut first = [0u8; EAC3_BURST_PERIOD_BYTES];
+        let mut second = [0u8; EAC3_BURST_PERIOD_BYTES];
+        write_eac3_period(&first_payload, &mut first).unwrap();
+        write_eac3_period(&second_payload, &mut second).unwrap();
+        let damaged = inject_carrier_fault(&first, CarrierFault::CorruptPa).unwrap();
+
+        let mut carrier = damaged;
+        carrier.extend_from_slice(&second);
+        let mut parser = BurstParser::new(CodecFilter::Eac3);
+        let observations = parser.push(&carrier);
+        parser.finish().unwrap();
+
+        assert_eq!(observations.len(), 1);
+        assert_eq!(observations[0].burst.payload, second_payload);
+        assert_eq!(
+            observations[0].carrier_offset_bytes,
+            EAC3_BURST_PERIOD_BYTES as u64
+        );
+        assert!(parser.discarded_bytes() >= EAC3_BURST_PERIOD_BYTES as u64);
+    }
+
+    #[test]
+    fn dropped_burst_gap_preserves_time_and_expands_pa_spacing() {
+        let first_payload = minimal_eac3_frame(0x31);
+        let second_payload = minimal_eac3_frame(0x32);
+        let mut first = [0u8; EAC3_BURST_PERIOD_BYTES];
+        let mut gap = [0u8; EAC3_BURST_PERIOD_BYTES];
+        let mut second = [0u8; EAC3_BURST_PERIOD_BYTES];
+        write_eac3_period(&first_payload, &mut first).unwrap();
+        write_idle_period(&mut gap).unwrap();
+        write_eac3_period(&second_payload, &mut second).unwrap();
+
+        let mut carrier = Vec::with_capacity(EAC3_BURST_PERIOD_BYTES * 3);
+        carrier.extend_from_slice(&first);
+        carrier.extend_from_slice(&gap);
+        carrier.extend_from_slice(&second);
+
+        let mut parser = BurstParser::new(CodecFilter::Eac3);
+        let observations = parser.push(&carrier);
+        parser.finish().unwrap();
+
+        assert_eq!(observations.len(), 2);
+        assert_eq!(observations[0].burst.payload, first_payload);
+        assert_eq!(observations[1].burst.payload, second_payload);
+        assert_eq!(
+            observations[1].carrier_offset_bytes - observations[0].carrier_offset_bytes,
+            (EAC3_BURST_PERIOD_BYTES * 2) as u64
+        );
+    }
+
+    #[test]
+    fn truncated_eof_is_reported_by_existing_parser() {
+        let payload = minimal_eac3_frame(0x41);
+        let mut period = [0u8; EAC3_BURST_PERIOD_BYTES];
+        write_eac3_period(&payload, &mut period).unwrap();
+        let truncated = inject_carrier_fault(
+            &period,
+            CarrierFault::Truncate {
+                length: HEADER_BYTES + 32,
+            },
+        )
+        .unwrap();
+
+        let mut parser = BurstParser::new(CodecFilter::Eac3);
+        assert!(parser.push(&truncated).is_empty());
+        assert!(matches!(
+            parser.finish(),
+            Err(BurstFinishError::TruncatedPayload { .. })
+        ));
     }
 
     #[test]
@@ -401,6 +540,13 @@ mod tests {
                 actual: short_period.len(),
             })
         );
+        assert_eq!(
+            write_idle_period(&mut short_period),
+            Err(SimSourceError::IncorrectPeriodSize {
+                expected: EAC3_BURST_PERIOD_BYTES,
+                actual: short_period.len(),
+            })
+        );
 
         assert_eq!(
             inject_carrier_fault(
@@ -416,5 +562,18 @@ mod tests {
                 carrier_bytes: 3,
             })
         );
+        assert_eq!(
+            inject_carrier_fault(&[1, 2, 3], CarrierFault::Truncate { length: 3 }),
+            Err(SimSourceError::InvalidTruncateLength {
+                requested: 3,
+                carrier_bytes: 3,
+            })
+        );
+    }
+
+    #[test]
+    fn carrier_geometry_has_exact_32_ms_period() {
+        assert_eq!(EAC3_CARRIER_BYTES_PER_MS, 768);
+        assert_eq!(EAC3_BURST_PERIOD_BYTES / EAC3_CARRIER_BYTES_PER_MS, 32);
     }
 }
