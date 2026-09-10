@@ -38,7 +38,8 @@ pub struct EngineTelemetry {
 ///
 /// This intentionally omits layout/fallback strings. Those remain available
 /// through `AuroraDecoderEngine::joc_status()` for setup/final diagnostics.
-/// Nothing here is inferred from IEC61937 type 0x15.
+/// Nothing here is inferred from IEC61937 type 0x15. Timing fields are measured
+/// only for successfully processed OpenJOC access units.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct JocDecoderHealth {
     pub codec_classified_joc: bool,
@@ -48,6 +49,10 @@ pub struct JocDecoderHealth {
     pub object_count: Option<u16>,
     pub complexity_index: Option<u8>,
     pub fallback_present: bool,
+    pub last_decode_time_us: Option<u64>,
+    pub last_render_time_us: Option<u64>,
+    pub last_total_time_us: Option<u64>,
+    pub max_total_time_us: Option<u64>,
 }
 
 /// Allocation-free timing for successful OpenJOC access units in the current
@@ -77,6 +82,10 @@ impl AuroraDecoderEngine {
             object_count: render.and_then(|info| info.object_count),
             complexity_index: render.and_then(|info| info.complexity_index),
             fallback_present: self.open.last_joc_error().is_some(),
+            last_decode_time_us: render.and_then(|info| info.last_decode_time_us),
+            last_render_time_us: render.and_then(|info| info.last_render_time_us),
+            last_total_time_us: render.and_then(|info| info.last_total_time_us),
+            max_total_time_us: render.and_then(|info| info.max_total_time_us),
         }
     }
 
@@ -204,7 +213,7 @@ mod tests {
         let engine = AuroraDecoderEngine::new(EngineConfig::default());
         assert_eq!(engine.joc_health(), JocDecoderHealth::default());
         assert_eq!(engine.joc_timing_health(), JocTimingHealth::default());
-        assert!(std::mem::size_of::<JocDecoderHealth>() <= 64);
+        assert!(std::mem::size_of::<JocDecoderHealth>() <= 128);
         assert!(std::mem::size_of::<JocTimingHealth>() <= 64);
     }
 
