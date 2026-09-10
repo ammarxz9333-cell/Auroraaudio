@@ -83,12 +83,18 @@ impl AuroraDecoderEngine {
         }
     }
 
-    /// Return a consumed decoded frame to the active open backend's bounded
-    /// planar-storage recycler. OpenJOC, native AC-3/E-AC-3 bed decode and the
-    /// FFmpeg compatibility worker all validate geometry before retaining it;
-    /// unsupported/non-recyclable frames are dropped normally.
+    /// Return a consumed decoded frame to the active decoder family's bounded
+    /// planar-storage recycler. Native AC-4 and DTS own engine-level pools;
+    /// OpenJOC, native AC-3/E-AC-3 and the FFmpeg compatibility worker recycle
+    /// through the open-decoder adapter. Every backend revalidates geometry
+    /// before retaining storage, so a retired-frame buffer after a codec switch
+    /// is reusable only when it is structurally compatible.
     pub fn recycle_decoded_frame(&mut self, frame: DecodedFrame) {
-        self.open.recycle_decoded_frame(frame);
+        match self.active_codec {
+            Some(CodecId::Ac4) => self.ac4.recycle_frame(frame),
+            Some(CodecId::Dts) => self.dts.recycle_frame(frame),
+            _ => self.open.recycle_decoded_frame(frame),
+        }
     }
 }
 
