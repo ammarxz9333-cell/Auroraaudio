@@ -3,10 +3,14 @@
 //! Aurora owns the adapter, timing, float conversion, routing and object-scene
 //! boundary. No proprietary runtime library or binary blob is loaded.
 
+use std::collections::VecDeque;
+
 use aurora_core::{AudioBlock, AudioFormat, SampleType};
 use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
 use oxideav_ac3::decoder::{make_decoder, make_eac3_decoder, make_eac3_decoder_with_joc};
-use oxideav_core::{CodecId, CodecParameters, Decoder as OxideDecoder, Frame, Packet, TimeBase};
+use oxideav_core::{
+    CodecId, CodecParameters, Decoder as OxideDecoder, Error as OxideError, Frame, Packet, TimeBase,
+};
 
 use crate::sniff::CodecKind;
 
@@ -27,6 +31,7 @@ pub struct NativeAc3Decoder {
     codec: CodecKind,
     output_format: Option<AudioFormat>,
     inner: Option<Box<dyn OxideDecoder>>,
+    pending: VecDeque<DecodedFrame>,
     emitted_frames: u64,
     discontinuity: bool,
     joc_presentation: JocPresentation,
@@ -43,6 +48,7 @@ impl NativeAc3Decoder {
             codec,
             output_format: None,
             inner: None,
+            pending: VecDeque::new(),
             emitted_frames: 0,
             discontinuity: true,
             joc_presentation,
@@ -150,6 +156,37 @@ impl NativeAc3Decoder {
             objects: Vec::new(),
         })
     }
+
+    /// Pull every frame made ready by the most recently submitted OxideAV
+    /// packet. OxideAV's decoder contract permits one packet to produce more
+    /// than one frame; stopping after the first frame would silently strand or
+    /// drop valid PCM before the next compressed packet arrives.
+    fn drain_inner(&mut self, input: &[u8]) -> Result<(), DecoderError> {
+        loop {
+            let result = self
+                .inner
+                .as_mut()
+                .ok_or(DecoderError::Unavailable("native backend is not initialized"))?
+                .receive_frame();
+            match result {
+                Ok(Frame::Audio(audio)) => {
+                    let frame = self.convert_audio_frame(audio, input)?;
+                    self.pending.push_back(frame);
+                }
+                Ok(_) => {
+                    return Err(DecoderError::UnsupportedInput(
+                        "audio decoder returned a non-audio frame",
+                    ));
+                }
+                Err(OxideError::NeedMore | OxideError::Eof) => return Ok(()),
+                Err(error) => {
+                    return Err(DecoderError::ExternalProcess(format!(
+                        "oxideav receive_frame: {error}"
+                    )));
+                }
+            }
+        }
+    }
 }
 
 /// Preserve a proven channel bed inside Aurora's canonical 7.1.4 speaker bus.
@@ -223,12 +260,21 @@ impl Decoder for NativeAc3Decoder {
         }
         self.inner = Some(self.build_inner(output_format)?);
         self.output_format = Some(output_format);
+        self.pending.clear();
         self.emitted_frames = 0;
         self.discontinuity = true;
         Ok(())
     }
 
     fn decode_chunk(&mut self, input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
+        if let Some(frame) = self.pending.pop_front() {
+            if !input.is_empty() {
+                return Err(DecoderError::Decode(
+                    "native AC-3/E-AC-3 input arrived before pending PCM was drained".to_owned(),
+                ));
+            }
+            return Ok(Some(frame));
+        }
         if input.is_empty() {
             return Ok(None);
         }
@@ -243,25 +289,20 @@ impl Decoder for NativeAc3Decoder {
             TimeBase::new(1, i64::from(output.sample_rate)),
             input.to_vec(),
         );
-        let inner = self.inner.as_mut().expect("decoder initialized above");
-        inner
+        self.inner
+            .as_mut()
+            .expect("decoder initialized above")
             .send_packet(&packet)
             .map_err(|e| DecoderError::ExternalProcess(format!("oxideav send_packet: {e}")))?;
-        let decoded = inner
-            .receive_frame()
-            .map_err(|e| DecoderError::ExternalProcess(format!("oxideav receive_frame: {e}")))?;
-        match decoded {
-            Frame::Audio(audio) => self.convert_audio_frame(audio, input).map(Some),
-            _ => Err(DecoderError::UnsupportedInput(
-                "audio decoder returned a non-audio frame",
-            )),
-        }
+        self.drain_inner(input)?;
+        Ok(self.pending.pop_front())
     }
 
     fn reset(&mut self) {
         if let Some(inner) = self.inner.as_mut() {
             let _ = inner.reset();
         }
+        self.pending.clear();
         self.emitted_frames = 0;
         self.discontinuity = true;
     }
