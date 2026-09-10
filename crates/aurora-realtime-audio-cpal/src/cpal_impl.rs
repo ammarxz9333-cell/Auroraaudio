@@ -73,6 +73,7 @@ impl AudioInputBackend for CpalAudioBackend {
             config.input_channels,
         )?;
         let channels = cpal_channels(config.input_channels)?;
+        let callback_channels = usize::from(channels);
         let block_size = cpal_block_size(config.block_size)?;
         let stream_config = cpal::StreamConfig {
             channels,
@@ -92,7 +93,7 @@ impl AudioInputBackend for CpalAudioBackend {
         let stream = device
             .build_input_stream(
                 &stream_config,
-                move |data: &[f32], _| callback(data, usize::from(stream_config.channels)),
+                move |data: &[f32], _| callback(data, callback_channels),
                 move |error| {
                     fault_for_callback.store(stream_error_fault(error) as u32, Ordering::Release);
                 },
@@ -142,6 +143,7 @@ impl AudioOutputBackend for CpalAudioBackend {
             config.output_channels,
         )?;
         let channels = cpal_channels(config.output_channels)?;
+        let callback_channels = usize::from(channels);
         let block_size = cpal_block_size(config.block_size)?;
         let stream_config = cpal::StreamConfig {
             channels,
@@ -161,7 +163,7 @@ impl AudioOutputBackend for CpalAudioBackend {
         let stream = device
             .build_output_stream(
                 &stream_config,
-                move |data: &mut [f32], _| callback(data, usize::from(stream_config.channels)),
+                move |data: &mut [f32], _| callback(data, callback_channels),
                 move |error| {
                     fault_for_callback.store(stream_error_fault(error) as u32, Ordering::Release);
                 },
@@ -417,7 +419,7 @@ fn supports_range(
 ) -> bool {
     min_rate <= sample_rate
         && sample_rate <= max_rate
-        && usize::from(range_channels) >= channels
+        && usize::from(range_channels) == channels
         && sample_format == cpal::SampleFormat::F32
 }
 
@@ -442,6 +444,26 @@ mod tests {
         if usize::BITS > 32 {
             assert!(cpal_block_size((u32::MAX as usize).saturating_add(1)).is_err());
         }
+    }
+
+    #[test]
+    fn supported_range_requires_exact_channel_count() {
+        assert!(supports_range(
+            44_100,
+            96_000,
+            2,
+            cpal::SampleFormat::F32,
+            48_000,
+            2,
+        ));
+        assert!(!supports_range(
+            44_100,
+            96_000,
+            8,
+            cpal::SampleFormat::F32,
+            48_000,
+            2,
+        ));
     }
 
     #[test]
