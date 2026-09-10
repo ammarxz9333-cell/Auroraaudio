@@ -38,6 +38,12 @@ path = "src/bin/aurora-encoded-runtime.rs"
 bench = false
 required-features = ["encoded-runtime"]
 
+[[bin]]
+name = "aurora-threaded-earc-runtime"
+path = "src/bin/aurora-threaded-earc-runtime.rs"
+bench = false
+required-features = ["encoded-runtime"]
+
 [features]
 default = ["camilladsp", "realtime", "simulation"]
 camilladsp = ["dep:aurora-dsp-camilladsp", "aurora-dsp-camilladsp/camilladsp-process"]
