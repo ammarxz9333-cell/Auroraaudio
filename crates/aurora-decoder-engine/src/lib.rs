@@ -31,9 +31,6 @@ use crate::telemetry::EngineTelemetry;
 #[derive(Debug, Clone, Copy)]
 pub struct EngineConfig {
     pub open_decoder: OpenDecoderConfig,
-    /// Explicit transport/container hint. Hints select an admitted native
-    /// backend before byte probing and are especially useful when a stream is
-    /// delivered in fragments smaller than its codec sync word.
     pub codec_hint: Option<CodecId>,
     pub policy: DecoderPolicy,
 }
@@ -49,11 +46,8 @@ impl Default for EngineConfig {
 }
 
 /// Read-only status of the open E-AC-3/JOC lane.
-///
-/// `speaker_render_active` describes the live renderer only. The remaining
-/// render details describe the most recent successful OpenJOC render in the
-/// current decoder epoch and therefore remain available after EOF/retirement.
-/// IEC61937 type 0x15 alone never sets any JOC field.
+/// `speaker_render_active` is live-only; render details are the latest
+/// successful OpenJOC observation in the current decoder epoch.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct JocDecoderStatus {
     pub codec_classified_joc: bool,
@@ -66,7 +60,6 @@ pub struct JocDecoderStatus {
     pub fallback_reason: Option<String>,
 }
 
-/// Aurora-owned front door for all codec backends.
 pub struct AuroraDecoderEngine {
     config: EngineConfig,
     catalog: DecoderCatalog,
@@ -115,8 +108,6 @@ impl AuroraDecoderEngine {
         snapshot
     }
 
-    /// Decoder-level JOC state. A transport-level E-AC-3 burst is insufficient;
-    /// the open decoder itself must classify and successfully render JOC.
     pub fn joc_status(&self) -> JocDecoderStatus {
         let active_render = self.open.joc_render_info();
         let observed_render = active_render.or_else(|| self.open.last_joc_render_info());
@@ -137,13 +128,46 @@ impl AuroraDecoderEngine {
         self.telemetry = EngineTelemetry::default();
     }
 
-    /// Flushes finite-stream state before the caller drains ready PCM with
-    /// ordinary empty `decode_chunk` polls.
     pub fn flush_pending(&mut self) -> Result<(), DecoderError> {
         if matches!(self.active_codec, Some(CodecId::Ac4 | CodecId::Dts)) {
             return Ok(());
         }
         self.open.flush_packets()
+    }
+
+    /// Decode one complete E-AC-3 access unit whose boundary was authenticated
+    /// by the outer transport (the direct-eARC IEC61937 parser). This preserves
+    /// the no-lookahead OpenJOC path while keeping engine policy and telemetry in
+    /// sync with the ordinary `Decoder::decode_chunk` front door.
+    pub fn decode_complete_eac3_access_unit(
+        &mut self,
+        input: &[u8],
+    ) -> Result<Option<DecodedFrame>, DecoderError> {
+        self.telemetry.observe_input(input);
+        let frame = match self.open.decode_complete_eac3_access_unit(input) {
+            Ok(frame) => frame,
+            Err(error) => return self.finish_decode(Err(error)),
+        };
+
+        if let Some(codec) = self.open.detected_codec() {
+            let codec = CodecId::from(codec);
+            if !matches!(codec, CodecId::Eac3 | CodecId::Eac3Joc) {
+                return self.decision_error(DecoderError::UnsupportedInput(
+                    "transport-bounded E-AC-3 front door selected a non-E-AC-3 codec",
+                ));
+            }
+            let changed = self
+                .active
+                .map(|decision| !decision.backend.supports(codec))
+                .unwrap_or(true)
+                || self.active_codec != Some(codec);
+            if changed {
+                if let Err(error) = self.refresh_decision(codec) {
+                    return self.decision_error(error);
+                }
+            }
+        }
+        self.finish_decode(Ok(frame))
     }
 
     pub fn decode_spatial_access_unit(
@@ -343,6 +367,16 @@ mod tests {
     fn empty_engine_flush_is_a_noop() {
         let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
         engine.flush_pending().unwrap();
+    }
+
+    #[test]
+    fn bounded_eac3_front_door_rejects_empty_payload_and_counts_error() {
+        let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
+        engine.configure(format(12)).unwrap();
+        assert!(engine.decode_complete_eac3_access_unit(&[]).is_err());
+        let telemetry = engine.telemetry();
+        assert_eq!(telemetry.poll_calls, 1);
+        assert_eq!(telemetry.unsupported_errors, 1);
     }
 
     #[test]
