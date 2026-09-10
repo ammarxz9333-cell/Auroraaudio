@@ -1,12 +1,12 @@
-//! Prototype direct-eARC Linux ingest path.
+//! Prototype direct-eARC carrier normalization helper.
 //!
-//! The utility consumes the raw S32_LE carrier exposed by an eARC receiver on a
-//! Linux ALSA capture device (or stdin), extracts the valid IEC61937 16-bit word
-//! from each slot without resampling or decoding, and writes canonical S16_LE
-//! IEC61937 bytes to stdout.
+//! This utility is intentionally stdin-only: it converts a captured raw S32_LE
+//! two-slot carrier into canonical S16_LE IEC61937 bytes. Native device capture
+//! belongs to `aurora-encoded-runtime --alsa-device`, which uses Aurora's owned
+//! ALSA backend and recovery/discontinuity semantics instead of an `arecord`
+//! subprocess.
 
 use std::io::{self, Read, Write};
-use std::process::{Child, Command, Stdio};
 
 use anyhow::{bail, Context, Result};
 use aurora_iec61937::{CarrierWordHalf, S32LeCarrierNormalizer};
@@ -36,19 +36,22 @@ impl From<CarrierWordHalfArg> for CarrierWordHalf {
 #[derive(Debug, Parser)]
 #[command(
     name = "aurora-direct-earc-ingest",
-    about = "Normalize direct Linux eARC S32_LE carrier capture into canonical IEC61937 S16_LE"
+    about = "Normalize stdin S32_LE direct-eARC carrier into canonical IEC61937 S16_LE"
 )]
 struct Args {
-    /// ALSA capture device passed to arecord, for example hw:0,0.
-    /// If omitted, raw S32_LE carrier bytes are read from stdin.
+    /// Legacy option retained only to fail with a migration message. Native ALSA
+    /// capture is owned by `aurora-encoded-runtime --alsa-device`.
     #[arg(long)]
     alsa_device: Option<String>,
 
-    /// Recovered eARC carrier frame rate.
+    /// Recovered eARC carrier frame rate. Kept for capture-contract validation;
+    /// stdin already contains sampled S32_LE data and is never resampled here.
     #[arg(long, default_value_t = DEFAULT_CARRIER_RATE_HZ)]
     carrier_rate: u32,
 
-    /// Number of 32-bit carrier slots per frame. DD+ reference path uses 2.
+    /// Number of 32-bit carrier slots per frame. The proven SiI9437 path is two
+    /// slots; wider TDM capture requires an explicit slot selector not provided
+    /// by this normalization helper.
     #[arg(long, default_value_t = DEFAULT_SLOTS_PER_FRAME)]
     slots: usize,
 
@@ -72,44 +75,18 @@ fn main() -> Result<()> {
     let args = Args::parse();
     validate_args(&args)?;
 
+    let stdin = io::stdin();
     let stdout = io::stdout();
     let mut output = stdout.lock();
-    let mut child = None;
-
-    let stats = if let Some(device) = args.alsa_device.as_deref() {
-        let mut capture = spawn_arecord(device, args.carrier_rate, args.slots)?;
-        let capture_stdout = capture
-            .stdout
-            .take()
-            .context("arecord stdout was not captured")?;
-        child = Some(capture);
-        process_stream(
-            capture_stdout,
-            &mut output,
-            args.slots,
-            args.word_half.into(),
-            args.read_bytes,
-        )?
-    } else {
-        let stdin = io::stdin();
-        process_stream(
-            stdin.lock(),
-            &mut output,
-            args.slots,
-            args.word_half.into(),
-            args.read_bytes,
-        )?
-    };
+    let stats = process_stream(
+        stdin.lock(),
+        &mut output,
+        args.slots,
+        args.word_half.into(),
+        args.read_bytes,
+    )?;
 
     output.flush().context("failed to flush IEC61937 output")?;
-
-    if let Some(mut capture) = child {
-        let status = capture.wait().context("failed waiting for arecord")?;
-        if !status.success() {
-            bail!("arecord exited with status {status}");
-        }
-    }
-
     eprintln!(
         "aurora-direct-earc-ingest: frames={} words={} iec61937_sync_bursts={}",
         stats.carrier_frames, stats.output_words, stats.sync_bursts
@@ -118,47 +95,25 @@ fn main() -> Result<()> {
 }
 
 fn validate_args(args: &Args) -> Result<()> {
+    if args.alsa_device.is_some() {
+        bail!(
+            "--alsa-device is no longer supported by this helper; use aurora-encoded-runtime --input direct-earc --alsa-device <device> for native ALSA capture"
+        );
+    }
     if args.carrier_rate == 0 {
         bail!("carrier rate must be greater than zero");
     }
-    if args.slots == 0 {
-        bail!("slot count must be greater than zero");
+    if args.slots != DEFAULT_SLOTS_PER_FRAME {
+        bail!(
+            "direct eARC normalization currently requires exactly {} S32 slots; got {}. Wider TDM capture needs explicit carrier-slot selection",
+            DEFAULT_SLOTS_PER_FRAME,
+            args.slots
+        );
     }
     if args.read_bytes == 0 {
         bail!("read size must be greater than zero");
     }
     Ok(())
-}
-
-fn spawn_arecord(device: &str, carrier_rate: u32, slots: usize) -> Result<Child> {
-    #[cfg(not(target_os = "linux"))]
-    {
-        let _ = (device, carrier_rate, slots);
-        bail!("--alsa-device is supported only on Linux");
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        Command::new("arecord")
-            .args([
-                "-q",
-                "-D",
-                device,
-                "-t",
-                "raw",
-                "-f",
-                "S32_LE",
-                "-r",
-                &carrier_rate.to_string(),
-                "-c",
-                &slots.to_string(),
-            ])
-            .stdin(Stdio::null())
-            .stdout(Stdio::piped())
-            .stderr(Stdio::inherit())
-            .spawn()
-            .with_context(|| format!("failed to start arecord for ALSA device {device}"))
-    }
 }
 
 fn process_stream<R: Read, W: Write>(
@@ -170,6 +125,13 @@ fn process_stream<R: Read, W: Write>(
 ) -> Result<IngestStats> {
     if read_bytes == 0 {
         bail!("read size must be greater than zero");
+    }
+    if slots != DEFAULT_SLOTS_PER_FRAME {
+        bail!(
+            "direct eARC normalization currently requires exactly {} S32 slots; got {}",
+            DEFAULT_SLOTS_PER_FRAME,
+            slots
+        );
     }
 
     let mut normalizer = S32LeCarrierNormalizer::new(slots, word_half)?;
@@ -238,6 +200,16 @@ mod tests {
         (u32::from(word) << 16).to_le_bytes()
     }
 
+    fn valid_args() -> Args {
+        Args {
+            alsa_device: None,
+            carrier_rate: DEFAULT_CARRIER_RATE_HZ,
+            slots: DEFAULT_SLOTS_PER_FRAME,
+            word_half: CarrierWordHalfArg::High,
+            read_bytes: 16_384,
+        }
+    }
+
     #[test]
     fn arbitrary_read_boundaries_do_not_change_carrier_words() {
         let words = [0xf872_u16, 0x4e1f, 0x0015, 0x0080];
@@ -276,6 +248,25 @@ mod tests {
         )
         .unwrap_err();
         assert!(error.to_string().contains("trailing bytes"));
+    }
+
+    #[test]
+    fn direct_ingest_rejects_arecord_and_unproven_slot_layouts() {
+        let mut args = valid_args();
+        args.alsa_device = Some("hw:0,0".to_owned());
+        assert!(validate_args(&args).is_err());
+
+        let mut args = valid_args();
+        args.slots = 4;
+        assert!(validate_args(&args).is_err());
+        assert!(process_stream(
+            Cursor::new(Vec::<u8>::new()),
+            Vec::<u8>::new(),
+            4,
+            CarrierWordHalf::High,
+            16,
+        )
+        .is_err());
     }
 
     #[test]
