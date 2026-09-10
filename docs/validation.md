@@ -18,7 +18,7 @@ failed before step execution, so exact-head Cargo execution remains a separate g
 
 ## Validation commands
 
-The branch now exposes two complementary headless tools:
+The branch exposes two complementary headless tools:
 
 - `aurora-sim-source`: generate ordinary 48 kHz / 5.1 E-AC-3 with local FFmpeg or
   frame supplied raw `.ec3`, wrap complete AUs into Aurora's canonical IEC61937
@@ -29,8 +29,9 @@ The branch now exposes two complementary headless tools:
 
 The dedicated `.github/workflows/aurora-validation-ci.yml` gate generates a real
 Cargo 1.85 lockfile, uploads it as an artifact, runs `cargo test --workspace`, runs
-validation-specific check/test/clippy, and executes short headless command smoke tests.
-The full 30-minute soak is intentionally not mislabeled as CI-proven until it is run.
+validation-specific check/test/clippy, executes short headless command smoke tests,
+and gates the pinned OpenJOC synthetic positive-JOC path. The full 30-minute soak
+is intentionally not mislabeled as CI-proven until it is run.
 
 ## Transport and framing
 
@@ -56,11 +57,12 @@ The full 30-minute soak is intentionally not mislabeled as CI-proven until it is
 | Area | Status | Evidence / acceptance |
 | --- | --- | --- |
 | `0x15` is not treated as JOC proof | PROVEN | Direct-eARC bridge clears fixed codec hints and leaves JOC classification to the complete-AU decoder path. |
-| Pinned OpenJOC JOC fixture exists | PROVEN | Pinned OpenJOC revision `e7e03bc834ac0483770933cdc50ac058b100d1e2` includes synthetic `crates/openjoc-wasm/testdata/joc.ec3`; Aurora pins its source identity in CI. |
-| Synthetic JOC fixture survives simulator transport | TESTED | CI gate performs `.ec3 -> aurora-sim-source -> IEC61937 -> probe -> .ec3` and requires byte-for-byte equality. Exact-head CI execution pending. |
-| Synthetic positive JOC admission | TESTED | Existing Aurora fixture test requires positive OpenJOC JOC classification from a complete AU, not from transport type. Exact-head CI execution pending. |
+| Pinned OpenJOC JOC fixture exists | PROVEN | Pinned OpenJOC revision `e7e03bc834ac0483770933cdc50ac058b100d1e2` includes synthetic `crates/openjoc-wasm/testdata/joc.ec3`; Aurora pins its SHA-256 in validation CI. |
+| Synthetic JOC fixture survives simulator transport | TESTED | Existing CI gate performs `.ec3 -> aurora-sim-source -> IEC61937 -> probe -> .ec3` and requires byte-for-byte equality. Exact-head CI execution pending. |
+| Synthetic positive JOC admission | TESTED | Validation CI downloads the exact pinned upstream fixture and runs Aurora's ignored positive OpenJOC classifier/render regression. Admission is from the complete AU, not the transport type. Exact-head CI execution pending. |
 | Synthetic canonical 7.1.4 speaker render | TESTED | Existing OpenJOC/Aurora tests require successful canonical 12-channel speaker output. Exact-head CI execution pending. |
-| Ordinary FFmpeg E-AC-3 negative JOC path | TESTED | `aurora-sim`/source-generated ordinary E-AC-3 enters the same complete-AU engine path; no rule promotes type `0x15` to JOC. Exact-head execution is still required before recording a result. |
+| Positive JOC latency visibility | TESTED | Validation CI runs `aurora-sim latency-report` on the pinned JOC fixture and requires a nonzero `joc_render` sample count. Exact-head CI execution pending. |
+| Ordinary FFmpeg E-AC-3 negative JOC path | TESTED | `aurora-sim` has a direct regression requiring ordinary locally generated E-AC-3 to remain non-JOC after complete-AU engine admission. Exact-head execution pending. |
 | Commercial Netflix/streaming JOC interoperability | NOT-PROVEN | Requires a real licensed playback source and physical capture path. |
 | Preservation/export of original object scene coordinates | NOT-PROVEN | Current OpenJOC integration is a speaker renderer; Aurora does not claim exported object-scene metadata from that path. |
 | “Atmos proven” product claim | NOT-PROVEN | Synthetic JOC software evidence is insufficient for a commercial Atmos interoperability claim. |
@@ -73,8 +75,9 @@ The full 30-minute soak is intentionally not mislabeled as CI-proven until it is
 | Codec transition retirement | TESTED | Previous decoder state is drained before reset so valid short PCM tails are not silently discarded. Exact-head CI execution pending. |
 | Finite E-AC-3 truncation | TESTED | Checked AU framing, parser EOF validation and checked bed finalization reject incomplete finite input. Exact-head CI execution pending. |
 | No crash / no silent corruption under defined injector cases | TESTED | Each injector has deterministic expected resync or explicit-failure behavior. Runtime cut-burst acceptance is a hard failure. Exact-head CI execution pending. |
-| Canonical 7.1.4 layout remains unchanged | PROVEN | Harness obtains channel order directly from `StandardLayout::SevenOneFour.canonical_roles()`; it introduces no alternate layout. |
-| Software channel-ID identity through SpeakerPostProcessor | TESTED | Twelve unique channel tones are injected one lane at a time; the dominant output lane must equal the source lane. Exact-head execution pending. |
+| Canonical 7.1.4 layout remains unchanged | PROVEN | Harness obtains channel order directly from `StandardLayout::SevenOneFour.canonical_roles()`; it introduces no alternate Aurora layout. |
+| Software channel-ID identity through SpeakerPostProcessor | TESTED | Twelve unique channel tones are injected one canonical lane at a time; the dominant output lane must equal the source lane. Exact-head execution pending. |
+| Manual `channel-id` WAV speaker semantics | TESTED | WAVE_FORMAT_EXTENSIBLE data is reordered to ascending channel-mask speaker slots while the test sequence remains Aurora canonical. This avoids the otherwise incorrect SL/SR vs SBL/SBR labeling. Exact-head execution pending. |
 | Physical speaker channel order | NOT-PROVEN | `aurora-sim channel-id` creates a 12-channel WAVE_FORMAT_EXTENSIBLE manual fixture, but physical cable/amplifier/speaker mapping still requires real output hardware. |
 | Raw eARC LPCM source switching | NOT-PROVEN | Current encoded harness can represent the parser-visible non-IEC interval and canonical PCM output leg, but does not emulate/claim the raw LPCM capture negotiation path. |
 
@@ -83,11 +86,11 @@ The full 30-minute soak is intentionally not mislabeled as CI-proven until it is
 | Area | Status | Evidence / acceptance |
 | --- | --- | --- |
 | Speaker DSP host timing baseline | PROVEN | Prior executed host self-test measured p50 11.1 us, p99 13.3 us and max 118 us per 40-frame DSP block. It excludes decode, transport and hardware. |
-| Fixed-capacity latency recording | TESTED | `StageLatencyBook` records parser/decode/JOC-render/SpeakerPostProcessor samples with fixed storage; allocation regression requires zero heap allocations during repeated `record()` calls. Exact-head Cargo execution pending. |
-| `aurora-sim latency-report` | TESTED | Command measures parser, decoder calls and SpeakerPostProcessor, imports OpenJOC render timing only after positive JOC classification, and prints p50/p99/max/overflow. Missing capture/output-sink stages print `NOT_MEASURED`, never zero. Exact-head smoke execution pending. |
+| Fixed-capacity latency recording | TESTED | `StageLatencyBook` records simulated capture-normalization, parser/decode/JOC-render/SpeakerPostProcessor/output-copy samples with fixed storage; allocation regression requires zero heap allocations during repeated `record()` calls. Exact-head Cargo execution pending. |
+| `aurora-sim latency-report` | TESTED | Command measures simulated S32 capture normalization, parser, decoder calls, SpeakerPostProcessor and a preallocated sink copy; it imports OpenJOC render timing only after positive JOC classification. Physical ALSA/device I/O remains explicitly `NOT_MEASURED`. Exact-head smoke execution pending. |
 | JOC decode/render timing visibility | PROVEN | Fixed-size live JOC health exposes last decode/render/total and max-total timing without formatting on the hot path. |
-| Full capture -> parser -> decode -> render -> DSP -> output stage percentiles | NOT-PROVEN | File harness does not measure a real ALSA capture read or sink write. Those stages remain explicitly `NOT_MEASURED`. |
-| New harness hot-loop allocations | TESTED | Carrier period, S32 words, idle/jitter buffers and latency counters are allocated before the stress loop and reused. Out-of-band RSS reading is excluded from the audio hot path. Exact-head allocator/runtime execution remains pending. |
+| Full physical capture -> output latency | NOT-PROVEN | Simulated capture normalization and sink-copy CPU time are not ALSA read/write or acoustic round-trip latency. |
+| New harness hot-loop allocations | TESTED | Carrier period, S32 words, idle/jitter buffers, sink scratch and latency counters are allocated before the stress/report loops and reused. Out-of-band RSS reading is excluded from the audio hot path. Exact-head allocator/runtime execution remains pending. |
 | Zero allocations for every complete production realtime stage | NOT-PROVEN | Existing runtime still owns additional outer containers/backends; whole-chain allocator activity needs target execution. |
 | Stress defaults: 100 format/speaker-path cycles | TESTED | `aurora-sim stress` defaults to 100 5.1-canonical -> 7.1-canonical -> real E-AC-3 encoded path -> canonical LPCM speaker-path cycles. Raw LPCM ingress is not claimed. Full default run pending. |
 | Stress defaults: 1000 pause/resume cycles | TESTED | Each cycle feeds an idle carrier interval, resets the production runtime and requires a subsequent valid E-AC-3 unit to resume. Full default run pending. |
