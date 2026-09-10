@@ -117,7 +117,8 @@ FFmpeg native 7.1 raw PCM order `FL FR FC LFE BL BR SL SR` is mapped to Aurora
 `FL FR FC LFE SL SR SBL SBR`; unsupported intermediate channel widths fail closed
 instead of silently assigning an ambiguous speaker order. This matters for
 TrueHD/DTS-HD and other compatibility-bed fallbacks even though it is not the
-primary DD+/JOC product path.
+primary DD+/JOC product path. Exact-head CI must still execute the pinned runtime
+FFmpeg version before this compatibility fallback is called validated.
 
 IEC61937 data type `0x15` remains transport evidence only. It establishes an
 E-AC-3 burst classification, not Atmos/JOC. Software JOC evidence requires
