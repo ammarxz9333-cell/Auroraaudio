@@ -90,19 +90,38 @@ impl OpenJocNativeRenderer {
         // reblocks 1536-sample E-AC-3 access units into 40-frame output blocks,
         // so emitted output lags the input timeline whenever a short tail remains
         // queued. OpenJOC supports `None` and maintains decode sequence internally.
-        let status = self
-            .session
-            .push_packet(OpenJocPacket {
-                data: bytes,
-                pts_samples: None,
-                discontinuity: false,
-                preroll: false,
-            })
-            .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC decode/render failed: {e}")))?;
-        if status == OpenJocStatus::OutputPending {
+        //
+        // `OutputPending` means OpenJOC did not consume this packet. Drain the
+        // prior owned PCM and retry this exact AU once; silently returning here
+        // would otherwise drop a compressed access unit under backpressure.
+        let mut retried_after_pending = false;
+        loop {
+            let status = self
+                .session
+                .push_packet(OpenJocPacket {
+                    data: bytes,
+                    pts_samples: None,
+                    discontinuity: false,
+                    preroll: false,
+                })
+                .map_err(|e| {
+                    DecoderError::ExternalProcess(format!("OpenJOC decode/render failed: {e}"))
+                })?;
+
+            if status != OpenJocStatus::OutputPending {
+                self.collect_output()?;
+                break;
+            }
+
             self.collect_output()?;
+            if retried_after_pending {
+                return Err(DecoderError::Decode(
+                    "OpenJOC remained OutputPending after Aurora drained prior PCM".to_owned(),
+                ));
+            }
+            retried_after_pending = true;
         }
-        self.collect_output()?;
+
         let diagnostics = self.session.diagnostics();
         self.last_info.object_count = diagnostics.object_count;
         self.last_info.complexity_index = diagnostics.complexity_index;
