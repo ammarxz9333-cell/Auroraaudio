@@ -17,17 +17,10 @@ const PB_LE: [u8; 2] = [0x1F, 0x4E];
 const PREAMBLE_LE: [u8; 4] = [PA_LE[0], PA_LE[1], PB_LE[0], PB_LE[1]];
 const MAX_PAYLOAD_BYTES: usize = 256 * 1024;
 
-/// IEC 61937 data type for AC-3.
 pub const DATA_TYPE_AC3: u8 = 0x01;
-/// IEC 61937 data type for E-AC-3 / Dolby Digital Plus.
 pub const DATA_TYPE_EAC3: u8 = 0x15;
-/// IEC 61937 data type for Dolby MAT / TrueHD.
 pub const DATA_TYPE_MAT: u8 = 0x16;
 
-/// Coarse transport classification derived only from IEC 61937 Pc.
-///
-/// `Eac3` does not imply JOC. JOC must be established by the codec/object
-/// decoder after the E-AC-3 payload has been extracted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TransportCodec {
     Ac3,
@@ -49,7 +42,6 @@ impl TransportCodec {
     }
 }
 
-/// Filter applied after a complete IEC 61937 burst has been validated.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum CodecFilter {
     Ac3,
@@ -71,47 +63,32 @@ impl CodecFilter {
     }
 }
 
-/// One validated IEC 61937 burst with the wrapper removed.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Burst {
-    /// Full 16-bit Pc burst-info word.
     pub pc: u16,
-    /// Full 16-bit Pd length-code word.
     pub pd: u16,
-    /// IEC 61937 data type from Pc bits 0..6.
     pub data_type: u8,
-    /// Transport classification. This deliberately does not infer JOC.
     pub codec: TransportCodec,
-    /// Elementary-stream bytes restored to native byte order.
     pub payload: Vec<u8>,
 }
 
-/// Stream-type transition observed between consecutive accepted bursts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FormatChange {
     pub previous: TransportCodec,
     pub current: TransportCodec,
 }
 
-/// One parser result plus an optional transport-format transition.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BurstObservation {
     pub burst: Burst,
     pub format_change: Option<FormatChange>,
-    /// Absolute byte offset of Pa in the canonical S16_LE carrier stream for the
-    /// current parser epoch. This includes idle/padding bytes and therefore lets
-    /// callers derive exact burst-to-burst spacing independently of process time.
     pub carrier_offset_bytes: u64,
 }
 
-/// End-of-stream validation failure for the canonical IEC61937 carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum BurstFinishError {
-    /// The stream ended after only the beginning of the Pa/Pb sync preamble.
     TruncatedPreamble { matched_bytes: usize },
-    /// A complete Pa/Pb preamble was present but Pc/Pd was incomplete.
     TruncatedHeader { pending_bytes: usize },
-    /// Pc/Pd declared a payload that did not fully arrive before EOF.
     TruncatedPayload {
         pending_bytes: usize,
         expected_bytes: usize,
@@ -142,12 +119,10 @@ impl fmt::Display for BurstFinishError {
 
 impl Error for BurstFinishError {}
 
-/// Stateful IEC 61937 parser for canonical S16_LE carrier bytes.
 #[derive(Debug)]
 pub struct BurstParser {
     filter: CodecFilter,
     buffer: Vec<u8>,
-    /// Absolute offset represented by buffer[0] inside the current parser epoch.
     stream_offset_bytes: u64,
     last_codec: Option<TransportCodec>,
     discarded_bytes: u64,
@@ -166,8 +141,6 @@ impl BurstParser {
         }
     }
 
-    /// Adds arbitrary carrier bytes and emits every complete accepted burst.
-    /// Partial preambles and payloads remain buffered for the next call.
     pub fn push(&mut self, input: &[u8]) -> Vec<BurstObservation> {
         self.buffer.extend_from_slice(input);
         let mut observations = Vec::new();
@@ -202,9 +175,6 @@ impl BurstParser {
                 continue;
             }
 
-            // IEC 61937 is a 16-bit word carrier. An odd native payload consumes
-            // one extra carrier byte; the final native byte is MSB-aligned in that
-            // final word. FFmpeg's spdif muxer uses the same convention.
             let carrier_payload_bytes = payload_bytes.saturating_add(payload_bytes & 1);
             let total = 8usize.saturating_add(carrier_payload_bytes);
             if self.buffer.len() < total {
@@ -247,12 +217,6 @@ impl BurstParser {
         observations
     }
 
-    /// Validates EOF without treating ordinary carrier padding as a truncation.
-    ///
-    /// During streaming the parser deliberately retains up to three trailing
-    /// non-sync bytes so a Pa/Pb preamble can straddle the next read boundary.
-    /// At EOF such bytes are harmless padding unless a suffix is an actual prefix
-    /// of Pa/Pb. A complete Pa/Pb candidate must have its full Pc/Pd and payload.
     pub fn finish(&mut self) -> Result<(), BurstFinishError> {
         if self.buffer.is_empty() {
             return Ok(());
@@ -284,8 +248,6 @@ impl BurstParser {
             return Err(BurstFinishError::TruncatedPreamble { matched_bytes });
         }
 
-        // A successful EOF may leave only idle/padding bytes. Account and clear
-        // them so post-finish telemetry reports no pending transport state.
         self.discarded_bytes = self
             .discarded_bytes
             .saturating_add(self.buffer.len() as u64);
@@ -296,8 +258,6 @@ impl BurstParser {
         Ok(())
     }
 
-    /// Clears pending carrier bytes and stream-format history after a real source
-    /// discontinuity, xrun, eARC unlock or capture-device restart.
     pub fn reset(&mut self) {
         self.buffer.clear();
         self.stream_offset_bytes = 0;
@@ -327,14 +287,15 @@ impl BurstParser {
     }
 }
 
-/// Converts IEC 61937 Pd into native payload bytes for the data types Aurora
-/// currently needs on the eARC path.
-///
-/// E-AC-3 (0x15) and MAT/TrueHD (0x16) express Pd in bytes. AC-3, DTS core and
-/// the ordinary legacy types express Pd in bits.
+/// Converts IEC61937 Pd to native payload bytes. E-AC-3/MAT use byte counts.
+/// Legacy bit-count types are accepted only when the payload is byte-aligned;
+/// a non-byte-aligned value returns zero so the parser treats the header as
+/// malformed instead of silently truncating or rounding it.
 pub fn payload_length_bytes(data_type: u8, pd: u16) -> usize {
     if matches!(data_type, DATA_TYPE_EAC3 | DATA_TYPE_MAT) {
         usize::from(pd)
+    } else if pd & 7 != 0 {
+        0
     } else {
         usize::from(pd) / 8
     }
@@ -360,9 +321,7 @@ mod tests {
         let native = vec![0x0B, 0x77, 0x12, 0x34, 0xAB, 0xCD, 0xEF, 0x01];
         let carrier = make_burst(DATA_TYPE_EAC3, &native);
         let mut parser = BurstParser::new(CodecFilter::Eac3);
-
         let out = parser.push(&carrier);
-
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].burst.data_type, DATA_TYPE_EAC3);
         assert_eq!(out[0].burst.codec, TransportCodec::Eac3);
@@ -378,11 +337,9 @@ mod tests {
         let carrier = make_burst(DATA_TYPE_EAC3, &native);
         let mut parser = BurstParser::new(CodecFilter::All);
         let mut out = Vec::new();
-
         for byte in carrier {
             out.extend(parser.push(&[byte]));
         }
-
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].burst.payload, native);
         assert_eq!(out[0].carrier_offset_bytes, 0);
@@ -394,9 +351,7 @@ mod tests {
         let native = vec![0x0B, 0x77, 0x10, 0x20, 0xAA];
         let carrier = make_burst(DATA_TYPE_EAC3, &native);
         let mut parser = BurstParser::new(CodecFilter::All);
-
         let out = parser.push(&carrier);
-
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].burst.payload, native);
     }
@@ -410,10 +365,8 @@ mod tests {
         let mut carrier = first;
         carrier.resize(EAC3_PERIOD_BYTES, 0);
         carrier.extend_from_slice(&second);
-
         let mut parser = BurstParser::new(CodecFilter::All);
         let out = parser.push(&carrier);
-
         assert_eq!(out.len(), 2);
         assert_eq!(out[0].carrier_offset_bytes, 0);
         assert_eq!(out[1].carrier_offset_bytes, EAC3_PERIOD_BYTES as u64);
@@ -424,10 +377,8 @@ mod tests {
         let eac3 = make_burst(DATA_TYPE_EAC3, &[0x0B, 0x77, 0x10, 0x20]);
         let ac3 = make_burst(DATA_TYPE_AC3, &[0x0B, 0x77, 0x30, 0x40]);
         let mut parser = BurstParser::new(CodecFilter::All);
-
         let first = parser.push(&eac3);
         let second = parser.push(&ac3);
-
         assert!(first[0].format_change.is_none());
         assert_eq!(
             second[0].format_change,
@@ -443,11 +394,9 @@ mod tests {
         let eac3 = make_burst(DATA_TYPE_EAC3, &[0x0B, 0x77, 0x10, 0x20]);
         let ac3 = make_burst(DATA_TYPE_AC3, &[0x0B, 0x77, 0x30, 0x40]);
         let mut parser = BurstParser::new(CodecFilter::All);
-
         assert_eq!(parser.push(&eac3).len(), 1);
         parser.reset();
         let after_reset = parser.push(&ac3);
-
         assert!(after_reset[0].format_change.is_none());
         assert_eq!(after_reset[0].carrier_offset_bytes, 0);
     }
@@ -464,9 +413,7 @@ mod tests {
             &[0x0B, 0x77, 0x12, 0x34],
         ));
         let mut parser = BurstParser::new(CodecFilter::All);
-
         let out = parser.push(&input);
-
         assert_eq!(parser.malformed_headers(), 1);
         assert_eq!(out.len(), 1);
         assert_eq!(out[0].burst.codec, TransportCodec::Eac3);
@@ -474,10 +421,29 @@ mod tests {
     }
 
     #[test]
+    fn non_byte_aligned_legacy_pd_is_rejected_and_resynchronizes() {
+        let mut input = Vec::new();
+        input.extend_from_slice(&PA_LE);
+        input.extend_from_slice(&PB_LE);
+        input.extend_from_slice(&u16::from(DATA_TYPE_AC3).to_le_bytes());
+        input.extend_from_slice(&9_u16.to_le_bytes());
+        input.extend_from_slice(&make_burst(
+            DATA_TYPE_EAC3,
+            &[0x0B, 0x77, 0x12, 0x34],
+        ));
+        let mut parser = BurstParser::new(CodecFilter::All);
+        let out = parser.push(&input);
+        assert_eq!(parser.malformed_headers(), 1);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].burst.codec, TransportCodec::Eac3);
+    }
+
+    #[test]
     fn pd_units_match_iec61937_codec_family_contract() {
         assert_eq!(payload_length_bytes(DATA_TYPE_AC3, 20_480), 2_560);
         assert_eq!(payload_length_bytes(DATA_TYPE_EAC3, 2_560), 2_560);
         assert_eq!(payload_length_bytes(DATA_TYPE_MAT, 61_424), 61_424);
+        assert_eq!(payload_length_bytes(DATA_TYPE_AC3, 9), 0);
     }
 
     #[test]
