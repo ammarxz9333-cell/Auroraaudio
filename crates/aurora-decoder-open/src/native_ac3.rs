@@ -11,6 +11,8 @@ use oxideav_core::{CodecId, CodecParameters, Decoder as OxideDecoder, Frame, Pac
 use crate::sniff::CodecKind;
 
 const AURORA_SEVEN_ONE_FOUR_CHANNELS: usize = 12;
+const MAX_RECYCLED_PLANAR_BLOCKS: usize = 32;
+const MAX_RECYCLED_PLANAR_FRAMES: usize = 2_048;
 
 /// JOC policy for the native E-AC-3 backend.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,6 +29,7 @@ pub struct NativeAc3Decoder {
     codec: CodecKind,
     output_format: Option<AudioFormat>,
     inner: Option<Box<dyn OxideDecoder>>,
+    recycled_planar: Vec<Vec<Vec<f32>>>,
     emitted_frames: u64,
     discontinuity: bool,
     joc_presentation: JocPresentation,
@@ -43,6 +46,7 @@ impl NativeAc3Decoder {
             codec,
             output_format: None,
             inner: None,
+            recycled_planar: Vec::with_capacity(MAX_RECYCLED_PLANAR_BLOCKS),
             emitted_frames: 0,
             discontinuity: true,
             joc_presentation,
@@ -74,6 +78,49 @@ impl NativeAc3Decoder {
             _ => unreachable!(),
         };
         result.map_err(|e| DecoderError::ExternalProcess(format!("oxideav decoder init: {e}")))
+    }
+
+    fn take_canonical_planar_storage(&mut self, samples: usize) -> Vec<Vec<f32>> {
+        if let Some(index) = self.recycled_planar.iter().position(|planar| {
+            planar.len() == AURORA_SEVEN_ONE_FOUR_CHANNELS
+                && planar.iter().all(|channel| channel.capacity() >= samples)
+        }) {
+            let mut planar = self.recycled_planar.swap_remove(index);
+            for channel in &mut planar {
+                channel.clear();
+                channel.resize(samples, 0.0);
+            }
+            return planar;
+        }
+        (0..AURORA_SEVEN_ONE_FOUR_CHANNELS)
+            .map(|_| vec![0.0_f32; samples])
+            .collect()
+    }
+
+    /// Return a consumed canonical bed frame to bounded decoder-owned storage.
+    /// Other shapes are dropped rather than retained because this pool is used
+    /// only by Aurora's fixed 7.1.4 product path.
+    pub fn recycle_frame(&mut self, frame: DecodedFrame) {
+        if !frame.objects.is_empty()
+            || self.output_format.map(|format| format.channel_count)
+                != Some(AURORA_SEVEN_ONE_FOUR_CHANNELS)
+            || frame.audio.channels.len() != AURORA_SEVEN_ONE_FOUR_CHANNELS
+            || frame.audio.frame_count == 0
+            || frame.audio.frame_count > MAX_RECYCLED_PLANAR_FRAMES
+            || frame
+                .audio
+                .channels
+                .iter()
+                .any(|channel| channel.len() != frame.audio.frame_count)
+            || self.recycled_planar.len() >= MAX_RECYCLED_PLANAR_BLOCKS
+        {
+            return;
+        }
+        let mut planar = frame.audio.channels;
+        for channel in &mut planar {
+            channel.clear();
+        }
+        self.recycled_planar.push(planar);
     }
 
     fn convert_audio_frame(
@@ -117,22 +164,47 @@ impl NativeAc3Decoder {
         let sample_rate = crate::sample_rate_hint(input)
             .or_else(|| self.output_format.map(|f| f.sample_rate))
             .unwrap_or(48_000);
-        let mut planar = (0..channels)
-            .map(|_| Vec::with_capacity(samples))
-            .collect::<Vec<_>>();
-        for frame_bytes in bytes.chunks_exact(channels * 2) {
-            for (channel, dst) in planar.iter_mut().enumerate() {
-                let at = channel * 2;
-                let sample = i16::from_le_bytes([frame_bytes[at], frame_bytes[at + 1]]);
-                dst.push(f32::from(sample) / 32768.0);
-            }
-        }
-
         let output_channels = self
             .output_format
             .map(|format| format.channel_count)
             .unwrap_or(channels);
-        planar = normalize_bed_for_output(planar, output_channels, samples)?;
+
+        let planar = if output_channels == AURORA_SEVEN_ONE_FOUR_CHANNELS {
+            let target_map: &[usize] = match channels {
+                // AC-3/E-AC-3 1/0 is front centre.
+                1 => &[2],
+                2 => &[0, 1],
+                // OxideAV 0.0.11 emits 3/2+LFE as
+                // FL, FR, FC, LFE, Ls, Rs after its WAVE-order reorder.
+                6 => &[0, 1, 2, 3, 4, 5],
+                _ => {
+                    return Err(DecoderError::UnsupportedInput(
+                        "native E-AC-3 bed width has no proven mapping to Aurora canonical 7.1.4",
+                    ));
+                }
+            };
+            let mut output = self.take_canonical_planar_storage(samples);
+            for (frame_index, frame_bytes) in bytes.chunks_exact(channels * 2).enumerate() {
+                for (source_channel, &target_channel) in target_map.iter().enumerate() {
+                    let at = source_channel * 2;
+                    let sample = i16::from_le_bytes([frame_bytes[at], frame_bytes[at + 1]]);
+                    output[target_channel][frame_index] = f32::from(sample) / 32768.0;
+                }
+            }
+            output
+        } else {
+            let mut source = (0..channels)
+                .map(|_| Vec::with_capacity(samples))
+                .collect::<Vec<_>>();
+            for frame_bytes in bytes.chunks_exact(channels * 2) {
+                for (channel, dst) in source.iter_mut().enumerate() {
+                    let at = channel * 2;
+                    let sample = i16::from_le_bytes([frame_bytes[at], frame_bytes[at + 1]]);
+                    dst.push(f32::from(sample) / 32768.0);
+                }
+            }
+            normalize_bed_for_output(source, output_channels, samples)?
+        };
 
         let pts = self.emitted_frames as f64 / f64::from(sample_rate);
         self.emitted_frames = self.emitted_frames.saturating_add(samples as u64);
@@ -179,7 +251,6 @@ fn normalize_bed_for_output(
         .collect::<Vec<_>>();
     match source_channels {
         1 => {
-            // AC-3/E-AC-3 1/0 is front centre.
             output[2] = planar.into_iter().next().expect("one source channel");
         }
         2 => {
@@ -188,7 +259,6 @@ fn normalize_bed_for_output(
             }
         }
         6 => {
-            // WAVE/SMPTE 5.1 exactly matches Aurora canonical indices 0..6.
             for (destination, source) in output.iter_mut().take(6).zip(planar) {
                 *destination = source;
             }
@@ -271,6 +341,15 @@ impl Decoder for NativeAc3Decoder {
 mod tests {
     use super::*;
 
+    fn immersive_format() -> AudioFormat {
+        AudioFormat {
+            sample_rate: 48_000,
+            channel_count: 12,
+            sample_type: SampleType::F32,
+            block_size: 40,
+        }
+    }
+
     #[test]
     fn rejects_unrelated_codec() {
         assert!(NativeAc3Decoder::new(CodecKind::Flac, JocPresentation::Bed).is_err());
@@ -279,14 +358,7 @@ mod tests {
     #[test]
     fn accepts_immersive_output_contract() {
         let mut decoder = NativeAc3Decoder::new(CodecKind::Eac3, JocPresentation::Bed).unwrap();
-        decoder
-            .configure(AudioFormat {
-                sample_rate: 48_000,
-                channel_count: 12,
-                sample_type: SampleType::F32,
-                block_size: 40,
-            })
-            .unwrap();
+        decoder.configure(immersive_format()).unwrap();
         assert_eq!(decoder.output_format.unwrap().block_size, 40);
     }
 
@@ -314,6 +386,28 @@ mod tests {
         for values in &output[2..] {
             assert_eq!(values, &vec![0.0; 3]);
         }
+    }
+
+    #[test]
+    fn canonical_planar_pool_reuses_channel_allocations() {
+        let mut decoder = NativeAc3Decoder::new(CodecKind::Eac3, JocPresentation::Bed).unwrap();
+        decoder.configure(immersive_format()).unwrap();
+        let frame = DecodedFrame {
+            audio: AudioBlock {
+                channels: (0..12).map(|_| vec![0.0; 1536]).collect(),
+                frame_count: 1536,
+                presentation_time_seconds: 0.0,
+                discontinuity: false,
+            },
+            objects: Vec::new(),
+        };
+        let first_ptr = frame.audio.channels[0].as_ptr();
+        decoder.recycle_frame(frame);
+
+        let recycled = decoder.take_canonical_planar_storage(1536);
+        assert_eq!(recycled[0].as_ptr(), first_ptr);
+        assert_eq!(recycled.len(), 12);
+        assert!(recycled.iter().all(|channel| channel.len() == 1536));
     }
 
     #[test]
