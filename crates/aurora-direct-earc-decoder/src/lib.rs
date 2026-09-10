@@ -180,14 +180,14 @@ impl DirectEarcDecoder {
             emitted = 1;
         }
         loop {
-            if emitted >= MAX_READY_FRAMES_PER_BURST {
-                return Err(DecoderError::Decode(
-                    "decoder produced an unbounded ready-frame sequence for one IEC61937 burst"
-                        .to_owned(),
-                ));
-            }
             match self.engine.decode_chunk(&[])? {
                 Some(frame) => {
+                    if emitted >= MAX_READY_FRAMES_PER_BURST {
+                        return Err(DecoderError::Decode(
+                            "decoder produced more than the bounded ready-frame limit for one IEC61937 burst"
+                                .to_owned(),
+                        ));
+                    }
                     frames.push(frame);
                     emitted += 1;
                 }
@@ -229,9 +229,17 @@ impl DirectEarcDecoder {
                 batch.format_changes += 1;
             }
 
-            // Consume this encoded burst exactly once, then drain all PCM made
-            // ready by it before another encoded burst can enter the decoder.
-            let first = self.engine.decode_chunk(&observation.burst.payload)?;
+            // IEC61937 E-AC-3 data-bursts carry one complete six-block access
+            // unit/repetition period. Preserve that authenticated transport
+            // boundary so the JOC framer does not wait for the next AU merely to
+            // prove an end boundary it already has. Other codecs retain the
+            // generic byte-stream front door.
+            let first = if observation.burst.codec == TransportCodec::Eac3 {
+                self.engine
+                    .decode_complete_eac3_access_unit(&observation.burst.payload)?
+            } else {
+                self.engine.decode_chunk(&observation.burst.payload)?
+            };
             self.collect_ready_frames(first, &mut batch.frames)?;
         }
 
