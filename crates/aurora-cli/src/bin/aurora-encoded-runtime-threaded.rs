@@ -147,6 +147,7 @@ fn spawn_capture_thread(
 #[cfg(target_os = "linux")]
 fn consume_batch_without_duplicate_reset<S: SpeakerSink>(
     batch: PlaybackBatch,
+    runtime: &mut AuroraPlaybackRuntime,
     sink: &mut S,
     stats: &mut RuntimeStats,
     transport_already_reset: bool,
@@ -156,7 +157,9 @@ fn consume_batch_without_duplicate_reset<S: SpeakerSink>(
         sink.reset_for_transport_discontinuity()?;
     }
     for frame in batch.frames {
-        sink.write_frame(&frame)?;
+        let write_result = sink.write_frame(&frame);
+        runtime.recycle_output_frame(frame);
+        write_result?;
     }
     Ok(())
 }
@@ -202,6 +205,7 @@ pub(super) fn run_direct_native_alsa<S: SpeakerSink>(
                 .context("native threaded direct-eARC S32-word ingest failed")?;
             consume_batch_without_duplicate_reset(
                 batch,
+                runtime,
                 sink,
                 &mut stats,
                 capture_discontinuity,
