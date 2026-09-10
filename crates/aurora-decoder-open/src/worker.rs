@@ -17,56 +17,48 @@ use crate::sniff::{CodecKind, Encapsulation};
 
 const MAX_RECYCLED_PLANAR_BLOCKS: usize = 32;
 const MAX_RECYCLED_PLANAR_FRAMES: usize = 2_048;
+const MAX_WORKER_CHANNELS: usize = 12;
+const MAX_WAV_HEADER_BYTES: usize = 64 * 1024;
+const WAVE_FORMAT_IEEE_FLOAT: u16 = 0x0003;
+const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkerCommand {
     pub program: String,
     pub args: Vec<String>,
+    /// Zero means channel count is intentionally negotiated from FFmpeg's WAV
+    /// output header instead of being forced with `-ac`.
     pub decoded_channels: usize,
-    /// Source-channel index -> Aurora canonical target-channel index.
+    /// Empty for the same reason: the semantic map is derived from the WAV
+    /// WAVE_FORMAT_EXTENSIBLE channel mask after FFmpeg has decoded the source.
     pub channel_map: Vec<usize>,
 }
 
-/// Resolve one deterministic FFmpeg raw-PCM layout and its semantic mapping to
-/// Aurora's canonical speaker order.
-///
-/// FFmpeg native 7.1 order is `FL FR FC LFE BL BR SL SR`, while Aurora's first
-/// eight canonical lanes are `FL FR FC LFE SL SR SBL SBR`. The worker must
-/// therefore remap the last four lanes instead of treating raw channel indices
-/// as speaker semantics. Aurora's six-channel contract uses side surrounds, so
-/// FFmpeg must be asked for `5.1(side)`, not back-channel `5.1`.
-fn worker_channel_contract(
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct WorkerPcmContract {
     decoded_channels: usize,
-    output_channels: usize,
-) -> Result<(&'static str, Vec<usize>), DecoderError> {
-    let contract = match decoded_channels {
-        1 if output_channels >= 1 => ("mono", vec![0]),
-        2 if output_channels >= 2 => ("stereo", vec![0, 1]),
-        6 if output_channels >= 6 => ("5.1(side)", vec![0, 1, 2, 3, 4, 5]),
-        8 if output_channels >= 8 => ("7.1", vec![0, 1, 2, 3, 6, 7, 4, 5]),
-        _ => {
-            return Err(DecoderError::UnsupportedInput(
-                "FFmpeg worker output width has no proven Aurora semantic channel mapping",
-            ));
-        }
-    };
-    Ok(contract)
+    /// Source-channel index -> Aurora canonical target-channel index.
+    channel_map: [usize; MAX_WORKER_CHANNELS],
 }
 
 /// Build the deterministic FFmpeg command used by the persistent worker.
 ///
-/// Immersive output layouts above 7.1 decode to an 8-channel compatibility
-/// bed. Aurora pads the remaining height/object lanes with silence until the
-/// native metadata renderer supplies them; FFmpeg is never allowed to invent
-/// Atmos/DTS:X object positions.
+/// The worker deliberately does not pass `-ac` or `-channel_layout`. Forcing a
+/// 12-channel Aurora output into FFmpeg 7.1 would silently rematrix stereo/5.1
+/// sources before Aurora sees them. Instead FFmpeg preserves its decoded source
+/// layout and emits self-describing F32 WAV. Aurora validates the WAV channel
+/// mask and performs only an explicit semantic lane permutation/zero-extension.
 pub fn build_worker_command(
     codec: CodecKind,
     encapsulation: Encapsulation,
     output: AudioFormat,
 ) -> Result<WorkerCommand, DecoderError> {
-    let decoded_channels = output.channel_count.min(8).max(1);
-    let (channel_layout, channel_map) =
-        worker_channel_contract(decoded_channels, output.channel_count)?;
+    if output.sample_rate == 0 || output.channel_count == 0 || output.channel_count > MAX_WORKER_CHANNELS {
+        return Err(DecoderError::UnsupportedInput(
+            "FFmpeg worker requires a non-zero output rate and at most twelve Aurora channels",
+        ));
+    }
+
     let mut args = vec![
         "-hide_banner".into(),
         "-loglevel".into(),
@@ -91,6 +83,8 @@ pub fn build_worker_command(
         "pipe:0".into(),
         "-map".into(),
         "0:a:0".into(),
+        "-map_metadata".into(),
+        "-1".into(),
         "-vn".into(),
         "-sn".into(),
         "-dn".into(),
@@ -98,20 +92,18 @@ pub fn build_worker_command(
         "pcm_f32le".into(),
         "-ar".into(),
         output.sample_rate.to_string(),
-        "-ac".into(),
-        decoded_channels.to_string(),
-        "-channel_layout".into(),
-        channel_layout.into(),
         "-f".into(),
-        "f32le".into(),
+        "wav".into(),
+        "-rf64".into(),
+        "never".into(),
         "pipe:1".into(),
     ]);
 
     Ok(WorkerCommand {
         program: "ffmpeg".into(),
         args,
-        decoded_channels,
-        channel_map,
+        decoded_channels: 0,
+        channel_map: Vec::new(),
     })
 }
 
@@ -155,12 +147,248 @@ fn decode_worker_sample(bytes: [u8; 4]) -> Result<f32, DecoderError> {
     Ok(sample)
 }
 
+fn wav_mask_target(bit: u32) -> Option<usize> {
+    match bit {
+        0x0000_0001 => Some(0),  // FL
+        0x0000_0002 => Some(1),  // FR
+        0x0000_0004 => Some(2),  // FC
+        0x0000_0008 => Some(3),  // LFE
+        0x0000_0200 => Some(4),  // SL
+        0x0000_0400 => Some(5),  // SR
+        0x0000_0010 => Some(6),  // BL
+        0x0000_0020 => Some(7),  // BR
+        0x0000_1000 => Some(8),  // TFL
+        0x0000_4000 => Some(9),  // TFR
+        0x0000_8000 => Some(10), // TBL
+        0x0002_0000 => Some(11), // TBR
+        _ => None,
+    }
+}
+
+fn wav_channel_contract(
+    decoded_channels: usize,
+    channel_mask: u32,
+    output_channels: usize,
+) -> Result<WorkerPcmContract, DecoderError> {
+    if decoded_channels == 0
+        || decoded_channels > MAX_WORKER_CHANNELS
+        || decoded_channels > output_channels
+    {
+        return Err(DecoderError::UnsupportedInput(
+            "FFmpeg WAV channel count cannot be represented by Aurora output",
+        ));
+    }
+
+    let mut map = [usize::MAX; MAX_WORKER_CHANNELS];
+    if channel_mask == 0 {
+        match decoded_channels {
+            1 => {
+                map[0] = if output_channels >= 3 { 2 } else { 0 };
+                return Ok(WorkerPcmContract {
+                    decoded_channels,
+                    channel_map: map,
+                });
+            }
+            2 => {
+                map[0] = 0;
+                map[1] = 1;
+                return Ok(WorkerPcmContract {
+                    decoded_channels,
+                    channel_map: map,
+                });
+            }
+            _ => {
+                return Err(DecoderError::UnsupportedInput(
+                    "multichannel FFmpeg WAV output has no channel mask; refusing ambiguous speaker order",
+                ));
+            }
+        }
+    }
+
+    if channel_mask.count_ones() as usize != decoded_channels {
+        return Err(DecoderError::UnsupportedInput(
+            "FFmpeg WAV channel mask does not match channel count",
+        ));
+    }
+
+    let mut source = 0usize;
+    for bit_index in 0..32 {
+        let bit = 1u32 << bit_index;
+        if channel_mask & bit == 0 {
+            continue;
+        }
+        let target = wav_mask_target(bit).ok_or(DecoderError::UnsupportedInput(
+            "FFmpeg WAV channel mask contains a speaker role without an Aurora mapping",
+        ))?;
+        if target >= output_channels || source >= MAX_WORKER_CHANNELS {
+            return Err(DecoderError::UnsupportedInput(
+                "FFmpeg WAV speaker layout exceeds configured Aurora output",
+            ));
+        }
+        map[source] = target;
+        source += 1;
+    }
+
+    if source != decoded_channels {
+        return Err(DecoderError::UnsupportedInput(
+            "FFmpeg WAV channel mask could not be resolved completely",
+        ));
+    }
+
+    Ok(WorkerPcmContract {
+        decoded_channels,
+        channel_map: map,
+    })
+}
+
+fn parse_wav_fmt_chunk(
+    fmt: &[u8],
+    output: AudioFormat,
+) -> Result<WorkerPcmContract, DecoderError> {
+    if fmt.len() < 16 {
+        return Err(DecoderError::Decode(
+            "FFmpeg WAV fmt chunk is truncated".to_owned(),
+        ));
+    }
+    let format_tag = u16::from_le_bytes([fmt[0], fmt[1]]);
+    let decoded_channels = usize::from(u16::from_le_bytes([fmt[2], fmt[3]]));
+    let sample_rate = u32::from_le_bytes([fmt[4], fmt[5], fmt[6], fmt[7]]);
+    let block_align = usize::from(u16::from_le_bytes([fmt[12], fmt[13]]));
+    let bits_per_sample = u16::from_le_bytes([fmt[14], fmt[15]]);
+
+    if sample_rate != output.sample_rate || bits_per_sample != 32 {
+        return Err(DecoderError::UnsupportedInput(
+            "FFmpeg WAV output rate or sample width drifted from F32 Aurora contract",
+        ));
+    }
+    let expected_align = decoded_channels
+        .checked_mul(std::mem::size_of::<f32>())
+        .ok_or(DecoderError::UnsupportedInput("worker frame size overflow"))?;
+    if expected_align == 0 || block_align != expected_align {
+        return Err(DecoderError::Decode(
+            "FFmpeg WAV block alignment does not match F32 channel geometry".to_owned(),
+        ));
+    }
+
+    let channel_mask = match format_tag {
+        WAVE_FORMAT_IEEE_FLOAT => {
+            if decoded_channels > 2 {
+                return Err(DecoderError::UnsupportedInput(
+                    "multichannel FFmpeg WAV output omitted WAVE_FORMAT_EXTENSIBLE channel semantics",
+                ));
+            }
+            0
+        }
+        WAVE_FORMAT_EXTENSIBLE => {
+            if fmt.len() < 40 {
+                return Err(DecoderError::Decode(
+                    "FFmpeg WAVE_FORMAT_EXTENSIBLE fmt chunk is truncated".to_owned(),
+                ));
+            }
+            let extension_size = u16::from_le_bytes([fmt[16], fmt[17]]);
+            let valid_bits = u16::from_le_bytes([fmt[18], fmt[19]]);
+            let mask = u32::from_le_bytes([fmt[20], fmt[21], fmt[22], fmt[23]]);
+            let subformat = u32::from_le_bytes([fmt[24], fmt[25], fmt[26], fmt[27]]);
+            if extension_size < 22 || valid_bits != 32 || subformat != u32::from(WAVE_FORMAT_IEEE_FLOAT) {
+                return Err(DecoderError::UnsupportedInput(
+                    "FFmpeg WAV extensible format is not 32-bit IEEE float",
+                ));
+            }
+            mask
+        }
+        _ => {
+            return Err(DecoderError::UnsupportedInput(
+                "FFmpeg worker emitted a WAV sample format other than IEEE F32",
+            ));
+        }
+    };
+
+    wav_channel_contract(decoded_channels, channel_mask, output.channel_count)
+}
+
+fn parse_wav_stream_header(
+    bytes: &[u8],
+    output: AudioFormat,
+) -> Result<Option<(usize, WorkerPcmContract)>, DecoderError> {
+    if bytes.len() < 12 {
+        return Ok(None);
+    }
+    if &bytes[0..4] != b"RIFF" || &bytes[8..12] != b"WAVE" {
+        return Err(DecoderError::Decode(
+            "FFmpeg worker stdout is not a RIFF/WAVE stream".to_owned(),
+        ));
+    }
+
+    let mut cursor = 12usize;
+    let mut contract = None;
+    loop {
+        if cursor > MAX_WAV_HEADER_BYTES {
+            return Err(DecoderError::Decode(
+                "FFmpeg WAV header exceeded bounded size".to_owned(),
+            ));
+        }
+        let header_end = cursor
+            .checked_add(8)
+            .ok_or_else(|| DecoderError::Decode("FFmpeg WAV chunk offset overflow".to_owned()))?;
+        if bytes.len() < header_end {
+            return Ok(None);
+        }
+        let id = &bytes[cursor..cursor + 4];
+        let size = u32::from_le_bytes([
+            bytes[cursor + 4],
+            bytes[cursor + 5],
+            bytes[cursor + 6],
+            bytes[cursor + 7],
+        ]) as usize;
+        let payload_start = header_end;
+
+        if id == b"data" {
+            let contract = contract.ok_or_else(|| {
+                DecoderError::Decode("FFmpeg WAV data chunk arrived before fmt chunk".to_owned())
+            })?;
+            if payload_start > MAX_WAV_HEADER_BYTES {
+                return Err(DecoderError::Decode(
+                    "FFmpeg WAV header exceeded bounded size".to_owned(),
+                ));
+            }
+            return Ok(Some((payload_start, contract)));
+        }
+
+        let padded_size = size
+            .checked_add(size & 1)
+            .ok_or_else(|| DecoderError::Decode("FFmpeg WAV chunk size overflow".to_owned()))?;
+        let payload_end = payload_start
+            .checked_add(padded_size)
+            .ok_or_else(|| DecoderError::Decode("FFmpeg WAV chunk size overflow".to_owned()))?;
+        if payload_end > MAX_WAV_HEADER_BYTES {
+            return Err(DecoderError::Decode(
+                "FFmpeg WAV header exceeded bounded size".to_owned(),
+            ));
+        }
+        if bytes.len() < payload_end {
+            return Ok(None);
+        }
+
+        if id == b"fmt " {
+            if contract.is_some() {
+                return Err(DecoderError::Decode(
+                    "FFmpeg WAV stream contains multiple fmt chunks".to_owned(),
+                ));
+            }
+            contract = Some(parse_wav_fmt_chunk(
+                &bytes[payload_start..payload_start + size],
+                output,
+            )?);
+        }
+        cursor = payload_end;
+    }
+}
+
 pub struct OpenWorkerDecoder {
     codec: CodecKind,
     encapsulation: Encapsulation,
     output: AudioFormat,
-    decoded_channels: usize,
-    channel_map: Vec<usize>,
+    pcm_contract: Option<WorkerPcmContract>,
     child: Child,
     stdin: Option<ChildStdin>,
     rx: Receiver<Vec<u8>>,
@@ -218,8 +446,7 @@ impl OpenWorkerDecoder {
             codec,
             encapsulation,
             output,
-            decoded_channels: command.decoded_channels,
-            channel_map: command.channel_map,
+            pcm_contract: None,
             child,
             stdin: Some(stdin),
             rx,
@@ -292,8 +519,13 @@ impl OpenWorkerDecoder {
             frames.push(frame);
         }
         if !self.pcm_bytes.is_empty() {
+            let reason = if self.pcm_contract.is_none() {
+                "an incomplete WAV header"
+            } else {
+                "bytes that do not form a complete PCM frame"
+            };
             return Err(DecoderError::Decode(format!(
-                "FFmpeg worker ended with {} trailing byte(s) that do not form a complete PCM frame",
+                "FFmpeg worker ended with {} trailing byte(s): {reason}",
                 self.pcm_bytes.len()
             )));
         }
@@ -301,8 +533,6 @@ impl OpenWorkerDecoder {
     }
 
     /// Return one consumed worker PCM frame to a bounded planar storage pool.
-    /// The samples are cleared before reuse and only the exact configured output
-    /// channel geometry is admitted.
     pub fn recycle_frame(&mut self, frame: DecodedFrame) {
         if !frame.objects.is_empty()
             || frame.audio.channels.len() != self.output.channel_count
@@ -322,6 +552,19 @@ impl OpenWorkerDecoder {
         while let Ok(bytes) = self.rx.try_recv() {
             self.pcm_bytes.extend_from_slice(&bytes);
         }
+    }
+
+    fn ensure_pcm_contract(&mut self) -> Result<bool, DecoderError> {
+        if self.pcm_contract.is_some() {
+            return Ok(true);
+        }
+        let Some((header_bytes, contract)) = parse_wav_stream_header(&self.pcm_bytes, self.output)?
+        else {
+            return Ok(false);
+        };
+        self.pcm_bytes.drain(..header_bytes);
+        self.pcm_contract = Some(contract);
+        Ok(true)
     }
 
     fn take_planar_storage(&mut self, frame_count: usize) -> Vec<Vec<f32>> {
@@ -359,7 +602,13 @@ impl OpenWorkerDecoder {
     }
 
     fn take_block(&mut self, allow_short: bool) -> Result<Option<DecodedFrame>, DecoderError> {
-        let bytes_per_frame = self
+        if !self.ensure_pcm_contract()? {
+            return Ok(None);
+        }
+        let contract = self
+            .pcm_contract
+            .expect("PCM contract was established immediately above");
+        let bytes_per_frame = contract
             .decoded_channels
             .checked_mul(std::mem::size_of::<f32>())
             .ok_or(DecoderError::UnsupportedInput("worker frame size overflow"))?;
@@ -379,7 +628,7 @@ impl OpenWorkerDecoder {
         let mut planar = self.take_planar_storage(frame_count);
         for frame in 0..frame_count {
             let base = frame * bytes_per_frame;
-            for source_channel in 0..self.decoded_channels {
+            for source_channel in 0..contract.decoded_channels {
                 let at = base + source_channel * 4;
                 let sample = decode_worker_sample([
                     self.pcm_bytes[at],
@@ -387,7 +636,7 @@ impl OpenWorkerDecoder {
                     self.pcm_bytes[at + 2],
                     self.pcm_bytes[at + 3],
                 ])?;
-                let target_channel = self.channel_map[source_channel];
+                let target_channel = contract.channel_map[source_channel];
                 planar[target_channel][frame] = sample;
             }
         }
@@ -432,54 +681,129 @@ mod tests {
         }
     }
 
+    fn wav_header(channels: u16, mask: Option<u32>) -> Vec<u8> {
+        let mut fmt = Vec::new();
+        let block_align = channels * 4;
+        let byte_rate = 48_000u32 * u32::from(block_align);
+        if let Some(mask) = mask {
+            fmt.extend_from_slice(&WAVE_FORMAT_EXTENSIBLE.to_le_bytes());
+            fmt.extend_from_slice(&channels.to_le_bytes());
+            fmt.extend_from_slice(&48_000u32.to_le_bytes());
+            fmt.extend_from_slice(&byte_rate.to_le_bytes());
+            fmt.extend_from_slice(&block_align.to_le_bytes());
+            fmt.extend_from_slice(&32u16.to_le_bytes());
+            fmt.extend_from_slice(&22u16.to_le_bytes());
+            fmt.extend_from_slice(&32u16.to_le_bytes());
+            fmt.extend_from_slice(&mask.to_le_bytes());
+            fmt.extend_from_slice(&3u32.to_le_bytes());
+            fmt.extend_from_slice(&0x0010u16.to_le_bytes());
+            fmt.extend_from_slice(&0x0000u16.to_le_bytes());
+            fmt.extend_from_slice(&[0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B, 0x71]);
+        } else {
+            fmt.extend_from_slice(&WAVE_FORMAT_IEEE_FLOAT.to_le_bytes());
+            fmt.extend_from_slice(&channels.to_le_bytes());
+            fmt.extend_from_slice(&48_000u32.to_le_bytes());
+            fmt.extend_from_slice(&byte_rate.to_le_bytes());
+            fmt.extend_from_slice(&block_align.to_le_bytes());
+            fmt.extend_from_slice(&32u16.to_le_bytes());
+            fmt.extend_from_slice(&0u16.to_le_bytes());
+        }
+
+        let mut wav = Vec::new();
+        wav.extend_from_slice(b"RIFF");
+        wav.extend_from_slice(&u32::MAX.to_le_bytes());
+        wav.extend_from_slice(b"WAVE");
+        wav.extend_from_slice(b"fmt ");
+        wav.extend_from_slice(&(fmt.len() as u32).to_le_bytes());
+        wav.extend_from_slice(&fmt);
+        if fmt.len() & 1 != 0 {
+            wav.push(0);
+        }
+        wav.extend_from_slice(b"data");
+        wav.extend_from_slice(&u32::MAX.to_le_bytes());
+        wav
+    }
+
     #[test]
-    fn truehd_uses_explicit_demuxer_and_semantic_seven_one_bed() {
+    fn worker_command_preserves_source_channel_layout() {
         let cmd =
             build_worker_command(CodecKind::TrueHd, Encapsulation::Elementary, fmt(12)).unwrap();
         assert!(cmd.args.windows(2).any(|p| p == ["-f", "truehd"]));
-        assert_eq!(cmd.decoded_channels, 8);
-        assert!(cmd.args.windows(2).any(|p| p == ["-ac", "8"]));
-        assert!(cmd
-            .args
-            .windows(2)
-            .any(|p| p == ["-channel_layout", "7.1"]));
-        assert_eq!(cmd.channel_map, vec![0, 1, 2, 3, 6, 7, 4, 5]);
+        assert!(cmd.args.windows(2).any(|p| p == ["-f", "wav"]));
+        assert!(cmd.args.windows(2).any(|p| p == ["-rf64", "never"]));
+        assert!(cmd.args.windows(2).any(|p| p == ["-map_metadata", "-1"]));
+        assert!(!cmd.args.iter().any(|arg| arg == "-ac"));
+        assert!(!cmd.args.iter().any(|arg| arg == "-channel_layout"));
+        assert_eq!(cmd.decoded_channels, 0);
+        assert!(cmd.channel_map.is_empty());
     }
 
     #[test]
-    fn five_one_worker_requests_side_surrounds_for_aurora() {
-        let cmd = build_worker_command(CodecKind::Flac, Encapsulation::Elementary, fmt(6)).unwrap();
-        assert!(cmd
-            .args
-            .windows(2)
-            .any(|p| p == ["-channel_layout", "5.1(side)"]));
-        assert_eq!(cmd.channel_map, vec![0, 1, 2, 3, 4, 5]);
+    fn wav_side_five_one_maps_directly_to_aurora_surrounds() {
+        let wav = wav_header(6, Some(0x0000_060F));
+        let (_, contract) = parse_wav_stream_header(&wav, fmt(12)).unwrap().unwrap();
+        assert_eq!(contract.decoded_channels, 6);
+        assert_eq!(&contract.channel_map[..6], &[0, 1, 2, 3, 4, 5]);
     }
 
     #[test]
-    fn mono_worker_uses_explicit_mono_layout() {
-        let cmd = build_worker_command(CodecKind::Flac, Encapsulation::Elementary, fmt(1)).unwrap();
-        assert!(cmd
-            .args
-            .windows(2)
-            .any(|p| p == ["-channel_layout", "mono"]));
-        assert_eq!(cmd.decoded_channels, 1);
-        assert_eq!(cmd.channel_map, vec![0]);
+    fn wav_back_five_one_maps_to_aurora_back_channels() {
+        let wav = wav_header(6, Some(0x0000_003F));
+        let (_, contract) = parse_wav_stream_header(&wav, fmt(12)).unwrap().unwrap();
+        assert_eq!(&contract.channel_map[..6], &[0, 1, 2, 3, 6, 7]);
     }
 
     #[test]
-    fn ambiguous_worker_width_fails_closed() {
-        let error = build_worker_command(CodecKind::Flac, Encapsulation::Elementary, fmt(7))
-            .unwrap_err();
-        assert!(matches!(error, DecoderError::UnsupportedInput(_)));
+    fn wav_seven_one_reorders_back_then_side_into_aurora_order() {
+        let wav = wav_header(8, Some(0x0000_063F));
+        let (_, contract) = parse_wav_stream_header(&wav, fmt(12)).unwrap().unwrap();
+        assert_eq!(
+            &contract.channel_map[..8],
+            &[0, 1, 2, 3, 6, 7, 4, 5]
+        );
+    }
+
+    #[test]
+    fn wav_plain_mono_and_stereo_have_unambiguous_semantics() {
+        let mono = wav_header(1, None);
+        let (_, mono_contract) = parse_wav_stream_header(&mono, fmt(12)).unwrap().unwrap();
+        assert_eq!(mono_contract.channel_map[0], 2);
+
+        let stereo = wav_header(2, None);
+        let (_, stereo_contract) = parse_wav_stream_header(&stereo, fmt(12)).unwrap().unwrap();
+        assert_eq!(&stereo_contract.channel_map[..2], &[0, 1]);
+    }
+
+    #[test]
+    fn multichannel_wav_without_mask_fails_closed() {
+        let wav = wav_header(6, None);
+        assert!(matches!(
+            parse_wav_stream_header(&wav, fmt(12)),
+            Err(DecoderError::UnsupportedInput(_))
+        ));
+    }
+
+    #[test]
+    fn wav_unknown_speaker_role_fails_closed() {
+        // FL + FR + front-left-of-center. Aurora has no semantic output role for
+        // FLC, so accepting this by index would be an incorrect speaker mapping.
+        let wav = wav_header(3, Some(0x0000_0043));
+        assert!(matches!(
+            parse_wav_stream_header(&wav, fmt(12)),
+            Err(DecoderError::UnsupportedInput(_))
+        ));
+    }
+
+    #[test]
+    fn fragmented_wav_header_waits_for_more_bytes() {
+        let wav = wav_header(8, Some(0x0000_063F));
+        assert_eq!(parse_wav_stream_header(&wav[..20], fmt(12)).unwrap(), None);
     }
 
     #[test]
     fn ogg_opus_keeps_container_probe() {
-        let cmd = build_worker_command(CodecKind::Opus, Encapsulation::Ogg, fmt(2)).unwrap();
+        let cmd = build_worker_command(CodecKind::Opus, Encapsulation::Ogg, fmt(12)).unwrap();
         assert!(!cmd.args.windows(2).any(|p| p == ["-f", "opus"]));
-        assert_eq!(cmd.decoded_channels, 2);
-        assert_eq!(cmd.channel_map, vec![0, 1]);
     }
 
     #[test]
