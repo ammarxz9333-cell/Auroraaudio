@@ -353,10 +353,18 @@ pub enum CoreError {
         /// Expected sample count from `frame_count`.
         expected: usize,
     },
+    /// A PCM sample is NaN or infinite and must never enter downstream DSP.
+    #[error("audio block channel {channel} frame {frame} contains a non-finite PCM sample")]
+    NonFiniteAudioSample {
+        /// Channel containing the invalid sample.
+        channel: usize,
+        /// Frame index containing the invalid sample.
+        frame: usize,
+    },
 }
 
 impl AudioBlock {
-    /// Verifies that every planar channel has exactly `frame_count` samples.
+    /// Verifies that every planar channel has exactly `frame_count` finite samples.
     pub fn validate(&self) -> Result<(), CoreError> {
         for (channel, samples) in self.channels.iter().enumerate() {
             if samples.len() != self.frame_count {
@@ -365,6 +373,9 @@ impl AudioBlock {
                     actual: samples.len(),
                     expected: self.frame_count,
                 });
+            }
+            if let Some(frame) = samples.iter().position(|sample| !sample.is_finite()) {
+                return Err(CoreError::NonFiniteAudioSample { channel, frame });
             }
         }
 
@@ -412,5 +423,24 @@ mod tests {
             serde_json::from_str::<ChannelRole>("\"TBR\"").unwrap(),
             ChannelRole::TopRearRight
         );
+    }
+
+    #[test]
+    fn audio_block_rejects_non_finite_pcm() {
+        for bad in [f32::NAN, f32::INFINITY, f32::NEG_INFINITY] {
+            let block = AudioBlock {
+                channels: vec![vec![0.0, bad, 0.0]],
+                frame_count: 3,
+                presentation_time_seconds: 0.0,
+                discontinuity: false,
+            };
+            assert_eq!(
+                block.validate(),
+                Err(CoreError::NonFiniteAudioSample {
+                    channel: 0,
+                    frame: 1,
+                })
+            );
+        }
     }
 }
