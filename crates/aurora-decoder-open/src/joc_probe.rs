@@ -1,112 +1,81 @@
-//! Standards-derived E-AC-3 JOC admission probe.
+//! OpenJOC-backed E-AC-3 JOC admission probe.
 //!
-//! JOC is never inferred from the `Atmos` label, file extension, or random
-//! compressed bytes. A frame is admitted only when:
-//! 1. Annex-E BSI carries EC-3 Extension Type A in `addbsi`;
-//! 2. the declared audio-block `skipfld` can be decoded at the real bit cursor;
-//! 3. one skip field is a structurally valid EMDF container containing matching
-//!    OAMD + JOC payloads accepted by the open TS 103 420 parser.
+//! Aurora does not infer JOC/Atmos from IEC 61937 data type 0x15, labels, file
+//! extensions, or random compressed bytes. Complete E-AC-3 access units are
+//! classified by OpenJOC's own parser and positive-admission rules. OxideAV is
+//! retained here only for a lightweight Annex-E header cross-check when the
+//! OpenJOC classifier reports invalid/unsupported input; it no longer decodes
+//! audio blocks merely to decide whether OpenJOC may run.
 
-use oxideav_ac3::audblk::Ac3State;
-use oxideav_ac3::eac3::{audfrm, bsi, dsp, joc};
+use openjoc_ffmpeg::{JocClassification, classify_complete_access_unit};
+use oxideav_ac3::eac3::{bsi, joc};
 use oxideav_core::bits::BitReader;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JocAdmission {
-    /// The frame is ordinary E-AC-3 or has no Extension Type A signal.
+    /// The access unit is ordinary E-AC-3 or has no positively admitted JOC.
     NotJoc,
-    /// Extension Type A exists but the EMDF/OAMD/JOC payload is malformed,
-    /// unsupported, or cannot be reached safely in this frame.
+    /// Extension Type A appears to be signalled, but OpenJOC rejected the
+    /// complete access unit as invalid or unsupported.
     SignalledButInvalid,
-    /// Extension Type A + a valid matching EMDF OAMD/JOC container were parsed.
+    /// OpenJOC positively classified the complete access unit as JOC.
     Validated,
 }
 
-/// Stateful admission probe. The DSP state persists because E-AC-3 exponent,
-/// coupling and overlap state can legally reuse information across frames.
-pub struct JocAdmissionProbe {
-    state: Ac3State,
-    skip_fields: Vec<Vec<u8>>,
-}
-
-impl Default for JocAdmissionProbe {
-    fn default() -> Self {
-        Self {
-            state: Ac3State::new(),
-            skip_fields: Vec::new(),
-        }
-    }
-}
+/// Stateless compatibility wrapper around OpenJOC's complete-AU classifier.
+/// Keeping this type preserves Aurora's existing decoder API while removing the
+/// previous duplicate OxideAV audblk decode/allocation from the realtime path.
+#[derive(Debug, Default)]
+pub struct JocAdmissionProbe;
 
 impl JocAdmissionProbe {
-    pub fn new() -> Self {
-        Self::default()
+    pub const fn new() -> Self {
+        Self
     }
 
-    pub fn reset(&mut self) {
-        self.state = Ac3State::new();
-        self.skip_fields.clear();
+    pub fn reset(&mut self) {}
+
+    /// Classify one complete E-AC-3 access unit. `Validated` is only an
+    /// admission result; Aurora still claims JOC/Atmos playback only after the
+    /// OpenJOC speaker renderer successfully accepts and renders the unit.
+    pub fn inspect(&mut self, access_unit: &[u8]) -> JocAdmission {
+        match classify_complete_access_unit(access_unit) {
+            JocClassification::ConfirmedJoc => JocAdmission::Validated,
+            JocClassification::ConfirmedNonJoc => JocAdmission::NotJoc,
+            JocClassification::InvalidOrUnsupported | JocClassification::Unknown => {
+                if extension_type_a_candidate(access_unit) {
+                    JocAdmission::SignalledButInvalid
+                } else {
+                    JocAdmission::NotJoc
+                }
+            }
+        }
+    }
+}
+
+/// Best-effort header-only cross-check used only to preserve Aurora's existing
+/// `SignalledButInvalid` diagnostic. This intentionally does not decode audio
+/// blocks and is not allowed to positively admit JOC.
+fn extension_type_a_candidate(access_unit: &[u8]) -> bool {
+    if access_unit.len() < 6 || access_unit[0..2] != [0x0B, 0x77] {
+        return false;
     }
 
-    /// Validate one independent E-AC-3 syncframe. Concatenated dependent
-    /// substreams are ignored here; their compatibility decode remains owned by
-    /// the native E-AC-3 decoder.
-    pub fn inspect(&mut self, frame: &[u8]) -> JocAdmission {
-        if frame.len() < 6 || frame[0..2] != [0x0B, 0x77] {
-            return JocAdmission::NotJoc;
-        }
-        let mut br = BitReader::new(&frame[2..]);
-        let Ok(bsi) = bsi::parse_with(&mut br) else {
-            return JocAdmission::NotJoc;
-        };
-        if !matches!(
-            bsi.strmtyp,
-            bsi::StreamType::Independent | bsi::StreamType::Ac3Convert
-        ) {
-            return JocAdmission::NotJoc;
-        }
-        let Some(addbsi) = bsi.addbsi.as_ref() else {
-            return JocAdmission::NotJoc;
-        };
-        let signal = match joc::parse_ec3_extension_type_a(addbsi.payload()) {
-            Ok(Some(signal)) => signal,
-            Ok(None) => return JocAdmission::NotJoc,
-            Err(_) => return JocAdmission::SignalledButInvalid,
-        };
+    let mut br = BitReader::new(&access_unit[2..]);
+    let Ok(bsi) = bsi::parse_with(&mut br) else {
+        return false;
+    };
+    let Some(addbsi) = bsi.addbsi.as_ref() else {
+        return false;
+    };
 
-        let Ok(audfrm) = audfrm::parse_with(&mut br, &bsi) else {
-            return JocAdmission::SignalledButInvalid;
-        };
-        let sample_count = usize::from(bsi.num_blocks)
-            .saturating_mul(256)
-            .saturating_mul(usize::from(bsi.nchans));
-        if sample_count == 0 || sample_count > 1536 * 16 {
-            return JocAdmission::SignalledButInvalid;
-        }
-        let mut scratch = vec![0.0_f32; sample_count];
-        self.skip_fields.clear();
-        if dsp::decode_indep_audblks(
-            &bsi,
-            &audfrm,
-            &mut br,
-            &mut self.state,
-            &mut scratch,
-            &mut self.skip_fields,
-        )
-        .is_err()
-        {
-            return JocAdmission::SignalledButInvalid;
-        }
-
-        if self
-            .skip_fields
-            .iter()
-            .any(|container| joc::parse_joc_emdf(container, signal).is_ok())
-        {
-            JocAdmission::Validated
-        } else {
-            JocAdmission::SignalledButInvalid
-        }
+    match joc::parse_ec3_extension_type_a(addbsi.payload()) {
+        Ok(Some(_)) => true,
+        Ok(None) => false,
+        // Preserve the old diagnostic posture: malformed addbsi that reaches
+        // the Type-A parser is treated as a signalled-but-invalid candidate,
+        // never as validated JOC.
+        Err(_) => true,
     }
 }
 
@@ -127,5 +96,12 @@ mod tests {
             probe.inspect(&[0x0B, 0x77, 0, 0, 0, 16 << 3]),
             JocAdmission::Validated
         );
+    }
+
+    #[test]
+    fn reset_is_safe_for_stateless_probe() {
+        let mut probe = JocAdmissionProbe::new();
+        probe.reset();
+        assert_eq!(probe.inspect(b"not eac3"), JocAdmission::NotJoc);
     }
 }
