@@ -18,7 +18,9 @@ use aurora_decoder_engine::{AuroraDecoderEngine, EngineConfig};
 use aurora_dsp_basic::output::OutputDspConfig;
 use aurora_encoded_input::EncodedInputConfig;
 use aurora_encoded_runtime::{AuroraPlaybackRuntime, PlaybackBatch, SpeakerOutputStage};
-use aurora_iec61937::{BurstParser, CarrierWordHalf, CodecFilter};
+use aurora_iec61937::{
+    BurstParser, CarrierWordHalf, CodecFilter, S32LeCarrierNormalizer,
+};
 use aurora_sim_source::latency::{FixedLatencyHistogram, StageLatencyBook, ValidationStage};
 use aurora_sim_source::{
     EAC3_BURST_PERIOD_BYTES, EAC3_CARRIER_BYTES_PER_MS, Eac3AccessUnitFramer,
@@ -29,6 +31,7 @@ use clap::{Args as ClapArgs, Parser, Subcommand};
 const SAMPLE_RATE: u32 = 48_000;
 const CHANNELS: usize = 12;
 const BLOCK_FRAMES: usize = 40;
+const MAX_VALIDATION_OUTPUT_FRAMES: usize = 2_048;
 const DEFAULT_BITRATE_KBPS: u32 = 384;
 const EAC3_PERIOD: Duration = Duration::from_millis(32);
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
@@ -281,6 +284,7 @@ fn run_latency_report(args: LatencyArgs) -> Result<()> {
         bail!("iterations must be greater than zero");
     }
     let units = load_access_units(args.input.as_deref(), args.seconds, args.bitrate_kbps)?;
+    let mut normalizer = S32LeCarrierNormalizer::new(2, CarrierWordHalf::Low)?;
     let mut parser = BurstParser::new(CodecFilter::Eac3);
     let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
     engine.configure(output_format())?;
@@ -288,16 +292,27 @@ fn run_latency_report(args: LatencyArgs) -> Result<()> {
     let mut stages = StageLatencyBook::new();
     let mut software_chain = FixedLatencyHistogram::new();
     let mut period = [0_u8; EAC3_BURST_PERIOD_BYTES];
+    let mut words = vec![0_i32; EAC3_BURST_PERIOD_BYTES / 2];
+    let mut carrier_scratch = Vec::with_capacity(EAC3_BURST_PERIOD_BYTES);
+    let mut sink_scratch = vec![0.0_f32; CHANNELS * MAX_VALIDATION_OUTPUT_FRAMES];
     let mut decoded_frames = 0_u64;
 
     for _ in 0..args.iterations {
         for unit in &units {
             write_eac3_period(unit, &mut period)
                 .map_err(|error| anyhow::anyhow!("failed building validation carrier: {error}"))?;
+            carrier_to_low_s32(&period, &mut words)?;
             let chain_start = Instant::now();
 
+            let capture_start = Instant::now();
+            normalizer.push_s32_words_into(&words, &mut carrier_scratch)?;
+            stages.record(ValidationStage::Capture, capture_start.elapsed());
+            if carrier_scratch != period {
+                bail!("simulated S32 capture normalization changed IEC61937 carrier bytes");
+            }
+
             let parser_start = Instant::now();
-            let observations = parser.push(&period);
+            let observations = parser.push(&carrier_scratch);
             stages.record(ValidationStage::Parser, parser_start.elapsed());
             if observations.len() != 1 || observations[0].burst.payload != *unit {
                 bail!("IEC61937 parser failed byte-exact one-AU latency validation");
@@ -310,6 +325,7 @@ fn run_latency_report(args: LatencyArgs) -> Result<()> {
                 &mut engine,
                 &mut output,
                 &mut stages,
+                &mut sink_scratch,
                 first,
             )? as u64);
 
@@ -330,8 +346,10 @@ fn run_latency_report(args: LatencyArgs) -> Result<()> {
         &mut engine,
         &mut output,
         &mut stages,
+        &mut sink_scratch,
         None,
     )? as u64);
+    normalizer.finish()?;
     parser.finish()?;
 
     println!("Aurora latency report (headless software isolation)");
@@ -358,7 +376,7 @@ fn run_latency_report(args: LatencyArgs) -> Result<()> {
         total.samples, total.p50_us, total.p99_us, total.max_us, total.overflow_samples
     );
     println!(
-        "PASS latency-report access_units={} iterations={} decoded_frames={} capture=NOT_MEASURED output_sink=NOT_MEASURED",
+        "PASS latency-report access_units={} iterations={} decoded_frames={} capture=SIMULATED_S32_NORMALIZE output=SIMULATED_PREALLOCATED_COPY physical_io=NOT_MEASURED",
         units.len(),
         args.iterations,
         decoded_frames
@@ -370,6 +388,7 @@ fn drain_decoder_frames(
     engine: &mut AuroraDecoderEngine,
     output: &mut SpeakerOutputStage,
     stages: &mut StageLatencyBook,
+    sink_scratch: &mut [f32],
     first: Option<DecodedFrame>,
 ) -> Result<usize> {
     let mut emitted = 0_usize;
@@ -387,6 +406,17 @@ fn drain_decoder_frames(
             {
                 bail!("speaker postprocessor emitted invalid canonical PCM");
             }
+            let samples = speaker.interleaved_f32.len();
+            if samples > sink_scratch.len() {
+                bail!(
+                    "speaker output block requires {samples} samples; validation sink capacity is {}",
+                    sink_scratch.len()
+                );
+            }
+            let sink_start = Instant::now();
+            sink_scratch[..samples].copy_from_slice(&speaker.interleaved_f32);
+            std::hint::black_box(sink_scratch[0]);
+            stages.record(ValidationStage::Output, sink_start.elapsed());
             output.recycle_output_frame(speaker);
             engine.recycle_decoded_frame(frame);
             emitted = emitted.saturating_add(1);
@@ -872,7 +902,6 @@ fn rss_bytes_linux() -> Option<u64> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aurora_iec61937::S32LeCarrierNormalizer;
 
     #[test]
     fn channel_mask_covers_exact_canonical_roles() {
@@ -926,6 +955,28 @@ mod tests {
             aligned_mid_payload_cut_words(1_536, EAC3_BURST_PERIOD_BYTES / 2).unwrap();
         assert!(cut_words < EAC3_BURST_PERIOD_BYTES / 2);
         assert_eq!(cut_words % 2, 0);
+    }
+
+    #[test]
+    fn ordinary_ffmpeg_eac3_does_not_promote_transport_type_to_joc() {
+        let units = generate_access_units(0.128, DEFAULT_BITRATE_KBPS).unwrap();
+        let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
+        engine.configure(output_format()).unwrap();
+        for unit in units {
+            let mut frame = engine.decode_complete_eac3_access_unit(&unit).unwrap();
+            while let Some(decoded) = frame {
+                engine.recycle_decoded_frame(decoded);
+                frame = engine.decode_chunk(&[]).unwrap();
+            }
+        }
+        engine.flush_pending().unwrap();
+        while let Some(decoded) = engine.decode_chunk(&[]).unwrap() {
+            engine.recycle_decoded_frame(decoded);
+        }
+        assert!(
+            !engine.joc_health().codec_classified_joc,
+            "ordinary FFmpeg E-AC-3 must not be promoted to JOC from IEC61937 type 0x15"
+        );
     }
 
     #[test]
