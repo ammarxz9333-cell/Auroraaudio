@@ -5,7 +5,7 @@
 //! transport detection, output timing, block sizing and the PCM/object contract;
 //! FFmpeg only performs codec decode/resample for open codec families.
 
-use std::io::{Read, Write};
+use std::io::{self, Read, Write};
 use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::thread::{self, JoinHandle};
@@ -129,7 +129,7 @@ pub struct OpenWorkerDecoder {
     child: Child,
     stdin: Option<ChildStdin>,
     rx: Receiver<Vec<u8>>,
-    reader: Option<JoinHandle<()>>,
+    reader: Option<JoinHandle<io::Result<()>>>,
     pcm_bytes: Vec<u8>,
     emitted_frames: u64,
     discontinuity: bool,
@@ -148,9 +148,11 @@ impl OpenWorkerDecoder {
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
             .spawn()
-            .map_err(|_| DecoderError::Unavailable(
-                "FFmpeg open-worker executable is not installed or not executable",
-            ))?;
+            .map_err(|_| {
+                DecoderError::Unavailable(
+                    "FFmpeg open-worker executable is not installed or not executable",
+                )
+            })?;
         let stdin = child.stdin.take().ok_or(DecoderError::Unavailable(
             "FFmpeg worker stdin pipe unavailable",
         ))?;
@@ -160,17 +162,17 @@ impl OpenWorkerDecoder {
         let (tx, rx) = mpsc::channel();
         let reader = thread::Builder::new()
             .name("aurora-open-decoder-ffmpeg".into())
-            .spawn(move || {
+            .spawn(move || -> io::Result<()> {
                 let mut chunk = vec![0_u8; 32 * 1024];
                 loop {
                     match stdout.read(&mut chunk) {
-                        Ok(0) => break,
+                        Ok(0) => return Ok(()),
                         Ok(count) => {
                             if tx.send(chunk[..count].to_vec()).is_err() {
-                                break;
+                                return Ok(());
                             }
                         }
-                        Err(_) => break,
+                        Err(error) => return Err(error),
                     }
                 }
             })
@@ -209,9 +211,9 @@ impl OpenWorkerDecoder {
             stdin
                 .write_all(bytes)
                 .and_then(|_| stdin.flush())
-                .map_err(|e| DecoderError::ExternalProcess(format!(
-                    "FFmpeg worker input write failed: {e}"
-                )))?;
+                .map_err(|e| {
+                    DecoderError::ExternalProcess(format!("FFmpeg worker input write failed: {e}"))
+                })?;
         }
         self.collect_stdout();
         self.take_block(false)
@@ -224,7 +226,9 @@ impl OpenWorkerDecoder {
     }
 
     /// Close input, wait for FFmpeg to flush codec delay, then return all final
-    /// PCM blocks including a short final block if present.
+    /// PCM blocks including a short final block if present. A successful child
+    /// exit is accepted only when the stdout reader also ended cleanly and the
+    /// raw F32 stream ends on a complete PCM-frame boundary.
     pub fn finish(&mut self) -> Result<Vec<DecodedFrame>, DecoderError> {
         self.stdin.take();
         let status = self
@@ -232,7 +236,19 @@ impl OpenWorkerDecoder {
             .wait()
             .map_err(|e| DecoderError::ExternalProcess(format!("FFmpeg wait failed: {e}")))?;
         if let Some(reader) = self.reader.take() {
-            let _ = reader.join();
+            match reader.join() {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    return Err(DecoderError::ExternalProcess(format!(
+                        "FFmpeg stdout reader failed: {error}"
+                    )));
+                }
+                Err(_) => {
+                    return Err(DecoderError::ExternalProcess(
+                        "FFmpeg stdout reader thread panicked".to_owned(),
+                    ));
+                }
+            }
         }
         self.collect_stdout();
         if !status.success() {
@@ -243,6 +259,12 @@ impl OpenWorkerDecoder {
         let mut frames = Vec::new();
         while let Some(frame) = self.take_block(true)? {
             frames.push(frame);
+        }
+        if !self.pcm_bytes.is_empty() {
+            return Err(DecoderError::Decode(format!(
+                "FFmpeg worker ended with {} trailing byte(s) that do not form a complete PCM frame",
+                self.pcm_bytes.len()
+            )));
         }
         Ok(frames)
     }
@@ -330,8 +352,8 @@ mod tests {
 
     #[test]
     fn truehd_uses_explicit_demuxer_and_bounded_bed_channels() {
-        let cmd = build_worker_command(CodecKind::TrueHd, Encapsulation::Elementary, fmt(12))
-            .unwrap();
+        let cmd =
+            build_worker_command(CodecKind::TrueHd, Encapsulation::Elementary, fmt(12)).unwrap();
         assert!(cmd.args.windows(2).any(|p| p == ["-f", "truehd"]));
         assert_eq!(cmd.decoded_channels, 8);
         assert!(cmd.args.windows(2).any(|p| p == ["-ac", "8"]));
