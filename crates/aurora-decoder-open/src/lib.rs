@@ -346,18 +346,13 @@ impl UniversalOpenDecoder {
             Ok(()) => {
                 self.codec = Some(CodecKind::Eac3Joc);
                 self.last_joc_error = None;
-                let info = {
-                    let renderer = self
-                        .joc_renderer
-                        .as_mut()
-                        .expect("renderer exists after successful JOC render");
-                    let info = Self::remember_renderer_info(renderer);
-                    while let Some(frame) = renderer.take_block() {
-                        self.pending.push_back(frame);
-                    }
-                    info
-                };
-                self.last_joc_render_info = Some(info);
+                let renderer = self
+                    .joc_renderer
+                    .as_mut()
+                    .expect("renderer exists after successful JOC render");
+                while let Some(frame) = renderer.take_block() {
+                    self.pending.push_back(frame);
+                }
                 Ok(())
             }
             Err(error) => {
