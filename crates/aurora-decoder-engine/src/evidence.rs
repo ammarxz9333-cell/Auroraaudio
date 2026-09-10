@@ -63,11 +63,11 @@ pub const fn evidence_for(backend: BackendId) -> BackendEvidence {
         BackendId::OxideAc4 => integrated(backend, true),
         BackendId::OxideDtsCore => integrated(backend, true),
         BackendId::FfmpegDtsHd => integrated(backend, true),
-        BackendId::IamfRust => integrated(backend, true),
         BackendId::FfmpegWorker => integrated(backend, true),
         BackendId::TrueHdNative
         | BackendId::OxideAac
         | BackendId::OxideOpus
+        | BackendId::IamfRust
         | BackendId::LibIamfReference
         | BackendId::IamfTools
         | BackendId::LibMpegH
@@ -87,7 +87,6 @@ mod tests {
             BackendId::OxideAc4,
             BackendId::OxideDtsCore,
             BackendId::FfmpegDtsHd,
-            BackendId::IamfRust,
             BackendId::FfmpegWorker,
         ] {
             let evidence = evidence_for(backend);
@@ -98,9 +97,10 @@ mod tests {
     }
 
     #[test]
-    fn best_of_breed_reference_candidates_do_not_fake_integration() {
+    fn unwired_or_reference_candidates_do_not_fake_integration() {
         for backend in [
             BackendId::TrueHdNative,
+            BackendId::IamfRust,
             BackendId::LibIamfReference,
             BackendId::IamfTools,
             BackendId::LibMpegH,
