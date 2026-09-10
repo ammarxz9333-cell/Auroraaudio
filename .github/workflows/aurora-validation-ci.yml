@@ -123,6 +123,37 @@ jobs:
           --bin aurora-sim --
           latency-report --seconds 0.128 --iterations 1
 
+      - name: Pinned OpenJOC positive JOC validation
+        env:
+          OPENJOC_REV: e7e03bc834ac0483770933cdc50ac058b100d1e2
+          OPENJOC_FIXTURE_SHA256: 54b48754b915cef97c13752de5eace4a219da6599cdfcf26f92b5b6fffc6e3e4
+          AURORA_OPENJOC_SYNTHETIC_FIXTURE: /tmp/openjoc-joc.ec3
+        run: |
+          curl --fail --location --retry 3 \
+            --output "$AURORA_OPENJOC_SYNTHETIC_FIXTURE" \
+            "https://raw.githubusercontent.com/chyinan/OpenJOC/$OPENJOC_REV/crates/openjoc-wasm/testdata/joc.ec3"
+          actual_sha256="$(sha256sum "$AURORA_OPENJOC_SYNTHETIC_FIXTURE" | awk '{print $1}')"
+          test "$actual_sha256" = "$OPENJOC_FIXTURE_SHA256" || {
+            echo "OpenJOC fixture SHA-256 mismatch: expected $OPENJOC_FIXTURE_SHA256 got $actual_sha256" >&2
+            exit 1
+          }
+
+          cargo test --locked -p aurora-decoder-open \
+            --test openjoc_synthetic_fixture \
+            synthetic_openjoc_fixture_renders_aurora_7_1_4 \
+            -- --ignored --exact
+          cargo test --locked -p aurora-direct-earc-decoder \
+            --test openjoc_iec_fixture \
+            synthetic_joc_survives_full_direct_earc_iec61937_chain \
+            -- --ignored --exact
+
+          cargo run --quiet --locked -p aurora-cli \
+            --no-default-features --features validation \
+            --bin aurora-sim -- \
+            latency-report --input "$AURORA_OPENJOC_SYNTHETIC_FIXTURE" --iterations 1 \
+            > /tmp/openjoc-latency.tsv
+          grep -Eq '^joc_render[[:space:]]+[1-9][0-9]*' /tmp/openjoc-latency.tsv
+
       - name: Stress smoke
         run: >-
           cargo run --quiet --locked -p aurora-cli
