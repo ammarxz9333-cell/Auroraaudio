@@ -89,36 +89,55 @@ has checked finalization: a partial syncword, header or payload is surfaced as a
 decoder error instead of being silently discarded. E-AC-3/JOC finite input is
 separately finalized by the complete-access-unit assembler; transport-bounded
 IEC61937 E-AC-3 additionally requires exactly one complete validated AU before
-bed/JOC decode. No partial E-AC-3 AU is accepted merely because a local bed
-framer is flushed.
+bed/JOC decode. The bed fallback now also runs its local E-AC-3 framer through
+`finish_checked()`, with regression coverage for truncated syncword, header and
+parseable frame payload, so a finite partial bed frame cannot be accepted or
+silently discarded by a plain `flush()`.
 
 Transport-format changes retire the previous decoder before backend reset. That
 preserves final JOC/worker PCM instead of silently dropping it. Native DTS and
-AC-4 queues also release real short PCM tails once their compressed staging is
-empty while retaining the tail when a compressed frame is genuinely incomplete.
-Direct eARC owns one outer presentation clock: a codec-only AC-3/E-AC-3/JOC
-transition keeps monotonic PTS, while a real transport discontinuity explicitly
-starts a new presentation epoch.
+AC-4 finite retirement now marks the stream final, emits already-decoded full or
+short PCM first, and then reports a remaining sync/header/frame prefix as a hard
+truncation error rather than losing it at reset. Direct eARC owns one outer
+presentation clock: a codec-only AC-3/E-AC-3/JOC transition keeps monotonic PTS,
+while a real transport discontinuity explicitly starts a new presentation epoch.
 
-OpenJOC speaker PCM now has bounded planar-buffer recycling. Once a frame has
-been copied/interleaved through the canonical speaker DSP, its planar channel Vec
-storage is returned through AuroraDecoderEngine to the active OpenJOC renderer.
-The hardware-facing interleaved SpeakerOutputFrame storage is also pooled with a
-bounded size/count policy and returned after the sink has consumed each frame in
-threaded native eARC, stdin fixture and legacy USB execution paths. Native ALSA
-output separately reuses its F32-to-S32 staging buffer. These changes remove the
-known steady-state per-block Vec allocation patterns from those boundaries after
-warm-up; target profiling is still required before claiming the complete decode-
-to-sink path is allocation-free or realtime-safe under production load.
+Planar PCM storage now has bounded recycling across all three open decoder paths
+used by the product/runtime boundary: OpenJOC speaker rendering, native
+AC-3/E-AC-3 bed decode and the FFmpeg compatibility worker. Native canonical
+AC-3/E-AC-3 conversion writes OxideAV S16 directly into reusable 7.1.4 planes,
+avoiding the previous temporary source-planar plus zero-extension allocations.
+Once speaker DSP has copied/interleaved a decoded frame, its planar storage is
+returned through AuroraDecoderEngine to the active reusable backend. The
+hardware-facing interleaved SpeakerOutputFrame storage is separately pooled and
+returned after sink consumption in threaded native eARC, stdin fixture and
+legacy USB paths. Native ALSA output also reuses its F32-to-S32 staging buffer.
+These changes remove the known per-block allocation patterns at those boundaries
+after warm-up; owned batch vectors, codec-internal allocations and other runtime
+work still require target measurement, so the complete decode-to-sink path is
+not claimed allocation-free or realtime-safe solely from source inspection.
 
-The FFmpeg compatibility worker now declares its output channel layout explicitly
-and remaps semantic speaker lanes into Aurora canonical order. In particular,
-FFmpeg native 7.1 raw PCM order `FL FR FC LFE BL BR SL SR` is mapped to Aurora
-`FL FR FC LFE SL SR SBL SBR`; unsupported intermediate channel widths fail closed
-instead of silently assigning an ambiguous speaker order. This matters for
-TrueHD/DTS-HD and other compatibility-bed fallbacks even though it is not the
-primary DD+/JOC product path. Exact-head CI must still execute the pinned runtime
-FFmpeg version before this compatibility fallback is called validated.
+The FFmpeg compatibility worker no longer forces Aurora's twelve-channel target
+into `-ac 8 -channel_layout 7.1`. That policy could silently rematrix a stereo or
+5.1 source before Aurora observed its real speaker semantics. FFmpeg now preserves
+its decoded source channel layout and emits self-describing F32 WAV. Aurora parses
+and bounds the RIFF/WAVE header, validates rate, sample width, block alignment,
+full IEEE-float WAVE_FORMAT_EXTENSIBLE GUID and channel-mask population, then maps
+only known speaker-mask roles into canonical Aurora lanes. Plain mono/stereo are
+accepted without a mask because their order is unambiguous; multichannel output
+without a channel mask, a mismatched mask/count or an unsupported speaker role
+fails closed. Known 5.1 side (`0x60f`), 5.1 back (`0x3f`) and 7.1 (`0x63f`) masks
+therefore retain their actual side/back semantics instead of being coerced into
+one guessed bed. The parser also tolerates bounded unknown/padded RIFF header
+chunks such as FFmpeg's LIST metadata chunk without weakening the format checks.
+
+A development-host check against FFmpeg 7.1.5 confirmed the expected emitted WAV
+contracts for mono, stereo, 5.1, 5.1(side) and 7.1, including the multichannel
+WAVE_FORMAT_EXTENSIBLE masks above. Separately, the `oxideav-ac3` source at the
+0.0.11 release used by Aurora was checked to confirm that 3/2+LFE PCM is emitted
+in WAVE order `FL FR FC LFE Ls Rs`, matching Aurora's first six canonical lanes.
+These checks support the mapping policy but do not replace an exact-head Cargo/CI
+run of Aurora itself.
 
 IEC61937 data type `0x15` remains transport evidence only. It establishes an
 E-AC-3 burst classification, not Atmos/JOC. Software JOC evidence requires
@@ -141,16 +160,15 @@ short-lived artifact before the final committed-lockfile gate. This provides an
 exact recovery path once a GitHub-hosted runner actually starts.
 
 As of the current 2026-09-10 branch series, GitHub Actions jobs for this
-repository are still failing before step execution. Direct eARC Ingest CI run
-`34521641699` created job `103020327496`, but the job has no step list and no
-logs. A manual re-run of an earlier Direct eARC job reproduced the same pre-step
-failure. Independent HOA Renderer, Decoder Engine + Spatial Runtime and S6
-Appliance workflows fail with the same signature. Therefore no current commit
-may be called CI-green, and the failure must not be attributed to Rust build/test
-code until a runner actually executes the workflow. Repository/account Actions
-provisioning, quota, billing or policy must be checked outside the source tree.
-The connected API does not expose the annotation text, so the exact account-side
-reason is not claimed.
+repository are still failing before step execution. A recent Direct eARC Ingest
+CI run `34524783855` created job `103030908452`, but the job has no step list and
+no logs. Independent HOA Renderer, Decoder Engine + Spatial Runtime and S6
+Appliance workflows continue to show the same pre-step failure signature.
+Therefore no current commit may be called CI-green, and the failure must not be
+attributed to Rust build/test code until a runner actually executes the workflow.
+Repository/account Actions provisioning, quota, billing or policy must be checked
+outside the source tree. The connected API does not expose the annotation text,
+so the exact account-side reason is not claimed.
 
 ## Remaining pre-hardware work (not claimed complete)
 
