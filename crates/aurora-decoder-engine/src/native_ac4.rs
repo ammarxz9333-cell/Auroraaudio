@@ -27,6 +27,7 @@ pub struct NativeAc4Decoder {
     emitted_frames: u64,
     dropped_bytes: u64,
     discontinuity: bool,
+    finalizing: bool,
 }
 
 impl NativeAc4Decoder {
@@ -40,6 +41,7 @@ impl NativeAc4Decoder {
             emitted_frames: 0,
             dropped_bytes: 0,
             discontinuity: true,
+            finalizing: false,
         }
     }
 
@@ -55,6 +57,11 @@ impl NativeAc4Decoder {
     ) -> Result<Option<DecodedFrame>, DecoderError> {
         if input.is_empty() {
             return self.poll();
+        }
+        if self.finalizing {
+            return Err(DecoderError::Decode(
+                "AC-4 input arrived after finite finalization began".into(),
+            ));
         }
         if input.len() > MAX_COMPRESSED_BUFFER {
             return Err(DecoderError::Decode(
@@ -82,6 +89,14 @@ impl NativeAc4Decoder {
         // block, polling must resume decode from that retained backlog.
         self.process_sync_stream()?;
         self.take_block(false)
+    }
+
+    /// Mark the current AC-4 byte stream as finite. Already-decoded PCM remains
+    /// drainable; after it retires, any remaining Annex-G sync/frame prefix is a
+    /// truncation error rather than state that may disappear during reset.
+    pub fn finish_pending(&mut self) -> Result<(), DecoderError> {
+        self.finalizing = true;
+        self.process_sync_stream()
     }
 
     pub fn reset(&mut self) {
@@ -113,12 +128,44 @@ impl NativeAc4Decoder {
             .unwrap_or(160)
     }
 
+    fn finish_non_sync_tail(&mut self) -> Result<(), DecoderError> {
+        if self.compressed.is_empty() {
+            return Ok(());
+        }
+        if self.compressed.last() == Some(&0xAC) {
+            let garbage = self.compressed.len().saturating_sub(1);
+            if garbage > 0 {
+                self.dropped_bytes = self.dropped_bytes.saturating_add(garbage as u64);
+                self.discontinuity = true;
+                self.compressed.drain(..garbage);
+            }
+            return Err(DecoderError::Decode(
+                "truncated AC-4 syncword at end of stream: 1 byte buffered".into(),
+            ));
+        }
+        let dropped = self.compressed.len();
+        self.compressed.clear();
+        self.dropped_bytes = self.dropped_bytes.saturating_add(dropped as u64);
+        if dropped > 0 {
+            self.discontinuity = true;
+        }
+        Ok(())
+    }
+
     fn process_sync_stream(&mut self) -> Result<(), DecoderError> {
         loop {
             if self.queued_frames() >= self.queue_high_watermark() {
                 break;
             }
+            // During finite retirement, publish PCM decoded from earlier valid
+            // packets before diagnosing a later truncated compressed suffix.
+            if self.finalizing && self.queued_frames() > 0 {
+                break;
+            }
             if self.compressed.len() < 2 {
+                if self.finalizing {
+                    self.finish_non_sync_tail()?;
+                }
                 break;
             }
 
@@ -128,6 +175,10 @@ impl NativeAc4Decoder {
                     self.discontinuity = true;
                     self.compressed.drain(..offset);
                     continue;
+                }
+                if self.finalizing {
+                    self.finish_non_sync_tail()?;
+                    break;
                 }
                 let keep_trailing_ac = self.compressed.last() == Some(&0xAC);
                 let keep = usize::from(keep_trailing_ac);
@@ -144,9 +195,14 @@ impl NativeAc4Decoder {
             }
 
             let Some(frame) = parse_sync_frame_at_start(&self.compressed) else {
-                // Sync is plausible but the complete frame has not arrived yet.
-                // The outer input bound prevents an attacker from growing this
-                // indefinitely while advertising an impossible frame.
+                // A valid AC40/AC41 prefix at finite EOF cannot gain more bytes.
+                if self.finalizing {
+                    return Err(DecoderError::Decode(format!(
+                        "truncated AC-4 sync frame at end of stream: {} byte(s) buffered",
+                        self.compressed.len()
+                    )));
+                }
+                // Streaming mode waits for the rest of the sync frame.
                 break;
             };
 
@@ -261,10 +317,13 @@ impl NativeAc4Decoder {
         let available = self.queued_frames();
         let wanted = output.block_size.max(1);
         // Retain a short PCM tail only while a sync-framed AC-4 packet is still
-        // incomplete. Once compressed staging is empty, the remaining samples
-        // were decoded from complete input and must be released rather than
-        // disappearing on a later reset or backend transition.
-        if available < wanted && !allow_short && !self.compressed.is_empty() {
+        // incomplete. Finite retirement emits all already-decoded PCM before a
+        // later truncated suffix is diagnosed.
+        if available < wanted
+            && !allow_short
+            && !self.compressed.is_empty()
+            && !self.finalizing
+        {
             return Ok(None);
         }
         let frame_count = available.min(wanted);
@@ -432,5 +491,33 @@ mod tests {
 
         assert!(decoder.take_block(false).unwrap().is_none());
         assert_eq!(decoder.queued_frames(), 17);
+    }
+
+    #[test]
+    fn finite_ac4_retirement_emits_valid_pcm_before_truncation_error() {
+        let mut decoder = NativeAc4Decoder::new();
+        decoder.configure(format(12, 40));
+        for queue in &mut decoder.pcm {
+            queue.extend(std::iter::repeat(0.25_f32).take(17));
+        }
+        decoder.compressed.push(0xAC);
+
+        decoder.finish_pending().unwrap();
+        let tail = decoder.poll().unwrap().expect("valid decoded tail must retire first");
+        assert_eq!(tail.audio.frame_count, 17);
+        let error = decoder.poll().unwrap_err();
+        assert!(error.to_string().contains("truncated AC-4 syncword"));
+    }
+
+    #[test]
+    fn finite_ac4_eof_drops_non_sync_garbage() {
+        let mut decoder = NativeAc4Decoder::new();
+        decoder.configure(format(12, 40));
+        decoder.compressed.extend_from_slice(&[1, 2, 3]);
+
+        decoder.finish_pending().unwrap();
+
+        assert!(decoder.compressed.is_empty());
+        assert_eq!(decoder.dropped_bytes(), 3);
     }
 }
