@@ -465,7 +465,10 @@ impl UniversalOpenDecoder {
                 self.process_eac3_access_unit(&unit)?;
             }
         }
-        if let Some(renderer) = self.joc_renderer.as_mut() {
+        // Finalization is one-shot for OpenJOC. Take ownership before drain so
+        // a repeated Aurora flush cannot call OpenJOC::drain on an already
+        // drained session and surface `AlreadyDrained`.
+        if let Some(mut renderer) = self.joc_renderer.take() {
             for frame in renderer.drain()? {
                 self.pending.push_back(frame);
             }
