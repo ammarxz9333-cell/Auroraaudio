@@ -7,6 +7,7 @@
 //! OpenJOC classifier reports invalid/unsupported input; it no longer decodes
 //! audio blocks merely to decide whether OpenJOC may run.
 
+use aurora_decoder_api::DecodedFrame;
 use openjoc_ffmpeg::{JocClassification, classify_complete_access_unit};
 use oxideav_ac3::eac3::{bsi, joc};
 use oxideav_core::bits::BitReader;
@@ -49,6 +50,18 @@ impl JocAdmissionProbe {
                     JocAdmission::NotJoc
                 }
             }
+        }
+    }
+}
+
+/// Return planar storage from a consumed JOC frame to the currently active
+/// OpenJOC renderer. If the frame came from another backend, or the renderer was
+/// already retired, `recycle_frame`/this method intentionally degrades to a
+/// normal drop rather than guessing ownership.
+impl super::UniversalOpenDecoder {
+    pub fn recycle_decoded_frame(&mut self, frame: DecodedFrame) {
+        if let Some(renderer) = self.joc_renderer.as_mut() {
+            renderer.recycle_frame(frame);
         }
     }
 }
