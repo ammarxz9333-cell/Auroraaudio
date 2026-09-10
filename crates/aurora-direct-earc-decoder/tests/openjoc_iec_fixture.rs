@@ -35,7 +35,6 @@ fn canonical_eac3_period(payload: &[u8]) -> Vec<u8> {
     let mut burst = Vec::with_capacity(EAC3_PERIOD_BYTES);
     burst.extend_from_slice(&[0x72, 0xF8, 0x1F, 0x4E]);
     burst.extend_from_slice(&u16::from(DATA_TYPE_EAC3).to_le_bytes());
-    // IEC61937 data type 0x15 carries Pd as a byte count.
     burst.extend_from_slice(&(payload.len() as u16).to_le_bytes());
 
     let mut wire = payload.to_vec();
@@ -111,8 +110,6 @@ fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
     let mut pcm_frames = 0_usize;
     for unit in &units {
         let period = canonical_eac3_period(unit);
-        // Awkward read boundaries ensure Pa/Pb, Pc/Pd, payload and idle padding
-        // all straddle caller chunks in the real transport parser.
         for chunk in period.chunks(997) {
             let batch = decoder
                 .push_carrier(chunk, false)
@@ -144,10 +141,29 @@ fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
     assert_eq!(joc.channel_count, Some(12));
     assert_eq!(joc.object_count, Some(1));
     assert!(joc.fallback_reason.is_none());
+    let live_health = decoder.engine().joc_health();
+    assert!(live_health.last_total_time_us.is_some());
+    assert!(live_health.max_total_time_us.is_some());
 
     let final_batch = decoder
         .finish()
         .expect("finish synthetic direct-eARC JOC carrier");
     observe_frames(final_batch.frames, &mut pcm_frames);
     assert!(pcm_frames > 0, "full direct-eARC JOC chain produced no PCM");
+
+    // EOF retires the live OpenJOC session, but Aurora must retain truthful
+    // evidence of the last successful render in this decoder epoch.
+    let final_joc = decoder.engine().joc_status();
+    assert!(final_joc.codec_classified_joc);
+    assert!(!final_joc.speaker_render_active);
+    assert_eq!(final_joc.layout_name.as_deref(), Some("7.1.4"));
+    assert_eq!(final_joc.channel_count, Some(12));
+    assert_eq!(final_joc.object_count, Some(1));
+    assert!(final_joc.fallback_reason.is_none());
+    let final_health = decoder.engine().joc_health();
+    assert!(!final_health.speaker_render_active);
+    assert_eq!(final_health.channel_count, Some(12));
+    assert_eq!(final_health.object_count, Some(1));
+    assert!(final_health.last_total_time_us.is_some());
+    assert!(final_health.max_total_time_us.is_some());
 }
