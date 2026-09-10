@@ -236,11 +236,22 @@ pub(super) fn run_direct_native_alsa<S: SpeakerSink>(
 
     drop(captured_rx);
     drop(recycle_tx);
-    let join_result = capture_thread.join();
-    if join_result.is_err() && run_result.is_ok() {
-        bail!("native direct-eARC capture thread terminated with an unreported panic");
+    match run_result {
+        Ok(stats) => {
+            if capture_thread.join().is_err() {
+                bail!("native direct-eARC capture thread terminated with an unreported panic");
+            }
+            Ok(stats)
+        }
+        Err(error) => {
+            // Do not join a producer that may still be blocked in a blocking ALSA
+            // read. Dropping JoinHandle detaches it; process teardown closes the
+            // PCM handle. This keeps decoder/output failures fail-fast instead of
+            // turning them into an unbounded shutdown hang.
+            drop(capture_thread);
+            Err(error)
+        }
     }
-    run_result
 }
 
 #[cfg(not(target_os = "linux"))]
