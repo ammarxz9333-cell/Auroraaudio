@@ -11,3 +11,6 @@ aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-decoder-engine = { path = "../aurora-decoder-engine" }
 aurora-iec61937 = { path = "../aurora-iec61937" }
+
+[dev-dependencies]
+aurora-decoder-open = { path = "../aurora-decoder-open" }
