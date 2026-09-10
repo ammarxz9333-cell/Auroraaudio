@@ -54,14 +54,17 @@ impl JocAdmissionProbe {
     }
 }
 
-/// Return planar storage from a consumed JOC frame to the currently active
-/// OpenJOC renderer. If the frame came from another backend, or the renderer was
-/// already retired, `recycle_frame`/this method intentionally degrades to a
-/// normal drop rather than guessing ownership.
+/// Return consumed planar storage to whichever reusable open backend currently
+/// owns the output path. The storage contains plain `Vec<f32>` planes, so it is
+/// safe to reuse across frames only after each backend revalidates its expected
+/// channel geometry and capacity. If no recyclable backend is active, dropping
+/// the frame remains the fail-safe behavior.
 impl super::UniversalOpenDecoder {
     pub fn recycle_decoded_frame(&mut self, frame: DecodedFrame) {
         if let Some(renderer) = self.joc_renderer.as_mut() {
             renderer.recycle_frame(frame);
+        } else if let Some(worker) = self.worker.as_mut() {
+            worker.recycle_frame(frame);
         }
     }
 }
@@ -85,9 +88,6 @@ fn extension_type_a_candidate(access_unit: &[u8]) -> bool {
     match joc::parse_ec3_extension_type_a(addbsi.payload()) {
         Ok(Some(_)) => true,
         Ok(None) => false,
-        // Preserve the old diagnostic posture: malformed addbsi that reaches
-        // the Type-A parser is treated as a signalled-but-invalid candidate,
-        // never as validated JOC.
         Err(_) => true,
     }
 }
