@@ -18,6 +18,7 @@ const FIXTURE_ENV: &str = "AURORA_OPENJOC_SYNTHETIC_FIXTURE";
 const EXPECTED_BYTES: usize = 32_768;
 const EXPECTED_ACCESS_UNITS: usize = 8;
 const EAC3_PERIOD_BYTES: usize = 24_576;
+const OUTPUT_RATE: f64 = 48_000.0;
 
 fn format_7_1_4() -> AudioFormat {
     AudioFormat {
@@ -74,6 +75,17 @@ fn observe_frames(
                 .iter()
                 .flatten()
                 .all(|sample| sample.is_finite())
+        );
+
+        // DirectEarcDecoder owns the presentation clock. Every emitted block,
+        // including the short EOF retirement tail, must start exactly where the
+        // previous real PCM block ended; decoder/backend-local clock restarts are
+        // not allowed to leak into the transport-facing timeline.
+        let expected_pts = *pcm_frames as f64 / OUTPUT_RATE;
+        assert!(
+            (frame.audio.presentation_time_seconds - expected_pts).abs() < 1.0e-12,
+            "non-contiguous direct-eARC PTS: expected {expected_pts:.12}, got {:.12}",
+            frame.audio.presentation_time_seconds
         );
         *pcm_frames = pcm_frames.saturating_add(frame.audio.frame_count);
     }
