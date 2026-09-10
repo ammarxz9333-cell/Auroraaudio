@@ -53,7 +53,7 @@ concurrency:
 
 jobs:
   direct-earc:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -75,6 +75,14 @@ jobs:
             echo '::warning file=Cargo.lock::Committed Cargo.lock is stale. Validation will continue against the freshly generated lockfile; the final lockfile gate will remain red until the generated file is committed.'
             git diff --stat -- Cargo.lock
           fi
+
+      - name: Upload resolver-generated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: direct-earc-generated-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 3
 
       - name: Validate Linux dependency graph
         run: |
