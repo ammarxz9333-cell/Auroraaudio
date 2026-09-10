@@ -181,7 +181,6 @@ pub(super) fn run_direct_native_alsa<S: SpeakerSink>(
 
     let run_result = (|| -> Result<RuntimeStats> {
         let mut stats = RuntimeStats::default();
-        let mut last_starvations = 0_u64;
 
         loop {
             let packet = match captured_rx.recv() {
@@ -212,13 +211,6 @@ pub(super) fn run_direct_native_alsa<S: SpeakerSink>(
             stats.capture_recoveries = packet.counters.recoveries;
             stats.capture_discontinuities = packet.counters.discontinuities;
             stats.capture_queue_starvations = packet.counters.queue_starvations;
-            if packet.counters.queue_starvations != last_starvations {
-                eprintln!(
-                    "aurora-runtime-warning: native_capture_queue_starvations={} (consumer is exhausting the bounded capture pool)",
-                    packet.counters.queue_starvations
-                );
-                last_starvations = packet.counters.queue_starvations;
-            }
 
             recycle_tx
                 .send(packet.block.interleaved_s32)
