@@ -90,6 +90,22 @@ decoder error instead of being silently discarded. Regression cases cover a
 complete final frame, truncated header, truncated payload and non-sync garbage
 tail.
 
+Transport-format changes now retire the previous decoder before backend reset.
+That preserves a short final JOC/worker PCM tail instead of silently dropping it.
+Direct eARC also owns one outer presentation clock: a codec-only AC-3/E-AC-3/JOC
+transition keeps monotonic PTS, while a real transport discontinuity explicitly
+starts a new presentation epoch.
+
+The 40-frame OpenJOC speaker path now has bounded planar-buffer recycling. Once
+a frame has been copied/interleaved through the canonical speaker DSP, its planar
+channel Vec storage is returned through AuroraDecoderEngine to the active
+OpenJOC renderer. This preserves the 40-frame latency contract while removing
+the previous steady-state pattern of an outer planar Vec plus twelve fresh
+channel Vec allocations for every 7.1.4 block after the pool has warmed. The
+hardware-facing interleaved SpeakerOutputFrame remains owned and is not yet
+recycled; target profiling is still required before making a hard realtime
+allocation claim for the entire decode-to-sink path.
+
 IEC61937 data type `0x15` remains transport evidence only. It establishes an
 E-AC-3 burst classification, not Atmos/JOC. Software JOC evidence requires
 successful JOC admission and successful OpenJOC speaker rendering. Physical
@@ -110,14 +126,16 @@ The Direct eARC workflow now runs `cargo generate-lockfile`, validates with
 short-lived artifact before the final committed-lockfile gate. This provides an
 exact recovery path once a GitHub-hosted runner actually starts.
 
-As of 2026-09-10, GitHub Actions jobs for this repository are failing before
-step execution. Multiple direct-eARC runs produced a job record with no step
-list and no logs, including after changing the runner label from
-`ubuntu-24.04` to `ubuntu-latest`. An independent HOA Renderer workflow failed
-with the same no-steps/no-logs signature. Therefore no current commit may be
-called CI-green, and the failure must not be attributed to Rust build/test code
-until a runner actually executes the workflow. Repository/account Actions
-provisioning, quota, billing or policy must be checked outside the source tree.
+As of the current 2026-09-10 branch head, GitHub Actions jobs for this repository
+are still failing before step execution. Direct eARC Ingest CI run `34519448145`
+created job `103012999089`, but the job has no step list and no logs. Independent
+HOA Renderer, Decoder Engine + Spatial Runtime and S6 Appliance workflows failed
+on the same head within the same two-second pre-step window. Therefore no current
+commit may be called CI-green, and the failure must not be attributed to Rust
+build/test code until a runner actually executes the workflow. Repository/account
+Actions provisioning, quota, billing or policy must be checked outside the source
+tree. The check records expose one annotation each, but the connected API does
+not expose the annotation text, so the exact account-side reason is not claimed.
 
 ## Remaining pre-hardware work (not claimed complete)
 
@@ -125,6 +143,9 @@ provisioning, quota, billing or policy must be checked outside the source tree.
   execute the direct-eARC `fmt`/`check`/`test`/`clippy` gates with `--locked`.
 - Restore executable GitHub Actions runner service for this repository and retain
   logs/artifacts from an actually executed validation run.
+- Profile the full 40-frame decode -> OpenJOC -> speaker DSP -> ALSA path on the
+  target host; decide from measured allocator pressure whether owned interleaved
+  speaker-output buffers also need pooling/recycling.
 - Production local/Bluetooth/network source adapters; staged packages are insufficient.
 - Live decoder telemetry and a user-facing status UI driven by actual telemetry.
 - Automatic calibration capture/analysis/application integration (manual validated
