@@ -1,9 +1,10 @@
 //! Native open JOC decode + speaker render adapter using the Apache-2.0
-//! `openjoc-api` implementation as an independent standards-derived backend.
+//! `openjoc-api` implementation as the admitted JOC rendering backend.
 //!
-//! Aurora does not load any Dolby binary or licensed runtime. This backend is
-//! intentionally paired with the independent OxideAV JOC admission probe so a
-//! stream is not promoted to immersive output on one implementation's guess.
+//! Aurora does not load any Dolby binary or licensed runtime. JOC admission is
+//! performed through OpenJOC's own positive complete-access-unit classifier;
+//! this renderer is created only after positive admission and Aurora still
+//! claims JOC/Atmos playback only after successful OpenJOC speaker rendering.
 
 use std::collections::VecDeque;
 
