@@ -170,13 +170,19 @@ mod tests {
     use crate::catalog::BackendId;
 
     #[test]
-    fn joc_metadata_requirement_excludes_bed_only_backends() {
+    fn joc_object_export_requirement_fails_closed_without_exported_scene() {
         let policy = DecoderPolicy {
             objects: ObjectRequirement::Require,
             ..DecoderPolicy::default()
         };
         let catalog = DecoderCatalog::default();
-        let ranked = policy.rank(&catalog, CodecId::Eac3Joc, false);
+        assert!(policy.rank(&catalog, CodecId::Eac3Joc, false).is_empty());
+    }
+
+    #[test]
+    fn default_joc_policy_still_selects_openjoc_speaker_rendering() {
+        let catalog = DecoderCatalog::default();
+        let ranked = DecoderPolicy::default().rank(&catalog, CodecId::Eac3Joc, true);
         assert_eq!(ranked.len(), 1);
         assert_eq!(ranked[0].backend.id, BackendId::OpenJoc);
     }
