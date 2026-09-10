@@ -116,15 +116,11 @@ impl OpenJocNativeRenderer {
         self.take_frames(self.output.block_size.max(1))
     }
 
-    /// Finalize OpenJOC and return every remaining PCM sample. Full realtime
-    /// blocks are emitted first; a final short block is emitted without padding
-    /// so finite files/fixtures do not lose up to `block_size - 1` samples and
-    /// the presentation timeline is not extended with synthetic silence.
-    pub fn drain(&mut self) -> Result<Vec<DecodedFrame>, DecoderError> {
-        self.session
-            .drain()
-            .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC drain failed: {e}")))?;
-        self.collect_output()?;
+    /// Remove every PCM sample already collected from OpenJOC without asking
+    /// the decoder session to process or drain anything further. This is used
+    /// when the next compressed AU fails: previously rendered PCM must not be
+    /// discarded merely because the new AU is bad.
+    pub(crate) fn take_buffered_frames(&mut self) -> Result<Vec<DecodedFrame>, DecoderError> {
         let mut frames = Vec::new();
         while let Some(frame) = self.take_block() {
             frames.push(frame);
@@ -133,7 +129,7 @@ impl OpenJocNativeRenderer {
         let remaining = self.channels.first().map(VecDeque::len).unwrap_or(0);
         if self.channels.iter().any(|channel| channel.len() != remaining) {
             return Err(DecoderError::Decode(
-                "OpenJOC channel queues diverged while draining final PCM".to_owned(),
+                "OpenJOC channel queues diverged while retiring buffered PCM".to_owned(),
             ));
         }
         if remaining > 0 {
@@ -143,6 +139,18 @@ impl OpenJocNativeRenderer {
             );
         }
         Ok(frames)
+    }
+
+    /// Finalize OpenJOC and return every remaining PCM sample. Full realtime
+    /// blocks are emitted first; a final short block is emitted without padding
+    /// so finite files/fixtures do not lose up to `block_size - 1` samples and
+    /// the presentation timeline is not extended with synthetic silence.
+    pub fn drain(&mut self) -> Result<Vec<DecodedFrame>, DecoderError> {
+        self.session
+            .drain()
+            .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC drain failed: {e}")))?;
+        self.collect_output()?;
+        self.take_buffered_frames()
     }
 
     pub fn reset(&mut self) -> Result<(), DecoderError> {
