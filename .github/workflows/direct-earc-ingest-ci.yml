@@ -22,7 +22,6 @@ on:
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
       - "crates/aurora-cli/src/bin/aurora-encoded-runtime*.rs"
-      - "crates/aurora-cli/src/bin/aurora-threaded-earc-runtime.rs"
       - ".github/workflows/direct-earc-ingest-ci.yml"
   pull_request:
     paths:
@@ -43,7 +42,6 @@ on:
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
       - "crates/aurora-cli/src/bin/aurora-encoded-runtime*.rs"
-      - "crates/aurora-cli/src/bin/aurora-threaded-earc-runtime.rs"
       - ".github/workflows/direct-earc-ingest-ci.yml"
 
 permissions:
@@ -217,21 +215,18 @@ jobs:
           cargo check --locked -p aurora-cli --bin aurora-direct-earc-ingest
           cargo check --locked -p aurora-cli --bin aurora-direct-earc-probe
           cargo check --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
-          cargo check --locked -p aurora-cli --features encoded-runtime --bin aurora-threaded-earc-runtime
 
       - name: Test direct eARC binaries
         run: |
           cargo test --locked -p aurora-cli --bin aurora-direct-earc-ingest
           cargo test --locked -p aurora-cli --bin aurora-direct-earc-probe
           cargo test --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
-          cargo test --locked -p aurora-cli --features encoded-runtime --bin aurora-threaded-earc-runtime
 
       - name: Clippy direct eARC binaries
         run: |
           cargo clippy --locked -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
           cargo clippy --locked -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
           cargo clippy --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
-          cargo clippy --locked -p aurora-cli --features encoded-runtime --bin aurora-threaded-earc-runtime -- -D warnings
 
       - name: Enforce committed workspace lockfile
         if: always()
