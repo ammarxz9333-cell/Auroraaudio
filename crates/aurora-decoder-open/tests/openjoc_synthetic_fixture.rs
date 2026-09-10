@@ -112,5 +112,5 @@ fn synthetic_openjoc_fixture_renders_aurora_7_1_4() {
     assert_eq!(info.channel_count, 12);
     assert!(info.latency_samples > 0);
     assert_eq!(info.object_count, Some(1));
-    assert!(info.max_total_us.is_some());
+    assert!(info.max_total_time_us.is_some());
 }
