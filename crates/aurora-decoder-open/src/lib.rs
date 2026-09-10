@@ -81,8 +81,9 @@ pub struct OpenDecoderConfig {
     /// The transport is still probed, so a hinted E-AC-3 stream arriving in
     /// IEC 61937 is depacketized correctly rather than treated as raw E-AC-3.
     pub codec_hint: Option<CodecKind>,
-    /// If true, 2-channel JOC validation can additionally use OxideAV's open
-    /// stereo reference renderer. Normal immersive playback keeps this false.
+    /// If true, a 2-channel native fallback/reference path may use OxideAV's
+    /// open JOC stereo renderer. This does not participate in JOC admission;
+    /// positive admission and the immersive product renderer are OpenJOC-owned.
     pub joc_stereo_reference: bool,
     /// Optional OpenJOC preset such as `7.1.4`, `9.1.6` or `22.2`. `None`
     /// derives an unambiguous standard preset from the Aurora channel count.
