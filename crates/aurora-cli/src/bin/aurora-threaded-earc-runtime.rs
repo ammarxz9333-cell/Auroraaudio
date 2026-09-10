@@ -244,7 +244,8 @@ fn run(args: Args) -> Result<()> {
         carrier_periods = carrier_periods.saturating_add(1);
         last_capture = packet.counters;
 
-        if packet.block.discontinuity {
+        let capture_discontinuity = packet.block.discontinuity;
+        if capture_discontinuity {
             runtime.reset();
             playback
                 .reset_for_discontinuity()
@@ -255,6 +256,18 @@ fn run(args: Args) -> Result<()> {
         let batch = runtime
             .push_direct_s32_words(&packet.block.interleaved_s32)
             .context("threaded direct-eARC carrier ingest failed")?;
+
+        // A parser/codec/source transition can create a transport discontinuity
+        // even when ALSA capture itself stayed healthy. Drop queued pre-transition
+        // speaker PCM in that case too, but do not reset twice when the same
+        // period already carried an ALSA-recovery discontinuity.
+        if batch.discontinuity && !capture_discontinuity {
+            playback
+                .reset_for_discontinuity()
+                .context("failed resetting playback after decoded transport discontinuity")?;
+            suppress_next_frame_discontinuity = true;
+        }
+
         for frame in batch.frames {
             decoded_pcm_frames =
                 decoded_pcm_frames.saturating_add(frame.frame_count as u64);
