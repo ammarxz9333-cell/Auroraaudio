@@ -21,7 +21,7 @@ on:
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
-      - "crates/aurora-cli/src/bin/aurora-encoded-runtime.rs"
+      - "crates/aurora-cli/src/bin/aurora-encoded-runtime*.rs"
       - "crates/aurora-cli/src/bin/aurora-threaded-earc-runtime.rs"
       - ".github/workflows/direct-earc-ingest-ci.yml"
   pull_request:
@@ -42,7 +42,7 @@ on:
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
-      - "crates/aurora-cli/src/bin/aurora-encoded-runtime.rs"
+      - "crates/aurora-cli/src/bin/aurora-encoded-runtime*.rs"
       - "crates/aurora-cli/src/bin/aurora-threaded-earc-runtime.rs"
       - ".github/workflows/direct-earc-ingest-ci.yml"
 
