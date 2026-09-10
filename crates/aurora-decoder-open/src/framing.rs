@@ -14,6 +14,14 @@ pub enum FramingError {
         "truncated AC-3 syncframe at EOF: expected {expected} bytes, only {available} buffered"
     )]
     TruncatedAc3Frame { expected: usize, available: usize },
+    #[error("truncated E-AC-3 syncword at EOF: {available} byte buffered")]
+    TruncatedEac3Syncword { available: usize },
+    #[error("truncated E-AC-3 syncframe header at EOF: {available} bytes buffered, need at least 6")]
+    TruncatedEac3Header { available: usize },
+    #[error(
+        "truncated E-AC-3 syncframe at EOF: expected {expected} bytes, only {available} buffered"
+    )]
+    TruncatedEac3Frame { expected: usize, available: usize },
 }
 
 #[derive(Debug)]
@@ -63,16 +71,18 @@ impl SyncFramer {
 
     /// Finalize a finite elementary stream.
     ///
-    /// Streaming extraction deliberately keeps an incomplete AC-3 syncframe in
-    /// the buffer because a later `push` may complete it. At a known EOF there
-    /// can be no later bytes, so a syncword/header/payload prefix must be
-    /// reported instead of silently disappearing. Non-sync garbage remains a
-    /// resynchronization concern and is counted as dropped data rather than a
-    /// truncated frame.
+    /// Streaming extraction deliberately keeps an incomplete AC-3/E-AC-3
+    /// syncframe in the buffer because a later `push` may complete it. At a
+    /// known EOF there can be no later bytes, so a syncword/header/payload prefix
+    /// must be reported instead of silently disappearing. Non-sync garbage
+    /// remains a resynchronization concern and is counted as dropped data rather
+    /// than a truncated frame.
     pub fn finish_checked(&mut self) -> Result<Vec<Vec<u8>>, FramingError> {
         let out = self.flush();
-        if self.codec == CodecKind::Ac3 {
-            self.validate_ac3_eof()?;
+        match self.codec {
+            CodecKind::Ac3 => self.validate_ac3_eof()?,
+            CodecKind::Eac3 | CodecKind::Eac3Joc => self.validate_eac3_eof()?,
+            _ => {}
         }
         Ok(out)
     }
@@ -132,6 +142,62 @@ impl SyncFramer {
             Err(_) => {
                 // Malformed sync-looking bytes are corruption/garbage rather than
                 // a provably truncated frame. Preserve streaming resync semantics.
+                let dropped = self.buffer.len();
+                self.buffer.clear();
+                self.dropped_bytes = self.dropped_bytes.saturating_add(dropped as u64);
+                Ok(())
+            }
+        }
+    }
+
+    fn validate_eac3_eof(&mut self) -> Result<(), FramingError> {
+        if self.buffer.is_empty() {
+            return Ok(());
+        }
+
+        if self.buffer[0] != 0x0B {
+            let dropped = self.buffer.len();
+            self.buffer.clear();
+            self.dropped_bytes = self.dropped_bytes.saturating_add(dropped as u64);
+            return Ok(());
+        }
+
+        if self.buffer.len() == 1 {
+            return Err(FramingError::TruncatedEac3Syncword { available: 1 });
+        }
+
+        if self.buffer[1] != 0x77 {
+            let dropped = self.buffer.len();
+            self.buffer.clear();
+            self.dropped_bytes = self.dropped_bytes.saturating_add(dropped as u64);
+            return Ok(());
+        }
+
+        if self.buffer.len() < 6 {
+            return Err(FramingError::TruncatedEac3Header {
+                available: self.buffer.len(),
+            });
+        }
+
+        match eac3::bsi::parse(&self.buffer[2..]) {
+            Ok(bsi) => {
+                let expected = bsi.frame_bytes as usize;
+                if self.buffer.len() < expected {
+                    Err(FramingError::TruncatedEac3Frame {
+                        expected,
+                        available: self.buffer.len(),
+                    })
+                } else {
+                    // Complete E-AC-3 frames are consumed by `flush`; if one is
+                    // still buffered here, preserve existing parser semantics and
+                    // let the caller's next validation layer decide corruption.
+                    Ok(())
+                }
+            }
+            Err(_) => {
+                // As with AC-3, malformed sync-looking data is corruption rather
+                // than a provably truncated parseable frame. `extract_eac3`
+                // normally resynchronizes it before this point.
                 let dropped = self.buffer.len();
                 self.buffer.clear();
                 self.dropped_bytes = self.dropped_bytes.saturating_add(dropped as u64);
@@ -296,5 +362,25 @@ mod tests {
         assert_eq!(f.push(&input), vec![frame]);
         assert!(f.finish_checked().unwrap().is_empty());
         assert_eq!(f.dropped_bytes(), 1);
+    }
+
+    #[test]
+    fn finite_eac3_eof_rejects_truncated_syncword() {
+        let mut f = SyncFramer::new(CodecKind::Eac3);
+        assert!(f.push(&[0x0B]).is_empty());
+        assert_eq!(
+            f.finish_checked(),
+            Err(FramingError::TruncatedEac3Syncword { available: 1 })
+        );
+    }
+
+    #[test]
+    fn finite_eac3_eof_rejects_truncated_header() {
+        let mut f = SyncFramer::new(CodecKind::Eac3);
+        assert!(f.push(&[0x0B, 0x77, 0, 0, 0]).is_empty());
+        assert_eq!(
+            f.finish_checked(),
+            Err(FramingError::TruncatedEac3Header { available: 5 })
+        );
     }
 }
