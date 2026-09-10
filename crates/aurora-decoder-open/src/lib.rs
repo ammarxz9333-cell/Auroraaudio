@@ -481,7 +481,9 @@ impl UniversalOpenDecoder {
 
     pub fn flush_packets(&mut self) -> Result<(), DecoderError> {
         if let Some(framer) = self.framer.as_mut() {
-            let packets = framer.flush();
+            let packets = framer
+                .finish_checked()
+                .map_err(|error| DecoderError::Decode(error.to_string()))?;
             for packet in packets {
                 self.decode_native_packet(&packet)?;
             }
