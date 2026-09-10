@@ -48,6 +48,8 @@ const PLAYBACK_PERIOD_FRAMES: usize = 256;
 const PLAYBACK_BUFFER_FRAMES: usize = 1_024;
 #[cfg(target_os = "linux")]
 const DSP_BLOCK_FRAMES: usize = 40;
+#[cfg(target_os = "linux")]
+const MAX_QUEUE_DEPTH: usize = 256;
 
 #[derive(Debug, Parser)]
 #[command(
@@ -103,8 +105,8 @@ fn spawn_capture_thread(
     SyncSender<Vec<i32>>,
     std::thread::JoinHandle<()>,
 )> {
-    if queue_depth < 2 {
-        bail!("queue depth must be at least 2 capture periods");
+    if !(2..=MAX_QUEUE_DEPTH).contains(&queue_depth) {
+        bail!("queue depth must be between 2 and {MAX_QUEUE_DEPTH} capture periods");
     }
 
     let (filled_tx, filled_rx) = sync_channel::<CaptureMessage>(queue_depth);
@@ -316,7 +318,9 @@ fn run(args: Args) -> Result<()> {
     }
 
     drop(recycle_tx);
-    let _ = capture_thread.join();
+    capture_thread
+        .join()
+        .map_err(|_| anyhow::anyhow!("Aurora eARC capture thread panicked"))?;
     playback.drain().context("failed draining native speaker output")?;
     Ok(())
 }
