@@ -21,7 +21,7 @@ on:
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
-      - "crates/aurora-cli/src/bin/aurora-encoded-runtime.rs"
+      - "crates/aurora-cli/src/bin/aurora-encoded-runtime*.rs"
       - ".github/workflows/direct-earc-private-ci.yml"
   workflow_dispatch:
 
