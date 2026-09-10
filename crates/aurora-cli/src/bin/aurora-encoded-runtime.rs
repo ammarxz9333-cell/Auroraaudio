@@ -245,8 +245,11 @@ fn main() -> Result<()> {
 }
 
 fn validate_args(args: &Args) -> Result<()> {
-    if args.carrier_rate == 0 {
-        bail!("carrier rate must be greater than zero");
+    if matches!(args.input, InputMode::LegacyUsb) && args.alsa_device.is_some() {
+        bail!("--alsa-device is valid only with --input direct-earc");
+    }
+    if matches!(args.output, OutputMode::StdoutF32) && args.output_device.is_some() {
+        bail!("--output-device is valid only with --output alsa-s32");
     }
     if matches!(args.input, InputMode::DirectEarc) && args.slots != DEFAULT_SLOTS {
         bail!(
@@ -255,20 +258,28 @@ fn validate_args(args: &Args) -> Result<()> {
             args.slots
         );
     }
-    if args.read_bytes == 0 {
+    if matches!(args.input, InputMode::DirectEarc)
+        && args.alsa_device.is_none()
+        && args.read_bytes == 0
+    {
         bail!("stdin read size must be greater than zero");
+    }
+    if let Some(_) = args.alsa_device {
+        if args.carrier_rate == 0 {
+            bail!("carrier rate must be greater than zero");
+        }
+        if args.input_period_frames == 0 {
+            bail!("ALSA input period must be greater than zero");
+        }
+        if args.input_buffer_frames < args.input_period_frames.saturating_mul(2) {
+            bail!("ALSA input buffer must be at least two periods");
+        }
+        if !(2..=256).contains(&args.input_queue_depth) {
+            bail!("ALSA input queue depth must be between 2 and 256 periods");
+        }
     }
     if args.block_size == 0 {
         bail!("decoder output block size must be greater than zero");
-    }
-    if args.input_period_frames == 0 {
-        bail!("ALSA input period must be greater than zero");
-    }
-    if args.input_buffer_frames < args.input_period_frames.saturating_mul(2) {
-        bail!("ALSA input buffer must be at least two periods");
-    }
-    if args.alsa_device.is_some() && !(2..=256).contains(&args.input_queue_depth) {
-        bail!("ALSA input queue depth must be between 2 and 256 periods");
     }
     if args.output_rate != OUTPUT_SAMPLE_RATE || args.output_channels != OUTPUT_CHANNELS {
         bail!(
@@ -277,24 +288,20 @@ fn validate_args(args: &Args) -> Result<()> {
             OUTPUT_CHANNELS
         );
     }
-    if args.hardware_output_channels < OUTPUT_CHANNELS {
-        bail!(
-            "physical output must expose at least {} channels; got {}",
-            OUTPUT_CHANNELS,
-            args.hardware_output_channels
-        );
-    }
-    if args.output_period_frames == 0 {
-        bail!("ALSA output period must be greater than zero");
-    }
-    if args.output_buffer_frames < args.output_period_frames.saturating_mul(2) {
-        bail!("ALSA output buffer must be at least two periods");
-    }
-    if matches!(args.input, InputMode::LegacyUsb) && args.alsa_device.is_some() {
-        bail!("--alsa-device is valid only with --input direct-earc");
-    }
-    if matches!(args.output, OutputMode::StdoutF32) && args.output_device.is_some() {
-        bail!("--output-device is valid only with --output alsa-s32");
+    if matches!(args.output, OutputMode::AlsaS32) {
+        if args.hardware_output_channels < OUTPUT_CHANNELS {
+            bail!(
+                "physical output must expose at least {} channels; got {}",
+                OUTPUT_CHANNELS,
+                args.hardware_output_channels
+            );
+        }
+        if args.output_period_frames == 0 {
+            bail!("ALSA output period must be greater than zero");
+        }
+        if args.output_buffer_frames < args.output_period_frames.saturating_mul(2) {
+            bail!("ALSA output buffer must be at least two periods");
+        }
     }
     Ok(())
 }
@@ -836,6 +843,7 @@ mod tests {
     #[test]
     fn rejects_invalid_native_capture_buffer_geometry() {
         let mut args = valid_args();
+        args.alsa_device = Some("hw:0,0".to_owned());
         args.input_period_frames = 256;
         args.input_buffer_frames = 256;
         assert!(validate_args(&args).is_err());
@@ -852,18 +860,39 @@ mod tests {
     }
 
     #[test]
-    fn ignores_native_capture_queue_depth_without_alsa_device() {
+    fn rejects_zero_native_capture_rate() {
         let mut args = valid_args();
-        for depth in [0, 1, 257, usize::MAX] {
-            args.input_queue_depth = depth;
-            validate_args(&args).unwrap();
-        }
+        args.alsa_device = Some("hw:0,0".to_owned());
+        args.carrier_rate = 0;
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn ignores_native_capture_geometry_without_alsa_device() {
+        let mut args = valid_args();
+        args.carrier_rate = 0;
+        args.input_period_frames = 0;
+        args.input_buffer_frames = 0;
+        args.input_queue_depth = 0;
+        validate_args(&args).unwrap();
 
         args.input = InputMode::LegacyUsb;
-        for depth in [0, 1, 257, usize::MAX] {
-            args.input_queue_depth = depth;
-            validate_args(&args).unwrap();
-        }
+        args.read_bytes = 0;
+        validate_args(&args).unwrap();
+    }
+
+    #[test]
+    fn stdin_requires_nonzero_read_size() {
+        let mut args = valid_args();
+        args.read_bytes = 0;
+        assert!(validate_args(&args).is_err());
+
+        args.alsa_device = Some("hw:0,0".to_owned());
+        args.carrier_rate = DEFAULT_CARRIER_RATE_HZ;
+        args.input_period_frames = DEFAULT_INPUT_PERIOD_FRAMES;
+        args.input_buffer_frames = DEFAULT_INPUT_BUFFER_FRAMES;
+        args.input_queue_depth = DEFAULT_INPUT_QUEUE_DEPTH;
+        validate_args(&args).unwrap();
     }
 
     #[test]
@@ -876,6 +905,7 @@ mod tests {
     #[test]
     fn rejects_physical_output_narrower_than_aurora_layout() {
         let mut args = valid_args();
+        args.output = OutputMode::AlsaS32;
         args.hardware_output_channels = OUTPUT_CHANNELS - 1;
         assert!(validate_args(&args).is_err());
     }
@@ -883,9 +913,19 @@ mod tests {
     #[test]
     fn rejects_output_buffer_smaller_than_two_periods() {
         let mut args = valid_args();
+        args.output = OutputMode::AlsaS32;
         args.output_period_frames = 256;
         args.output_buffer_frames = 256;
         assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn ignores_native_output_geometry_for_stdout() {
+        let mut args = valid_args();
+        args.hardware_output_channels = 0;
+        args.output_period_frames = 0;
+        args.output_buffer_frames = 0;
+        validate_args(&args).unwrap();
     }
 
     #[test]
