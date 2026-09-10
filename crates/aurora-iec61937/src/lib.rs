@@ -16,6 +16,7 @@ const PA_LE: [u8; 2] = [0x72, 0xF8];
 const PB_LE: [u8; 2] = [0x1F, 0x4E];
 const PREAMBLE_LE: [u8; 4] = [PA_LE[0], PA_LE[1], PB_LE[0], PB_LE[1]];
 const MAX_PAYLOAD_BYTES: usize = 256 * 1024;
+const MAX_EAC3_PAYLOAD_BYTES: usize = 24_560;
 
 pub const DATA_TYPE_AC3: u8 = 0x01;
 pub const DATA_TYPE_EAC3: u8 = 0x15;
@@ -167,7 +168,7 @@ impl BurstParser {
             let data_type = (pc & 0x7F) as u8;
             let payload_bytes = payload_length_bytes(data_type, pd);
 
-            if payload_bytes == 0 || payload_bytes > MAX_PAYLOAD_BYTES {
+            if !valid_payload_length(data_type, payload_bytes) {
                 self.malformed_headers = self.malformed_headers.saturating_add(1);
                 self.discarded_bytes = self.discarded_bytes.saturating_add(2);
                 self.stream_offset_bytes = self.stream_offset_bytes.saturating_add(2);
@@ -301,6 +302,12 @@ pub fn payload_length_bytes(data_type: u8, pd: u16) -> usize {
     }
 }
 
+fn valid_payload_length(data_type: u8, payload_bytes: usize) -> bool {
+    payload_bytes != 0
+        && payload_bytes <= MAX_PAYLOAD_BYTES
+        && (data_type != DATA_TYPE_EAC3 || payload_bytes <= MAX_EAC3_PAYLOAD_BYTES)
+}
+
 fn find_sync(buffer: &[u8]) -> Option<usize> {
     buffer.windows(4).position(|window| window == PREAMBLE_LE)
 }
@@ -421,6 +428,27 @@ mod tests {
     }
 
     #[test]
+    fn oversized_eac3_header_resynchronizes_without_waiting_for_impossible_payload() {
+        let mut input = Vec::new();
+        input.extend_from_slice(&PA_LE);
+        input.extend_from_slice(&PB_LE);
+        input.extend_from_slice(&u16::from(DATA_TYPE_EAC3).to_le_bytes());
+        input.extend_from_slice(&((MAX_EAC3_PAYLOAD_BYTES + 1) as u16).to_le_bytes());
+        input.extend_from_slice(&make_burst(
+            DATA_TYPE_EAC3,
+            &[0x0B, 0x77, 0x12, 0x34],
+        ));
+
+        let mut parser = BurstParser::new(CodecFilter::All);
+        let out = parser.push(&input);
+
+        assert_eq!(parser.malformed_headers(), 1);
+        assert_eq!(out.len(), 1);
+        assert_eq!(out[0].burst.codec, TransportCodec::Eac3);
+        assert_eq!(out[0].carrier_offset_bytes, 8);
+    }
+
+    #[test]
     fn non_byte_aligned_legacy_pd_is_rejected_and_resynchronizes() {
         let mut input = Vec::new();
         input.extend_from_slice(&PA_LE);
@@ -444,6 +472,11 @@ mod tests {
         assert_eq!(payload_length_bytes(DATA_TYPE_EAC3, 2_560), 2_560);
         assert_eq!(payload_length_bytes(DATA_TYPE_MAT, 61_424), 61_424);
         assert_eq!(payload_length_bytes(DATA_TYPE_AC3, 9), 0);
+        assert!(valid_payload_length(DATA_TYPE_EAC3, MAX_EAC3_PAYLOAD_BYTES));
+        assert!(!valid_payload_length(
+            DATA_TYPE_EAC3,
+            MAX_EAC3_PAYLOAD_BYTES + 1
+        ));
     }
 
     #[test]
