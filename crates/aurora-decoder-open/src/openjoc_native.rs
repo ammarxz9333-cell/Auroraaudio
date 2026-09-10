@@ -233,11 +233,13 @@ impl OpenJocNativeRenderer {
                 || frame.interleaved_f32.len()
                     != frame.sample_count.saturating_mul(frame.channel_count)
             {
+                self.ready_frames.clear();
                 return Err(DecoderError::UnsupportedInput(
                     "OpenJOC output format changed or returned malformed PCM",
                 ));
             }
             if frame.interleaved_f32.iter().any(|sample| !sample.is_finite()) {
+                self.ready_frames.clear();
                 return Err(DecoderError::Decode(
                     "OpenJOC returned non-finite PCM; refusing to sanitize corrupted decoder output"
                         .to_owned(),
