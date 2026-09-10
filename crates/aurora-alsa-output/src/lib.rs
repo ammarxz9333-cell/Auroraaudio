@@ -161,6 +161,18 @@ fn validate_channel_shape(
     Ok(())
 }
 
+/// Keep one hardware period free while requiring the rest of the playback
+/// buffer to be primed before ALSA starts (or restarts) the stream. Compared
+/// with starting after one period, this trades a small, deterministic startup
+/// delay for materially more protection against decoder/render scheduling
+/// spikes such as the first OpenJOC access unit after a bed-to-JOC transition.
+fn playback_start_threshold(period_frames: usize, buffer_frames: usize) -> usize {
+    buffer_frames
+        .saturating_sub(period_frames)
+        .max(period_frames)
+        .min(buffer_frames)
+}
+
 /// Native blocking ALSA playback stream.
 #[cfg(target_os = "linux")]
 pub struct NativeAlsaPlayback {
@@ -219,10 +231,15 @@ impl NativeAlsaPlayback {
                 "requested S32_LE but device negotiated {negotiated_format:?}"
             )));
         }
+        if period_frames == 0 || buffer_frames < period_frames.saturating_mul(2) {
+            return Err(AlsaOutputError::Negotiation(format!(
+                "device negotiated period={period_frames} buffer={buffer_frames}; Aurora requires a buffer of at least two periods"
+            )));
+        }
 
         let sw = pcm.sw_params_current()?;
         sw.set_avail_min(period_frames as i64)?;
-        sw.set_start_threshold(period_frames as i64)?;
+        sw.set_start_threshold(playback_start_threshold(period_frames, buffer_frames) as i64)?;
         pcm.sw_params(&sw)?;
         drop(sw);
         pcm.prepare()?;
@@ -430,6 +447,12 @@ mod tests {
             ..AlsaOutputConfig::default()
         };
         assert!(validate_config(&config).is_err());
+    }
+
+    #[test]
+    fn playback_prefills_all_but_one_period_before_start() {
+        assert_eq!(playback_start_threshold(256, 1_024), 768);
+        assert_eq!(playback_start_threshold(128, 256), 128);
     }
 
     #[cfg(target_os = "linux")]
