@@ -5,7 +5,9 @@ use crate::catalog::BackendId;
 /// This is deliberately separate from source-code availability or licensing.
 /// A backend does not become production-ready merely because it exists,
 /// compiles upstream, or has a strong reputation; Aurora promotes it only when
-/// the exact pinned integration passes retained gates.
+/// the exact integration passes retained gates. `pinned_revision` is a separate
+/// reproducibility fact and is false for PATH-resolved external tools unless a
+/// workflow/runtime contract fixes their exact build or revision.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 #[repr(u8)]
 pub enum EvidenceTier {
@@ -62,8 +64,11 @@ pub const fn evidence_for(backend: BackendId) -> BackendEvidence {
         BackendId::OxideAc3 => integrated(backend, true),
         BackendId::OxideAc4 => integrated(backend, true),
         BackendId::OxideDtsCore => integrated(backend, true),
-        BackendId::FfmpegDtsHd => integrated(backend, true),
-        BackendId::FfmpegWorker => integrated(backend, true),
+        // Both FFmpeg routes currently execute the `ffmpeg` binary resolved from
+        // PATH. The workflows do not install or verify an exact FFmpeg build, so
+        // integration exists but the external decoder revision is not pinned.
+        BackendId::FfmpegDtsHd => integrated(backend, false),
+        BackendId::FfmpegWorker => integrated(backend, false),
         BackendId::TrueHdNative
         | BackendId::OxideAac
         | BackendId::OxideOpus
@@ -93,6 +98,15 @@ mod tests {
             assert!(evidence.satisfies(EvidenceTier::Integrated));
             assert!(!evidence.satisfies(EvidenceTier::BuildVerified));
             assert!(!evidence.satisfies(EvidenceTier::ProductReady));
+        }
+    }
+
+    #[test]
+    fn path_resolved_ffmpeg_backends_do_not_fake_revision_pinning() {
+        for backend in [BackendId::FfmpegDtsHd, BackendId::FfmpegWorker] {
+            let evidence = evidence_for(backend);
+            assert!(evidence.satisfies(EvidenceTier::Integrated));
+            assert!(!evidence.pinned_revision);
         }
     }
 
