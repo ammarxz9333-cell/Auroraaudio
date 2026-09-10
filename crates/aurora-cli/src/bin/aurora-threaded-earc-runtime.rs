@@ -77,6 +77,7 @@ struct CaptureCounters {
     xruns: u64,
     recoveries: u64,
     discontinuities: u64,
+    queue_starvations: u64,
 }
 
 #[cfg(target_os = "linux")]
@@ -136,6 +137,7 @@ fn spawn_capture_thread(
             for _ in 0..queue_depth {
                 free.push_back(vec![0_i32; sample_count]);
             }
+            let mut queue_starvations = 0_u64;
 
             loop {
                 while let Ok(buffer) = recycle_rx.try_recv() {
@@ -143,10 +145,13 @@ fn spawn_capture_thread(
                 }
                 let replacement = match free.pop_front() {
                     Some(buffer) => buffer,
-                    None => match recycle_rx.recv() {
-                        Ok(buffer) => buffer,
-                        Err(_) => return,
-                    },
+                    None => {
+                        queue_starvations = queue_starvations.saturating_add(1);
+                        match recycle_rx.recv() {
+                            Ok(buffer) => buffer,
+                            Err(_) => return,
+                        }
+                    }
                 };
 
                 let block = match capture.read_owned_block(replacement) {
@@ -163,6 +168,7 @@ fn spawn_capture_thread(
                     xruns: telemetry.xruns,
                     recoveries: telemetry.recoveries,
                     discontinuities: telemetry.discontinuities,
+                    queue_starvations,
                 };
                 if filled_tx
                     .send(CaptureMessage::Block(CapturePacket { block, counters }))
@@ -233,6 +239,7 @@ fn run(args: Args) -> Result<()> {
         xruns: 0,
         recoveries: 0,
         discontinuities: 0,
+        queue_starvations: 0,
     };
 
     loop {
@@ -287,12 +294,13 @@ fn run(args: Args) -> Result<()> {
             let joc = runtime.encoded().decoder().engine().joc_health();
             let output = playback.telemetry();
             eprintln!(
-                "aurora-threaded-earc: periods={} pcm_frames={} capture_xruns={} capture_recoveries={} capture_discontinuities={} parser_pending={} bursts={} spacing={:?} joc={} joc_render={} joc_total_us={:?} joc_max_us={:?} output_xruns={} output_recoveries={}",
+                "aurora-threaded-earc: periods={} pcm_frames={} capture_xruns={} capture_recoveries={} capture_discontinuities={} capture_queue_starvations={} parser_pending={} bursts={} spacing={:?} joc={} joc_render={} joc_total_us={:?} joc_max_us={:?} output_xruns={} output_recoveries={}",
                 carrier_periods,
                 decoded_pcm_frames,
                 last_capture.xruns,
                 last_capture.recoveries,
                 last_capture.discontinuities,
+                last_capture.queue_starvations,
                 transport.pending_carrier_bytes,
                 transport.total_bursts,
                 transport.last_burst_spacing_bytes,
