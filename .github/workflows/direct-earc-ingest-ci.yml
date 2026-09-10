@@ -66,10 +66,10 @@ jobs:
         with:
           components: rustfmt, clippy
 
-      - name: Install Linux audio build dependencies
+      - name: Install Linux audio and simulator dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install --yes libasound2-dev pkg-config
+          sudo apt-get install --yes libasound2-dev pkg-config ffmpeg
 
       - name: Generate validation lockfile and expose committed drift
         run: |
@@ -130,6 +130,25 @@ jobs:
 
       - name: Clippy deterministic eARC simulator source
         run: cargo clippy --locked -p aurora-sim-source --all-targets -- -D warnings
+
+      - name: Validate FFmpeg-generated E-AC-3 carrier rates
+        run: |
+          for bitrate in 384 768 640; do
+            cargo run --quiet --locked -p aurora-cli \
+              --no-default-features --features earc-sim \
+              --bin aurora-sim-source \
+              -- --generate-seconds 0.256 --bitrate-kbps "$bitrate" \
+              > "/tmp/generated-${bitrate}.iec61937"
+            cargo run --quiet --locked -p aurora-cli \
+              --no-default-features \
+              --bin aurora-direct-earc-probe \
+              -- --filter eac3 \
+              < "/tmp/generated-${bitrate}.iec61937" \
+              > /dev/null 2> "/tmp/generated-${bitrate}.log"
+            grep -Eq 'eac3=[1-9][0-9]*' "/tmp/generated-${bitrate}.log"
+            grep -q 'malformed_headers=0' "/tmp/generated-${bitrate}.log"
+            grep -q 'eac3_period_mismatches=0' "/tmp/generated-${bitrate}.log"
+          done
 
       - name: Check open AC3/EAC3/JOC decoder adapter
         run: cargo check --locked -p aurora-decoder-open --all-targets
