@@ -236,13 +236,15 @@ impl SpeakerOutputStage {
         Ok(())
     }
 
-    /// Converts planar canonical speaker PCM to the hardware-facing interleaved
-    /// domain and applies bass management, calibration, limiter and lip-sync.
-    pub fn process_decoded_frame(
+    /// Converts borrowed planar canonical speaker PCM to the hardware-facing
+    /// interleaved domain and applies bass management, calibration, limiter and
+    /// lip-sync. Borrowing lets the caller return the consumed planar storage to
+    /// a decoder-side recycler after DSP has copied the samples.
+    pub fn process_decoded_frame_ref(
         &mut self,
-        frame: DecodedFrame,
+        frame: &DecodedFrame,
     ) -> Result<SpeakerOutputFrame, RuntimeError> {
-        self.validate_decoded_frame(&frame)?;
+        self.validate_decoded_frame(frame)?;
         if frame.audio.discontinuity {
             self.post.reset();
         }
@@ -263,6 +265,15 @@ impl SpeakerOutputStage {
             presentation_time_seconds: frame.audio.presentation_time_seconds,
             discontinuity: frame.audio.discontinuity,
         })
+    }
+
+    /// Owned compatibility entry point. The playback runtime uses the borrowed
+    /// form above so decoder-owned planar buffers can be recycled afterwards.
+    pub fn process_decoded_frame(
+        &mut self,
+        frame: DecodedFrame,
+    ) -> Result<SpeakerOutputFrame, RuntimeError> {
+        self.process_decoded_frame_ref(&frame)
     }
 
     pub fn reset(&mut self) {
@@ -330,7 +341,15 @@ impl AuroraPlaybackRuntime {
 
         let mut frames = Vec::with_capacity(batch.frames.len());
         for frame in batch.frames {
-            frames.push(self.output.process_decoded_frame(frame)?);
+            // Speaker DSP only needs to borrow planar PCM. Once the output block
+            // has copied/interleaved those samples, return the original Vec
+            // storage to the active decoder recycler before moving on.
+            let processed = self.output.process_decoded_frame_ref(&frame);
+            self.encoded
+                .decoder_mut()
+                .engine_mut()
+                .recycle_decoded_frame(frame);
+            frames.push(processed?);
         }
         Ok(PlaybackBatch {
             frames,
@@ -674,6 +693,19 @@ mod tests {
             .interleaved_f32
             .iter()
             .all(|sample| sample.is_finite()));
+    }
+
+    #[test]
+    fn borrowed_output_stage_preserves_planar_storage_for_recycling() {
+        let mut output = SpeakerOutputStage::new(format(), OutputDspConfig::default()).unwrap();
+        let frame = decoded_frame(OUTPUT_CHANNELS, Vec::new());
+        let first_channel_ptr = frame.audio.channels[0].as_ptr();
+
+        let processed = output.process_decoded_frame_ref(&frame).unwrap();
+
+        assert_eq!(processed.frame_count, 40);
+        assert_eq!(frame.audio.channels[0].as_ptr(), first_channel_ptr);
+        assert_eq!(frame.audio.channels[0].len(), 40);
     }
 
     #[test]
