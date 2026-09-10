@@ -34,6 +34,7 @@ const BLOCK_FRAMES: usize = 40;
 const MAX_VALIDATION_OUTPUT_FRAMES: usize = 2_048;
 const DEFAULT_BITRATE_KBPS: u32 = 384;
 const EAC3_PERIOD: Duration = Duration::from_millis(32);
+const DIRECT_EARC_REFERENCE_WORD_HALF: CarrierWordHalf = CarrierWordHalf::High;
 const WAVE_FORMAT_EXTENSIBLE: u16 = 0xFFFE;
 const WAVE_FLOAT_SUBFORMAT: [u8; 16] = [
     0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x10, 0x00, 0x80, 0x00, 0x00, 0xAA, 0x00, 0x38, 0x9B,
@@ -284,7 +285,7 @@ fn run_latency_report(args: LatencyArgs) -> Result<()> {
         bail!("iterations must be greater than zero");
     }
     let units = load_access_units(args.input.as_deref(), args.seconds, args.bitrate_kbps)?;
-    let mut normalizer = S32LeCarrierNormalizer::new(2, CarrierWordHalf::Low)?;
+    let mut normalizer = S32LeCarrierNormalizer::new(2, DIRECT_EARC_REFERENCE_WORD_HALF)?;
     let mut parser = BurstParser::new(CodecFilter::Eac3);
     let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
     engine.configure(output_format())?;
@@ -301,7 +302,7 @@ fn run_latency_report(args: LatencyArgs) -> Result<()> {
         for unit in &units {
             write_eac3_period(unit, &mut period)
                 .map_err(|error| anyhow::anyhow!("failed building validation carrier: {error}"))?;
-            carrier_to_low_s32(&period, &mut words)?;
+            carrier_to_reference_s32(&period, &mut words)?;
             let chain_start = Instant::now();
 
             let capture_start = Instant::now();
@@ -401,7 +402,8 @@ fn drain_decoder_frames(
                 ValidationStage::SpeakerPostProcessor,
                 output_start.elapsed(),
             );
-            if speaker.interleaved_f32.len() != speaker.frame_count * CHANNELS
+            if speaker.frame_count == 0
+                || speaker.interleaved_f32.len() != speaker.frame_count * CHANNELS
                 || speaker.interleaved_f32.iter().any(|sample| !sample.is_finite())
             {
                 bail!("speaker postprocessor emitted invalid canonical PCM");
@@ -516,14 +518,14 @@ fn run_stress(args: StressArgs) -> Result<()> {
         let unit = &units[unit_index % units.len()];
         write_eac3_period(unit, &mut period)
             .map_err(|error| anyhow::anyhow!("failed building stress carrier: {error}"))?;
-        carrier_to_low_s32(&period, &mut words)?;
+        carrier_to_reference_s32(&period, &mut words)?;
 
         let inject = inject_every != 0 && periods != 0 && periods % inject_every == 0;
         if inject {
             match fault_sequence % 5 {
                 0 => {
                     period[0] ^= 0x01;
-                    carrier_to_low_s32(&period, &mut words)?;
+                    carrier_to_reference_s32(&period, &mut words)?;
                     let batch = runtime.push_direct_s32_words(&words)?;
                     recycle_playback_batch(&mut runtime, batch)?;
                 }
@@ -643,7 +645,7 @@ fn playback_runtime() -> Result<AuroraPlaybackRuntime> {
     let runtime = AuroraPlaybackRuntime::new(
         EncodedInputConfig::DirectEarc {
             slots: 2,
-            word_half: CarrierWordHalf::Low,
+            word_half: DIRECT_EARC_REFERENCE_WORD_HALF,
         },
         EngineConfig::default(),
         output_format(),
@@ -660,7 +662,7 @@ fn feed_valid_unit(
 ) -> Result<usize> {
     write_eac3_period(unit, period)
         .map_err(|error| anyhow::anyhow!("failed building E-AC-3 stress period: {error}"))?;
-    carrier_to_low_s32(period, words)?;
+    carrier_to_reference_s32(period, words)?;
     let batch = runtime.push_direct_s32_words(words)?;
     recycle_playback_batch(runtime, batch)
 }
@@ -682,12 +684,13 @@ fn recycle_playback_batch(
     Ok(frames)
 }
 
-fn carrier_to_low_s32(carrier: &[u8], words: &mut [i32]) -> Result<()> {
+fn carrier_to_reference_s32(carrier: &[u8], words: &mut [i32]) -> Result<()> {
     if carrier.len() % 2 != 0 || words.len() != carrier.len() / 2 {
         bail!("carrier/S32 validation buffer geometry mismatch");
     }
     for (destination, source) in words.iter_mut().zip(carrier.chunks_exact(2)) {
-        *destination = i32::from(u16::from_le_bytes([source[0], source[1]]));
+        let word = u32::from(u16::from_le_bytes([source[0], source[1]]));
+        *destination = (word << 16) as i32;
     }
     Ok(())
 }
@@ -712,7 +715,7 @@ fn verify_truncated_eof_is_rejected(unit: &[u8]) -> Result<usize> {
     write_eac3_period(unit, &mut period)
         .map_err(|error| anyhow::anyhow!("failed building truncated-EOF period: {error}"))?;
     let mut words = vec![0_i32; EAC3_BURST_PERIOD_BYTES / 2];
-    carrier_to_low_s32(&period, &mut words)?;
+    carrier_to_reference_s32(&period, &mut words)?;
     let cut_words = aligned_mid_payload_cut_words(unit.len(), words.len())?;
     let batch = runtime.push_direct_s32_words(&words[..cut_words])?;
     recycle_playback_batch(&mut runtime, batch)?;
@@ -937,13 +940,14 @@ mod tests {
     }
 
     #[test]
-    fn low_half_s32_conversion_round_trips_canonical_carrier() {
+    fn reference_high_half_s32_conversion_round_trips_canonical_carrier() {
         let payload = [0x0B_u8, 0x77, 0x12, 0x34, 0x56, 0x78];
         let mut period = [0_u8; EAC3_BURST_PERIOD_BYTES];
         write_eac3_period(&payload, &mut period).unwrap();
         let mut words = vec![0_i32; EAC3_BURST_PERIOD_BYTES / 2];
-        carrier_to_low_s32(&period, &mut words).unwrap();
-        let mut normalizer = S32LeCarrierNormalizer::new(2, CarrierWordHalf::Low).unwrap();
+        carrier_to_reference_s32(&period, &mut words).unwrap();
+        let mut normalizer =
+            S32LeCarrierNormalizer::new(2, DIRECT_EARC_REFERENCE_WORD_HALF).unwrap();
         let normalized = normalizer.push_s32_words(&words).unwrap();
         assert_eq!(normalized, period);
     }
@@ -986,7 +990,7 @@ mod tests {
         let mut period = [0_u8; EAC3_BURST_PERIOD_BYTES];
         write_eac3_period(unit, &mut period).unwrap();
         let mut words = vec![0_i32; EAC3_BURST_PERIOD_BYTES / 2];
-        carrier_to_low_s32(&period, &mut words).unwrap();
+        carrier_to_reference_s32(&period, &mut words).unwrap();
         let cut_words = aligned_mid_payload_cut_words(unit.len(), words.len()).unwrap();
 
         let prefix = runtime.push_direct_s32_words(&words[..cut_words]).unwrap();
