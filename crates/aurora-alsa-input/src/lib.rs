@@ -7,6 +7,8 @@
 
 use thiserror::Error;
 
+const MIN_CAPTURE_HEADROOM_MS: u64 = 40;
+
 /// Native ALSA capture configuration for the recovered eARC serial-audio carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlsaInputConfig {
@@ -18,7 +20,9 @@ pub struct AlsaInputConfig {
     pub channels: usize,
     /// Preferred hardware period size in carrier frames.
     pub period_frames: usize,
-    /// Preferred hardware buffer size in carrier frames.
+    /// Preferred hardware buffer size in carrier frames. The native backend
+    /// may raise this preference to preserve Aurora's minimum realtime capture
+    /// headroom; the negotiated value is exposed through telemetry.
     pub buffer_frames: usize,
 }
 
@@ -112,6 +116,18 @@ fn validate_config(config: &AlsaInputConfig) -> Result<(), AlsaInputError> {
     Ok(())
 }
 
+/// Minimum hardware capture capacity used to isolate the realtime carrier
+/// reader from occasional decoder/render work in the current single-process
+/// prototype. This is buffer headroom, not an intentional read delay.
+fn minimum_capture_buffer_frames(sample_rate: u32, period_frames: usize) -> usize {
+    let duration_frames = u64::from(sample_rate)
+        .saturating_mul(MIN_CAPTURE_HEADROOM_MS)
+        .saturating_add(999)
+        / 1_000;
+    let duration_frames = usize::try_from(duration_frames).unwrap_or(usize::MAX);
+    duration_frames.max(period_frames.saturating_mul(2))
+}
+
 /// Converts interleaved native i32 slot words into the exact little-endian byte
 /// representation expected by Aurora's existing S32_LE carrier normalizer.
 pub fn interleaved_i32_to_le_bytes(samples: &[i32]) -> Vec<u8> {
@@ -135,7 +151,9 @@ pub struct NativeAlsaCapture {
 impl NativeAlsaCapture {
     /// Opens the ALSA capture endpoint with exact S32_LE/rate/channel semantics.
     /// ALSA resampling is disabled. Period and buffer sizes may negotiate to a
-    /// nearby hardware-supported value and are exposed through telemetry.
+    /// nearby hardware-supported value and are exposed through telemetry. The
+    /// requested buffer is raised when needed to retain at least 40 ms of
+    /// capture headroom in the current synchronous decoder prototype.
     pub fn open(config: AlsaInputConfig) -> Result<Self, AlsaInputError> {
         use alsa::pcm::{Access, Format, HwParams};
         use alsa::{Direction, ValueOr};
@@ -149,7 +167,11 @@ impl NativeAlsaCapture {
         hw.set_channels(config.channels as u32)?;
         hw.set_rate(config.sample_rate, ValueOr::Nearest)?;
         hw.set_period_size_near(config.period_frames as i64, ValueOr::Nearest)?;
-        hw.set_buffer_size_near(config.buffer_frames as i64)?;
+        let requested_buffer_frames = config.buffer_frames.max(minimum_capture_buffer_frames(
+            config.sample_rate,
+            config.period_frames,
+        ));
+        hw.set_buffer_size_near(requested_buffer_frames as i64)?;
         pcm.hw_params(&hw)?;
         drop(hw);
 
@@ -329,6 +351,12 @@ mod tests {
         assert_eq!(config.period_frames, 1_024);
         assert_eq!(config.buffer_frames, 8_192);
         assert_eq!(config.buffer_frames / config.period_frames, 8);
+        assert_eq!(minimum_capture_buffer_frames(192_000, 256), 7_680);
+    }
+
+    #[test]
+    fn minimum_capture_headroom_never_breaks_two_period_rule() {
+        assert_eq!(minimum_capture_buffer_frames(48_000, 2_000), 4_000);
     }
 
     #[test]
