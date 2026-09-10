@@ -17,6 +17,8 @@ use aurora_usb_protocol::{
     HEADER_LEN,
 };
 
+const PROVEN_DIRECT_EARC_SLOTS: usize = 2;
+
 /// Physical/logical encoded input selected for one runtime instance.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EncodedInputKind {
@@ -53,7 +55,9 @@ pub struct CarrierBatch {
     pub carrier: Vec<u8>,
     /// True after an explicit transport break/xrun recovery indication.
     pub discontinuity: bool,
-    /// Source PTS in Aurora's 48 kHz clock domain when supplied by legacy USB.
+    /// Source-packet PTS in Aurora's 48 kHz clock domain when supplied by legacy
+    /// USB. This is transport metadata, not the presentation time of decoded PCM
+    /// returned in the same runtime call because decoders may buffer output.
     pub pts_48k: Option<u64>,
 }
 
@@ -74,9 +78,15 @@ impl EncodedInput {
     pub fn new(config: EncodedInputConfig) -> Result<Self, EncodedInputError> {
         let kind = config.kind();
         let state = match config {
-            EncodedInputConfig::DirectEarc { slots, word_half } => InputState::DirectEarc(
-                S32LeCarrierNormalizer::new(slots, word_half).map_err(EncodedInputError::Carrier)?,
-            ),
+            EncodedInputConfig::DirectEarc { slots, word_half } => {
+                if slots != PROVEN_DIRECT_EARC_SLOTS {
+                    return Err(EncodedInputError::UnsupportedDirectEarcSlots { slots });
+                }
+                InputState::DirectEarc(
+                    S32LeCarrierNormalizer::new(slots, word_half)
+                        .map_err(EncodedInputError::Carrier)?,
+                )
+            }
             EncodedInputConfig::LegacyUsb => InputState::LegacyUsb,
         };
         Ok(Self { kind, state })
@@ -88,7 +98,10 @@ impl EncodedInput {
 
     /// Pushes arbitrary S32_LE bytes from a direct Linux I2S/SAI capture.
     /// Incomplete serial-audio frames are retained until the next call.
-    pub fn push_direct_s32(&mut self, bytes: &[u8]) -> Result<Option<CarrierBatch>, EncodedInputError> {
+    pub fn push_direct_s32(
+        &mut self,
+        bytes: &[u8],
+    ) -> Result<Option<CarrierBatch>, EncodedInputError> {
         let InputState::DirectEarc(normalizer) = &mut self.state else {
             return Err(EncodedInputError::WrongSource {
                 configured: self.kind,
@@ -223,6 +236,9 @@ pub enum EncodedInputError {
         declared: usize,
         actual: usize,
     },
+    UnsupportedDirectEarcSlots {
+        slots: usize,
+    },
     WrongSource {
         configured: EncodedInputKind,
         attempted: EncodedInputKind,
@@ -237,6 +253,10 @@ impl fmt::Display for EncodedInputError {
             Self::UsbPacketLength { declared, actual } => write!(
                 f,
                 "Aurora USB payload length mismatch: declared {declared} bytes, actual {actual} bytes"
+            ),
+            Self::UnsupportedDirectEarcSlots { slots } => write!(
+                f,
+                "direct eARC carrier currently requires exactly {PROVEN_DIRECT_EARC_SLOTS} S32 slots; got {slots}. Wider TDM capture needs explicit carrier-slot selection before normalization"
             ),
             Self::WrongSource {
                 configured,
@@ -254,7 +274,9 @@ impl Error for EncodedInputError {
         match self {
             Self::Carrier(error) => Some(error),
             Self::UsbProtocol(error) => Some(error),
-            Self::UsbPacketLength { .. } | Self::WrongSource { .. } => None,
+            Self::UsbPacketLength { .. }
+            | Self::UnsupportedDirectEarcSlots { .. }
+            | Self::WrongSource { .. } => None,
         }
     }
 }
@@ -292,6 +314,19 @@ mod tests {
         assert!(!batch.discontinuity);
         assert_eq!(batch.pts_48k, None);
         input.finish().unwrap();
+    }
+
+    #[test]
+    fn direct_earc_rejects_unproven_slot_layouts() {
+        for slots in [1, 4, 8, 16] {
+            assert!(matches!(
+                EncodedInput::new(EncodedInputConfig::DirectEarc {
+                    slots,
+                    word_half: CarrierWordHalf::High,
+                }),
+                Err(EncodedInputError::UnsupportedDirectEarcSlots { slots: rejected }) if rejected == slots
+            ));
+        }
     }
 
     #[test]
