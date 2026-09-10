@@ -94,21 +94,15 @@ impl NativeAc3Decoder {
         }
         let samples = frame.samples as usize;
         if samples == 0 {
-            return Ok(DecodedFrame {
-                audio: AudioBlock {
-                    channels: Vec::new(),
-                    frame_count: 0,
-                    presentation_time_seconds: 0.0,
-                    discontinuity: self.discontinuity,
-                },
-                objects: Vec::new(),
-            });
+            return Err(DecoderError::UnsupportedInput(
+                "oxideav AC-3 output contained a zero-sample audio frame",
+            ));
         }
         let bytes = &frame.data[0];
         let denom = samples
             .checked_mul(2)
             .ok_or(DecoderError::UnsupportedInput("decoded frame size overflow"))?;
-        if denom == 0 || bytes.len() % denom != 0 {
+        if bytes.len() % denom != 0 {
             return Err(DecoderError::UnsupportedInput(
                 "decoded S16 payload has inconsistent frame/channel size",
             ));
@@ -186,6 +180,52 @@ impl NativeAc3Decoder {
                 }
             }
         }
+    }
+
+    /// Collapse every PCM frame emitted by one compressed packet into one
+    /// contiguous Aurora frame. This keeps the one-result Decoder API while
+    /// preserving every OxideAV frame and avoids hidden native output that the
+    /// parent decoder cannot poll independently.
+    fn take_packet_output(&mut self) -> Result<Option<DecodedFrame>, DecoderError> {
+        let Some(mut combined) = self.pending.pop_front() else {
+            return Ok(None);
+        };
+        let channel_count = combined.audio.channels.len();
+        while let Some(next) = self.pending.pop_front() {
+            if next.audio.discontinuity {
+                self.pending.clear();
+                return Err(DecoderError::Decode(
+                    "oxideav emitted an unexpected discontinuity inside one compressed packet"
+                        .to_owned(),
+                ));
+            }
+            if next.audio.channels.len() != channel_count || !next.objects.is_empty() {
+                self.pending.clear();
+                return Err(DecoderError::UnsupportedInput(
+                    "oxideav changed PCM shape inside one compressed packet",
+                ));
+            }
+            let next_total = combined
+                .audio
+                .frame_count
+                .checked_add(next.audio.frame_count)
+                .ok_or(DecoderError::UnsupportedInput(
+                    "combined decoded PCM frame count overflow",
+                ))?;
+            for (destination, mut source) in combined
+                .audio
+                .channels
+                .iter_mut()
+                .zip(next.audio.channels.into_iter())
+            {
+                destination.try_reserve(source.len()).map_err(|_| {
+                    DecoderError::Unavailable("unable to grow combined AC-3 PCM output")
+                })?;
+                destination.append(&mut source);
+            }
+            combined.audio.frame_count = next_total;
+        }
+        Ok(Some(combined))
     }
 }
 
@@ -267,16 +307,13 @@ impl Decoder for NativeAc3Decoder {
     }
 
     fn decode_chunk(&mut self, input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
-        if let Some(frame) = self.pending.pop_front() {
-            if !input.is_empty() {
-                return Err(DecoderError::Decode(
-                    "native AC-3/E-AC-3 input arrived before pending PCM was drained".to_owned(),
-                ));
-            }
-            return Ok(Some(frame));
-        }
         if input.is_empty() {
-            return Ok(None);
+            return self.take_packet_output();
+        }
+        if !self.pending.is_empty() {
+            return Err(DecoderError::Decode(
+                "native AC-3/E-AC-3 retained PCM across compressed packet boundaries".to_owned(),
+            ));
         }
         let output = self
             .output_format
@@ -295,7 +332,7 @@ impl Decoder for NativeAc3Decoder {
             .send_packet(&packet)
             .map_err(|e| DecoderError::ExternalProcess(format!("oxideav send_packet: {e}")))?;
         self.drain_inner(input)?;
-        Ok(self.pending.pop_front())
+        self.take_packet_output()
     }
 
     fn reset(&mut self) {
@@ -311,6 +348,18 @@ impl Decoder for NativeAc3Decoder {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn pending_frame(value: f32, frames: usize, discontinuity: bool) -> DecodedFrame {
+        DecodedFrame {
+            audio: AudioBlock {
+                channels: (0..12).map(|_| vec![value; frames]).collect(),
+                frame_count: frames,
+                presentation_time_seconds: 0.0,
+                discontinuity,
+            },
+            objects: Vec::new(),
+        }
+    }
 
     #[test]
     fn rejects_unrelated_codec() {
@@ -329,6 +378,22 @@ mod tests {
             })
             .unwrap();
         assert_eq!(decoder.output_format.unwrap().block_size, 40);
+    }
+
+    #[test]
+    fn packet_output_coalesces_every_ready_pcm_frame() {
+        let mut decoder = NativeAc3Decoder::new(CodecKind::Eac3, JocPresentation::Bed).unwrap();
+        decoder.pending.push_back(pending_frame(1.0, 2, true));
+        decoder.pending.push_back(pending_frame(2.0, 3, false));
+
+        let combined = decoder.take_packet_output().unwrap().unwrap();
+
+        assert_eq!(combined.audio.frame_count, 5);
+        assert!(combined.audio.discontinuity);
+        assert!(decoder.pending.is_empty());
+        for channel in combined.audio.channels {
+            assert_eq!(channel, vec![1.0, 1.0, 2.0, 2.0, 2.0]);
+        }
     }
 
     #[test]
