@@ -196,6 +196,21 @@ impl DirectEarcDecoder {
         }
     }
 
+    /// Flushes decoder-owned PCM before a transport codec transition, then
+    /// resets codec detection/backend state for the newly observed IEC61937 type.
+    ///
+    /// Resetting first would silently discard a short (< block-size) JOC/worker
+    /// tail that is still buffered behind the previous transport format.
+    fn prepare_format_change(
+        &mut self,
+        frames: &mut Vec<DecodedFrame>,
+    ) -> Result<(), DecoderError> {
+        self.engine.flush_pending()?;
+        self.collect_ready_frames(None, frames)?;
+        self.engine.reset();
+        Ok(())
+    }
+
     /// Pushes arbitrary canonical S16_LE IEC 61937 carrier bytes.
     ///
     /// `discontinuity` must be true after a real ALSA xrun, eARC unlock/relock,
@@ -222,9 +237,10 @@ impl DirectEarcDecoder {
             batch.transport_codecs.push(observation.burst.codec);
 
             if observation.format_change.is_some() {
-                // Never let buffered state from one compressed format leak into
-                // another when the TV switches source or output mode.
-                self.engine.reset();
+                // Retire the old decoder before resetting codec detection. This
+                // preserves a short final PCM tail instead of dropping it at a
+                // source/format switch.
+                self.prepare_format_change(&mut batch.frames)?;
                 self.total_format_changes = self.total_format_changes.saturating_add(1);
                 batch.format_changes += 1;
             }
@@ -357,12 +373,23 @@ mod tests {
         direct.observe_valid_burst(0);
         direct.observe_valid_burst(24_576);
         direct.observe_valid_burst(49_160);
-
         let health = direct.transport_telemetry();
         assert_eq!(health.last_burst_spacing_bytes, Some(24_584));
         assert_eq!(health.min_burst_spacing_bytes, Some(24_576));
         assert_eq!(health.max_burst_spacing_bytes, Some(24_584));
         assert_eq!(health.total_bursts, 3);
+    }
+
+    #[test]
+    fn empty_format_change_retirement_is_lossless_and_ready_for_new_codec() {
+        let mut direct = DirectEarcDecoder::new(EngineConfig::default());
+        direct.configure(format()).unwrap();
+        let mut frames = Vec::new();
+
+        direct.prepare_format_change(&mut frames).unwrap();
+
+        assert!(frames.is_empty());
+        assert!(!direct.engine().joc_status().codec_classified_joc);
     }
 
     #[test]
