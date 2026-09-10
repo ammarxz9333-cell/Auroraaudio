@@ -8,3 +8,4 @@ publish = false
 
 [dependencies]
 aurora-iec61937 = { path = "../aurora-iec61937" }
+openjoc-eac3 = { git = "https://github.com/chyinan/OpenJOC.git", rev = "e7e03bc834ac0483770933cdc50ac058b100d1e2", package = "openjoc-eac3" }
