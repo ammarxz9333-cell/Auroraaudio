@@ -34,8 +34,8 @@ const DEFAULT_SLOTS: usize = 2;
 const DEFAULT_BRIDGE_SOCKET: &str = "/run/aurora/usb-bridge.sock";
 #[cfg(unix)]
 const LEGACY_PACKET_BUFFER_BYTES: usize = 512 * 1024;
-const DEFAULT_INPUT_PERIOD_FRAMES: usize = 256;
-const DEFAULT_INPUT_BUFFER_FRAMES: usize = 1_024;
+const DEFAULT_INPUT_PERIOD_FRAMES: usize = 1_024;
+const DEFAULT_INPUT_BUFFER_FRAMES: usize = 8_192;
 const DEFAULT_OUTPUT_PERIOD_FRAMES: usize = 256;
 const DEFAULT_OUTPUT_BUFFER_FRAMES: usize = 1_024;
 
@@ -165,8 +165,9 @@ fn main() -> Result<()> {
     let decoder = runtime.encoded().decoder();
     let transport = decoder.transport_telemetry();
     let joc = decoder.engine().joc_status();
+    let joc_health = decoder.engine().joc_health();
     eprintln!(
-        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_layout={:?} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_fallback={:?}",
+        "aurora-encoded-runtime: input={:?} output={:?} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_layout={:?} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_last_decode_us={:?} joc_last_render_us={:?} joc_last_total_us={:?} joc_max_total_us={:?} joc_fallback={:?}",
         args.input,
         args.output,
         stats.carrier_bursts,
@@ -196,6 +197,10 @@ fn main() -> Result<()> {
         joc.latency_samples,
         joc.object_count,
         joc.complexity_index,
+        joc_health.last_decode_time_us,
+        joc_health.last_render_time_us,
+        joc_health.last_total_time_us,
+        joc_health.max_total_time_us,
         joc.fallback_reason
     );
     Ok(())
@@ -205,8 +210,12 @@ fn validate_args(args: &Args) -> Result<()> {
     if args.carrier_rate == 0 {
         bail!("carrier rate must be greater than zero");
     }
-    if args.slots == 0 {
-        bail!("slot count must be greater than zero");
+    if matches!(args.input, InputMode::DirectEarc) && args.slots != DEFAULT_SLOTS {
+        bail!(
+            "direct eARC currently requires exactly {} S32 carrier slots; got {}",
+            DEFAULT_SLOTS,
+            args.slots
+        );
     }
     if args.read_bytes == 0 {
         bail!("stdin read size must be greater than zero");
@@ -270,7 +279,7 @@ fn run_selected_input<S: SpeakerSink>(
             let stats = health.counters;
             let _ = writeln!(
                 io::stderr(),
-                "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_fallback_present={} output_xruns={:?} output_recoveries={:?}",
+                "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_last_decode_us={:?} joc_last_render_us={:?} joc_last_total_us={:?} joc_max_total_us={:?} joc_fallback_present={} output_xruns={:?} output_recoveries={:?}",
                 age.as_millis(),
                 stats.carrier_bursts,
                 stats.format_changes,
@@ -299,6 +308,10 @@ fn run_selected_input<S: SpeakerSink>(
                 health.joc.latency_samples,
                 health.joc.object_count,
                 health.joc.complexity_index,
+                health.joc.last_decode_time_us,
+                health.joc.last_render_time_us,
+                health.joc.last_total_time_us,
+                health.joc.max_total_time_us,
                 health.joc.fallback_present,
                 health.output.map(|o| o.xruns),
                 health.output.map(|o| o.recoveries)
@@ -738,6 +751,13 @@ mod tests {
         let mut args = valid_args();
         args.input_period_frames = 256;
         args.input_buffer_frames = 256;
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn rejects_unproven_direct_earc_slot_layout() {
+        let mut args = valid_args();
+        args.slots = 4;
         assert!(validate_args(&args).is_err());
     }
 
