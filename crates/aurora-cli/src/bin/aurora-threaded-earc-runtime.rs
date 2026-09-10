@@ -186,16 +186,6 @@ fn run(args: Args) -> Result<()> {
         );
     }
 
-    let capture_config = AlsaInputConfig {
-        device: args.capture_device,
-        sample_rate: CARRIER_RATE,
-        channels: CARRIER_SLOTS,
-        period_frames: CAPTURE_PERIOD_FRAMES,
-        buffer_frames: CAPTURE_BUFFER_FRAMES,
-    };
-    let (captured_rx, recycle_tx, capture_thread) =
-        spawn_capture_thread(capture_config, args.queue_depth)?;
-
     let mut runtime = AuroraPlaybackRuntime::new(
         EncodedInputConfig::DirectEarc {
             slots: CARRIER_SLOTS,
@@ -212,6 +202,9 @@ fn run(args: Args) -> Result<()> {
     )
     .context("failed initializing Aurora threaded direct-eARC runtime")?;
 
+    // Bring the speaker sink to a prepared state before capture starts. This
+    // prevents ALSA playback setup latency from consuming the bounded capture
+    // queue or hardware headroom during startup.
     let mut playback = NativeAlsaPlayback::open(AlsaOutputConfig {
         device: args.output_device,
         sample_rate: OUTPUT_SAMPLE_RATE,
@@ -221,6 +214,16 @@ fn run(args: Args) -> Result<()> {
         buffer_frames: PLAYBACK_BUFFER_FRAMES,
     })
     .context("failed opening Aurora native speaker output")?;
+
+    let capture_config = AlsaInputConfig {
+        device: args.capture_device,
+        sample_rate: CARRIER_RATE,
+        channels: CARRIER_SLOTS,
+        period_frames: CAPTURE_PERIOD_FRAMES,
+        buffer_frames: CAPTURE_BUFFER_FRAMES,
+    };
+    let (captured_rx, recycle_tx, capture_thread) =
+        spawn_capture_thread(capture_config, args.queue_depth)?;
 
     let mut suppress_next_frame_discontinuity = false;
     let mut carrier_periods = 0_u64;
