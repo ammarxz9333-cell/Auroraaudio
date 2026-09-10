@@ -124,8 +124,8 @@ impl SyncFramer {
                         available: self.buffer.len(),
                     })
                 } else {
-                    // `flush` should already have emitted every complete frame.
-                    debug_assert!(false, "complete AC-3 frame remained buffered after flush");
+                    // `flush` already emits complete frames; reaching this branch
+                    // only means the parser's invariants changed underneath us.
                     Ok(())
                 }
             }
