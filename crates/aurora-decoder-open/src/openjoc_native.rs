@@ -50,7 +50,7 @@ impl OpenJocNativeRenderer {
             Some(name) if !name.trim().is_empty() => name.to_owned(),
             _ => default_layout_for_channels(output.channel_count)
                 .ok_or(DecoderError::UnsupportedInput(
-                    "JOC speaker layout is ambiguous; provide an explicit OpenJOC layout hint",
+                    "JOC speaker layout is ambiguous or lacks a proven Aurora channel map; provide a verified supported layout",
                 ))?
                 .to_owned(),
         };
@@ -283,19 +283,20 @@ fn duration_us(duration: Duration) -> u64 {
 ///
 /// OpenJOC's 7.1-family presets use `FL FR FC LFE Lb Rb Ls Rs ...`, while
 /// Aurora's canonical 7.1/7.1.4 order is `FL FR FC LFE SL SR SBL SBR ...`.
-/// The explicit permutation keeps side/back calibration, bass management and
-/// physical routing attached to the correct semantic speakers.
+/// Only layouts with an explicitly verified semantic permutation are admitted;
+/// channel-count equality alone is never enough to claim a safe speaker map.
 fn aurora_channel_map(layout: &str, channels: usize) -> Result<Vec<usize>, DecoderError> {
     let map: Vec<usize> = match (layout, channels) {
         ("7.1", 8) => vec![0, 1, 2, 3, 6, 7, 4, 5],
         ("7.1.4", 12) => vec![0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11],
-        // These admitted presets already match Aurora's corresponding semantic
-        // order for the channel roles Aurora currently names explicitly.
+        // These verified presets already match Aurora's corresponding semantic
+        // order for every channel role used by the current adapter.
         ("2.0", 2) | ("5.1", 6) | ("5.1.4", 10) => (0..channels).collect(),
-        // Other layouts are usable only as explicitly selected non-canonical
-        // targets. Aurora has no complete semantic role contract for them yet,
-        // so preserve the renderer-owned order rather than guessing a mapping.
-        (_, count) => (0..count).collect(),
+        _ => {
+            return Err(DecoderError::UnsupportedInput(
+                "OpenJOC speaker layout has no verified semantic channel map in Aurora",
+            ));
+        }
     };
     if map.len() != channels
         || map.iter().any(|&index| index >= channels)
@@ -320,9 +321,8 @@ pub const fn default_layout_for_channels(channels: usize) -> Option<&'static str
         8 => Some("7.1"),
         10 => Some("5.1.4"),
         12 => Some("7.1.4"),
-        14 => Some("7.1.6"),
-        16 => Some("9.1.6"),
-        24 => Some("22.2"),
+        // Larger OpenJOC layouts are intentionally not inferred by channel
+        // count until Aurora owns and tests their complete semantic mapping.
         _ => None,
     }
 }
@@ -350,6 +350,12 @@ mod tests {
             aurora_channel_map("7.1", 8).unwrap(),
             vec![0, 1, 2, 3, 6, 7, 4, 5]
         );
+    }
+
+    #[test]
+    fn unverified_same_width_layout_fails_closed() {
+        assert!(aurora_channel_map("custom-12", 12).is_err());
+        assert_eq!(default_layout_for_channels(16), None);
     }
 
     #[test]
