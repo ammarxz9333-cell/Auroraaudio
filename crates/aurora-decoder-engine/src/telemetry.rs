@@ -83,9 +83,10 @@ impl AuroraDecoderEngine {
         }
     }
 
-    /// Return a consumed decoded frame to any active backend-specific recycler.
-    /// OpenJOC uses this to reuse 40-frame planar buffers; non-JOC frames simply
-    /// fall through and are dropped normally by the backend hook.
+    /// Return a consumed decoded frame to the active open backend's bounded
+    /// planar-storage recycler. OpenJOC, native AC-3/E-AC-3 bed decode and the
+    /// FFmpeg compatibility worker all validate geometry before retaining it;
+    /// unsupported/non-recyclable frames are dropped normally.
     pub fn recycle_decoded_frame(&mut self, frame: DecodedFrame) {
         self.open.recycle_decoded_frame(frame);
     }
