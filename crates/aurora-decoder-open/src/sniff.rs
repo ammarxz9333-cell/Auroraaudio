@@ -96,7 +96,7 @@ pub struct ProbeResult {
     pub encapsulation: Encapsulation,
     /// Confidence in percent, 0..=100.
     pub confidence: u8,
-    /// IEC 61937 Pc data type when the input is a burst carrier.
+    /// Full IEC 61937 Pc data type/sub-data-type value from bits 0..6.
     pub iec61937_data_type: Option<u8>,
 }
 
@@ -214,8 +214,8 @@ pub fn probe(data: &[u8]) -> ProbeResult {
         }
         if bsid <= 16 {
             // JOC is intentionally not guessed from arbitrary coded bytes.
-            // The decoder promotes Eac3 -> Eac3Joc only after parsing declared
-            // addbsi/skipfld EMDF metadata.
+            // The decoder promotes Eac3 -> Eac3Joc only after positive OpenJOC
+            // admission and successful speaker rendering.
             return ProbeResult::elementary(CodecKind::Eac3, 100);
         }
     }
@@ -254,19 +254,22 @@ fn probe_iec61937(data: &[u8]) -> Option<ProbeResult> {
         return None;
     }
 
-    // Captured S16_LE carrier words: Pa=0xF872, Pb=0x4E1F.
+    // Captured S16_LE carrier words: Pa=0xF872, Pb=0x4E1F. Pc bits 0..6 carry
+    // the IEC61937 data-type/sub-data-type value; bit 7 is not part of it.
     if data[0..4] != [0x72, 0xF8, 0x1F, 0x4E] {
         return None;
     }
     let pc = u16::from_le_bytes([data[4], data[5]]);
-    let data_type = (pc & 0x1F) as u8;
+    let data_type = (pc & 0x7F) as u8;
     let codec = match data_type {
         0x01 => CodecKind::Ac3,
         0x0B | 0x0C | 0x0D => CodecKind::Dts,
         0x11 => CodecKind::DtsHd,
         0x15 => CodecKind::Eac3,
-        // IEC 61937 type used for MLP/TrueHD bursts on HBR transports.
-        0x16 => CodecKind::TrueHd,
+        // IEC61937 type 0x16 is the MAT transport. A MAT payload is not the
+        // same byte contract as a raw TrueHD elementary stream, so keep the
+        // distinction explicit and let a dedicated MAT adapter own conversion.
+        0x16 => CodecKind::DolbyMat,
         _ => CodecKind::Unknown,
     };
     Some(ProbeResult {
@@ -300,6 +303,20 @@ mod tests {
         assert_eq!(p.encapsulation, Encapsulation::Iec61937);
         assert_eq!(p.codec, CodecKind::Eac3);
         assert_eq!(p.iec61937_data_type, Some(0x15));
+    }
+
+    #[test]
+    fn iec61937_probe_preserves_full_seven_bit_type_and_mat_semantics() {
+        let mat = [0x72, 0xF8, 0x1F, 0x4E, 0x16, 0x00, 0x00, 0x00];
+        let p = probe(&mat);
+        assert_eq!(p.codec, CodecKind::DolbyMat);
+        assert_eq!(p.iec61937_data_type, Some(0x16));
+
+        // A non-zero sub-data-type bit must not alias back to base AC-3.
+        let extended = [0x72, 0xF8, 0x1F, 0x4E, 0x21, 0x00, 0x08, 0x00];
+        let p = probe(&extended);
+        assert_eq!(p.codec, CodecKind::Unknown);
+        assert_eq!(p.iec61937_data_type, Some(0x21));
     }
 
     #[test]
