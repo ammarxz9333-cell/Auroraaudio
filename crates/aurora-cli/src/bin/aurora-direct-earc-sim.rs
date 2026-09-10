@@ -59,6 +59,12 @@ fn main() -> Result<()> {
     let mut period = [0_u8; EAC3_BURST_PERIOD_BYTES];
     let mut framer = Eac3AccessUnitFramer::new();
 
+    // When a deletion fault is requested, stage all output until the selected
+    // period is actually reached. If EOS arrives before that period, the command
+    // fails without leaving a misleading partial carrier file on redirected stdout.
+    // Once the target period is emitted, the staged prefix is committed and the
+    // remainder resumes ordinary streaming.
+    let mut staged_output = fault.map(|_| Vec::new());
     let mut input_bytes = 0_u64;
     let mut output_bytes = 0_u64;
     let mut access_units = 0_usize;
@@ -77,11 +83,12 @@ fn main() -> Result<()> {
             .push(&read_buffer[..count])
             .map_err(|error| anyhow::anyhow!("E-AC-3 access-unit framing failed: {error}"))?;
         for unit in units {
-            let (written, applied) = emit_period(
+            let (written, applied) = emit_stream_period(
                 &unit,
                 access_units,
                 &mut period,
                 fault,
+                &mut staged_output,
                 &mut output,
             )?;
             output_bytes = output_bytes.saturating_add(written as u64);
@@ -94,11 +101,12 @@ fn main() -> Result<()> {
         .finish()
         .map_err(|error| anyhow::anyhow!("finite E-AC-3 stream finalization failed: {error}"))?
     {
-        let (written, applied) = emit_period(
+        let (written, applied) = emit_stream_period(
             &unit,
             access_units,
             &mut period,
             fault,
+            &mut staged_output,
             &mut output,
         )?;
         output_bytes = output_bytes.saturating_add(written as u64);
@@ -132,6 +140,32 @@ fn parse_fault(args: &Args) -> Result<Option<DeleteFaultSpec>> {
         (Some(_), Some(_), Some(0)) => bail!("delete-count must be greater than zero"),
         _ => bail!("delete-period, delete-offset and delete-count must be supplied together"),
     }
+}
+
+fn emit_stream_period<W: Write>(
+    access_unit: &[u8],
+    period_index: usize,
+    period: &mut [u8; EAC3_BURST_PERIOD_BYTES],
+    fault: Option<DeleteFaultSpec>,
+    staged_output: &mut Option<Vec<u8>>,
+    output: &mut W,
+) -> Result<(usize, bool)> {
+    let (written, applied) = if let Some(staged) = staged_output.as_mut() {
+        emit_period(access_unit, period_index, period, fault, staged)?
+    } else {
+        emit_period(access_unit, period_index, period, fault, output)?
+    };
+
+    if applied {
+        let staged = staged_output.take().ok_or_else(|| {
+            anyhow::anyhow!("internal simulator fault staging state was unexpectedly absent")
+        })?;
+        output
+            .write_all(&staged)
+            .context("failed committing staged fault-injected IEC61937 carrier")?;
+    }
+
+    Ok((written, applied))
 }
 
 fn emit_period<W: Write>(
@@ -216,5 +250,86 @@ mod tests {
             emit_period(&payload, 1, &mut period, fault, &mut second).unwrap();
         assert_eq!(second_bytes, EAC3_BURST_PERIOD_BYTES - 2);
         assert!(second_applied);
+    }
+
+    #[test]
+    fn missing_fault_target_keeps_redirected_output_empty() {
+        let payload = [0x0B_u8, 0x77, 0xAA, 0x55];
+        let fault = Some(DeleteFaultSpec {
+            period: 2,
+            offset: 10,
+            count: 2,
+        });
+        let mut period = [0_u8; EAC3_BURST_PERIOD_BYTES];
+        let mut staged = Some(Vec::new());
+        let mut visible = Vec::new();
+
+        let (_, first_applied) = emit_stream_period(
+            &payload,
+            0,
+            &mut period,
+            fault,
+            &mut staged,
+            &mut visible,
+        )
+        .unwrap();
+        let (_, second_applied) = emit_stream_period(
+            &payload,
+            1,
+            &mut period,
+            fault,
+            &mut staged,
+            &mut visible,
+        )
+        .unwrap();
+
+        assert!(!first_applied);
+        assert!(!second_applied);
+        assert!(visible.is_empty());
+        assert_eq!(
+            staged.as_ref().map(Vec::len),
+            Some(EAC3_BURST_PERIOD_BYTES * 2)
+        );
+    }
+
+    #[test]
+    fn reaching_fault_target_commits_staged_prefix_once() {
+        let payload = [0x0B_u8, 0x77, 0xAA, 0x55];
+        let fault = Some(DeleteFaultSpec {
+            period: 1,
+            offset: 10,
+            count: 2,
+        });
+        let mut period = [0_u8; EAC3_BURST_PERIOD_BYTES];
+        let mut staged = Some(Vec::new());
+        let mut visible = Vec::new();
+
+        emit_stream_period(
+            &payload,
+            0,
+            &mut period,
+            fault,
+            &mut staged,
+            &mut visible,
+        )
+        .unwrap();
+        assert!(visible.is_empty());
+
+        let (_, applied) = emit_stream_period(
+            &payload,
+            1,
+            &mut period,
+            fault,
+            &mut staged,
+            &mut visible,
+        )
+        .unwrap();
+
+        assert!(applied);
+        assert!(staged.is_none());
+        assert_eq!(
+            visible.len(),
+            EAC3_BURST_PERIOD_BYTES * 2 - fault.unwrap().count
+        );
     }
 }
