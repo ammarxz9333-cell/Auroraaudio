@@ -22,6 +22,7 @@ on:
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
+      - "crates/aurora-cli/src/bin/aurora-direct-earc-sim.rs"
       - "crates/aurora-cli/src/bin/aurora-encoded-runtime*.rs"
       - ".github/workflows/direct-earc-ingest-ci.yml"
   pull_request:
@@ -43,6 +44,7 @@ on:
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-ingest.rs"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-probe.rs"
+      - "crates/aurora-cli/src/bin/aurora-direct-earc-sim.rs"
       - "crates/aurora-cli/src/bin/aurora-encoded-runtime*.rs"
       - ".github/workflows/direct-earc-ingest-ci.yml"
 
@@ -234,18 +236,21 @@ jobs:
         run: |
           cargo check --locked -p aurora-cli --bin aurora-direct-earc-ingest
           cargo check --locked -p aurora-cli --bin aurora-direct-earc-probe
+          cargo check --locked -p aurora-cli --no-default-features --features earc-sim --bin aurora-direct-earc-sim
           cargo check --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
 
       - name: Test direct eARC binaries
         run: |
           cargo test --locked -p aurora-cli --bin aurora-direct-earc-ingest
           cargo test --locked -p aurora-cli --bin aurora-direct-earc-probe
+          cargo test --locked -p aurora-cli --no-default-features --features earc-sim --bin aurora-direct-earc-sim
           cargo test --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime
 
       - name: Clippy direct eARC binaries
         run: |
           cargo clippy --locked -p aurora-cli --bin aurora-direct-earc-ingest -- -D warnings
           cargo clippy --locked -p aurora-cli --bin aurora-direct-earc-probe -- -D warnings
+          cargo clippy --locked -p aurora-cli --no-default-features --features earc-sim --bin aurora-direct-earc-sim -- -D warnings
           cargo clippy --locked -p aurora-cli --features encoded-runtime --bin aurora-encoded-runtime -- -D warnings
 
       - name: Enforce committed workspace lockfile
