@@ -111,14 +111,21 @@ fn encode_f32_to_s32_padded_into(
     }
 
     let frames = interleaved_f32.len() / logical_channels;
-    let required = frames.saturating_mul(hardware_channels);
+    let required = frames.checked_mul(hardware_channels).ok_or_else(|| {
+        AlsaOutputError::InvalidConfig(
+            "speaker frame/channel product overflowed addressable memory".to_owned(),
+        )
+    })?;
     encoded.clear();
     if encoded.capacity() < required {
-        // `Vec::reserve` guarantees capacity for `len + additional`; after the
-        // clear above len is zero, so request the full target rather than the
-        // capacity delta. Requesting only `required - capacity` could legally
-        // leave the vector undersized and force a growth during the sample loop.
-        encoded.reserve(required);
+        // After clear len is zero, so reserve the complete target. Use the
+        // fallible reserve API so impossible geometry is an Aurora error rather
+        // than a capacity-overflow panic in the realtime output path.
+        encoded.try_reserve(required).map_err(|_| {
+            AlsaOutputError::InvalidConfig(
+                "unable to reserve the encoded ALSA output staging buffer".to_owned(),
+            )
+        })?;
     }
     for frame in interleaved_f32.chunks_exact(logical_channels) {
         for &sample in frame {
@@ -159,9 +166,24 @@ fn validate_config(config: &AlsaOutputConfig) -> Result<(), AlsaOutputError> {
             "sample rate must be greater than zero".to_owned(),
         ));
     }
+    if u32::try_from(config.hardware_channels).is_err() {
+        return Err(AlsaOutputError::InvalidConfig(
+            "hardware channel count exceeds ALSA's u32 range".to_owned(),
+        ));
+    }
     if config.period_frames == 0 {
         return Err(AlsaOutputError::InvalidConfig(
             "period size must be greater than zero".to_owned(),
+        ));
+    }
+    if i64::try_from(config.period_frames).is_err() {
+        return Err(AlsaOutputError::InvalidConfig(
+            "period size exceeds ALSA's signed frame range".to_owned(),
+        ));
+    }
+    if i64::try_from(config.buffer_frames).is_err() {
+        return Err(AlsaOutputError::InvalidConfig(
+            "buffer size exceeds ALSA's signed frame range".to_owned(),
         ));
     }
     if config.buffer_frames < config.period_frames.saturating_mul(2) {
@@ -187,6 +209,28 @@ fn validate_channel_shape(
         )));
     }
     Ok(())
+}
+
+fn configured_channels_u32(channels: usize) -> Result<u32, AlsaOutputError> {
+    u32::try_from(channels).map_err(|_| {
+        AlsaOutputError::InvalidConfig("hardware channel count exceeds ALSA's u32 range".to_owned())
+    })
+}
+
+fn configured_frames_i64(name: &str, frames: usize) -> Result<i64, AlsaOutputError> {
+    i64::try_from(frames).map_err(|_| {
+        AlsaOutputError::InvalidConfig(format!(
+            "{name} frame count exceeds ALSA's signed frame range"
+        ))
+    })
+}
+
+fn negotiated_frames_usize(name: &str, frames: i64) -> Result<usize, AlsaOutputError> {
+    usize::try_from(frames).map_err(|_| {
+        AlsaOutputError::Negotiation(format!(
+            "device negotiated an invalid negative or oversized {name} frame count: {frames}"
+        ))
+    })
 }
 
 /// Keep one hardware period free while requiring the rest of the playback
@@ -224,25 +268,32 @@ impl NativeAlsaPlayback {
         use alsa::{Direction, ValueOr};
 
         validate_config(&config)?;
+        let configured_channels = configured_channels_u32(config.hardware_channels)?;
+        let configured_period = configured_frames_i64("period", config.period_frames)?;
+        let configured_buffer = configured_frames_i64("buffer", config.buffer_frames)?;
         let pcm = alsa::pcm::PCM::new(&config.device, Direction::Playback, false)?;
 
         let hw = HwParams::any(&pcm)?;
         hw.set_rate_resample(false)?;
         hw.set_access(Access::RWInterleaved)?;
         hw.set_format(Format::S32LE)?;
-        hw.set_channels(config.hardware_channels as u32)?;
+        hw.set_channels(configured_channels)?;
         hw.set_rate(config.sample_rate, ValueOr::Nearest)?;
-        hw.set_period_size_near(config.period_frames as i64, ValueOr::Nearest)?;
-        hw.set_buffer_size_near(config.buffer_frames as i64)?;
+        hw.set_period_size_near(configured_period, ValueOr::Nearest)?;
+        hw.set_buffer_size_near(configured_buffer)?;
         pcm.hw_params(&hw)?;
         drop(hw);
 
         let current = pcm.hw_params_current()?;
         let negotiated_rate = current.get_rate()?;
-        let negotiated_channels = current.get_channels()? as usize;
+        let negotiated_channels = usize::try_from(current.get_channels()?).map_err(|_| {
+            AlsaOutputError::Negotiation(
+                "device negotiated a channel count outside usize".to_owned(),
+            )
+        })?;
         let negotiated_format = current.get_format()?;
-        let period_frames = current.get_period_size()? as usize;
-        let buffer_frames = current.get_buffer_size()? as usize;
+        let period_frames = negotiated_frames_usize("period", current.get_period_size()?)?;
+        let buffer_frames = negotiated_frames_usize("buffer", current.get_buffer_size()?)?;
         drop(current);
 
         if negotiated_rate != config.sample_rate {
@@ -268,9 +319,12 @@ impl NativeAlsaPlayback {
             )));
         }
 
+        let negotiated_period = configured_frames_i64("negotiated period", period_frames)?;
+        let start_threshold = playback_start_threshold(period_frames, buffer_frames);
+        let start_threshold = configured_frames_i64("playback start threshold", start_threshold)?;
         let sw = pcm.sw_params_current()?;
-        sw.set_avail_min(period_frames as i64)?;
-        sw.set_start_threshold(playback_start_threshold(period_frames, buffer_frames) as i64)?;
+        sw.set_avail_min(negotiated_period)?;
+        sw.set_start_threshold(start_threshold)?;
         pcm.sw_params(&sw)?;
         drop(sw);
         pcm.prepare()?;
@@ -286,8 +340,17 @@ impl NativeAlsaPlayback {
             recoveries: 0,
             discontinuity_resets: 0,
         };
-        let encoded_scratch =
-            Vec::with_capacity(period_frames.saturating_mul(negotiated_channels));
+        let scratch_capacity = period_frames.checked_mul(negotiated_channels).ok_or_else(|| {
+            AlsaOutputError::Negotiation(
+                "negotiated playback period/channel product overflowed usize".to_owned(),
+            )
+        })?;
+        let mut encoded_scratch = Vec::new();
+        encoded_scratch.try_reserve_exact(scratch_capacity).map_err(|_| {
+            AlsaOutputError::InvalidConfig(
+                "unable to reserve the native playback staging buffer".to_owned(),
+            )
+        })?;
 
         Ok(Self {
             pcm,
@@ -384,7 +447,13 @@ impl NativeAlsaPlayback {
             match result {
                 Ok(0) => return Err(AlsaOutputError::NoForwardProgress),
                 Ok(written_frames) => {
-                    frame_offset = frame_offset.saturating_add(written_frames);
+                    let remaining = total_frames - frame_offset;
+                    if written_frames > remaining {
+                        return Err(AlsaOutputError::Negotiation(format!(
+                            "ALSA reported writing {written_frames} frames with only {remaining} remaining"
+                        )));
+                    }
+                    frame_offset += written_frames;
                     self.telemetry.frames_written = self
                         .telemetry
                         .frames_written
@@ -496,6 +565,16 @@ mod tests {
     fn narrower_physical_output_fails_closed() {
         let error = encode_f32_to_s32_padded(&[0.0; 12], 12, 8).unwrap_err();
         assert!(matches!(error, AlsaOutputError::InvalidConfig(_)));
+    }
+
+    #[test]
+    fn alsa_integer_geometry_is_checked_before_casting() {
+        if usize::BITS > 32 {
+            let too_many_channels = (u32::MAX as usize).saturating_add(1);
+            assert!(configured_channels_u32(too_many_channels).is_err());
+        }
+        assert!(negotiated_frames_usize("period", -1).is_err());
+        assert_eq!(negotiated_frames_usize("period", 256).unwrap(), 256);
     }
 
     #[test]
