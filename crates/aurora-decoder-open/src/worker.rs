@@ -37,9 +37,6 @@ fn worker_channel_contract(
     output_channels: usize,
 ) -> Result<(&'static str, Vec<usize>), DecoderError> {
     let contract = match decoded_channels {
-        // FFmpeg mono is FC. Preserve that semantic whenever Aurora exposes its
-        // canonical center lane; only narrow non-cinema outputs fall back to 0.
-        1 if output_channels >= 3 => ("mono", vec![2]),
         1 if output_channels >= 1 => ("mono", vec![0]),
         2 if output_channels >= 2 => ("stereo", vec![0, 1]),
         6 if output_channels >= 6 => ("5.1(side)", vec![0, 1, 2, 3, 4, 5]),
@@ -128,8 +125,6 @@ pub const fn ffmpeg_input_format(codec: CodecKind) -> Option<&'static str> {
         CodecKind::MonkeyAudio => Some("ape"),
         CodecKind::Tta => Some("tta"),
         CodecKind::AmrNb | CodecKind::AmrWb => Some("amr"),
-        // Ogg-carried Opus/Vorbis/Speex and ALAC commonly require container
-        // headers, so they intentionally rely on FFmpeg probing.
         CodecKind::Opus
         | CodecKind::Vorbis
         | CodecKind::Speex
@@ -239,8 +234,6 @@ impl OpenWorkerDecoder {
         self.encapsulation
     }
 
-    /// Feed compressed bytes and return at most one Aurora-sized PCM block.
-    /// Additional decoded blocks stay queued in `pcm_bytes` for the next call.
     pub fn push(&mut self, bytes: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
         if !bytes.is_empty() {
             let stdin = self.stdin.as_mut().ok_or(DecoderError::ExternalProcess(
@@ -257,16 +250,11 @@ impl OpenWorkerDecoder {
         self.take_block(false)
     }
 
-    /// Drain any bytes the reader thread has already delivered.
     pub fn poll(&mut self) -> Result<Option<DecodedFrame>, DecoderError> {
         self.collect_stdout();
         self.take_block(false)
     }
 
-    /// Close input, wait for FFmpeg to flush codec delay, then return all final
-    /// PCM blocks including a short final block if present. A successful child
-    /// exit is accepted only when the stdout reader also ended cleanly and the
-    /// raw F32 stream ends on a complete PCM-frame boundary.
     pub fn finish(&mut self) -> Result<Vec<DecodedFrame>, DecoderError> {
         self.stdin.take();
         let status = self
@@ -348,9 +336,6 @@ impl OpenWorkerDecoder {
                 planar[target_channel][frame] = sample;
             }
         }
-        // Consume only after every sample validated successfully. This removes
-        // the per-block temporary byte allocation without weakening failure
-        // behavior: malformed/non-finite PCM remains staged for diagnostics.
         self.pcm_bytes.drain(..take);
         let pts = self.emitted_frames as f64 / f64::from(self.output.sample_rate);
         self.emitted_frames = self.emitted_frames.saturating_add(frame_count as u64);
@@ -417,19 +402,14 @@ mod tests {
     }
 
     #[test]
-    fn mono_worker_routes_ffmpeg_center_to_aurora_center() {
-        let cmd = build_worker_command(CodecKind::Flac, Encapsulation::Elementary, fmt(3)).unwrap();
+    fn mono_worker_uses_explicit_mono_layout() {
+        let cmd = build_worker_command(CodecKind::Flac, Encapsulation::Elementary, fmt(1)).unwrap();
         assert!(cmd
             .args
             .windows(2)
             .any(|p| p == ["-channel_layout", "mono"]));
-        assert_eq!(cmd.decoded_channels, 3.min(8).max(1));
-        assert_eq!(worker_channel_contract(1, 12).unwrap().1, vec![2]);
-    }
-
-    #[test]
-    fn narrow_mono_output_falls_back_to_lane_zero() {
-        assert_eq!(worker_channel_contract(1, 1).unwrap().1, vec![0]);
+        assert_eq!(cmd.decoded_channels, 1);
+        assert_eq!(cmd.channel_map, vec![0]);
     }
 
     #[test]
