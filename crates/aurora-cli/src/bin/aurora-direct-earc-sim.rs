@@ -236,6 +236,9 @@ fn parse_fault_plan(args: &Args) -> Result<FaultPlan> {
         if values.len() != 2 || values[1] == 0 {
             bail!("--gap requires N M with M greater than zero");
         }
+        values[0]
+            .checked_add(values[1] - 1)
+            .ok_or_else(|| anyhow::anyhow!("--gap target range overflows period index"))?;
         select(Some(PrimaryFault::Gap {
             start: values[0],
             count: values[1],
@@ -266,7 +269,7 @@ fn mid_payload_cut_length(payload_bytes: usize) -> usize {
     IEC61937_HEADER_BYTES + carrier_payload.max(2) / 2
 }
 
-fn maybe_write_jitter<W: Write>(
+fn maybe_write_jitter<W: Write + ?Sized>(
     period_index: usize,
     plan: FaultPlan,
     output: &mut W,
@@ -298,29 +301,26 @@ fn emit_stream_period<W: Write>(
     write_eac3_period(access_unit, period)
         .map_err(|error| anyhow::anyhow!("failed building E-AC-3 carrier period: {error}"))?;
 
-    let mut emitted: Vec<u8> = Vec::new();
-    let bytes: &[u8] = match plan.primary {
-        Some(PrimaryFault::CutBurst { period: target }) if target == period_index => {
-            emitted = inject_carrier_fault(
+    let owned = match plan.primary {
+        Some(PrimaryFault::CutBurst { period: target }) if target == period_index => Some(
+            inject_carrier_fault(
                 period,
                 CarrierFault::Truncate {
                     length: mid_payload_cut_length(access_unit.len()),
                 },
             )
-            .map_err(|error| anyhow::anyhow!("failed cutting carrier burst: {error}"))?;
-            &emitted
-        }
-        Some(PrimaryFault::CorruptPa { period: target }) if target == period_index => {
-            emitted = inject_carrier_fault(period, CarrierFault::CorruptPa)
-                .map_err(|error| anyhow::anyhow!("failed corrupting Pa: {error}"))?;
-            &emitted
-        }
+            .map_err(|error| anyhow::anyhow!("failed cutting carrier burst: {error}"))?,
+        ),
+        Some(PrimaryFault::CorruptPa { period: target }) if target == period_index => Some(
+            inject_carrier_fault(period, CarrierFault::CorruptPa)
+                .map_err(|error| anyhow::anyhow!("failed corrupting Pa: {error}"))?,
+        ),
         Some(PrimaryFault::Gap { start, count })
             if period_index >= start && period_index < start.saturating_add(count) =>
         {
             write_idle_period(period)
                 .map_err(|error| anyhow::anyhow!("failed writing gap idle period: {error}"))?;
-            period
+            None
         }
         Some(PrimaryFault::CodecSwitch { period: target }) if target == period_index => {
             // An encoded-only IEC61937 parser cannot decode LPCM. One full carrier
@@ -328,10 +328,11 @@ fn emit_stream_period<W: Write>(
             // non-IEC interval while preserving time before E-AC-3 returns.
             write_idle_period(period)
                 .map_err(|error| anyhow::anyhow!("failed writing LPCM switch span: {error}"))?;
-            period
+            None
         }
-        _ => period,
+        _ => None,
     };
+    let bytes = owned.as_deref().unwrap_or(period);
 
     let destination: &mut dyn Write = if let Some(staged) = staged_output.as_mut() {
         staged
@@ -352,8 +353,9 @@ fn emit_stream_period<W: Write>(
         }
     }
 
-    usize::try_from(jitter_bytes)
-        .unwrap_or(usize::MAX)
+    let jitter_bytes = usize::try_from(jitter_bytes)
+        .map_err(|_| anyhow::anyhow!("simulator jitter byte count exceeds usize"))?;
+    jitter_bytes
         .checked_add(bytes.len())
         .ok_or_else(|| anyhow::anyhow!("simulator output byte count overflow"))
 }
@@ -386,6 +388,13 @@ mod tests {
     fn gap_requires_positive_count() {
         let mut args = base_args();
         args.gap = Some(vec![3, 0]);
+        assert!(parse_fault_plan(&args).is_err());
+    }
+
+    #[test]
+    fn gap_rejects_index_overflow() {
+        let mut args = base_args();
+        args.gap = Some(vec![usize::MAX, 2]);
         assert!(parse_fault_plan(&args).is_err());
     }
 
