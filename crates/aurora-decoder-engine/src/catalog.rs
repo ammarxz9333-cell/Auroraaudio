@@ -107,6 +107,9 @@ pub struct BackendDescriptor {
     pub license: LicenseClass,
     pub integrated: bool,
     pub closed_core_compatible: bool,
+    /// True only when the integrated Aurora boundary exports object metadata for
+    /// downstream object-preserving rendering. A backend that consumes objects
+    /// internally and emits speaker PCM does not satisfy this contract.
     pub object_metadata: bool,
     pub max_channels: u8,
     pub quality: u8,
@@ -165,7 +168,7 @@ const FFMPEG_CODECS: &[CodecId] = &[
 ];
 
 const BACKENDS: &[BackendDescriptor] = &[
-    BackendDescriptor { id: BackendId::OpenJoc, name: "OpenJOC E-AC-3 JOC object decoder", execution: ExecutionClass::NativeRust, license: LicenseClass::ProprietaryCompatiblePermissive, integrated: true, closed_core_compatible: true, object_metadata: true, max_channels: 64, quality: 99, robustness: 94, latency: 94, metadata_fidelity: 100, portability: 96, codecs: OPENJOC_CODECS },
+    BackendDescriptor { id: BackendId::OpenJoc, name: "OpenJOC E-AC-3 JOC speaker renderer", execution: ExecutionClass::NativeRust, license: LicenseClass::ProprietaryCompatiblePermissive, integrated: true, closed_core_compatible: true, object_metadata: false, max_channels: 64, quality: 99, robustness: 94, latency: 94, metadata_fidelity: 100, portability: 96, codecs: OPENJOC_CODECS },
     BackendDescriptor { id: BackendId::OxideAc3, name: "OxideAV AC-3/E-AC-3", execution: ExecutionClass::NativeRust, license: LicenseClass::ProprietaryCompatiblePermissive, integrated: true, closed_core_compatible: true, object_metadata: false, max_channels: 8, quality: 96, robustness: 93, latency: 96, metadata_fidelity: 72, portability: 99, codecs: OXIDE_AC3_CODECS },
     BackendDescriptor { id: BackendId::OxideAc4, name: "OxideAV AC-4 + Aurora object-preserving OAMD bridge", execution: ExecutionClass::NativeRust, license: LicenseClass::ProprietaryCompatiblePermissive, integrated: true, closed_core_compatible: true, object_metadata: true, max_channels: 24, quality: 96, robustness: 88, latency: 95, metadata_fidelity: 92, portability: 99, codecs: OXIDE_AC4_CODECS },
     BackendDescriptor { id: BackendId::TrueHdNative, name: "truehd/truehdd TrueHD Atmos object decoder", execution: ExecutionClass::NativeRust, license: LicenseClass::ProprietaryCompatiblePermissive, integrated: false, closed_core_compatible: true, object_metadata: true, max_channels: 16, quality: 99, robustness: 94, latency: 90, metadata_fidelity: 100, portability: 95, codecs: TRUEHD_CODECS },
