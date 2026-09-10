@@ -115,6 +115,10 @@ pub struct JocHealth {
     pub object_count: Option<u16>,
     pub complexity_index: Option<u8>,
     pub fallback_present: bool,
+    pub last_decode_time_us: Option<u64>,
+    pub last_render_time_us: Option<u64>,
+    pub last_total_time_us: Option<u64>,
+    pub max_total_time_us: Option<u64>,
 }
 
 impl IntoJocHealth for JocDecoderHealth {
@@ -127,6 +131,10 @@ impl IntoJocHealth for JocDecoderHealth {
             object_count: self.object_count,
             complexity_index: self.complexity_index,
             fallback_present: self.fallback_present,
+            last_decode_time_us: self.last_decode_time_us,
+            last_render_time_us: self.last_render_time_us,
+            last_total_time_us: self.last_total_time_us,
+            max_total_time_us: self.max_total_time_us,
         }
     }
 }
@@ -141,6 +149,12 @@ impl IntoJocHealth for &JocDecoderStatus {
             object_count: self.object_count,
             complexity_index: self.complexity_index,
             fallback_present: self.fallback_reason.is_some(),
+            // Detailed/final status does not own realtime stage timings. Live
+            // callers should pass JocDecoderHealth from joc_health().
+            last_decode_time_us: None,
+            last_render_time_us: None,
+            last_total_time_us: None,
+            max_total_time_us: None,
         }
     }
 }
@@ -336,10 +350,14 @@ mod tests {
             codec_classified_joc: true,
             speaker_render_active: true,
             channel_count: Some(12),
-            latency_samples: Some(256),
+            latency_samples: Some(609),
             object_count: Some(15),
             complexity_index: Some(8),
             fallback_present: false,
+            last_decode_time_us: Some(1100),
+            last_render_time_us: Some(900),
+            last_total_time_us: Some(2100),
+            max_total_time_us: Some(2400),
         };
         let health = RuntimeCounters::default().snapshot_with_joc(
             parser_snapshot(),
@@ -350,6 +368,10 @@ mod tests {
         assert!(health.joc.speaker_render_active);
         assert_eq!(health.joc.channel_count, Some(12));
         assert_eq!(health.joc.object_count, Some(15));
+        assert_eq!(health.joc.last_decode_time_us, Some(1100));
+        assert_eq!(health.joc.last_render_time_us, Some(900));
+        assert_eq!(health.joc.last_total_time_us, Some(2100));
+        assert_eq!(health.joc.max_total_time_us, Some(2400));
         assert!(!health.joc.fallback_present);
     }
 
