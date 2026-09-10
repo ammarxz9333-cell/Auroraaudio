@@ -82,44 +82,6 @@ impl AuroraDecoderEngine {
             max_total_time_us: render.and_then(|info| info.max_total_time_us),
         }
     }
-
-    /// Decode one complete E-AC-3 access unit whose end boundary has already
-    /// been validated by the transport layer. This preserves IEC61937 type 0x15
-    /// burst boundaries so the JOC framer does not need a one-AU look-ahead.
-    /// The open decoder independently validates that `input` is exactly one
-    /// complete E-AC-3 AU before accepting it.
-    pub fn decode_complete_eac3_access_unit(
-        &mut self,
-        input: &[u8],
-    ) -> Result<Option<DecodedFrame>, DecoderError> {
-        self.telemetry.observe_input(input);
-
-        if !matches!(self.active_codec, Some(CodecId::Eac3 | CodecId::Eac3Joc)) {
-            if let Err(error) = self.refresh_decision(CodecId::Eac3) {
-                return self.decision_error(error);
-            }
-        }
-
-        let frame = match self.open.decode_complete_eac3_access_unit(input) {
-            Ok(frame) => frame,
-            Err(error) => return self.finish_decode(Err(error)),
-        };
-
-        if let Some(codec) = self.open.detected_codec() {
-            let codec = CodecId::from(codec);
-            let changed = self
-                .active
-                .map(|decision| !decision.backend.supports(codec))
-                .unwrap_or(true)
-                || self.active_codec != Some(codec);
-            if changed {
-                if let Err(error) = self.refresh_decision(codec) {
-                    return self.decision_error(error);
-                }
-            }
-        }
-        self.finish_decode(Ok(frame))
-    }
 }
 
 impl EngineTelemetry {
@@ -241,16 +203,6 @@ mod tests {
     fn empty_engine_flush_is_a_noop() {
         let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
         engine.flush_pending().unwrap();
-    }
-
-    #[test]
-    fn complete_eac3_front_door_rejects_empty_input_and_records_error() {
-        let mut engine = AuroraDecoderEngine::new(EngineConfig::default());
-        let error = engine.decode_complete_eac3_access_unit(&[]).unwrap_err();
-        assert!(matches!(error, DecoderError::UnsupportedInput(_)));
-        let telemetry = engine.telemetry();
-        assert_eq!(telemetry.poll_calls, 1);
-        assert_eq!(telemetry.unsupported_errors, 1);
     }
 
     #[test]
