@@ -29,6 +29,8 @@ use aurora_dsp_basic::output::{
 use aurora_encoded_input::{EncodedInput, EncodedInputConfig, EncodedInputError, EncodedInputKind};
 use aurora_spatial_runtime::{SpatialRuntimeConfig, SpatialRuntimeError, VbapSpatialRuntime};
 
+const DIRECT_CARRIER_SCRATCH_BYTES: usize = 64 * 1024;
+
 /// Decoder output produced by one source-ingest call.
 #[derive(Debug, Default)]
 pub struct RuntimeBatch {
@@ -65,6 +67,9 @@ pub struct PlaybackBatch {
 pub struct AuroraEncodedRuntime {
     input: EncodedInput,
     decoder: DirectEarcDecoder,
+    /// Reused only by native direct-eARC S32-word ingress. The compatibility
+    /// byte/legacy APIs keep their owned-batch behavior.
+    direct_carrier_scratch: Vec<u8>,
 }
 
 impl AuroraEncodedRuntime {
@@ -78,7 +83,16 @@ impl AuroraEncodedRuntime {
         decoder
             .configure(output_format)
             .map_err(RuntimeError::Decoder)?;
-        Ok(Self { input, decoder })
+        let direct_carrier_scratch = if input_config.kind() == EncodedInputKind::DirectEarc {
+            Vec::with_capacity(DIRECT_CARRIER_SCRATCH_BYTES)
+        } else {
+            Vec::new()
+        };
+        Ok(Self {
+            input,
+            decoder,
+            direct_carrier_scratch,
+        })
     }
 
     pub const fn input_kind(&self) -> EncodedInputKind {
@@ -94,22 +108,33 @@ impl AuroraEncodedRuntime {
         else {
             return Ok(RuntimeBatch::default());
         };
-        self.decode_carrier(carrier.carrier, carrier.discontinuity, carrier.pts_48k)
+        decode_carrier_batch(
+            &mut self.decoder,
+            &carrier.carrier,
+            carrier.discontinuity,
+            carrier.pts_48k,
+        )
     }
 
     /// Feeds complete native ALSA S32 slot samples from direct eARC capture.
     ///
-    /// This path avoids the redundant intermediate i32 -> byte staging vector
-    /// while preserving the exact signed 32-bit slot bit pattern.
+    /// The canonical S16_LE carrier bytes are written into Aurora-owned reusable
+    /// storage. After initial construction this removes the normalizer's
+    /// per-capture-block carrier allocation while preserving the exact slot bits.
     pub fn push_direct_s32_words(&mut self, samples: &[i32]) -> Result<RuntimeBatch, RuntimeError> {
-        let Some(carrier) = self
+        let produced = self
             .input
-            .push_direct_s32_words(samples)
-            .map_err(RuntimeError::Input)?
-        else {
+            .push_direct_s32_words_into(samples, &mut self.direct_carrier_scratch)
+            .map_err(RuntimeError::Input)?;
+        if !produced {
             return Ok(RuntimeBatch::default());
-        };
-        self.decode_carrier(carrier.carrier, carrier.discontinuity, carrier.pts_48k)
+        }
+        decode_carrier_batch(
+            &mut self.decoder,
+            &self.direct_carrier_scratch,
+            false,
+            None,
+        )
     }
 
     /// Feeds one complete Aurora USB v1 packet from the legacy STM32 bridge.
@@ -122,26 +147,12 @@ impl AuroraEncodedRuntime {
         else {
             return Ok(RuntimeBatch::default());
         };
-        self.decode_carrier(carrier.carrier, carrier.discontinuity, carrier.pts_48k)
-    }
-
-    fn decode_carrier(
-        &mut self,
-        carrier: Vec<u8>,
-        discontinuity: bool,
-        pts_48k: Option<u64>,
-    ) -> Result<RuntimeBatch, RuntimeError> {
-        let decoded = self
-            .decoder
-            .push_carrier(&carrier, discontinuity)
-            .map_err(RuntimeError::Decoder)?;
-        Ok(RuntimeBatch {
-            frames: decoded.frames,
-            bursts: decoded.bursts,
-            format_changes: decoded.format_changes,
-            discontinuity: decoded.discontinuity,
-            pts_48k,
-        })
+        decode_carrier_batch(
+            &mut self.decoder,
+            &carrier.carrier,
+            carrier.discontinuity,
+            carrier.pts_48k,
+        )
     }
 
     /// Clears both source-local partial state and decoder/parser state after an
@@ -149,6 +160,7 @@ impl AuroraEncodedRuntime {
     pub fn reset(&mut self) {
         self.input.reset();
         self.decoder.reset();
+        self.direct_carrier_scratch.clear();
     }
 
     /// Validates source-local framing and drains every remaining decoder frame.
@@ -171,6 +183,24 @@ impl AuroraEncodedRuntime {
     pub fn decoder_mut(&mut self) -> &mut DirectEarcDecoder {
         &mut self.decoder
     }
+}
+
+fn decode_carrier_batch(
+    decoder: &mut DirectEarcDecoder,
+    carrier: &[u8],
+    discontinuity: bool,
+    pts_48k: Option<u64>,
+) -> Result<RuntimeBatch, RuntimeError> {
+    let decoded = decoder
+        .push_carrier(carrier, discontinuity)
+        .map_err(RuntimeError::Decoder)?;
+    Ok(RuntimeBatch {
+        frames: decoded.frames,
+        bursts: decoded.bursts,
+        format_changes: decoded.format_changes,
+        discontinuity: decoded.discontinuity,
+        pts_48k,
+    })
 }
 
 /// Canonical speaker-output stage shared by already-rendered decoder PCM and
@@ -273,7 +303,8 @@ impl AuroraPlaybackRuntime {
         self.process_batch(batch)
     }
 
-    /// Feeds native ALSA S32 slot words without a byte-staging allocation.
+    /// Feeds native ALSA S32 slot words using the encoded runtime's reusable
+    /// carrier scratch instead of allocating a normalized carrier vector per call.
     pub fn push_direct_s32_words(
         &mut self,
         samples: &[i32],
@@ -559,6 +590,26 @@ mod tests {
         assert!(batch.frames.is_empty());
         assert_eq!(runtime.decoder().pending_carrier_bytes(), 4);
         assert!(matches!(runtime.finish(), Err(RuntimeError::Decoder(_))));
+    }
+
+    #[test]
+    fn native_s32_word_runtime_reuses_carrier_capacity() {
+        let mut runtime = AuroraEncodedRuntime::new(
+            EncodedInputConfig::DirectEarc {
+                slots: 2,
+                word_half: CarrierWordHalf::High,
+            },
+            EngineConfig::default(),
+            format(),
+        )
+        .unwrap();
+        let capacity = runtime.direct_carrier_scratch.capacity();
+        assert!(capacity >= DIRECT_CARRIER_SCRATCH_BYTES);
+
+        runtime.push_direct_s32_words(&[0, 0]).unwrap();
+        runtime.push_direct_s32_words(&[0, 0]).unwrap();
+
+        assert_eq!(runtime.direct_carrier_scratch.capacity(), capacity);
     }
 
     #[test]
