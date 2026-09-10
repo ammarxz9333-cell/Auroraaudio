@@ -287,6 +287,30 @@ impl UniversalOpenDecoder {
         Ok(())
     }
 
+    /// Cleanly closes an admitted JOC presentation before falling back to the
+    /// ordinary E-AC-3 bed. OpenJOC may hold a sub-block tail because 1536 AU
+    /// samples are not divisible by Aurora's 40-frame cadence; dropping the
+    /// renderer here would otherwise lose real rendered PCM at the transition.
+    fn drain_and_retire_joc_renderer(&mut self) -> Result<(), DecoderError> {
+        if let Some(mut renderer) = self.joc_renderer.take() {
+            for frame in renderer.drain()? {
+                self.pending.push_back(frame);
+            }
+        }
+        Ok(())
+    }
+
+    /// Preserve PCM that OpenJOC had already rendered before the current AU
+    /// failed. Do not ask a failed decoder session to process more data.
+    fn salvage_and_retire_joc_renderer(&mut self) -> Result<(), DecoderError> {
+        if let Some(mut renderer) = self.joc_renderer.take() {
+            for frame in renderer.take_buffered_frames()? {
+                self.pending.push_back(frame);
+            }
+        }
+        Ok(())
+    }
+
     fn process_eac3_access_unit(&mut self, unit: &[u8]) -> Result<(), DecoderError> {
         match self.joc_probe.inspect(unit) {
             JocAdmission::Validated => {
@@ -319,28 +343,33 @@ impl UniversalOpenDecoder {
                         Ok(())
                     }
                     Err(error) => {
-                        self.last_joc_error = Some(error.to_string());
-                        self.joc_renderer = None;
+                        let render_error = error.to_string();
+                        if let Err(retire_error) = self.salvage_and_retire_joc_renderer() {
+                            self.last_joc_error = Some(format!(
+                                "{render_error}; buffered JOC retirement failed: {retire_error}"
+                            ));
+                            return Err(retire_error);
+                        }
+                        self.last_joc_error = Some(render_error);
                         self.codec = Some(CodecKind::Eac3);
                         self.decode_eac3_bed_access_unit(unit)
                     }
                 }
             }
             JocAdmission::SignalledButInvalid => {
+                self.drain_and_retire_joc_renderer()?;
                 self.last_joc_error = Some(
-                    "EC-3 Extension Type A was present but EMDF/OAMD/JOC validation failed"
-                        .to_owned(),
+                    "EC-3 Extension Type A was present but OpenJOC admission failed".to_owned(),
                 );
-                self.joc_renderer = None;
                 self.codec = Some(CodecKind::Eac3);
                 self.decode_eac3_bed_access_unit(unit)
             }
             JocAdmission::NotJoc => {
-                // Ordinary E-AC-3 starts a non-JOC state immediately. Do not
-                // leave an earlier malformed-JOC fallback reason or renderer
-                // attached to the current stream classification.
+                // Ordinary E-AC-3 starts a non-JOC state immediately. Retire any
+                // previous JOC renderer first so a real sub-block tail is not
+                // discarded at a same-carrier content transition.
+                self.drain_and_retire_joc_renderer()?;
                 self.last_joc_error = None;
-                self.joc_renderer = None;
                 self.codec = Some(CodecKind::Eac3);
                 self.decode_eac3_bed_access_unit(unit)
             }
