@@ -30,6 +30,8 @@ use aurora_encoded_input::{EncodedInput, EncodedInputConfig, EncodedInputError, 
 use aurora_spatial_runtime::{SpatialRuntimeConfig, SpatialRuntimeError, VbapSpatialRuntime};
 
 const DIRECT_CARRIER_SCRATCH_BYTES: usize = 64 * 1024;
+const MAX_RECYCLED_INTERLEAVED_BLOCKS: usize = 32;
+const MAX_RECYCLED_INTERLEAVED_SAMPLES: usize = OUTPUT_CHANNELS * 2_048;
 
 /// Decoder output produced by one source-ingest call.
 #[derive(Debug, Default)]
@@ -207,6 +209,7 @@ fn decode_carrier_batch(
 /// Aurora's object-preserving spatial renderer.
 pub struct SpeakerOutputStage {
     post: SpeakerPostProcessor,
+    recycled_interleaved: Vec<Vec<f32>>,
 }
 
 impl SpeakerOutputStage {
@@ -214,7 +217,10 @@ impl SpeakerOutputStage {
         validate_output_format(output_format)?;
         let post = SpeakerPostProcessor::new(config)
             .map_err(|error| RuntimeError::OutputSetup(error.to_string()))?;
-        Ok(Self { post })
+        Ok(Self {
+            post,
+            recycled_interleaved: Vec::with_capacity(MAX_RECYCLED_INTERLEAVED_BLOCKS),
+        })
     }
 
     fn validate_decoded_frame(&self, frame: &DecodedFrame) -> Result<(), RuntimeError> {
@@ -236,6 +242,27 @@ impl SpeakerOutputStage {
         Ok(())
     }
 
+    fn take_interleaved_storage(&mut self, required: usize) -> Vec<f32> {
+        if let Some(index) = self
+            .recycled_interleaved
+            .iter()
+            .position(|buffer| buffer.capacity() >= required)
+        {
+            return self.recycled_interleaved.swap_remove(index);
+        }
+        Vec::with_capacity(required)
+    }
+
+    fn recycle_interleaved_storage(&mut self, mut storage: Vec<f32>) {
+        storage.clear();
+        if storage.capacity() > MAX_RECYCLED_INTERLEAVED_SAMPLES
+            || self.recycled_interleaved.len() >= MAX_RECYCLED_INTERLEAVED_BLOCKS
+        {
+            return;
+        }
+        self.recycled_interleaved.push(storage);
+    }
+
     /// Converts borrowed planar canonical speaker PCM to the hardware-facing
     /// interleaved domain and applies bass management, calibration, limiter and
     /// lip-sync. Borrowing lets the caller return the consumed planar storage to
@@ -249,15 +276,21 @@ impl SpeakerOutputStage {
             self.post.reset();
         }
 
-        let mut interleaved = Vec::with_capacity(frame.audio.frame_count * OUTPUT_CHANNELS);
+        let required = frame
+            .audio
+            .frame_count
+            .checked_mul(OUTPUT_CHANNELS)
+            .ok_or_else(|| RuntimeError::OutputSetup("speaker output block size overflow".to_owned()))?;
+        let mut interleaved = self.take_interleaved_storage(required);
         for frame_index in 0..frame.audio.frame_count {
             for channel in &frame.audio.channels {
                 interleaved.push(channel[frame_index]);
             }
         }
-        self.post
-            .process_block(&mut interleaved)
-            .map_err(RuntimeError::OutputDsp)?;
+        if let Err(error) = self.post.process_block(&mut interleaved) {
+            self.recycle_interleaved_storage(interleaved);
+            return Err(RuntimeError::OutputDsp(error));
+        }
 
         Ok(SpeakerOutputFrame {
             interleaved_f32: interleaved,
@@ -265,6 +298,12 @@ impl SpeakerOutputStage {
             presentation_time_seconds: frame.audio.presentation_time_seconds,
             discontinuity: frame.audio.discontinuity,
         })
+    }
+
+    /// Return one consumed hardware-facing output buffer to the bounded pool.
+    /// Callers should do this only after the sink has finished reading the frame.
+    pub fn recycle_output_frame(&mut self, frame: SpeakerOutputFrame) {
+        self.recycle_interleaved_storage(frame.interleaved_f32);
     }
 
     /// Owned compatibility entry point. The playback runtime uses the borrowed
@@ -360,6 +399,12 @@ impl AuroraPlaybackRuntime {
         })
     }
 
+    /// Return a speaker frame after the sink consumed it so the interleaved F32
+    /// allocation can be reused by a later DSP block.
+    pub fn recycle_output_frame(&mut self, frame: SpeakerOutputFrame) {
+        self.output.recycle_output_frame(frame);
+    }
+
     pub fn reset(&mut self) {
         self.encoded.reset();
         self.output.reset();
@@ -420,6 +465,10 @@ impl SpatialSpeakerRuntime {
             audio,
             objects: Vec::new(),
         })
+    }
+
+    pub fn recycle_output_frame(&mut self, frame: SpeakerOutputFrame) {
+        self.output.recycle_output_frame(frame);
     }
 
     pub fn reset(&mut self) {
@@ -706,6 +755,25 @@ mod tests {
         assert_eq!(processed.frame_count, 40);
         assert_eq!(frame.audio.channels[0].as_ptr(), first_channel_ptr);
         assert_eq!(frame.audio.channels[0].len(), 40);
+    }
+
+    #[test]
+    fn speaker_output_stage_reuses_interleaved_storage_after_recycle() {
+        let mut output = SpeakerOutputStage::new(format(), OutputDspConfig::default()).unwrap();
+        let first = output
+            .process_decoded_frame(decoded_frame(OUTPUT_CHANNELS, Vec::new()))
+            .unwrap();
+        let allocation = first.interleaved_f32.as_ptr();
+        let capacity = first.interleaved_f32.capacity();
+        output.recycle_output_frame(first);
+
+        let second = output
+            .process_decoded_frame(decoded_frame(OUTPUT_CHANNELS, Vec::new()))
+            .unwrap();
+
+        assert_eq!(second.interleaved_f32.as_ptr(), allocation);
+        assert_eq!(second.interleaved_f32.capacity(), capacity);
+        assert_eq!(second.interleaved_f32.len(), 40 * OUTPUT_CHANNELS);
     }
 
     #[test]
