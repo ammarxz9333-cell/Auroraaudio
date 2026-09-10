@@ -122,6 +122,10 @@ pub struct UniversalOpenDecoder {
     joc_renderer: Option<OpenJocNativeRenderer>,
     last_joc_error: Option<String>,
     pending: VecDeque<DecodedFrame>,
+    /// Aurora-owned stream-local PCM timeline. Backend-local synthetic PTS may
+    /// restart when routing moves between OpenJOC, the E-AC-3 bed decoder or an
+    /// open worker; frames are stamped from this counter only when emitted.
+    presentation_frames: u64,
 }
 
 impl UniversalOpenDecoder {
@@ -140,6 +144,7 @@ impl UniversalOpenDecoder {
             joc_renderer: None,
             last_joc_error: None,
             pending: VecDeque::new(),
+            presentation_frames: 0,
         }
     }
 
@@ -164,6 +169,29 @@ impl UniversalOpenDecoder {
     /// Atmos/JOC output.
     pub fn last_joc_error(&self) -> Option<&str> {
         self.last_joc_error.as_deref()
+    }
+
+    /// Stamp output at the one boundary shared by all decoder backends. The
+    /// byte-oriented decoder API currently carries no source-domain PTS, so a
+    /// single emitted-PCM clock is more truthful than backend-local clocks that
+    /// restart on a JOC/bed route change.
+    fn stamp_output_frame(&mut self, mut frame: DecodedFrame) -> DecodedFrame {
+        let sample_rate = self
+            .output_format
+            .map(|format| format.sample_rate)
+            .filter(|rate| *rate > 0)
+            .unwrap_or(48_000);
+        frame.audio.presentation_time_seconds =
+            self.presentation_frames as f64 / f64::from(sample_rate);
+        self.presentation_frames = self
+            .presentation_frames
+            .saturating_add(frame.audio.frame_count as u64);
+        frame
+    }
+
+    fn pop_pending_frame(&mut self) -> Option<DecodedFrame> {
+        let frame = self.pending.pop_front()?;
+        Some(self.stamp_output_frame(frame))
     }
 
     fn ensure_codec(&mut self, data: &[u8]) -> Result<(), DecoderError> {
@@ -501,18 +529,18 @@ impl Decoder for UniversalOpenDecoder {
     }
 
     fn decode_chunk(&mut self, input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
-        if let Some(frame) = self.pending.pop_front() {
-            return Ok(Some(frame));
+        if self.pending.front().is_some() {
+            return Ok(self.pop_pending_frame());
         }
         if input.is_empty() {
             if let Some(renderer) = self.joc_renderer.as_mut() {
                 if let Some(frame) = renderer.take_block() {
-                    return Ok(Some(frame));
+                    return Ok(Some(self.stamp_output_frame(frame)));
                 }
             }
             if let Some(worker) = self.worker.as_mut() {
                 if let Some(frame) = worker.poll()? {
-                    return Ok(Some(frame));
+                    return Ok(Some(self.stamp_output_frame(frame)));
                 }
             }
             return Ok(None);
@@ -526,7 +554,7 @@ impl Decoder for UniversalOpenDecoder {
             Transport::Elementary => self.process_elementary(input)?,
             Transport::Undecided => unreachable!("ensure_codec decides transport"),
         }
-        Ok(self.pending.pop_front())
+        Ok(self.pop_pending_frame())
     }
 
     fn reset(&mut self) {
@@ -541,6 +569,7 @@ impl Decoder for UniversalOpenDecoder {
         self.joc_renderer = None;
         self.last_joc_error = None;
         self.pending.clear();
+        self.presentation_frames = 0;
     }
 }
 
@@ -577,7 +606,28 @@ pub(crate) fn sample_rate_hint(input: &[u8]) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aurora_core::SampleType;
+    use aurora_core::{AudioBlock, SampleType};
+
+    fn format(channels: usize) -> AudioFormat {
+        AudioFormat {
+            sample_rate: 48_000,
+            channel_count: channels,
+            sample_type: SampleType::F32,
+            block_size: 40,
+        }
+    }
+
+    fn silent_frame(frame_count: usize, synthetic_pts: f64) -> DecodedFrame {
+        DecodedFrame {
+            audio: AudioBlock {
+                channels: (0..12).map(|_| vec![0.0; frame_count]).collect(),
+                frame_count,
+                presentation_time_seconds: synthetic_pts,
+                discontinuity: false,
+            },
+            objects: Vec::new(),
+        }
+    }
 
     #[test]
     fn routing_never_assigns_proprietary_backend() {
@@ -605,14 +655,38 @@ mod tests {
     #[test]
     fn accepts_aurora_40_frame_output_contract() {
         let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig::default());
-        decoder
-            .configure(AudioFormat {
-                sample_rate: 48_000,
-                channel_count: 12,
-                sample_type: SampleType::F32,
-                block_size: 40,
-            })
-            .unwrap();
+        decoder.configure(format(12)).unwrap();
+    }
+
+    #[test]
+    fn output_pts_stays_monotonic_across_backend_local_clock_restarts() {
+        let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig::default());
+        decoder.configure(format(12)).unwrap();
+
+        let first = decoder.stamp_output_frame(silent_frame(40, 123.0));
+        let retirement_tail = decoder.stamp_output_frame(silent_frame(16, 0.0));
+        let next_backend = decoder.stamp_output_frame(silent_frame(40, 0.0));
+
+        assert_eq!(first.audio.presentation_time_seconds, 0.0);
+        assert!(
+            (retirement_tail.audio.presentation_time_seconds - 40.0 / 48_000.0).abs()
+                < f64::EPSILON
+        );
+        assert!(
+            (next_backend.audio.presentation_time_seconds - 56.0 / 48_000.0).abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn reset_starts_a_new_presentation_epoch() {
+        let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig::default());
+        decoder.configure(format(12)).unwrap();
+        let _ = decoder.stamp_output_frame(silent_frame(40, 7.0));
+        decoder.reset();
+        decoder.configure(format(12)).unwrap();
+        let first = decoder.stamp_output_frame(silent_frame(16, 9.0));
+        assert_eq!(first.audio.presentation_time_seconds, 0.0);
     }
 
     #[test]
