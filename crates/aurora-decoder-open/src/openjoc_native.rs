@@ -314,15 +314,15 @@ fn aurora_channel_map(layout: &str, channels: usize) -> Result<Vec<usize>, Decod
     Ok(map)
 }
 
+/// Derive a layout only where Aurora's current product contract makes the
+/// channel roles explicit. OpenJOC itself has multiple different presets with
+/// 8 and 10 channels, so those widths must never be guessed from count alone.
 pub const fn default_layout_for_channels(channels: usize) -> Option<&'static str> {
     match channels {
         2 => Some("2.0"),
         6 => Some("5.1"),
-        8 => Some("7.1"),
-        10 => Some("5.1.4"),
+        // Aurora's integrated immersive output contract is canonical 7.1.4.
         12 => Some("7.1.4"),
-        // Larger OpenJOC layouts are intentionally not inferred by channel
-        // count until Aurora owns and tests their complete semantic mapping.
         _ => None,
     }
 }
@@ -334,6 +334,12 @@ mod tests {
     #[test]
     fn aurora_7_1_4_maps_to_openjoc_7_1_4() {
         assert_eq!(default_layout_for_channels(12), Some("7.1.4"));
+    }
+
+    #[test]
+    fn ambiguous_widths_require_an_explicit_verified_layout() {
+        assert_eq!(default_layout_for_channels(8), None);
+        assert_eq!(default_layout_for_channels(10), None);
     }
 
     #[test]
@@ -355,6 +361,7 @@ mod tests {
     #[test]
     fn unverified_same_width_layout_fails_closed() {
         assert!(aurora_channel_map("custom-12", 12).is_err());
+        assert!(aurora_channel_map("9.1.2", 12).is_err());
         assert_eq!(default_layout_for_channels(16), None);
     }
 
