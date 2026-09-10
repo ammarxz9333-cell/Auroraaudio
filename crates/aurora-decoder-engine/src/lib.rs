@@ -149,6 +149,13 @@ impl AuroraDecoderEngine {
         input: &[u8],
     ) -> Result<Option<DecodedFrame>, DecoderError> {
         self.telemetry.observe_input(input);
+        // IEC61937 type 0x15 authenticates an E-AC-3 transport boundary but does
+        // not prove JOC. Admit the provisional E-AC-3 route before any backend
+        // executes; positive OpenJOC promotion is checked again below after the
+        // complete-AU classifier/render path resolves the final codec class.
+        if let Err(error) = self.preflight_admission(CodecId::Eac3) {
+            return self.decision_error(error);
+        }
         let frame = match self.open.decode_complete_eac3_access_unit(input) {
             Ok(frame) => frame,
             Err(error) => return self.finish_decode(Err(error)),
@@ -201,6 +208,30 @@ impl AuroraDecoderEngine {
             Err(error) => self.telemetry.observe_error(error),
         }
         result
+    }
+
+    /// Verify that at least one integrated backend is admitted for a codec
+    /// before invoking the open decoder fabric. This is intentionally
+    /// side-effect free: the final backend selection/telemetry is committed only
+    /// after the open fabric resolves any stronger classification (for example
+    /// E-AC-3 -> E-AC-3 JOC). Most importantly, a policy that disallows external
+    /// workers or requires a higher evidence tier cannot launch FFmpeg first and
+    /// reject it only afterwards.
+    fn preflight_admission(&self, codec: CodecId) -> Result<(), DecoderError> {
+        if codec == CodecId::Unknown {
+            return Ok(());
+        }
+        if self
+            .config
+            .policy
+            .rank(&self.catalog, codec, true)
+            .is_empty()
+        {
+            return Err(DecoderError::UnsupportedInput(
+                "Aurora policy found no integrated backend admitted for this codec before execution",
+            ));
+        }
+        Ok(())
     }
 
     fn refresh_decision(&mut self, codec: CodecId) -> Result<(), DecoderError> {
@@ -310,6 +341,9 @@ impl Decoder for AuroraDecoderEngine {
             return self.finish_decode(result);
         }
 
+        if let Err(error) = self.preflight_admission(requested) {
+            return self.decision_error(error);
+        }
         let frame = match self.open.decode_chunk(input) {
             Ok(frame) => frame,
             Err(error) => return self.finish_decode(Err(error)),
@@ -422,6 +456,41 @@ mod tests {
     }
 
     #[test]
+    fn policy_preflight_blocks_external_worker_before_execution() {
+        let engine = AuroraDecoderEngine::new(EngineConfig {
+            policy: DecoderPolicy {
+                allow_external_worker: false,
+                ..DecoderPolicy::default()
+            },
+            ..EngineConfig::default()
+        });
+        assert!(engine.preflight_admission(CodecId::TrueHd).is_err());
+        assert!(engine.active_backend().is_none());
+        assert!(engine.open.detected_codec().is_none());
+    }
+
+    #[test]
+    fn policy_preflight_respects_evidence_floor_before_open_decode() {
+        let engine = AuroraDecoderEngine::new(EngineConfig {
+            policy: DecoderPolicy::product(),
+            ..EngineConfig::default()
+        });
+        assert!(engine.preflight_admission(CodecId::Eac3).is_err());
+        assert!(engine.preflight_admission(CodecId::TrueHd).is_err());
+        assert!(engine.active_backend().is_none());
+    }
+
+    #[test]
+    fn iamf_is_not_exposed_as_an_integrated_engine_route() {
+        let engine = AuroraDecoderEngine::new(EngineConfig::default());
+        assert!(engine
+            .config
+            .policy
+            .rank(engine.catalog(), CodecId::Iamf, true)
+            .is_empty());
+    }
+
+    #[test]
     fn ac4_is_an_integrated_native_route() {
         let engine = AuroraDecoderEngine::new(EngineConfig::default());
         let active = engine.config.policy.rank(engine.catalog(), CodecId::Ac4, true);
@@ -436,10 +505,10 @@ mod tests {
     }
 
     #[test]
-    fn dts_hd_stays_on_compatibility_fallback() {
+    fn dts_hd_stays_on_specialized_ffmpeg_compatibility_fallback() {
         let engine = AuroraDecoderEngine::new(EngineConfig::default());
         let active = engine.config.policy.rank(engine.catalog(), CodecId::DtsHd, true);
-        assert_eq!(active.first().map(|d| d.backend.id), Some(BackendId::FfmpegWorker));
+        assert_eq!(active.first().map(|d| d.backend.id), Some(BackendId::FfmpegDtsHd));
     }
 
     #[test]
