@@ -139,6 +139,10 @@ jobs:
             --test openjoc_synthetic_fixture \
             synthetic_openjoc_fixture_renders_aurora_7_1_4 \
             -- --ignored --exact
+          cargo test --locked -p aurora-direct-earc-decoder \
+            --test openjoc_iec_fixture \
+            synthetic_joc_survives_full_direct_earc_iec61937_chain \
+            -- --ignored --exact
 
       - name: Clippy open AC3/EAC3/JOC decoder adapter
         run: cargo clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
