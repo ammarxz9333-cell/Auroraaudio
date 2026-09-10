@@ -181,6 +181,10 @@ impl StageLatencyBook {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aurora_test_alloc::{CountingAllocator, count_allocations};
+
+    #[global_allocator]
+    static ALLOCATOR: CountingAllocator = CountingAllocator;
 
     #[test]
     fn percentiles_and_max_are_bounded_without_sample_storage() {
@@ -217,5 +221,21 @@ mod tests {
         assert_eq!(book.summary(ValidationStage::Parser).samples, 1);
         assert_eq!(book.summary(ValidationStage::Decode).samples, 1);
         assert_eq!(book.summary(ValidationStage::Output).samples, 0);
+    }
+
+    #[test]
+    fn hot_recording_path_performs_zero_heap_allocations() {
+        let mut book = StageLatencyBook::new();
+        // Warm the test-thread-local allocation counter before measurement.
+        assert_eq!(count_allocations(|| {}), 0);
+        let allocations = count_allocations(|| {
+            for value in 0..10_000_u64 {
+                book.record_us(ValidationStage::Parser, value % 4_000);
+                book.record(ValidationStage::Decode, Duration::from_micros(value % 8_000));
+                book.record_us(ValidationStage::SpeakerPostProcessor, 11);
+            }
+        });
+        assert_eq!(allocations, 0);
+        assert_eq!(book.summary(ValidationStage::Parser).samples, 10_000);
     }
 }
