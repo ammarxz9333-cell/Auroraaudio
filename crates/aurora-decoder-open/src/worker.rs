@@ -303,7 +303,7 @@ impl OpenWorkerDecoder {
     /// Return one consumed worker PCM frame to a bounded planar storage pool.
     /// The samples are cleared before reuse and only the exact configured output
     /// channel geometry is admitted.
-    pub fn recycle_frame(&mut self, mut frame: DecodedFrame) {
+    pub fn recycle_frame(&mut self, frame: DecodedFrame) {
         if !frame.objects.is_empty()
             || frame.audio.channels.len() != self.output.channel_count
             || frame.audio.frame_count > MAX_RECYCLED_PLANAR_FRAMES
