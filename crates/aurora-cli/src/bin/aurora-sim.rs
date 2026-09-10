@@ -169,15 +169,21 @@ fn run_channel_id(args: ChannelIdArgs) -> Result<()> {
     write_f32_extensible_wav_header(&mut writer, total_frames)?;
 
     let roles = StandardLayout::SevenOneFour.canonical_roles();
+    let wave_slots = canonical_to_wave_slots()?;
     for (index, role) in roles.iter().enumerate() {
         let start = index as f64 * args.seconds_per_channel;
         let end = start + args.seconds_per_channel;
+        let wave_slot = wave_slots[index];
         eprintln!(
-            "channel-id index={index:02} role={} frequency_hz={:.1} start_s={start:.3} end_s={end:.3}",
+            "channel-id index={index:02} role={} wave_slot={wave_slot:02} frequency_hz={:.1} start_s={start:.3} end_s={end:.3}",
             role,
             CHANNEL_ID_FREQUENCIES_HZ[index]
         );
 
+        // WAVE_FORMAT_EXTENSIBLE orders interleaved channels by ascending speaker
+        // mask bit. Aurora's internal canonical order intentionally differs for
+        // SL/SR vs SBL/SBR, so map the selected canonical role to its WAVE slot
+        // rather than mislabelling a canonical interleave with a standard mask.
         for local_frame in 0..frames_per_channel {
             let phase = std::f32::consts::TAU
                 * CHANNEL_ID_FREQUENCIES_HZ[index]
@@ -185,7 +191,7 @@ fn run_channel_id(args: ChannelIdArgs) -> Result<()> {
                 / SAMPLE_RATE as f32;
             let active = phase.sin() * args.amplitude;
             for channel in 0..CHANNELS {
-                let sample = if channel == index { active } else { 0.0 };
+                let sample = if channel == wave_slot { active } else { 0.0 };
                 writer
                     .write_all(&sample.to_le_bytes())
                     .context("failed writing channel-ID PCM")?;
@@ -244,6 +250,30 @@ fn canonical_channel_mask() -> Result<u32> {
         mask |= bit;
     }
     Ok(mask)
+}
+
+fn canonical_to_wave_slots() -> Result<[usize; CHANNELS]> {
+    let roles = StandardLayout::SevenOneFour.canonical_roles();
+    if roles.len() != CHANNELS {
+        bail!("canonical 7.1.4 role count changed unexpectedly");
+    }
+    let mut slots = [0_usize; CHANNELS];
+    for (index, role) in roles.iter().enumerate() {
+        let bit = role
+            .wav_channel_mask_bit()
+            .with_context(|| format!("canonical role {role} has no WAVE channel-mask bit"))?;
+        let mut slot = 0_usize;
+        for other in roles {
+            let other_bit = other
+                .wav_channel_mask_bit()
+                .with_context(|| format!("canonical role {other} has no WAVE channel-mask bit"))?;
+            if other_bit < bit {
+                slot += 1;
+            }
+        }
+        slots[index] = slot;
+    }
+    Ok(slots)
 }
 
 fn run_latency_report(args: LatencyArgs) -> Result<()> {
@@ -855,6 +885,14 @@ mod tests {
         assert_eq!(
             StandardLayout::SevenOneFour.canonical_roles().len(),
             CHANNELS
+        );
+    }
+
+    #[test]
+    fn wave_slots_preserve_canonical_role_semantics() {
+        assert_eq!(
+            canonical_to_wave_slots().unwrap(),
+            [0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11]
         );
     }
 
