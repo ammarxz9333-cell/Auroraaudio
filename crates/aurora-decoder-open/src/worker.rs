@@ -15,6 +15,9 @@ use aurora_decoder_api::{DecodedFrame, DecoderError};
 
 use crate::sniff::{CodecKind, Encapsulation};
 
+const MAX_RECYCLED_PLANAR_BLOCKS: usize = 32;
+const MAX_RECYCLED_PLANAR_FRAMES: usize = 2_048;
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct WorkerCommand {
     pub program: String,
@@ -163,6 +166,7 @@ pub struct OpenWorkerDecoder {
     rx: Receiver<Vec<u8>>,
     reader: Option<JoinHandle<io::Result<()>>>,
     pcm_bytes: Vec<u8>,
+    recycled_planar: Vec<Vec<Vec<f32>>>,
     emitted_frames: u64,
     discontinuity: bool,
 }
@@ -221,6 +225,7 @@ impl OpenWorkerDecoder {
             rx,
             reader: Some(reader),
             pcm_bytes: Vec::new(),
+            recycled_planar: Vec::with_capacity(MAX_RECYCLED_PLANAR_BLOCKS),
             emitted_frames: 0,
             discontinuity: true,
         })
@@ -295,10 +300,62 @@ impl OpenWorkerDecoder {
         Ok(frames)
     }
 
+    /// Return one consumed worker PCM frame to a bounded planar storage pool.
+    /// The samples are cleared before reuse and only the exact configured output
+    /// channel geometry is admitted.
+    pub fn recycle_frame(&mut self, mut frame: DecodedFrame) {
+        if !frame.objects.is_empty()
+            || frame.audio.channels.len() != self.output.channel_count
+            || frame.audio.frame_count > MAX_RECYCLED_PLANAR_FRAMES
+            || frame
+                .audio
+                .channels
+                .iter()
+                .any(|channel| channel.len() != frame.audio.frame_count)
+        {
+            return;
+        }
+        self.recycle_planar_storage(frame.audio.channels);
+    }
+
     fn collect_stdout(&mut self) {
         while let Ok(bytes) = self.rx.try_recv() {
             self.pcm_bytes.extend_from_slice(&bytes);
         }
+    }
+
+    fn take_planar_storage(&mut self, frame_count: usize) -> Vec<Vec<f32>> {
+        if let Some(index) = self.recycled_planar.iter().position(|planar| {
+            planar.len() == self.output.channel_count
+                && planar
+                    .iter()
+                    .all(|channel| channel.capacity() >= frame_count)
+        }) {
+            let mut planar = self.recycled_planar.swap_remove(index);
+            for channel in &mut planar {
+                channel.clear();
+                channel.resize(frame_count, 0.0);
+            }
+            return planar;
+        }
+        (0..self.output.channel_count)
+            .map(|_| vec![0.0_f32; frame_count])
+            .collect()
+    }
+
+    fn recycle_planar_storage(&mut self, mut planar: Vec<Vec<f32>>) {
+        if planar.len() != self.output.channel_count
+            || self.recycled_planar.len() >= MAX_RECYCLED_PLANAR_BLOCKS
+            || planar
+                .iter()
+                .any(|channel| channel.capacity() > MAX_RECYCLED_PLANAR_FRAMES)
+        {
+            return;
+        }
+        for channel in &mut planar {
+            channel.clear();
+        }
+        self.recycled_planar.push(planar);
     }
 
     fn take_block(&mut self, allow_short: bool) -> Result<Option<DecodedFrame>, DecoderError> {
@@ -319,9 +376,7 @@ impl OpenWorkerDecoder {
         }
         let frame_count = available_frames.min(wanted_frames);
         let take = frame_count * bytes_per_frame;
-        let mut planar = (0..self.output.channel_count)
-            .map(|_| vec![0.0_f32; frame_count])
-            .collect::<Vec<_>>();
+        let mut planar = self.take_planar_storage(frame_count);
         for frame in 0..frame_count {
             let base = frame * bytes_per_frame;
             for source_channel in 0..self.decoded_channels {
