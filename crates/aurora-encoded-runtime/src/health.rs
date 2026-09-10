@@ -25,6 +25,9 @@ pub struct RuntimeCounters {
     pub capture_xruns: u64,
     pub capture_recoveries: u64,
     pub capture_discontinuities: u64,
+    /// Number of times the bounded native capture pool had no free period buffer
+    /// and the producer had to wait for the consumer to recycle one.
+    pub capture_queue_starvations: u64,
 }
 
 /// Inputs accepted by the health snapshot builder. `JocDecoderHealth` is the
@@ -300,6 +303,7 @@ mod tests {
             capture_xruns: 3,
             capture_recoveries: 4,
             capture_discontinuities: 1,
+            capture_queue_starvations: 2,
             ..RuntimeCounters::default()
         };
         counters.record_batch(&PlaybackBatch {
@@ -328,6 +332,7 @@ mod tests {
         assert_eq!(health.counters.capture_xruns, 3);
         assert_eq!(health.counters.capture_recoveries, 4);
         assert_eq!(health.counters.capture_discontinuities, 1);
+        assert_eq!(health.counters.capture_queue_starvations, 2);
         assert_eq!(health.parser, parser_snapshot());
         assert_eq!(health.joc, JocHealth::default());
         assert_eq!(health.output.unwrap().xruns, 5);
