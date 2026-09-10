@@ -25,6 +25,7 @@ const LABELS_7_1: [&str; 8] = ["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs"];
 const LABELS_7_1_4: [&str; 12] = [
     "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
 ];
+const MAX_RECYCLED_PLANAR_BLOCKS: usize = 128;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JocRenderInfo {
@@ -49,6 +50,11 @@ pub struct OpenJocNativeRenderer {
     /// PCM vectors themselves remain owned by OpenJOC frames; retaining this
     /// vector removes an avoidable allocation from every successful JOC AU.
     ready_frames: Vec<OpenJocPcmFrame>,
+    /// Bounded pool of Aurora planar blocks returned by the downstream playback
+    /// runtime. A 40-frame 7.1.4 JOC AU otherwise allocates one outer Vec plus
+    /// twelve channel Vecs for every emitted block. Recycling keeps the exact
+    /// public DecodedFrame contract while removing those steady-state heap hits.
+    recycled_planar: Vec<Vec<Vec<f32>>>,
     emitted_frames: u64,
     discontinuity: bool,
     last_info: JocRenderInfo,
@@ -121,6 +127,7 @@ impl OpenJocNativeRenderer {
             expected_channel_labels,
             channels: (0..output.channel_count).map(|_| VecDeque::new()).collect(),
             ready_frames: Vec::with_capacity(2),
+            recycled_planar: Vec::with_capacity(64),
             emitted_frames: 0,
             discontinuity: true,
             last_info,
@@ -185,6 +192,22 @@ impl OpenJocNativeRenderer {
         self.take_frames(self.output.block_size.max(1))
     }
 
+    /// Returns a consumed Aurora JOC frame's planar storage to a bounded pool.
+    /// Frames from other backends or unexpected shapes are simply dropped.
+    pub fn recycle_frame(&mut self, frame: DecodedFrame) {
+        if !frame.objects.is_empty() {
+            return;
+        }
+        let frame_count = frame.audio.frame_count;
+        recycle_planar_storage(
+            &mut self.recycled_planar,
+            frame.audio.channels,
+            self.output.channel_count,
+            frame_count,
+            self.output.block_size.max(1),
+        );
+    }
+
     pub(crate) fn take_buffered_frames(&mut self) -> Result<Vec<DecodedFrame>, DecoderError> {
         let mut frames = Vec::new();
         while let Some(frame) = self.take_block() {
@@ -235,13 +258,15 @@ impl OpenJocNativeRenderer {
         if frame_count == 0 || self.channels.iter().any(|channel| channel.len() < frame_count) {
             return None;
         }
-        let mut planar = Vec::with_capacity(self.channels.len());
-        for channel in &mut self.channels {
-            let mut samples = Vec::with_capacity(frame_count);
+        let mut planar = take_planar_storage(
+            &mut self.recycled_planar,
+            self.channels.len(),
+            frame_count,
+        );
+        for (samples, channel) in planar.iter_mut().zip(&mut self.channels) {
             for _ in 0..frame_count {
                 samples.push(channel.pop_front().expect("length checked above"));
             }
-            planar.push(samples);
         }
         let pts = self.emitted_frames as f64 / f64::from(self.output.sample_rate);
         self.emitted_frames = self.emitted_frames.saturating_add(frame_count as u64);
@@ -301,6 +326,47 @@ impl OpenJocNativeRenderer {
         self.ready_frames.clear();
         Ok(())
     }
+}
+
+fn take_planar_storage(
+    pool: &mut Vec<Vec<Vec<f32>>>,
+    channel_count: usize,
+    frame_count: usize,
+) -> Vec<Vec<f32>> {
+    let mut planar = match pool.pop() {
+        Some(planar) if planar.len() == channel_count => planar,
+        _ => (0..channel_count)
+            .map(|_| Vec::with_capacity(frame_count))
+            .collect(),
+    };
+    for channel in &mut planar {
+        channel.clear();
+        if channel.capacity() < frame_count {
+            channel.reserve(frame_count);
+        }
+    }
+    planar
+}
+
+fn recycle_planar_storage(
+    pool: &mut Vec<Vec<Vec<f32>>>,
+    mut planar: Vec<Vec<f32>>,
+    channel_count: usize,
+    frame_count: usize,
+    max_frame_count: usize,
+) {
+    if pool.len() >= MAX_RECYCLED_PLANAR_BLOCKS
+        || frame_count == 0
+        || frame_count > max_frame_count
+        || planar.len() != channel_count
+        || planar.iter().any(|channel| channel.len() != frame_count)
+    {
+        return;
+    }
+    for channel in &mut planar {
+        channel.clear();
+    }
+    pool.push(planar);
 }
 
 fn duration_us(duration: Duration) -> u64 {
@@ -406,5 +472,32 @@ mod tests {
     #[test]
     fn ambiguous_custom_count_fails_closed() {
         assert_eq!(default_layout_for_channels(11), None);
+    }
+
+    #[test]
+    fn planar_pool_reuses_existing_channel_allocations() {
+        let mut pool = Vec::new();
+        let mut planar = (0..12)
+            .map(|_| Vec::with_capacity(40))
+            .collect::<Vec<_>>();
+        for channel in &mut planar {
+            channel.resize(40, 0.0);
+        }
+        let first_ptr = planar[0].as_ptr();
+        recycle_planar_storage(&mut pool, planar, 12, 40, 40);
+        assert_eq!(pool.len(), 1);
+
+        let reused = take_planar_storage(&mut pool, 12, 40);
+        assert_eq!(reused[0].as_ptr(), first_ptr);
+        assert!(reused.iter().all(Vec::is_empty));
+        assert!(reused.iter().all(|channel| channel.capacity() >= 40));
+    }
+
+    #[test]
+    fn planar_pool_rejects_oversized_or_malformed_frames() {
+        let mut pool = Vec::new();
+        recycle_planar_storage(&mut pool, vec![vec![0.0; 80]; 12], 12, 80, 40);
+        recycle_planar_storage(&mut pool, vec![vec![0.0; 40]; 11], 12, 40, 40);
+        assert!(pool.is_empty());
     }
 }
