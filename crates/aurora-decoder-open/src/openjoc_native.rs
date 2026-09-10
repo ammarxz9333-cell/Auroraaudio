@@ -7,6 +7,7 @@
 //! claims JOC/Atmos playback only after successful OpenJOC speaker rendering.
 
 use std::collections::VecDeque;
+use std::time::Duration;
 
 use aurora_core::{AudioBlock, AudioFormat};
 use aurora_decoder_api::{DecodedFrame, DecoderError};
@@ -22,6 +23,14 @@ pub struct JocRenderInfo {
     pub latency_samples: usize,
     pub object_count: Option<u16>,
     pub complexity_index: Option<u8>,
+    /// Decode time for the most recent successfully accepted JOC access unit.
+    pub last_decode_time_us: Option<u64>,
+    /// Speaker-render time for the most recent successfully accepted JOC AU.
+    pub last_render_time_us: Option<u64>,
+    /// Total OpenJOC processing time for the most recent successful JOC AU.
+    pub last_total_time_us: Option<u64>,
+    /// Largest successful per-AU OpenJOC total observed in the current epoch.
+    pub max_total_time_us: Option<u64>,
 }
 
 pub struct OpenJocNativeRenderer {
@@ -49,8 +58,12 @@ impl OpenJocNativeRenderer {
         config.render_mode = RenderMode::Speaker;
         config.speaker_layout = layout.clone();
         config.validation_profile = ValidationProfile::Auto;
-        let session = OpenJocSession::new(config)
+        let mut session = OpenJocSession::new(config)
             .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC init failed: {e}")))?;
+        // Timing is observational only. OpenJOC measures its own successful AU
+        // decode/render stages so Aurora can compare real work with ALSA buffer
+        // headroom instead of inferring realtime safety from codec labels.
+        session.enable_stage_timing();
         let info = session.output_info();
         if info.channel_count != output.channel_count {
             return Err(DecoderError::UnsupportedInput(
@@ -64,6 +77,10 @@ impl OpenJocNativeRenderer {
             latency_samples: info.latency_samples,
             object_count: None,
             complexity_index: None,
+            last_decode_time_us: None,
+            last_render_time_us: None,
+            last_total_time_us: None,
+            max_total_time_us: None,
         };
         Ok(Self {
             session,
@@ -125,6 +142,18 @@ impl OpenJocNativeRenderer {
         let diagnostics = self.session.diagnostics();
         self.last_info.object_count = diagnostics.object_count;
         self.last_info.complexity_index = diagnostics.complexity_index;
+        let timing = self.session.take_stage_timing();
+        let decode_us = duration_us(timing.decode);
+        let render_us = duration_us(timing.render);
+        let total_us = duration_us(timing.total);
+        self.last_info.last_decode_time_us = Some(decode_us);
+        self.last_info.last_render_time_us = Some(render_us);
+        self.last_info.last_total_time_us = Some(total_us);
+        self.last_info.max_total_time_us = Some(
+            self.last_info
+                .max_total_time_us
+                .map_or(total_us, |current| current.max(total_us)),
+        );
         Ok(())
     }
 
@@ -181,6 +210,10 @@ impl OpenJocNativeRenderer {
         self.discontinuity = true;
         self.last_info.object_count = None;
         self.last_info.complexity_index = None;
+        self.last_info.last_decode_time_us = None;
+        self.last_info.last_render_time_us = None;
+        self.last_info.last_total_time_us = None;
+        self.last_info.max_total_time_us = None;
         Ok(())
     }
 
@@ -240,6 +273,10 @@ impl OpenJocNativeRenderer {
         }
         Ok(())
     }
+}
+
+fn duration_us(duration: Duration) -> u64 {
+    duration.as_micros().min(u128::from(u64::MAX)) as u64
 }
 
 /// Returns Aurora output index -> OpenJOC source index.
@@ -313,6 +350,11 @@ mod tests {
             aurora_channel_map("7.1", 8).unwrap(),
             vec![0, 1, 2, 3, 6, 7, 4, 5]
         );
+    }
+
+    #[test]
+    fn duration_conversion_saturates_into_u64_microseconds() {
+        assert_eq!(duration_us(Duration::from_millis(3)), 3_000);
     }
 
     #[test]
