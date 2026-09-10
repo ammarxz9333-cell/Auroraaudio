@@ -193,7 +193,10 @@ fn observe_transport(
 ) {
     // Compare only physically consecutive E-AC-3 bursts. Every transport class
     // updates previous_codec/offset even when filtered from the selected counts.
-    if selected && codec == TransportCodec::Eac3 && stats.previous_codec == Some(TransportCodec::Eac3) {
+    if selected
+        && codec == TransportCodec::Eac3
+        && stats.previous_codec == Some(TransportCodec::Eac3)
+    {
         if let Some(previous_offset) = stats.previous_carrier_offset {
             let spacing = carrier_offset_bytes.saturating_sub(previous_offset);
             stats.eac3_last_spacing_bytes = Some(spacing);
