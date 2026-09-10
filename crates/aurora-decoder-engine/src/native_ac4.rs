@@ -10,6 +10,8 @@ use oxideav_core::{CodecId, CodecParameters, Decoder as OxideDecoder, Frame, Pac
 const MAX_COMPRESSED_BUFFER: usize = 8 * 1024 * 1024;
 const MAX_QUEUE_BLOCKS: usize = 4;
 const MAX_PCM_QUEUE_FRAMES: usize = 8_192;
+const MAX_RECYCLED_PLANAR_BLOCKS: usize = 32;
+const MAX_RECYCLED_PLANAR_FRAMES: usize = 2_048;
 
 pub fn looks_like_ac4_sync(input: &[u8]) -> bool {
     if input.len() < 2 {
@@ -24,6 +26,7 @@ pub struct NativeAc4Decoder {
     output: Option<AudioFormat>,
     compressed: Vec<u8>,
     pcm: Vec<VecDeque<f32>>,
+    recycled_planar: Vec<Vec<Vec<f32>>>,
     emitted_frames: u64,
     dropped_bytes: u64,
     discontinuity: bool,
@@ -38,6 +41,7 @@ impl NativeAc4Decoder {
             output: None,
             compressed: Vec::new(),
             pcm: Vec::new(),
+            recycled_planar: Vec::with_capacity(MAX_RECYCLED_PLANAR_BLOCKS),
             emitted_frames: 0,
             dropped_bytes: 0,
             discontinuity: true,
@@ -99,9 +103,36 @@ impl NativeAc4Decoder {
         self.process_sync_stream()
     }
 
+    /// Return one consumed AC-4 speaker frame to bounded planar storage.
+    pub fn recycle_frame(&mut self, frame: DecodedFrame) {
+        let Some(output) = self.output else {
+            return;
+        };
+        if !frame.objects.is_empty()
+            || frame.audio.frame_count == 0
+            || frame.audio.frame_count > MAX_RECYCLED_PLANAR_FRAMES
+            || frame.audio.channels.len() != output.channel_count
+            || frame
+                .audio
+                .channels
+                .iter()
+                .any(|channel| channel.len() != frame.audio.frame_count)
+            || self.recycled_planar.len() >= MAX_RECYCLED_PLANAR_BLOCKS
+        {
+            return;
+        }
+        let mut planar = frame.audio.channels;
+        for channel in &mut planar {
+            channel.clear();
+        }
+        self.recycled_planar.push(planar);
+    }
+
     pub fn reset(&mut self) {
         let output = self.output;
+        let recycled_planar = std::mem::take(&mut self.recycled_planar);
         *self = Self::new();
+        self.recycled_planar = recycled_planar;
         if let Some(output) = output {
             self.configure(output);
         }
@@ -122,10 +153,38 @@ impl NativeAc4Decoder {
         self.pcm.iter().map(VecDeque::len).min().unwrap_or(0)
     }
 
+    fn checked_queued_frames(&self) -> Result<usize, DecoderError> {
+        let frames = self.queued_frames();
+        if self.pcm.iter().any(|queue| queue.len() != frames) {
+            return Err(DecoderError::Decode(
+                "AC-4 decoded PCM channel queues diverged".into(),
+            ));
+        }
+        Ok(frames)
+    }
+
     fn queue_high_watermark(&self) -> usize {
         self.output
             .map(|format| format.block_size.max(1).saturating_mul(MAX_QUEUE_BLOCKS))
             .unwrap_or(160)
+    }
+
+    fn take_planar_storage(&mut self, channel_count: usize, frame_count: usize) -> Vec<Vec<f32>> {
+        if let Some(index) = self.recycled_planar.iter().position(|planar| {
+            planar.len() == channel_count
+                && planar
+                    .iter()
+                    .all(|channel| channel.capacity() >= frame_count)
+        }) {
+            let mut planar = self.recycled_planar.swap_remove(index);
+            for channel in &mut planar {
+                channel.clear();
+            }
+            return planar;
+        }
+        (0..channel_count)
+            .map(|_| Vec::with_capacity(frame_count))
+            .collect()
     }
 
     fn finish_non_sync_tail(&mut self) -> Result<(), DecoderError> {
@@ -154,12 +213,12 @@ impl NativeAc4Decoder {
 
     fn process_sync_stream(&mut self) -> Result<(), DecoderError> {
         loop {
-            if self.queued_frames() >= self.queue_high_watermark() {
+            if self.checked_queued_frames()? >= self.queue_high_watermark() {
                 break;
             }
             // During finite retirement, publish PCM decoded from earlier valid
             // packets before diagnosing a later truncated compressed suffix.
-            if self.finalizing && self.queued_frames() > 0 {
+            if self.finalizing && self.checked_queued_frames()? > 0 {
                 break;
             }
             if self.compressed.len() < 2 {
@@ -246,7 +305,7 @@ impl NativeAc4Decoder {
         if samples == 0 {
             return Ok(());
         }
-        if self.queued_frames().saturating_add(samples) > MAX_PCM_QUEUE_FRAMES {
+        if self.checked_queued_frames()?.saturating_add(samples) > MAX_PCM_QUEUE_FRAMES {
             return Err(DecoderError::Decode(
                 "AC-4 decoded PCM exceeded bounded queue".into(),
             ));
@@ -314,7 +373,7 @@ impl NativeAc4Decoder {
         if self.pcm.is_empty() {
             return Ok(None);
         }
-        let available = self.queued_frames();
+        let available = self.checked_queued_frames()?;
         let wanted = output.block_size.max(1);
         // Retain a short PCM tail only while a sync-framed AC-4 packet is still
         // incomplete. Finite retirement emits all already-decoded PCM before a
@@ -331,13 +390,15 @@ impl NativeAc4Decoder {
             return Ok(None);
         }
 
-        let mut channels = Vec::with_capacity(output.channel_count);
-        for queue in &mut self.pcm {
-            let mut channel = Vec::with_capacity(frame_count);
+        let mut channels = self.take_planar_storage(output.channel_count, frame_count);
+        for (channel, queue) in channels.iter_mut().zip(&mut self.pcm) {
             for _ in 0..frame_count {
-                channel.push(queue.pop_front().unwrap_or(0.0));
+                channel.push(
+                    queue
+                        .pop_front()
+                        .expect("AC-4 queue lengths checked before block extraction"),
+                );
             }
-            channels.push(channel);
         }
         let pts = self.emitted_frames as f64 / f64::from(output.sample_rate);
         self.emitted_frames = self.emitted_frames.saturating_add(frame_count as u64);
@@ -503,7 +564,10 @@ mod tests {
         decoder.compressed.push(0xAC);
 
         decoder.finish_pending().unwrap();
-        let tail = decoder.poll().unwrap().expect("valid decoded tail must retire first");
+        let tail = decoder
+            .poll()
+            .unwrap()
+            .expect("valid decoded tail must retire first");
         assert_eq!(tail.audio.frame_count, 17);
         let error = decoder.poll().unwrap_err();
         assert!(error.to_string().contains("truncated AC-4 syncword"));
@@ -519,5 +583,34 @@ mod tests {
 
         assert!(decoder.compressed.is_empty());
         assert_eq!(decoder.dropped_bytes(), 3);
+    }
+
+    #[test]
+    fn ac4_output_pool_reuses_channel_allocations() {
+        let mut decoder = NativeAc4Decoder::new();
+        decoder.configure(format(12, 40));
+        let frame = DecodedFrame {
+            audio: AudioBlock {
+                channels: (0..12).map(|_| vec![0.25; 40]).collect(),
+                frame_count: 40,
+                presentation_time_seconds: 0.0,
+                discontinuity: false,
+            },
+            objects: Vec::new(),
+        };
+        let first_ptr = frame.audio.channels[0].as_ptr();
+        decoder.recycle_frame(frame);
+
+        let reused = decoder.take_planar_storage(12, 40);
+        assert_eq!(reused[0].as_ptr(), first_ptr);
+    }
+
+    #[test]
+    fn ac4_queue_divergence_fails_closed() {
+        let mut decoder = NativeAc4Decoder::new();
+        decoder.configure(format(12, 40));
+        decoder.pcm[0].push_back(1.0);
+        let error = decoder.take_block(false).unwrap_err();
+        assert!(error.to_string().contains("queues diverged"));
     }
 }
