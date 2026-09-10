@@ -50,8 +50,10 @@ impl Default for EngineConfig {
 
 /// Read-only status of the open E-AC-3/JOC lane.
 ///
-/// This intentionally separates codec classification from an actually admitted
-/// OpenJOC speaker render. IEC61937 type 0x15 alone never sets either field.
+/// `speaker_render_active` describes the live renderer only. The remaining
+/// render details describe the most recent successful OpenJOC render in the
+/// current decoder epoch and therefore remain available after EOF/retirement.
+/// IEC61937 type 0x15 alone never sets any JOC field.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct JocDecoderStatus {
     pub codec_classified_joc: bool,
@@ -114,18 +116,19 @@ impl AuroraDecoderEngine {
     }
 
     /// Decoder-level JOC state. A transport-level E-AC-3 burst is insufficient;
-    /// the open decoder itself must classify the elementary stream as JOC.
+    /// the open decoder itself must classify and successfully render JOC.
     pub fn joc_status(&self) -> JocDecoderStatus {
-        let render = self.open.joc_render_info();
+        let active_render = self.open.joc_render_info();
+        let observed_render = active_render.or_else(|| self.open.last_joc_render_info());
         JocDecoderStatus {
             codec_classified_joc: self.open.detected_codec().map(CodecId::from)
                 == Some(CodecId::Eac3Joc),
-            speaker_render_active: render.is_some(),
-            layout_name: render.map(|info| info.layout_name.clone()),
-            channel_count: render.map(|info| info.channel_count),
-            latency_samples: render.map(|info| info.latency_samples),
-            object_count: render.and_then(|info| info.object_count),
-            complexity_index: render.and_then(|info| info.complexity_index),
+            speaker_render_active: active_render.is_some(),
+            layout_name: observed_render.map(|info| info.layout_name.clone()),
+            channel_count: observed_render.map(|info| info.channel_count),
+            latency_samples: observed_render.map(|info| info.latency_samples),
+            object_count: observed_render.and_then(|info| info.object_count),
+            complexity_index: observed_render.and_then(|info| info.complexity_index),
             fallback_reason: self.open.last_joc_error().map(str::to_owned),
         }
     }
@@ -136,11 +139,6 @@ impl AuroraDecoderEngine {
 
     /// Flushes finite-stream state before the caller drains ready PCM with
     /// ordinary empty `decode_chunk` polls.
-    ///
-    /// Open codecs may retain a partial codec frame/access unit, renderer delay,
-    /// or FFmpeg worker output that only becomes available at EOF. AC-4 and DTS
-    /// currently expose ready output solely through their normal poll path and
-    /// therefore have no separate finite-stream flush primitive here.
     pub fn flush_pending(&mut self) -> Result<(), DecoderError> {
         if matches!(self.active_codec, Some(CodecId::Ac4 | CodecId::Dts)) {
             return Ok(());
