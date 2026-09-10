@@ -6,6 +6,8 @@
 
 #![forbid(unsafe_code)]
 
+pub mod latency;
+
 use aurora_iec61937::DATA_TYPE_EAC3;
 use openjoc_eac3::{AccessUnitParse, parse_access_unit_bounds};
 pub use openjoc_eac3::Eac3Error;
