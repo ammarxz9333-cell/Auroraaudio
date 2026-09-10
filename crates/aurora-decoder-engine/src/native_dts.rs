@@ -9,12 +9,24 @@ use oxideav_dts::{
 
 const MAX_COMPRESSED_BUFFER: usize = 8 * 1024 * 1024;
 const MAX_QUEUE_BLOCKS: usize = 4;
+const DTS_SYNC_PREFIXES: [[u8; 4]; 4] = [
+    [0x7F, 0xFE, 0x80, 0x01],
+    [0xFE, 0x7F, 0x01, 0x80],
+    [0x1F, 0xFF, 0xE8, 0x00],
+    [0xFF, 0x1F, 0x00, 0xE8],
+];
 
 pub fn looks_like_dts_sync(input: &[u8]) -> bool {
-    input.starts_with(&[0x7F, 0xFE, 0x80, 0x01])
-        || input.starts_with(&[0xFE, 0x7F, 0x01, 0x80])
-        || input.starts_with(&[0x1F, 0xFF, 0xE8, 0x00])
-        || input.starts_with(&[0xFF, 0x1F, 0x00, 0xE8])
+    DTS_SYNC_PREFIXES.iter().any(|sync| input.starts_with(sync))
+}
+
+fn trailing_dts_sync_prefix_len(input: &[u8]) -> Option<usize> {
+    let max = input.len().min(3);
+    (1..=max).rev().find(|&len| {
+        DTS_SYNC_PREFIXES
+            .iter()
+            .any(|sync| input[input.len() - len..] == sync[..len])
+    })
 }
 
 pub struct NativeDtsDecoder {
@@ -25,6 +37,7 @@ pub struct NativeDtsDecoder {
     emitted_frames: u64,
     dropped_bytes: u64,
     discontinuity: bool,
+    finalizing: bool,
 }
 
 impl NativeDtsDecoder {
@@ -37,6 +50,7 @@ impl NativeDtsDecoder {
             emitted_frames: 0,
             dropped_bytes: 0,
             discontinuity: true,
+            finalizing: false,
         }
     }
 
@@ -47,6 +61,11 @@ impl NativeDtsDecoder {
 
     pub fn push(&mut self, input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
         if !input.is_empty() {
+            if self.finalizing {
+                return Err(DecoderError::Decode(
+                    "DTS input arrived after finite finalization began".into(),
+                ));
+            }
             self.compressed.extend_from_slice(input);
             if self.compressed.len() > MAX_COMPRESSED_BUFFER {
                 return Err(DecoderError::Decode(
@@ -61,6 +80,15 @@ impl NativeDtsDecoder {
     pub fn poll(&mut self) -> Result<Option<DecodedFrame>, DecoderError> {
         self.process_stream()?;
         self.take_block(false)
+    }
+
+    /// Mark the current byte stream as finite. Subsequent empty-input polls may
+    /// still return already-decoded PCM and complete staged frames, but once all
+    /// valid PCM has drained any remaining DTS sync/header/frame prefix becomes
+    /// a hard truncation error instead of disappearing on reset.
+    pub fn finish_pending(&mut self) -> Result<(), DecoderError> {
+        self.finalizing = true;
+        self.process_stream()
     }
 
     pub fn reset(&mut self) {
@@ -92,16 +120,54 @@ impl NativeDtsDecoder {
             .unwrap_or(160)
     }
 
+    fn discard_finite_garbage(&mut self) -> Result<(), DecoderError> {
+        if self.compressed.is_empty() {
+            return Ok(());
+        }
+        if let Some(prefix) = trailing_dts_sync_prefix_len(&self.compressed) {
+            let garbage = self.compressed.len().saturating_sub(prefix);
+            if garbage > 0 {
+                self.dropped_bytes = self.dropped_bytes.saturating_add(garbage as u64);
+                self.discontinuity = true;
+                self.compressed.drain(..garbage);
+            }
+            return Err(DecoderError::Decode(format!(
+                "truncated DTS syncword at end of stream: {prefix} byte(s) buffered"
+            )));
+        }
+        let dropped = self.compressed.len();
+        self.compressed.clear();
+        self.dropped_bytes = self.dropped_bytes.saturating_add(dropped as u64);
+        if dropped > 0 {
+            self.discontinuity = true;
+        }
+        Ok(())
+    }
+
     fn process_stream(&mut self) -> Result<(), DecoderError> {
         loop {
             if self.queued_frames() >= self.queue_high_watermark() {
                 break;
             }
+            // During finite retirement, publish PCM already decoded from earlier
+            // complete frames before diagnosing any later truncated compressed
+            // suffix. `take_block` below is allowed to emit a short tail in this
+            // state, then the next poll resumes compressed validation.
+            if self.finalizing && self.queued_frames() > 0 {
+                break;
+            }
             if self.compressed.len() < 4 {
+                if self.finalizing {
+                    self.discard_finite_garbage()?;
+                }
                 break;
             }
 
             let Some(sync) = find_next_sync(&self.compressed, 0) else {
+                if self.finalizing {
+                    self.discard_finite_garbage()?;
+                    break;
+                }
                 // Longest DTS sync prefix is six bytes. Keep a five-byte tail
                 // so a prefix split across calls can still be completed.
                 let keep = self.compressed.len().min(5);
@@ -122,9 +188,15 @@ impl NativeDtsDecoder {
             }
 
             // 18 bytes cover the largest sync/header minimum used by the
-            // supported raw and 14-bit forms. Wait for more bytes instead of
-            // treating a fragmented header as corruption.
+            // supported raw and 14-bit forms. Wait for more bytes in streaming
+            // mode; at finite EOF the same prefix is provably truncated.
             if self.compressed.len() < 18 {
+                if self.finalizing {
+                    return Err(DecoderError::Decode(format!(
+                        "truncated DTS frame header at end of stream: {} byte(s) buffered",
+                        self.compressed.len()
+                    )));
+                }
                 break;
             }
 
@@ -163,6 +235,12 @@ impl NativeDtsDecoder {
                 ));
             }
             if self.compressed.len() < frame_len {
+                if self.finalizing {
+                    return Err(DecoderError::Decode(format!(
+                        "truncated DTS frame at end of stream: expected {frame_len} bytes, only {} buffered",
+                        self.compressed.len()
+                    )));
+                }
                 break;
             }
 
@@ -286,11 +364,13 @@ impl NativeDtsDecoder {
         let wanted = output.block_size.max(1);
         // While compressed input is still staged, retain a sub-block PCM tail so
         // the next complete DTS frame can continue the preferred block cadence.
-        // Once the compressed staging buffer is empty, every decoded sample is
-        // known to belong to a complete frame and the residual PCM is real audio,
-        // not look-ahead state. Emit it instead of letting a later codec reset
-        // silently discard a tail such as 32 samples from a 512-sample DTS frame.
-        if available < wanted && !allow_short && !self.compressed.is_empty() {
+        // Finite retirement is different: all already-decoded PCM is known-valid
+        // audio and must be emitted before a later truncated suffix is reported.
+        if available < wanted
+            && !allow_short
+            && !self.compressed.is_empty()
+            && !self.finalizing
+        {
             return Ok(None);
         }
         let frame_count = available.min(wanted);
@@ -521,5 +601,33 @@ mod tests {
 
         assert!(decoder.take_block(false).unwrap().is_none());
         assert_eq!(decoder.queued_frames(), 32);
+    }
+
+    #[test]
+    fn finite_dts_retirement_emits_valid_pcm_before_truncation_error() {
+        let mut decoder = NativeDtsDecoder::new();
+        decoder.configure(format(40));
+        for queue in &mut decoder.pcm {
+            queue.extend(std::iter::repeat(0.25_f32).take(32));
+        }
+        decoder.compressed.extend_from_slice(&[0x7F, 0xFE]);
+
+        decoder.finish_pending().unwrap();
+        let tail = decoder.poll().unwrap().expect("valid decoded tail must retire first");
+        assert_eq!(tail.audio.frame_count, 32);
+        let error = decoder.poll().unwrap_err();
+        assert!(error.to_string().contains("truncated DTS syncword"));
+    }
+
+    #[test]
+    fn finite_dts_eof_drops_non_sync_garbage() {
+        let mut decoder = NativeDtsDecoder::new();
+        decoder.configure(format(40));
+        decoder.compressed.extend_from_slice(&[1, 2, 3]);
+
+        decoder.finish_pending().unwrap();
+
+        assert!(decoder.compressed.is_empty());
+        assert_eq!(decoder.dropped_bytes(), 3);
     }
 }
