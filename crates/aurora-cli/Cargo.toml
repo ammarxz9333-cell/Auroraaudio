@@ -41,13 +41,13 @@ required-features = ["encoded-runtime"]
 [features]
 default = ["camilladsp", "realtime", "simulation"]
 camilladsp = ["dep:aurora-dsp-camilladsp", "aurora-dsp-camilladsp/camilladsp-process"]
-encoded-runtime = ["dep:aurora-alsa-output", "dep:aurora-decoder-engine", "dep:aurora-encoded-input", "dep:aurora-encoded-runtime"]
+encoded-runtime = ["dep:aurora-alsa-input", "dep:aurora-alsa-output", "dep:aurora-decoder-engine", "dep:aurora-encoded-input", "dep:aurora-encoded-runtime"]
 realtime = ["dep:aurora-realtime-audio-api", "dep:aurora-realtime-audio-cpal", "dep:aurora-realtime-engine"]
 simulation = ["dep:aurora-realtime-audio-sim", "dep:aurora-realtime-engine"]
 
 [dependencies]
 anyhow.workspace = true
-aurora-alsa-input = { path = "../aurora-alsa-input" }
+aurora-alsa-input = { path = "../aurora-alsa-input", optional = true }
 aurora-alsa-output = { path = "../aurora-alsa-output", optional = true }
 aurora-audio-io = { path = "../aurora-audio-io" }
 aurora-core = { path = "../aurora-core" }
