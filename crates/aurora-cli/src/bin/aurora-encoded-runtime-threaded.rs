@@ -211,6 +211,7 @@ pub(super) fn run_direct_native_alsa<S: SpeakerSink>(
             stats.capture_xruns = packet.counters.xruns;
             stats.capture_recoveries = packet.counters.recoveries;
             stats.capture_discontinuities = packet.counters.discontinuities;
+            stats.capture_queue_starvations = packet.counters.queue_starvations;
             if packet.counters.queue_starvations != last_starvations {
                 eprintln!(
                     "aurora-runtime-warning: native_capture_queue_starvations={} (consumer is exhausting the bounded capture pool)",
