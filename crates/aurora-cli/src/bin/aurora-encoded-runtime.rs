@@ -1,8 +1,9 @@
 //! Single-process Aurora encoded input -> decode -> speaker DSP -> hardware output.
 //!
-//! Direct eARC can use Aurora-owned native ALSA capture. A stdin S32_LE path
-//! remains for fixtures/evidence. Legacy STM32/USB remains an explicit fallback
-//! and converges on the same IEC61937/decoder/DSP/output runtime.
+//! Direct eARC native ALSA capture runs on a dedicated bounded producer thread.
+//! A stdin S32_LE path remains for fixtures/evidence. Legacy STM32/USB remains
+//! an explicit fallback and converges on the same IEC61937/decoder/DSP/output
+//! runtime.
 //!
 //! Native ALSA i32 slot samples enter the carrier normalizer directly. Final
 //! speaker PCM can remain canonical 12-channel interleaved F32 on stdout or go
@@ -10,11 +11,13 @@
 //! zero-padded only; no extra channels are synthesized and no Atmos/JOC claim is
 //! inferred from transport type alone.
 
+#[path = "aurora-encoded-runtime-threaded.rs"]
+mod threaded_native_capture;
+
 use std::io::{self, Read, Write};
 use std::time::Duration;
 
 use anyhow::{bail, Context, Result};
-use aurora_alsa_input::{AlsaInputConfig, NativeAlsaCapture};
 use aurora_alsa_output::{AlsaOutputConfig, NativeAlsaPlayback};
 use aurora_core::{AudioFormat, SampleType};
 use aurora_decoder_engine::EngineConfig;
@@ -36,6 +39,7 @@ const DEFAULT_BRIDGE_SOCKET: &str = "/run/aurora/usb-bridge.sock";
 const LEGACY_PACKET_BUFFER_BYTES: usize = 512 * 1024;
 const DEFAULT_INPUT_PERIOD_FRAMES: usize = 1_024;
 const DEFAULT_INPUT_BUFFER_FRAMES: usize = 8_192;
+const DEFAULT_INPUT_QUEUE_DEPTH: usize = 16;
 const DEFAULT_OUTPUT_PERIOD_FRAMES: usize = 256;
 const DEFAULT_OUTPUT_BUFFER_FRAMES: usize = 1_024;
 
@@ -82,6 +86,10 @@ struct Args {
     input_period_frames: usize,
     #[arg(long, default_value_t = DEFAULT_INPUT_BUFFER_FRAMES)]
     input_buffer_frames: usize,
+    /// Number of native ALSA capture-period buffers owned by the bounded
+    /// producer/consumer queue. Used only when --alsa-device is supplied.
+    #[arg(long, default_value_t = DEFAULT_INPUT_QUEUE_DEPTH)]
+    input_queue_depth: usize,
     #[arg(long, value_enum, default_value = "stdout-f32")]
     output: OutputMode,
     #[arg(long)]
@@ -229,6 +237,9 @@ fn validate_args(args: &Args) -> Result<()> {
     if args.input_buffer_frames < args.input_period_frames.saturating_mul(2) {
         bail!("ALSA input buffer must be at least two periods");
     }
+    if !(2..=256).contains(&args.input_queue_depth) {
+        bail!("ALSA input queue depth must be between 2 and 256 periods");
+    }
     if args.output_rate != OUTPUT_SAMPLE_RATE || args.output_channels != OUTPUT_CHANNELS {
         bail!(
             "integrated Aurora speaker DSP currently requires {} Hz and {} canonical 7.1.4 channels",
@@ -332,54 +343,10 @@ fn run_direct<S: SpeakerSink>(
     reporter: &HealthReporter,
 ) -> Result<RuntimeStats> {
     if let Some(device) = args.alsa_device.as_deref() {
-        run_direct_native_alsa(args, device, runtime, sink, reporter)
+        threaded_native_capture::run_direct_native_alsa(args, device, runtime, sink, reporter)
     } else {
         let stdin = io::stdin();
         run_direct_stdin(stdin.lock(), runtime, sink, args.read_bytes, reporter)
-    }
-}
-
-fn run_direct_native_alsa<S: SpeakerSink>(
-    args: &Args,
-    device: &str,
-    runtime: &mut AuroraPlaybackRuntime,
-    sink: &mut S,
-    reporter: &HealthReporter,
-) -> Result<RuntimeStats> {
-    let mut capture = NativeAlsaCapture::open(AlsaInputConfig {
-        device: device.to_owned(),
-        sample_rate: args.carrier_rate,
-        channels: args.slots,
-        period_frames: args.input_period_frames,
-        buffer_frames: args.input_buffer_frames,
-    })
-    .context("failed to open Aurora native ALSA direct-eARC capture")?;
-    let mut stats = RuntimeStats::default();
-
-    loop {
-        let block = capture
-            .read_block()
-            .context("native ALSA direct-eARC capture failed")?;
-        if block.discontinuity {
-            runtime.reset();
-            sink.reset_for_transport_discontinuity()?;
-            stats.transport_discontinuities = stats.transport_discontinuities.saturating_add(1);
-        }
-        let batch = runtime
-            .push_direct_s32_words(&block.interleaved_s32)
-            .context("native direct-eARC S32-word ingest failed")?;
-        consume_batch(batch, sink, &mut stats)?;
-
-        let telemetry = capture.telemetry();
-        stats.capture_xruns = telemetry.xruns;
-        stats.capture_recoveries = telemetry.recoveries;
-        stats.capture_discontinuities = telemetry.discontinuities;
-        let decoder = runtime.encoded().decoder();
-        reporter.publish(stats.snapshot_with_joc(
-            decoder.transport_telemetry(),
-            sink.output_health(),
-            decoder.engine().joc_health(),
-        ));
     }
 }
 
@@ -719,6 +686,7 @@ mod tests {
             alsa_device: None,
             input_period_frames: DEFAULT_INPUT_PERIOD_FRAMES,
             input_buffer_frames: DEFAULT_INPUT_BUFFER_FRAMES,
+            input_queue_depth: DEFAULT_INPUT_QUEUE_DEPTH,
             output: OutputMode::StdoutF32,
             output_device: None,
             hardware_output_channels: OUTPUT_CHANNELS,
@@ -751,6 +719,15 @@ mod tests {
         let mut args = valid_args();
         args.input_period_frames = 256;
         args.input_buffer_frames = 256;
+        assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn rejects_invalid_native_capture_queue_depth() {
+        let mut args = valid_args();
+        args.input_queue_depth = 1;
+        assert!(validate_args(&args).is_err());
+        args.input_queue_depth = 257;
         assert!(validate_args(&args).is_err());
     }
 
