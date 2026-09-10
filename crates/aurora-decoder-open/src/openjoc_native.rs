@@ -23,20 +23,15 @@ pub struct JocRenderInfo {
     pub latency_samples: usize,
     pub object_count: Option<u16>,
     pub complexity_index: Option<u8>,
-    /// Decode time for the most recent successfully accepted JOC access unit.
     pub last_decode_time_us: Option<u64>,
-    /// Speaker-render time for the most recent successfully accepted JOC AU.
     pub last_render_time_us: Option<u64>,
-    /// Total OpenJOC processing time for the most recent successful JOC AU.
     pub last_total_time_us: Option<u64>,
-    /// Largest successful per-AU OpenJOC total observed in the current epoch.
     pub max_total_time_us: Option<u64>,
 }
 
 pub struct OpenJocNativeRenderer {
     session: OpenJocSession,
     output: AudioFormat,
-    /// Aurora output index -> OpenJOC source index.
     channel_map: Vec<usize>,
     channels: Vec<VecDeque<f32>>,
     emitted_frames: u64,
@@ -56,13 +51,10 @@ impl OpenJocNativeRenderer {
         };
         let mut config = OpenJocConfig::default();
         config.render_mode = RenderMode::Speaker;
-        config.speaker_layout = layout.clone();
+        config.speaker_layout = layout;
         config.validation_profile = ValidationProfile::Auto;
         let mut session = OpenJocSession::new(config)
             .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC init failed: {e}")))?;
-        // Timing is observational only. OpenJOC measures its own successful AU
-        // decode/render stages so Aurora can compare real work with ALSA buffer
-        // headroom instead of inferring realtime safety from codec labels.
         session.enable_stage_timing();
         let info = session.output_info();
         if info.channel_count != output.channel_count {
@@ -97,20 +89,10 @@ impl OpenJocNativeRenderer {
         &self.last_info
     }
 
-    /// Push one complete E-AC-3/JOC access unit.
     pub fn push_access_unit(&mut self, bytes: &[u8]) -> Result<(), DecoderError> {
         if bytes.is_empty() {
             return Ok(());
         }
-        // Direct eARC currently reaches this boundary without a source-domain
-        // sample PTS. Do not synthesize one from `emitted_frames`: Aurora
-        // reblocks 1536-sample E-AC-3 access units into 40-frame output blocks,
-        // so emitted output lags the input timeline whenever a short tail remains
-        // queued. OpenJOC supports `None` and maintains decode sequence internally.
-        //
-        // `OutputPending` means OpenJOC did not consume this packet. Drain the
-        // prior owned PCM and retry this exact AU once; silently returning here
-        // would otherwise drop a compressed access unit under backpressure.
         let mut retried_after_pending = false;
         loop {
             let status = self
@@ -157,17 +139,10 @@ impl OpenJocNativeRenderer {
         Ok(())
     }
 
-    /// Return one exact Aurora processing block when enough rendered samples
-    /// are queued. A 1536-sample JOC AU is therefore reblocked losslessly into
-    /// the 40-frame realtime cadence without resampling.
     pub fn take_block(&mut self) -> Option<DecodedFrame> {
         self.take_frames(self.output.block_size.max(1))
     }
 
-    /// Remove every PCM sample already collected from OpenJOC without asking
-    /// the decoder session to process or drain anything further. This is used
-    /// when the next compressed AU fails: previously rendered PCM must not be
-    /// discarded merely because the new AU is bad.
     pub(crate) fn take_buffered_frames(&mut self) -> Result<Vec<DecodedFrame>, DecoderError> {
         let mut frames = Vec::new();
         while let Some(frame) = self.take_block() {
@@ -189,10 +164,6 @@ impl OpenJocNativeRenderer {
         Ok(frames)
     }
 
-    /// Finalize OpenJOC and return every remaining PCM sample. Full realtime
-    /// blocks are emitted first; a final short block is emitted without padding
-    /// so finite files/fixtures do not lose up to `block_size - 1` samples and
-    /// the presentation timeline is not extended with synthetic silence.
     pub fn drain(&mut self) -> Result<Vec<DecodedFrame>, DecoderError> {
         self.session
             .drain()
@@ -239,14 +210,17 @@ impl OpenJocNativeRenderer {
                 presentation_time_seconds: pts,
                 discontinuity,
             },
-            // OpenJOC has already rendered the decoded object scene to the
-            // requested physical layout. Aurora object telemetry is attached by
-            // the metadata observer, not duplicated as a second renderer input.
             objects: Vec::new(),
         })
     }
 
+    /// Receive every currently available OpenJOC frame, validate the entire
+    /// batch first, and only then publish samples into Aurora's channel queues.
+    /// This makes one receive cycle transactional: a malformed/non-finite later
+    /// frame cannot leave partial PCM committed and then cause the same AU to be
+    /// decoded again by the E-AC-3 bed fallback.
     fn collect_output(&mut self) -> Result<(), DecoderError> {
+        let mut ready = Vec::new();
         while let Some(frame) = self.session.receive_frame() {
             if frame.sample_rate != self.output.sample_rate
                 || frame.channel_count != self.output.channel_count
@@ -263,6 +237,10 @@ impl OpenJocNativeRenderer {
                         .to_owned(),
                 ));
             }
+            ready.push(frame);
+        }
+
+        for frame in ready {
             for source_frame in frame.interleaved_f32.chunks_exact(frame.channel_count) {
                 for (destination, source_index) in
                     self.channels.iter_mut().zip(self.channel_map.iter().copied())
@@ -279,18 +257,10 @@ fn duration_us(duration: Duration) -> u64 {
     duration.as_micros().min(u128::from(u64::MAX)) as u64
 }
 
-/// Returns Aurora output index -> OpenJOC source index.
-///
-/// OpenJOC's 7.1-family presets use `FL FR FC LFE Lb Rb Ls Rs ...`, while
-/// Aurora's canonical 7.1/7.1.4 order is `FL FR FC LFE SL SR SBL SBR ...`.
-/// Only layouts with an explicitly verified semantic permutation are admitted;
-/// channel-count equality alone is never enough to claim a safe speaker map.
 fn aurora_channel_map(layout: &str, channels: usize) -> Result<Vec<usize>, DecoderError> {
     let map: Vec<usize> = match (layout, channels) {
         ("7.1", 8) => vec![0, 1, 2, 3, 6, 7, 4, 5],
         ("7.1.4", 12) => vec![0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11],
-        // These verified presets already match Aurora's corresponding semantic
-        // order for every channel role used by the current adapter.
         ("2.0", 2) | ("5.1", 6) | ("5.1.4", 10) => (0..channels).collect(),
         _ => {
             return Err(DecoderError::UnsupportedInput(
@@ -314,14 +284,10 @@ fn aurora_channel_map(layout: &str, channels: usize) -> Result<Vec<usize>, Decod
     Ok(map)
 }
 
-/// Derive a layout only where Aurora's current product contract makes the
-/// channel roles explicit. OpenJOC itself has multiple different presets with
-/// 8 and 10 channels, so those widths must never be guessed from count alone.
 pub const fn default_layout_for_channels(channels: usize) -> Option<&'static str> {
     match channels {
         2 => Some("2.0"),
         6 => Some("5.1"),
-        // Aurora's integrated immersive output contract is canonical 7.1.4.
         12 => Some("7.1.4"),
         _ => None,
     }
