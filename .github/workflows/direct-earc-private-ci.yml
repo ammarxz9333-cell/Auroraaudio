@@ -109,6 +109,22 @@ jobs:
           cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
+      - name: Test exact OpenJOC 0.17 synthetic JOC fixture
+        run: |
+          $openJocRev = "e7e03bc834ac0483770933cdc50ac058b100d1e2"
+          $expectedBlob = "4a47d79c1af717c7007e0398d01266867a3a9a49"
+          $fixture = Join-Path $env:RUNNER_TEMP "openjoc-joc.ec3"
+          $uri = "https://raw.githubusercontent.com/chyinan/OpenJOC/$openJocRev/crates/openjoc-wasm/testdata/joc.ec3"
+          Invoke-WebRequest -Uri $uri -OutFile $fixture
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          $actualBlob = (git hash-object -- $fixture).Trim()
+          if ($actualBlob -ne $expectedBlob) {
+            throw "OpenJOC synthetic fixture identity mismatch: expected $expectedBlob got $actualBlob"
+          }
+          $env:AURORA_OPENJOC_SYNTHETIC_FIXTURE = $fixture
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-decoder-open --test openjoc_synthetic_fixture synthetic_openjoc_fixture_renders_aurora_7_1_4 -- --ignored --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
       - name: Check and test decoder engine lifecycle
         run: |
           cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-decoder-engine --all-targets
