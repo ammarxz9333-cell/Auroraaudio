@@ -33,6 +33,12 @@ path = "src/bin/aurora-direct-earc-probe.rs"
 bench = false
 
 [[bin]]
+name = "aurora-direct-earc-sim"
+path = "src/bin/aurora-direct-earc-sim.rs"
+bench = false
+required-features = ["earc-sim"]
+
+[[bin]]
 name = "aurora-encoded-runtime"
 path = "src/bin/aurora-encoded-runtime.rs"
 bench = false
@@ -41,6 +47,7 @@ required-features = ["encoded-runtime"]
 [features]
 default = ["camilladsp", "realtime", "simulation"]
 camilladsp = ["dep:aurora-dsp-camilladsp", "aurora-dsp-camilladsp/camilladsp-process"]
+earc-sim = ["dep:aurora-sim-source"]
 encoded-runtime = ["dep:aurora-alsa-input", "dep:aurora-alsa-output", "dep:aurora-decoder-engine", "dep:aurora-encoded-input", "dep:aurora-encoded-runtime"]
 realtime = ["dep:aurora-realtime-audio-api", "dep:aurora-realtime-audio-cpal", "dep:aurora-realtime-engine"]
 simulation = ["dep:aurora-realtime-audio-sim", "dep:aurora-realtime-engine"]
@@ -64,6 +71,7 @@ aurora-realtime-audio-cpal = { path = "../aurora-realtime-audio-cpal", optional 
 aurora-realtime-audio-sim = { path = "../aurora-realtime-audio-sim", optional = true }
 aurora-realtime-engine = { path = "../aurora-realtime-engine", optional = true }
 aurora-scene = { path = "../aurora-scene" }
+aurora-sim-source = { path = "../aurora-sim-source", optional = true }
 clap.workspace = true
 serde.workspace = true
 serde_json.workspace = true
