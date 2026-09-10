@@ -58,6 +58,19 @@ pub struct CaptureBlock<'a> {
     pub discontinuity: bool,
 }
 
+/// Owned capture period suitable for transfer to a bounded worker queue.
+///
+/// The vector length is exactly the number of valid captured slot samples.
+/// Its capacity remains large enough for the negotiated ALSA period so the
+/// consumer can recycle the vector back to [`NativeAlsaCapture`] without a
+/// steady-state allocation.
+#[derive(Debug, PartialEq, Eq)]
+pub struct OwnedCaptureBlock {
+    pub interleaved_s32: Vec<i32>,
+    pub frame_count: usize,
+    pub discontinuity: bool,
+}
+
 /// Negotiated capture geometry and live transport counters.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlsaInputTelemetry {
@@ -185,6 +198,20 @@ fn negotiated_frames_usize(name: &str, frames: i64) -> Result<usize, AlsaInputEr
             "device negotiated an invalid negative or oversized {name} frame count: {frames}"
         ))
     })
+}
+
+fn prepare_recycled_buffer(
+    buffer: &mut Vec<i32>,
+    required_samples: usize,
+) -> Result<(), AlsaInputError> {
+    if buffer.capacity() < required_samples {
+        return Err(AlsaInputError::InvalidConfig(format!(
+            "recycled capture buffer capacity {} is smaller than negotiated period requirement {required_samples}",
+            buffer.capacity()
+        )));
+    }
+    buffer.resize(required_samples, 0_i32);
+    Ok(())
 }
 
 /// Converts interleaved native i32 slot words into the exact little-endian byte
@@ -367,6 +394,32 @@ impl NativeAlsaCapture {
         }
     }
 
+    /// Reads one period and transfers ownership of its sample storage without
+    /// copying the captured words. `replacement` must be a previously allocated
+    /// or recycled buffer with enough capacity for the negotiated period.
+    pub fn read_owned_block(
+        &mut self,
+        mut replacement: Vec<i32>,
+    ) -> Result<OwnedCaptureBlock, AlsaInputError> {
+        let required_samples = self.samples.len();
+        prepare_recycled_buffer(&mut replacement, required_samples)?;
+        let (sample_count, frame_count, discontinuity) = {
+            let block = self.read_block()?;
+            (
+                block.interleaved_s32.len(),
+                block.frame_count,
+                block.discontinuity,
+            )
+        };
+        std::mem::swap(&mut self.samples, &mut replacement);
+        replacement.truncate(sample_count);
+        Ok(OwnedCaptureBlock {
+            interleaved_s32: replacement,
+            frame_count,
+            discontinuity,
+        })
+    }
+
     pub fn telemetry(&self) -> &AlsaInputTelemetry {
         &self.telemetry
     }
@@ -385,6 +438,13 @@ impl NativeAlsaCapture {
     }
 
     pub fn read_block(&mut self) -> Result<CaptureBlock<'_>, AlsaInputError> {
+        Err(AlsaInputError::UnsupportedPlatform)
+    }
+
+    pub fn read_owned_block(
+        &mut self,
+        _replacement: Vec<i32>,
+    ) -> Result<OwnedCaptureBlock, AlsaInputError> {
         Err(AlsaInputError::UnsupportedPlatform)
     }
 
@@ -428,6 +488,17 @@ mod tests {
         assert!(validate_negotiated_buffer(192_000, 256, 7_680).is_ok());
         assert!(validate_negotiated_buffer(48_000, 2_000, 3_999).is_err());
         assert!(validate_negotiated_buffer(48_000, 2_000, 4_000).is_ok());
+    }
+
+    #[test]
+    fn recycled_capture_buffer_requires_preallocated_capacity() {
+        let mut too_small = Vec::<i32>::with_capacity(7);
+        assert!(prepare_recycled_buffer(&mut too_small, 8).is_err());
+
+        let mut recycled = Vec::<i32>::with_capacity(8);
+        prepare_recycled_buffer(&mut recycled, 8).unwrap();
+        assert_eq!(recycled.len(), 8);
+        assert!(recycled.iter().all(|sample| *sample == 0));
     }
 
     #[test]
