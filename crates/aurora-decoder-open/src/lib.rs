@@ -144,9 +144,6 @@ impl UniversalOpenDecoder {
             .map(OpenJocNativeRenderer::render_info)
     }
 
-    /// Most recent successful JOC speaker-render observation in the current
-    /// decoder epoch. Unlike `joc_render_info`, this survives renderer retirement
-    /// at EOF or a same-family fallback and is cleared by reset/backend rebuild.
     pub fn last_joc_render_info(&self) -> Option<&JocRenderInfo> {
         self.joc_render_info().or(self.last_joc_render_info.as_ref())
     }
@@ -412,7 +409,11 @@ impl UniversalOpenDecoder {
     fn decode_eac3_bed_access_unit(&mut self, unit: &[u8]) -> Result<(), DecoderError> {
         let mut framer = SyncFramer::new(CodecKind::Eac3);
         let mut packets = framer.push(unit);
-        packets.extend(framer.flush());
+        packets.extend(
+            framer
+                .finish_checked()
+                .map_err(|error| DecoderError::Decode(error.to_string()))?,
+        );
         if packets.is_empty() {
             return Err(DecoderError::UnsupportedInput(
                 "E-AC-3 access unit contained no decodable programme set",
