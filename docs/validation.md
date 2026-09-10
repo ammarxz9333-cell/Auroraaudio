@@ -13,9 +13,24 @@ complete-access-unit OpenJOC classifier decision.
   the exact-head GitHub runner has not executed, the row says so explicitly.
 - **NOT-PROVEN**: requires evidence not available from this software-only harness.
 
-A TESTED row is not automatically CI-green. The current GitHub-hosted Actions
-failure occurs before step execution, so exact-head Cargo execution remains a
-separate gate.
+A TESTED row is not automatically CI-green. GitHub-hosted Actions have recently
+failed before step execution, so exact-head Cargo execution remains a separate gate.
+
+## Validation commands
+
+The branch now exposes two complementary headless tools:
+
+- `aurora-sim-source`: generate ordinary 48 kHz / 5.1 E-AC-3 with local FFmpeg or
+  frame supplied raw `.ec3`, wrap complete AUs into Aurora's canonical IEC61937
+  carrier, and inject deterministic transport faults.
+- `aurora-sim`: run `channel-id`, `latency-report`, and `stress` validation against
+  Aurora's canonical 7.1.4 software path. The stress defaults are 100 switch cycles,
+  1000 pause/resume cycles and a 1800-second soak with a 5% RSS-growth ceiling.
+
+The dedicated `.github/workflows/aurora-validation-ci.yml` gate generates a real
+Cargo 1.85 lockfile, uploads it as an artifact, runs `cargo test --workspace`, runs
+validation-specific check/test/clippy, and executes short headless command smoke tests.
+The full 30-minute soak is intentionally not mislabeled as CI-proven until it is run.
 
 ## Transport and framing
 
@@ -25,24 +40,27 @@ separate gate.
 | E-AC-3 carrier geometry | PROVEN | Canonical harness geometry is 192 kHz, two S16 slots, 24,576 carrier bytes per repetition period = 32 ms. |
 | E-AC-3 payload bound | TESTED | 24,560-byte payload round-trips; 24,561 bytes fail closed. Exact-head Cargo execution pending. |
 | Word swap / odd payload padding | TESTED | Round-trip test validates native payload recovery and zero pad confined to the carrier word. Exact-head Cargo execution pending. |
-| Arbitrary capture chunk boundaries | TESTED | Two complete periods are fed using deliberately irregular read sizes and must recover byte-identical payloads with zero malformed headers. Exact-head Cargo execution pending. |
+| Arbitrary capture chunk boundaries | TESTED | Complete periods are fed using deliberately irregular read sizes and must recover byte-identical payloads with zero malformed headers. Exact-head Cargo execution pending. |
 | Complete E-AC-3 AU framing | TESTED | `Eac3AccessUnitFramer` delegates to pinned OpenJOC `parse_access_unit_bounds()` and requires following-boundary or finite-EOS proof. Exact-head Cargo execution pending. |
-| Corrupt Pa resynchronization | TESTED | Corrupted Pa suppresses that burst; the next valid Pa/Pb is recovered without a fabricated payload. Exact-head Cargo execution pending. |
-| Dropped-burst gap | TESTED | Missing bursts are represented by full idle carrier periods so elapsed carrier time is retained; next Pa spacing expands by the dropped-period count. Exact-head Cargo execution pending. |
-| Truncated finite carrier | TESTED | A declared E-AC-3 payload cut at EOF must return `TruncatedPayload`/an explicit incomplete-burst error. Exact-head Cargo execution pending. |
-| Encoded payload byte loss | TESTED | IEC61937 may remain structurally parseable because it has no payload integrity field; the damaged E-AC-3 AU is then rejected by OpenJOC framing. This is a layering property, not silent acceptance by the decoder. Exact-head Cargo execution pending. |
-| Cadence jitter | TESTED | File-mode simulator inserts deterministic idle carrier bytes; CI gate requires the resulting Pa-to-Pa mismatch to be reported. Exact-head Cargo execution pending. |
+| FFmpeg-generated 384/768/custom-rate E-AC-3 | TESTED | CI generates 384, 768 and 640 kbit/s 5.1 streams locally, wraps them and requires valid E-AC-3 bursts with zero malformed headers/cadence mismatches. Exact-head execution pending. |
+| Corrupt Pa resynchronization | TESTED | Integration test corrupts Pa, drops only that burst, and requires recovery of the following byte-exact payload. Exact-head Cargo execution pending. |
+| Dropped-burst gap | TESTED | Integration test inserts full idle periods so elapsed carrier time is retained and requires the following Pa offset to expand by the missing periods. Exact-head Cargo execution pending. |
+| Parser-visible E-AC-3 -> LPCM interval -> E-AC-3 | TESTED | The encoded parser view is modeled as a full non-IEC idle carrier interval and must resynchronize to the next E-AC-3 burst. This does **not** prove raw LPCM input negotiation. Exact-head Cargo execution pending. |
+| Truncated finite carrier / `--truncated-eof` | TESTED | Independent integration and runtime-backed tests require an explicit incomplete/truncated payload error, never a fabricated complete observation. Exact-head Cargo execution pending. |
+| `--cut-burst` | TESTED | Finite cut is rejected by IEC61937 EOF validation. A runtime-backed regression also feeds a mid-payload cut followed by a new period and requires failure rather than silent decoded audio. If that regression fails when first executed, it is a core-bug reproduction gate; parser/engine must not be changed before the failure is examined. |
+| Encoded payload byte loss | TESTED | IEC61937 may remain structurally parseable because it has no payload integrity field; damaged encoded content therefore requires downstream framing/decoder validation. This layering property is not presented as transport authentication. |
+| Cadence jitter | TESTED | Integration and CLI gates insert deterministic idle carrier bytes and require the resulting Pa-to-Pa spacing change to remain visible. Exact-head Cargo execution pending. |
 
 ## JOC path
 
 | Area | Status | Evidence / acceptance |
 | --- | --- | --- |
 | `0x15` is not treated as JOC proof | PROVEN | Direct-eARC bridge clears fixed codec hints and leaves JOC classification to the complete-AU decoder path. |
-| Pinned OpenJOC JOC fixture exists | PROVEN | Pinned OpenJOC revision `e7e03bc834ac0483770933cdc50ac058b100d1e2` includes synthetic `joc.ec3`; upstream tests report eight decoded access units and JOC object metadata. |
+| Pinned OpenJOC JOC fixture exists | PROVEN | Pinned OpenJOC revision `e7e03bc834ac0483770933cdc50ac058b100d1e2` includes synthetic `crates/openjoc-wasm/testdata/joc.ec3`; Aurora pins its source identity in CI. |
 | Synthetic JOC fixture survives simulator transport | TESTED | CI gate performs `.ec3 -> aurora-sim-source -> IEC61937 -> probe -> .ec3` and requires byte-for-byte equality. Exact-head CI execution pending. |
-| Synthetic positive JOC admission | TESTED | Existing ignored Aurora fixture test requires positive OpenJOC JOC classification from a complete AU. Exact-head CI execution pending. |
-| Synthetic canonical 7.1.4 speaker render | TESTED | Existing ignored OpenJOC/Aurora tests require successful canonical 12-channel speaker output. Exact-head CI execution pending. |
-| Ordinary E-AC-3 negative JOC path | TESTED | Decoder policy does not promote transport type `0x15`; non-JOC E-AC-3 remains the bed path. Exact-head current-head execution pending. |
+| Synthetic positive JOC admission | TESTED | Existing Aurora fixture test requires positive OpenJOC JOC classification from a complete AU, not from transport type. Exact-head CI execution pending. |
+| Synthetic canonical 7.1.4 speaker render | TESTED | Existing OpenJOC/Aurora tests require successful canonical 12-channel speaker output. Exact-head CI execution pending. |
+| Ordinary FFmpeg E-AC-3 negative JOC path | TESTED | `aurora-sim`/source-generated ordinary E-AC-3 enters the same complete-AU engine path; no rule promotes type `0x15` to JOC. Exact-head execution is still required before recording a result. |
 | Commercial Netflix/streaming JOC interoperability | NOT-PROVEN | Requires a real licensed playback source and physical capture path. |
 | Preservation/export of original object scene coordinates | NOT-PROVEN | Current OpenJOC integration is a speaker renderer; Aurora does not claim exported object-scene metadata from that path. |
 | “Atmos proven” product claim | NOT-PROVEN | Synthetic JOC software evidence is insufficient for a commercial Atmos interoperability claim. |
@@ -51,25 +69,31 @@ separate gate.
 
 | Area | Status | Evidence / acceptance |
 | --- | --- | --- |
-| Direct carrier -> parser -> decoder bridge | TESTED | Existing direct-eARC integration tests exercise the production bridge; simulator now supplies deterministic carrier input. Exact-head CI execution pending. |
+| Direct S32-slot normalization -> carrier -> parser -> decoder -> SpeakerPostProcessor | TESTED | `aurora-sim stress` converts each generated canonical carrier period into two-slot S32 words and feeds the production `AuroraPlaybackRuntime`; output must remain finite canonical 12-channel PCM. Exact-head execution pending. |
 | Codec transition retirement | TESTED | Previous decoder state is drained before reset so valid short PCM tails are not silently discarded. Exact-head CI execution pending. |
-| Finite E-AC-3 truncation | TESTED | Checked AU framing and checked bed finalization reject incomplete finite input. Exact-head CI execution pending. |
-| No crash / no silent corruption under defined injector cases | TESTED | Injector cases have deterministic expected resync or explicit failure behavior. Exact-head CI execution pending. |
-| Canonical 7.1.4 layout remains unchanged | PROVEN | Harness uses the existing 12-channel Aurora canonical layout and does not introduce a new layout. |
-| Physical speaker channel order | NOT-PROVEN | Requires real output hardware and speaker/channel observation. |
+| Finite E-AC-3 truncation | TESTED | Checked AU framing, parser EOF validation and checked bed finalization reject incomplete finite input. Exact-head CI execution pending. |
+| No crash / no silent corruption under defined injector cases | TESTED | Each injector has deterministic expected resync or explicit-failure behavior. Runtime cut-burst acceptance is a hard failure. Exact-head CI execution pending. |
+| Canonical 7.1.4 layout remains unchanged | PROVEN | Harness obtains channel order directly from `StandardLayout::SevenOneFour.canonical_roles()`; it introduces no alternate layout. |
+| Software channel-ID identity through SpeakerPostProcessor | TESTED | Twelve unique channel tones are injected one lane at a time; the dominant output lane must equal the source lane. Exact-head execution pending. |
+| Physical speaker channel order | NOT-PROVEN | `aurora-sim channel-id` creates a 12-channel WAVE_FORMAT_EXTENSIBLE manual fixture, but physical cable/amplifier/speaker mapping still requires real output hardware. |
+| Raw eARC LPCM source switching | NOT-PROVEN | Current encoded harness can represent the parser-visible non-IEC interval and canonical PCM output leg, but does not emulate/claim the raw LPCM capture negotiation path. |
 
 ## Realtime, latency and stress
 
 | Area | Status | Evidence / acceptance |
 | --- | --- | --- |
 | Speaker DSP host timing baseline | PROVEN | Prior executed host self-test measured p50 11.1 us, p99 13.3 us and max 118 us per 40-frame DSP block. It excludes decode, transport and hardware. |
+| Fixed-capacity latency recording | TESTED | `StageLatencyBook` records parser/decode/JOC-render/SpeakerPostProcessor samples with fixed storage; allocation regression requires zero heap allocations during repeated `record()` calls. Exact-head Cargo execution pending. |
+| `aurora-sim latency-report` | TESTED | Command measures parser, decoder calls and SpeakerPostProcessor, imports OpenJOC render timing only after positive JOC classification, and prints p50/p99/max/overflow. Missing capture/output-sink stages print `NOT_MEASURED`, never zero. Exact-head smoke execution pending. |
 | JOC decode/render timing visibility | PROVEN | Fixed-size live JOC health exposes last decode/render/total and max-total timing without formatting on the hot path. |
-| Full capture -> parser -> decode -> render -> DSP -> output stage percentiles | NOT-PROVEN | Per-stage fixed-capacity aggregation and an executed target-host run are still required. |
-| Zero allocations for every complete realtime stage | NOT-PROVEN | Several hot boundaries are pooled and have allocation regressions, but complete end-to-end allocator activity still needs measurement. |
-| 30-minute zero-XRUN run | NOT-PROVEN | Headless file transport has no ALSA XRUN concept; physical/snd-aloop ALSA execution is required for an XRUN assertion. |
-| 30-minute memory stability <=5% RSS growth | NOT-PROVEN | Stress runner and an executed long-duration result are required. |
-| 100 format-switch cycles | NOT-PROVEN | Stress matrix execution result not yet available. |
-| 1000 pause/resume cycles | NOT-PROVEN | Stress matrix execution result not yet available. |
+| Full capture -> parser -> decode -> render -> DSP -> output stage percentiles | NOT-PROVEN | File harness does not measure a real ALSA capture read or sink write. Those stages remain explicitly `NOT_MEASURED`. |
+| New harness hot-loop allocations | TESTED | Carrier period, S32 words, idle/jitter buffers and latency counters are allocated before the stress loop and reused. Out-of-band RSS reading is excluded from the audio hot path. Exact-head allocator/runtime execution remains pending. |
+| Zero allocations for every complete production realtime stage | NOT-PROVEN | Existing runtime still owns additional outer containers/backends; whole-chain allocator activity needs target execution. |
+| Stress defaults: 100 format/speaker-path cycles | TESTED | `aurora-sim stress` defaults to 100 5.1-canonical -> 7.1-canonical -> real E-AC-3 encoded path -> canonical LPCM speaker-path cycles. Raw LPCM ingress is not claimed. Full default run pending. |
+| Stress defaults: 1000 pause/resume cycles | TESTED | Each cycle feeds an idle carrier interval, resets the production runtime and requires a subsequent valid E-AC-3 unit to resume. Full default run pending. |
+| 30-minute memory stability <=5% RSS growth | TESTED | Linux stress samples `/proc/self/status` out-of-band after warmup and fails if peak RSS growth exceeds 5%. Full 1800-second run has **not** executed on current head. |
+| Zero XRUNs / zero capture-queue starvation | NOT-PROVEN in file mode | These metrics are `N/A(file-mode)`, not fabricated zeroes. They require ALSA loopback or the physical capture/output rig. |
+| CI smoke stress | TESTED | Dedicated validation workflow runs shortened switch/pause/soak settings headlessly to catch crashes, malformed PCM, channel swaps, unexpected fault acceptance and gross leaks. Exact-head workflow execution pending. |
 
 ## Physical acceptance still required
 
