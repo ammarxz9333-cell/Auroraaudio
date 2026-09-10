@@ -50,6 +50,17 @@ pub struct JocDecoderHealth {
     pub fallback_present: bool,
 }
 
+/// Allocation-free timing for successful OpenJOC access units in the current
+/// renderer epoch. These are decoder-internal measurements, not transport
+/// timestamps and not an Atmos/JOC admission claim.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct JocTimingHealth {
+    pub last_decode_time_us: Option<u64>,
+    pub last_render_time_us: Option<u64>,
+    pub last_total_time_us: Option<u64>,
+    pub max_total_time_us: Option<u64>,
+}
+
 impl AuroraDecoderEngine {
     /// Returns a fixed-size JOC observation without cloning strings or allocating.
     pub fn joc_health(&self) -> JocDecoderHealth {
@@ -66,6 +77,18 @@ impl AuroraDecoderEngine {
             object_count: render.and_then(|info| info.object_count),
             complexity_index: render.and_then(|info| info.complexity_index),
             fallback_present: self.open.last_joc_error().is_some(),
+        }
+    }
+
+    /// Returns per-access-unit OpenJOC stage timing without allocation. `None`
+    /// means no successful JOC access unit has been measured in this epoch.
+    pub fn joc_timing_health(&self) -> JocTimingHealth {
+        let render = self.open.joc_render_info();
+        JocTimingHealth {
+            last_decode_time_us: render.and_then(|info| info.last_decode_time_us),
+            last_render_time_us: render.and_then(|info| info.last_render_time_us),
+            last_total_time_us: render.and_then(|info| info.last_total_time_us),
+            max_total_time_us: render.and_then(|info| info.max_total_time_us),
         }
     }
 }
@@ -180,7 +203,9 @@ mod tests {
     fn empty_engine_joc_health_is_fixed_size_and_has_no_claim() {
         let engine = AuroraDecoderEngine::new(EngineConfig::default());
         assert_eq!(engine.joc_health(), JocDecoderHealth::default());
+        assert_eq!(engine.joc_timing_health(), JocTimingHealth::default());
         assert!(std::mem::size_of::<JocDecoderHealth>() <= 64);
+        assert!(std::mem::size_of::<JocTimingHealth>() <= 64);
     }
 
     #[test]
