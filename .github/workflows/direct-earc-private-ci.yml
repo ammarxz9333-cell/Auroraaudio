@@ -113,13 +113,17 @@ jobs:
         run: |
           $openJocRev = "e7e03bc834ac0483770933cdc50ac058b100d1e2"
           $expectedBlob = "4a47d79c1af717c7007e0398d01266867a3a9a49"
+          $expectedSha256 = "54b48754b915cef97c13752de5eace4a219da6599cdfcf26f92b5b6fffc6e3e4"
           $fixture = Join-Path $env:RUNNER_TEMP "openjoc-joc.ec3"
           $uri = "https://raw.githubusercontent.com/chyinan/OpenJOC/$openJocRev/crates/openjoc-wasm/testdata/joc.ec3"
           Invoke-WebRequest -Uri $uri -OutFile $fixture
-          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           $actualBlob = (git hash-object -- $fixture).Trim()
           if ($actualBlob -ne $expectedBlob) {
             throw "OpenJOC synthetic fixture identity mismatch: expected $expectedBlob got $actualBlob"
+          }
+          $actualSha256 = (Get-FileHash -LiteralPath $fixture -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actualSha256 -ne $expectedSha256) {
+            throw "OpenJOC synthetic fixture SHA-256 mismatch: expected $expectedSha256 got $actualSha256"
           }
           $env:AURORA_OPENJOC_SYNTHETIC_FIXTURE = $fixture
           cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-decoder-open --test openjoc_synthetic_fixture synthetic_openjoc_fixture_renders_aurora_7_1_4 -- --ignored --exact
