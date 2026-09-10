@@ -9,6 +9,8 @@ use oxideav_dts::{
 
 const MAX_COMPRESSED_BUFFER: usize = 8 * 1024 * 1024;
 const MAX_QUEUE_BLOCKS: usize = 4;
+const MAX_RECYCLED_PLANAR_BLOCKS: usize = 32;
+const MAX_RECYCLED_PLANAR_FRAMES: usize = 2_048;
 const DTS_SYNC_PREFIXES: [[u8; 4]; 4] = [
     [0x7F, 0xFE, 0x80, 0x01],
     [0xFE, 0x7F, 0x01, 0x80],
@@ -33,6 +35,7 @@ pub struct NativeDtsDecoder {
     output: Option<AudioFormat>,
     compressed: Vec<u8>,
     pcm: Vec<VecDeque<f32>>,
+    recycled_planar: Vec<Vec<Vec<f32>>>,
     stream: Option<CoreStreamDecoder>,
     emitted_frames: u64,
     dropped_bytes: u64,
@@ -46,6 +49,7 @@ impl NativeDtsDecoder {
             output: None,
             compressed: Vec::new(),
             pcm: Vec::new(),
+            recycled_planar: Vec::with_capacity(MAX_RECYCLED_PLANAR_BLOCKS),
             stream: None,
             emitted_frames: 0,
             dropped_bytes: 0,
@@ -91,9 +95,36 @@ impl NativeDtsDecoder {
         self.process_stream()
     }
 
+    /// Return one consumed DTS speaker frame to bounded planar storage.
+    pub fn recycle_frame(&mut self, frame: DecodedFrame) {
+        let Some(output) = self.output else {
+            return;
+        };
+        if !frame.objects.is_empty()
+            || frame.audio.frame_count == 0
+            || frame.audio.frame_count > MAX_RECYCLED_PLANAR_FRAMES
+            || frame.audio.channels.len() != output.channel_count
+            || frame
+                .audio
+                .channels
+                .iter()
+                .any(|channel| channel.len() != frame.audio.frame_count)
+            || self.recycled_planar.len() >= MAX_RECYCLED_PLANAR_BLOCKS
+        {
+            return;
+        }
+        let mut planar = frame.audio.channels;
+        for channel in &mut planar {
+            channel.clear();
+        }
+        self.recycled_planar.push(planar);
+    }
+
     pub fn reset(&mut self) {
         let output = self.output;
+        let recycled_planar = std::mem::take(&mut self.recycled_planar);
         *self = Self::new();
+        self.recycled_planar = recycled_planar;
         if let Some(output) = output {
             self.configure(output);
         }
@@ -114,10 +145,39 @@ impl NativeDtsDecoder {
         self.pcm.iter().map(VecDeque::len).min().unwrap_or(0)
     }
 
+    fn checked_queued_frames(&self) -> Result<usize, DecoderError> {
+        let frames = self.queued_frames();
+        if self.pcm.iter().any(|queue| queue.len() != frames) {
+            return Err(DecoderError::Decode(
+                "DTS decoded PCM channel queues diverged".into(),
+            ));
+        }
+        Ok(frames)
+    }
+
     fn queue_high_watermark(&self) -> usize {
         self.output
             .map(|format| format.block_size.max(1).saturating_mul(MAX_QUEUE_BLOCKS))
             .unwrap_or(160)
+    }
+
+    fn take_planar_storage(&mut self, channel_count: usize, frame_count: usize) -> Vec<Vec<f32>> {
+        if let Some(index) = self.recycled_planar.iter().position(|planar| {
+            planar.len() == channel_count
+                && planar
+                    .iter()
+                    .all(|channel| channel.capacity() >= frame_count)
+        }) {
+            let mut planar = self.recycled_planar.swap_remove(index);
+            for channel in &mut planar {
+                channel.clear();
+                channel.reserve(frame_count.saturating_sub(channel.capacity()));
+            }
+            return planar;
+        }
+        (0..channel_count)
+            .map(|_| Vec::with_capacity(frame_count))
+            .collect()
     }
 
     fn discard_finite_garbage(&mut self) -> Result<(), DecoderError> {
@@ -146,14 +206,14 @@ impl NativeDtsDecoder {
 
     fn process_stream(&mut self) -> Result<(), DecoderError> {
         loop {
-            if self.queued_frames() >= self.queue_high_watermark() {
+            if self.checked_queued_frames()? >= self.queue_high_watermark() {
                 break;
             }
             // During finite retirement, publish PCM already decoded from earlier
             // complete frames before diagnosing any later truncated compressed
             // suffix. `take_block` below is allowed to emit a short tail in this
             // state, then the next poll resumes compressed validation.
-            if self.finalizing && self.queued_frames() > 0 {
+            if self.finalizing && self.checked_queued_frames()? > 0 {
                 break;
             }
             if self.compressed.len() < 4 {
@@ -360,7 +420,7 @@ impl NativeDtsDecoder {
         if self.pcm.is_empty() {
             return Ok(None);
         }
-        let available = self.queued_frames();
+        let available = self.checked_queued_frames()?;
         let wanted = output.block_size.max(1);
         // While compressed input is still staged, retain a sub-block PCM tail so
         // the next complete DTS frame can continue the preferred block cadence.
@@ -378,13 +438,15 @@ impl NativeDtsDecoder {
             return Ok(None);
         }
 
-        let mut channels = Vec::with_capacity(output.channel_count);
-        for queue in &mut self.pcm {
-            let mut channel = Vec::with_capacity(frame_count);
+        let mut channels = self.take_planar_storage(output.channel_count, frame_count);
+        for (channel, queue) in channels.iter_mut().zip(&mut self.pcm) {
             for _ in 0..frame_count {
-                channel.push(queue.pop_front().unwrap_or(0.0));
+                channel.push(
+                    queue
+                        .pop_front()
+                        .expect("DTS queue lengths checked before block extraction"),
+                );
             }
-            channels.push(channel);
         }
         let pts = self.emitted_frames as f64 / f64::from(output.sample_rate);
         self.emitted_frames = self.emitted_frames.saturating_add(frame_count as u64);
@@ -613,7 +675,10 @@ mod tests {
         decoder.compressed.extend_from_slice(&[0x7F, 0xFE]);
 
         decoder.finish_pending().unwrap();
-        let tail = decoder.poll().unwrap().expect("valid decoded tail must retire first");
+        let tail = decoder
+            .poll()
+            .unwrap()
+            .expect("valid decoded tail must retire first");
         assert_eq!(tail.audio.frame_count, 32);
         let error = decoder.poll().unwrap_err();
         assert!(error.to_string().contains("truncated DTS syncword"));
@@ -629,5 +694,34 @@ mod tests {
 
         assert!(decoder.compressed.is_empty());
         assert_eq!(decoder.dropped_bytes(), 3);
+    }
+
+    #[test]
+    fn dts_output_pool_reuses_channel_allocations() {
+        let mut decoder = NativeDtsDecoder::new();
+        decoder.configure(format(40));
+        let frame = DecodedFrame {
+            audio: AudioBlock {
+                channels: (0..12).map(|_| vec![0.25; 40]).collect(),
+                frame_count: 40,
+                presentation_time_seconds: 0.0,
+                discontinuity: false,
+            },
+            objects: Vec::new(),
+        };
+        let first_ptr = frame.audio.channels[0].as_ptr();
+        decoder.recycle_frame(frame);
+
+        let reused = decoder.take_planar_storage(12, 40);
+        assert_eq!(reused[0].as_ptr(), first_ptr);
+    }
+
+    #[test]
+    fn dts_queue_divergence_fails_closed() {
+        let mut decoder = NativeDtsDecoder::new();
+        decoder.configure(format(40));
+        decoder.pcm[0].push_back(1.0);
+        let error = decoder.take_block(false).unwrap_err();
+        assert!(error.to_string().contains("queues diverged"));
     }
 }
