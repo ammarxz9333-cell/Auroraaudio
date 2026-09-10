@@ -1,0 +1,133 @@
+name: Aurora Validation Harness CI
+
+on:
+  push:
+    branches:
+      - feature/direct-earc-linux-ingest
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/aurora-sim-source/**"
+      - "crates/aurora-iec61937/**"
+      - "crates/aurora-decoder-open/**"
+      - "crates/aurora-decoder-engine/**"
+      - "crates/aurora-direct-earc-decoder/**"
+      - "crates/aurora-encoded-input/**"
+      - "crates/aurora-encoded-runtime/**"
+      - "crates/aurora-dsp-basic/**"
+      - "crates/aurora-cli/Cargo.toml"
+      - "crates/aurora-cli/src/bin/aurora-direct-earc-sim.rs"
+      - "crates/aurora-cli/src/bin/aurora-sim.rs"
+      - "docs/validation.md"
+      - "docs/latency-budget.md"
+      - ".github/workflows/aurora-validation-ci.yml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/aurora-sim-source/**"
+      - "crates/aurora-iec61937/**"
+      - "crates/aurora-decoder-open/**"
+      - "crates/aurora-decoder-engine/**"
+      - "crates/aurora-direct-earc-decoder/**"
+      - "crates/aurora-encoded-input/**"
+      - "crates/aurora-encoded-runtime/**"
+      - "crates/aurora-dsp-basic/**"
+      - "crates/aurora-cli/Cargo.toml"
+      - "crates/aurora-cli/src/bin/aurora-direct-earc-sim.rs"
+      - "crates/aurora-cli/src/bin/aurora-sim.rs"
+      - "docs/validation.md"
+      - "docs/latency-budget.md"
+      - ".github/workflows/aurora-validation-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-validation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validation:
+    name: Headless validation harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Install validation dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev pkg-config ffmpeg
+
+      - name: Generate resolver lockfile
+        run: |
+          cargo generate-lockfile
+          cargo metadata --format-version 1 --locked > /tmp/aurora-validation-metadata.json
+          if ! git diff --quiet -- Cargo.lock; then
+            echo '::warning file=Cargo.lock::Committed lockfile is stale; validation uses the resolver-generated Cargo 1.85 lockfile.'
+            git diff --stat -- Cargo.lock
+          fi
+
+      - name: Upload resolver-generated lockfile
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-validation-generated-cargo-lock
+          path: Cargo.lock
+          if-no-files-found: error
+          retention-days: 3
+
+      - name: Format validation code
+        run: cargo fmt --all -- --check
+
+      - name: Workspace tests
+        run: cargo test --locked --workspace
+
+      - name: Check validation binary
+        run: >-
+          cargo check --locked -p aurora-cli
+          --no-default-features --features validation
+          --bin aurora-sim
+
+      - name: Test validation binary
+        run: >-
+          cargo test --locked -p aurora-cli
+          --no-default-features --features validation
+          --bin aurora-sim
+
+      - name: Clippy validation binary
+        run: >-
+          cargo clippy --locked -p aurora-cli
+          --no-default-features --features validation
+          --bin aurora-sim -- -D warnings
+
+      - name: Clippy simulator source
+        run: cargo clippy --locked -p aurora-sim-source --all-targets -- -D warnings
+
+      - name: Channel-ID smoke
+        run: >-
+          cargo run --quiet --locked -p aurora-cli
+          --no-default-features --features validation
+          --bin aurora-sim --
+          channel-id --output /tmp/aurora-channel-id.wav
+          --seconds-per-channel 0.005
+
+      - name: Latency-report smoke
+        run: >-
+          cargo run --quiet --locked -p aurora-cli
+          --no-default-features --features validation
+          --bin aurora-sim --
+          latency-report --seconds 0.128 --iterations 1
+
+      - name: Stress smoke
+        run: >-
+          cargo run --quiet --locked -p aurora-cli
+          --no-default-features --features validation
+          --bin aurora-sim --
+          stress --switches 4 --pause-resumes 8
+          --duration-seconds 1 --inject-every 8
+          --memory-growth-percent 5 --unpaced
