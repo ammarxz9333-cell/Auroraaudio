@@ -28,6 +28,27 @@ impl CpalAudioBackend {
     }
 }
 
+fn cpal_channels(channels: usize) -> Result<u16, RealTimeAudioError> {
+    u16::try_from(channels).map_err(|_| {
+        RealTimeAudioError::UnsupportedFormat(format!(
+            "requested channel count {channels} exceeds CPAL's u16 range"
+        ))
+    })
+}
+
+fn cpal_block_size(block_size: usize) -> Result<u32, RealTimeAudioError> {
+    if block_size == 0 {
+        return Err(RealTimeAudioError::UnsupportedFormat(
+            "requested callback block size must be greater than zero".to_owned(),
+        ));
+    }
+    u32::try_from(block_size).map_err(|_| {
+        RealTimeAudioError::UnsupportedFormat(format!(
+            "requested callback block size {block_size} exceeds CPAL's u32 range"
+        ))
+    })
+}
+
 impl AudioInputBackend for CpalAudioBackend {
     fn enumerate_devices(&self) -> Result<Vec<AudioDeviceInfo>, RealTimeAudioError> {
         enumerate(AudioDeviceDirection::Input)
@@ -51,10 +72,12 @@ impl AudioInputBackend for CpalAudioBackend {
             sample_rate,
             config.input_channels,
         )?;
+        let channels = cpal_channels(config.input_channels)?;
+        let block_size = cpal_block_size(config.block_size)?;
         let stream_config = cpal::StreamConfig {
-            channels: config.input_channels as u16,
+            channels,
             sample_rate: cpal::SampleRate(sample_rate),
-            buffer_size: cpal::BufferSize::Fixed(config.block_size as u32),
+            buffer_size: cpal::BufferSize::Fixed(block_size),
         };
         let negotiated = NegotiatedAudioConfig {
             sample_rate,
@@ -69,7 +92,7 @@ impl AudioInputBackend for CpalAudioBackend {
         let stream = device
             .build_input_stream(
                 &stream_config,
-                move |data: &[f32], _| callback(data, stream_config.channels as usize),
+                move |data: &[f32], _| callback(data, usize::from(stream_config.channels)),
                 move |error| {
                     fault_for_callback.store(stream_error_fault(error) as u32, Ordering::Release);
                 },
@@ -118,10 +141,12 @@ impl AudioOutputBackend for CpalAudioBackend {
             sample_rate,
             config.output_channels,
         )?;
+        let channels = cpal_channels(config.output_channels)?;
+        let block_size = cpal_block_size(config.block_size)?;
         let stream_config = cpal::StreamConfig {
-            channels: config.output_channels as u16,
+            channels,
             sample_rate: cpal::SampleRate(sample_rate),
-            buffer_size: cpal::BufferSize::Fixed(config.block_size as u32),
+            buffer_size: cpal::BufferSize::Fixed(block_size),
         };
         let negotiated = NegotiatedAudioConfig {
             sample_rate,
@@ -136,7 +161,7 @@ impl AudioOutputBackend for CpalAudioBackend {
         let stream = device
             .build_output_stream(
                 &stream_config,
-                move |data: &mut [f32], _| callback(data, stream_config.channels as usize),
+                move |data: &mut [f32], _| callback(data, usize::from(stream_config.channels)),
                 move |error| {
                     fault_for_callback.store(stream_error_fault(error) as u32, Ordering::Release);
                 },
@@ -277,7 +302,7 @@ fn device_info(
         host_identifier: None,
         channel_count: default_config
             .as_ref()
-            .map(|config| config.channels() as usize),
+            .map(|config| usize::from(config.channels())),
         default_sample_rate: default_config.as_ref().map(|config| config.sample_rate().0),
     };
     Ok(AudioDeviceInfo {
@@ -287,7 +312,7 @@ fn device_info(
         default_sample_rate: default_config.as_ref().map(|config| config.sample_rate().0),
         max_channels: default_config
             .as_ref()
-            .map(|config| config.channels() as usize),
+            .map(|config| usize::from(config.channels())),
         descriptor,
     })
 }
@@ -405,6 +430,19 @@ mod tests {
     use std::time::Duration;
 
     use super::*;
+
+    #[test]
+    fn stream_geometry_narrowing_is_checked() {
+        assert_eq!(cpal_channels(12).unwrap(), 12);
+        assert_eq!(cpal_block_size(256).unwrap(), 256);
+        assert!(cpal_block_size(0).is_err());
+        if usize::BITS > 16 {
+            assert!(cpal_channels((u16::MAX as usize).saturating_add(1)).is_err());
+        }
+        if usize::BITS > 32 {
+            assert!(cpal_block_size((u32::MAX as usize).saturating_add(1)).is_err());
+        }
+    }
 
     #[test]
     fn backend_stream_errors_map_to_numeric_faults_without_formatting() {
