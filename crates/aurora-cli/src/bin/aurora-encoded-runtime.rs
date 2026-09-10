@@ -371,7 +371,7 @@ fn run_direct_stdin<R: Read, S: SpeakerSink>(
         let batch = runtime
             .push_direct_s32(&read_buffer[..count])
             .context("direct eARC playback runtime ingest failed")?;
-        consume_batch(batch, sink, &mut stats)?;
+        consume_batch(batch, runtime, sink, &mut stats)?;
         let decoder = runtime.encoded().decoder();
         reporter.publish(stats.snapshot_with_joc(
             decoder.transport_telemetry(),
@@ -382,7 +382,7 @@ fn run_direct_stdin<R: Read, S: SpeakerSink>(
     let final_batch = runtime
         .finish()
         .context("direct eARC stdin finalization failed")?;
-    consume_batch(final_batch, sink, &mut stats)?;
+    consume_batch(final_batch, runtime, sink, &mut stats)?;
     let decoder = runtime.encoded().decoder();
     reporter.publish(stats.snapshot_with_joc(
         decoder.transport_telemetry(),
@@ -414,7 +414,7 @@ fn run_legacy<S: SpeakerSink>(
         let batch = runtime
             .push_legacy_usb_packet(&packet[..count])
             .context("legacy STM32/USB playback runtime ingest failed")?;
-        consume_batch(batch, sink, &mut stats)?;
+        consume_batch(batch, runtime, sink, &mut stats)?;
         let decoder = runtime.encoded().decoder();
         reporter.publish(stats.snapshot_with_joc(
             decoder.transport_telemetry(),
@@ -423,7 +423,7 @@ fn run_legacy<S: SpeakerSink>(
         ));
     }
     let final_batch = runtime.finish().context("legacy runtime finalization failed")?;
-    consume_batch(final_batch, sink, &mut stats)?;
+    consume_batch(final_batch, runtime, sink, &mut stats)?;
     let decoder = runtime.encoded().decoder();
     reporter.publish(stats.snapshot_with_joc(
         decoder.transport_telemetry(),
@@ -446,6 +446,7 @@ fn run_legacy<S: SpeakerSink>(
 
 fn consume_batch<S: SpeakerSink>(
     batch: PlaybackBatch,
+    runtime: &mut AuroraPlaybackRuntime,
     sink: &mut S,
     stats: &mut RuntimeStats,
 ) -> Result<()> {
@@ -454,7 +455,9 @@ fn consume_batch<S: SpeakerSink>(
         sink.reset_for_transport_discontinuity()?;
     }
     for frame in batch.frames {
-        sink.write_frame(&frame)?;
+        let write_result = sink.write_frame(&frame);
+        runtime.recycle_output_frame(frame);
+        write_result?;
     }
     Ok(())
 }
