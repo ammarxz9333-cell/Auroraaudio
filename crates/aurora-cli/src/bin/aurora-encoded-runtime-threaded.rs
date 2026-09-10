@@ -9,7 +9,9 @@ use std::collections::VecDeque;
 #[cfg(target_os = "linux")]
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
+#[cfg(target_os = "linux")]
+use anyhow::Context;
 #[cfg(target_os = "linux")]
 use aurora_alsa_input::{AlsaInputConfig, NativeAlsaCapture, OwnedCaptureBlock};
 #[cfg(target_os = "linux")]
