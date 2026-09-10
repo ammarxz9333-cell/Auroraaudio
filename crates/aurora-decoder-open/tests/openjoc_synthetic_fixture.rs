@@ -77,19 +77,12 @@ fn synthetic_openjoc_fixture_renders_aurora_7_1_4() {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     assert_eq!(fixture.len(), EXPECTED_BYTES, "unexpected fixture size");
 
-    // Derive the expected decoded sample count from OpenJOC's public AU trace
-    // API at the same exact revision as the decoder. Aurora must emit exactly
-    // that many PCM frames after final drain: no dropped renderer tail and no
-    // synthetic padding are allowed.
     let trace = trace_access_units(&fixture, None).expect("trace synthetic JOC access units");
     assert!(!trace.is_empty(), "synthetic fixture contains no access units");
     let expected_output_frames = trace.iter().fold(0_usize, |total, unit| {
         total.saturating_add(usize::from(unit.sample_count))
     });
 
-    // Start with an ordinary E-AC-3 hint. Aurora must upgrade the live codec
-    // state to Eac3Joc only after authoritative positive JOC admission and a
-    // successful OpenJOC speaker render.
     let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig {
         codec_hint: Some(OpenCodecKind::Eac3),
         joc_stereo_reference: false,
@@ -101,10 +94,6 @@ fn synthetic_openjoc_fixture_renders_aurora_7_1_4() {
 
     let mut output_frames = 0_usize;
     let mut full_blocks = 0_usize;
-
-    // Deliberately awkward boundaries exercise the real streaming front door.
-    // `decode_chunk` owns explicit backpressure: drain all pending PCM before
-    // submitting the next compressed chunk so no caller input is skipped.
     for chunk in fixture.chunks(97) {
         if let Some(frame) = decoder
             .decode_chunk(chunk)
@@ -138,4 +127,13 @@ fn synthetic_openjoc_fixture_renders_aurora_7_1_4() {
         "Aurora must preserve the complete decoded JOC sample timeline without dropping tail PCM or padding the stream"
     );
     assert_eq!(decoder.detected_codec(), Some(OpenCodecKind::Eac3Joc));
+    assert!(decoder.joc_render_info().is_none());
+    let historical = decoder
+        .last_joc_render_info()
+        .expect("successful JOC render evidence must survive renderer retirement");
+    assert_eq!(historical.layout_name, "7.1.4");
+    assert_eq!(historical.channel_count, 12);
+    assert_eq!(historical.object_count, Some(1));
+    assert!(historical.last_total_time_us.is_some());
+    assert!(historical.max_total_time_us.is_some());
 }
