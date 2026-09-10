@@ -260,7 +260,11 @@ impl NativeAc4Decoder {
         }
         let available = self.queued_frames();
         let wanted = output.block_size.max(1);
-        if available < wanted && !allow_short {
+        // Retain a short PCM tail only while a sync-framed AC-4 packet is still
+        // incomplete. Once compressed staging is empty, the remaining samples
+        // were decoded from complete input and must be released rather than
+        // disappearing on a later reset or backend transition.
+        if available < wanted && !allow_short && !self.compressed.is_empty() {
             return Ok(None);
         }
         let frame_count = available.min(wanted);
@@ -362,6 +366,15 @@ mod tests {
     use super::*;
     use aurora_core::SampleType;
 
+    fn format(channels: usize, block_size: usize) -> AudioFormat {
+        AudioFormat {
+            sample_rate: 48_000,
+            channel_count: channels,
+            sample_type: SampleType::F32,
+            block_size,
+        }
+    }
+
     #[test]
     fn recognizes_both_annex_g_sync_words() {
         assert!(looks_like_ac4_sync(&[0xAC, 0x40, 0, 0]));
@@ -372,12 +385,7 @@ mod tests {
     #[test]
     fn adapter_accepts_aurora_40_frame_configuration() {
         let mut decoder = NativeAc4Decoder::new();
-        decoder.configure(AudioFormat {
-            sample_rate: 48_000,
-            channel_count: 12,
-            sample_type: SampleType::F32,
-            block_size: 40,
-        });
+        decoder.configure(format(12, 40));
         assert_eq!(decoder.queue_high_watermark(), 160);
         assert!(decoder.poll().unwrap().is_none());
     }
@@ -390,14 +398,39 @@ mod tests {
     #[test]
     fn resynchronization_counts_dropped_bytes_and_keeps_split_sync_prefix() {
         let mut decoder = NativeAc4Decoder::new();
-        decoder.configure(AudioFormat {
-            sample_rate: 48_000,
-            channel_count: 2,
-            sample_type: SampleType::F32,
-            block_size: 40,
-        });
+        decoder.configure(format(2, 40));
         assert!(decoder.push(&[1, 2, 3, 0xAC], false).unwrap().is_none());
         assert_eq!(decoder.dropped_bytes(), 3);
         assert_eq!(decoder.compressed, vec![0xAC]);
+    }
+
+    #[test]
+    fn complete_ac4_input_releases_short_pcm_tail() {
+        let mut decoder = NativeAc4Decoder::new();
+        decoder.configure(format(12, 40));
+        for queue in &mut decoder.pcm {
+            queue.extend(std::iter::repeat(0.25_f32).take(17));
+        }
+        assert!(decoder.compressed.is_empty());
+
+        let tail = decoder.take_block(false).unwrap().unwrap();
+
+        assert_eq!(tail.audio.frame_count, 17);
+        assert_eq!(tail.audio.channels.len(), 12);
+        assert!(tail.audio.channels.iter().all(|channel| channel.len() == 17));
+        assert_eq!(decoder.queued_frames(), 0);
+    }
+
+    #[test]
+    fn partial_sync_framed_ac4_input_holds_short_pcm_tail() {
+        let mut decoder = NativeAc4Decoder::new();
+        decoder.configure(format(12, 40));
+        for queue in &mut decoder.pcm {
+            queue.extend(std::iter::repeat(0.25_f32).take(17));
+        }
+        decoder.compressed.push(0xAC);
+
+        assert!(decoder.take_block(false).unwrap().is_none());
+        assert_eq!(decoder.queued_frames(), 17);
     }
 }
