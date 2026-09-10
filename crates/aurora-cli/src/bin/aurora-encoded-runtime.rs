@@ -26,7 +26,8 @@ use aurora_dsp_basic::output::{
 };
 use aurora_encoded_input::EncodedInputConfig;
 use aurora_encoded_runtime::health::{
-    HealthReporter, OutputHealth, RuntimeCounters as RuntimeStats, DEFAULT_HEALTH_INTERVAL,
+    HealthReporter, OutputHealth, RuntimeCounters as RuntimeStats, RuntimeHealthSnapshot,
+    DEFAULT_HEALTH_INTERVAL,
 };
 use aurora_encoded_runtime::{AuroraPlaybackRuntime, PlaybackBatch, SpeakerOutputFrame};
 use aurora_iec61937::CarrierWordHalf;
@@ -49,12 +50,36 @@ enum InputMode {
     LegacyUsb,
 }
 
+impl InputMode {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::DirectEarc => "direct-earc",
+            Self::LegacyUsb => "legacy-usb",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 enum OutputMode {
     /// Write canonical 12-channel interleaved little-endian F32 to stdout.
     StdoutF32,
     /// Write native S32_LE directly to a Linux ALSA/ASoC endpoint.
     AlsaS32,
+}
+
+impl OutputMode {
+    const fn as_str(self) -> &'static str {
+        match self {
+            Self::StdoutF32 => "stdout-f32",
+            Self::AlsaS32 => "alsa-s32",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+enum HealthFormat {
+    Text,
+    Json,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
@@ -116,6 +141,10 @@ struct Args {
     output_channels: usize,
     #[arg(long, default_value_t = DEFAULT_HEALTH_INTERVAL.as_millis() as u64)]
     health_interval_ms: u64,
+    /// Periodic health output. JSON is emitted as one object per line from the
+    /// non-realtime reporter thread and may be consumed by a dashboard/visualizer.
+    #[arg(long, value_enum, default_value = "text")]
+    health_format: HealthFormat,
     #[arg(long, default_value_t = 40)]
     block_size: usize,
 }
@@ -270,25 +299,17 @@ fn validate_args(args: &Args) -> Result<()> {
     Ok(())
 }
 
-fn run_selected_input<S: SpeakerSink>(
-    args: &Args,
-    runtime: &mut AuroraPlaybackRuntime,
-    sink: &mut S,
-) -> Result<RuntimeStats> {
-    let input = args.input;
-    let output = args.output;
-    let native_capture = args.alsa_device.is_some();
-    let decoder = runtime.encoded().decoder();
-    let initial = RuntimeStats::default().snapshot_with_joc(
-        decoder.transport_telemetry(),
-        sink.output_health(),
-        decoder.engine().joc_health(),
-    );
-    let reporter = HealthReporter::start(
-        Duration::from_millis(args.health_interval_ms),
-        initial,
-        move |health, age| {
-            let stats = health.counters;
+fn emit_health(
+    format: HealthFormat,
+    input: InputMode,
+    output: OutputMode,
+    native_capture: bool,
+    health: RuntimeHealthSnapshot,
+    age: Duration,
+) {
+    let stats = health.counters;
+    match format {
+        HealthFormat::Text => {
             let _ = writeln!(
                 io::stderr(),
                 "aurora-runtime-health: input={input:?} output={output:?} native_capture={native_capture} snapshot_age_ms={} bursts={} format_changes={} decoded_frames={} decoded_pcm_frames={} transport_discontinuities={} capture_xruns={} capture_recoveries={} capture_discontinuities={} capture_queue_starvations={} parser_pending_bytes={} parser_discarded_bytes={} parser_malformed_headers={} iec61937_locked={} transport_epoch={} transport_total_bursts={} bursts_since_lock={} transport_total_format_changes={} relocks={} last_valid_burst_age_ms={:?} last_burst_spacing_bytes={:?} min_burst_spacing_bytes={:?} max_burst_spacing_bytes={:?} joc_classified={} joc_render_active={} joc_channels={:?} joc_latency_samples={:?} joc_object_count={:?} joc_complexity={:?} joc_last_decode_us={:?} joc_last_render_us={:?} joc_last_total_us={:?} joc_max_total_us={:?} joc_fallback_present={} output_xruns={:?} output_recoveries={:?}",
@@ -328,6 +349,94 @@ fn run_selected_input<S: SpeakerSink>(
                 health.joc.fallback_present,
                 health.output.map(|o| o.xruns),
                 health.output.map(|o| o.recoveries)
+            );
+        }
+        HealthFormat::Json => {
+            let age_ms = age.as_millis().min(u128::from(u64::MAX)) as u64;
+            let record = serde_json::json!({
+                "event": "aurora-runtime-health",
+                "input": input.as_str(),
+                "output": output.as_str(),
+                "native_capture": native_capture,
+                "snapshot_age_ms": age_ms,
+                "counters": {
+                    "carrier_bursts": stats.carrier_bursts,
+                    "format_changes": stats.format_changes,
+                    "decoded_frames": stats.decoded_frames,
+                    "decoded_pcm_frames": stats.decoded_pcm_frames,
+                    "transport_discontinuities": stats.transport_discontinuities,
+                    "capture_xruns": stats.capture_xruns,
+                    "capture_recoveries": stats.capture_recoveries,
+                    "capture_discontinuities": stats.capture_discontinuities,
+                    "capture_queue_starvations": stats.capture_queue_starvations,
+                },
+                "transport": {
+                    "pending_carrier_bytes": health.parser.pending_carrier_bytes,
+                    "discarded_bytes": health.parser.discarded_bytes,
+                    "malformed_headers": health.parser.malformed_headers,
+                    "iec61937_locked": health.parser.iec61937_locked,
+                    "observation_epoch": health.parser.observation_epoch,
+                    "total_bursts": health.parser.total_bursts,
+                    "bursts_since_lock": health.parser.bursts_since_lock,
+                    "total_format_changes": health.parser.total_format_changes,
+                    "relocks": health.parser.relocks,
+                    "last_valid_burst_age_ms": health.parser.last_valid_burst_age_ms,
+                    "last_burst_spacing_bytes": health.parser.last_burst_spacing_bytes,
+                    "min_burst_spacing_bytes": health.parser.min_burst_spacing_bytes,
+                    "max_burst_spacing_bytes": health.parser.max_burst_spacing_bytes,
+                },
+                "joc": {
+                    "codec_classified": health.joc.codec_classified_joc,
+                    "speaker_render_active": health.joc.speaker_render_active,
+                    "channels": health.joc.channel_count,
+                    "latency_samples": health.joc.latency_samples,
+                    "object_count": health.joc.object_count,
+                    "complexity": health.joc.complexity_index,
+                    "last_decode_us": health.joc.last_decode_time_us,
+                    "last_render_us": health.joc.last_render_time_us,
+                    "last_total_us": health.joc.last_total_time_us,
+                    "max_total_us": health.joc.max_total_time_us,
+                    "fallback_present": health.joc.fallback_present,
+                },
+                "output_health": health.output.map(|o| serde_json::json!({
+                    "xruns": o.xruns,
+                    "recoveries": o.recoveries,
+                })),
+            });
+            let mut stderr = io::stderr().lock();
+            if serde_json::to_writer(&mut stderr, &record).is_ok() {
+                let _ = writeln!(stderr);
+            }
+        }
+    }
+}
+
+fn run_selected_input<S: SpeakerSink>(
+    args: &Args,
+    runtime: &mut AuroraPlaybackRuntime,
+    sink: &mut S,
+) -> Result<RuntimeStats> {
+    let input = args.input;
+    let output = args.output;
+    let native_capture = args.alsa_device.is_some();
+    let health_format = args.health_format;
+    let decoder = runtime.encoded().decoder();
+    let initial = RuntimeStats::default().snapshot_with_joc(
+        decoder.transport_telemetry(),
+        sink.output_health(),
+        decoder.engine().joc_health(),
+    );
+    let reporter = HealthReporter::start(
+        Duration::from_millis(args.health_interval_ms),
+        initial,
+        move |health, age| {
+            emit_health(
+                health_format,
+                input,
+                output,
+                native_capture,
+                health,
+                age,
             );
         },
     )
@@ -669,12 +778,9 @@ mod tests {
 
     #[test]
     fn health_interval_cli_defaults_override_disable_and_reject_invalid() {
-        assert_eq!(
-            Args::try_parse_from(["runtime"])
-                .unwrap()
-                .health_interval_ms,
-            5000
-        );
+        let defaults = Args::try_parse_from(["runtime"]).unwrap();
+        assert_eq!(defaults.health_interval_ms, 5000);
+        assert_eq!(defaults.health_format, HealthFormat::Text);
         for value in ["0", "250", "10000"] {
             let args = Args::try_parse_from(["runtime", "--health-interval-ms", value]).unwrap();
             assert_eq!(args.health_interval_ms, value.parse::<u64>().unwrap());
@@ -683,6 +789,13 @@ mod tests {
         for value in ["-1", "NaN", "1.5"] {
             assert!(Args::try_parse_from(["runtime", "--health-interval-ms", value]).is_err());
         }
+        assert_eq!(
+            Args::try_parse_from(["runtime", "--health-format", "json"])
+                .unwrap()
+                .health_format,
+            HealthFormat::Json
+        );
+        assert!(Args::try_parse_from(["runtime", "--health-format", "xml"]).is_err());
     }
 
     fn valid_args() -> Args {
@@ -706,6 +819,7 @@ mod tests {
             output_channels: OUTPUT_CHANNELS,
             block_size: 40,
             health_interval_ms: 5000,
+            health_format: HealthFormat::Text,
         }
     }
 
