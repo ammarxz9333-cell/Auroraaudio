@@ -5,10 +5,6 @@ use crate::spatial_ir::SpatialDecodedFrame;
 use crate::AuroraDecoderEngine;
 
 /// Cumulative health counters for one Aurora decoder-engine instance.
-///
-/// Counters are intentionally codec-agnostic and cheap enough to update on the
-/// realtime control path. Native adapter-specific resynchronization counters are
-/// copied into the snapshot by `AuroraDecoderEngine::telemetry()`.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct EngineTelemetry {
     pub input_chunks: u64,
@@ -16,9 +12,6 @@ pub struct EngineTelemetry {
     pub input_bytes: u64,
     pub frames_emitted: u64,
     pub samples_emitted: u64,
-    /// Logical renderable objects emitted. For legacy frames this is
-    /// `DecodedFrame.objects`; for Spatial IR this is the stable object-signal
-    /// count, not the number of metadata events.
     pub objects_emitted: u64,
     pub spatial_updates_emitted: u64,
     pub discontinuities: u64,
@@ -34,12 +27,9 @@ pub struct EngineTelemetry {
     pub active_codec: Option<CodecId>,
 }
 
-/// Allocation-free JOC state for the live health path.
-///
-/// This intentionally omits layout/fallback strings. Those remain available
-/// through `AuroraDecoderEngine::joc_status()` for setup/final diagnostics.
-/// Nothing here is inferred from IEC61937 type 0x15. Timing fields are measured
-/// only for successfully processed OpenJOC access units.
+/// Allocation-free JOC state for the live health path. `speaker_render_active`
+/// is live-only; the remaining render details are the latest successful
+/// OpenJOC observation in the current decoder epoch and survive EOF retirement.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct JocDecoderHealth {
     pub codec_classified_joc: bool,
@@ -55,9 +45,6 @@ pub struct JocDecoderHealth {
     pub max_total_time_us: Option<u64>,
 }
 
-/// Allocation-free timing for successful OpenJOC access units in the current
-/// renderer epoch. These are decoder-internal measurements, not transport
-/// timestamps and not an Atmos/JOC admission claim.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
 pub struct JocTimingHealth {
     pub last_decode_time_us: Option<u64>,
@@ -67,32 +54,27 @@ pub struct JocTimingHealth {
 }
 
 impl AuroraDecoderEngine {
-    /// Returns a fixed-size JOC observation without cloning strings or allocating.
     pub fn joc_health(&self) -> JocDecoderHealth {
-        let render = self.open.joc_render_info();
+        let active_render = self.open.joc_render_info();
+        let observed_render = active_render.or_else(|| self.open.last_joc_render_info());
         JocDecoderHealth {
-            // Read classification from the decoder itself. The open JOC lane can
-            // change classification while flushing a final access unit, after
-            // the policy-facing active_codec snapshot was last refreshed.
             codec_classified_joc: self.open.detected_codec().map(CodecId::from)
                 == Some(CodecId::Eac3Joc),
-            speaker_render_active: render.is_some(),
-            channel_count: render.map(|info| info.channel_count),
-            latency_samples: render.map(|info| info.latency_samples),
-            object_count: render.and_then(|info| info.object_count),
-            complexity_index: render.and_then(|info| info.complexity_index),
+            speaker_render_active: active_render.is_some(),
+            channel_count: observed_render.map(|info| info.channel_count),
+            latency_samples: observed_render.map(|info| info.latency_samples),
+            object_count: observed_render.and_then(|info| info.object_count),
+            complexity_index: observed_render.and_then(|info| info.complexity_index),
             fallback_present: self.open.last_joc_error().is_some(),
-            last_decode_time_us: render.and_then(|info| info.last_decode_time_us),
-            last_render_time_us: render.and_then(|info| info.last_render_time_us),
-            last_total_time_us: render.and_then(|info| info.last_total_time_us),
-            max_total_time_us: render.and_then(|info| info.max_total_time_us),
+            last_decode_time_us: observed_render.and_then(|info| info.last_decode_time_us),
+            last_render_time_us: observed_render.and_then(|info| info.last_render_time_us),
+            last_total_time_us: observed_render.and_then(|info| info.last_total_time_us),
+            max_total_time_us: observed_render.and_then(|info| info.max_total_time_us),
         }
     }
 
-    /// Returns per-access-unit OpenJOC stage timing without allocation. `None`
-    /// means no successful JOC access unit has been measured in this epoch.
     pub fn joc_timing_health(&self) -> JocTimingHealth {
-        let render = self.open.joc_render_info();
+        let render = self.open.last_joc_render_info();
         JocTimingHealth {
             last_decode_time_us: render.and_then(|info| info.last_decode_time_us),
             last_render_time_us: render.and_then(|info| info.last_render_time_us),
