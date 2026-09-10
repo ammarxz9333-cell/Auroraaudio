@@ -146,7 +146,7 @@ impl UniversalOpenDecoder {
         }
 
         if !matches!(self.codec, Some(CodecKind::Eac3 | CodecKind::Eac3Joc))
-            || !matches!(self.transport, Transport::Elementary)
+            || !matches!(&self.transport, Transport::Elementary)
         {
             self.codec = Some(CodecKind::Eac3);
             self.encapsulation = Encapsulation::Elementary;
