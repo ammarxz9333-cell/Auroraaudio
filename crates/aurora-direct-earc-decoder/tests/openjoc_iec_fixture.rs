@@ -108,12 +108,14 @@ fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
 
     let mut bursts = 0_usize;
     let mut pcm_frames = 0_usize;
+    let mut first_burst_admission_checked = false;
     for unit in &units {
         let period = canonical_eac3_period(unit);
         for chunk in period.chunks(997) {
             let batch = decoder
                 .push_carrier(chunk, false)
                 .expect("decode synthetic direct-eARC carrier chunk");
+            let prior_bursts = bursts;
             bursts = bursts.saturating_add(batch.bursts);
             assert!(
                 batch
@@ -121,10 +123,26 @@ fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
                     .iter()
                     .all(|codec| *codec == TransportCodec::Eac3)
             );
+
+            if prior_bursts == 0 && batch.bursts > 0 {
+                // The IEC61937 0x15 burst itself is an authenticated complete
+                // E-AC-3 AU boundary. Aurora must classify/render that first AU
+                // immediately rather than buffering it until the next AU arrives.
+                let first_joc = decoder.engine().joc_status();
+                assert!(first_joc.codec_classified_joc);
+                assert!(first_joc.speaker_render_active);
+                assert!(first_joc.fallback_reason.is_none());
+                first_burst_admission_checked = true;
+            }
+
             observe_frames(batch.frames, &mut pcm_frames);
         }
     }
 
+    assert!(
+        first_burst_admission_checked,
+        "first IEC61937 E-AC-3 burst was never admitted before a second AU"
+    );
     assert_eq!(bursts, EXPECTED_ACCESS_UNITS);
     let transport = decoder.transport_telemetry();
     assert!(transport.iec61937_locked);
