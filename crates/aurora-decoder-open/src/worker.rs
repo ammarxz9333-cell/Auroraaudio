@@ -20,6 +20,33 @@ pub struct WorkerCommand {
     pub program: String,
     pub args: Vec<String>,
     pub decoded_channels: usize,
+    /// Source-channel index -> Aurora canonical target-channel index.
+    pub channel_map: Vec<usize>,
+}
+
+/// Resolve one deterministic FFmpeg raw-PCM layout and its semantic mapping to
+/// Aurora's canonical speaker order.
+///
+/// FFmpeg native 7.1 order is `FL FR FC LFE BL BR SL SR`, while Aurora's first
+/// eight canonical lanes are `FL FR FC LFE SL SR SBL SBR`. The worker must
+/// therefore remap the last four lanes instead of treating raw channel indices
+/// as speaker semantics. Unsupported widths fail closed rather than guessing.
+fn worker_channel_contract(
+    decoded_channels: usize,
+    output_channels: usize,
+) -> Result<(&'static str, Vec<usize>), DecoderError> {
+    let contract = match decoded_channels {
+        1 if output_channels >= 1 => ("mono", vec![0]),
+        2 if output_channels >= 2 => ("stereo", vec![0, 1]),
+        6 if output_channels >= 6 => ("5.1", vec![0, 1, 2, 3, 4, 5]),
+        8 if output_channels >= 8 => ("7.1", vec![0, 1, 2, 3, 6, 7, 4, 5]),
+        _ => {
+            return Err(DecoderError::UnsupportedInput(
+                "FFmpeg worker output width has no proven Aurora semantic channel mapping",
+            ));
+        }
+    };
+    Ok(contract)
 }
 
 /// Build the deterministic FFmpeg command used by the persistent worker.
@@ -34,6 +61,8 @@ pub fn build_worker_command(
     output: AudioFormat,
 ) -> Result<WorkerCommand, DecoderError> {
     let decoded_channels = output.channel_count.min(8).max(1);
+    let (channel_layout, channel_map) =
+        worker_channel_contract(decoded_channels, output.channel_count)?;
     let mut args = vec![
         "-hide_banner".into(),
         "-loglevel".into(),
@@ -67,6 +96,8 @@ pub fn build_worker_command(
         output.sample_rate.to_string(),
         "-ac".into(),
         decoded_channels.to_string(),
+        "-channel_layout".into(),
+        channel_layout.into(),
         "-f".into(),
         "f32le".into(),
         "pipe:1".into(),
@@ -76,6 +107,7 @@ pub fn build_worker_command(
         program: "ffmpeg".into(),
         args,
         decoded_channels,
+        channel_map,
     })
 }
 
@@ -126,6 +158,7 @@ pub struct OpenWorkerDecoder {
     encapsulation: Encapsulation,
     output: AudioFormat,
     decoded_channels: usize,
+    channel_map: Vec<usize>,
     child: Child,
     stdin: Option<ChildStdin>,
     rx: Receiver<Vec<u8>>,
@@ -183,6 +216,7 @@ impl OpenWorkerDecoder {
             encapsulation,
             output,
             decoded_channels: command.decoded_channels,
+            channel_map: command.channel_map,
             child,
             stdin: Some(stdin),
             rx,
@@ -299,15 +333,16 @@ impl OpenWorkerDecoder {
             .collect::<Vec<_>>();
         for frame in 0..frame_count {
             let base = frame * bytes_per_frame;
-            for channel in 0..self.decoded_channels {
-                let at = base + channel * 4;
+            for source_channel in 0..self.decoded_channels {
+                let at = base + source_channel * 4;
                 let sample = decode_worker_sample([
                     block[at],
                     block[at + 1],
                     block[at + 2],
                     block[at + 3],
                 ])?;
-                planar[channel][frame] = sample;
+                let target_channel = self.channel_map[source_channel];
+                planar[target_channel][frame] = sample;
             }
         }
         let pts = self.emitted_frames as f64 / f64::from(self.output.sample_rate);
@@ -351,12 +386,34 @@ mod tests {
     }
 
     #[test]
-    fn truehd_uses_explicit_demuxer_and_bounded_bed_channels() {
+    fn truehd_uses_explicit_demuxer_and_semantic_seven_one_bed() {
         let cmd =
             build_worker_command(CodecKind::TrueHd, Encapsulation::Elementary, fmt(12)).unwrap();
         assert!(cmd.args.windows(2).any(|p| p == ["-f", "truehd"]));
         assert_eq!(cmd.decoded_channels, 8);
         assert!(cmd.args.windows(2).any(|p| p == ["-ac", "8"]));
+        assert!(cmd
+            .args
+            .windows(2)
+            .any(|p| p == ["-channel_layout", "7.1"]));
+        assert_eq!(cmd.channel_map, vec![0, 1, 2, 3, 6, 7, 4, 5]);
+    }
+
+    #[test]
+    fn five_one_worker_layout_matches_aurora_first_six_lanes() {
+        let cmd = build_worker_command(CodecKind::Flac, Encapsulation::Elementary, fmt(6)).unwrap();
+        assert!(cmd
+            .args
+            .windows(2)
+            .any(|p| p == ["-channel_layout", "5.1"]));
+        assert_eq!(cmd.channel_map, vec![0, 1, 2, 3, 4, 5]);
+    }
+
+    #[test]
+    fn ambiguous_worker_width_fails_closed() {
+        let error = build_worker_command(CodecKind::Flac, Encapsulation::Elementary, fmt(7))
+            .unwrap_err();
+        assert!(matches!(error, DecoderError::UnsupportedInput(_)));
     }
 
     #[test]
@@ -364,6 +421,7 @@ mod tests {
         let cmd = build_worker_command(CodecKind::Opus, Encapsulation::Ogg, fmt(2)).unwrap();
         assert!(!cmd.args.windows(2).any(|p| p == ["-f", "opus"]));
         assert_eq!(cmd.decoded_channels, 2);
+        assert_eq!(cmd.channel_map, vec![0, 1]);
     }
 
     #[test]
