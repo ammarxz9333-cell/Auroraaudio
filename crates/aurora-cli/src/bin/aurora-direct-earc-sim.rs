@@ -1,11 +1,13 @@
-//! Convert a raw finite E-AC-3 elementary stream into Aurora's canonical IEC61937 carrier.
+//! Generate or wrap finite E-AC-3 into Aurora's canonical IEC61937 carrier.
 //!
-//! Input is read from stdin and framed with the exact OpenJOC revision pinned by
-//! `aurora-sim-source`. Each proven E-AC-3 access unit is emitted as one fixed
-//! 24,576-byte type-0x15 carrier period. Deterministic edge-case injection is
-//! intentionally implemented outside Aurora's production parser/decoder.
+//! Raw E-AC-3 may arrive on stdin, or `--generate-seconds` can ask the local
+//! FFmpeg CLI to synthesize a 48 kHz 5.1 E-AC-3 elementary stream. Every complete
+//! AU is framed with the exact OpenJOC revision pinned by `aurora-sim-source` and
+//! emitted as one fixed 24,576-byte type-0x15 carrier period. Deterministic edge
+//! faults remain outside Aurora's production parser/decoder.
 
-use std::io::{self, Read, Write};
+use std::io::{self, Cursor, Read, Write};
+use std::process::Command;
 
 use anyhow::{Context, Result, bail};
 use aurora_sim_source::{
@@ -15,6 +17,7 @@ use aurora_sim_source::{
 use clap::Parser;
 
 const IEC61937_HEADER_BYTES: usize = 8;
+const DEFAULT_EAC3_BITRATE_KBPS: u32 = 384;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PrimaryFault {
@@ -46,12 +49,20 @@ struct FaultPlan {
 #[derive(Debug, Parser)]
 #[command(
     name = "aurora-sim-source",
-    about = "Wrap raw E-AC-3 access units into canonical IEC61937 carrier periods and inject deterministic faults"
+    about = "Generate/wrap E-AC-3 into canonical IEC61937 carrier and inject deterministic faults"
 )]
 struct Args {
-    /// Internal stdin read size. E-AC-3 access-unit framing may cross any read boundary.
+    /// Internal source read size. E-AC-3 access-unit framing may cross any read boundary.
     #[arg(long, default_value_t = 16_384)]
     read_bytes: usize,
+
+    /// Generate this many seconds of synthetic 48 kHz 5.1 E-AC-3 with local FFmpeg instead of stdin.
+    #[arg(long)]
+    generate_seconds: Option<f64>,
+
+    /// FFmpeg E-AC-3 bitrate in kbit/s. 384 is the historical capture target; 768 is also gated in CI.
+    #[arg(long, default_value_t = DEFAULT_EAC3_BITRATE_KBPS)]
+    bitrate_kbps: u32,
 
     /// Cut zero-based burst N in the middle of its declared encoded payload.
     #[arg(long)]
@@ -83,16 +94,90 @@ struct Args {
 
 fn main() -> Result<()> {
     let args = Args::parse();
+    validate_source_options(&args)?;
+    let plan = parse_fault_plan(&args)?;
+
+    let generated = args
+        .generate_seconds
+        .map(|seconds| generate_eac3_with_ffmpeg(seconds, args.bitrate_kbps))
+        .transpose()?;
+
+    let stdin = io::stdin();
+    let mut stdin_lock = stdin.lock();
+    let mut generated_cursor = Cursor::new(generated.as_deref().unwrap_or(&[]));
+    let input: &mut dyn Read = if generated.is_some() {
+        &mut generated_cursor
+    } else {
+        &mut stdin_lock
+    };
+
+    let stdout = io::stdout();
+    let mut output = stdout.lock();
+    run_source(input, &mut output, args.read_bytes, plan)
+}
+
+fn validate_source_options(args: &Args) -> Result<()> {
     if args.read_bytes == 0 {
         bail!("read size must be greater than zero");
     }
-    let plan = parse_fault_plan(&args)?;
+    if args.bitrate_kbps == 0 {
+        bail!("bitrate-kbps must be greater than zero");
+    }
+    if let Some(seconds) = args.generate_seconds {
+        if !seconds.is_finite() || seconds <= 0.0 {
+            bail!("generate-seconds must be finite and greater than zero");
+        }
+    }
+    Ok(())
+}
 
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let mut input = stdin.lock();
-    let mut output = stdout.lock();
-    let mut read_buffer = vec![0_u8; args.read_bytes];
+fn generate_eac3_with_ffmpeg(seconds: f64, bitrate_kbps: u32) -> Result<Vec<u8>> {
+    let duration = format!("{seconds:.6}");
+    let bitrate = format!("{bitrate_kbps}k");
+    let generated = Command::new("ffmpeg")
+        .args([
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-nostdin",
+            "-f",
+            "lavfi",
+            "-i",
+            "anullsrc=r=48000:cl=5.1",
+            "-t",
+            &duration,
+            "-c:a",
+            "eac3",
+            "-b:a",
+            &bitrate,
+            "-ar",
+            "48000",
+            "-ac",
+            "6",
+            "-f",
+            "eac3",
+            "pipe:1",
+        ])
+        .output()
+        .context("failed to launch FFmpeg E-AC-3 generator")?;
+
+    if !generated.status.success() {
+        let stderr = String::from_utf8_lossy(&generated.stderr);
+        bail!("FFmpeg E-AC-3 generation failed: {stderr}");
+    }
+    if generated.stdout.is_empty() {
+        bail!("FFmpeg E-AC-3 generator returned an empty elementary stream");
+    }
+    Ok(generated.stdout)
+}
+
+fn run_source<R: Read + ?Sized, W: Write>(
+    input: &mut R,
+    output: &mut W,
+    read_bytes: usize,
+    plan: FaultPlan,
+) -> Result<()> {
+    let mut read_buffer = vec![0_u8; read_bytes];
     let mut period = [0_u8; EAC3_BURST_PERIOD_BYTES];
     let mut framer = Eac3AccessUnitFramer::new();
 
@@ -128,7 +213,7 @@ fn main() -> Result<()> {
                         &mut period,
                         plan,
                         &mut staged_output,
-                        &mut output,
+                        output,
                     )? as u64);
                     access_units = access_units.saturating_add(1);
                 }
@@ -139,7 +224,7 @@ fn main() -> Result<()> {
                     &mut period,
                     plan,
                     &mut staged_output,
-                    &mut output,
+                    output,
                 )? as u64);
                 access_units = access_units.saturating_add(1);
                 if completion_period == access_units.checked_sub(1) {
@@ -161,7 +246,7 @@ fn main() -> Result<()> {
                     &mut period,
                     plan,
                     &mut staged_output,
-                    &mut output,
+                    output,
                 )? as u64);
                 access_units = access_units.saturating_add(1);
             }
@@ -172,7 +257,7 @@ fn main() -> Result<()> {
                 &mut period,
                 plan,
                 &mut staged_output,
-                &mut output,
+                output,
             )? as u64);
             access_units = access_units.saturating_add(1);
             if completion_period == access_units.checked_sub(1) {
@@ -187,7 +272,7 @@ fn main() -> Result<()> {
             .ok_or_else(|| anyhow::anyhow!("--truncated-eof requires at least one complete E-AC-3 AU"))?;
         write_eac3_period(&final_unit, &mut period)
             .map_err(|error| anyhow::anyhow!("failed building final E-AC-3 carrier period: {error}"))?;
-        maybe_write_jitter(access_units, plan, &mut output, &mut output_bytes)?;
+        maybe_write_jitter(access_units, plan, output, &mut output_bytes)?;
         let truncate_at = mid_payload_cut_length(final_unit.len());
         let truncated = inject_carrier_fault(&period, CarrierFault::Truncate { length: truncate_at })
             .map_err(|error| anyhow::anyhow!("failed truncating final carrier period: {error}"))?;
@@ -367,6 +452,8 @@ mod tests {
     fn base_args() -> Args {
         Args {
             read_bytes: 4096,
+            generate_seconds: None,
+            bitrate_kbps: DEFAULT_EAC3_BITRATE_KBPS,
             cut_burst: None,
             corrupt_pa: None,
             gap: None,
@@ -374,6 +461,20 @@ mod tests {
             cadence_jitter_ms: None,
             truncated_eof: false,
         }
+    }
+
+    #[test]
+    fn source_options_reject_impossible_generation_values() {
+        let mut args = base_args();
+        args.bitrate_kbps = 0;
+        assert!(validate_source_options(&args).is_err());
+        args.bitrate_kbps = 384;
+        args.generate_seconds = Some(0.0);
+        assert!(validate_source_options(&args).is_err());
+        args.generate_seconds = Some(f64::NAN);
+        assert!(validate_source_options(&args).is_err());
+        args.generate_seconds = Some(0.25);
+        assert!(validate_source_options(&args).is_ok());
     }
 
     #[test]
