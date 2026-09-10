@@ -280,7 +280,9 @@ impl SpeakerOutputStage {
             .audio
             .frame_count
             .checked_mul(OUTPUT_CHANNELS)
-            .ok_or_else(|| RuntimeError::OutputSetup("speaker output block size overflow".to_owned()))?;
+            .ok_or_else(|| {
+                RuntimeError::OutputSetup("speaker output block size overflow".to_owned())
+            })?;
         let mut interleaved = self.take_interleaved_storage(required);
         for frame_index in 0..frame.audio.frame_count {
             for channel in &frame.audio.channels {
