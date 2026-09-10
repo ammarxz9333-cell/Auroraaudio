@@ -103,9 +103,24 @@ fn validate_config(config: &AlsaInputConfig) -> Result<(), AlsaInputError> {
             "channel/slot count must be greater than zero".to_owned(),
         ));
     }
+    if u32::try_from(config.channels).is_err() {
+        return Err(AlsaInputError::InvalidConfig(
+            "channel/slot count exceeds ALSA's u32 range".to_owned(),
+        ));
+    }
     if config.period_frames == 0 {
         return Err(AlsaInputError::InvalidConfig(
             "period size must be greater than zero".to_owned(),
+        ));
+    }
+    if i64::try_from(config.period_frames).is_err() {
+        return Err(AlsaInputError::InvalidConfig(
+            "period size exceeds ALSA's signed frame range".to_owned(),
+        ));
+    }
+    if i64::try_from(config.buffer_frames).is_err() {
+        return Err(AlsaInputError::InvalidConfig(
+            "buffer size exceeds ALSA's signed frame range".to_owned(),
         ));
     }
     if config.buffer_frames < config.period_frames.saturating_mul(2) {
@@ -150,6 +165,28 @@ fn validate_negotiated_buffer(
     Ok(())
 }
 
+fn configured_channels_u32(channels: usize) -> Result<u32, AlsaInputError> {
+    u32::try_from(channels).map_err(|_| {
+        AlsaInputError::InvalidConfig("channel/slot count exceeds ALSA's u32 range".to_owned())
+    })
+}
+
+fn configured_frames_i64(name: &str, frames: usize) -> Result<i64, AlsaInputError> {
+    i64::try_from(frames).map_err(|_| {
+        AlsaInputError::InvalidConfig(format!(
+            "{name} frame count exceeds ALSA's signed frame range"
+        ))
+    })
+}
+
+fn negotiated_frames_usize(name: &str, frames: i64) -> Result<usize, AlsaInputError> {
+    usize::try_from(frames).map_err(|_| {
+        AlsaInputError::Negotiation(format!(
+            "device negotiated an invalid negative or oversized {name} frame count: {frames}"
+        ))
+    })
+}
+
 /// Converts interleaved native i32 slot words into the exact little-endian byte
 /// representation expected by Aurora's existing S32_LE carrier normalizer.
 pub fn interleaved_i32_to_le_bytes(samples: &[i32]) -> Vec<u8> {
@@ -181,28 +218,36 @@ impl NativeAlsaCapture {
         use alsa::{Direction, ValueOr};
 
         validate_config(&config)?;
+        let configured_channels = configured_channels_u32(config.channels)?;
+        let configured_period = configured_frames_i64("period", config.period_frames)?;
+        let requested_buffer_frames = config.buffer_frames.max(minimum_capture_buffer_frames(
+            config.sample_rate,
+            config.period_frames,
+        ));
+        let configured_buffer = configured_frames_i64("buffer", requested_buffer_frames)?;
+
         let pcm = alsa::pcm::PCM::new(&config.device, Direction::Capture, false)?;
         let hw = HwParams::any(&pcm)?;
         hw.set_rate_resample(false)?;
         hw.set_access(Access::RWInterleaved)?;
         hw.set_format(Format::S32LE)?;
-        hw.set_channels(config.channels as u32)?;
+        hw.set_channels(configured_channels)?;
         hw.set_rate(config.sample_rate, ValueOr::Nearest)?;
-        hw.set_period_size_near(config.period_frames as i64, ValueOr::Nearest)?;
-        let requested_buffer_frames = config.buffer_frames.max(minimum_capture_buffer_frames(
-            config.sample_rate,
-            config.period_frames,
-        ));
-        hw.set_buffer_size_near(requested_buffer_frames as i64)?;
+        hw.set_period_size_near(configured_period, ValueOr::Nearest)?;
+        hw.set_buffer_size_near(configured_buffer)?;
         pcm.hw_params(&hw)?;
         drop(hw);
 
         let current = pcm.hw_params_current()?;
         let negotiated_rate = current.get_rate()?;
-        let negotiated_channels = current.get_channels()? as usize;
+        let negotiated_channels = usize::try_from(current.get_channels()?).map_err(|_| {
+            AlsaInputError::Negotiation(
+                "device negotiated a channel count outside usize".to_owned(),
+            )
+        })?;
         let negotiated_format = current.get_format()?;
-        let period_frames = current.get_period_size()? as usize;
-        let buffer_frames = current.get_buffer_size()? as usize;
+        let period_frames = negotiated_frames_usize("period", current.get_period_size()?)?;
+        let buffer_frames = negotiated_frames_usize("buffer", current.get_buffer_size()?)?;
         drop(current);
 
         if negotiated_rate != config.sample_rate {
@@ -240,7 +285,7 @@ impl NativeAlsaCapture {
         samples.resize(sample_count, 0_i32);
 
         let sw = pcm.sw_params_current()?;
-        sw.set_avail_min(period_frames as i64)?;
+        sw.set_avail_min(configured_frames_i64("negotiated period", period_frames)?)?;
         pcm.sw_params(&sw)?;
         drop(sw);
         pcm.prepare()?;
@@ -383,6 +428,16 @@ mod tests {
         assert!(validate_negotiated_buffer(192_000, 256, 7_680).is_ok());
         assert!(validate_negotiated_buffer(48_000, 2_000, 3_999).is_err());
         assert!(validate_negotiated_buffer(48_000, 2_000, 4_000).is_ok());
+    }
+
+    #[test]
+    fn alsa_integer_geometry_is_checked_before_casting() {
+        if usize::BITS > 32 {
+            let too_many_channels = (u32::MAX as usize).saturating_add(1);
+            assert!(configured_channels_u32(too_many_channels).is_err());
+        }
+        assert!(negotiated_frames_usize("period", -1).is_err());
+        assert_eq!(negotiated_frames_usize("period", 256).unwrap(), 256);
     }
 
     #[test]
