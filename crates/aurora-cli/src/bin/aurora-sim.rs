@@ -307,7 +307,7 @@ fn run_latency_report(args: LatencyArgs) -> Result<()> {
             let capture_start = Instant::now();
             normalizer.push_s32_words_into(&words, &mut carrier_scratch)?;
             stages.record(ValidationStage::Capture, capture_start.elapsed());
-            if carrier_scratch != period {
+            if carrier_scratch.as_slice() != period.as_slice() {
                 bail!("simulated S32 capture normalization changed IEC61937 carrier bytes");
             }
 
@@ -448,6 +448,7 @@ fn run_stress(args: StressArgs) -> Result<()> {
     let mut words = vec![0_i32; EAC3_BURST_PERIOD_BYTES / 2];
     let idle_words = vec![0_i32; EAC3_BURST_PERIOD_BYTES / 2];
     let jitter_words = vec![0_i32; EAC3_CARRIER_BYTES_PER_MS / 2];
+    let inject_every = u64::try_from(args.inject_every).context("inject-every exceeds u64")?;
     let mut unit_index = 0_usize;
     let mut output_frames = 0_u64;
     let mut handled_expected_errors = 0_u64;
@@ -517,9 +518,7 @@ fn run_stress(args: StressArgs) -> Result<()> {
             .map_err(|error| anyhow::anyhow!("failed building stress carrier: {error}"))?;
         carrier_to_low_s32(&period, &mut words)?;
 
-        let inject = args.inject_every != 0
-            && periods != 0
-            && periods % args.inject_every as u64 == 0;
+        let inject = inject_every != 0 && periods != 0 && periods % inject_every == 0;
         if inject {
             match fault_sequence % 5 {
                 0 => {
@@ -581,7 +580,7 @@ fn run_stress(args: StressArgs) -> Result<()> {
         }
 
         if !args.unpaced {
-            next_tick = next_tick + EAC3_PERIOD;
+            next_tick += EAC3_PERIOD;
             let now = Instant::now();
             if next_tick > now {
                 thread::sleep(next_tick.duration_since(now));
