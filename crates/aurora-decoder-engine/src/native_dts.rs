@@ -284,7 +284,13 @@ impl NativeDtsDecoder {
         }
         let available = self.queued_frames();
         let wanted = output.block_size.max(1);
-        if available < wanted && !allow_short {
+        // While compressed input is still staged, retain a sub-block PCM tail so
+        // the next complete DTS frame can continue the preferred block cadence.
+        // Once the compressed staging buffer is empty, every decoded sample is
+        // known to belong to a complete frame and the residual PCM is real audio,
+        // not look-ahead state. Emit it instead of letting a later codec reset
+        // silently discard a tail such as 32 samples from a 512-sample DTS frame.
+        if available < wanted && !allow_short && !self.compressed.is_empty() {
             return Ok(None);
         }
         let frame_count = available.min(wanted);
@@ -444,6 +450,15 @@ mod tests {
     use super::*;
     use aurora_core::SampleType;
 
+    fn format(block_size: usize) -> AudioFormat {
+        AudioFormat {
+            sample_rate: 48_000,
+            channel_count: 12,
+            sample_type: SampleType::F32,
+            block_size,
+        }
+    }
+
     #[test]
     fn recognizes_all_four_core_sync_forms() {
         assert!(looks_like_dts_sync(&[0x7F, 0xFE, 0x80, 0x01]));
@@ -474,12 +489,37 @@ mod tests {
     #[test]
     fn adapter_accepts_aurora_40_frame_configuration() {
         let mut decoder = NativeDtsDecoder::new();
-        decoder.configure(AudioFormat {
-            sample_rate: 48_000,
-            channel_count: 12,
-            sample_type: SampleType::F32,
-            block_size: 40,
-        });
+        decoder.configure(format(40));
         assert!(decoder.poll().unwrap().is_none());
+    }
+
+    #[test]
+    fn complete_dts_input_releases_short_pcm_tail() {
+        let mut decoder = NativeDtsDecoder::new();
+        decoder.configure(format(40));
+        for queue in &mut decoder.pcm {
+            queue.extend(std::iter::repeat(0.25_f32).take(32));
+        }
+        assert!(decoder.compressed.is_empty());
+
+        let tail = decoder.take_block(false).unwrap().unwrap();
+
+        assert_eq!(tail.audio.frame_count, 32);
+        assert_eq!(tail.audio.channels.len(), 12);
+        assert!(tail.audio.channels.iter().all(|channel| channel.len() == 32));
+        assert_eq!(decoder.queued_frames(), 0);
+    }
+
+    #[test]
+    fn partial_compressed_dts_input_holds_short_pcm_tail() {
+        let mut decoder = NativeDtsDecoder::new();
+        decoder.configure(format(40));
+        for queue in &mut decoder.pcm {
+            queue.extend(std::iter::repeat(0.25_f32).take(32));
+        }
+        decoder.compressed.push(0x7F);
+
+        assert!(decoder.take_block(false).unwrap().is_none());
+        assert_eq!(decoder.queued_frames(), 32);
     }
 }
