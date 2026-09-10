@@ -12,7 +12,7 @@ const MIN_CAPTURE_HEADROOM_MS: u64 = 40;
 /// Native ALSA capture configuration for the recovered eARC serial-audio carrier.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AlsaInputConfig {
-    /// ALSA PCM capture endpoint, for example `hw:0,0`.
+    /// ALSA PCM device name, for example `hw:0,0`.
     pub device: String,
     /// Recovered serial-audio carrier frame rate, typically 192 kHz for DD+ IEC61937.
     pub sample_rate: u32,
@@ -128,6 +128,28 @@ fn minimum_capture_buffer_frames(sample_rate: u32, period_frames: usize) -> usiz
     duration_frames.max(period_frames.saturating_mul(2))
 }
 
+/// Reject a negotiated geometry that silently collapses the realtime headroom
+/// requested above. `set_buffer_size_near` is permitted to move to a nearby
+/// value, so the post-negotiation contract must be checked independently.
+fn validate_negotiated_buffer(
+    sample_rate: u32,
+    period_frames: usize,
+    buffer_frames: usize,
+) -> Result<(), AlsaInputError> {
+    if period_frames == 0 {
+        return Err(AlsaInputError::Negotiation(
+            "device negotiated a zero-frame capture period".to_owned(),
+        ));
+    }
+    let required = minimum_capture_buffer_frames(sample_rate, period_frames);
+    if buffer_frames < required {
+        return Err(AlsaInputError::Negotiation(format!(
+            "device negotiated period={period_frames} buffer={buffer_frames}; Aurora requires at least {required} capture frames ({MIN_CAPTURE_HEADROOM_MS} ms headroom and at least two periods)"
+        )));
+    }
+    Ok(())
+}
+
 /// Converts interleaved native i32 slot words into the exact little-endian byte
 /// representation expected by Aurora's existing S32_LE carrier normalizer.
 pub fn interleaved_i32_to_le_bytes(samples: &[i32]) -> Vec<u8> {
@@ -200,11 +222,7 @@ impl NativeAlsaCapture {
                 "requested S32_LE but device negotiated {negotiated_format:?}"
             )));
         }
-        if period_frames == 0 || buffer_frames < period_frames.saturating_mul(2) {
-            return Err(AlsaInputError::Negotiation(format!(
-                "device negotiated period={period_frames} buffer={buffer_frames}; Aurora requires a buffer of at least two periods"
-            )));
-        }
+        validate_negotiated_buffer(negotiated_rate, period_frames, buffer_frames)?;
 
         let sample_count = period_frames
             .checked_mul(negotiated_channels)
@@ -357,6 +375,14 @@ mod tests {
     #[test]
     fn minimum_capture_headroom_never_breaks_two_period_rule() {
         assert_eq!(minimum_capture_buffer_frames(48_000, 2_000), 4_000);
+    }
+
+    #[test]
+    fn negotiated_buffer_cannot_fall_below_realtime_headroom() {
+        assert!(validate_negotiated_buffer(192_000, 256, 7_679).is_err());
+        assert!(validate_negotiated_buffer(192_000, 256, 7_680).is_ok());
+        assert!(validate_negotiated_buffer(48_000, 2_000, 3_999).is_err());
+        assert!(validate_negotiated_buffer(48_000, 2_000, 4_000).is_ok());
     }
 
     #[test]
