@@ -119,6 +119,7 @@ jobs:
         env:
           OPENJOC_REV: e7e03bc834ac0483770933cdc50ac058b100d1e2
           OPENJOC_FIXTURE_BLOB: 4a47d79c1af717c7007e0398d01266867a3a9a49
+          OPENJOC_FIXTURE_SHA256: 54b48754b915cef97c13752de5eace4a219da6599cdfcf26f92b5b6fffc6e3e4
           AURORA_OPENJOC_SYNTHETIC_FIXTURE: /tmp/openjoc-joc.ec3
         run: |
           curl --fail --location --retry 3 \
@@ -127,6 +128,11 @@ jobs:
           actual_blob="$(git hash-object "$AURORA_OPENJOC_SYNTHETIC_FIXTURE")"
           test "$actual_blob" = "$OPENJOC_FIXTURE_BLOB" || {
             echo "OpenJOC synthetic fixture identity mismatch: expected $OPENJOC_FIXTURE_BLOB got $actual_blob" >&2
+            exit 1
+          }
+          actual_sha256="$(sha256sum "$AURORA_OPENJOC_SYNTHETIC_FIXTURE" | awk '{print $1}')"
+          test "$actual_sha256" = "$OPENJOC_FIXTURE_SHA256" || {
+            echo "OpenJOC synthetic fixture SHA-256 mismatch: expected $OPENJOC_FIXTURE_SHA256 got $actual_sha256" >&2
             exit 1
           }
           cargo test --locked -p aurora-decoder-open \
