@@ -15,6 +15,7 @@ on:
       - "crates/aurora-encoded-runtime/**"
       - "crates/aurora-alsa-input/**"
       - "crates/aurora-alsa-output/**"
+      - "crates/aurora-realtime-audio-cpal/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-spatial-runtime/**"
       - "crates/aurora-cli/Cargo.toml"
@@ -88,6 +89,7 @@ jobs:
           --package aurora-encoded-runtime
           --package aurora-alsa-input
           --package aurora-alsa-output
+          --package aurora-realtime-audio-cpal
           --package aurora-cli
           -- --check
 
@@ -127,6 +129,8 @@ jobs:
           }
           $env:AURORA_OPENJOC_SYNTHETIC_FIXTURE = $fixture
           cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-decoder-open --test openjoc_synthetic_fixture synthetic_openjoc_fixture_renders_aurora_7_1_4 -- --ignored --exact
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-direct-earc-decoder --test openjoc_iec_fixture synthetic_joc_survives_full_direct_earc_iec61937_chain -- --ignored --exact
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test decoder engine lifecycle
@@ -181,6 +185,15 @@ jobs:
           cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-alsa-output
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-alsa-output --all-targets -- -D warnings
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+      - name: Check real Windows CPAL backend
+        run: |
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" check --locked -p aurora-realtime-audio-cpal --all-targets
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" test --locked -p aurora-realtime-audio-cpal
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo "+$env:AURORA_RUST_TOOLCHAIN" clippy --locked -p aurora-realtime-audio-cpal --all-targets -- -D warnings
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
       - name: Check and test direct eARC binaries
