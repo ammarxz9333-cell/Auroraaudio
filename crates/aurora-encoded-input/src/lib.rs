@@ -108,9 +108,9 @@ impl EncodedInput {
 
     /// Pushes complete native ALSA S32_LE slot samples directly.
     ///
-    /// This is the preferred direct-eARC hardware path because it avoids an
-    /// intermediate i32 -> byte-vector allocation before carrier normalization.
-    /// The sample count must contain complete serial-audio frames.
+    /// This compatibility API returns an owned carrier batch. The integrated
+    /// realtime path should prefer [`Self::push_direct_s32_words_into`] so the
+    /// canonical IEC61937 carrier storage can be reused between capture reads.
     pub fn push_direct_s32_words(
         &mut self,
         samples: &[i32],
@@ -132,6 +132,28 @@ impl EncodedInput {
             discontinuity: false,
             pts_48k: None,
         }))
+    }
+
+    /// Normalizes native direct-eARC slot words into caller-owned carrier
+    /// storage. Returns true when canonical IEC61937 bytes were produced.
+    /// Direct eARC has no source PTS at this boundary; physical discontinuities
+    /// are signalled out-of-band by the ALSA capture owner before this call.
+    pub fn push_direct_s32_words_into(
+        &mut self,
+        samples: &[i32],
+        carrier: &mut Vec<u8>,
+    ) -> Result<bool, EncodedInputError> {
+        carrier.clear();
+        let InputState::DirectEarc(normalizer) = &mut self.state else {
+            return Err(EncodedInputError::WrongSource {
+                configured: self.kind,
+                attempted: EncodedInputKind::DirectEarc,
+            });
+        };
+        normalizer
+            .push_s32_words_into(samples, carrier)
+            .map_err(EncodedInputError::Carrier)?;
+        Ok(!carrier.is_empty())
     }
 
     /// Pushes one complete Aurora USB v1 SOCK_SEQPACKET packet from the legacy
@@ -289,6 +311,37 @@ mod tests {
             .unwrap();
         assert_eq!(batch.carrier, [0x72, 0xF8, 0x1F, 0x4E]);
         native.finish().unwrap();
+    }
+
+    #[test]
+    fn reusable_direct_native_words_match_owned_path_without_reallocation() {
+        let samples = [
+            (u32::from(0xF872_u16) << 16) as i32,
+            (u32::from(0x4E1F_u16) << 16) as i32,
+        ];
+        let mut native = EncodedInput::new(EncodedInputConfig::DirectEarc {
+            slots: 2,
+            word_half: CarrierWordHalf::High,
+        })
+        .unwrap();
+        let mut scratch = Vec::with_capacity(32);
+        let capacity = scratch.capacity();
+        assert!(native
+            .push_direct_s32_words_into(&samples, &mut scratch)
+            .unwrap());
+        assert_eq!(scratch, [0x72, 0xF8, 0x1F, 0x4E]);
+        assert_eq!(scratch.capacity(), capacity);
+    }
+
+    #[test]
+    fn reusable_direct_native_words_clears_stale_output_on_wrong_source() {
+        let mut input = EncodedInput::new(EncodedInputConfig::LegacyUsb).unwrap();
+        let mut scratch = vec![1, 2, 3, 4];
+        assert!(matches!(
+            input.push_direct_s32_words_into(&[0, 0], &mut scratch),
+            Err(EncodedInputError::WrongSource { .. })
+        ));
+        assert!(scratch.is_empty());
     }
 
     #[test]
