@@ -6,7 +6,7 @@ Aurora keeps third-party components behind crate, adapter, process, or configura
 
 | Dependency | Purpose | License posture |
 | --- | --- | --- |
-| OpenJOC 0.16.0 | Native E-AC-3 JOC admission, reconstruction and speaker rendering | Apache-2.0; third-party notices must be retained; no Dolby certification, trademark, or patent rights are implied |
+| OpenJOC 0.17.0 | Native E-AC-3 JOC admission, reconstruction and speaker rendering | Apache-2.0; third-party notices must be retained; no Dolby certification, trademark, or patent rights are implied |
 | `oxideav-ac3` 0.0.11 | Native AC-3 / E-AC-3 decode | MIT |
 | `oxideav-ac4` 0.0.8 | Native AC-4 decode, including upstream immersive/A-JOC-to-PCM paths | MIT; Aurora integration is experimental and does not yet export AC-4 object metadata at the Aurora boundary |
 | `oxideav-core` 0.1 | Shared OxideAV packet/frame/decoder abstractions | MIT |
