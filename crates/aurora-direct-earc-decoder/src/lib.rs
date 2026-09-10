@@ -15,6 +15,7 @@ use aurora_decoder_engine::{AuroraDecoderEngine, EngineConfig};
 use aurora_iec61937::{BurstParser, CodecFilter, TransportCodec};
 
 const MAX_READY_FRAMES_PER_BURST: usize = 4096;
+const DEFAULT_PRESENTATION_RATE: u32 = 48_000;
 
 /// Result of processing one arbitrary chunk of canonical IEC 61937 carrier.
 #[derive(Debug, Default)]
@@ -93,6 +94,8 @@ pub struct DirectEarcDecoder {
     last_burst_spacing_bytes: Option<u64>,
     min_burst_spacing_bytes: Option<u64>,
     max_burst_spacing_bytes: Option<u64>,
+    presentation_sample_rate: u32,
+    presentation_frames: u64,
 }
 
 impl DirectEarcDecoder {
@@ -115,12 +118,17 @@ impl DirectEarcDecoder {
             last_burst_spacing_bytes: None,
             min_burst_spacing_bytes: None,
             max_burst_spacing_bytes: None,
+            presentation_sample_rate: DEFAULT_PRESENTATION_RATE,
+            presentation_frames: 0,
         }
     }
 
     /// Configures the downstream decoder output format.
     pub fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError> {
-        self.engine.configure(output_format)
+        self.engine.configure(output_format)?;
+        self.presentation_sample_rate = output_format.sample_rate;
+        self.presentation_frames = 0;
+        Ok(())
     }
 
     fn begin_new_epoch(&mut self) {
@@ -134,6 +142,7 @@ impl DirectEarcDecoder {
         self.last_burst_spacing_bytes = None;
         self.min_burst_spacing_bytes = None;
         self.max_burst_spacing_bytes = None;
+        self.presentation_frames = 0;
     }
 
     fn observe_valid_burst(&mut self, carrier_offset_bytes: u64) {
@@ -164,6 +173,19 @@ impl DirectEarcDecoder {
         self.last_valid_burst = Some(Instant::now());
     }
 
+    /// Re-stamps every decoder backend onto one direct-eARC presentation clock.
+    /// Codec-format transitions may rebuild/reset the inner engine, but they are
+    /// not transport discontinuities and therefore must not jump PTS back to zero.
+    fn stamp_output_frame(&mut self, mut frame: DecodedFrame) -> DecodedFrame {
+        let sample_rate = self.presentation_sample_rate.max(1);
+        frame.audio.presentation_time_seconds =
+            self.presentation_frames as f64 / f64::from(sample_rate);
+        self.presentation_frames = self
+            .presentation_frames
+            .saturating_add(frame.audio.frame_count as u64);
+        frame
+    }
+
     /// Drain every PCM frame already made ready by exactly one encoded input
     /// burst. This is required because one E-AC-3/JOC access unit can yield many
     /// Aurora 40-frame blocks. Leaving any queued frame behind before the next
@@ -176,6 +198,7 @@ impl DirectEarcDecoder {
     ) -> Result<(), DecoderError> {
         let mut emitted = 0usize;
         if let Some(frame) = first {
+            let frame = self.stamp_output_frame(frame);
             frames.push(frame);
             emitted = 1;
         }
@@ -188,6 +211,7 @@ impl DirectEarcDecoder {
                                 .to_owned(),
                         ));
                     }
+                    let frame = self.stamp_output_frame(frame);
                     frames.push(frame);
                     emitted += 1;
                 }
@@ -200,7 +224,8 @@ impl DirectEarcDecoder {
     /// resets codec detection/backend state for the newly observed IEC61937 type.
     ///
     /// Resetting first would silently discard a short (< block-size) JOC/worker
-    /// tail that is still buffered behind the previous transport format.
+    /// tail that is still buffered behind the previous transport format. The
+    /// outer presentation clock deliberately survives this codec-only reset.
     fn prepare_format_change(
         &mut self,
         frames: &mut Vec<DecodedFrame>,
@@ -324,7 +349,7 @@ impl DirectEarcDecoder {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aurora_core::SampleType;
+    use aurora_core::{AudioBlock, SampleType};
 
     fn format() -> AudioFormat {
         AudioFormat {
@@ -332,6 +357,18 @@ mod tests {
             channel_count: 12,
             sample_type: SampleType::F32,
             block_size: 40,
+        }
+    }
+
+    fn silent_frame(frame_count: usize, synthetic_pts: f64) -> DecodedFrame {
+        DecodedFrame {
+            audio: AudioBlock {
+                channels: (0..12).map(|_| vec![0.0; frame_count]).collect(),
+                frame_count,
+                presentation_time_seconds: synthetic_pts,
+                discontinuity: false,
+            },
+            objects: Vec::new(),
         }
     }
 
@@ -390,6 +427,34 @@ mod tests {
 
         assert!(frames.is_empty());
         assert!(!direct.engine().joc_status().codec_classified_joc);
+    }
+
+    #[test]
+    fn format_change_keeps_one_outer_presentation_clock() {
+        let mut direct = DirectEarcDecoder::new(EngineConfig::default());
+        direct.configure(format()).unwrap();
+        let first = direct.stamp_output_frame(silent_frame(40, 123.0));
+        assert_eq!(first.audio.presentation_time_seconds, 0.0);
+
+        let mut retired = Vec::new();
+        direct.prepare_format_change(&mut retired).unwrap();
+        assert!(retired.is_empty());
+
+        let after_change = direct.stamp_output_frame(silent_frame(16, 0.0));
+        assert!(
+            (after_change.audio.presentation_time_seconds - 40.0 / 48_000.0).abs()
+                < f64::EPSILON
+        );
+    }
+
+    #[test]
+    fn discontinuity_starts_a_new_outer_presentation_epoch() {
+        let mut direct = DirectEarcDecoder::new(EngineConfig::default());
+        direct.configure(format()).unwrap();
+        let _ = direct.stamp_output_frame(silent_frame(40, 0.0));
+        direct.begin_new_epoch();
+        let first = direct.stamp_output_frame(silent_frame(16, 99.0));
+        assert_eq!(first.audio.presentation_time_seconds, 0.0);
     }
 
     #[test]
