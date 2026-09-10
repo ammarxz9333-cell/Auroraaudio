@@ -264,7 +264,7 @@ fn validate_args(args: &Args) -> Result<()> {
     {
         bail!("stdin read size must be greater than zero");
     }
-    if let Some(_) = args.alsa_device {
+    if args.alsa_device.is_some() {
         if args.carrier_rate == 0 {
             bail!("carrier rate must be greater than zero");
         }
