@@ -27,14 +27,14 @@ enum FilterArg {
     Dts,
 }
 
-impl From<FilterArg> for CodecFilter {
-    fn from(value: FilterArg) -> Self {
-        match value {
-            FilterArg::All => CodecFilter::All,
-            FilterArg::Ac3 => CodecFilter::Ac3,
-            FilterArg::Eac3 => CodecFilter::Eac3,
-            FilterArg::Mat => CodecFilter::MatTrueHd,
-            FilterArg::Dts => CodecFilter::DtsCore,
+impl FilterArg {
+    const fn accepts(self, data_type: u8) -> bool {
+        match self {
+            Self::All => true,
+            Self::Ac3 => data_type == DATA_TYPE_AC3,
+            Self::Eac3 => data_type == DATA_TYPE_EAC3,
+            Self::Mat => data_type == DATA_TYPE_MAT,
+            Self::Dts => matches!(data_type, 0x0B..=0x0D),
         }
     }
 }
@@ -52,7 +52,9 @@ enum ExtractArg {
     about = "Classify direct-eARC IEC61937 bursts and optionally extract codec payloads"
 )]
 struct Args {
-    /// Which IEC61937 transport bursts to admit to telemetry.
+    /// Which IEC61937 transport bursts to include in selected counters/output.
+    /// Transport continuity is still observed across every valid burst so a
+    /// filtered-out codec cannot create a false E-AC-3 cadence comparison.
     #[arg(long, value_enum, default_value_t = FilterArg::All)]
     filter: FilterArg,
 
@@ -94,7 +96,10 @@ fn main() -> Result<()> {
     let stdout = io::stdout();
     let mut input = stdin.lock();
     let mut output = stdout.lock();
-    let mut parser = BurstParser::new(args.filter.into());
+    // Always parse all valid transport classes. Filtering happens after parsing
+    // so a hidden AC-3/MAT/DTS burst still breaks E-AC-3 consecutive-cadence
+    // comparison instead of producing a false mismatch across the hidden burst.
+    let mut parser = BurstParser::new(CodecFilter::All);
     let mut stats = ProbeStats::default();
     let mut read_buffer = vec![0_u8; args.read_bytes];
 
@@ -107,27 +112,32 @@ fn main() -> Result<()> {
         }
 
         for observation in parser.push(&read_buffer[..count]) {
-            observe_burst(
+            let selected = args.filter.accepts(observation.burst.data_type);
+            observe_transport(
                 &mut stats,
                 observation.burst.codec,
                 observation.carrier_offset_bytes,
+                selected,
             );
 
-            if let Some(change) = observation.format_change {
-                stats.format_changes = stats.format_changes.saturating_add(1);
-                eprintln!(
-                    "aurora-direct-earc-probe: format-change {:?} -> {:?}",
-                    change.previous, change.current
-                );
-            }
+            if selected {
+                observe_selected_burst(&mut stats, observation.burst.codec);
+                if let Some(change) = observation.format_change {
+                    stats.format_changes = stats.format_changes.saturating_add(1);
+                    eprintln!(
+                        "aurora-direct-earc-probe: format-change {:?} -> {:?}",
+                        change.previous, change.current
+                    );
+                }
 
-            if should_extract(args.extract, observation.burst.data_type) {
-                output
-                    .write_all(&observation.burst.payload)
-                    .context("failed writing extracted codec payload")?;
-                stats.payload_bytes_emitted = stats
-                    .payload_bytes_emitted
-                    .saturating_add(observation.burst.payload.len() as u64);
+                if should_extract(args.extract, observation.burst.data_type) {
+                    output
+                        .write_all(&observation.burst.payload)
+                        .context("failed writing extracted codec payload")?;
+                    stats.payload_bytes_emitted = stats
+                        .payload_bytes_emitted
+                        .saturating_add(observation.burst.payload.len() as u64);
+                }
             }
         }
     }
@@ -164,7 +174,7 @@ fn main() -> Result<()> {
     Ok(())
 }
 
-fn observe_burst(stats: &mut ProbeStats, codec: TransportCodec, carrier_offset_bytes: u64) {
+fn observe_selected_burst(stats: &mut ProbeStats, codec: TransportCodec) {
     stats.bursts = stats.bursts.saturating_add(1);
     match codec {
         TransportCodec::Ac3 => stats.ac3 = stats.ac3.saturating_add(1),
@@ -173,10 +183,17 @@ fn observe_burst(stats: &mut ProbeStats, codec: TransportCodec, carrier_offset_b
         TransportCodec::DtsCore => stats.dts = stats.dts.saturating_add(1),
         TransportCodec::Other(_) => stats.other = stats.other.saturating_add(1),
     }
+}
 
-    // Compare only consecutive E-AC-3 bursts. A source-format transition must
-    // not turn another codec's repetition period into a false E-AC-3 mismatch.
-    if codec == TransportCodec::Eac3 && stats.previous_codec == Some(TransportCodec::Eac3) {
+fn observe_transport(
+    stats: &mut ProbeStats,
+    codec: TransportCodec,
+    carrier_offset_bytes: u64,
+    selected: bool,
+) {
+    // Compare only physically consecutive E-AC-3 bursts. Every transport class
+    // updates previous_codec/offset even when filtered from the selected counts.
+    if selected && codec == TransportCodec::Eac3 && stats.previous_codec == Some(TransportCodec::Eac3) {
         if let Some(previous_offset) = stats.previous_carrier_offset {
             let spacing = carrier_offset_bytes.saturating_sub(previous_offset);
             stats.eac3_last_spacing_bytes = Some(spacing);
@@ -222,9 +239,20 @@ mod tests {
     }
 
     #[test]
+    fn filter_matches_transport_data_types_without_hiding_parser_continuity() {
+        assert!(FilterArg::All.accepts(DATA_TYPE_EAC3));
+        assert!(FilterArg::Eac3.accepts(DATA_TYPE_EAC3));
+        assert!(!FilterArg::Eac3.accepts(DATA_TYPE_AC3));
+        assert!(FilterArg::Dts.accepts(0x0B));
+        assert!(FilterArg::Dts.accepts(0x0D));
+        assert!(!FilterArg::Dts.accepts(DATA_TYPE_MAT));
+    }
+
+    #[test]
     fn telemetry_keeps_eac3_as_transport_only_classification() {
         let mut stats = ProbeStats::default();
-        observe_burst(&mut stats, TransportCodec::Eac3, 0);
+        observe_transport(&mut stats, TransportCodec::Eac3, 0, true);
+        observe_selected_burst(&mut stats, TransportCodec::Eac3);
         assert_eq!(stats.eac3, 1);
         assert_eq!(stats.bursts, 1);
         assert_eq!(stats.eac3_last_spacing_bytes, None);
@@ -233,16 +261,18 @@ mod tests {
     #[test]
     fn consecutive_eac3_cadence_counts_exact_nominal_and_mismatch_periods() {
         let mut stats = ProbeStats::default();
-        observe_burst(&mut stats, TransportCodec::Eac3, 0);
-        observe_burst(
+        observe_transport(&mut stats, TransportCodec::Eac3, 0, true);
+        observe_transport(
             &mut stats,
             TransportCodec::Eac3,
             EAC3_IEC61937_PERIOD_BYTES,
+            true,
         );
-        observe_burst(
+        observe_transport(
             &mut stats,
             TransportCodec::Eac3,
             EAC3_IEC61937_PERIOD_BYTES * 2 + 8,
+            true,
         );
 
         assert_eq!(stats.eac3_nominal_period_matches, 1);
@@ -253,11 +283,11 @@ mod tests {
     }
 
     #[test]
-    fn non_eac3_burst_breaks_eac3_cadence_comparison() {
+    fn filtered_non_eac3_burst_still_breaks_eac3_cadence_comparison() {
         let mut stats = ProbeStats::default();
-        observe_burst(&mut stats, TransportCodec::Eac3, 0);
-        observe_burst(&mut stats, TransportCodec::Ac3, 24_576);
-        observe_burst(&mut stats, TransportCodec::Eac3, 30_000);
+        observe_transport(&mut stats, TransportCodec::Eac3, 0, true);
+        observe_transport(&mut stats, TransportCodec::Ac3, 24_576, false);
+        observe_transport(&mut stats, TransportCodec::Eac3, 30_000, true);
 
         assert_eq!(stats.eac3_nominal_period_matches, 0);
         assert_eq!(stats.eac3_period_mismatches, 0);
