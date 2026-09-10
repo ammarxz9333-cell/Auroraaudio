@@ -83,6 +83,25 @@ pub fn encode_f32_to_s32_padded(
     logical_channels: usize,
     hardware_channels: usize,
 ) -> Result<Vec<i32>, AlsaOutputError> {
+    let mut encoded = Vec::new();
+    encode_f32_to_s32_padded_into(
+        interleaved_f32,
+        logical_channels,
+        hardware_channels,
+        &mut encoded,
+    )?;
+    Ok(encoded)
+}
+
+/// Same conversion as [`encode_f32_to_s32_padded`] but writes into caller-owned
+/// storage so the native playback hot path can reuse capacity across Aurora's
+/// small realtime DSP blocks.
+fn encode_f32_to_s32_padded_into(
+    interleaved_f32: &[f32],
+    logical_channels: usize,
+    hardware_channels: usize,
+    encoded: &mut Vec<i32>,
+) -> Result<(), AlsaOutputError> {
     validate_channel_shape(logical_channels, hardware_channels)?;
     if interleaved_f32.len() % logical_channels != 0 {
         return Err(AlsaOutputError::InvalidFrameShape {
@@ -92,7 +111,11 @@ pub fn encode_f32_to_s32_padded(
     }
 
     let frames = interleaved_f32.len() / logical_channels;
-    let mut encoded = Vec::with_capacity(frames.saturating_mul(hardware_channels));
+    let required = frames.saturating_mul(hardware_channels);
+    encoded.clear();
+    if encoded.capacity() < required {
+        encoded.reserve(required - encoded.capacity());
+    }
     for frame in interleaved_f32.chunks_exact(logical_channels) {
         for &sample in frame {
             encoded.push(f32_to_s32(sample)?);
@@ -102,7 +125,8 @@ pub fn encode_f32_to_s32_padded(
             hardware_channels - logical_channels,
         ));
     }
-    Ok(encoded)
+    debug_assert_eq!(encoded.len(), required);
+    Ok(())
 }
 
 /// Saturating full-scale conversion used by the hardware sink.
@@ -179,6 +203,9 @@ pub struct NativeAlsaPlayback {
     pcm: alsa::pcm::PCM,
     config: AlsaOutputConfig,
     telemetry: AlsaOutputTelemetry,
+    /// Reused F32 -> S32_LE/TDM staging storage. Capacity is primed to one
+    /// negotiated hardware period and grows only if a caller submits more.
+    encoded_scratch: Vec<i32>,
 }
 
 #[cfg(target_os = "linux")]
@@ -255,11 +282,15 @@ impl NativeAlsaPlayback {
             recoveries: 0,
             discontinuity_resets: 0,
         };
+        let encoded_scratch = Vec::with_capacity(
+            period_frames.saturating_mul(negotiated_channels),
+        );
 
         Ok(Self {
             pcm,
             config,
             telemetry,
+            encoded_scratch,
         })
     }
 
@@ -275,12 +306,23 @@ impl NativeAlsaPlayback {
         if discontinuity {
             self.reset_for_discontinuity()?;
         }
-        let encoded = encode_f32_to_s32_padded(
+
+        // Move the scratch out temporarily so the ALSA write can borrow `self`
+        // mutably without aliasing a field borrowed for the encoded slice.
+        let mut encoded = std::mem::take(&mut self.encoded_scratch);
+        let conversion = encode_f32_to_s32_padded_into(
             interleaved_f32,
             self.config.logical_channels,
             self.config.hardware_channels,
-        )?;
-        self.write_i32_frames(&encoded)
+            &mut encoded,
+        );
+        if let Err(error) = conversion {
+            self.encoded_scratch = encoded;
+            return Err(error);
+        }
+        let write_result = self.write_i32_frames(&encoded);
+        self.encoded_scratch = encoded;
+        write_result
     }
 
     /// Returns live negotiated format and fault counters.
@@ -431,6 +473,20 @@ mod tests {
             assert_eq!(encoded[index], f32_to_s32(input[index]).unwrap());
         }
         assert_eq!(&encoded[AURORA_LOGICAL_CHANNELS..], &[0_i32; 4]);
+    }
+
+    #[test]
+    fn caller_owned_conversion_storage_reuses_capacity() {
+        let input = vec![0.25_f32; AURORA_LOGICAL_CHANNELS * 40];
+        let mut encoded = Vec::with_capacity(16 * 40);
+        let capacity = encoded.capacity();
+        encode_f32_to_s32_padded_into(&input, AURORA_LOGICAL_CHANNELS, 16, &mut encoded)
+            .unwrap();
+        assert_eq!(encoded.len(), 16 * 40);
+        assert_eq!(encoded.capacity(), capacity);
+        encode_f32_to_s32_padded_into(&input, AURORA_LOGICAL_CHANNELS, 16, &mut encoded)
+            .unwrap();
+        assert_eq!(encoded.capacity(), capacity);
     }
 
     #[test]
