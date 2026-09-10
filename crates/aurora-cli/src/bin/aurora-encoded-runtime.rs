@@ -267,7 +267,7 @@ fn validate_args(args: &Args) -> Result<()> {
     if args.input_buffer_frames < args.input_period_frames.saturating_mul(2) {
         bail!("ALSA input buffer must be at least two periods");
     }
-    if !(2..=256).contains(&args.input_queue_depth) {
+    if args.alsa_device.is_some() && !(2..=256).contains(&args.input_queue_depth) {
         bail!("ALSA input queue depth must be between 2 and 256 periods");
     }
     if args.output_rate != OUTPUT_SAMPLE_RATE || args.output_channels != OUTPUT_CHANNELS {
@@ -844,10 +844,26 @@ mod tests {
     #[test]
     fn rejects_invalid_native_capture_queue_depth() {
         let mut args = valid_args();
+        args.alsa_device = Some("hw:0,0".to_owned());
         args.input_queue_depth = 1;
         assert!(validate_args(&args).is_err());
         args.input_queue_depth = 257;
         assert!(validate_args(&args).is_err());
+    }
+
+    #[test]
+    fn ignores_native_capture_queue_depth_without_alsa_device() {
+        let mut args = valid_args();
+        for depth in [0, 1, 257, usize::MAX] {
+            args.input_queue_depth = depth;
+            validate_args(&args).unwrap();
+        }
+
+        args.input = InputMode::LegacyUsb;
+        for depth in [0, 1, 257, usize::MAX] {
+            args.input_queue_depth = depth;
+            validate_args(&args).unwrap();
+        }
     }
 
     #[test]
