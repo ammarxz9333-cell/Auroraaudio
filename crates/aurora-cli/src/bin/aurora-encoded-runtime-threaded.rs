@@ -118,19 +118,23 @@ fn spawn_capture_thread(
                 }
             };
 
-            if let Err(error) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)) {
-                let message = if let Some(text) = error.downcast_ref::<&str>() {
-                    (*text).to_owned()
-                } else if let Some(text) = error.downcast_ref::<String>() {
-                    text.clone()
-                } else {
-                    "unknown capture-thread panic".to_owned()
-                };
-                let _ = filled_tx.send(CaptureMessage::Error(format!(
-                    "native direct-eARC capture thread panicked: {message}"
-                )));
-            } else if let Err(error) = run() {
-                let _ = filled_tx.send(CaptureMessage::Error(format!("{error:#}")));
+            match std::panic::catch_unwind(std::panic::AssertUnwindSafe(run)) {
+                Ok(Ok(())) => {}
+                Ok(Err(error)) => {
+                    let _ = filled_tx.send(CaptureMessage::Error(format!("{error:#}")));
+                }
+                Err(error) => {
+                    let message = if let Some(text) = error.downcast_ref::<&str>() {
+                        (*text).to_owned()
+                    } else if let Some(text) = error.downcast_ref::<String>() {
+                        text.clone()
+                    } else {
+                        "unknown capture-thread panic".to_owned()
+                    };
+                    let _ = filled_tx.send(CaptureMessage::Error(format!(
+                        "native direct-eARC capture thread panicked: {message}"
+                    )));
+                }
             }
         })
         .context("failed spawning Aurora direct-eARC capture thread")?;
