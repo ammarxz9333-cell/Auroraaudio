@@ -65,6 +65,8 @@ impl super::UniversalOpenDecoder {
             renderer.recycle_frame(frame);
         } else if let Some(worker) = self.worker.as_mut() {
             worker.recycle_frame(frame);
+        } else if let Some(native) = self.native.as_mut() {
+            native.recycle_frame(frame);
         }
     }
 }
