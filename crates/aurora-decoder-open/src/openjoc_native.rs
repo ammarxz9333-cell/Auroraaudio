@@ -12,7 +12,7 @@ use std::time::Duration;
 use aurora_core::{AudioBlock, AudioFormat};
 use aurora_decoder_api::{DecodedFrame, DecoderError};
 use openjoc_api::{
-    OpenJocConfig, OpenJocPacket, OpenJocSession, OpenJocStatus, RenderMode,
+    OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode,
     ValidationProfile,
 };
 
@@ -34,6 +34,10 @@ pub struct OpenJocNativeRenderer {
     output: AudioFormat,
     channel_map: Vec<usize>,
     channels: Vec<VecDeque<f32>>,
+    /// Reused outer staging storage for one transactional receive cycle. The
+    /// PCM vectors themselves remain owned by OpenJOC frames; retaining this
+    /// vector removes an avoidable allocation from every successful JOC AU.
+    ready_frames: Vec<OpenJocPcmFrame>,
     emitted_frames: u64,
     discontinuity: bool,
     last_info: JocRenderInfo,
@@ -79,6 +83,7 @@ impl OpenJocNativeRenderer {
             output,
             channel_map,
             channels: (0..output.channel_count).map(|_| VecDeque::new()).collect(),
+            ready_frames: Vec::with_capacity(2),
             emitted_frames: 0,
             discontinuity: true,
             last_info,
@@ -177,6 +182,7 @@ impl OpenJocNativeRenderer {
         for channel in &mut self.channels {
             channel.clear();
         }
+        self.ready_frames.clear();
         self.emitted_frames = 0;
         self.discontinuity = true;
         self.last_info.object_count = None;
@@ -220,7 +226,7 @@ impl OpenJocNativeRenderer {
     /// frame cannot leave partial PCM committed and then cause the same AU to be
     /// decoded again by the E-AC-3 bed fallback.
     fn collect_output(&mut self) -> Result<(), DecoderError> {
-        let mut ready = Vec::new();
+        self.ready_frames.clear();
         while let Some(frame) = self.session.receive_frame() {
             if frame.sample_rate != self.output.sample_rate
                 || frame.channel_count != self.output.channel_count
@@ -237,10 +243,10 @@ impl OpenJocNativeRenderer {
                         .to_owned(),
                 ));
             }
-            ready.push(frame);
+            self.ready_frames.push(frame);
         }
 
-        for frame in ready {
+        for frame in &self.ready_frames {
             for source_frame in frame.interleaved_f32.chunks_exact(frame.channel_count) {
                 for (destination, source_index) in
                     self.channels.iter_mut().zip(self.channel_map.iter().copied())
@@ -249,6 +255,7 @@ impl OpenJocNativeRenderer {
                 }
             }
         }
+        self.ready_frames.clear();
         Ok(())
     }
 }
