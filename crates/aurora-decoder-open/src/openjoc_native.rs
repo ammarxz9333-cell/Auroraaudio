@@ -12,9 +12,19 @@ use std::time::Duration;
 use aurora_core::{AudioBlock, AudioFormat};
 use aurora_decoder_api::{DecodedFrame, DecoderError};
 use openjoc_api::{
-    OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, RenderMode,
-    ValidationProfile,
+    OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus,
+    PcmSampleFormat, RenderMode, ValidationProfile,
 };
+
+const LABELS_2_0: [&str; 2] = ["FL", "FR"];
+const LABELS_5_1: [&str; 6] = ["FL", "FR", "FC", "LFE", "Ls", "Rs"];
+const LABELS_5_1_4: [&str; 10] = [
+    "FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+];
+const LABELS_7_1: [&str; 8] = ["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs"];
+const LABELS_7_1_4: [&str; 12] = [
+    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+];
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JocRenderInfo {
@@ -33,6 +43,7 @@ pub struct OpenJocNativeRenderer {
     session: OpenJocSession,
     output: AudioFormat,
     channel_map: Vec<usize>,
+    expected_channel_labels: Vec<String>,
     channels: Vec<VecDeque<f32>>,
     /// Reused outer staging storage for one transactional receive cycle. The
     /// PCM vectors themselves remain owned by OpenJOC frames; retaining this
@@ -61,12 +72,37 @@ impl OpenJocNativeRenderer {
             .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC init failed: {e}")))?;
         session.enable_stage_timing();
         let info = session.output_info();
+        if info.sample_format != PcmSampleFormat::F32 {
+            return Err(DecoderError::UnsupportedInput(
+                "OpenJOC speaker output is not interleaved F32",
+            ));
+        }
+        if let Some(sample_rate) = info.sample_rate {
+            if sample_rate != output.sample_rate {
+                return Err(DecoderError::UnsupportedInput(
+                    "OpenJOC speaker output sample rate does not match Aurora output format",
+                ));
+            }
+        }
         if info.channel_count != output.channel_count {
             return Err(DecoderError::UnsupportedInput(
                 "selected JOC layout channel count does not match Aurora output format",
             ));
         }
+        let expected_labels = expected_openjoc_channel_labels(&info.layout_name, info.channel_count)?;
+        if info.channel_labels.len() != expected_labels.len()
+            || info
+                .channel_labels
+                .iter()
+                .map(String::as_str)
+                .ne(expected_labels.iter().copied())
+        {
+            return Err(DecoderError::UnsupportedInput(
+                "OpenJOC output labels do not match the verified Aurora speaker-layout contract",
+            ));
+        }
         let channel_map = aurora_channel_map(&info.layout_name, info.channel_count)?;
+        let expected_channel_labels = info.channel_labels;
         let last_info = JocRenderInfo {
             layout_name: info.layout_name,
             channel_count: info.channel_count,
@@ -82,6 +118,7 @@ impl OpenJocNativeRenderer {
             session,
             output,
             channel_map,
+            expected_channel_labels,
             channels: (0..output.channel_count).map(|_| VecDeque::new()).collect(),
             ready_frames: Vec::with_capacity(2),
             emitted_frames: 0,
@@ -228,14 +265,18 @@ impl OpenJocNativeRenderer {
     fn collect_output(&mut self) -> Result<(), DecoderError> {
         self.ready_frames.clear();
         while let Some(frame) = self.session.receive_frame() {
-            if frame.sample_rate != self.output.sample_rate
+            let malformed_shape = frame.sample_count == 0
+                || frame.sample_format != PcmSampleFormat::F32
+                || frame.sample_rate != self.output.sample_rate
                 || frame.channel_count != self.output.channel_count
+                || frame.layout_name.as_str() != self.last_info.layout_name.as_str()
+                || frame.channel_labels.as_slice() != self.expected_channel_labels.as_slice()
                 || frame.interleaved_f32.len()
-                    != frame.sample_count.saturating_mul(frame.channel_count)
-            {
+                    != frame.sample_count.saturating_mul(frame.channel_count);
+            if malformed_shape {
                 self.ready_frames.clear();
                 return Err(DecoderError::UnsupportedInput(
-                    "OpenJOC output format changed or returned malformed PCM",
+                    "OpenJOC output semantic layout, channel order or PCM format changed",
                 ));
             }
             if frame.interleaved_f32.iter().any(|sample| !sample.is_finite()) {
@@ -266,16 +307,29 @@ fn duration_us(duration: Duration) -> u64 {
     duration.as_micros().min(u128::from(u64::MAX)) as u64
 }
 
+fn expected_openjoc_channel_labels(
+    layout: &str,
+    channels: usize,
+) -> Result<&'static [&'static str], DecoderError> {
+    match (layout, channels) {
+        ("2.0", 2) => Ok(&LABELS_2_0),
+        ("5.1", 6) => Ok(&LABELS_5_1),
+        ("5.1.4", 10) => Ok(&LABELS_5_1_4),
+        ("7.1", 8) => Ok(&LABELS_7_1),
+        ("7.1.4", 12) => Ok(&LABELS_7_1_4),
+        _ => Err(DecoderError::UnsupportedInput(
+            "OpenJOC speaker layout has no verified semantic channel-label contract in Aurora",
+        )),
+    }
+}
+
 fn aurora_channel_map(layout: &str, channels: usize) -> Result<Vec<usize>, DecoderError> {
+    let _ = expected_openjoc_channel_labels(layout, channels)?;
     let map: Vec<usize> = match (layout, channels) {
         ("7.1", 8) => vec![0, 1, 2, 3, 6, 7, 4, 5],
         ("7.1.4", 12) => vec![0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11],
         ("2.0", 2) | ("5.1", 6) | ("5.1.4", 10) => (0..channels).collect(),
-        _ => {
-            return Err(DecoderError::UnsupportedInput(
-                "OpenJOC speaker layout has no verified semantic channel map in Aurora",
-            ));
-        }
+        _ => unreachable!("verified layout contract above covers supported mappings"),
     };
     if map.len() != channels
         || map.iter().any(|&index| index >= channels)
@@ -322,6 +376,10 @@ mod tests {
         assert_eq!(
             aurora_channel_map("7.1.4", 12).unwrap(),
             vec![0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11]
+        );
+        assert_eq!(
+            expected_openjoc_channel_labels("7.1.4", 12).unwrap(),
+            &LABELS_7_1_4
         );
     }
 
