@@ -33,18 +33,12 @@ pub use sniff::{CodecKind as OpenCodecKind, Encapsulation as OpenEncapsulation, 
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackendClass {
-    /// Rust-native permissive backend integrated in-process.
     NativeOpen,
-    /// Open-source external worker (FFmpeg/libavcodec class).
     OpenWorker,
-    /// Raw PCM can bypass codec decode when its exact format is declared.
     Passthrough,
-    /// No admitted open backend is wired yet.
     Unavailable,
 }
 
-/// Route table kept separate from byte probing. This is the architectural
-/// contract for broad codec support; adding a backend never changes callers.
 pub const fn backend_class(codec: CodecKind) -> BackendClass {
     match codec {
         CodecKind::Ac3 | CodecKind::Eac3 | CodecKind::Eac3Joc => BackendClass::NativeOpen,
@@ -74,20 +68,10 @@ pub const fn backend_class(codec: CodecKind) -> BackendClass {
     }
 }
 
-/// Universal open decoder configuration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct OpenDecoderConfig {
-    /// Optional caller-supplied codec hint. `None` enables byte probing.
-    /// The transport is still probed, so a hinted E-AC-3 stream arriving in
-    /// IEC 61937 is depacketized correctly rather than treated as raw E-AC-3.
     pub codec_hint: Option<CodecKind>,
-    /// If true, a 2-channel native fallback/reference path may use OxideAV's
-    /// open JOC stereo renderer. This does not participate in JOC admission;
-    /// positive admission and the immersive product renderer are OpenJOC-owned.
     pub joc_stereo_reference: bool,
-    /// Optional OpenJOC preset such as `7.1.4`, `9.1.6` or `22.2`. `None`
-    /// derives a supported preset only where Aurora owns an unambiguous semantic
-    /// channel contract for that width.
     pub joc_layout_hint: Option<&'static str>,
 }
 
@@ -107,8 +91,6 @@ enum Transport {
     Iec61937(Iec61937Depacketizer),
 }
 
-/// Decoder front door used by Aurora. One instance owns detection, transport
-/// depacketizing, codec framing, backend state and decoded-frame queuing.
 pub struct UniversalOpenDecoder {
     config: OpenDecoderConfig,
     output_format: Option<AudioFormat>,
@@ -121,11 +103,9 @@ pub struct UniversalOpenDecoder {
     joc_assembler: Option<JocAccessUnitAssembler>,
     joc_probe: JocAdmissionProbe,
     joc_renderer: Option<OpenJocNativeRenderer>,
+    last_joc_render_info: Option<JocRenderInfo>,
     last_joc_error: Option<String>,
     pending: VecDeque<DecodedFrame>,
-    /// Aurora-owned stream-local PCM timeline. Backend-local synthetic PTS may
-    /// restart when routing moves between OpenJOC, the E-AC-3 bed decoder or an
-    /// open worker; frames are stamped from this counter only when emitted.
     presentation_frames: u64,
 }
 
@@ -143,6 +123,7 @@ impl UniversalOpenDecoder {
             joc_assembler: None,
             joc_probe: JocAdmissionProbe::new(),
             joc_renderer: None,
+            last_joc_render_info: None,
             last_joc_error: None,
             pending: VecDeque::new(),
             presentation_frames: 0,
@@ -157,25 +138,23 @@ impl UniversalOpenDecoder {
         self.encapsulation
     }
 
-    /// Diagnostics from the admitted immersive renderer, if JOC has actually
-    /// passed validation and produced an OpenJOC session.
     pub fn joc_render_info(&self) -> Option<&JocRenderInfo> {
         self.joc_renderer
             .as_ref()
             .map(OpenJocNativeRenderer::render_info)
     }
 
-    /// Most recent JOC admission/render failure. A non-empty value means Aurora
-    /// deliberately fell back to the ordinary E-AC-3 bed instead of claiming
-    /// Atmos/JOC output.
+    /// Most recent successful JOC speaker-render observation in the current
+    /// decoder epoch. Unlike `joc_render_info`, this survives renderer retirement
+    /// at EOF or a same-family fallback and is cleared by reset/backend rebuild.
+    pub fn last_joc_render_info(&self) -> Option<&JocRenderInfo> {
+        self.joc_render_info().or(self.last_joc_render_info.as_ref())
+    }
+
     pub fn last_joc_error(&self) -> Option<&str> {
         self.last_joc_error.as_deref()
     }
 
-    /// Stamp output at the one boundary shared by all decoder backends. The
-    /// byte-oriented decoder API currently carries no source-domain PTS, so a
-    /// single emitted-PCM clock is more truthful than backend-local clocks that
-    /// restart on a JOC/bed route change.
     fn stamp_output_frame(&mut self, mut frame: DecodedFrame) -> DecodedFrame {
         let sample_rate = self
             .output_format
@@ -221,7 +200,6 @@ impl UniversalOpenDecoder {
         } else {
             Transport::Elementary
         };
-        // An IEC burst is depacketized before the codec backend sees it.
         let backend_encapsulation = if encapsulation == Encapsulation::Iec61937 {
             Encapsulation::Elementary
         } else {
@@ -240,10 +218,8 @@ impl UniversalOpenDecoder {
         self.framer = None;
         self.joc_assembler = None;
         self.joc_renderer = None;
+        self.last_joc_render_info = None;
         self.joc_probe.reset();
-        // A JOC failure belongs only to the E-AC-3 presentation in which it
-        // occurred. Rebuilding a codec backend must not leak that diagnostic
-        // into a later AC-3/worker stream.
         self.last_joc_error = None;
         match backend_class(codec) {
             BackendClass::NativeOpen => {
@@ -321,12 +297,13 @@ impl UniversalOpenDecoder {
         Ok(())
     }
 
-    /// Cleanly closes an admitted JOC presentation before falling back to the
-    /// ordinary E-AC-3 bed. OpenJOC may hold a sub-block tail because 1536 AU
-    /// samples are not divisible by Aurora's 40-frame cadence; dropping the
-    /// renderer here would otherwise lose real rendered PCM at the transition.
+    fn remember_renderer_info(renderer: &OpenJocNativeRenderer) -> JocRenderInfo {
+        renderer.render_info().clone()
+    }
+
     fn drain_and_retire_joc_renderer(&mut self) -> Result<(), DecoderError> {
         if let Some(mut renderer) = self.joc_renderer.take() {
+            self.last_joc_render_info = Some(Self::remember_renderer_info(&renderer));
             for frame in renderer.drain()? {
                 self.pending.push_back(frame);
             }
@@ -334,8 +311,6 @@ impl UniversalOpenDecoder {
         Ok(())
     }
 
-    /// Finalize an open-worker decoder exactly once and preserve every delayed
-    /// frame it owns before a codec transition or finite-stream shutdown.
     fn finish_and_retire_worker(&mut self) -> Result<(), DecoderError> {
         if let Some(mut worker) = self.worker.take() {
             for frame in worker.finish()? {
@@ -345,19 +320,15 @@ impl UniversalOpenDecoder {
         Ok(())
     }
 
-    /// Preserve already decoded output before rebuilding a different codec
-    /// backend. Partial compressed framing state is intentionally not flushed
-    /// across a format change; only PCM/delayed decoder output is retired.
     fn retire_output_before_codec_change(&mut self) -> Result<(), DecoderError> {
         self.drain_and_retire_joc_renderer()?;
         self.finish_and_retire_worker()?;
         Ok(())
     }
 
-    /// Preserve PCM that OpenJOC had already rendered before the current AU
-    /// failed. Do not ask a failed decoder session to process more data.
     fn salvage_and_retire_joc_renderer(&mut self) -> Result<(), DecoderError> {
         if let Some(mut renderer) = self.joc_renderer.take() {
+            self.last_joc_render_info = Some(Self::remember_renderer_info(&renderer));
             for frame in renderer.take_buffered_frames()? {
                 self.pending.push_back(frame);
             }
@@ -365,11 +336,6 @@ impl UniversalOpenDecoder {
         Ok(())
     }
 
-    /// Send one access unit to an already-created OpenJOC session. OpenJOC owns
-    /// its own complete-AU validation, so once Aurora has positively admitted
-    /// and successfully rendered JOC, repeating the separate admission parser
-    /// on every subsequent AU only duplicates parsing work. A renderer rejection
-    /// still retires already-produced PCM and falls back to the ordinary DD+ bed.
     fn render_active_joc_access_unit(&mut self, unit: &[u8]) -> Result<(), DecoderError> {
         let render = self
             .joc_renderer
@@ -380,13 +346,18 @@ impl UniversalOpenDecoder {
             Ok(()) => {
                 self.codec = Some(CodecKind::Eac3Joc);
                 self.last_joc_error = None;
-                let renderer = self
-                    .joc_renderer
-                    .as_mut()
-                    .expect("renderer exists after successful JOC render");
-                while let Some(frame) = renderer.take_block() {
-                    self.pending.push_back(frame);
-                }
+                let info = {
+                    let renderer = self
+                        .joc_renderer
+                        .as_mut()
+                        .expect("renderer exists after successful JOC render");
+                    let info = Self::remember_renderer_info(renderer);
+                    while let Some(frame) = renderer.take_block() {
+                        self.pending.push_back(frame);
+                    }
+                    info
+                };
+                self.last_joc_render_info = Some(info);
                 Ok(())
             }
             Err(error) => {
@@ -405,9 +376,6 @@ impl UniversalOpenDecoder {
     }
 
     fn process_eac3_access_unit(&mut self, unit: &[u8]) -> Result<(), DecoderError> {
-        // Once a real OpenJOC session has successfully rendered this E-AC-3
-        // presentation, let that session validate following AUs directly. This
-        // removes duplicate complete-AU parsing from the steady-state Atmos path.
         if self.codec == Some(CodecKind::Eac3Joc) && self.joc_renderer.is_some() {
             return self.render_active_joc_access_unit(unit);
         }
@@ -438,9 +406,6 @@ impl UniversalOpenDecoder {
                 self.decode_eac3_bed_access_unit(unit)
             }
             JocAdmission::NotJoc => {
-                // Ordinary E-AC-3 starts a non-JOC state immediately. Retire any
-                // previous JOC renderer first so a real sub-block tail is not
-                // discarded at a same-carrier content transition.
                 self.drain_and_retire_joc_renderer()?;
                 self.last_joc_error = None;
                 self.codec = Some(CodecKind::Eac3);
@@ -450,9 +415,6 @@ impl UniversalOpenDecoder {
     }
 
     fn decode_eac3_bed_access_unit(&mut self, unit: &[u8]) -> Result<(), DecoderError> {
-        // OxideAV consumes an independent frame plus its dependents. Split a
-        // six-block AU into those programme sets without changing the live
-        // Aurora decoder state between sets.
         let mut framer = SyncFramer::new(CodecKind::Eac3);
         let mut packets = framer.push(unit);
         packets.extend(framer.flush());
@@ -504,9 +466,6 @@ impl UniversalOpenDecoder {
                 continue;
             }
             if !same_codec_family(self.codec, burst.codec) {
-                // Preserve already-rendered/delayed PCM from the old backend,
-                // but never carry its compressed parser state into the new
-                // format. This prevents tails being silently lost on switches.
                 self.retire_output_before_codec_change()?;
                 self.codec = Some(burst.codec);
                 self.initialize_backend(burst.codec, Encapsulation::Elementary)?;
@@ -525,8 +484,6 @@ impl UniversalOpenDecoder {
         Ok(())
     }
 
-    /// Flush complete codec packets retained by the streaming frontends and
-    /// flush delayed samples from the native JOC/open-worker renderers.
     pub fn flush_packets(&mut self) -> Result<(), DecoderError> {
         if let Some(framer) = self.framer.as_mut() {
             let packets = framer.flush();
@@ -540,9 +497,6 @@ impl UniversalOpenDecoder {
                 self.process_eac3_access_unit(&unit)?;
             }
         }
-        // Finalization is one-shot for both delayed backends. Taking ownership
-        // prevents repeated flush calls from draining an already-finalized
-        // OpenJOC session or finishing the same worker twice.
         self.drain_and_retire_joc_renderer()?;
         self.finish_and_retire_worker()?;
         Ok(())
@@ -605,6 +559,7 @@ impl Decoder for UniversalOpenDecoder {
         self.joc_assembler = None;
         self.joc_probe.reset();
         self.joc_renderer = None;
+        self.last_joc_render_info = None;
         self.last_joc_error = None;
         self.pending.clear();
         self.presentation_frames = 0;
@@ -622,7 +577,6 @@ fn same_codec_family(current: Option<CodecKind>, incoming: CodecKind) -> bool {
     }
 }
 
-/// Best-effort sample-rate hint from native AC-3/E-AC-3 headers.
 pub(crate) fn sample_rate_hint(input: &[u8]) -> Option<u32> {
     if input.len() < 6 || input[0..2] != [0x0B, 0x77] {
         return None;
@@ -701,10 +655,22 @@ mod tests {
         let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig::default());
         decoder.configure(format(12)).unwrap();
         decoder.last_joc_error = Some("old JOC failure".to_owned());
+        decoder.last_joc_render_info = Some(JocRenderInfo {
+            layout_name: "7.1.4".to_owned(),
+            channel_count: 12,
+            latency_samples: 609,
+            object_count: Some(1),
+            complexity_index: Some(1),
+            last_decode_time_us: Some(10),
+            last_render_time_us: Some(20),
+            last_total_time_us: Some(30),
+            max_total_time_us: Some(30),
+        });
         decoder
             .initialize_backend(CodecKind::Ac3, Encapsulation::Elementary)
             .unwrap();
         assert_eq!(decoder.last_joc_error(), None);
+        assert!(decoder.last_joc_render_info().is_none());
     }
 
     #[test]
@@ -736,6 +702,7 @@ mod tests {
         decoder.configure(format(12)).unwrap();
         let first = decoder.stamp_output_frame(silent_frame(16, 9.0));
         assert_eq!(first.audio.presentation_time_seconds, 0.0);
+        assert!(decoder.last_joc_render_info().is_none());
     }
 
     #[test]
