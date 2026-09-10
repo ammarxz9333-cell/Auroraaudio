@@ -6,9 +6,13 @@ This transport implementation does not establish physical streaming Atmos accept
 
 Aurora is a format-independent spatial-audio system with implemented offline
 rendering, basic DSP, backend-neutral real-time contracts, deterministic
-simulation, and accepted diagnostics and configuration control planes. Physical
-hardware validation remains incomplete. Proprietary codec decoding and network
-speaker transport are out of scope.
+simulation, diagnostics/configuration control planes, and a native encoded-audio
+runtime for direct eARC or the explicit legacy STM32/USB fallback. The direct
+eARC path now includes Aurora-owned ALSA S32_LE capture, carrier normalization,
+IEC61937 parsing, open AC-3/E-AC-3 decode, JOC admission/render integration,
+canonical 7.1.4 output DSP, and native ALSA output plumbing. Physical eARC/TDM
+and commercial streaming/JOC acceptance remain incomplete. Proprietary SDKs,
+DRM/HDCP circumvention, and network speaker transport remain out of scope.
 
 ## Workspace Layout
 
@@ -20,6 +24,14 @@ speaker transport are out of scope.
   is not an HRTF renderer and uses no HRIR data, convolution, pinna cues, or
   elevation cues.
 - `aurora-renderer-vbap`: Optional deterministic horizontal-plane VBAP renderer implementing the existing renderer boundary.
+- `aurora-decoder-open`: Aurora-owned open decoder fabric for AC-3/E-AC-3/JOC admission/rendering plus isolated open-worker decoding for admitted formats.
+- `aurora-decoder-engine`: Decoder lifecycle, JOC status/health and Aurora spatial-frame boundary.
+- `aurora-direct-earc-decoder`: IEC61937-to-decoder bridge used by encoded runtime.
+- `aurora-iec61937`: Reusable carrier normalization, IEC61937 parsing and transport telemetry.
+- `aurora-encoded-input`: Explicit source selector for direct eARC versus legacy STM32/USB input.
+- `aurora-encoded-runtime`: Single-process encoded input -> decode/render -> canonical speaker DSP runtime.
+- `aurora-alsa-input`: Aurora-owned native ALSA capture backend used by threaded direct-eARC ingest.
+- `aurora-alsa-output`: Aurora-owned native ALSA speaker-output backend.
 - `aurora-dsp-api`: Aurora-owned DSP processing boundary.
 - `aurora-dsp-basic`: Implemented basic offline DSP, including fractional per-channel delay.
 - `aurora-audio-io`: Implemented offline PCM/float WAV reading and multichannel WAVE_FORMAT_EXTENSIBLE output.
@@ -34,7 +46,7 @@ speaker transport are out of scope.
 - `aurora-realtime-engine`: Real-time block pipeline preserving renderer, channel-role, geometric-delay, and DSP boundaries.
 - `aurora-measurement`: Synthetic-measurement scope scaffold; implemented synthetic latency and routing evidence lives in the simulator and real-time engine, and no accepted physical measurement capability exists.
 - `aurora-scene`: JSON scene loading, validation, and trajectory sampling.
-- `aurora-cli`: Developer CLI for offline simulation and inspection.
+- `aurora-cli`: Developer CLI for offline simulation, inspection, eARC evidence helpers and encoded-runtime bring-up.
 
 ## Data Flow
 
@@ -57,6 +69,33 @@ Real-time output replaces offline Audio IO with a backend callback:
 Audio backend callback -> real-time engine -> renderer -> DSP -> output backend
 ```
 
+The current encoded direct-eARC production path is separate from the historical
+CPAL callback pipeline:
+
+```text
+native ALSA S32_LE capture producer thread
+        |
+        v
+bounded period-buffer queue
+        |
+        v
+carrier normalization -> IEC61937 parser
+        |
+        v
+AC-3 / E-AC-3 / JOC decode + admitted render
+        |
+        v
+canonical 48 kHz 7.1.4 speaker DSP
+        |
+        +--> stdout F32 evidence sink
+        |
+        `--> native ALSA S32_LE speaker output
+```
+
+The old `aurora-direct-earc-ingest` binary is stdin-only and is retained as a
+normalization/evidence helper. Native device capture belongs to
+`aurora-encoded-runtime --input direct-earc --alsa-device <device>`.
+
 Milestone 0B adds offline mono WAV input, block-based rendering, and multichannel WAV output. The visualizer remains intentionally deferred.
 
 Milestone 0C adds explicit channel roles, canonical standard layout ordering, WAVE_FORMAT_EXTENSIBLE channel masks, and optional offline per-channel geometric delay processing.
@@ -68,7 +107,13 @@ path. The truehdd adapter is experimental, offline-only, and non-production.
 The Cavern adapter is disabled by default and policy-limited pending license
 review. None of these boundaries proves codec or renderer availability.
 
-Milestone 0F adds a local real-time audio path using Aurora-owned traits and a CPAL-backed local backend. No HDMI/eARC, network audio, wireless speaker transport, GUI, or proprietary codec integration is included.
+Milestone 0F introduced the original local real-time audio path using
+Aurora-owned traits and a CPAL-backed local backend. Its historical scope did
+not include HDMI/eARC. That limitation no longer describes the separate current
+encoded runtime: direct eARC is now implemented through Aurora-owned ALSA,
+IEC61937 and decoder/runtime crates as described above. This does not itself
+prove physical eARC lock, TDM interoperability, Dolby certification or
+commercial Atmos/JOC acceptance.
 
 ## Renderer Boundary
 
@@ -101,6 +146,13 @@ the selected SPSC ring and `RealTimeEngine`. Rubato is private implementation
 detail. A PI controller adjusts one multichannel-coherent ratio; CPAL input and
 output streams remain independent. Device lifecycle is controlled by the state
 machine in ADR 0008.
+
+Native direct-eARC capture is not performed inside a CPAL callback. The encoded
+runtime confines the ALSA capture handle to a dedicated producer thread and
+moves capture periods through a bounded reusable buffer queue to the consumer
+that owns normalization/parser/decoder/DSP/output work. Queue starvation,
+XRUN/recovery and discontinuity are observable runtime-health facts. See
+`docs/threading-model.md` for ownership and shutdown rules.
 
 Simulation Sprint 1 adds an independent virtual backend with integer-tick input
 and output clock domains. It exercises format negotiation, callback scheduling,
@@ -219,7 +271,7 @@ Aurora runtime and JSON trajectories retain canonical order. Specifically,
 The source gate delivers validated absolute lip-sync frames through a dedicated
 APC0 Unix datagram endpoint, separate from the AUR0 audio stream. HDMI uses
 `AURORA_DSP_CONTROL_SOCKET`; the optional local adapter has its own endpoint.
-The supported range is 024000 frames at 48 kHz. Active-source control is
+The supported range is 0–24000 frames at 48 kHz. Active-source control is
 replayed after DSP restart. The legacy broker pipe remains available only when
 `AURORA_CONTROL_FD` is explicitly supplied and names a valid descriptor.
 
@@ -239,6 +291,7 @@ IEC61937 stream and emits the same canonical 48 kHz, 12-channel raw-f32 output
 into Aurora's existing postprocessor and managed source gate. The default
 `objects` mode remains separate; failure never silently selects an upmixer.
 See [the surround-upmix adapter](surround-upmix.md) for semantics and evidence.
+
 ## Encoded runtime health observations
 
 `aurora-encoded-runtime::health` provides a reusable fixed-size
