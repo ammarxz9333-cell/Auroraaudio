@@ -147,7 +147,10 @@ fn run_channel_id(args: ChannelIdArgs) -> Result<()> {
     if !args.seconds_per_channel.is_finite() || args.seconds_per_channel <= 0.0 {
         bail!("seconds-per-channel must be finite and greater than zero");
     }
-    if !args.amplitude.is_finite() || !(0.0..=1.0).contains(&args.amplitude) || args.amplitude == 0.0 {
+    if !args.amplitude.is_finite()
+        || !(0.0..=1.0).contains(&args.amplitude)
+        || args.amplitude == 0.0
+    {
         bail!("amplitude must be finite and in (0, 1]");
     }
 
@@ -389,7 +392,6 @@ fn run_stress(args: StressArgs) -> Result<()> {
     let mut output_frames = 0_u64;
     let mut handled_expected_errors = 0_u64;
 
-    // Warm every reusable path before the RSS baseline.
     for _ in 0..units.len().min(8) {
         output_frames = output_frames.saturating_add(feed_valid_unit(
             &mut runtime,
@@ -401,10 +403,8 @@ fn run_stress(args: StressArgs) -> Result<()> {
     }
     verify_channel_identity(&mut pcm_stage, &mut pcm_frame)?;
 
-    // Source-format stress that can be represented headlessly. 5.1/7.1/LPCM are
-    // already-canonicalized speaker frames at this boundary; only E-AC-3 traverses
-    // encoded transport/decoder admission. Raw LPCM input negotiation is therefore
-    // explicitly not claimed by this test.
+    // The PCM legs start at Aurora's canonical speaker boundary. They stress the
+    // shared SpeakerPostProcessor, but do not claim raw eARC LPCM negotiation.
     for cycle in 0..args.switches {
         fill_pcm_profile(&mut pcm_frame, 6, cycle as u64);
         process_pcm_profile(&mut pcm_stage, &pcm_frame)?;
@@ -434,8 +434,7 @@ fn run_stress(args: StressArgs) -> Result<()> {
         unit_index = unit_index.wrapping_add(1);
     }
 
-    // Warm one extra cycle after all reset/switch paths so lazy allocator growth
-    // is outside the leak baseline.
+    // Warm all reset/switch paths before taking the leak baseline.
     output_frames = output_frames.saturating_add(feed_valid_unit(
         &mut runtime,
         &units[unit_index % units.len()],
@@ -460,7 +459,7 @@ fn run_stress(args: StressArgs) -> Result<()> {
 
         let inject = args.inject_every != 0
             && periods != 0
-            && periods.is_multiple_of(args.inject_every as u64);
+            && periods % args.inject_every as u64 == 0;
         if inject {
             match fault_sequence % 5 {
                 0 => {
@@ -522,7 +521,7 @@ fn run_stress(args: StressArgs) -> Result<()> {
         }
 
         if !args.unpaced {
-            next_tick += EAC3_PERIOD;
+            next_tick = next_tick + EAC3_PERIOD;
             let now = Instant::now();
             if next_tick > now {
                 thread::sleep(next_tick.duration_since(now));
@@ -534,8 +533,6 @@ fn run_stress(args: StressArgs) -> Result<()> {
         max_rss = max_rss.max(rss);
     }
 
-    // Finite truncated EOF is tested on an isolated runtime because successful
-    // detection necessarily terminates that stream.
     handled_expected_errors = handled_expected_errors.saturating_add(
         verify_truncated_eof_is_rejected(&units[0])? as u64,
     );
@@ -584,7 +581,7 @@ fn run_stress(args: StressArgs) -> Result<()> {
 }
 
 fn playback_runtime() -> Result<AuroraPlaybackRuntime> {
-    AuroraPlaybackRuntime::new(
+    let runtime = AuroraPlaybackRuntime::new(
         EncodedInputConfig::DirectEarc {
             slots: 2,
             word_half: CarrierWordHalf::Low,
@@ -592,8 +589,8 @@ fn playback_runtime() -> Result<AuroraPlaybackRuntime> {
         EngineConfig::default(),
         output_format(),
         OutputDspConfig::default(),
-    )
-    .map_err(Into::into)
+    )?;
+    Ok(runtime)
 }
 
 fn feed_valid_unit(
@@ -609,7 +606,10 @@ fn feed_valid_unit(
     recycle_playback_batch(runtime, batch)
 }
 
-fn recycle_playback_batch(runtime: &mut AuroraPlaybackRuntime, batch: PlaybackBatch) -> Result<usize> {
+fn recycle_playback_batch(
+    runtime: &mut AuroraPlaybackRuntime,
+    batch: PlaybackBatch,
+) -> Result<usize> {
     let mut frames = 0_usize;
     for frame in batch.frames {
         if frame.interleaved_f32.len() != frame.frame_count * CHANNELS
@@ -666,7 +666,9 @@ fn verify_truncated_eof_is_rejected(unit: &[u8]) -> Result<usize> {
 fn silent_frame(frame_count: usize) -> DecodedFrame {
     DecodedFrame {
         audio: AudioBlock {
-            channels: (0..CHANNELS).map(|_| vec![0.0_f32; frame_count]).collect(),
+            channels: (0..CHANNELS)
+                .map(|_| vec![0.0_f32; frame_count])
+                .collect(),
             frame_count,
             presentation_time_seconds: 0.0,
             discontinuity: false,
@@ -683,7 +685,8 @@ fn fill_pcm_profile(frame: &mut DecodedFrame, active_channels: usize, seed: u64)
     for channel in 0..active_channels {
         let frequency = 600.0_f32 + 70.0 * channel as f32 + (seed % 5) as f32;
         for (sample_index, sample) in frame.audio.channels[channel].iter_mut().enumerate() {
-            let phase = std::f32::consts::TAU * frequency * sample_index as f32 / SAMPLE_RATE as f32;
+            let phase = std::f32::consts::TAU * frequency * sample_index as f32
+                / SAMPLE_RATE as f32;
             *sample = 0.05 * phase.sin();
         }
     }
@@ -708,7 +711,8 @@ fn verify_channel_identity(stage: &mut SpeakerOutputStage, frame: &mut DecodedFr
         }
         let frequency = CHANNEL_ID_FREQUENCIES_HZ[target];
         for (index, sample) in frame.audio.channels[target].iter_mut().enumerate() {
-            let phase = std::f32::consts::TAU * frequency * index as f32 / SAMPLE_RATE as f32;
+            let phase =
+                std::f32::consts::TAU * frequency * index as f32 / SAMPLE_RATE as f32;
             *sample = 0.20 * phase.sin();
         }
         stage.reset();
@@ -740,7 +744,11 @@ fn verify_channel_identity(stage: &mut SpeakerOutputStage, frame: &mut DecodedFr
     Ok(())
 }
 
-fn load_access_units(input: Option<&Path>, seconds: f64, bitrate_kbps: u32) -> Result<Vec<Vec<u8>>> {
+fn load_access_units(
+    input: Option<&Path>,
+    seconds: f64,
+    bitrate_kbps: u32,
+) -> Result<Vec<Vec<u8>>> {
     match input {
         Some(path) => {
             let mut bytes = Vec::new();
@@ -844,14 +852,20 @@ mod tests {
             .map(|role| role.wav_channel_mask_bit().unwrap())
             .fold(0_u32, |mask, bit| mask | bit);
         assert_eq!(canonical_channel_mask().unwrap(), expected);
-        assert_eq!(StandardLayout::SevenOneFour.canonical_roles().len(), CHANNELS);
+        assert_eq!(
+            StandardLayout::SevenOneFour.canonical_roles().len(),
+            CHANNELS
+        );
     }
 
     #[test]
     fn channel_id_frequencies_are_unique() {
         for left in 0..CHANNELS {
             for right in left + 1..CHANNELS {
-                assert_ne!(CHANNEL_ID_FREQUENCIES_HZ[left], CHANNEL_ID_FREQUENCIES_HZ[right]);
+                assert_ne!(
+                    CHANNEL_ID_FREQUENCIES_HZ[left],
+                    CHANNEL_ID_FREQUENCIES_HZ[right]
+                );
             }
         }
     }
@@ -870,8 +884,35 @@ mod tests {
 
     #[test]
     fn mid_payload_cut_preserves_two_slot_alignment() {
-        let cut_words = aligned_mid_payload_cut_words(1_536, EAC3_BURST_PERIOD_BYTES / 2).unwrap();
+        let cut_words =
+            aligned_mid_payload_cut_words(1_536, EAC3_BURST_PERIOD_BYTES / 2).unwrap();
         assert!(cut_words < EAC3_BURST_PERIOD_BYTES / 2);
         assert_eq!(cut_words % 2, 0);
+    }
+
+    #[test]
+    fn runtime_rejects_cut_burst_instead_of_emitting_silent_corruption() {
+        let units = generate_access_units(0.128, DEFAULT_BITRATE_KBPS).unwrap();
+        let unit = &units[0];
+        let mut runtime = playback_runtime().unwrap();
+        let mut period = [0_u8; EAC3_BURST_PERIOD_BYTES];
+        write_eac3_period(unit, &mut period).unwrap();
+        let mut words = vec![0_i32; EAC3_BURST_PERIOD_BYTES / 2];
+        carrier_to_low_s32(&period, &mut words).unwrap();
+        let cut_words = aligned_mid_payload_cut_words(unit.len(), words.len()).unwrap();
+
+        let prefix = runtime.push_direct_s32_words(&words[..cut_words]).unwrap();
+        assert_eq!(prefix.bursts, 0);
+        recycle_playback_batch(&mut runtime, prefix).unwrap();
+        assert!(
+            runtime.push_direct_s32_words(&words).is_err(),
+            "mid-payload cut followed by a new period must not be accepted as valid audio"
+        );
+    }
+
+    #[test]
+    fn runtime_rejects_truncated_finite_eof() {
+        let units = generate_access_units(0.128, DEFAULT_BITRATE_KBPS).unwrap();
+        assert_eq!(verify_truncated_eof_is_rejected(&units[0]).unwrap(), 1);
     }
 }
