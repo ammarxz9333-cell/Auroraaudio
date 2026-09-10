@@ -86,7 +86,8 @@ pub struct OpenDecoderConfig {
     /// positive admission and the immersive product renderer are OpenJOC-owned.
     pub joc_stereo_reference: bool,
     /// Optional OpenJOC preset such as `7.1.4`, `9.1.6` or `22.2`. `None`
-    /// derives an unambiguous standard preset from the Aurora channel count.
+    /// derives a supported preset only where Aurora owns an unambiguous semantic
+    /// channel contract for that width.
     pub joc_layout_hint: Option<&'static str>,
 }
 
@@ -240,6 +241,10 @@ impl UniversalOpenDecoder {
         self.joc_assembler = None;
         self.joc_renderer = None;
         self.joc_probe.reset();
+        // A JOC failure belongs only to the E-AC-3 presentation in which it
+        // occurred. Rebuilding a codec backend must not leak that diagnostic
+        // into a later AC-3/worker stream.
+        self.last_joc_error = None;
         match backend_class(codec) {
             BackendClass::NativeOpen => {
                 let joc = if self.config.joc_stereo_reference {
@@ -326,6 +331,26 @@ impl UniversalOpenDecoder {
                 self.pending.push_back(frame);
             }
         }
+        Ok(())
+    }
+
+    /// Finalize an open-worker decoder exactly once and preserve every delayed
+    /// frame it owns before a codec transition or finite-stream shutdown.
+    fn finish_and_retire_worker(&mut self) -> Result<(), DecoderError> {
+        if let Some(mut worker) = self.worker.take() {
+            for frame in worker.finish()? {
+                self.pending.push_back(frame);
+            }
+        }
+        Ok(())
+    }
+
+    /// Preserve already decoded output before rebuilding a different codec
+    /// backend. Partial compressed framing state is intentionally not flushed
+    /// across a format change; only PCM/delayed decoder output is retired.
+    fn retire_output_before_codec_change(&mut self) -> Result<(), DecoderError> {
+        self.drain_and_retire_joc_renderer()?;
+        self.finish_and_retire_worker()?;
         Ok(())
     }
 
@@ -460,8 +485,10 @@ impl UniversalOpenDecoder {
                 continue;
             }
             if !same_codec_family(self.codec, burst.codec) {
-                // The carrier can switch format at runtime. Rebuild exactly one
-                // codec backend while preserving the single final PCM owner.
+                // Preserve already-rendered/delayed PCM from the old backend,
+                // but never carry its compressed parser state into the new
+                // format. This prevents tails being silently lost on switches.
+                self.retire_output_before_codec_change()?;
                 self.codec = Some(burst.codec);
                 self.initialize_backend(burst.codec, Encapsulation::Elementary)?;
             }
@@ -494,19 +521,11 @@ impl UniversalOpenDecoder {
                 self.process_eac3_access_unit(&unit)?;
             }
         }
-        // Finalization is one-shot for OpenJOC. Take ownership before drain so
-        // a repeated Aurora flush cannot call OpenJOC::drain on an already
-        // drained session and surface `AlreadyDrained`.
-        if let Some(mut renderer) = self.joc_renderer.take() {
-            for frame in renderer.drain()? {
-                self.pending.push_back(frame);
-            }
-        }
-        if let Some(worker) = self.worker.as_mut() {
-            for frame in worker.finish()? {
-                self.pending.push_back(frame);
-            }
-        }
+        // Finalization is one-shot for both delayed backends. Taking ownership
+        // prevents repeated flush calls from draining an already-finalized
+        // OpenJOC session or finishing the same worker twice.
+        self.drain_and_retire_joc_renderer()?;
+        self.finish_and_retire_worker()?;
         Ok(())
     }
 }
@@ -656,6 +675,17 @@ mod tests {
     fn accepts_aurora_40_frame_output_contract() {
         let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig::default());
         decoder.configure(format(12)).unwrap();
+    }
+
+    #[test]
+    fn backend_rebuild_clears_stale_joc_failure_diagnostic() {
+        let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig::default());
+        decoder.configure(format(12)).unwrap();
+        decoder.last_joc_error = Some("old JOC failure".to_owned());
+        decoder
+            .initialize_backend(CodecKind::Ac3, Encapsulation::Elementary)
+            .unwrap();
+        assert_eq!(decoder.last_joc_error(), None);
     }
 
     #[test]
