@@ -76,6 +76,9 @@ jobs:
       - name: Workspace tests
         run: cargo test --locked --workspace
 
+      - name: Clippy dynamic speaker output
+        run: cargo clippy --locked -p aurora-speaker-output --all-targets -- -D warnings
+
       - name: Check validation binary
         run: >-
           cargo check --locked -p aurora-cli
@@ -130,6 +133,10 @@ jobs:
           cargo test --locked -p aurora-decoder-open \
             --test openjoc_synthetic_fixture \
             synthetic_openjoc_fixture_renders_aurora_7_1_4 \
+            -- --ignored --exact
+          cargo test --locked -p aurora-decoder-open \
+            --test openjoc_custom_layout \
+            pinned_openjoc_renders_synthetic_joc_through_aurora_sixteen_channel_output \
             -- --ignored --exact
           cargo test --locked -p aurora-direct-earc-decoder \
             --test openjoc_iec_fixture \
