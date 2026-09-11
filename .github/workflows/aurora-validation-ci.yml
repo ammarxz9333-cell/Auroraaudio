@@ -138,6 +138,10 @@ jobs:
             --test openjoc_custom_layout \
             pinned_openjoc_renders_synthetic_joc_through_aurora_sixteen_channel_output \
             -- --ignored --exact
+          cargo test --locked -p aurora-decoder-open \
+            --test openjoc_earc_reference_layout \
+            canonical_earc_carrier_reaches_aurora_eleven_one_four_reference_tdm16 \
+            -- --ignored --exact
           cargo test --locked -p aurora-direct-earc-decoder \
             --test openjoc_iec_fixture \
             synthetic_joc_survives_full_direct_earc_iec61937_chain \
