@@ -1,7 +1,7 @@
 //! Canonical 48 kHz output DSP used by the S6 stream and host validation.
-//! Audio is interleaved in the configured Aurora output-layout order. The
-//! current storage implementation remains twelve channels while layout
-//! semantics (LFE, height lanes and calibration roles) are contract-driven.
+//! Audio is interleaved in the configured Aurora output-layout order. Layout
+//! semantics (LFE, height lanes and calibration roles) and channel storage are
+//! runtime-sized; the legacy constructor still selects canonical 7.1.4.
 //! Construction may allocate; processing and control setters never allocate or
 //! access the operating system.
 
@@ -13,6 +13,7 @@ use std::f32::consts::PI;
 use crate::output_layout::OutputLayoutContract;
 
 pub const SAMPLE_RATE: u32 = 48_000;
+/// Canonical product width retained for callers that explicitly target 7.1.4.
 pub const CHANNELS: usize = 12;
 const MAX_LIPSYNC_FRAMES: usize = 24_000;
 const LIPSYNC_RING_FRAMES: usize = MAX_LIPSYNC_FRAMES + 1;
@@ -88,22 +89,24 @@ const MAX_PEQ_BANDS: usize = 8;
 const CALIBRATION_DELAY_FRAMES: usize = 4_801;
 
 struct PreparedCalibration {
-    filters: [[Biquad; MAX_PEQ_BANDS]; CHANNELS],
-    bands: [usize; CHANNELS],
-    gains: [f32; CHANNELS],
-    delays: [usize; CHANNELS],
+    channel_count: usize,
+    filters: Vec<[Biquad; MAX_PEQ_BANDS]>,
+    bands: Vec<usize>,
+    gains: Vec<f32>,
+    delays: Vec<usize>,
     ring: Vec<f32>,
     write: usize,
 }
 
 impl PreparedCalibration {
-    fn flat() -> Self {
+    fn flat(channel_count: usize) -> Self {
         Self {
-            filters: [[Biquad::default(); MAX_PEQ_BANDS]; CHANNELS],
-            bands: [0; CHANNELS],
-            gains: [1.0; CHANNELS],
-            delays: [0; CHANNELS],
-            ring: vec![0.0; CALIBRATION_DELAY_FRAMES * CHANNELS],
+            channel_count,
+            filters: vec![[Biquad::default(); MAX_PEQ_BANDS]; channel_count],
+            bands: vec![0; channel_count],
+            gains: vec![1.0; channel_count],
+            delays: vec![0; channel_count],
+            ring: vec![0.0; CALIBRATION_DELAY_FRAMES * channel_count],
             write: 0,
         }
     }
@@ -111,14 +114,13 @@ impl PreparedCalibration {
     fn prepare(config: &SpeakerCalibration, layout: &OutputLayoutContract) -> Result<Self> {
         if config.schema_version != 1
             || config.sample_rate != SAMPLE_RATE
-            || layout.channel_count() != CHANNELS
             || config.channels.len() != layout.channel_count()
         {
             bail!(
                 "calibration requires schema 1, 48000 Hz and exactly the active output-layout channels"
             );
         }
-        let mut prepared = Self::flat();
+        let mut prepared = Self::flat(layout.channel_count());
         for (index, (channel, expected)) in config
             .channels
             .iter()
@@ -166,14 +168,15 @@ impl PreparedCalibration {
     }
 
     fn process_frame(&mut self, frame: &mut [f32]) {
+        debug_assert_eq!(frame.len(), self.channel_count);
         for (channel, sample) in frame.iter_mut().enumerate() {
             for filter in &mut self.filters[channel][..self.bands[channel]] {
                 *sample = filter.process(*sample);
             }
-            self.ring[self.write * CHANNELS + channel] = *sample * self.gains[channel];
+            self.ring[self.write * self.channel_count + channel] = *sample * self.gains[channel];
             let read = (self.write + CALIBRATION_DELAY_FRAMES - self.delays[channel])
                 % CALIBRATION_DELAY_FRAMES;
-            *sample = self.ring[read * CHANNELS + channel];
+            *sample = self.ring[read * self.channel_count + channel];
         }
         self.write = (self.write + 1) % CALIBRATION_DELAY_FRAMES;
     }
@@ -350,6 +353,7 @@ impl LinkedLimiter {
 
 #[derive(Debug, Clone)]
 struct LipDelay {
+    channel_count: usize,
     ring: Vec<f32>,
     write_frame: usize,
     delay_frames: usize,
@@ -359,12 +363,13 @@ struct LipDelay {
 }
 
 impl LipDelay {
-    fn new(delay_frames: usize) -> Result<Self> {
+    fn new(delay_frames: usize, channel_count: usize) -> Result<Self> {
         if delay_frames > MAX_LIPSYNC_FRAMES {
             bail!("lip-sync delay exceeds 500 ms");
         }
         Ok(Self {
-            ring: vec![0.0; LIPSYNC_RING_FRAMES * CHANNELS],
+            channel_count,
+            ring: vec![0.0; LIPSYNC_RING_FRAMES * channel_count],
             write_frame: 0,
             delay_frames,
             previous_delay: delay_frames,
@@ -380,21 +385,22 @@ impl LipDelay {
     #[inline]
     fn process_frame(&mut self, frame: &mut [f32]) {
         const FADE_FRAMES: usize = 240;
+        debug_assert_eq!(frame.len(), self.channel_count);
         if self.fade_remaining == 0 && self.requested_delay != self.delay_frames {
             self.previous_delay = self.delay_frames;
             self.delay_frames = self.requested_delay;
             self.fade_remaining = FADE_FRAMES;
         }
-        let write_base = self.write_frame * CHANNELS;
-        self.ring[write_base..write_base + CHANNELS].copy_from_slice(frame);
+        let write_base = self.write_frame * self.channel_count;
+        self.ring[write_base..write_base + self.channel_count].copy_from_slice(frame);
         let read_frame =
             (self.write_frame + LIPSYNC_RING_FRAMES - self.delay_frames) % LIPSYNC_RING_FRAMES;
-        let read_base = read_frame * CHANNELS;
-        frame.copy_from_slice(&self.ring[read_base..read_base + CHANNELS]);
+        let read_base = read_frame * self.channel_count;
+        frame.copy_from_slice(&self.ring[read_base..read_base + self.channel_count]);
         if self.fade_remaining > 0 {
             let old_base = ((self.write_frame + LIPSYNC_RING_FRAMES - self.previous_delay)
                 % LIPSYNC_RING_FRAMES)
-                * CHANNELS;
+                * self.channel_count;
             let alpha = 1.0 - self.fade_remaining as f32 / FADE_FRAMES as f32;
             for (channel, sample) in frame.iter_mut().enumerate() {
                 *sample = self.ring[old_base + channel] * (1.0 - alpha) + *sample * alpha;
@@ -416,16 +422,18 @@ impl LipDelay {
     }
 }
 
-/// Returned without allocation when an interleaved block is incomplete.
+/// Returned without allocation when an interleaved block does not contain
+/// complete frames for the configured output layout.
 #[derive(Debug, thiserror::Error, PartialEq, Eq)]
-#[error("output block must contain complete twelve-channel frames")]
+#[error("output block must contain complete configured-layout frames")]
 pub struct OutputShapeError;
 
 /// One prepared cinema DSP chain shared by offline and appliance processing.
 pub struct SpeakerPostProcessor {
     layout: OutputLayoutContract,
+    channel_count: usize,
     calibration: PreparedCalibration,
-    crossovers: [Crossover; CHANNELS],
+    crossovers: Vec<Crossover>,
     lfe_index: usize,
     lfe_low_1: Biquad,
     lfe_low_2: Biquad,
@@ -451,20 +459,12 @@ impl SpeakerPostProcessor {
         Self::new_for_layout(config, layout)
     }
 
-    /// Prepares all filter and delay state for an explicit output layout. The
-    /// current storage implementation is intentionally still limited to twelve
-    /// channels; callers get a deterministic setup error for wider layouts
-    /// until the dynamic-buffer phase lands.
+    /// Prepares all filter and delay state for an explicit bass-managed output
+    /// layout. Storage is allocated once at construction and then reused.
     pub fn new_for_layout(config: OutputDspConfig, layout: OutputLayoutContract) -> Result<Self> {
-        if layout.channel_count() != CHANNELS {
-            bail!(
-                "current speaker postprocessor storage requires {CHANNELS} channels; layout {} has {}",
-                layout.name(),
-                layout.channel_count()
-            );
-        }
+        let channel_count = layout.channel_count();
         let Some(lfe_index) = layout.lfe_index() else {
-            bail!("current bass-managed speaker postprocessor requires exactly one LFE channel");
+            bail!("bass-managed speaker postprocessor requires exactly one LFE channel");
         };
         let OutputDspConfig {
             bed_crossover_hz,
@@ -485,7 +485,7 @@ impl SpeakerPostProcessor {
         }
         let bed = Crossover::linkwitz_riley_4(SAMPLE_RATE as f32, bed_crossover_hz)?;
         let height = Crossover::linkwitz_riley_4(SAMPLE_RATE as f32, height_crossover_hz)?;
-        let mut crossovers = [bed; CHANNELS];
+        let mut crossovers = vec![bed; channel_count];
         for &index in layout.height_indices() {
             crossovers[index] = height;
         }
@@ -496,7 +496,8 @@ impl SpeakerPostProcessor {
         let gain_samples = 5.0 * SAMPLE_RATE as f32 / 1_000.0;
         Ok(Self {
             layout,
-            calibration: PreparedCalibration::flat(),
+            channel_count,
+            calibration: PreparedCalibration::flat(channel_count),
             crossovers,
             lfe_index,
             lfe_low_1: lfe_low,
@@ -512,12 +513,16 @@ impl SpeakerPostProcessor {
             muted: false,
             standby: false,
             limiter: LinkedLimiter::new(limiter_dbfs, limiter_release_ms)?,
-            lip_delay: LipDelay::new(lipsync_frames)?,
+            lip_delay: LipDelay::new(lipsync_frames, channel_count)?,
         })
     }
 
     pub fn layout(&self) -> &OutputLayoutContract {
         &self.layout
+    }
+
+    pub fn channel_count(&self) -> usize {
+        self.channel_count
     }
 
     /// Replaces calibration transactionally at setup, never from an audio callback.
@@ -549,12 +554,12 @@ impl SpeakerPostProcessor {
         &mut self,
         block: &mut [f32],
     ) -> std::result::Result<(), OutputShapeError> {
-        if block.len() % CHANNELS != 0 {
+        if block.len() % self.channel_count != 0 {
             block.fill(0.0);
             self.reset();
             return Err(OutputShapeError);
         }
-        for frame in block.chunks_exact_mut(CHANNELS) {
+        for frame in block.chunks_exact_mut(self.channel_count) {
             for sample in frame.iter_mut() {
                 if !sample.is_finite() {
                     *sample = 0.0;
@@ -624,6 +629,24 @@ mod tests {
 
     fn canonical_layout() -> OutputLayoutContract {
         OutputLayoutContract::for_standard(StandardLayout::SevenOneFour).unwrap()
+    }
+
+    fn future_sixteen_channel_layout() -> OutputLayoutContract {
+        let mut channels = Vec::new();
+        for index in 0..16 {
+            let class = if index == 3 {
+                OutputChannelClass::Lfe
+            } else if index >= 12 {
+                OutputChannelClass::Height
+            } else {
+                OutputChannelClass::Bed
+            };
+            channels.push(OutputChannelSpec {
+                role: ChannelRole::Custom(format!("lane-{index}")),
+                class,
+            });
+        }
+        OutputLayoutContract::custom("future-16", channels).unwrap()
     }
 
     #[test]
@@ -706,23 +729,41 @@ mod tests {
     }
 
     #[test]
-    fn wider_layout_is_rejected_until_dynamic_storage_lands() {
-        let mut channels = Vec::new();
-        for index in 0..16 {
-            let class = if index == 3 {
-                OutputChannelClass::Lfe
-            } else if index >= 12 {
-                OutputChannelClass::Height
-            } else {
-                OutputChannelClass::Bed
-            };
-            channels.push(OutputChannelSpec {
-                role: ChannelRole::Custom(format!("lane-{index}")),
-                class,
-            });
-        }
-        let layout = OutputLayoutContract::custom("future-16", channels).unwrap();
-        assert!(SpeakerPostProcessor::new_for_layout(OutputDspConfig::default(), layout).is_err());
+    fn sixteen_channel_layout_constructs_and_processes_without_width_assumptions() {
+        let layout = future_sixteen_channel_layout();
+        let mut post =
+            SpeakerPostProcessor::new_for_layout(OutputDspConfig::default(), layout).unwrap();
+        assert_eq!(post.channel_count(), 16);
+        assert_eq!(post.lfe_index, 3);
+        assert_eq!(post.layout().height_indices(), &[12, 13, 14, 15]);
+
+        let mut block = vec![0.05_f32; 40 * 16];
+        post.process_block(&mut block).unwrap();
+        assert!(block.iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
+    fn sixteen_channel_calibration_uses_layout_roles() {
+        let layout = future_sixteen_channel_layout();
+        let calibration = SpeakerCalibration {
+            schema_version: 1,
+            sample_rate: SAMPLE_RATE,
+            channels: layout
+                .channels()
+                .iter()
+                .map(|channel| ChannelCalibration {
+                    role: channel.role.clone(),
+                    trim_db: 0.0,
+                    delay_frames: 0,
+                    invert_polarity: false,
+                    peq: Vec::new(),
+                })
+                .collect(),
+        };
+        let prepared = PreparedCalibration::prepare(&calibration, &layout).unwrap();
+        assert_eq!(prepared.channel_count, 16);
+        assert_eq!(prepared.filters.len(), 16);
+        assert_eq!(prepared.gains.len(), 16);
     }
 
     #[test]
@@ -739,7 +780,7 @@ mod tests {
 
     #[test]
     fn lip_delay_delays_all_channels_by_exact_frames() {
-        let mut delay = LipDelay::new(2).unwrap();
+        let mut delay = LipDelay::new(2, CHANNELS).unwrap();
         let mut first = [0.0_f32; CHANNELS];
         first[0] = 1.0;
         delay.process_frame(&mut first);
