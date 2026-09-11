@@ -10,6 +10,7 @@ rust-version.workspace = true
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-decoder-engine = { path = "../aurora-decoder-engine" }
+aurora-decoder-open = { path = "../aurora-decoder-open" }
 aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-encoded-input = { path = "../aurora-encoded-input" }
 aurora-encoded-runtime = { path = "../aurora-encoded-runtime" }
