@@ -1,10 +1,10 @@
 use std::{fs, path::PathBuf};
 
 use aurora_alsa_output::{encode_f32_to_s32_padded, f32_to_s32};
-use aurora_core::ChannelRole;
 use aurora_dsp_basic::output::{OutputDspConfig, SpeakerPostProcessor};
 use aurora_dsp_basic::output_layout::{
-    OutputChannelClass, OutputChannelSpec, OutputLayoutContract,
+    OutputLayoutContract, AURORA_ELEVEN_ONE_FOUR_REFERENCE_NAME, AURORA_ROLE_FRONT_WIDE_LEFT,
+    AURORA_ROLE_FRONT_WIDE_RIGHT, AURORA_ROLE_REAR_SIDE_LEFT, AURORA_ROLE_REAR_SIDE_RIGHT,
 };
 use openjoc_api::{
     OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, PcmSampleFormat, RenderMode,
@@ -13,14 +13,28 @@ use openjoc_eac3::{parse_access_unit_bounds, AccessUnitParse};
 use openjoc_scene::{SpeakerGeometry, SpeakerLayout};
 
 const FIXTURE_ENV: &str = "AURORA_OPENJOC_SYNTHETIC_FIXTURE";
-const LAYOUT_NAME: &str = "aurora-custom-16-validation";
+const LAYOUT_NAME: &str = AURORA_ELEVEN_ONE_FOUR_REFERENCE_NAME;
 const CHANNELS: usize = 16;
 const LABELS: [&str; CHANNELS] = [
-    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Bc", "TFL", "TFR",
-    "TML", "TMR", "TRC",
+    "FL",
+    "FR",
+    "FC",
+    "LFE",
+    "Ls",
+    "Rs",
+    "Lb",
+    "Rb",
+    AURORA_ROLE_FRONT_WIDE_LEFT,
+    AURORA_ROLE_FRONT_WIDE_RIGHT,
+    AURORA_ROLE_REAR_SIDE_LEFT,
+    AURORA_ROLE_REAR_SIDE_RIGHT,
+    "TFL",
+    "TFR",
+    "TBL",
+    "TBR",
 ];
 
-fn custom_sixteen_channel_layout() -> SpeakerLayout {
+fn aurora_eleven_one_four_geometry() -> SpeakerLayout {
     SpeakerLayout::custom(
         LAYOUT_NAME,
         vec![
@@ -28,45 +42,31 @@ fn custom_sixteen_channel_layout() -> SpeakerLayout {
             SpeakerGeometry::full_range("FR", 30.0, 0.0),
             SpeakerGeometry::full_range("FC", 0.0, 0.0),
             SpeakerGeometry::lfe("LFE", 0.0, -30.0),
-            SpeakerGeometry::full_range("Lb", -150.0, 0.0),
-            SpeakerGeometry::full_range("Rb", 150.0, 0.0),
             SpeakerGeometry::full_range("Ls", -90.0, 0.0),
             SpeakerGeometry::full_range("Rs", 90.0, 0.0),
-            SpeakerGeometry::full_range("Lw", -60.0, 0.0),
-            SpeakerGeometry::full_range("Rw", 60.0, 0.0),
-            SpeakerGeometry::full_range("Bc", 180.0, 0.0),
+            SpeakerGeometry::full_range("Lb", -150.0, 0.0),
+            SpeakerGeometry::full_range("Rb", 150.0, 0.0),
+            SpeakerGeometry::full_range(AURORA_ROLE_FRONT_WIDE_LEFT, -60.0, 0.0),
+            SpeakerGeometry::full_range(AURORA_ROLE_FRONT_WIDE_RIGHT, 60.0, 0.0),
+            SpeakerGeometry::full_range(AURORA_ROLE_REAR_SIDE_LEFT, -120.0, 0.0),
+            SpeakerGeometry::full_range(AURORA_ROLE_REAR_SIDE_RIGHT, 120.0, 0.0),
             SpeakerGeometry::full_range("TFL", -30.0, 45.0),
             SpeakerGeometry::full_range("TFR", 30.0, 45.0),
-            SpeakerGeometry::full_range("TML", -90.0, 45.0),
-            SpeakerGeometry::full_range("TMR", 90.0, 45.0),
-            SpeakerGeometry::full_range("TRC", 180.0, 45.0),
+            SpeakerGeometry::full_range("TBL", -135.0, 45.0),
+            SpeakerGeometry::full_range("TBR", 135.0, 45.0),
         ],
     )
-    .expect("validation geometry must satisfy the pinned OpenJOC layout contract")
+    .expect("Aurora 11.1.4 reference geometry must satisfy the pinned OpenJOC layout contract")
 }
 
 fn output_layout_contract() -> OutputLayoutContract {
-    let channels = LABELS
-        .iter()
-        .enumerate()
-        .map(|(index, label)| OutputChannelSpec {
-            role: ChannelRole::Custom((*label).to_owned()),
-            class: if index == 3 {
-                OutputChannelClass::Lfe
-            } else if index >= 11 {
-                OutputChannelClass::Height
-            } else {
-                OutputChannelClass::Bed
-            },
-        })
-        .collect();
-    OutputLayoutContract::custom(LAYOUT_NAME, channels)
-        .expect("Aurora output contract must accept the explicit custom lane order")
+    OutputLayoutContract::aurora_eleven_one_four_reference()
+        .expect("Aurora 11.1.4 reference output contract must be valid")
 }
 
 fn custom_session() -> OpenJocSession {
-    let config = OpenJocConfig::default().with_speaker_layout(custom_sixteen_channel_layout());
-    OpenJocSession::new(config).expect("create OpenJOC custom speaker session")
+    let config = OpenJocConfig::default().with_speaker_layout(aurora_eleven_one_four_geometry());
+    OpenJocSession::new(config).expect("create OpenJOC Aurora 11.1.4 reference session")
 }
 
 fn assert_output_contract(session: &OpenJocSession) {
@@ -80,7 +80,7 @@ fn assert_output_contract(session: &OpenJocSession) {
     assert_eq!(info.channel_count, CHANNELS);
     assert_eq!(info.sample_format, PcmSampleFormat::F32);
     assert_eq!(info.render_mode, RenderMode::Speaker);
-    assert_eq!(labels, LABELS);
+    assert_eq!(labels.as_slice(), LABELS.as_slice());
 }
 
 fn consume_rendered_frame(
@@ -92,14 +92,12 @@ fn consume_rendered_frame(
     assert_eq!(frame.sample_format, PcmSampleFormat::F32);
     assert_eq!(frame.render_mode, RenderMode::Speaker);
     assert_eq!(frame.sample_rate, 48_000);
-    assert_eq!(
-        frame
-            .channel_labels
-            .iter()
-            .map(String::as_str)
-            .collect::<Vec<_>>(),
-        LABELS
-    );
+    let labels = frame
+        .channel_labels
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    assert_eq!(labels.as_slice(), LABELS.as_slice());
     assert!(frame.sample_count > 0);
     assert_eq!(frame.interleaved_f32.len(), frame.sample_count * CHANNELS);
     assert!(frame.interleaved_f32.iter().all(|sample| sample.is_finite()));
@@ -123,7 +121,7 @@ fn consume_rendered_frame(
 }
 
 #[test]
-fn pinned_openjoc_accepts_explicit_sixteen_channel_geometry() {
+fn pinned_openjoc_accepts_aurora_reference_eleven_one_four_geometry() {
     let session = custom_session();
     assert_output_contract(&session);
 }
@@ -143,7 +141,7 @@ fn pinned_openjoc_renders_synthetic_joc_through_aurora_sixteen_channel_output() 
         OutputDspConfig::default(),
         output_layout_contract(),
     )
-    .expect("construct dynamic 16-channel Aurora output DSP");
+    .expect("construct dynamic Aurora 11.1.4 reference output DSP");
 
     let mut offset = 0_usize;
     let mut rendered_frames = 0_usize;
@@ -167,7 +165,7 @@ fn pinned_openjoc_renders_synthetic_joc_through_aurora_sixteen_channel_output() 
                 discontinuity: false,
                 preroll: false,
             })
-            .expect("decode/render custom-layout synthetic JOC access unit");
+            .expect("decode/render Aurora 11.1.4 reference synthetic JOC access unit");
         while let Some(frame) = session.receive_frame() {
             rendered_samples = rendered_samples
                 .saturating_add(consume_rendered_frame(frame, &mut post));
@@ -176,7 +174,7 @@ fn pinned_openjoc_renders_synthetic_joc_through_aurora_sixteen_channel_output() 
         offset = offset.saturating_add(length);
     }
 
-    session.drain().expect("drain custom-layout OpenJOC tail");
+    session.drain().expect("drain Aurora 11.1.4 reference OpenJOC tail");
     while let Some(frame) = session.receive_frame() {
         rendered_samples =
             rendered_samples.saturating_add(consume_rendered_frame(frame, &mut post));
