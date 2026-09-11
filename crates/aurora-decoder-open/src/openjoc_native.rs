@@ -18,14 +18,32 @@ use openjoc_api::{
 
 const LABELS_2_0: [&str; 2] = ["FL", "FR"];
 const LABELS_5_1: [&str; 6] = ["FL", "FR", "FC", "LFE", "Ls", "Rs"];
+const LABELS_5_1_2: [&str; 8] = ["FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR"];
 const LABELS_5_1_4: [&str; 10] = [
     "FL", "FR", "FC", "LFE", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
 ];
 const LABELS_7_1: [&str; 8] = ["FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs"];
+const LABELS_7_1_2: [&str; 10] = [
+    "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR",
+];
 const LABELS_7_1_4: [&str; 12] = [
     "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
 ];
+
+const MAP_2_0: [usize; 2] = [0, 1];
+const MAP_5_1: [usize; 6] = [0, 1, 2, 3, 4, 5];
+const MAP_5_1_2: [usize; 8] = [0, 1, 2, 3, 4, 5, 6, 7];
+const MAP_5_1_4: [usize; 10] = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+const MAP_7_1: [usize; 8] = [0, 1, 2, 3, 6, 7, 4, 5];
+const MAP_7_1_2: [usize; 10] = [0, 1, 2, 3, 6, 7, 4, 5, 8, 9];
+const MAP_7_1_4: [usize; 12] = [0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11];
 const MAX_RECYCLED_PLANAR_BLOCKS: usize = 128;
+
+#[derive(Debug, Clone, Copy)]
+struct OpenJocLayoutContract {
+    labels: &'static [&'static str],
+    aurora_map: &'static [usize],
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JocRenderInfo {
@@ -373,30 +391,57 @@ fn duration_us(duration: Duration) -> u64 {
     duration.as_micros().min(u128::from(u64::MAX)) as u64
 }
 
+fn openjoc_layout_contract(
+    layout: &str,
+    channels: usize,
+) -> Result<OpenJocLayoutContract, DecoderError> {
+    let contract = match (layout, channels) {
+        ("2.0", 2) => OpenJocLayoutContract {
+            labels: &LABELS_2_0,
+            aurora_map: &MAP_2_0,
+        },
+        ("5.1", 6) => OpenJocLayoutContract {
+            labels: &LABELS_5_1,
+            aurora_map: &MAP_5_1,
+        },
+        ("5.1.2", 8) => OpenJocLayoutContract {
+            labels: &LABELS_5_1_2,
+            aurora_map: &MAP_5_1_2,
+        },
+        ("5.1.4", 10) => OpenJocLayoutContract {
+            labels: &LABELS_5_1_4,
+            aurora_map: &MAP_5_1_4,
+        },
+        ("7.1", 8) => OpenJocLayoutContract {
+            labels: &LABELS_7_1,
+            aurora_map: &MAP_7_1,
+        },
+        ("7.1.2", 10) => OpenJocLayoutContract {
+            labels: &LABELS_7_1_2,
+            aurora_map: &MAP_7_1_2,
+        },
+        ("7.1.4", 12) => OpenJocLayoutContract {
+            labels: &LABELS_7_1_4,
+            aurora_map: &MAP_7_1_4,
+        },
+        _ => {
+            return Err(DecoderError::UnsupportedInput(
+                "OpenJOC speaker layout has no verified semantic channel-label contract in Aurora",
+            ))
+        }
+    };
+    Ok(contract)
+}
+
 fn expected_openjoc_channel_labels(
     layout: &str,
     channels: usize,
 ) -> Result<&'static [&'static str], DecoderError> {
-    match (layout, channels) {
-        ("2.0", 2) => Ok(&LABELS_2_0),
-        ("5.1", 6) => Ok(&LABELS_5_1),
-        ("5.1.4", 10) => Ok(&LABELS_5_1_4),
-        ("7.1", 8) => Ok(&LABELS_7_1),
-        ("7.1.4", 12) => Ok(&LABELS_7_1_4),
-        _ => Err(DecoderError::UnsupportedInput(
-            "OpenJOC speaker layout has no verified semantic channel-label contract in Aurora",
-        )),
-    }
+    Ok(openjoc_layout_contract(layout, channels)?.labels)
 }
 
 fn aurora_channel_map(layout: &str, channels: usize) -> Result<Vec<usize>, DecoderError> {
-    let _ = expected_openjoc_channel_labels(layout, channels)?;
-    let map: Vec<usize> = match (layout, channels) {
-        ("7.1", 8) => vec![0, 1, 2, 3, 6, 7, 4, 5],
-        ("7.1.4", 12) => vec![0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11],
-        ("2.0", 2) | ("5.1", 6) | ("5.1.4", 10) => (0..channels).collect(),
-        _ => unreachable!("verified layout contract above covers supported mappings"),
-    };
+    let map = openjoc_layout_contract(layout, channels)?.aurora_map.to_vec();
     if map.len() != channels
         || map.iter().any(|&index| index >= channels)
         || {
@@ -417,7 +462,12 @@ pub const fn default_layout_for_channels(channels: usize) -> Option<&'static str
     match channels {
         2 => Some("2.0"),
         6 => Some("5.1"),
+        // Aurora's current product path is explicitly canonical 7.1.4. Other
+        // OpenJOC presets with the same width must be requested through the
+        // layout hint instead of changing this established product default.
         12 => Some("7.1.4"),
+        // Eight and ten channels are intentionally ambiguous: 7.1 vs 5.1.2,
+        // and 5.1.4 vs 7.1.2 respectively.
         _ => None,
     }
 }
@@ -438,10 +488,28 @@ mod tests {
     }
 
     #[test]
+    fn fixed_height_layout_contracts_are_explicitly_supported() {
+        assert_eq!(
+            expected_openjoc_channel_labels("5.1.2", 8).unwrap(),
+            &LABELS_5_1_2
+        );
+        assert_eq!(
+            expected_openjoc_channel_labels("5.1.4", 10).unwrap(),
+            &LABELS_5_1_4
+        );
+        assert_eq!(
+            expected_openjoc_channel_labels("7.1.2", 10).unwrap(),
+            &LABELS_7_1_2
+        );
+        assert_eq!(aurora_channel_map("5.1.2", 8).unwrap(), MAP_5_1_2);
+        assert_eq!(aurora_channel_map("5.1.4", 10).unwrap(), MAP_5_1_4);
+    }
+
+    #[test]
     fn openjoc_7_1_4_side_back_order_is_normalized_to_aurora() {
         assert_eq!(
             aurora_channel_map("7.1.4", 12).unwrap(),
-            vec![0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11]
+            MAP_7_1_4
         );
         assert_eq!(
             expected_openjoc_channel_labels("7.1.4", 12).unwrap(),
@@ -450,11 +518,16 @@ mod tests {
     }
 
     #[test]
-    fn openjoc_7_1_side_back_order_is_normalized_to_aurora() {
+    fn openjoc_7_1_2_side_back_order_is_normalized_to_aurora() {
         assert_eq!(
-            aurora_channel_map("7.1", 8).unwrap(),
-            vec![0, 1, 2, 3, 6, 7, 4, 5]
+            aurora_channel_map("7.1.2", 10).unwrap(),
+            MAP_7_1_2
         );
+    }
+
+    #[test]
+    fn openjoc_7_1_side_back_order_is_normalized_to_aurora() {
+        assert_eq!(aurora_channel_map("7.1", 8).unwrap(), MAP_7_1);
     }
 
     #[test]
