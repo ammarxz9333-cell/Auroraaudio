@@ -9,7 +9,7 @@
 use std::collections::VecDeque;
 use std::time::Duration;
 
-use aurora_core::{AudioBlock, AudioFormat};
+use aurora_core::{AudioBlock, AudioFormat, StandardLayout};
 use aurora_decoder_api::{DecodedFrame, DecoderError};
 use openjoc_api::{
     OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus,
@@ -43,6 +43,40 @@ const MAX_RECYCLED_PLANAR_BLOCKS: usize = 128;
 struct OpenJocLayoutContract {
     labels: &'static [&'static str],
     aurora_map: &'static [usize],
+}
+
+/// Resolves Aurora's typed standard layout identity to the exact admitted
+/// OpenJOC preset. Custom layouts intentionally remain outside this fixed
+/// contract until Aurora carries explicit geometry end to end.
+pub fn openjoc_preset_for_standard_layout(
+    layout: StandardLayout,
+) -> Result<&'static str, DecoderError> {
+    match layout {
+        StandardLayout::Stereo => Ok("2.0"),
+        StandardLayout::FiveOne => Ok("5.1"),
+        StandardLayout::SevenOne => Ok("7.1"),
+        StandardLayout::FiveOneTwo => Ok("5.1.2"),
+        StandardLayout::FiveOneFour => Ok("5.1.4"),
+        StandardLayout::SevenOneTwo => Ok("7.1.2"),
+        StandardLayout::SevenOneFour => Ok("7.1.4"),
+        StandardLayout::Custom => Err(DecoderError::UnsupportedInput(
+            "custom JOC output requires explicit speaker geometry; a channel count or fixed-layout hint is insufficient",
+        )),
+    }
+}
+
+impl crate::OpenDecoderConfig {
+    /// Selects a JOC speaker layout through Aurora's typed standard-layout
+    /// identity instead of a caller-authored string. This is the migration path
+    /// away from channel-count inference while preserving the legacy hint field
+    /// for compatibility with older callers.
+    pub fn with_standard_joc_layout(
+        mut self,
+        layout: StandardLayout,
+    ) -> Result<Self, DecoderError> {
+        self.joc_layout_hint = Some(openjoc_preset_for_standard_layout(layout)?);
+        Ok(self)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -477,6 +511,32 @@ mod tests {
     use super::*;
 
     #[test]
+    fn typed_standard_layout_builder_selects_exact_openjoc_presets() {
+        let cases = [
+            (StandardLayout::Stereo, "2.0"),
+            (StandardLayout::FiveOne, "5.1"),
+            (StandardLayout::SevenOne, "7.1"),
+            (StandardLayout::FiveOneTwo, "5.1.2"),
+            (StandardLayout::FiveOneFour, "5.1.4"),
+            (StandardLayout::SevenOneTwo, "7.1.2"),
+            (StandardLayout::SevenOneFour, "7.1.4"),
+        ];
+        for (layout, preset) in cases {
+            let config = crate::OpenDecoderConfig::default()
+                .with_standard_joc_layout(layout)
+                .unwrap();
+            assert_eq!(config.joc_layout_hint, Some(preset));
+        }
+    }
+
+    #[test]
+    fn typed_custom_layout_requires_future_geometry_contract() {
+        assert!(crate::OpenDecoderConfig::default()
+            .with_standard_joc_layout(StandardLayout::Custom)
+            .is_err());
+    }
+
+    #[test]
     fn aurora_7_1_4_maps_to_openjoc_7_1_4() {
         assert_eq!(default_layout_for_channels(12), Some("7.1.4"));
     }
@@ -507,10 +567,7 @@ mod tests {
 
     #[test]
     fn openjoc_7_1_4_side_back_order_is_normalized_to_aurora() {
-        assert_eq!(
-            aurora_channel_map("7.1.4", 12).unwrap(),
-            MAP_7_1_4
-        );
+        assert_eq!(aurora_channel_map("7.1.4", 12).unwrap(), MAP_7_1_4);
         assert_eq!(
             expected_openjoc_channel_labels("7.1.4", 12).unwrap(),
             &LABELS_7_1_4
@@ -519,10 +576,7 @@ mod tests {
 
     #[test]
     fn openjoc_7_1_2_side_back_order_is_normalized_to_aurora() {
-        assert_eq!(
-            aurora_channel_map("7.1.2", 10).unwrap(),
-            MAP_7_1_2
-        );
+        assert_eq!(aurora_channel_map("7.1.2", 10).unwrap(), MAP_7_1_2);
     }
 
     #[test]
