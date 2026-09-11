@@ -16,6 +16,8 @@ use aurora_dsp_camilladsp::{
     discover_camilladsp, inspect_processed_wav, process_offline_wav, AuroraDspConfig,
 };
 #[cfg(feature = "realtime")]
+use aurora_realtime_acceptance::{evaluate_realtime_acceptance, RealTimeAcceptancePolicy};
+#[cfg(feature = "realtime")]
 use aurora_realtime_audio_api::{
     AudioDeviceDirection, AudioOutputBackend, RealTimeAudioConfig, RealTimeSampleFormat,
 };
@@ -23,7 +25,8 @@ use aurora_realtime_audio_api::{
 use aurora_realtime_audio_cpal::CpalAudioBackend;
 #[cfg(feature = "realtime")]
 use aurora_realtime_engine::{
-    identify_roles, ProcessStatus, RealTimeEngine, RealTimeEngineConfig, TestSignal,
+    identify_roles, ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RealTimeFault,
+    RealTimeMetrics, TestSignal,
 };
 use aurora_renderer_api::{RenderObject, Renderer, RendererScratch, SpeakerGain};
 use aurora_renderer_basic::{
@@ -131,6 +134,15 @@ enum Command {
         duration_seconds: u64,
         #[arg(long, value_enum, default_value_t = CliRendererMode::InverseDistance)]
         renderer_mode: CliRendererMode,
+        /// Optional machine-readable final realtime health report.
+        #[arg(long)]
+        health_report: Option<PathBuf>,
+        /// Maximum accepted p95 callback use of one block budget.
+        #[arg(long, default_value_t = 100.0)]
+        max_p95_budget_percent: f64,
+        /// Optional maximum estimated software end-to-end latency in frames.
+        #[arg(long)]
+        max_estimated_latency_frames: Option<usize>,
     },
     /// Run independent input/output streams through adaptive duplex resampling.
     Duplex {
@@ -412,6 +424,9 @@ fn main() -> Result<()> {
             test_signal,
             duration_seconds,
             renderer_mode,
+            health_report,
+            max_p95_budget_percent,
+            max_estimated_latency_frames,
         } => run_realtime(
             input_device,
             output_device,
@@ -423,6 +438,9 @@ fn main() -> Result<()> {
             test_signal,
             duration_seconds,
             renderer_mode.into(),
+            health_report.as_deref(),
+            max_p95_budget_percent,
+            max_estimated_latency_frames,
         ),
         Command::Duplex {
             input_device,
@@ -614,6 +632,9 @@ fn run_realtime(
     test_signal: CliTestSignal,
     duration_seconds: u64,
     renderer_mode: BasicRendererMode,
+    health_report: Option<&Path>,
+    max_p95_budget_percent: f64,
+    max_estimated_latency_frames: Option<usize>,
 ) -> Result<()> {
     let scene = load_render_scene(scene_path).context("load scene")?;
     let output_channels = scene.ordered_speakers()?.len();
@@ -642,6 +663,12 @@ fn run_realtime(
     };
     let mut engine =
         RealTimeEngine::new(scene, engine_config, block_size).context("create real-time engine")?;
+    let initial_metrics = engine.metrics().clone();
+    let block_duration_budget = initial_metrics.block_duration_budget;
+    let renderer_latency_frames = initial_metrics.renderer_latency_frames;
+    let dsp_latency_frames = initial_metrics.dsp_latency_frames;
+    let estimated_device_latency_frames = initial_metrics.estimated_device_latency_frames;
+    let estimated_end_to_end_latency_frames = initial_metrics.estimated_end_to_end_latency_frames;
     for report in engine.delay_reports() {
         println!(
             "canonical_output_index={} channel_role={} distance_m={:.4} delay_ms={:.4} delay_samples={:.4}",
@@ -660,6 +687,15 @@ fn run_realtime(
             counters_for_callback
                 .processed_blocks
                 .store(metrics.processed_blocks, Ordering::Relaxed);
+            counters_for_callback
+                .input_underruns
+                .store(metrics.input_underruns, Ordering::Relaxed);
+            counters_for_callback
+                .output_underruns
+                .store(metrics.output_underruns, Ordering::Relaxed);
+            counters_for_callback
+                .dropped_blocks
+                .store(metrics.dropped_blocks, Ordering::Relaxed);
             counters_for_callback.max_callback_nanos.store(
                 metrics.max_callback_duration.as_nanos() as u64,
                 Ordering::Relaxed,
@@ -680,8 +716,8 @@ fn run_realtime(
                 .store(metrics.fault as u64, Ordering::Relaxed);
             if matches!(status, ProcessStatus::Fault(_)) {
                 counters_for_callback
-                    .dropped_blocks
-                    .store(metrics.dropped_blocks, Ordering::Relaxed);
+                    .fault
+                    .store(metrics.fault as u64, Ordering::Relaxed);
             }
         }),
     )?;
@@ -704,10 +740,12 @@ fn run_realtime(
     while started.elapsed() < Duration::from_secs(duration_seconds) {
         std::thread::sleep(Duration::from_secs(1));
         println!(
-            "status elapsed_s={} callbacks={} processed_blocks={} dropped_blocks={} max_callback_ms={:.3} avg_callback_ms={:.3} p95_callback_ms={:.3} fault_code={}",
+            "status elapsed_s={} callbacks={} processed_blocks={} input_underruns={} output_underruns={} dropped_blocks={} max_callback_ms={:.3} avg_callback_ms={:.3} p95_callback_ms={:.3} fault_code={}",
             started.elapsed().as_secs(),
             counters.callback_count.load(Ordering::Relaxed),
             counters.processed_blocks.load(Ordering::Relaxed),
+            counters.input_underruns.load(Ordering::Relaxed),
+            counters.output_underruns.load(Ordering::Relaxed),
             counters.dropped_blocks.load(Ordering::Relaxed),
             counters.max_callback_nanos.load(Ordering::Relaxed) as f64 / 1_000_000.0,
             counters.avg_callback_nanos.load(Ordering::Relaxed) as f64 / 1_000_000.0,
@@ -716,6 +754,120 @@ fn run_realtime(
         );
     }
     stream.stop()?;
+
+    let mut final_metrics = RealTimeMetrics::default();
+    final_metrics.callback_count = counters.callback_count.load(Ordering::Relaxed);
+    final_metrics.processed_blocks = counters.processed_blocks.load(Ordering::Relaxed);
+    final_metrics.input_underruns = counters.input_underruns.load(Ordering::Relaxed);
+    final_metrics.output_underruns = counters.output_underruns.load(Ordering::Relaxed);
+    final_metrics.dropped_blocks = counters.dropped_blocks.load(Ordering::Relaxed);
+    final_metrics.max_callback_duration =
+        Duration::from_nanos(counters.max_callback_nanos.load(Ordering::Relaxed));
+    final_metrics.average_callback_duration =
+        Duration::from_nanos(counters.avg_callback_nanos.load(Ordering::Relaxed));
+    final_metrics.p95_callback_duration =
+        Duration::from_nanos(counters.p95_callback_nanos.load(Ordering::Relaxed));
+    final_metrics.block_duration_budget = block_duration_budget;
+    final_metrics.renderer_latency_frames = renderer_latency_frames;
+    final_metrics.dsp_latency_frames = dsp_latency_frames;
+    final_metrics.estimated_device_latency_frames = estimated_device_latency_frames;
+    final_metrics.estimated_end_to_end_latency_frames = estimated_end_to_end_latency_frames;
+    final_metrics.fault = realtime_fault_from_code(counters.fault.load(Ordering::Relaxed))?;
+
+    let policy = RealTimeAcceptancePolicy {
+        max_p95_budget_usage_percent: max_p95_budget_percent,
+        max_estimated_end_to_end_latency_frames: max_estimated_latency_frames,
+        ..RealTimeAcceptancePolicy::default()
+    };
+    let health = evaluate_realtime_acceptance(&final_metrics, policy);
+    let p95_percent = health
+        .p95_budget_usage_percent
+        .map_or_else(|| "unknown".to_owned(), |value| format!("{value:.3}"));
+    println!(
+        "realtime_health={} p95_budget_usage_percent={} callbacks={} input_underruns={} output_underruns={} dropped_blocks={} estimated_end_to_end_latency_frames={} fault_code={}",
+        if health.accepted { "PASS" } else { "FAIL" },
+        p95_percent,
+        final_metrics.callback_count,
+        final_metrics.input_underruns,
+        final_metrics.output_underruns,
+        final_metrics.dropped_blocks,
+        final_metrics.estimated_end_to_end_latency_frames,
+        final_metrics.fault as u64,
+    );
+    for violation in &health.violations {
+        println!("realtime_health_violation={violation:?}");
+    }
+    if let Some(path) = health_report {
+        write_realtime_health_report(path, &final_metrics, policy, &health)?;
+    }
+    if !health.accepted {
+        bail!("real-time health acceptance failed");
+    }
+    Ok(())
+}
+
+#[cfg(feature = "realtime")]
+fn realtime_fault_from_code(code: u64) -> Result<RealTimeFault> {
+    match code {
+        0 => Ok(RealTimeFault::None),
+        1 => Ok(RealTimeFault::OutputBuffer),
+        2 => Ok(RealTimeFault::InputBuffer),
+        3 => Ok(RealTimeFault::Renderer),
+        4 => Ok(RealTimeFault::Dsp),
+        other => bail!("unknown realtime fault code {other}"),
+    }
+}
+
+#[cfg(feature = "realtime")]
+fn write_realtime_health_report(
+    path: &Path,
+    metrics: &RealTimeMetrics,
+    policy: RealTimeAcceptancePolicy,
+    health: &aurora_realtime_acceptance::RealTimeAcceptanceReport,
+) -> Result<()> {
+    if let Some(parent) = path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
+        std::fs::create_dir_all(parent)?;
+    }
+    let violations = health
+        .violations
+        .iter()
+        .map(|violation| format!("{violation:?}"))
+        .collect::<Vec<_>>();
+    let document = serde_json::json!({
+        "schema_version": 1,
+        "accepted": health.accepted,
+        "p95_budget_usage_percent": health.p95_budget_usage_percent,
+        "policy": {
+            "max_input_underruns": policy.max_input_underruns,
+            "max_output_underruns": policy.max_output_underruns,
+            "max_dropped_blocks": policy.max_dropped_blocks,
+            "max_p95_budget_usage_percent": policy.max_p95_budget_usage_percent,
+            "max_estimated_end_to_end_latency_frames": policy.max_estimated_end_to_end_latency_frames,
+            "require_callbacks": policy.require_callbacks,
+            "require_fault_free": policy.require_fault_free,
+        },
+        "metrics": {
+            "callback_count": metrics.callback_count,
+            "processed_blocks": metrics.processed_blocks,
+            "input_underruns": metrics.input_underruns,
+            "output_underruns": metrics.output_underruns,
+            "dropped_blocks": metrics.dropped_blocks,
+            "max_callback_ms": metrics.max_callback_duration.as_secs_f64() * 1000.0,
+            "average_callback_ms": metrics.average_callback_duration.as_secs_f64() * 1000.0,
+            "p95_callback_ms": metrics.p95_callback_duration.as_secs_f64() * 1000.0,
+            "block_duration_budget_ms": metrics.block_duration_budget.as_secs_f64() * 1000.0,
+            "renderer_latency_frames": metrics.renderer_latency_frames,
+            "dsp_latency_frames": metrics.dsp_latency_frames,
+            "estimated_device_latency_frames": metrics.estimated_device_latency_frames,
+            "estimated_end_to_end_latency_frames": metrics.estimated_end_to_end_latency_frames,
+            "fault_code": metrics.fault as u64,
+        },
+        "violations": violations,
+    });
+    std::fs::write(path, serde_json::to_vec_pretty(&document)?)?;
     Ok(())
 }
 
@@ -1058,6 +1210,8 @@ fn simulate_output_validation_command(
 struct RealtimeCounters {
     callback_count: AtomicU64,
     processed_blocks: AtomicU64,
+    input_underruns: AtomicU64,
+    output_underruns: AtomicU64,
     dropped_blocks: AtomicU64,
     max_callback_nanos: AtomicU64,
     avg_callback_nanos: AtomicU64,
@@ -1559,6 +1713,32 @@ mod tests {
 
         let json = Cli::try_parse_from(["aurora", "capabilities", "--json"]).unwrap();
         assert!(matches!(json.command, Command::Capabilities { json: true }));
+    }
+
+    #[test]
+    fn realtime_health_flags_parse() {
+        let cli = Cli::try_parse_from([
+            "aurora",
+            "realtime",
+            "--scene",
+            "scene.json",
+            "--health-report",
+            "health.json",
+            "--max-p95-budget-percent",
+            "80",
+            "--max-estimated-latency-frames",
+            "1024",
+        ])
+        .unwrap();
+        assert!(matches!(
+            cli.command,
+            Command::Realtime {
+                health_report: Some(_),
+                max_p95_budget_percent,
+                max_estimated_latency_frames: Some(1024),
+                ..
+            } if (max_p95_budget_percent - 80.0).abs() < f64::EPSILON
+        ));
     }
 
     #[test]
