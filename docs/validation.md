@@ -18,7 +18,7 @@ failed before step execution, so exact-head Cargo execution remains a separate g
 
 ## Validation commands
 
-The branch exposes two complementary headless tools:
+The branch exposes complementary headless validation tools:
 
 - `aurora-sim-source`: generate ordinary 48 kHz / 5.1 E-AC-3 with local FFmpeg or
   frame supplied raw `.ec3`, wrap complete AUs into Aurora's canonical IEC61937
@@ -26,12 +26,29 @@ The branch exposes two complementary headless tools:
 - `aurora-sim`: run `channel-id`, `latency-report`, and `stress` validation against
   Aurora's canonical 7.1.4 software path. The stress defaults are 100 switch cycles,
   1000 pause/resume cycles and a 1800-second soak with a 5% RSS-growth ceiling.
+- `scripts/validate_jocforge_corpus.sh`: pin an independent JOCForge source revision,
+  generate one deterministic synthetic ADM/BW64 scene, encode five public JOC
+  profile families, transport each through Aurora IEC61937, require byte-perfect
+  extraction, and require positive JOC-render timing visibility.
+
+Primary direct-eARC validation:
+
+```sh
+bash scripts/validate_direct_earc.sh
+```
+
+Five-profile JOCForge corpus:
+
+```sh
+bash scripts/validate_jocforge_corpus.sh
+```
 
 The dedicated `.github/workflows/aurora-validation-ci.yml` gate generates a real
 Cargo 1.85 lockfile, uploads it as an artifact, runs `cargo test --workspace`, runs
 validation-specific check/test/clippy, executes short headless command smoke tests,
-and gates the pinned OpenJOC synthetic positive-JOC path. The full 30-minute soak
-is intentionally not mislabeled as CI-proven until it is run.
+gates the pinned OpenJOC synthetic positive-JOC path, and runs the pinned five-profile
+JOCForge corpus. The full 30-minute soak is intentionally not mislabeled as CI-proven
+until it is run.
 
 ## Transport and framing
 
@@ -58,14 +75,34 @@ is intentionally not mislabeled as CI-proven until it is run.
 | --- | --- | --- |
 | `0x15` is not treated as JOC proof | PROVEN | Direct-eARC bridge clears fixed codec hints and leaves JOC classification to the complete-AU decoder path. |
 | Pinned OpenJOC JOC fixture exists | PROVEN | Pinned OpenJOC revision `e7e03bc834ac0483770933cdc50ac058b100d1e2` includes synthetic `crates/openjoc-wasm/testdata/joc.ec3`; Aurora pins its SHA-256 in validation CI. |
+| OpenJOC pin deliberately retained | PROVEN | At upstream review time, OpenJOC master was only two commits ahead of the Aurora pin and those commits changed LAV CI/public validation artifacts, not the decoder/renderer contract. No blind dependency bump is claimed. |
 | Synthetic JOC fixture survives simulator transport | TESTED | Existing CI gate performs `.ec3 -> aurora-sim-source -> IEC61937 -> probe -> .ec3` and requires byte-for-byte equality. Exact-head CI execution pending. |
 | Synthetic positive JOC admission | TESTED | Validation CI downloads the exact pinned upstream fixture and runs Aurora's ignored positive OpenJOC classifier/render regression. Admission is from the complete AU, not the transport type. Exact-head CI execution pending. |
 | Synthetic canonical 7.1.4 speaker render | TESTED | Existing OpenJOC/Aurora tests require successful canonical 12-channel speaker output. Exact-head CI execution pending. |
 | Positive JOC latency visibility | TESTED | Validation CI runs `aurora-sim latency-report` on the pinned JOC fixture and requires a nonzero `joc_render` sample count. Exact-head CI execution pending. |
+| JOCForge source revision identity | PROVEN | Corpus runner pins and verifies JOCForge revision `05a4108e0c6288130dec1203b301979a91475fca` before generation. The generated media itself remains synthetic evidence. |
+| JOCForge five-profile corpus | TESTED | The corpus runner generates idx0, idx1/Flat-7.X, idx2/5.X+2, idx3/5.X Phase and idx4/5.X+2 Phase from one deterministic synthetic BW64 scene. Full current-head execution is pending. |
+| JOCForge profile carrier round-trip | TESTED | Each generated raw `.ec3` is wrapped by `aurora-sim-source`, extracted by `aurora-direct-earc-probe`, and required to `cmp` byte-for-byte with nonzero E-AC-3 bursts, zero malformed headers and zero canonical cadence mismatches. Full current-head execution is pending. |
+| JOCForge positive render timing | TESTED | Every profile is fed into `aurora-sim latency-report` and must produce a nonzero `joc_render` sample count. This is structural software evidence, not renderer-equivalence or perceptual-quality proof. Full current-head execution is pending. |
 | Ordinary FFmpeg E-AC-3 negative JOC path | TESTED | `aurora-sim` has a direct regression requiring ordinary locally generated E-AC-3 to remain non-JOC after complete-AU engine admission. Exact-head execution pending. |
 | Commercial Netflix/streaming JOC interoperability | NOT-PROVEN | Requires a real licensed playback source and physical capture path. |
-| Preservation/export of original object scene coordinates | NOT-PROVEN | Current OpenJOC integration is a speaker renderer; Aurora does not claim exported object-scene metadata from that path. |
-| “Atmos proven” product claim | NOT-PROVEN | Synthetic JOC software evidence is insufficient for a commercial Atmos interoperability claim. |
+| Preservation/export of original authored object identity | NOT-PROVEN | Current OpenJOC integration renders a decoded speaker scene and does not claim recovery of the original authored Atmos master, source stems or authoring identity. |
+| “Atmos proven” product claim | NOT-PROVEN | Synthetic JOC/OpenJOC/JOCForge software evidence is insufficient for a commercial Atmos interoperability claim. |
+
+## Speaker-layout contracts
+
+| Area | Status | Evidence / acceptance |
+| --- | --- | --- |
+| Fixed OpenJOC layout contract table | PROVEN | One adapter contract now binds expected OpenJOC labels and the OpenJOC-to-Aurora lane permutation instead of maintaining separate layout logic. |
+| `2.0`, `5.1`, `5.1.2`, `5.1.4`, `7.1`, `7.1.2`, `7.1.4` contracts | TESTED | Static contracts and unit regressions define each supported fixed layout. Exact-head Cargo execution pending. |
+| Canonical `5.1.4` in `aurora-core` | PROVEN | `StandardLayout::FiveOneFour` defines FL, FR, FC, LFE, SL, SR, TFL, TFR, TRL, TRR. |
+| Canonical `7.1.2` in `aurora-core` | PROVEN | `StandardLayout::SevenOneTwo` defines FL, FR, FC, LFE, SL, SR, SBL, SBR, TFL, TFR. |
+| 7.1 OpenJOC side/back normalization | TESTED | OpenJOC `FL FR FC LFE Lb Rb Ls Rs` is permuted into Aurora canonical side-before-back order. Exact-head Cargo execution pending. |
+| 7.1.2 OpenJOC side/back normalization | TESTED | Contract maps OpenJOC `FL FR FC LFE Lb Rb Ls Rs TFL TFR` to Aurora `FL FR FC LFE SL SR SBL SBR TFL TFR`. Exact-head Cargo execution pending. |
+| 7.1.4 OpenJOC side/back normalization | TESTED | Contract maps OpenJOC `FL FR FC LFE Lb Rb Ls Rs TFL TFR TBL TBR` to Aurora canonical side-before-back order. Exact-head Cargo execution pending. |
+| Ambiguous 8/10-channel inference | PROVEN fail-closed contract | 8 channels can be 7.1 or 5.1.2; 10 channels can be 5.1.4 or 7.1.2. Aurora requires an explicit layout hint instead of guessing. |
+| Current 12-channel product default | PROVEN | Existing Aurora product semantics remain canonical 7.1.4; this intake does not silently change the shipping target layout. |
+| 9.1.6 / custom 11.1.4 | NOT-PROVEN / DEFERRED | OpenJOC supports wider presets/custom geometry, but Aurora will not enable them until layout identity/custom geometry is explicit end-to-end rather than inferred from channel count. |
 
 ## Pipeline and failure behavior
 
@@ -75,7 +112,7 @@ is intentionally not mislabeled as CI-proven until it is run.
 | Codec transition retirement | TESTED | Previous decoder state is drained before reset so valid short PCM tails are not silently discarded. Exact-head CI execution pending. |
 | Finite E-AC-3 truncation | TESTED | Checked AU framing, parser EOF validation and checked bed finalization reject incomplete finite input. Exact-head CI execution pending. |
 | No crash / no silent corruption under defined injector cases | TESTED | Each injector has deterministic expected resync or explicit-failure behavior. Runtime cut-burst acceptance is a hard failure. Exact-head CI execution pending. |
-| Canonical 7.1.4 layout remains unchanged | PROVEN | Harness obtains channel order directly from `StandardLayout::SevenOneFour.canonical_roles()`; it introduces no alternate Aurora layout. |
+| Canonical 7.1.4 layout remains unchanged | PROVEN | Harness obtains channel order directly from `StandardLayout::SevenOneFour.canonical_roles()`; the new fixed-layout contracts do not change the current product default. |
 | Software channel-ID identity through SpeakerPostProcessor | TESTED | Twelve unique channel tones are injected one canonical lane at a time; the dominant output lane must equal the source lane. Exact-head execution pending. |
 | Manual `channel-id` WAV speaker semantics | TESTED | WAVE_FORMAT_EXTENSIBLE data is reordered to ascending channel-mask speaker slots while the test sequence remains Aurora canonical. This avoids the otherwise incorrect SL/SR vs SBL/SBR labeling. Exact-head execution pending. |
 | Physical speaker channel order | NOT-PROVEN | `aurora-sim channel-id` creates a 12-channel WAVE_FORMAT_EXTENSIBLE manual fixture, but physical cable/amplifier/speaker mapping still requires real output hardware. |
