@@ -50,14 +50,21 @@ path = "src/bin/aurora-encoded-runtime.rs"
 bench = false
 required-features = ["encoded-runtime"]
 
+[[bin]]
+name = "aurora-layout-runtime"
+path = "src/bin/aurora-layout-runtime.rs"
+bench = false
+required-features = ["layout-runtime"]
+
 [features]
 default = ["camilladsp", "realtime", "simulation"]
 camilladsp = ["dep:aurora-dsp-camilladsp", "aurora-dsp-camilladsp/camilladsp-process"]
 earc-sim = ["dep:aurora-sim-source"]
 encoded-runtime = ["dep:aurora-alsa-input", "dep:aurora-alsa-output", "dep:aurora-decoder-engine", "dep:aurora-encoded-input", "dep:aurora-encoded-runtime"]
-validation = ["earc-sim", "encoded-runtime"]
+layout-runtime = ["encoded-runtime", "dep:aurora-layout-playback-runtime"]
+validation = ["earc-sim", "layout-runtime"]
 realtime = ["dep:aurora-realtime-audio-api", "dep:aurora-realtime-audio-cpal", "dep:aurora-realtime-engine"]
-simulation = ["dep:aurora-realtime-audio-sim", "dep:aurora-realtime-engine"]
+simulation = ["dep:aurora-realtime-audio-sim", "aurora-realtime-engine"]
 
 [dependencies]
 anyhow.workspace = true
@@ -71,6 +78,7 @@ aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-dsp-camilladsp = { path = "../aurora-dsp-camilladsp", optional = true }
 aurora-encoded-input = { path = "../aurora-encoded-input", optional = true }
 aurora-encoded-runtime = { path = "../aurora-encoded-runtime", optional = true }
+aurora-layout-playback-runtime = { path = "../aurora-layout-playback-runtime", optional = true }
 aurora-iec61937 = { path = "../aurora-iec61937" }
 aurora-renderer-api = { path = "../aurora-renderer-api" }
 aurora-renderer-basic = { path = "../aurora-renderer-basic" }
