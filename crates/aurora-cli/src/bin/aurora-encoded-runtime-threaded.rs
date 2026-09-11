@@ -20,23 +20,39 @@ use aurora_encoded_runtime::health::HealthReporter;
 use aurora_encoded_runtime::{AuroraPlaybackRuntime, PlaybackBatch};
 
 #[cfg(target_os = "linux")]
-use super::{Args, RuntimeStats, SpeakerSink};
+use super::{Args, RuntimeStats, SpeakerSink, WordHalfArg};
 
 #[cfg(target_os = "linux")]
 const MIN_QUEUE_DEPTH: usize = 2;
 #[cfg(target_os = "linux")]
 const MAX_QUEUE_DEPTH: usize = 256;
-/// Proven SiI9437/Vibesbox IEC61937 carrier frame rate. The threaded product
-/// path stays fail-closed to this geometry until another recovered-link rate is
+/// Proven SiI9437/Vibesbox IEC61937 capture geometry. The threaded product path
+/// stays fail-closed to this exact recovered-link shape until an alternative is
 /// captured and validated end to end.
 #[cfg(target_os = "linux")]
 const REFERENCE_CARRIER_RATE_HZ: u32 = 192_000;
+#[cfg(target_os = "linux")]
+const REFERENCE_CARRIER_SLOTS: usize = 2;
 
 #[cfg(target_os = "linux")]
-fn validate_reference_carrier_rate(sample_rate: u32) -> Result<()> {
+fn validate_reference_capture_geometry(
+    sample_rate: u32,
+    slots: usize,
+    word_half: WordHalfArg,
+) -> Result<()> {
     if sample_rate != REFERENCE_CARRIER_RATE_HZ {
         bail!(
             "native direct-eARC capture currently requires the proven {REFERENCE_CARRIER_RATE_HZ} Hz carrier rate; got {sample_rate} Hz"
+        );
+    }
+    if slots != REFERENCE_CARRIER_SLOTS {
+        bail!(
+            "native direct-eARC capture currently requires the proven {REFERENCE_CARRIER_SLOTS}-slot carrier; got {slots} slots"
+        );
+    }
+    if word_half != WordHalfArg::High {
+        bail!(
+            "native direct-eARC capture currently requires the proven high-half S32 packing (IEC61937 word in bits 31..16)"
         );
     }
     Ok(())
@@ -187,7 +203,7 @@ pub(super) fn run_direct_native_alsa<S: SpeakerSink>(
     sink: &mut S,
     reporter: &HealthReporter,
 ) -> Result<RuntimeStats> {
-    validate_reference_carrier_rate(args.carrier_rate)?;
+    validate_reference_capture_geometry(args.carrier_rate, args.slots, args.word_half)?;
     let capture_config = AlsaInputConfig {
         device: device.to_owned(),
         sample_rate: args.carrier_rate,
@@ -282,10 +298,35 @@ mod tests {
     use super::*;
 
     #[test]
-    fn native_capture_accepts_only_reference_carrier_rate() {
-        validate_reference_carrier_rate(REFERENCE_CARRIER_RATE_HZ).unwrap();
+    fn native_capture_accepts_only_reference_geometry() {
+        validate_reference_capture_geometry(
+            REFERENCE_CARRIER_RATE_HZ,
+            REFERENCE_CARRIER_SLOTS,
+            WordHalfArg::High,
+        )
+        .unwrap();
+
         for rate in [0, 48_000, 96_000, 384_000] {
-            assert!(validate_reference_carrier_rate(rate).is_err());
+            assert!(validate_reference_capture_geometry(
+                rate,
+                REFERENCE_CARRIER_SLOTS,
+                WordHalfArg::High
+            )
+            .is_err());
         }
+        for slots in [0, 1, 4, 8, 16] {
+            assert!(validate_reference_capture_geometry(
+                REFERENCE_CARRIER_RATE_HZ,
+                slots,
+                WordHalfArg::High
+            )
+            .is_err());
+        }
+        assert!(validate_reference_capture_geometry(
+            REFERENCE_CARRIER_RATE_HZ,
+            REFERENCE_CARRIER_SLOTS,
+            WordHalfArg::Low
+        )
+        .is_err());
     }
 }
