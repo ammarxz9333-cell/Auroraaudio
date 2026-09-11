@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "default_integration": "external-process-or-adapter",
+    "bundle_proprietary_codec_code": false,
+    "require_evidence_for_production_ready": true
+  },
+  "components": [
+    {
+      "id": "ffmpeg",
+      "upstream": "https://github.com/FFmpeg/FFmpeg",
+      "decision": "adopted",
+      "integration": "external-process",
+      "tested_version": "6.1.1",
+      "roles": ["channel-bed-decode", "resample", "format-conversion"],
+      "object_metadata": "unsupported",
+      "production_ready": false,
+      "evidence": ["docs/surround-upmix.md"]
+    },
+    {
+      "id": "camilladsp",
+      "upstream": "https://github.com/HEnquist/camilladsp",
+      "decision": "adopted-offline",
+      "integration": "external-process",
+      "tested_version": "4.1.3",
+      "roles": ["fir", "iir", "crossover", "delay", "limiter", "room-correction"],
+      "object_metadata": "not-applicable",
+      "production_ready": false,
+      "evidence": ["docs/adapters.md"]
+    },
+    {
+      "id": "omniphony",
+      "upstream": "https://github.com/mgth/Omniphony",
+      "decision": "validation-only",
+      "integration": "external-process",
+      "tested_version": "v0.5.2",
+      "pinned_commit": "f9a79721af64ad9c39042d4deded158b568fc598",
+      "roles": ["spatial-renderer-host"],
+      "object_metadata": "experimental",
+      "production_ready": false,
+      "evidence": ["docs/immersive-validation.md"]
+    },
+    {
+      "id": "harletty-bridge",
+      "upstream": "https://github.com/harletty/harletty-bridge",
+      "decision": "validation-only",
+      "integration": "runtime-plugin",
+      "tested_version": "v0.7.4",
+      "pinned_commit": "10943821cca7e6886c11f45d2267b06d76e6db7c",
+      "roles": ["optional-codec-bridge"],
+      "object_metadata": "experimental",
+      "production_ready": false,
+      "evidence": ["docs/immersive-validation.md"]
+    },
+    {
+      "id": "libiamf",
+      "upstream": "https://github.com/AOMediaCodec/libiamf",
+      "decision": "evaluate",
+      "integration": "external-process-or-ffi-adapter",
+      "roles": ["open-immersive-audio"],
+      "object_metadata": "candidate",
+      "production_ready": false,
+      "evidence": ["docs/adapters.md"]
+    },
+    {
+      "id": "libmysofa",
+      "upstream": "https://github.com/hoene/libmysofa",
+      "decision": "defer-headphones",
+      "integration": "adapter",
+      "roles": ["sofa-hrir-loader", "binaural-headphones"],
+      "object_metadata": "not-applicable",
+      "production_ready": false,
+      "evidence": []
+    },
+    {
+      "id": "rnnoise",
+      "upstream": "https://github.com/xiph/rnnoise",
+      "decision": "defer-dialogue",
+      "integration": "worker-adapter",
+      "roles": ["optional-speech-denoise"],
+      "object_metadata": "not-applicable",
+      "production_ready": false,
+      "evidence": []
+    },
+    {
+      "id": "shairport-sync",
+      "upstream": "https://github.com/mikebrady/shairport-sync",
+      "decision": "defer-streaming",
+      "integration": "external-service",
+      "roles": ["airplay-receiver"],
+      "object_metadata": "not-applicable",
+      "production_ready": false,
+      "evidence": []
+    },
+    {
+      "id": "spotifyd",
+      "upstream": "https://github.com/Spotifyd/spotifyd",
+      "decision": "defer-streaming",
+      "integration": "external-service",
+      "roles": ["spotify-connect-client"],
+      "object_metadata": "not-applicable",
+      "production_ready": false,
+      "evidence": []
+    },
+    {
+      "id": "snapcast",
+      "upstream": "https://github.com/badaix/snapcast",
+      "decision": "defer-multiroom",
+      "integration": "external-service",
+      "roles": ["multiroom-reference"],
+      "object_metadata": "not-applicable",
+      "production_ready": false,
+      "evidence": []
+    }
+  ]
+}

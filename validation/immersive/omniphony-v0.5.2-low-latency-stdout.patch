@@ -1,0 +1,39 @@
+diff --git a/omniphony-renderer/audio_output/src/file_sink.rs b/omniphony-renderer/audio_output/src/file_sink.rs
+--- a/omniphony-renderer/audio_output/src/file_sink.rs
++++ b/omniphony-renderer/audio_output/src/file_sink.rs
+@@ -70,3 +70,3 @@
+ impl FileAudioWriter {
+-    const BUF_CAPACITY: usize = 64 * 1024;
++    const BUF_CAPACITY: usize = 40 * 12 * 4;
+ 
+diff --git a/omniphony-renderer/src/cli/decode/decoder_thread.rs b/omniphony-renderer/src/cli/decode/decoder_thread.rs
+--- a/omniphony-renderer/src/cli/decode/decoder_thread.rs
++++ b/omniphony-renderer/src/cli/decode/decoder_thread.rs
+@@ -454,3 +454,9 @@
+             if !continuous {
++                if tx
++                    .send(Ok(DecoderMessage::StreamEnd(DecodedSource::Bridge)))
++                    .is_err()
++                {
++                    log::warn!("Failed to signal finite stream end, receiver closed");
++                }
+                 break;
+             }
+ 
+diff --git a/omniphony-renderer/src/cli/decode/session_run.rs b/omniphony-renderer/src/cli/decode/session_run.rs
+--- a/omniphony-renderer/src/cli/decode/session_run.rs
++++ b/omniphony-renderer/src/cli/decode/session_run.rs
+@@ -650,7 +650,12 @@
+             Ok(DecoderMessage::StreamEnd(source)) => {
+                 if handler.should_accept_source(source) {
+-                    handle_stream_end(handler, ctx.args)?;
++                    if ctx.args.continuous {
++                        handle_stream_end(handler, ctx.args)?;
++                    } else {
++                        log::info!("Finite stream ended; completing render run");
++                        break;
++                    }
+                 } else {
+                     handler.poll_runtime_state()?;
+                 }
+             }
