@@ -18,6 +18,7 @@ on:
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-sim.rs"
       - "crates/aurora-cli/src/bin/aurora-sim.rs"
+      - "scripts/validate_direct_earc.sh"
       - "docs/validation.md"
       - "docs/latency-budget.md"
       - ".github/workflows/aurora-validation-ci.yml"
@@ -36,6 +37,7 @@ on:
       - "crates/aurora-cli/Cargo.toml"
       - "crates/aurora-cli/src/bin/aurora-direct-earc-sim.rs"
       - "crates/aurora-cli/src/bin/aurora-sim.rs"
+      - "scripts/validate_direct_earc.sh"
       - "docs/validation.md"
       - "docs/latency-budget.md"
       - ".github/workflows/aurora-validation-ci.yml"
@@ -54,6 +56,9 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate standalone Linux runner syntax
+        run: bash -n scripts/validate_direct_earc.sh
 
       - uses: dtolnay/rust-toolchain@1.85.0
         with:
