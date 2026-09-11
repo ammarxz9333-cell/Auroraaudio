@@ -7,13 +7,13 @@ on:
       - main-v2
     paths:
       - "config/external-components-v1.json"
-      - "platform/s6/patches/omniphony-raw-f32-low-latency.patch"
+      - "platform/s6/patches/omniphony-v0.5.2-low-latency-stdout.patch"
       - "platform/s6/scripts/test-immersive-joc-stack.sh"
       - ".github/workflows/immersive-joc-stack-ci.yml"
   pull_request:
     paths:
       - "config/external-components-v1.json"
-      - "platform/s6/patches/omniphony-raw-f32-low-latency.patch"
+      - "platform/s6/patches/omniphony-v0.5.2-low-latency-stdout.patch"
       - "platform/s6/scripts/test-immersive-joc-stack.sh"
       - ".github/workflows/immersive-joc-stack-ci.yml"
 
