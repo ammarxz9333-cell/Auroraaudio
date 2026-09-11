@@ -32,6 +32,7 @@ use aurora_spatial_runtime::{SpatialRuntimeConfig, SpatialRuntimeError, VbapSpat
 const DIRECT_CARRIER_SCRATCH_BYTES: usize = 64 * 1024;
 const MAX_RECYCLED_INTERLEAVED_BLOCKS: usize = 32;
 const MAX_RECYCLED_INTERLEAVED_SAMPLES: usize = OUTPUT_CHANNELS * 2_048;
+const CANONICAL_JOC_LAYOUT: &str = "7.1.4";
 
 /// Decoder output produced by one source-ingest call.
 #[derive(Debug, Default)]
@@ -322,6 +323,24 @@ impl SpeakerOutputStage {
     }
 }
 
+/// Canonical product playback is structurally 7.1.4. Bind that identity into
+/// the JOC decoder before construction rather than relying on 12-channel width
+/// inference. A conflicting legacy string hint is rejected, never overwritten.
+fn bind_canonical_playback_layout(mut engine_config: EngineConfig) -> Result<EngineConfig, RuntimeError> {
+    if let Some(existing) = engine_config.open_decoder.joc_layout_hint {
+        if existing != CANONICAL_JOC_LAYOUT {
+            return Err(RuntimeError::OutputLayout(format!(
+                "canonical playback runtime requires JOC layout {CANONICAL_JOC_LAYOUT}; caller requested {existing}"
+            )));
+        }
+    }
+    engine_config.open_decoder = engine_config
+        .open_decoder
+        .with_standard_joc_layout(StandardLayout::SevenOneFour)
+        .map_err(RuntimeError::Decoder)?;
+    Ok(engine_config)
+}
+
 /// End-to-end encoded-source runtime through Aurora's canonical speaker DSP.
 ///
 /// Both direct eARC and legacy USB use this exact object. Frames with generic
@@ -340,10 +359,10 @@ impl AuroraPlaybackRuntime {
         output_format: AudioFormat,
         output_dsp: OutputDspConfig,
     ) -> Result<Self, RuntimeError> {
-        Ok(Self {
-            encoded: AuroraEncodedRuntime::new(input_config, engine_config, output_format)?,
-            output: SpeakerOutputStage::new(output_format, output_dsp)?,
-        })
+        let output = SpeakerOutputStage::new(output_format, output_dsp)?;
+        let engine_config = bind_canonical_playback_layout(engine_config)?;
+        let encoded = AuroraEncodedRuntime::new(input_config, engine_config, output_format)?;
+        Ok(Self { encoded, output })
     }
 
     pub const fn input_kind(&self) -> EncodedInputKind {
@@ -805,6 +824,22 @@ mod tests {
                 expected: OUTPUT_CHANNELS,
                 actual: 8
             })
+        ));
+    }
+
+    #[test]
+    fn canonical_playback_binds_typed_seven_one_four_layout() {
+        let config = bind_canonical_playback_layout(EngineConfig::default()).unwrap();
+        assert_eq!(config.open_decoder.joc_layout_hint, Some(CANONICAL_JOC_LAYOUT));
+    }
+
+    #[test]
+    fn canonical_playback_rejects_conflicting_joc_layout_hint() {
+        let mut config = EngineConfig::default();
+        config.open_decoder.joc_layout_hint = Some("5.1.2");
+        assert!(matches!(
+            bind_canonical_playback_layout(config),
+            Err(RuntimeError::OutputLayout(_))
         ));
     }
 
