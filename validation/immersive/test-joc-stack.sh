@@ -6,6 +6,27 @@ MANIFEST="$ROOT_DIR/config/external-components-v1.json"
 OMNIP_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
 KEEP_WORKDIR="${AURORA_KEEP_JOC_TEST_WORKDIR:-0}"
+BUILD_MODE="${AURORA_JOC_BUILD_MODE:-debug}"
+
+phase() {
+  printf '\n== Aurora JOC phase: %s ==\n' "$1"
+  date -u '+%Y-%m-%dT%H:%M:%SZ'
+}
+
+case "$BUILD_MODE" in
+  debug)
+    PROFILE_ARGS=()
+    PROFILE_DIR="debug"
+    ;;
+  release)
+    PROFILE_ARGS=(--release)
+    PROFILE_DIR="release"
+    ;;
+  *)
+    echo "unsupported AURORA_JOC_BUILD_MODE: $BUILD_MODE (expected debug or release)" >&2
+    exit 2
+    ;;
+esac
 
 if [[ "$(uname -s)" != "Linux" ]]; then
   echo "This validation currently targets the Linux software validation path." >&2
@@ -17,8 +38,13 @@ done
 [[ -f "$MANIFEST" ]] || { echo "missing external component manifest: $MANIFEST" >&2; exit 2; }
 [[ -f "$OMNIP_PATCH" ]] || { echo "missing Omniphony latency patch: $OMNIP_PATCH" >&2; exit 2; }
 
-WORK_DIR="${AURORA_JOC_TEST_WORKDIR:-$(mktemp -d "${TMPDIR:-/tmp}/aurora-joc-stack.XXXXXX")}"
-mkdir -p "$WORK_DIR"
+if [[ -n "${AURORA_JOC_TEST_WORKDIR:-}" ]]; then
+  WORK_DIR="$AURORA_JOC_TEST_WORKDIR"
+  rm -rf "$WORK_DIR"
+  mkdir -p "$WORK_DIR"
+else
+  WORK_DIR="$(mktemp -d "${TMPDIR:-/tmp}/aurora-joc-stack.XXXXXX")"
+fi
 cleanup() {
   if [[ "$KEEP_WORKDIR" == "1" ]]; then
     echo "Keeping JOC validation workdir: $WORK_DIR"
@@ -52,30 +78,40 @@ clone_pinned() {
 
 OMNIP_DIR="$WORK_DIR/Omniphony"
 HARLETTY_DIR="$WORK_DIR/harletty-bridge"
+HARLETTY_TARGET_DIR="${AURORA_HARLETTY_TARGET_DIR:-$HARLETTY_DIR/target}"
+OMNIP_TARGET_DIR="${AURORA_OMNIP_TARGET_DIR:-$OMNIP_DIR/omniphony-renderer/target}"
+HARNESS_TARGET_DIR="${AURORA_JOC_HARNESS_TARGET_DIR:-$WORK_DIR/iec-joc-harness-target}"
+mkdir -p "$HARLETTY_TARGET_DIR" "$OMNIP_TARGET_DIR" "$HARNESS_TARGET_DIR"
+
+phase "clone pinned external components"
 clone_pinned "$OMNIP_UPSTREAM" "$OMNIP_VERSION" "$OMNIP_COMMIT" "$OMNIP_DIR"
 clone_pinned "$HARLETTY_UPSTREAM" "$HARLETTY_VERSION" "$HARLETTY_COMMIT" "$HARLETTY_DIR"
 
+phase "install external Rust toolchain"
 rustup toolchain install "$TOOLCHAIN" --profile minimal >/dev/null
 
-cargo +"$TOOLCHAIN" test --locked \
+phase "run Harletty official JOC golden fixture test"
+CARGO_TARGET_DIR="$HARLETTY_TARGET_DIR" cargo +"$TOOLCHAIN" test --locked \
   --manifest-path "$HARLETTY_DIR/Cargo.toml" \
   -p harletty --test golden joc_master_set_matches_golden -- --exact --nocapture
 
-cargo +"$TOOLCHAIN" build --locked --release \
+phase "build Harletty bridge ($BUILD_MODE)"
+CARGO_TARGET_DIR="$HARLETTY_TARGET_DIR" cargo +"$TOOLCHAIN" build --locked "${PROFILE_ARGS[@]}" \
   --manifest-path "$HARLETTY_DIR/Cargo.toml" \
   -p harletty-bridge
 
+phase "patch and build Omniphony renderer ($BUILD_MODE)"
 git -C "$OMNIP_DIR/omniphony-renderer" apply --check "$OMNIP_PATCH"
 git -C "$OMNIP_DIR/omniphony-renderer" apply "$OMNIP_PATCH"
-cargo +"$TOOLCHAIN" build --release \
+CARGO_TARGET_DIR="$OMNIP_TARGET_DIR" cargo +"$TOOLCHAIN" build "${PROFILE_ARGS[@]}" \
   --manifest-path "$OMNIP_DIR/omniphony-renderer/Cargo.toml" \
   -p omniphony-renderer
 
 JOC_FIXTURE="$HARLETTY_DIR/harletty/tests/fixtures/joc_atmos_1s.eac3"
 IEC_FILE="$WORK_DIR/joc_atmos_1s.spdif"
 PLAIN_IEC_FILE="$WORK_DIR/plain_eac3_5_1.spdif"
-BRIDGE_LIB="$HARLETTY_DIR/target/release/libharletty_bridge.so"
-ORENDER="$OMNIP_DIR/omniphony-renderer/target/release/orender"
+BRIDGE_LIB="$HARLETTY_TARGET_DIR/$PROFILE_DIR/libharletty_bridge.so"
+ORENDER="$OMNIP_TARGET_DIR/$PROFILE_DIR/orender"
 LAYOUT="$OMNIP_DIR/layouts/7.1.4.yaml"
 RENDER_OUT="$WORK_DIR/joc_atmos_7_1_4.f32"
 RENDER_LOG="$WORK_DIR/orender-joc.log"
@@ -84,6 +120,7 @@ for path in "$JOC_FIXTURE" "$BRIDGE_LIB" "$ORENDER" "$LAYOUT"; do
   [[ -f "$path" ]] || { echo "expected validation input/build product missing: $path" >&2; exit 1; }
 done
 
+phase "create and verify IEC61937 carriers"
 ffmpeg -nostdin -hide_banner -loglevel error -y \
   -i "$JOC_FIXTURE" -map 0:a:0 -c:a copy -f spdif "$IEC_FILE"
 
@@ -191,11 +228,15 @@ fn main() {
 }
 EOF_RS
 
-cargo +"$TOOLCHAIN" run --quiet --release --manifest-path "$HARNESS_DIR/Cargo.toml" -- \
+phase "run plain E-AC-3 negative control through real bridge"
+CARGO_TARGET_DIR="$HARNESS_TARGET_DIR" cargo +"$TOOLCHAIN" run --quiet "${PROFILE_ARGS[@]}" --manifest-path "$HARNESS_DIR/Cargo.toml" -- \
   "$BRIDGE_LIB" "$PLAIN_IEC_FILE" plain
-cargo +"$TOOLCHAIN" run --quiet --release --manifest-path "$HARNESS_DIR/Cargo.toml" -- \
+
+phase "run real JOC IEC61937 object-metadata harness"
+CARGO_TARGET_DIR="$HARNESS_TARGET_DIR" cargo +"$TOOLCHAIN" run --quiet "${PROFILE_ARGS[@]}" --manifest-path "$HARNESS_DIR/Cargo.toml" -- \
   "$BRIDGE_LIB" "$IEC_FILE" objects
 
+phase "render real JOC IEC61937 fixture to 7.1.4"
 if ! RUST_LOG="${RUST_LOG:-info}" "$ORENDER" "$IEC_FILE" \
   --bridge-path "$BRIDGE_LIB" \
   --enable-vbap \
