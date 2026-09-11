@@ -219,6 +219,12 @@ pub enum StandardLayout {
     /// 5.1.2: FL, FR, FC, LFE, SL, SR, TFL, TFR.
     #[serde(rename = "5.1.2")]
     FiveOneTwo,
+    /// 5.1.4: FL, FR, FC, LFE, SL, SR, TFL, TFR, TRL, TRR.
+    #[serde(rename = "5.1.4")]
+    FiveOneFour,
+    /// 7.1.2: FL, FR, FC, LFE, SL, SR, SBL, SBR, TFL, TFR.
+    #[serde(rename = "7.1.2")]
+    SevenOneTwo,
     /// 7.1.4: FL, FR, FC, LFE, SL, SR, SBL, SBR, TFL, TFR, TRL, TRR.
     #[serde(rename = "7.1.4")]
     SevenOneFour,
@@ -257,6 +263,30 @@ impl StandardLayout {
                 ChannelRole::LowFrequencyEffects,
                 ChannelRole::SurroundLeft,
                 ChannelRole::SurroundRight,
+                ChannelRole::TopFrontLeft,
+                ChannelRole::TopFrontRight,
+            ],
+            Self::FiveOneFour => &[
+                ChannelRole::FrontLeft,
+                ChannelRole::FrontRight,
+                ChannelRole::FrontCenter,
+                ChannelRole::LowFrequencyEffects,
+                ChannelRole::SurroundLeft,
+                ChannelRole::SurroundRight,
+                ChannelRole::TopFrontLeft,
+                ChannelRole::TopFrontRight,
+                ChannelRole::TopRearLeft,
+                ChannelRole::TopRearRight,
+            ],
+            Self::SevenOneTwo => &[
+                ChannelRole::FrontLeft,
+                ChannelRole::FrontRight,
+                ChannelRole::FrontCenter,
+                ChannelRole::LowFrequencyEffects,
+                ChannelRole::SurroundLeft,
+                ChannelRole::SurroundRight,
+                ChannelRole::SurroundBackLeft,
+                ChannelRole::SurroundBackRight,
                 ChannelRole::TopFrontLeft,
                 ChannelRole::TopFrontRight,
             ],
@@ -405,6 +435,40 @@ mod tests {
                 ChannelRole::TopFrontRight,
                 ChannelRole::TopRearLeft,
                 ChannelRole::TopRearRight,
+            ]
+        );
+    }
+
+    #[test]
+    fn height_layout_variants_have_canonical_orders() {
+        assert_eq!(
+            StandardLayout::FiveOneFour.canonical_roles(),
+            &[
+                ChannelRole::FrontLeft,
+                ChannelRole::FrontRight,
+                ChannelRole::FrontCenter,
+                ChannelRole::LowFrequencyEffects,
+                ChannelRole::SurroundLeft,
+                ChannelRole::SurroundRight,
+                ChannelRole::TopFrontLeft,
+                ChannelRole::TopFrontRight,
+                ChannelRole::TopRearLeft,
+                ChannelRole::TopRearRight,
+            ]
+        );
+        assert_eq!(
+            StandardLayout::SevenOneTwo.canonical_roles(),
+            &[
+                ChannelRole::FrontLeft,
+                ChannelRole::FrontRight,
+                ChannelRole::FrontCenter,
+                ChannelRole::LowFrequencyEffects,
+                ChannelRole::SurroundLeft,
+                ChannelRole::SurroundRight,
+                ChannelRole::SurroundBackLeft,
+                ChannelRole::SurroundBackRight,
+                ChannelRole::TopFrontLeft,
+                ChannelRole::TopFrontRight,
             ]
         );
     }
