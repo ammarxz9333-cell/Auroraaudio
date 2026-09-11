@@ -8,3 +8,7 @@ rust-version.workspace = true
 
 [dependencies]
 aurora-realtime-engine = { path = "../aurora-realtime-engine" }
+
+[dev-dependencies]
+aurora-core = { path = "../aurora-core" }
+aurora-scene = { path = "../aurora-scene" }
