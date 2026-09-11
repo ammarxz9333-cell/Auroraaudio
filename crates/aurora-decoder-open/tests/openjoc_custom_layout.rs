@@ -1,7 +1,13 @@
 use std::{fs, path::PathBuf};
 
+use aurora_alsa_output::{encode_f32_to_s32_padded, f32_to_s32};
+use aurora_core::ChannelRole;
+use aurora_dsp_basic::output::{OutputDspConfig, SpeakerPostProcessor};
+use aurora_dsp_basic::output_layout::{
+    OutputChannelClass, OutputChannelSpec, OutputLayoutContract,
+};
 use openjoc_api::{
-    OpenJocConfig, OpenJocPacket, OpenJocSession, PcmSampleFormat, RenderMode,
+    OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, PcmSampleFormat, RenderMode,
 };
 use openjoc_eac3::{parse_access_unit_bounds, AccessUnitParse};
 use openjoc_scene::{SpeakerGeometry, SpeakerLayout};
@@ -39,6 +45,25 @@ fn custom_sixteen_channel_layout() -> SpeakerLayout {
     .expect("validation geometry must satisfy the pinned OpenJOC layout contract")
 }
 
+fn output_layout_contract() -> OutputLayoutContract {
+    let channels = LABELS
+        .iter()
+        .enumerate()
+        .map(|(index, label)| OutputChannelSpec {
+            role: ChannelRole::Custom((*label).to_owned()),
+            class: if index == 3 {
+                OutputChannelClass::Lfe
+            } else if index >= 11 {
+                OutputChannelClass::Height
+            } else {
+                OutputChannelClass::Bed
+            },
+        })
+        .collect();
+    OutputLayoutContract::custom(LAYOUT_NAME, channels)
+        .expect("Aurora output contract must accept the explicit custom lane order")
+}
+
 fn custom_session() -> OpenJocSession {
     let config = OpenJocConfig::default().with_speaker_layout(custom_sixteen_channel_layout());
     OpenJocSession::new(config).expect("create OpenJOC custom speaker session")
@@ -58,6 +83,45 @@ fn assert_output_contract(session: &OpenJocSession) {
     assert_eq!(labels, LABELS);
 }
 
+fn consume_rendered_frame(
+    mut frame: OpenJocPcmFrame,
+    post: &mut SpeakerPostProcessor,
+) -> usize {
+    assert_eq!(frame.layout_name, LAYOUT_NAME);
+    assert_eq!(frame.channel_count, CHANNELS);
+    assert_eq!(frame.sample_format, PcmSampleFormat::F32);
+    assert_eq!(frame.render_mode, RenderMode::Speaker);
+    assert_eq!(frame.sample_rate, 48_000);
+    assert_eq!(
+        frame
+            .channel_labels
+            .iter()
+            .map(String::as_str)
+            .collect::<Vec<_>>(),
+        LABELS
+    );
+    assert!(frame.sample_count > 0);
+    assert_eq!(frame.interleaved_f32.len(), frame.sample_count * CHANNELS);
+    assert!(frame.interleaved_f32.iter().all(|sample| sample.is_finite()));
+
+    post.process_block(&mut frame.interleaved_f32)
+        .expect("dynamic Aurora DSP must accept the 16-channel rendered block");
+    assert!(frame.interleaved_f32.iter().all(|sample| sample.is_finite()));
+
+    let encoded = encode_f32_to_s32_padded(&frame.interleaved_f32, CHANNELS, CHANNELS)
+        .expect("16-channel Aurora PCM must enter TDM staging without padding or truncation");
+    assert_eq!(encoded.len(), frame.interleaved_f32.len());
+    for (source, staged) in frame
+        .interleaved_f32
+        .iter()
+        .copied()
+        .zip(encoded.iter().copied())
+    {
+        assert_eq!(staged, f32_to_s32(source).expect("DSP output must remain finite"));
+    }
+    frame.sample_count
+}
+
 #[test]
 fn pinned_openjoc_accepts_explicit_sixteen_channel_geometry() {
     let session = custom_session();
@@ -66,7 +130,7 @@ fn pinned_openjoc_accepts_explicit_sixteen_channel_geometry() {
 
 #[test]
 #[ignore = "requires exact OpenJOC synthetic joc.ec3 fixture via AURORA_OPENJOC_SYNTHETIC_FIXTURE"]
-fn pinned_openjoc_renders_synthetic_joc_to_sixteen_channel_pcm() {
+fn pinned_openjoc_renders_synthetic_joc_through_aurora_sixteen_channel_output() {
     let path = PathBuf::from(
         std::env::var(FIXTURE_ENV)
             .unwrap_or_else(|_| panic!("set {FIXTURE_ENV} to the verified OpenJOC joc.ec3 fixture")),
@@ -75,6 +139,11 @@ fn pinned_openjoc_renders_synthetic_joc_to_sixteen_channel_pcm() {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     let mut session = custom_session();
     assert_output_contract(&session);
+    let mut post = SpeakerPostProcessor::new_for_layout(
+        OutputDspConfig::default(),
+        output_layout_contract(),
+    )
+    .expect("construct dynamic 16-channel Aurora output DSP");
 
     let mut offset = 0_usize;
     let mut rendered_frames = 0_usize;
@@ -85,7 +154,9 @@ fn pinned_openjoc_renders_synthetic_joc_to_sixteen_channel_pcm() {
             .expect("parse complete synthetic JOC access unit")
         {
             AccessUnitParse::Complete(length) => length,
-            AccessUnitParse::NeedMore => panic!("verified synthetic fixture ended with a partial access unit"),
+            AccessUnitParse::NeedMore => {
+                panic!("verified synthetic fixture ended with a partial access unit")
+            }
         };
         assert!(length > 0 && length <= remaining.len());
         let unit = &remaining[..length];
@@ -98,28 +169,18 @@ fn pinned_openjoc_renders_synthetic_joc_to_sixteen_channel_pcm() {
             })
             .expect("decode/render custom-layout synthetic JOC access unit");
         while let Some(frame) = session.receive_frame() {
-            assert_eq!(frame.layout_name, LAYOUT_NAME);
-            assert_eq!(frame.channel_count, CHANNELS);
-            assert_eq!(frame.sample_format, PcmSampleFormat::F32);
-            assert_eq!(frame.render_mode, RenderMode::Speaker);
-            assert_eq!(frame.sample_rate, 48_000);
-            assert_eq!(frame.channel_labels.iter().map(String::as_str).collect::<Vec<_>>(), LABELS);
-            assert_eq!(frame.interleaved_f32.len(), frame.sample_count * CHANNELS);
-            assert!(frame.interleaved_f32.iter().all(|sample| sample.is_finite()));
+            rendered_samples = rendered_samples
+                .saturating_add(consume_rendered_frame(frame, &mut post));
             rendered_frames = rendered_frames.saturating_add(1);
-            rendered_samples = rendered_samples.saturating_add(frame.sample_count);
         }
         offset = offset.saturating_add(length);
     }
 
     session.drain().expect("drain custom-layout OpenJOC tail");
     while let Some(frame) = session.receive_frame() {
-        assert_eq!(frame.layout_name, LAYOUT_NAME);
-        assert_eq!(frame.channel_count, CHANNELS);
-        assert_eq!(frame.interleaved_f32.len(), frame.sample_count * CHANNELS);
-        assert!(frame.interleaved_f32.iter().all(|sample| sample.is_finite()));
+        rendered_samples =
+            rendered_samples.saturating_add(consume_rendered_frame(frame, &mut post));
         rendered_frames = rendered_frames.saturating_add(1);
-        rendered_samples = rendered_samples.saturating_add(frame.sample_count);
     }
 
     assert_eq!(offset, fixture.len());
