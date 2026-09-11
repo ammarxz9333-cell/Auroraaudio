@@ -219,6 +219,15 @@ name = "aurora-measurement"
 version = "0.1.0"
 
 [[package]]
+name = "aurora-realtime-acceptance"
+version = "0.1.0"
+dependencies = [
+ "aurora-core",
+ "aurora-realtime-engine",
+ "aurora-scene",
+]
+
+[[package]]
 name = "aurora-realtime-audio-api"
 version = "0.1.0"
 dependencies = [
