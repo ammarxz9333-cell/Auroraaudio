@@ -19,4 +19,5 @@ thiserror = { workspace = true }
 [dev-dependencies]
 aurora-alsa-output = { path = "../aurora-alsa-output" }
 aurora-dsp-basic = { path = "../aurora-dsp-basic" }
+aurora-iec61937 = { path = "../aurora-iec61937" }
 openjoc-scene = { git = "https://github.com/chyinan/OpenJOC", rev = "e7e03bc834ac0483770933cdc50ac058b100d1e2", package = "openjoc-scene" }
