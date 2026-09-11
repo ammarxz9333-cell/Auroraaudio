@@ -79,6 +79,9 @@ jobs:
       - name: Clippy dynamic speaker output
         run: cargo clippy --locked -p aurora-speaker-output --all-targets -- -D warnings
 
+      - name: Clippy layout playback runtime
+        run: cargo clippy --locked -p aurora-layout-playback-runtime --all-targets -- -D warnings
+
       - name: Check validation binary
         run: >-
           cargo check --locked -p aurora-cli
