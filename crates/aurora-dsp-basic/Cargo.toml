@@ -18,6 +18,7 @@ thiserror.workspace = true
 
 [dev-dependencies]
 aurora-test-alloc = { path = "../aurora-test-alloc" }
+aurora-alsa-output = { path = "../aurora-alsa-output" }
 criterion.workspace = true
 
 [[bench]]
