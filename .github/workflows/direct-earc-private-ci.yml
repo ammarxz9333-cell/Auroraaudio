@@ -32,7 +32,7 @@ defaults:
 jobs:
   direct-earc-windows:
     if: github.actor == github.repository_owner
-    runs-on: [self-hosted, Windows, X64, aurora-private-ci]
+    runs-on: [self-hosted, Windows, X64]
     timeout-minutes: 25
     steps:
       - name: Configure verified portable GNU linker tools
