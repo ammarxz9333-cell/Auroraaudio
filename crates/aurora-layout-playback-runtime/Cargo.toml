@@ -16,3 +16,6 @@ aurora-encoded-input = { path = "../aurora-encoded-input" }
 aurora-encoded-runtime = { path = "../aurora-encoded-runtime" }
 aurora-speaker-output = { path = "../aurora-speaker-output" }
 thiserror.workspace = true
+
+[dev-dependencies]
+aurora-iec61937 = { path = "../aurora-iec61937" }
