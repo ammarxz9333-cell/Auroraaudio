@@ -7,20 +7,14 @@ on:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
-      - "crates/aurora-layout-playback-runtime/**"
-      - "crates/aurora-speaker-output/**"
-      - "crates/aurora-cli/**"
-      - "crates/aurora-decoder-open/**"
+      - "crates/**"
       - "scripts/validate_layout_runtime.sh"
       - ".github/workflows/layout-runtime-ci.yml"
   pull_request:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
-      - "crates/aurora-layout-playback-runtime/**"
-      - "crates/aurora-speaker-output/**"
-      - "crates/aurora-cli/**"
-      - "crates/aurora-decoder-open/**"
+      - "crates/**"
       - "scripts/validate_layout_runtime.sh"
       - ".github/workflows/layout-runtime-ci.yml"
 
