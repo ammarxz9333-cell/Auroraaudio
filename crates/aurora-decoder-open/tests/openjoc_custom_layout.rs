@@ -32,12 +32,17 @@ fn pinned_openjoc_accepts_explicit_sixteen_channel_geometry() {
     let config = OpenJocConfig::default().with_speaker_layout(layout);
     let session = OpenJocSession::new(config).expect("create OpenJOC custom speaker session");
     let info = session.output_info();
+    let labels = info
+        .channel_labels
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
 
     assert_eq!(info.layout_name, "aurora-custom-16-validation");
     assert_eq!(info.channel_count, 16);
     assert_eq!(
-        info.channel_labels,
-        [
+        labels,
+        vec![
             "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "Lw", "Rw", "Bc", "TFL",
             "TFR", "TML", "TMR", "TRC",
         ]
