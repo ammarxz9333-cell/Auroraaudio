@@ -4,6 +4,11 @@ use aurora_core::{ChannelRole, StandardLayout};
 use thiserror::Error;
 
 pub const MAX_OUTPUT_CHANNELS: usize = 64;
+pub const AURORA_ROLE_FRONT_WIDE_LEFT: &str = "front-wide-left";
+pub const AURORA_ROLE_FRONT_WIDE_RIGHT: &str = "front-wide-right";
+pub const AURORA_ROLE_REAR_SIDE_LEFT: &str = "rear-side-left";
+pub const AURORA_ROLE_REAR_SIDE_RIGHT: &str = "rear-side-right";
+pub const AURORA_ELEVEN_ONE_FOUR_REFERENCE_NAME: &str = "aurora-11.1.4-reference-v1";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum OutputChannelClass {
@@ -64,6 +69,85 @@ impl OutputLayoutContract {
             })
             .collect();
         Self::custom(name, channels)
+    }
+
+    /// Aurora-owned 11.1.4 reference semantics for the wider product path.
+    ///
+    /// This is deliberately not presented as a Dolby, ITU or Samsung channel
+    /// naming standard. It keeps the established Aurora 7.1 bed, adds explicit
+    /// front-wide and rear-side pairs, then retains four canonical height lanes.
+    /// The ordered result is eleven horizontal full-range lanes, one LFE and
+    /// four height lanes (sixteen outputs total).
+    pub fn aurora_eleven_one_four_reference() -> Result<Self, OutputLayoutContractError> {
+        Self::custom(
+            AURORA_ELEVEN_ONE_FOUR_REFERENCE_NAME,
+            vec![
+                OutputChannelSpec {
+                    role: ChannelRole::FrontLeft,
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::FrontRight,
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::FrontCenter,
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::LowFrequencyEffects,
+                    class: OutputChannelClass::Lfe,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::SurroundLeft,
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::SurroundRight,
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::SurroundBackLeft,
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::SurroundBackRight,
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::Custom(AURORA_ROLE_FRONT_WIDE_LEFT.to_owned()),
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::Custom(AURORA_ROLE_FRONT_WIDE_RIGHT.to_owned()),
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::Custom(AURORA_ROLE_REAR_SIDE_LEFT.to_owned()),
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::Custom(AURORA_ROLE_REAR_SIDE_RIGHT.to_owned()),
+                    class: OutputChannelClass::Bed,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::TopFrontLeft,
+                    class: OutputChannelClass::Height,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::TopFrontRight,
+                    class: OutputChannelClass::Height,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::TopRearLeft,
+                    class: OutputChannelClass::Height,
+                },
+                OutputChannelSpec {
+                    role: ChannelRole::TopRearRight,
+                    class: OutputChannelClass::Height,
+                },
+            ],
+        )
     }
 
     pub fn custom(
@@ -193,6 +277,31 @@ mod tests {
         assert_eq!(layout.channel_count(), 12);
         assert_eq!(layout.lfe_index(), Some(3));
         assert_eq!(layout.height_indices(), &[8, 9, 10, 11]);
+    }
+
+    #[test]
+    fn aurora_reference_eleven_one_four_has_explicit_sixteen_lane_identity() {
+        let layout = OutputLayoutContract::aurora_eleven_one_four_reference().unwrap();
+        assert_eq!(layout.name(), AURORA_ELEVEN_ONE_FOUR_REFERENCE_NAME);
+        assert_eq!(layout.channel_count(), 16);
+        assert_eq!(layout.lfe_index(), Some(3));
+        assert_eq!(layout.height_indices(), &[12, 13, 14, 15]);
+        assert_eq!(
+            layout.channels()[8].role,
+            ChannelRole::Custom(AURORA_ROLE_FRONT_WIDE_LEFT.to_owned())
+        );
+        assert_eq!(
+            layout.channels()[9].role,
+            ChannelRole::Custom(AURORA_ROLE_FRONT_WIDE_RIGHT.to_owned())
+        );
+        assert_eq!(
+            layout.channels()[10].role,
+            ChannelRole::Custom(AURORA_ROLE_REAR_SIDE_LEFT.to_owned())
+        );
+        assert_eq!(
+            layout.channels()[11].role,
+            ChannelRole::Custom(AURORA_ROLE_REAR_SIDE_RIGHT.to_owned())
+        );
     }
 
     #[test]
