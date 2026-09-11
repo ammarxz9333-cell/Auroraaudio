@@ -9,7 +9,9 @@
 
 use aurora_core::{AudioFormat, StandardLayout};
 use aurora_decoder_engine::EngineConfig;
-use aurora_decoder_open::openjoc_native::AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT;
+use aurora_decoder_open::openjoc_native::{
+    openjoc_preset_for_standard_layout, AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT,
+};
 use aurora_dsp_basic::output::OutputDspConfig;
 use aurora_dsp_basic::output_layout::{OutputLayoutContract, OutputLayoutContractError};
 use aurora_encoded_input::{EncodedInputConfig, EncodedInputKind};
@@ -47,6 +49,8 @@ impl LayoutPlaybackRuntime {
 
     /// Constructs the runtime for one typed fixed layout and binds the same
     /// identity into the OpenJOC adapter before any compressed input arrives.
+    /// A conflicting legacy string hint is rejected rather than silently
+    /// overwritten so the decoder and DSP boundaries cannot disagree.
     pub fn new_for_standard_layout(
         input_config: EncodedInputConfig,
         mut engine_config: EngineConfig,
@@ -54,6 +58,17 @@ impl LayoutPlaybackRuntime {
         layout: StandardLayout,
         output_dsp: OutputDspConfig,
     ) -> Result<Self, LayoutPlaybackError> {
+        let expected = openjoc_preset_for_standard_layout(layout)
+            .map_err(EncodedRuntimeError::Decoder)?;
+        if let Some(existing) = engine_config.open_decoder.joc_layout_hint {
+            if existing != expected {
+                return Err(LayoutPlaybackError::DecoderLayoutConflict {
+                    expected,
+                    actual: existing,
+                });
+            }
+        }
+
         let output_layout = OutputLayoutContract::for_standard(layout)?;
         engine_config.open_decoder = engine_config
             .open_decoder
