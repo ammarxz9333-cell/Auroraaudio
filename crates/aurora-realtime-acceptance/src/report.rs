@@ -27,8 +27,7 @@ impl From<RealTimeAcceptancePolicy> for RealTimeHealthPolicyV1 {
             max_output_underruns: policy.max_output_underruns,
             max_dropped_blocks: policy.max_dropped_blocks,
             max_p95_budget_usage_percent: policy.max_p95_budget_usage_percent,
-            max_estimated_end_to_end_latency_frames: policy
-                .max_estimated_end_to_end_latency_frames,
+            max_estimated_end_to_end_latency_frames: policy.max_estimated_end_to_end_latency_frames,
             require_callbacks: policy.require_callbacks,
             require_fault_free: policy.require_fault_free,
         }
@@ -169,7 +168,10 @@ mod tests {
         assert!(!document.accepted);
         assert_eq!(document.metrics.output_underruns, 1);
         assert_eq!(document.metrics.dropped_blocks, 1);
-        assert_eq!(document.metrics.fault_code, RealTimeFault::OutputBuffer as u64);
+        assert_eq!(
+            document.metrics.fault_code,
+            RealTimeFault::OutputBuffer as u64
+        );
         assert!(document
             .violations
             .iter()
