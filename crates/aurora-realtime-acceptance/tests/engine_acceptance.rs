@@ -3,7 +3,8 @@ use aurora_realtime_acceptance::{
     evaluate_realtime_acceptance, RealTimeAcceptancePolicy, RealTimeAcceptanceViolation,
 };
 use aurora_realtime_engine::{
-    BasicRendererMode, ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RealTimeFault, TestSignal,
+    BasicRendererMode, ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RealTimeFault,
+    TestSignal,
 };
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
 

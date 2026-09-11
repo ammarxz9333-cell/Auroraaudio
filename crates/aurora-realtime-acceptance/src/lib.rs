@@ -122,10 +122,8 @@ pub fn evaluate_realtime_acceptance(
         });
     }
 
-    let p95_budget_usage_percent = budget_usage_percent(
-        metrics.p95_callback_duration,
-        metrics.block_duration_budget,
-    );
+    let p95_budget_usage_percent =
+        budget_usage_percent(metrics.p95_callback_duration, metrics.block_duration_budget);
     if metrics.callback_count > 0 && p95_budget_usage_percent.is_none() {
         violations.push(RealTimeAcceptanceViolation::MissingBlockBudget);
     }
@@ -157,10 +155,7 @@ pub fn evaluate_realtime_acceptance(
     }
 }
 
-fn budget_usage_percent(
-    callback: std::time::Duration,
-    budget: std::time::Duration,
-) -> Option<f64> {
+fn budget_usage_percent(callback: std::time::Duration, budget: std::time::Duration) -> Option<f64> {
     if budget.is_zero() {
         return None;
     }
@@ -184,10 +179,8 @@ mod tests {
 
     #[test]
     fn strict_default_accepts_clean_metrics() {
-        let report = evaluate_realtime_acceptance(
-            &clean_metrics(),
-            RealTimeAcceptancePolicy::default(),
-        );
+        let report =
+            evaluate_realtime_acceptance(&clean_metrics(), RealTimeAcceptancePolicy::default());
         assert!(report.accepted);
         assert!(report.violations.is_empty());
         assert_eq!(report.p95_budget_usage_percent, Some(40.0));
@@ -200,10 +193,7 @@ mod tests {
         metrics.output_underruns = 3;
         metrics.dropped_blocks = 4;
         metrics.fault = RealTimeFault::Renderer;
-        let report = evaluate_realtime_acceptance(
-            &metrics,
-            RealTimeAcceptancePolicy::default(),
-        );
+        let report = evaluate_realtime_acceptance(&metrics, RealTimeAcceptancePolicy::default());
         assert!(!report.accepted);
         assert!(report
             .violations
@@ -280,10 +270,7 @@ mod tests {
     fn missing_block_budget_is_rejected_after_callbacks() {
         let mut metrics = clean_metrics();
         metrics.block_duration_budget = Duration::ZERO;
-        let report = evaluate_realtime_acceptance(
-            &metrics,
-            RealTimeAcceptancePolicy::default(),
-        );
+        let report = evaluate_realtime_acceptance(&metrics, RealTimeAcceptancePolicy::default());
         assert!(report
             .violations
             .contains(&RealTimeAcceptanceViolation::MissingBlockBudget));
