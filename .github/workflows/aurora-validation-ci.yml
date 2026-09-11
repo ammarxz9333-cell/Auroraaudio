@@ -82,6 +82,24 @@ jobs:
       - name: Clippy layout playback runtime
         run: cargo clippy --locked -p aurora-layout-playback-runtime --all-targets -- -D warnings
 
+      - name: Check wider-layout appliance
+        run: >-
+          cargo check --locked -p aurora-cli
+          --no-default-features --features layout-runtime
+          --bin aurora-layout-runtime
+
+      - name: Test wider-layout appliance
+        run: >-
+          cargo test --locked -p aurora-cli
+          --no-default-features --features layout-runtime
+          --bin aurora-layout-runtime
+
+      - name: Clippy wider-layout appliance
+        run: >-
+          cargo clippy --locked -p aurora-cli
+          --no-default-features --features layout-runtime
+          --bin aurora-layout-runtime -- -D warnings
+
       - name: Check validation binary
         run: >-
           cargo check --locked -p aurora-cli
