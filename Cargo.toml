@@ -23,6 +23,7 @@ members = [
     "crates/aurora-runtime-assembly",
     "crates/aurora-runtime-inspection",
     "crates/aurora-realtime-engine",
+    "crates/aurora-realtime-acceptance",
     "crates/aurora-measurement",
     "crates/aurora-cli",
 ]
