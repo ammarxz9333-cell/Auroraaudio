@@ -2,20 +2,12 @@ name: Private Self-Hosted CI
 
 on:
   workflow_dispatch:
-  pull_request:
-    branches:
-      - main-v2
-    types:
-      - opened
-      - synchronize
-      - reopened
-      - ready_for_review
 
 permissions:
   contents: read
 
 concurrency:
-  group: private-self-hosted-${{ github.event.pull_request.number || github.ref }}
+  group: private-self-hosted-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -33,13 +25,8 @@ defaults:
 jobs:
   windows-stable-self-hosted:
     if: >-
-      (github.event_name == 'workflow_dispatch' &&
-       github.ref == 'refs/heads/main-v2' &&
-       github.actor == github.repository_owner) ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository &&
-       github.event.pull_request.user.login == github.repository_owner &&
-       github.actor == github.repository_owner)
+      github.ref == 'refs/heads/main-v2' &&
+      github.actor == github.repository_owner
     runs-on: [self-hosted, Windows, X64, aurora-private-ci]
     timeout-minutes: 45
     steps:
@@ -131,13 +118,8 @@ jobs:
 
   msrv-1-78-self-hosted:
     if: >-
-      (github.event_name == 'workflow_dispatch' &&
-       github.ref == 'refs/heads/main-v2' &&
-       github.actor == github.repository_owner) ||
-      (github.event_name == 'pull_request' &&
-       github.event.pull_request.head.repo.full_name == github.repository &&
-       github.event.pull_request.user.login == github.repository_owner &&
-       github.actor == github.repository_owner)
+      github.ref == 'refs/heads/main-v2' &&
+      github.actor == github.repository_owner
     runs-on: [self-hosted, Windows, X64, aurora-private-ci]
     timeout-minutes: 35
     steps:
