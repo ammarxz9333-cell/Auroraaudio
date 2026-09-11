@@ -14,7 +14,9 @@ use aurora_dsp_basic::output_layout::{
     AURORA_ROLE_FRONT_WIDE_RIGHT, AURORA_ROLE_REAR_SIDE_LEFT, AURORA_ROLE_REAR_SIDE_RIGHT,
 };
 use aurora_iec61937::{BurstParser, CodecFilter, TransportCodec, DATA_TYPE_EAC3};
-use openjoc_api::{OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession};
+use openjoc_api::{
+    OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, PcmSampleFormat, RenderMode,
+};
 use openjoc_eac3::{parse_access_unit_bounds, AccessUnitParse};
 use openjoc_scene::{SpeakerGeometry, SpeakerLayout};
 
@@ -74,7 +76,9 @@ fn split_access_units(stream: &[u8]) -> Vec<Vec<u8>> {
             .expect("parse synthetic JOC access-unit boundary")
         {
             AccessUnitParse::Complete(length) => length,
-            AccessUnitParse::NeedMore => panic!("synthetic fixture ended with a partial access unit"),
+            AccessUnitParse::NeedMore => {
+                panic!("synthetic fixture ended with a partial access unit")
+            }
         };
         assert!(length > 0 && length <= remaining.len());
         units.push(remaining[..length].to_vec());
@@ -99,6 +103,7 @@ fn canonical_eac3_period(payload: &[u8]) -> Vec<u8> {
         word.swap(0, 1);
     }
     burst.extend_from_slice(&wire);
+    assert!(burst.len() <= EAC3_PERIOD_BYTES);
     burst.resize(EAC3_PERIOD_BYTES, 0);
     burst
 }
@@ -106,12 +111,16 @@ fn canonical_eac3_period(payload: &[u8]) -> Vec<u8> {
 fn consume_frame(mut frame: OpenJocPcmFrame, post: &mut SpeakerPostProcessor) -> usize {
     assert_eq!(frame.layout_name, AURORA_ELEVEN_ONE_FOUR_REFERENCE_NAME);
     assert_eq!(frame.channel_count, CHANNELS);
+    assert_eq!(frame.sample_format, PcmSampleFormat::F32);
+    assert_eq!(frame.sample_rate, 48_000);
+    assert_eq!(frame.render_mode, RenderMode::Speaker);
     let labels = frame
         .channel_labels
         .iter()
         .map(String::as_str)
         .collect::<Vec<_>>();
     assert_eq!(labels.as_slice(), LABELS.as_slice());
+    assert!(frame.sample_count > 0);
     assert_eq!(frame.interleaved_f32.len(), frame.sample_count * CHANNELS);
     assert!(frame.interleaved_f32.iter().all(|sample| sample.is_finite()));
     post.process_block(&mut frame.interleaved_f32)
@@ -168,7 +177,10 @@ fn canonical_earc_carrier_reaches_aurora_eleven_one_four_reference_tdm16() {
                 observation.carrier_offset_bytes,
                 (observed_units * EAC3_PERIOD_BYTES) as u64
             );
-            assert_eq!(observation.burst.payload, units[observed_units]);
+            assert_eq!(
+                observation.burst.payload.as_slice(),
+                units[observed_units].as_slice()
+            );
             session
                 .push_packet(OpenJocPacket {
                     data: &observation.burst.payload,
@@ -178,7 +190,8 @@ fn canonical_earc_carrier_reaches_aurora_eleven_one_four_reference_tdm16() {
                 })
                 .expect("render transport-authenticated JOC access unit");
             while let Some(frame) = session.receive_frame() {
-                rendered_samples = rendered_samples.saturating_add(consume_frame(frame, &mut post));
+                rendered_samples =
+                    rendered_samples.saturating_add(consume_frame(frame, &mut post));
             }
             observed_units = observed_units.saturating_add(1);
         }
