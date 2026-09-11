@@ -1,0 +1,107 @@
+name: OpenJOC Speaker Contract CI
+
+on:
+  push:
+    branches:
+      - codex/openjoc-speaker-fail-closed
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/aurora-decoder-open/**"
+      - "crates/aurora-iec61937/**"
+      - "crates/aurora-dsp-basic/**"
+      - "crates/aurora-alsa-output/**"
+      - ".github/workflows/openjoc-speaker-contract-ci.yml"
+  pull_request:
+    paths:
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "crates/aurora-decoder-open/**"
+      - "crates/aurora-iec61937/**"
+      - "crates/aurora-dsp-basic/**"
+      - "crates/aurora-alsa-output/**"
+      - ".github/workflows/openjoc-speaker-contract-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: openjoc-speaker-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  openjoc-speaker-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      OPENJOC_REV: e7e03bc834ac0483770933cdc50ac058b100d1e2
+      OPENJOC_FIXTURE_BLOB: 4a47d79c1af717c7007e0398d01266867a3a9a49
+      OPENJOC_FIXTURE_SHA256: 54b48754b915cef97c13752de5eace4a219da6599cdfcf26f92b5b6fffc6e3e4
+      AURORA_OPENJOC_SYNTHETIC_FIXTURE: /tmp/openjoc-joc.ec3
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.85.0
+        with:
+          components: rustfmt, clippy
+
+      - name: Install Linux audio dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libasound2-dev pkg-config ffmpeg
+
+      - name: Generate validation lockfile
+        run: |
+          cargo generate-lockfile
+          cargo metadata --format-version 1 --locked > /tmp/aurora-metadata.json
+
+      - name: Check changed OpenJOC production adapter formatting
+        run: rustfmt --edition 2021 --check crates/aurora-decoder-open/src/openjoc_native.rs
+
+      - name: Check OpenJOC decoder adapter
+        run: cargo check --locked -p aurora-decoder-open --all-targets
+
+      - name: Test OpenJOC decoder adapter
+        run: cargo test --locked -p aurora-decoder-open
+
+      - name: Clippy OpenJOC decoder adapter
+        run: cargo clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
+
+      - name: Fetch and verify pinned synthetic JOC fixture
+        run: |
+          curl --fail --location --retry 3 \
+            --output "$AURORA_OPENJOC_SYNTHETIC_FIXTURE" \
+            "https://raw.githubusercontent.com/chyinan/OpenJOC/$OPENJOC_REV/crates/openjoc-wasm/testdata/joc.ec3"
+          actual_blob="$(git hash-object "$AURORA_OPENJOC_SYNTHETIC_FIXTURE")"
+          test "$actual_blob" = "$OPENJOC_FIXTURE_BLOB" || {
+            echo "OpenJOC synthetic fixture identity mismatch: expected $OPENJOC_FIXTURE_BLOB got $actual_blob" >&2
+            exit 1
+          }
+          actual_sha256="$(sha256sum "$AURORA_OPENJOC_SYNTHETIC_FIXTURE" | awk '{print $1}')"
+          test "$actual_sha256" = "$OPENJOC_FIXTURE_SHA256" || {
+            echo "OpenJOC synthetic fixture SHA-256 mismatch: expected $OPENJOC_FIXTURE_SHA256 got $actual_sha256" >&2
+            exit 1
+          }
+
+      - name: Prove production OpenJOC adapter renders JOC
+        run: |
+          cargo test --locked -p aurora-decoder-open \
+            --test openjoc_synthetic_fixture \
+            synthetic_openjoc_fixture_renders_aurora_7_1_4 \
+            -- --ignored --exact
+
+      - name: Prove JOC to Aurora 11.1.4 to TDM16
+        run: |
+          cargo test --locked -p aurora-decoder-open \
+            --test openjoc_custom_layout \
+            pinned_openjoc_renders_synthetic_joc_through_aurora_sixteen_channel_output \
+            -- --ignored --exact
+
+      - name: Prove IEC61937 JOC to Aurora 11.1.4 to TDM16
+        run: |
+          cargo test --locked -p aurora-decoder-open \
+            --test openjoc_earc_reference_layout \
+            canonical_earc_carrier_reaches_aurora_eleven_one_four_reference_tdm16 \
+            -- --ignored --exact
