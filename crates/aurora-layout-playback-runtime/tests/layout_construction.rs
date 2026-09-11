@@ -37,6 +37,28 @@ fn canonical_seven_one_four_constructor_remains_available() {
 }
 
 #[test]
+fn standard_layout_constructor_rejects_conflicting_decoder_layout() {
+    let mut engine = EngineConfig::default();
+    engine.open_decoder.joc_layout_hint = Some("5.1.2");
+
+    let result = LayoutPlaybackRuntime::new_for_standard_layout(
+        direct_earc_input(),
+        engine,
+        format(12),
+        StandardLayout::SevenOneFour,
+        OutputDspConfig::default(),
+    );
+
+    assert!(matches!(
+        result,
+        Err(LayoutPlaybackError::DecoderLayoutConflict {
+            expected: "7.1.4",
+            actual: "5.1.2",
+        })
+    ));
+}
+
+#[test]
 fn aurora_eleven_one_four_reference_constructor_binds_sixteen_lanes() {
     let runtime = LayoutPlaybackRuntime::new_for_aurora_eleven_one_four_reference(
         direct_earc_input(),
