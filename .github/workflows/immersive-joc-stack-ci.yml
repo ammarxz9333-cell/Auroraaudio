@@ -7,14 +7,12 @@ on:
       - main-v2
     paths:
       - "config/external-components-v1.json"
-      - "platform/s6/patches/omniphony-v0.5.2-low-latency-stdout.patch"
-      - "platform/s6/scripts/test-immersive-joc-stack.sh"
+      - "validation/immersive/**"
       - ".github/workflows/immersive-joc-stack-ci.yml"
   pull_request:
     paths:
       - "config/external-components-v1.json"
-      - "platform/s6/patches/omniphony-v0.5.2-low-latency-stdout.patch"
-      - "platform/s6/scripts/test-immersive-joc-stack.sh"
+      - "validation/immersive/**"
       - ".github/workflows/immersive-joc-stack-ci.yml"
 
 permissions:
@@ -34,4 +32,4 @@ jobs:
       - name: Install host audio tooling
         run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev
       - name: Validate real E-AC-3 JOC through IEC61937, Harletty, and Omniphony 7.1.4
-        run: bash platform/s6/scripts/test-immersive-joc-stack.sh
+        run: bash validation/immersive/test-joc-stack.sh

@@ -1,61 +1,21 @@
-# Third-Party Adapter Layer
+# Third-party and platform adapters
 
-Milestone 0D creates adapter crates only. Aurora does not copy third-party source into the repository and does not link third-party decoder, renderer, or DSP code by default.
+Aurora keeps third-party projects and platform integrations behind explicit adapter boundaries.
 
-The reviewed selection record is `config/external-components-v1.json`; the integration order and promotion gates are documented in `docs/upstream-component-plan.md`. Candidate entries are not runtime dependencies and do not imply codec, hardware, or production validation.
+## Adapter classes
 
-## Adapter Policy
+- **Decoder adapters** translate encoded/structured inputs into Aurora channel/object data.
+- **Renderer adapters** translate Aurora scene/audio data into an external rendering engine and return PCM.
+- **DSP adapters** pass PCM/configuration through an external processing engine.
+- **Audio I/O adapters** expose host or platform audio endpoints through Aurora's generic interfaces.
 
-- Adapters implement Aurora-owned traits.
-- Third-party tools should run out-of-process where practical.
-- Adapter-specific Cargo features are disabled by default.
-- `aurora-core` must compile and test without any adapter crate.
-- Commercial use requires a separate license and patent review.
+## Rules
 
-## CamillaDSP
+1. No adapter may redefine Aurora's core scene/channel semantics.
+2. External versions and licenses must be pinned or documented.
+3. Adapter failure must be explicit; no silent substitution with a weaker mode.
+4. Core crates may not import device-specific SDKs or filesystem layouts.
+5. A platform adapter must be removable without breaking the software core.
+6. Protected-media access and DRM circumvention are out of scope.
 
-- Crate: `aurora-dsp-camilladsp`
-- Aurora trait: `aurora_dsp_api::DspEngine`
-- Cargo feature: `camilladsp-process`
-- Integration style: generated CamillaDSP YAML plus offline file processing through an external process.
-- Maturity: functional offline adapter.
-- Production readiness: not production-ready.
-- Commercial risk: medium; CamillaDSP licensing and deployment obligations must be reviewed before redistribution.
-- Source policy: do not fork or vendor CamillaDSP source.
-- Executable discovery order: explicit `--camilladsp-path`, `AURORA_CAMILLADSP_PATH`, then `PATH`.
-- Supported initial controls: channel count, sample rate, WAV input/output, per-channel gain, mute, polarity inversion, delay, high-pass, low-pass, and parametric EQ.
-- Process safety: invoked without shell concatenation, stdout/stderr captured, timeout enforced, output WAV validated.
-- Local validation: tested against CamillaDSP 4.1.3 using `WavFile` capture, `File` playback with `wav_header: true`, sample-based delays, and per-channel filter pipelines.
-
-## IAMF / libiamf
-
-- Crate: `aurora-decoder-iamf`
-- Aurora trait: `aurora_decoder_api::Decoder`
-- Cargo feature: `libiamf-process`
-- Integration style: preferred open immersive-audio decoder through an external libiamf-compatible process.
-- Maturity: preferred open adapter candidate.
-- Production readiness: not production-ready.
-- Commercial risk: medium; codec, patent, and distribution posture must be reviewed.
-- Source policy: do not copy libiamf source into Aurora.
-
-## truehdd
-
-- Crate: `aurora-decoder-truehdd`
-- Aurora trait: `aurora_decoder_api::Decoder`
-- Cargo feature: `truehdd-process`
-- Integration style: experimental offline-only external process if ever enabled.
-- Maturity: experimental/offline-only.
-- Production readiness: not production-ready.
-- Commercial risk: high; must not be used for product behavior without legal review.
-- Source policy: do not copy truehdd source into Aurora.
-
-## Cavern
-
-- Crate: `aurora-renderer-cavern`
-- Aurora trait: `aurora_renderer_api::Renderer`
-- Cargo feature: `cavern-process`
-- Integration style: disabled-by-default external/process adapter pending license review.
-- Maturity: blocked pending license review.
-- Production readiness: not production-ready.
-- Commercial risk: high until license and redistribution questions are resolved.
-- Source policy: do not copy Cavern source into Aurora.
+The current immersive validation pins Harletty and Omniphony through `config/external-components-v1.json`; this is a validation/integration boundary, not a claim that either project is part of Aurora's core.

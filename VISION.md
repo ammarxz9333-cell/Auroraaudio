@@ -1,24 +1,25 @@
-# Aurora Audio OS Vision
+# Aurora vision
 
-## Why Aurora Exists
+Aurora is an open immersive-audio software engine, not a hardware product definition.
 
-Aurora is an open, modular spatial-audio platform designed around explicit
-interfaces, measurable behavior, and hardware independence. It separates scene
-data, rendering, DSP, file IO, device backends, and third-party adapters so each
-part can be tested and replaced. Aurora should work across speaker brands and
-codec sources without making one vendor's ecosystem the architecture.
+The project exists to make spatial and multichannel audio processing inspectable, replaceable, testable, and portable. Its core must remain independent of any particular phone, SBC, processor, MCU, HDMI/eARC board, DAC, amplifier, or speaker product.
 
-## Ten-Year Direction
+## Principles
 
-Aurora's long direction is reliable real-time spatial rendering, open decoder
-adapters, repeatable room measurement and calibration, carefully engineered
-wireless endpoints, and deployment on embedded and OEM hardware. Progress should
-be driven by reproducible measurements, stable Aurora-owned contracts, and clear
-legal and operational boundaries around external technology.
+1. **Hardware agnostic** — physical devices are optional adapters, never architectural requirements.
+2. **Open interfaces** — Aurora-owned APIs separate decoding, scene representation, rendering, DSP, realtime scheduling, and I/O.
+3. **Evidence before claims** — capabilities are promoted only when deterministic tests or measured evidence exist.
+4. **No silent fallback** — object decoding, channel decoding, and synthetic upmixing remain explicitly distinct modes.
+5. **Portable realtime core** — timing, buffering, drift correction, ASRC, and state machines stay reusable across operating systems and devices.
+6. **Replaceable backends** — external projects may be integrated behind narrow boundaries without becoming the project identity.
+7. **No device lock-in** — deleting or replacing a hardware adapter must not require rewriting the engine.
 
-## Explicit Non-Goals
+## Near-term software milestones
 
-Aurora will not bypass legal codec licensing, copy proprietary implementations,
-or hard-code the platform to one hardware vendor. It will not trade reliability
-for feature count. Features without a verified use case, benchmarks, correctness
-tests, and an understood license posture do not belong in production paths.
+- complete reproducible E-AC-3 JOC -> object metadata -> 7.1.4 software validation;
+- consolidate generic immersive input and renderer adapter contracts;
+- keep deterministic simulation and renderer evidence green across Linux and Windows;
+- improve realtime reliability and latency instrumentation on ordinary host audio devices;
+- expand open immersive formats and renderer backends where licensing permits.
+
+Physical product design is intentionally outside the core roadmap.

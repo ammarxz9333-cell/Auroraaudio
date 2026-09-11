@@ -1,21 +1,19 @@
 # Agent Instructions
 
+- Keep Aurora hardware-agnostic. Core crates must not depend on a named phone, SBC, MCU, HDMI/eARC board, DAC, amplifier, speaker product, boot image, or appliance filesystem.
+- Put optional platform integrations behind narrow adapter boundaries; they must be removable without changing the core audio model or renderer/DSP APIs.
 - Never implement Dolby trademarked or patented codec behavior without explicit legal review.
+- Never add DRM circumvention or protected-media extraction code.
 - Never copy source from repositories with incompatible licenses.
-- Keep all third-party renderers behind adapters.
-- Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace` before completing a task.
+- Keep third-party decoders, renderers, and DSP engines behind adapters with explicit version/license tracking.
+- Run `cargo fmt --all --check`, `cargo clippy --workspace --all-targets --all-features -- -D warnings`, and `cargo test --workspace --all-features` before completing a software change.
 - Update architecture documentation when changing public interfaces.
 - Keep callback-reachable code allocation-free, lock-free, free of formatting/logging, and free of filesystem or process access.
 - Use caller-owned fixed buffers for renderer and DSP steady-state processing; add allocation and capacity guards when changing these paths.
-- Run `cargo bench --workspace` after performance-sensitive real-time changes and report release-mode results.
-- Never label configured, estimated, timestamp-derived, or synthetic latency as measured latency; measured round-trip latency requires accepted physical capture.
-- Treat sample-slip drift correction as proof-of-concept only, never as production asynchronous sample-rate conversion.
-- Never label synthetic correlation, software buffering, or device-reported estimates as measured latency; measured round-trip values require captured physical loopback audio.
-- Label virtual-device and virtual-loopback outputs as simulated truth, never measured hardware results.
+- Run relevant release-mode benchmarks after performance-sensitive realtime changes.
+- Never label configured, estimated, timestamp-derived, simulated, or synthetic latency as measured latency. Measured round-trip latency requires accepted physical loopback capture.
 - Keep accelerated simulation deterministic for equal seeds and allocation-free after scheduler startup.
 - Live callbacks must not allocate, block, log, access files/processes, or silently change selected devices.
-- Prefer small, reviewable commits.
-- Keep the renderer/product-evidence execution lane and the S6 appliance/hardware-enablement lane separate. Do not mix HRTF, IAMF, networking, receiver, multiroom, HDMI/eARC, or appliance expansion into a renderer checkpoint/evidence PR unless the active issue explicitly requires it.
-- The S6 appliance/realtime-MCU baseline landed through PR #83 and may receive dedicated maintenance, hardening, build, or physical-bring-up work. Host/software validation must never be presented as physical S6, eARC, USB, DAC, speaker, thermal, latency, or wireless validation.
-- Do not add new network or hardware product scope to renderer/evaluation/capability PRs merely because the supporting infrastructure exists elsewhere. Existing S6 appliance infrastructure does not need to be removed or rolled back; changes to it must stay in dedicated PRs and preserve its evidence boundaries.
-- New HDMI, ARC, eARC, HDCP, streaming-service capture, wireless speaker streaming, Raspberry Pi deployment, or mobile application scope must be tracked independently from renderer work unless the active issue explicitly requires cross-lane integration. Existing host-validated S6/HDMI/eARC infrastructure is maintained as a separate execution lane.
+- Keep object decoding, channel decoding, and synthetic upmixing as distinct modes. Never silently fall back from one to another.
+- Software validation proves software behavior only. Do not turn CI evidence into claims about physical eARC, USB, DAC, amplifiers, speakers, thermals, or wireless links.
+- Prefer small, reviewable commits and preserve reproducible validation evidence.
