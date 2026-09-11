@@ -26,6 +26,21 @@ use super::{Args, RuntimeStats, SpeakerSink};
 const MIN_QUEUE_DEPTH: usize = 2;
 #[cfg(target_os = "linux")]
 const MAX_QUEUE_DEPTH: usize = 256;
+/// Proven SiI9437/Vibesbox IEC61937 carrier frame rate. The threaded product
+/// path stays fail-closed to this geometry until another recovered-link rate is
+/// captured and validated end to end.
+#[cfg(target_os = "linux")]
+const REFERENCE_CARRIER_RATE_HZ: u32 = 192_000;
+
+#[cfg(target_os = "linux")]
+fn validate_reference_carrier_rate(sample_rate: u32) -> Result<()> {
+    if sample_rate != REFERENCE_CARRIER_RATE_HZ {
+        bail!(
+            "native direct-eARC capture currently requires the proven {REFERENCE_CARRIER_RATE_HZ} Hz carrier rate; got {sample_rate} Hz"
+        );
+    }
+    Ok(())
+}
 
 #[cfg(target_os = "linux")]
 #[derive(Debug, Clone, Copy)]
@@ -172,6 +187,7 @@ pub(super) fn run_direct_native_alsa<S: SpeakerSink>(
     sink: &mut S,
     reporter: &HealthReporter,
 ) -> Result<RuntimeStats> {
+    validate_reference_carrier_rate(args.carrier_rate)?;
     let capture_config = AlsaInputConfig {
         device: device.to_owned(),
         sample_rate: args.carrier_rate,
@@ -259,4 +275,17 @@ pub(super) fn run_direct_native_alsa<S: super::SpeakerSink>(
     _reporter: &aurora_encoded_runtime::health::HealthReporter,
 ) -> Result<super::RuntimeStats> {
     bail!("native ALSA direct-eARC capture requires Linux")
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn native_capture_accepts_only_reference_carrier_rate() {
+        validate_reference_carrier_rate(REFERENCE_CARRIER_RATE_HZ).unwrap();
+        for rate in [0, 48_000, 96_000, 384_000] {
+            assert!(validate_reference_carrier_rate(rate).is_err());
+        }
+    }
 }
