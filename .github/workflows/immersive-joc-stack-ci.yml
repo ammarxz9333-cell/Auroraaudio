@@ -32,6 +32,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - name: Install host audio tooling
-        run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev
       - name: Validate real E-AC-3 JOC through IEC61937, Harletty, and Omniphony 7.1.4
         run: bash platform/s6/scripts/test-immersive-joc-stack.sh
