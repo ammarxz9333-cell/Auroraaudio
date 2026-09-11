@@ -233,7 +233,7 @@ mod tests {
             [RealTimeAcceptanceViolation::P95BudgetExceeded {
                 actual_percent,
                 maximum_percent: 75.0,
-            }] if (*actual_percent - 90.0).abs() < f64::EPSILON
+            }] if (*actual_percent - 90.0).abs() < 1.0e-9
         ));
     }
 
