@@ -8,12 +8,10 @@ rust-version.workspace = true
 
 [dependencies]
 aurora-core = { path = "../aurora-core" }
+aurora-decoder-api = { path = "../aurora-decoder-api" }
 aurora-decoder-engine = { path = "../aurora-decoder-engine" }
 aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-encoded-input = { path = "../aurora-encoded-input" }
 aurora-encoded-runtime = { path = "../aurora-encoded-runtime" }
 aurora-speaker-output = { path = "../aurora-speaker-output" }
 thiserror.workspace = true
-
-[dev-dependencies]
-aurora-decoder-api = { path = "../aurora-decoder-api" }
