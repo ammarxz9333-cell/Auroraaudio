@@ -15,6 +15,9 @@ use openjoc_api::{
     OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus,
     PcmSampleFormat, RenderMode, ValidationProfile,
 };
+use openjoc_scene::{SpeakerGeometry, SpeakerLayout};
+
+pub const AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT: &str = "aurora-11.1.4-reference-v1";
 
 const LABELS_2_0: [&str; 2] = ["FL", "FR"];
 const LABELS_5_1: [&str; 6] = ["FL", "FR", "FC", "LFE", "Ls", "Rs"];
@@ -28,6 +31,24 @@ const LABELS_7_1_2: [&str; 10] = [
 ];
 const LABELS_7_1_4: [&str; 12] = [
     "FL", "FR", "FC", "LFE", "Lb", "Rb", "Ls", "Rs", "TFL", "TFR", "TBL", "TBR",
+];
+const LABELS_AURORA_11_1_4: [&str; 16] = [
+    "FL",
+    "FR",
+    "FC",
+    "LFE",
+    "Ls",
+    "Rs",
+    "Lb",
+    "Rb",
+    "front-wide-left",
+    "front-wide-right",
+    "rear-side-left",
+    "rear-side-right",
+    "TFL",
+    "TFR",
+    "TBL",
+    "TBR",
 ];
 
 const MAP_2_0: [usize; 2] = [0, 1];
@@ -67,15 +88,22 @@ pub fn openjoc_preset_for_standard_layout(
 
 impl crate::OpenDecoderConfig {
     /// Selects a JOC speaker layout through Aurora's typed standard-layout
-    /// identity instead of a caller-authored string. This is the migration path
-    /// away from channel-count inference while preserving the legacy hint field
-    /// for compatibility with older callers.
+    /// identity instead of a caller-authored string.
     pub fn with_standard_joc_layout(
         mut self,
         layout: StandardLayout,
     ) -> Result<Self, DecoderError> {
         self.joc_layout_hint = Some(openjoc_preset_for_standard_layout(layout)?);
         Ok(self)
+    }
+
+    /// Selects Aurora's explicit sixteen-lane reference geometry. The lane
+    /// contract is Aurora-owned and is not presented as a Dolby/ITU/vendor
+    /// channel-naming standard.
+    #[must_use]
+    pub fn with_aurora_eleven_one_four_reference(mut self) -> Self {
+        self.joc_layout_hint = Some(AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT);
+        self
     }
 }
 
@@ -98,14 +126,7 @@ pub struct OpenJocNativeRenderer {
     channel_map: Vec<usize>,
     expected_channel_labels: Vec<String>,
     channels: Vec<VecDeque<f32>>,
-    /// Reused outer staging storage for one transactional receive cycle. The
-    /// PCM vectors themselves remain owned by OpenJOC frames; retaining this
-    /// vector removes an avoidable allocation from every successful JOC AU.
     ready_frames: Vec<OpenJocPcmFrame>,
-    /// Bounded pool of Aurora planar blocks returned by the downstream playback
-    /// runtime. A 40-frame 7.1.4 JOC AU otherwise allocates one outer Vec plus
-    /// twelve channel Vecs for every emitted block. Recycling keeps the exact
-    /// public DecodedFrame contract while removing those steady-state heap hits.
     recycled_planar: Vec<Vec<Vec<f32>>>,
     emitted_frames: u64,
     discontinuity: bool,
@@ -114,6 +135,10 @@ pub struct OpenJocNativeRenderer {
 
 impl OpenJocNativeRenderer {
     pub fn new(output: AudioFormat, layout_hint: Option<&str>) -> Result<Self, DecoderError> {
+        if layout_hint == Some(AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT) {
+            return Self::new_aurora_eleven_one_four_reference(output);
+        }
+
         let layout = match layout_hint {
             Some(name) if !name.trim().is_empty() => name.to_owned(),
             _ => default_layout_for_channels(output.channel_count)
@@ -160,11 +185,96 @@ impl OpenJocNativeRenderer {
             ));
         }
         let channel_map = aurora_channel_map(&info.layout_name, info.channel_count)?;
-        let expected_channel_labels = info.channel_labels;
+        Self::from_session(session, output, channel_map, info.channel_labels, info.layout_name, info.channel_count, info.latency_samples)
+    }
+
+    fn new_aurora_eleven_one_four_reference(output: AudioFormat) -> Result<Self, DecoderError> {
+        if output.channel_count != LABELS_AURORA_11_1_4.len() {
+            return Err(DecoderError::UnsupportedInput(
+                "Aurora 11.1.4 reference layout requires exactly sixteen output channels",
+            ));
+        }
+        let layout = SpeakerLayout::custom(
+            AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT,
+            vec![
+                SpeakerGeometry::full_range("FL", -30.0, 0.0),
+                SpeakerGeometry::full_range("FR", 30.0, 0.0),
+                SpeakerGeometry::full_range("FC", 0.0, 0.0),
+                SpeakerGeometry::lfe("LFE", 0.0, -30.0),
+                SpeakerGeometry::full_range("Ls", -90.0, 0.0),
+                SpeakerGeometry::full_range("Rs", 90.0, 0.0),
+                SpeakerGeometry::full_range("Lb", -150.0, 0.0),
+                SpeakerGeometry::full_range("Rb", 150.0, 0.0),
+                SpeakerGeometry::full_range("front-wide-left", -60.0, 0.0),
+                SpeakerGeometry::full_range("front-wide-right", 60.0, 0.0),
+                SpeakerGeometry::full_range("rear-side-left", -120.0, 0.0),
+                SpeakerGeometry::full_range("rear-side-right", 120.0, 0.0),
+                SpeakerGeometry::full_range("TFL", -30.0, 45.0),
+                SpeakerGeometry::full_range("TFR", 30.0, 45.0),
+                SpeakerGeometry::full_range("TBL", -135.0, 45.0),
+                SpeakerGeometry::full_range("TBR", 135.0, 45.0),
+            ],
+        )
+        .map_err(|e| {
+            DecoderError::ExternalProcess(format!("Aurora 11.1.4 OpenJOC layout failed: {e}"))
+        })?;
+        let mut config = OpenJocConfig::default().with_speaker_layout(layout);
+        config.render_mode = RenderMode::Speaker;
+        config.validation_profile = ValidationProfile::Auto;
+        let mut session = OpenJocSession::new(config)
+            .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC init failed: {e}")))?;
+        session.enable_stage_timing();
+        let info = session.output_info();
+        if info.sample_format != PcmSampleFormat::F32
+            || info.channel_count != output.channel_count
+            || info.layout_name != AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT
+            || info
+                .channel_labels
+                .iter()
+                .map(String::as_str)
+                .ne(LABELS_AURORA_11_1_4.iter().copied())
+        {
+            return Err(DecoderError::UnsupportedInput(
+                "OpenJOC did not preserve the Aurora 11.1.4 reference semantic contract",
+            ));
+        }
+        if let Some(sample_rate) = info.sample_rate {
+            if sample_rate != output.sample_rate {
+                return Err(DecoderError::UnsupportedInput(
+                    "OpenJOC speaker output sample rate does not match Aurora output format",
+                ));
+            }
+        }
+        let channel_map = (0..output.channel_count).collect::<Vec<_>>();
+        Self::from_session(session, output, channel_map, info.channel_labels, info.layout_name, info.channel_count, info.latency_samples)
+    }
+
+    fn from_session(
+        session: OpenJocSession,
+        output: AudioFormat,
+        channel_map: Vec<usize>,
+        expected_channel_labels: Vec<String>,
+        layout_name: String,
+        channel_count: usize,
+        latency_samples: usize,
+    ) -> Result<Self, DecoderError> {
+        if channel_map.len() != channel_count
+            || channel_map.iter().any(|&index| index >= channel_count)
+            || {
+                let mut sorted = channel_map.clone();
+                sorted.sort_unstable();
+                sorted.dedup();
+                sorted.len() != channel_count
+            }
+        {
+            return Err(DecoderError::UnsupportedInput(
+                "OpenJOC-to-Aurora channel map is not a complete permutation",
+            ));
+        }
         let last_info = JocRenderInfo {
-            layout_name: info.layout_name,
-            channel_count: info.channel_count,
-            latency_samples: info.latency_samples,
+            layout_name,
+            channel_count,
+            latency_samples,
             object_count: None,
             complexity_index: None,
             last_decode_time_us: None,
@@ -244,8 +354,6 @@ impl OpenJocNativeRenderer {
         self.take_frames(self.output.block_size.max(1))
     }
 
-    /// Returns a consumed Aurora JOC frame's planar storage to a bounded pool.
-    /// Frames from other backends or unexpected shapes are simply dropped.
     pub fn recycle_frame(&mut self, frame: DecodedFrame) {
         if !frame.objects.is_empty() {
             return;
@@ -265,7 +373,6 @@ impl OpenJocNativeRenderer {
         while let Some(frame) = self.take_block() {
             frames.push(frame);
         }
-
         let remaining = self.channels.first().map(VecDeque::len).unwrap_or(0);
         if self.channels.iter().any(|channel| channel.len() != remaining) {
             return Err(DecoderError::Decode(
@@ -334,11 +441,6 @@ impl OpenJocNativeRenderer {
         })
     }
 
-    /// Receive every currently available OpenJOC frame, validate the entire
-    /// batch first, and only then publish samples into Aurora's channel queues.
-    /// This makes one receive cycle transactional: a malformed/non-finite later
-    /// frame cannot leave partial PCM committed and then cause the same AU to be
-    /// decoded again by the E-AC-3 bed fallback.
     fn collect_output(&mut self) -> Result<(), DecoderError> {
         self.ready_frames.clear();
         while let Some(frame) = self.session.receive_frame() {
@@ -496,12 +598,7 @@ pub const fn default_layout_for_channels(channels: usize) -> Option<&'static str
     match channels {
         2 => Some("2.0"),
         6 => Some("5.1"),
-        // Aurora's current product path is explicitly canonical 7.1.4. Other
-        // OpenJOC presets with the same width must be requested through the
-        // layout hint instead of changing this established product default.
         12 => Some("7.1.4"),
-        // Eight and ten channels are intentionally ambiguous: 7.1 vs 5.1.2,
-        // and 5.1.4 vs 7.1.2 respectively.
         _ => None,
     }
 }
@@ -530,7 +627,17 @@ mod tests {
     }
 
     #[test]
-    fn typed_custom_layout_requires_future_geometry_contract() {
+    fn aurora_reference_builder_uses_explicit_custom_identity() {
+        let config = crate::OpenDecoderConfig::default()
+            .with_aurora_eleven_one_four_reference();
+        assert_eq!(
+            config.joc_layout_hint,
+            Some(AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT)
+        );
+    }
+
+    #[test]
+    fn typed_custom_layout_requires_explicit_geometry_contract() {
         assert!(crate::OpenDecoderConfig::default()
             .with_standard_joc_layout(StandardLayout::Custom)
             .is_err());
@@ -545,6 +652,7 @@ mod tests {
     fn ambiguous_widths_require_an_explicit_verified_layout() {
         assert_eq!(default_layout_for_channels(8), None);
         assert_eq!(default_layout_for_channels(10), None);
+        assert_eq!(default_layout_for_channels(16), None);
     }
 
     #[test]
@@ -588,17 +696,11 @@ mod tests {
     fn unverified_same_width_layout_fails_closed() {
         assert!(aurora_channel_map("custom-12", 12).is_err());
         assert!(aurora_channel_map("9.1.2", 12).is_err());
-        assert_eq!(default_layout_for_channels(16), None);
     }
 
     #[test]
     fn duration_conversion_saturates_into_u64_microseconds() {
         assert_eq!(duration_us(Duration::from_millis(3)), 3_000);
-    }
-
-    #[test]
-    fn ambiguous_custom_count_fails_closed() {
-        assert_eq!(default_layout_for_channels(11), None);
     }
 
     #[test]
