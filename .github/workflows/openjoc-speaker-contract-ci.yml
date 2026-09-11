@@ -70,8 +70,11 @@ jobs:
       - name: Test OpenJOC decoder adapter
         run: cargo test --locked -p aurora-decoder-open
 
+      # Keep this focused gate scoped to the OpenJOC target crate. Workspace
+      # path/dev dependencies retain their own lint gates; an existing ALSA
+      # unreachable-pattern warning must not prevent the JOC functional proof.
       - name: Clippy OpenJOC decoder adapter
-        run: cargo clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
+        run: cargo clippy --locked -p aurora-decoder-open --all-targets --no-deps -- -D warnings
 
       - name: Fetch and verify pinned synthetic JOC fixture
         run: |
