@@ -35,7 +35,9 @@ pub struct LayoutPlaybackRuntime {
 }
 
 impl LayoutPlaybackRuntime {
-    pub fn new(
+    /// Internal constructor used only after a public typed constructor has bound
+    /// the same layout identity at both the decoder and output-DSP boundaries.
+    fn new(
         input_config: EncodedInputConfig,
         engine_config: EngineConfig,
         output_format: AudioFormat,
