@@ -15,3 +15,6 @@ openjoc-ffmpeg = { git = "https://github.com/chyinan/OpenJOC", rev = "e7e03bc834
 oxideav-ac3 = "0.0.11"
 oxideav-core = "0.1"
 thiserror = { workspace = true }
+
+[dev-dependencies]
+openjoc-scene = { git = "https://github.com/chyinan/OpenJOC", rev = "e7e03bc834ac0483770933cdc50ac058b100d1e2", package = "openjoc-scene" }
