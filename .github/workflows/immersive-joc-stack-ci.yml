@@ -1,0 +1,37 @@
+name: Immersive JOC Stack CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main-v2
+    paths:
+      - "config/external-components-v1.json"
+      - "platform/s6/patches/omniphony-raw-f32-low-latency.patch"
+      - "platform/s6/scripts/test-immersive-joc-stack.sh"
+      - ".github/workflows/immersive-joc-stack-ci.yml"
+  pull_request:
+    paths:
+      - "config/external-components-v1.json"
+      - "platform/s6/patches/omniphony-raw-f32-low-latency.patch"
+      - "platform/s6/scripts/test-immersive-joc-stack.sh"
+      - ".github/workflows/immersive-joc-stack-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immersive-joc-stack-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  real-joc-software-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install host audio tooling
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev
+      - name: Validate real E-AC-3 JOC through IEC61937, Harletty, and Omniphony 7.1.4
+        run: bash platform/s6/scripts/test-immersive-joc-stack.sh
