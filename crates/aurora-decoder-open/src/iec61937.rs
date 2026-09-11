@@ -108,7 +108,7 @@ const fn payload_length_bytes(data_type: u8, pd: u16) -> usize {
 pub const fn codec_from_data_type(data_type: u8) -> CodecKind {
     match data_type {
         0x01 => CodecKind::Ac3,
-        0x0B | 0x0C | 0x0D => CodecKind::Dts,
+        0x0B..=0x0D => CodecKind::Dts,
         0x11 => CodecKind::DtsHd,
         0x15 => CodecKind::Eac3,
         0x16 => CodecKind::DolbyMat,

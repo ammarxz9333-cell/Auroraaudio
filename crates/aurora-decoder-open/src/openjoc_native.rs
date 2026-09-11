@@ -147,10 +147,12 @@ impl OpenJocNativeRenderer {
                 ))?
                 .to_owned(),
         };
-        let mut config = OpenJocConfig::default();
-        config.render_mode = RenderMode::Speaker;
-        config.speaker_layout = layout;
-        config.validation_profile = ValidationProfile::Auto;
+        let config = OpenJocConfig {
+            render_mode: RenderMode::Speaker,
+            speaker_layout: layout,
+            validation_profile: ValidationProfile::Auto,
+            ..Default::default()
+        };
         let mut session = OpenJocSession::new(config)
             .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC init failed: {e}")))?;
         session.enable_stage_timing();

@@ -263,7 +263,7 @@ fn probe_iec61937(data: &[u8]) -> Option<ProbeResult> {
     let data_type = (pc & 0x7F) as u8;
     let codec = match data_type {
         0x01 => CodecKind::Ac3,
-        0x0B | 0x0C | 0x0D => CodecKind::Dts,
+        0x0B..=0x0D => CodecKind::Dts,
         0x11 => CodecKind::DtsHd,
         0x15 => CodecKind::Eac3,
         // IEC61937 type 0x16 is the MAT transport. A MAT payload is not the

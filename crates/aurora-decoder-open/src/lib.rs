@@ -68,22 +68,13 @@ pub const fn backend_class(codec: CodecKind) -> BackendClass {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub struct OpenDecoderConfig {
     pub codec_hint: Option<CodecKind>,
     pub joc_stereo_reference: bool,
     pub joc_layout_hint: Option<&'static str>,
 }
 
-impl Default for OpenDecoderConfig {
-    fn default() -> Self {
-        Self {
-            codec_hint: None,
-            joc_stereo_reference: false,
-            joc_layout_hint: None,
-        }
-    }
-}
 
 enum Transport {
     Undecided,
