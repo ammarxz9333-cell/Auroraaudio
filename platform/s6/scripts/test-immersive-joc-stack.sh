@@ -79,7 +79,9 @@ cargo +"$TOOLCHAIN" build --locked --release \
 # 3) Apply Aurora's pinned low-latency raw-f32 sink patch and build orender.
 git -C "$OMNIP_DIR/omniphony-renderer" apply --check "$OMNIP_PATCH"
 git -C "$OMNIP_DIR/omniphony-renderer" apply "$OMNIP_PATCH"
-cargo +"$TOOLCHAIN" build --locked --release \
+# Omniphony intentionally ignores Cargo.lock, so its exact source revision is
+# pinned above while Cargo resolves the dependency graph for this validation.
+cargo +"$TOOLCHAIN" build --release \
   --manifest-path "$OMNIP_DIR/omniphony-renderer/Cargo.toml" \
   -p omniphony-renderer
 
