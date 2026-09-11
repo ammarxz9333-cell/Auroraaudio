@@ -112,3 +112,5 @@ jobs:
             --test openjoc_earc_reference_layout \
             canonical_earc_carrier_reaches_aurora_eleven_one_four_reference_tdm16 \
             -- --ignored --exact
+
+# Trigger focused proof after behavior-preserving Clippy codemod.
