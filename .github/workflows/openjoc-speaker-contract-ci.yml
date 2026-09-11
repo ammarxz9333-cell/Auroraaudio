@@ -43,7 +43,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: dtolnay/rust-toolchain@1.85.0
+      # This focused functional proof uses Rust 1.88 because regenerating the
+      # current transitive dependency graph selects crates that require up to
+      # Rust 1.88. Aurora's declared 1.85 MSRV and legacy MSRV gates are left
+      # unchanged; dependency/MSRV reconciliation remains a separate task.
+      - uses: dtolnay/rust-toolchain@1.88.0
         with:
           components: rustfmt, clippy
 
