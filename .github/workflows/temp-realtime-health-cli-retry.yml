@@ -1,0 +1,49 @@
+name: Temporary realtime health CLI retry
+
+on:
+  push:
+    branches:
+      - feature/realtime-health-cli
+
+permissions:
+  contents: write
+
+jobs:
+  edit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/realtime-health-cli
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev
+      - name: Reuse the exact staged CLI transform
+        shell: python
+        run: |
+          from pathlib import Path
+          workflow = Path('.github/workflows/temp-realtime-health-cli-edit.yml').read_text()
+          start_marker = '      - name: Apply realtime health CLI integration\n        shell: python\n        run: |\n'
+          end_marker = '      - name: Format\n'
+          start = workflow.index(start_marker) + len(start_marker)
+          end = workflow.index(end_marker, start)
+          lines = workflow[start:end].splitlines()
+          script = '\n'.join(line[10:] if line.startswith('          ') else line for line in lines)
+          exec(compile(script, '<realtime-health-cli-transform>', 'exec'))
+      - name: Format
+        run: cargo fmt --all
+      - name: Check CLI with all features
+        run: cargo check -p aurora-cli --all-features
+      - name: Commit generated edit
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/aurora-cli/Cargo.toml crates/aurora-cli/src/main.rs Cargo.lock
+          if git diff --cached --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git commit -m "feat: expose realtime health acceptance in CLI"
+          git push origin HEAD:feature/realtime-health-cli
