@@ -282,18 +282,17 @@ mod tests {
 
     #[test]
     fn stage_rejects_layout_width_mismatch() {
-        let error = SpeakerOutputStage::new(
+        let result = SpeakerOutputStage::new(
             format(12),
             custom_sixteen(),
             OutputDspConfig::default(),
-        )
-        .unwrap_err();
+        );
         assert!(matches!(
-            error,
-            SpeakerOutputError::ChannelCount {
+            result,
+            Err(SpeakerOutputError::ChannelCount {
                 expected: 16,
                 actual: 12
-            }
+            })
         ));
     }
 
