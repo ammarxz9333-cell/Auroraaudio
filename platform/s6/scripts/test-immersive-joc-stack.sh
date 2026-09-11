@@ -17,7 +17,7 @@ done
 [[ -f "$MANIFEST" ]] || { echo "missing external component manifest: $MANIFEST" >&2; exit 2; }
 [[ -f "$OMNIP_PATCH" ]] || { echo "missing Omniphony latency patch: $OMNIP_PATCH" >&2; exit 2; }
 
-WORK_DIR="${AURORA_JOC_TEST_WORKDIR:-$(mktemp -d "${TMPDIR:-/tmp}/aurora-joc-stack.XXXXXX")}" 
+WORK_DIR="${AURORA_JOC_TEST_WORKDIR:-$(mktemp -d "${TMPDIR:-/tmp}/aurora-joc-stack.XXXXXX")}"
 mkdir -p "$WORK_DIR"
 cleanup() {
   if [[ "$KEEP_WORKDIR" == "1" ]]; then
@@ -172,7 +172,7 @@ fn main() {
             assert!(
                 result.error_message.is_empty(),
                 "bridge error after packet {packets}: {}",
-                result.error_message
+                result.error_message.as_str()
             );
             frames += result.frames.len();
             for frame in result.frames.iter() {
@@ -205,14 +205,18 @@ cargo +"$TOOLCHAIN" run --quiet --release --manifest-path "$HARNESS_DIR/Cargo.to
 
 # 5) Feed the same IEC61937 JOC carrier through the actual orender CLI and the
 # same runtime bridge, rendering to the pinned 7.1.4 speaker layout.
-RUST_LOG="${RUST_LOG:-info}" "$ORENDER" "$IEC_FILE" \
+if ! RUST_LOG="${RUST_LOG:-info}" "$ORENDER" "$IEC_FILE" \
   --bridge-path "$BRIDGE_LIB" \
   --enable-vbap \
   --speaker-layout "$LAYOUT" \
   --output-backend file \
   --output-file "$RENDER_OUT" \
   --output-file-format raw-f32 \
-  >"$RENDER_LOG" 2>&1
+  >"$RENDER_LOG" 2>&1; then
+  echo "orender failed while rendering the real JOC IEC61937 fixture:" >&2
+  cat "$RENDER_LOG" >&2
+  exit 1
+fi
 
 python3 - "$RENDER_OUT" <<'PY'
 from array import array
