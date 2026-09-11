@@ -31,6 +31,7 @@ members = [
     "crates/aurora-encoded-input",
     "crates/aurora-encoded-runtime",
     "crates/aurora-speaker-output",
+    "crates/aurora-layout-playback-runtime",
     "crates/aurora-alsa-input",
     "crates/aurora-alsa-output",
     "crates/aurora-realtime-audio-api",
