@@ -149,6 +149,10 @@ jobs:
             --test openjoc_iec_fixture \
             synthetic_joc_survives_full_direct_earc_iec61937_chain \
             -- --ignored --exact
+          cargo test --locked -p aurora-layout-playback-runtime \
+            --test direct_earc_aurora_11_1_4 \
+            direct_earc_s32_reaches_layout_runtime_aurora_11_1_4 \
+            -- --ignored --exact
 
           cargo run --quiet --locked -p aurora-cli \
             --no-default-features --features validation \
