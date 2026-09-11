@@ -10,21 +10,20 @@ Aurora requires a reliable media-processing layer for audio capture, routing, fo
 
 GStreamer is a mature, modular multimedia framework with Linux and ALSA integration, pipeline composition, clocking, buffering, resampling, format conversion, RTP/network support, and a large plugin ecosystem. The `gst-plugins-rs` project additionally provides first-class Rust plugins and bindings that align with Aurora's Rust-oriented system architecture.
 
-Aurora must nevertheless retain ownership of its product-defining behavior and must not become inseparably coupled to a single framework before real-time performance is demonstrated.
+Aurora must nevertheless retain ownership of its core behavior and must not become inseparably coupled to a single framework before real-time performance is demonstrated.
 
 ## Decision
 
-Aurora will evaluate GStreamer as a **candidate media pipeline layer** between Linux hardware interfaces and Aurora-owned DSP/control components.
+Aurora will evaluate GStreamer as a **candidate media pipeline layer** between platform audio interfaces and Aurora-owned DSP/control components.
 
 The proposed layered architecture is:
 
 ```text
-Hardware
-  -> Linux kernel drivers
-  -> ALSA / DRM-KMS / network interfaces
+Platform audio / media interfaces
+  -> operating-system audio and media APIs
   -> GStreamer media pipeline (candidate)
   -> Aurora-owned DSP, routing, synchronization, and control
-  -> ALSA / network / hardware outputs
+  -> generic audio / network outputs
 ```
 
 GStreamer is not, at this stage, a mandatory dependency of the Aurora real-time core. Adoption requires successful validation against Aurora's latency, determinism, reliability, and portability requirements.
@@ -41,7 +40,7 @@ Aurora remains authoritative for:
 - wireless speaker synchronization policy;
 - distributed clock-discipline logic specific to Aurora;
 - presets, diagnostics, telemetry, and recovery behavior;
-- product configuration and device orchestration;
+- runtime configuration and endpoint orchestration;
 - real-time DSP kernels and their ABI.
 
 These components must remain Aurora-owned and testable independently of GStreamer.
@@ -50,7 +49,7 @@ These components must remain Aurora-owned and testable independently of GStreame
 
 Subject to validation, GStreamer may be used for:
 
-- ALSA capture and playback integration;
+- host audio capture and playback integration;
 - media graph and pipeline orchestration;
 - buffer transport between components;
 - sample-format conversion;
@@ -84,27 +83,27 @@ GStreamer may move from Candidate to Adopted only after a reproducible evaluatio
 - reliable device hot-plug and recovery behavior;
 - deterministic restart behavior after pipeline failure;
 - compatibility with Aurora's simulation and diagnostics framework;
-- acceptable behavior on supported Linux targets, including Raspberry Pi-class hardware.
+- acceptable behavior across supported Linux environments, including resource-constrained hosts.
 
 The evaluation must include at minimum:
 
-- stereo, 5.1, and 7.1 PCM pipelines where hardware permits;
+- stereo, 5.1, and 7.1 PCM pipelines where endpoints permit;
 - 48 kHz as the primary cinema baseline;
 - multiple period/buffer configurations;
-- ALSA-to-Aurora-to-ALSA loopback testing;
+- host-audio-to-Aurora-to-host-audio loopback testing;
 - network transport tests with loss, jitter, and clock drift;
 - long-duration soak testing;
-- comparison with a minimal direct-ALSA reference path.
+- comparison with a minimal direct host-audio reference path.
 
 ## Non-goals
 
 This decision does not solve or authorize:
 
-- HDMI or eARC input hardware support;
-- HDCP handling;
+- protected transport access;
+- DRM handling;
 - Dolby, DTS, or other licensed codec decoding;
 - Atmos object decoding;
-- replacement of ALSA or Linux kernel drivers;
+- replacement of operating-system audio APIs;
 - browser/WebRTC integration as a core Aurora requirement.
 
 ## Consequences
@@ -113,24 +112,24 @@ This decision does not solve or authorize:
 
 - Aurora can reuse a mature media framework instead of rebuilding generic infrastructure.
 - Rust integration is available through `gst-plugins-rs`.
-- Transport and device support can be expanded with less custom code.
-- Aurora's engineering effort remains focused on DSP, synchronization, calibration, and product behavior.
+- Transport and endpoint support can be expanded with less custom code.
+- Aurora's engineering effort remains focused on DSP, synchronization, calibration, and reusable software behavior.
 
 ### Risks
 
 - Hidden buffering or negotiation may increase latency.
 - Framework-level abstractions may complicate deterministic real-time behavior.
-- Plugin behavior may differ across GStreamer versions and Linux distributions.
+- Plugin behavior may differ across GStreamer versions and operating-system distributions.
 - Excessive coupling could make later replacement expensive.
 
-These risks are mitigated through a strict adapter boundary, explicit negotiation, measurable latency budgets, pinned dependency versions, and a direct-ALSA comparison implementation.
+These risks are mitigated through a strict adapter boundary, explicit negotiation, measurable latency budgets, pinned dependency versions, and a minimal host-audio comparison implementation.
 
 ## Current disposition
 
-GStreamer and `gst-plugins-rs` are approved for prototyping and controlled evaluation only. They are not yet approved as the mandatory production transport layer for Aurora.
+GStreamer and `gst-plugins-rs` are approved for prototyping and controlled evaluation only. They are not yet approved as the mandatory runtime transport layer for Aurora.
 
 ## References
 
 - GStreamer project documentation
 - `gst-plugins-rs`: https://gitlab.freedesktop.org/gstreamer/gst-plugins-rs
-- ADR-0018: Linux and ALSA hardware abstraction architecture
+- ADR-0018: platform audio abstraction architecture

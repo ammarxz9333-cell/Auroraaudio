@@ -11,7 +11,7 @@ from pathlib import Path
 ALLOWED_DECISIONS = {
     "adopted",
     "adopted-offline",
-    "experimental-s6",
+    "validation-only",
     "evaluate",
     "defer-headphones",
     "defer-dialogue",
@@ -61,7 +61,7 @@ def main() -> None:
         evidence = component.get("evidence")
         if not isinstance(evidence, list):
             fail(f"{component_id}: evidence must be a list")
-        if component["decision"] in {"adopted", "adopted-offline", "experimental-s6"}:
+        if component["decision"] in {"adopted", "adopted-offline", "validation-only"}:
             if not component.get("tested_version"):
                 fail(f"{component_id}: selected components require a tested_version")
             if not evidence:

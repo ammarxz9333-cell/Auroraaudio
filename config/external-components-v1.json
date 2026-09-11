@@ -15,7 +15,7 @@
       "roles": ["channel-bed-decode", "resample", "format-conversion"],
       "object_metadata": "unsupported",
       "production_ready": false,
-      "evidence": ["platform/s6/THIRD_PARTY.md"]
+      "evidence": ["docs/surround-upmix.md"]
     },
     {
       "id": "camilladsp",
@@ -31,26 +31,26 @@
     {
       "id": "omniphony",
       "upstream": "https://github.com/mgth/Omniphony",
-      "decision": "experimental-s6",
+      "decision": "validation-only",
       "integration": "external-process",
       "tested_version": "v0.5.2",
       "pinned_commit": "f9a79721af64ad9c39042d4deded158b568fc598",
       "roles": ["spatial-renderer-host"],
       "object_metadata": "experimental",
       "production_ready": false,
-      "evidence": ["platform/s6/THIRD_PARTY.md"]
+      "evidence": ["docs/immersive-validation.md"]
     },
     {
       "id": "harletty-bridge",
       "upstream": "https://github.com/harletty/harletty-bridge",
-      "decision": "experimental-s6",
+      "decision": "validation-only",
       "integration": "runtime-plugin",
       "tested_version": "v0.7.4",
       "pinned_commit": "10943821cca7e6886c11f45d2267b06d76e6db7c",
       "roles": ["optional-codec-bridge"],
-      "object_metadata": "unvalidated",
+      "object_metadata": "experimental",
       "production_ready": false,
-      "evidence": ["platform/s6/THIRD_PARTY.md"]
+      "evidence": ["docs/immersive-validation.md"]
     },
     {
       "id": "libiamf",

@@ -2,7 +2,7 @@
 
 Aurora is an open, modular, **hardware-agnostic immersive-audio software stack** written primarily in Rust.
 
-Aurora is not tied to a phone, SBC, MCU, soundbar, DAC, amplifier, or vendor platform. The core project owns audio/scene models, rendering, DSP, realtime scheduling, simulation, validation, and generic I/O boundaries. Physical transports and devices belong behind optional adapters and must never become prerequisites for the core engine.
+Aurora's core owns audio/scene models, rendering, DSP, realtime scheduling, simulation, validation, and generic I/O boundaries. The software core has no canonical hardware target. Physical transports and devices may be integrated only through optional adapters and must never become prerequisites for the engine.
 
 ## Project direction
 
@@ -15,7 +15,7 @@ Aurora is software-first. The active goals are:
 - generic local audio I/O through portable APIs;
 - explicit capability reporting so documentation cannot claim more than the code proves.
 
-Aurora does **not** require Galaxy S6, Android, N100, Raspberry Pi, STM32, a specific eARC receiver, or any other hardware target. Hardware integration may be added later as optional adapters maintained outside the software core.
+Hardware integrations, when needed, live outside the software core behind generic adapter contracts. No specific device or product defines Aurora's architecture.
 
 Aurora also does not claim Dolby certification, DRM circumvention, or production compatibility with proprietary streaming services.
 
@@ -92,6 +92,6 @@ cargo run -p aurora-cli --all-features -- realtime --output-device 0 --scene fix
 
 ## Integration rule
 
-New platform work must enter Aurora through a generic adapter boundary. Core crates may not depend on a named phone, board, MCU, boot image, vendor firmware, or appliance filesystem.
+New platform work must enter Aurora through a generic adapter boundary. Core crates may depend only on portable software contracts, not on product-specific assumptions.
 
 Third-party integrations and their licensing status are documented in [`THIRD_PARTY_LICENSES.md`](THIRD_PARTY_LICENSES.md) and [`docs/adapters.md`](docs/adapters.md).
