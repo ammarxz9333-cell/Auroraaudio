@@ -16,7 +16,9 @@ use aurora_dsp_camilladsp::{
     discover_camilladsp, inspect_processed_wav, process_offline_wav, AuroraDspConfig,
 };
 #[cfg(feature = "realtime")]
-use aurora_realtime_acceptance::{evaluate_realtime_acceptance, RealTimeAcceptancePolicy};
+use aurora_realtime_acceptance::{
+    evaluate_realtime_acceptance, RealTimeAcceptancePolicy, RealTimeHealthReportV1,
+};
 #[cfg(feature = "realtime")]
 use aurora_realtime_audio_api::{
     AudioDeviceDirection, AudioOutputBackend, RealTimeAudioConfig, RealTimeSampleFormat,
@@ -831,43 +833,8 @@ fn write_realtime_health_report(
     {
         std::fs::create_dir_all(parent)?;
     }
-    let violations = health
-        .violations
-        .iter()
-        .map(|violation| format!("{violation:?}"))
-        .collect::<Vec<_>>();
-    let document = serde_json::json!({
-        "schema_version": 1,
-        "accepted": health.accepted,
-        "p95_budget_usage_percent": health.p95_budget_usage_percent,
-        "policy": {
-            "max_input_underruns": policy.max_input_underruns,
-            "max_output_underruns": policy.max_output_underruns,
-            "max_dropped_blocks": policy.max_dropped_blocks,
-            "max_p95_budget_usage_percent": policy.max_p95_budget_usage_percent,
-            "max_estimated_end_to_end_latency_frames": policy.max_estimated_end_to_end_latency_frames,
-            "require_callbacks": policy.require_callbacks,
-            "require_fault_free": policy.require_fault_free,
-        },
-        "metrics": {
-            "callback_count": metrics.callback_count,
-            "processed_blocks": metrics.processed_blocks,
-            "input_underruns": metrics.input_underruns,
-            "output_underruns": metrics.output_underruns,
-            "dropped_blocks": metrics.dropped_blocks,
-            "max_callback_ms": metrics.max_callback_duration.as_secs_f64() * 1000.0,
-            "average_callback_ms": metrics.average_callback_duration.as_secs_f64() * 1000.0,
-            "p95_callback_ms": metrics.p95_callback_duration.as_secs_f64() * 1000.0,
-            "block_duration_budget_ms": metrics.block_duration_budget.as_secs_f64() * 1000.0,
-            "renderer_latency_frames": metrics.renderer_latency_frames,
-            "dsp_latency_frames": metrics.dsp_latency_frames,
-            "estimated_device_latency_frames": metrics.estimated_device_latency_frames,
-            "estimated_end_to_end_latency_frames": metrics.estimated_end_to_end_latency_frames,
-            "fault_code": metrics.fault as u64,
-        },
-        "violations": violations,
-    });
-    std::fs::write(path, serde_json::to_vec_pretty(&document)?)?;
+    let document = RealTimeHealthReportV1::from_evaluation(metrics, policy, health);
+    std::fs::write(path, document.to_pretty_json()?)?;
     Ok(())
 }
 

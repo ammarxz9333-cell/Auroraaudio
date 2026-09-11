@@ -4,6 +4,13 @@
 //! already-collected [`RealTimeMetrics`] snapshot into an explicit PASS/FAIL
 //! report and may allocate while constructing diagnostics.
 
+mod report;
+
+pub use report::{
+    RealTimeHealthMetricsV1, RealTimeHealthPolicyV1, RealTimeHealthReportV1,
+    REALTIME_HEALTH_REPORT_SCHEMA_VERSION,
+};
+
 use aurora_realtime_engine::{RealTimeFault, RealTimeMetrics};
 
 /// Thresholds used to decide whether a realtime software run is acceptable.

@@ -226,6 +226,8 @@ dependencies = [
  "aurora-core",
  "aurora-realtime-engine",
  "aurora-scene",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
