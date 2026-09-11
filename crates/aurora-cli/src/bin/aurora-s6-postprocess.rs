@@ -584,7 +584,6 @@ mod tests {
         assert!(block.iter().all(|sample| *sample == 0.0));
     }
 
-
     #[test]
     fn fixed_queue_preserves_frame_order_across_wrap() {
         let mut queue = FixedFrameQueue::new(4);
@@ -642,4 +641,3 @@ mod tests {
         }
     }
 }
-
