@@ -31,6 +31,22 @@ An estimated latency threshold can be added with `--max-estimated-latency-frames
 
 When acceptance fails, Aurora writes the requested report first and then returns a command error. This preserves the failure evidence for CI or later inspection.
 
+## Sustained software soak
+
+The `Sustained Realtime Health Soak` workflow runs the real `RealTimeEngine` against the repository's generic 7.1.4 reference scene with a rotating test source. The run is accelerated rather than wall-clock paced so CI can validate a longer media interval efficiently without requiring an audio device.
+
+The default CI gate simulates 600 seconds of 48 kHz media with 256-frame callbacks: exactly 112,500 callbacks. It requires:
+
+- all callbacks to return `ProcessStatus::Ok`;
+- exactly 12 output channels from the 7.1.4 scene;
+- finite and non-silent sampled output throughout the run;
+- zero input/output underruns and zero dropped blocks;
+- no persistent realtime engine fault;
+- strict realtime health acceptance to pass;
+- a schema-v1 JSON health report whose counters match the expected callback count.
+
+The workflow uploads the JSON report and execution log as bounded CI evidence. Because the run is accelerated and uses no physical audio endpoint, it proves sustained software-path stability only; it is not a physical timing or device-driver soak.
+
 ## Report contract
 
 Schema version 1 is owned by the `aurora-realtime-acceptance` crate through `RealTimeHealthReportV1`. The CLI consumes this shared contract rather than defining its own JSON layout.
