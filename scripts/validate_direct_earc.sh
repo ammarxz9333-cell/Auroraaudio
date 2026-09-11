@@ -76,6 +76,7 @@ for package in \
   aurora-encoded-input \
   aurora-encoded-runtime \
   aurora-speaker-output \
+  aurora-layout-playback-runtime \
   aurora-alsa-input \
   aurora-alsa-output \
   aurora-realtime-audio-cpal; do
@@ -210,6 +211,12 @@ AURORA_OPENJOC_SYNTHETIC_FIXTURE="$FIXTURE" \
   cargo test --locked -p aurora-direct-earc-decoder \
   --test openjoc_iec_fixture \
   synthetic_joc_survives_full_direct_earc_iec61937_chain \
+  -- --ignored --exact
+
+AURORA_OPENJOC_SYNTHETIC_FIXTURE="$FIXTURE" \
+  cargo test --locked -p aurora-layout-playback-runtime \
+  --test direct_earc_aurora_11_1_4 \
+  direct_earc_s32_reaches_layout_runtime_aurora_11_1_4 \
   -- --ignored --exact
 
 cargo run --quiet --locked -p aurora-cli \
