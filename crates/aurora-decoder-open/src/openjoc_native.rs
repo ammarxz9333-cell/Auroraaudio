@@ -12,8 +12,8 @@ use std::time::Duration;
 use aurora_core::{AudioBlock, AudioFormat, StandardLayout};
 use aurora_decoder_api::{DecodedFrame, DecoderError};
 use openjoc_api::{
-    OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus,
-    PcmSampleFormat, RenderMode, ValidationProfile,
+    OpenJocConfig, OpenJocPacket, OpenJocPcmFrame, OpenJocSession, OpenJocStatus, PcmSampleFormat,
+    RenderMode, ValidationProfile,
 };
 use openjoc_scene::{SpeakerGeometry, SpeakerLayout};
 
@@ -177,7 +177,8 @@ impl OpenJocNativeRenderer {
                 "selected JOC layout channel count does not match Aurora output format",
             ));
         }
-        let expected_labels = expected_openjoc_channel_labels(&info.layout_name, info.channel_count)?;
+        let expected_labels =
+            expected_openjoc_channel_labels(&info.layout_name, info.channel_count)?;
         if info.channel_labels.len() != expected_labels.len()
             || info
                 .channel_labels
@@ -190,7 +191,15 @@ impl OpenJocNativeRenderer {
             ));
         }
         let channel_map = aurora_channel_map(&info.layout_name, info.channel_count)?;
-        Self::from_session(session, output, channel_map, info.channel_labels, info.layout_name, info.channel_count, info.latency_samples)
+        Self::from_session(
+            session,
+            output,
+            channel_map,
+            info.channel_labels,
+            info.layout_name,
+            info.channel_count,
+            info.latency_samples,
+        )
     }
 
     fn new_aurora_eleven_one_four_reference(output: AudioFormat) -> Result<Self, DecoderError> {
@@ -252,7 +261,15 @@ impl OpenJocNativeRenderer {
             }
         }
         let channel_map = (0..output.channel_count).collect::<Vec<_>>();
-        Self::from_session(session, output, channel_map, info.channel_labels, info.layout_name, info.channel_count, info.latency_samples)
+        Self::from_session(
+            session,
+            output,
+            channel_map,
+            info.channel_labels,
+            info.layout_name,
+            info.channel_count,
+            info.latency_samples,
+        )
     }
 
     fn from_session(
@@ -380,7 +397,11 @@ impl OpenJocNativeRenderer {
             frames.push(frame);
         }
         let remaining = self.channels.first().map(VecDeque::len).unwrap_or(0);
-        if self.channels.iter().any(|channel| channel.len() != remaining) {
+        if self
+            .channels
+            .iter()
+            .any(|channel| channel.len() != remaining)
+        {
             return Err(DecoderError::Decode(
                 "OpenJOC channel queues diverged while retiring buffered PCM".to_owned(),
             ));
@@ -420,14 +441,16 @@ impl OpenJocNativeRenderer {
     }
 
     fn take_frames(&mut self, frame_count: usize) -> Option<DecodedFrame> {
-        if frame_count == 0 || self.channels.iter().any(|channel| channel.len() < frame_count) {
+        if frame_count == 0
+            || self
+                .channels
+                .iter()
+                .any(|channel| channel.len() < frame_count)
+        {
             return None;
         }
-        let mut planar = take_planar_storage(
-            &mut self.recycled_planar,
-            self.channels.len(),
-            frame_count,
-        );
+        let mut planar =
+            take_planar_storage(&mut self.recycled_planar, self.channels.len(), frame_count);
         for (samples, channel) in planar.iter_mut().zip(&mut self.channels) {
             for _ in 0..frame_count {
                 samples.push(channel.pop_front().expect("length checked above"));
@@ -465,7 +488,11 @@ impl OpenJocNativeRenderer {
                     "OpenJOC output render mode, semantic layout, channel order or PCM format changed",
                 ));
             }
-            if frame.interleaved_f32.iter().any(|sample| !sample.is_finite()) {
+            if frame
+                .interleaved_f32
+                .iter()
+                .any(|sample| !sample.is_finite())
+            {
                 self.ready_frames.clear();
                 return Err(DecoderError::Decode(
                     "OpenJOC returned non-finite PCM; refusing to sanitize corrupted decoder output"
@@ -477,8 +504,10 @@ impl OpenJocNativeRenderer {
 
         for frame in &self.ready_frames {
             for source_frame in frame.interleaved_f32.chunks_exact(frame.channel_count) {
-                for (destination, source_index) in
-                    self.channels.iter_mut().zip(self.channel_map.iter().copied())
+                for (destination, source_index) in self
+                    .channels
+                    .iter_mut()
+                    .zip(self.channel_map.iter().copied())
                 {
                     destination.push_back(source_frame[source_index]);
                 }
@@ -538,41 +567,40 @@ fn openjoc_layout_contract(
     layout: &str,
     channels: usize,
 ) -> Result<OpenJocLayoutContract, DecoderError> {
-    let contract = match (layout, channels) {
-        ("2.0", 2) => OpenJocLayoutContract {
-            labels: &LABELS_2_0,
-            aurora_map: &MAP_2_0,
-        },
-        ("5.1", 6) => OpenJocLayoutContract {
-            labels: &LABELS_5_1,
-            aurora_map: &MAP_5_1,
-        },
-        ("5.1.2", 8) => OpenJocLayoutContract {
-            labels: &LABELS_5_1_2,
-            aurora_map: &MAP_5_1_2,
-        },
-        ("5.1.4", 10) => OpenJocLayoutContract {
-            labels: &LABELS_5_1_4,
-            aurora_map: &MAP_5_1_4,
-        },
-        ("7.1", 8) => OpenJocLayoutContract {
-            labels: &LABELS_7_1,
-            aurora_map: &MAP_7_1,
-        },
-        ("7.1.2", 10) => OpenJocLayoutContract {
-            labels: &LABELS_7_1_2,
-            aurora_map: &MAP_7_1_2,
-        },
-        ("7.1.4", 12) => OpenJocLayoutContract {
-            labels: &LABELS_7_1_4,
-            aurora_map: &MAP_7_1_4,
-        },
-        _ => {
-            return Err(DecoderError::UnsupportedInput(
+    let contract =
+        match (layout, channels) {
+            ("2.0", 2) => OpenJocLayoutContract {
+                labels: &LABELS_2_0,
+                aurora_map: &MAP_2_0,
+            },
+            ("5.1", 6) => OpenJocLayoutContract {
+                labels: &LABELS_5_1,
+                aurora_map: &MAP_5_1,
+            },
+            ("5.1.2", 8) => OpenJocLayoutContract {
+                labels: &LABELS_5_1_2,
+                aurora_map: &MAP_5_1_2,
+            },
+            ("5.1.4", 10) => OpenJocLayoutContract {
+                labels: &LABELS_5_1_4,
+                aurora_map: &MAP_5_1_4,
+            },
+            ("7.1", 8) => OpenJocLayoutContract {
+                labels: &LABELS_7_1,
+                aurora_map: &MAP_7_1,
+            },
+            ("7.1.2", 10) => OpenJocLayoutContract {
+                labels: &LABELS_7_1_2,
+                aurora_map: &MAP_7_1_2,
+            },
+            ("7.1.4", 12) => OpenJocLayoutContract {
+                labels: &LABELS_7_1_4,
+                aurora_map: &MAP_7_1_4,
+            },
+            _ => return Err(DecoderError::UnsupportedInput(
                 "OpenJOC speaker layout has no verified semantic channel-label contract in Aurora",
-            ))
-        }
-    };
+            )),
+        };
     Ok(contract)
 }
 
@@ -584,16 +612,15 @@ fn expected_openjoc_channel_labels(
 }
 
 fn aurora_channel_map(layout: &str, channels: usize) -> Result<Vec<usize>, DecoderError> {
-    let map = openjoc_layout_contract(layout, channels)?.aurora_map.to_vec();
-    if map.len() != channels
-        || map.iter().any(|&index| index >= channels)
-        || {
-            let mut sorted = map.clone();
-            sorted.sort_unstable();
-            sorted.dedup();
-            sorted.len() != channels
-        }
-    {
+    let map = openjoc_layout_contract(layout, channels)?
+        .aurora_map
+        .to_vec();
+    if map.len() != channels || map.iter().any(|&index| index >= channels) || {
+        let mut sorted = map.clone();
+        sorted.sort_unstable();
+        sorted.dedup();
+        sorted.len() != channels
+    } {
         return Err(DecoderError::UnsupportedInput(
             "OpenJOC-to-Aurora channel map is not a complete permutation",
         ));
@@ -635,8 +662,7 @@ mod tests {
 
     #[test]
     fn aurora_reference_builder_uses_explicit_custom_identity() {
-        let config = crate::OpenDecoderConfig::default()
-            .with_aurora_eleven_one_four_reference();
+        let config = crate::OpenDecoderConfig::default().with_aurora_eleven_one_four_reference();
         assert_eq!(
             config.joc_layout_hint,
             Some(AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT)
@@ -713,9 +739,7 @@ mod tests {
     #[test]
     fn planar_pool_reuses_existing_channel_allocations() {
         let mut pool = Vec::new();
-        let mut planar = (0..12)
-            .map(|_| Vec::with_capacity(40))
-            .collect::<Vec<_>>();
+        let mut planar = (0..12).map(|_| Vec::with_capacity(40)).collect::<Vec<_>>();
         for channel in &mut planar {
             channel.resize(40, 0.0);
         }
