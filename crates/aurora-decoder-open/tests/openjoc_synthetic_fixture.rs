@@ -55,14 +55,11 @@ fn drain_ready(
     output_frames: &mut usize,
     full_blocks: &mut usize,
 ) {
-    loop {
-        match decoder
-            .decode_chunk(&[])
-            .expect("drain ready synthetic JOC PCM")
-        {
-            Some(frame) => observe_frame(frame, output_frames, full_blocks),
-            None => break,
-        }
+    while let Some(frame) = decoder
+        .decode_chunk(&[])
+        .expect("drain ready synthetic JOC PCM")
+    {
+        observe_frame(frame, output_frames, full_blocks);
     }
 }
 
