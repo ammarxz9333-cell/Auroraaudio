@@ -113,6 +113,7 @@ dependencies = [
  "aurora-core",
  "aurora-dsp-basic",
  "aurora-dsp-camilladsp",
+ "aurora-realtime-acceptance",
  "aurora-realtime-audio-api",
  "aurora-realtime-audio-cpal",
  "aurora-realtime-audio-sim",
