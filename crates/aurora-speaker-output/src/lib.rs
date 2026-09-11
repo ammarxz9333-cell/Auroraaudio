@@ -64,7 +64,11 @@ impl SpeakerOutputStage {
         self.layout.channel_count()
     }
 
-    fn validate_decoded_frame(&self, frame: &DecodedFrame) -> Result<(), SpeakerOutputError> {
+    /// Validates one already-rendered speaker-domain frame without mutating DSP
+    /// state. Playback runtimes use this to validate an entire decoder batch
+    /// before committing any part of that batch to bass management, limiter or
+    /// lip-sync state.
+    pub fn validate_decoded_frame(&self, frame: &DecodedFrame) -> Result<(), SpeakerOutputError> {
         frame
             .audio
             .validate()
