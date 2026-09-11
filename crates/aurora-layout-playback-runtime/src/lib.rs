@@ -20,6 +20,9 @@ use aurora_encoded_runtime::{AuroraEncodedRuntime, RuntimeBatch, RuntimeError as
 use aurora_speaker_output::{SpeakerOutputError, SpeakerOutputFrame, SpeakerOutputStage};
 use thiserror::Error;
 
+pub const AURORA_ELEVEN_ONE_FOUR_REFERENCE_JOC_LAYOUT: &str =
+    "aurora-11.1.4-reference-v1";
+
 #[derive(Debug, Default)]
 pub struct LayoutPlaybackBatch {
     pub frames: Vec<SpeakerOutputFrame>,
@@ -66,6 +69,36 @@ impl LayoutPlaybackRuntime {
             .open_decoder
             .with_standard_joc_layout(layout)
             .map_err(EncodedRuntimeError::Decoder)?;
+        Self::new(
+            input_config,
+            engine_config,
+            output_format,
+            output_layout,
+            output_dsp,
+        )
+    }
+
+    /// Binds Aurora's explicit sixteen-lane 11.1.4 reference identity at both
+    /// the decoder and speaker-DSP boundaries. This never infers geometry from
+    /// `channel_count == 16`. The OpenJOC adapter must separately recognize the
+    /// same reference identity or decoding fails closed.
+    pub fn new_for_aurora_eleven_one_four_reference(
+        input_config: EncodedInputConfig,
+        mut engine_config: EngineConfig,
+        output_format: AudioFormat,
+        output_dsp: OutputDspConfig,
+    ) -> Result<Self, LayoutPlaybackError> {
+        if let Some(existing) = engine_config.open_decoder.joc_layout_hint {
+            if existing != AURORA_ELEVEN_ONE_FOUR_REFERENCE_JOC_LAYOUT {
+                return Err(LayoutPlaybackError::DecoderLayoutConflict {
+                    expected: AURORA_ELEVEN_ONE_FOUR_REFERENCE_JOC_LAYOUT,
+                    actual: existing,
+                });
+            }
+        }
+        engine_config.open_decoder.joc_layout_hint =
+            Some(AURORA_ELEVEN_ONE_FOUR_REFERENCE_JOC_LAYOUT);
+        let output_layout = OutputLayoutContract::aurora_eleven_one_four_reference()?;
         Self::new(
             input_config,
             engine_config,
@@ -199,4 +232,9 @@ pub enum LayoutPlaybackError {
     Output(#[from] SpeakerOutputError),
     #[error(transparent)]
     Layout(#[from] OutputLayoutContractError),
+    #[error("decoder JOC layout conflict: expected {expected}, got {actual}")]
+    DecoderLayoutConflict {
+        expected: &'static str,
+        actual: &'static str,
+    },
 }
