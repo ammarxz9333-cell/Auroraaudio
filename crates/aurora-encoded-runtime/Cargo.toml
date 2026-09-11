@@ -20,3 +20,4 @@ aurora-spatial-runtime = { path = "../aurora-spatial-runtime" }
 aurora-test-alloc = { path = "../aurora-test-alloc" }
 aurora-iec61937 = { path = "../aurora-iec61937" }
 aurora-usb-protocol = { path = "../aurora-usb-protocol" }
+aurora-decoder-open = { path = "../aurora-decoder-open" }
