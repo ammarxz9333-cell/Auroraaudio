@@ -9,6 +9,7 @@ set -euo pipefail
 # ALSA XRUN, TDM speaker order, acoustic latency, or commercial streaming JOC.
 
 OPENJOC_REV="e7e03bc834ac0483770933cdc50ac058b100d1e2"
+OPENJOC_FIXTURE_BLOB="4a47d79c1af717c7007e0398d01266867a3a9a49"
 OPENJOC_FIXTURE_SHA256="54b48754b915cef97c13752de5eace4a219da6599cdfcf26f92b5b6fffc6e3e4"
 FULL_SOAK="${AURORA_FULL_SOAK:-0}"
 
@@ -21,12 +22,19 @@ require_tool() {
   command -v "$1" >/dev/null 2>&1 || fail "required tool '$1' is not installed"
 }
 
-for tool in git cargo rustc curl sha256sum grep ffmpeg pkg-config; do
+for tool in git cargo rustc curl sha256sum grep awk cmp ffmpeg pkg-config; do
   require_tool "$tool"
 done
 
 [[ "$(uname -s)" == "Linux" ]] || fail "this exact validation entry point requires Linux"
 pkg-config --exists alsa || fail "ALSA development files are missing (pkg-config cannot resolve 'alsa')"
+
+RUSTC_VERSION="$(rustc --version | awk '{print $2}')"
+CARGO_VERSION="$(cargo --version | awk '{print $2}')"
+[[ "$RUSTC_VERSION" == 1.85.* ]] || \
+  fail "exact validation requires rustc 1.85.x; found $RUSTC_VERSION"
+[[ "$CARGO_VERSION" == 1.85.* ]] || \
+  fail "exact validation requires cargo 1.85.x; found $CARGO_VERSION"
 
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 cd "$REPO_ROOT"
@@ -130,10 +138,55 @@ FIXTURE="$TMP_DIR/openjoc-joc.ec3"
 curl --fail --location --retry 3 \
   --output "$FIXTURE" \
   "https://raw.githubusercontent.com/chyinan/OpenJOC/${OPENJOC_REV}/crates/openjoc-wasm/testdata/joc.ec3"
+ACTUAL_BLOB="$(git hash-object "$FIXTURE")"
+[[ "$ACTUAL_BLOB" == "$OPENJOC_FIXTURE_BLOB" ]] || \
+  fail "OpenJOC fixture Git blob mismatch: expected $OPENJOC_FIXTURE_BLOB got $ACTUAL_BLOB"
 ACTUAL_SHA256="$(sha256sum "$FIXTURE" | awk '{print $1}')"
 [[ "$ACTUAL_SHA256" == "$OPENJOC_FIXTURE_SHA256" ]] || \
   fail "OpenJOC fixture SHA-256 mismatch: expected $OPENJOC_FIXTURE_SHA256 got $ACTUAL_SHA256"
 
+printf '\n== Synthetic JOC transport round-trip/fault gates ==\n'
+cargo run --quiet --locked -p aurora-cli \
+  --no-default-features --features earc-sim \
+  --bin aurora-sim-source \
+  < "$FIXTURE" > "$TMP_DIR/openjoc-joc.iec61937"
+cargo run --quiet --locked -p aurora-cli \
+  --no-default-features \
+  --bin aurora-direct-earc-probe -- \
+  --filter eac3 --extract eac3 \
+  < "$TMP_DIR/openjoc-joc.iec61937" > "$TMP_DIR/openjoc-joc.roundtrip.ec3"
+cmp "$FIXTURE" "$TMP_DIR/openjoc-joc.roundtrip.ec3"
+
+cargo run --quiet --locked -p aurora-cli \
+  --no-default-features --features earc-sim \
+  --bin aurora-sim-source -- \
+  --cadence-jitter 1 \
+  < "$FIXTURE" > "$TMP_DIR/openjoc-joc.jitter.iec61937"
+cargo run --quiet --locked -p aurora-cli \
+  --no-default-features \
+  --bin aurora-direct-earc-probe -- \
+  --filter eac3 \
+  < "$TMP_DIR/openjoc-joc.jitter.iec61937" \
+  > /dev/null 2> "$TMP_DIR/openjoc-joc.jitter.log"
+grep -q 'eac3_max_spacing_bytes=Some(25344)' "$TMP_DIR/openjoc-joc.jitter.log"
+grep -q 'eac3_period_mismatches=4' "$TMP_DIR/openjoc-joc.jitter.log"
+
+cargo run --quiet --locked -p aurora-cli \
+  --no-default-features --features earc-sim \
+  --bin aurora-sim-source -- \
+  --truncated-eof \
+  < "$FIXTURE" > "$TMP_DIR/openjoc-joc.truncated.iec61937"
+if cargo run --quiet --locked -p aurora-cli \
+    --no-default-features \
+    --bin aurora-direct-earc-probe -- \
+    --filter eac3 \
+    < "$TMP_DIR/openjoc-joc.truncated.iec61937" \
+    > /dev/null 2> "$TMP_DIR/openjoc-joc.truncated.log"; then
+  fail "truncated EOF unexpectedly passed IEC61937 finite validation"
+fi
+grep -q 'incomplete burst' "$TMP_DIR/openjoc-joc.truncated.log"
+
+printf '\n== Synthetic JOC decode/render gates ==\n'
 AURORA_OPENJOC_SYNTHETIC_FIXTURE="$FIXTURE" \
   cargo test --locked -p aurora-decoder-open \
   --test openjoc_synthetic_fixture \
