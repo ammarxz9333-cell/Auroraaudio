@@ -4,24 +4,18 @@
 //! `AuroraPlaybackRuntime`. It keeps Aurora's established encoded-input and
 //! direct-eARC decoder boundaries, but the downstream speaker stage is selected
 //! by an explicit [`OutputLayoutContract`] rather than channel-count inference.
-//!
-//! Custom OpenJOC speaker geometry is intentionally a separate constructor
-//! boundary. Merely requesting sixteen output lanes is never treated as proof
-//! that the decoder rendered those exact semantics.
 
 #![forbid(unsafe_code)]
 
 use aurora_core::{AudioFormat, StandardLayout};
 use aurora_decoder_engine::EngineConfig;
+use aurora_decoder_open::openjoc_native::AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT;
 use aurora_dsp_basic::output::OutputDspConfig;
 use aurora_dsp_basic::output_layout::{OutputLayoutContract, OutputLayoutContractError};
 use aurora_encoded_input::{EncodedInputConfig, EncodedInputKind};
 use aurora_encoded_runtime::{AuroraEncodedRuntime, RuntimeBatch, RuntimeError as EncodedRuntimeError};
 use aurora_speaker_output::{SpeakerOutputError, SpeakerOutputFrame, SpeakerOutputStage};
 use thiserror::Error;
-
-pub const AURORA_ELEVEN_ONE_FOUR_REFERENCE_JOC_LAYOUT: &str =
-    "aurora-11.1.4-reference-v1";
 
 #[derive(Debug, Default)]
 pub struct LayoutPlaybackBatch {
@@ -33,10 +27,6 @@ pub struct LayoutPlaybackBatch {
 }
 
 /// Encoded source -> decoder -> explicit-layout speaker DSP runtime.
-///
-/// The runtime does not infer JOC geometry from `output_format.channel_count`.
-/// `new_for_standard_layout` explicitly binds one admitted fixed OpenJOC layout;
-/// `new` leaves decoder layout selection entirely to the supplied engine config.
 pub struct LayoutPlaybackRuntime {
     encoded: AuroraEncodedRuntime,
     output: SpeakerOutputStage,
@@ -79,9 +69,8 @@ impl LayoutPlaybackRuntime {
     }
 
     /// Binds Aurora's explicit sixteen-lane 11.1.4 reference identity at both
-    /// the decoder and speaker-DSP boundaries. This never infers geometry from
-    /// `channel_count == 16`. The OpenJOC adapter must separately recognize the
-    /// same reference identity or decoding fails closed.
+    /// the decoder and speaker-DSP boundaries. No geometry is inferred from a
+    /// bare channel count.
     pub fn new_for_aurora_eleven_one_four_reference(
         input_config: EncodedInputConfig,
         mut engine_config: EngineConfig,
@@ -89,15 +78,16 @@ impl LayoutPlaybackRuntime {
         output_dsp: OutputDspConfig,
     ) -> Result<Self, LayoutPlaybackError> {
         if let Some(existing) = engine_config.open_decoder.joc_layout_hint {
-            if existing != AURORA_ELEVEN_ONE_FOUR_REFERENCE_JOC_LAYOUT {
+            if existing != AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT {
                 return Err(LayoutPlaybackError::DecoderLayoutConflict {
-                    expected: AURORA_ELEVEN_ONE_FOUR_REFERENCE_JOC_LAYOUT,
+                    expected: AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT,
                     actual: existing,
                 });
             }
         }
-        engine_config.open_decoder.joc_layout_hint =
-            Some(AURORA_ELEVEN_ONE_FOUR_REFERENCE_JOC_LAYOUT);
+        engine_config.open_decoder = engine_config
+            .open_decoder
+            .with_aurora_eleven_one_four_reference();
         let output_layout = OutputLayoutContract::aurora_eleven_one_four_reference()?;
         Self::new(
             input_config,
@@ -160,8 +150,6 @@ impl LayoutPlaybackRuntime {
         &mut self,
         batch: RuntimeBatch,
     ) -> Result<LayoutPlaybackBatch, LayoutPlaybackError> {
-        // Validate the complete batch before advancing any output-DSP state.
-        // If validation fails, all decoder-owned planar storage is returned.
         if let Some(error) = batch
             .frames
             .iter()
