@@ -9,7 +9,7 @@
 
 use std::{fs, path::PathBuf};
 
-use aurora_core::{AudioFormat, SampleType};
+use aurora_core::{AudioFormat, SampleType, StandardLayout};
 use aurora_decoder_api::{DecodedFrame, Decoder};
 use aurora_decoder_open::{OpenCodecKind, OpenDecoderConfig, UniversalOpenDecoder};
 use openjoc_api::trace_access_units;
@@ -83,11 +83,14 @@ fn synthetic_openjoc_fixture_renders_aurora_7_1_4() {
         total.saturating_add(usize::from(unit.sample_count))
     });
 
-    let mut decoder = UniversalOpenDecoder::new(OpenDecoderConfig {
+    let config = OpenDecoderConfig {
         codec_hint: Some(OpenCodecKind::Eac3),
         joc_stereo_reference: false,
-        joc_layout_hint: Some("7.1.4"),
-    });
+        ..OpenDecoderConfig::default()
+    }
+    .with_standard_joc_layout(StandardLayout::SevenOneFour)
+    .expect("typed Aurora 7.1.4 layout must map to an admitted OpenJOC preset");
+    let mut decoder = UniversalOpenDecoder::new(config);
     decoder
         .configure(format_7_1_4())
         .expect("configure Aurora 7.1.4 decoder output");
