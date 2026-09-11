@@ -36,16 +36,18 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/joc
-          key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
+          key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/test-joc-realtime-soak.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
           restore-keys: |
             ${{ runner.os }}-joc-
       - name: Install host audio tooling
         run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev
-      - name: Validate real E-AC-3 JOC through IEC61937, Harletty, and Omniphony 7.1.4
+      - name: Validate baseline and paced E-AC-3 JOC through IEC61937, Harletty, and Omniphony 7.1.4
         env:
-          AURORA_JOC_BUILD_MODE: debug
+          # Throughput/realtime claims must be evaluated on an optimized build.
+          AURORA_JOC_BUILD_MODE: release
+          AURORA_JOC_REALTIME_LOOPS: 4
           AURORA_JOC_TEST_WORKDIR: ${{ runner.temp }}/aurora-joc-work
           AURORA_HARLETTY_TARGET_DIR: ${{ github.workspace }}/.cache/joc/harletty-target
           AURORA_OMNIP_TARGET_DIR: ${{ github.workspace }}/.cache/joc/omniphony-target
           AURORA_JOC_HARNESS_TARGET_DIR: ${{ github.workspace }}/.cache/joc/harness-target
-        run: bash validation/immersive/test-joc-stack.sh
+        run: bash validation/immersive/test-joc-realtime-soak.sh
