@@ -1,0 +1,92 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/ammarxz9333-cell/Auroraaudio/schemas/realtime-health-report-v1.schema.json",
+  "title": "Aurora Realtime Health Report v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "accepted",
+    "p95_budget_usage_percent",
+    "policy",
+    "metrics",
+    "violations"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "accepted": {
+      "type": "boolean"
+    },
+    "p95_budget_usage_percent": {
+      "type": ["number", "null"],
+      "minimum": 0
+    },
+    "policy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "max_input_underruns",
+        "max_output_underruns",
+        "max_dropped_blocks",
+        "max_p95_budget_usage_percent",
+        "max_estimated_end_to_end_latency_frames",
+        "require_callbacks",
+        "require_fault_free"
+      ],
+      "properties": {
+        "max_input_underruns": { "type": "integer", "minimum": 0 },
+        "max_output_underruns": { "type": "integer", "minimum": 0 },
+        "max_dropped_blocks": { "type": "integer", "minimum": 0 },
+        "max_p95_budget_usage_percent": { "type": "number", "exclusiveMinimum": 0 },
+        "max_estimated_end_to_end_latency_frames": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "require_callbacks": { "type": "boolean" },
+        "require_fault_free": { "type": "boolean" }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "callback_count",
+        "processed_blocks",
+        "input_underruns",
+        "output_underruns",
+        "dropped_blocks",
+        "max_callback_ms",
+        "average_callback_ms",
+        "p95_callback_ms",
+        "block_duration_budget_ms",
+        "renderer_latency_frames",
+        "dsp_latency_frames",
+        "estimated_device_latency_frames",
+        "estimated_end_to_end_latency_frames",
+        "fault_code"
+      ],
+      "properties": {
+        "callback_count": { "type": "integer", "minimum": 0 },
+        "processed_blocks": { "type": "integer", "minimum": 0 },
+        "input_underruns": { "type": "integer", "minimum": 0 },
+        "output_underruns": { "type": "integer", "minimum": 0 },
+        "dropped_blocks": { "type": "integer", "minimum": 0 },
+        "max_callback_ms": { "type": "number", "minimum": 0 },
+        "average_callback_ms": { "type": "number", "minimum": 0 },
+        "p95_callback_ms": { "type": "number", "minimum": 0 },
+        "block_duration_budget_ms": { "type": "number", "minimum": 0 },
+        "renderer_latency_frames": { "type": "integer", "minimum": 0 },
+        "dsp_latency_frames": { "type": "integer", "minimum": 0 },
+        "estimated_device_latency_frames": { "type": "integer", "minimum": 0 },
+        "estimated_end_to_end_latency_frames": { "type": "integer", "minimum": 0 },
+        "fault_code": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "violations": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
