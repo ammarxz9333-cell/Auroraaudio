@@ -155,6 +155,11 @@ impl OpenJocNativeRenderer {
             .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC init failed: {e}")))?;
         session.enable_stage_timing();
         let info = session.output_info();
+        if info.render_mode != RenderMode::Speaker {
+            return Err(DecoderError::UnsupportedInput(
+                "OpenJOC session did not preserve fail-closed speaker render mode",
+            ));
+        }
         if info.sample_format != PcmSampleFormat::F32 {
             return Err(DecoderError::UnsupportedInput(
                 "OpenJOC speaker output is not interleaved F32",
@@ -225,7 +230,8 @@ impl OpenJocNativeRenderer {
             .map_err(|e| DecoderError::ExternalProcess(format!("OpenJOC init failed: {e}")))?;
         session.enable_stage_timing();
         let info = session.output_info();
-        if info.sample_format != PcmSampleFormat::F32
+        if info.render_mode != RenderMode::Speaker
+            || info.sample_format != PcmSampleFormat::F32
             || info.channel_count != output.channel_count
             || info.layout_name != AURORA_ELEVEN_ONE_FOUR_REFERENCE_LAYOUT
             || info
@@ -445,6 +451,7 @@ impl OpenJocNativeRenderer {
         self.ready_frames.clear();
         while let Some(frame) = self.session.receive_frame() {
             let malformed_shape = frame.sample_count == 0
+                || frame.render_mode != RenderMode::Speaker
                 || frame.sample_format != PcmSampleFormat::F32
                 || frame.sample_rate != self.output.sample_rate
                 || frame.channel_count != self.output.channel_count
@@ -455,7 +462,7 @@ impl OpenJocNativeRenderer {
             if malformed_shape {
                 self.ready_frames.clear();
                 return Err(DecoderError::UnsupportedInput(
-                    "OpenJOC output semantic layout, channel order or PCM format changed",
+                    "OpenJOC output render mode, semantic layout, channel order or PCM format changed",
                 ));
             }
             if frame.interleaved_f32.iter().any(|sample| !sample.is_finite()) {
