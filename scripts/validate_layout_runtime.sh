@@ -33,17 +33,31 @@ cargo generate-lockfile
 cargo metadata --format-version 1 --locked >/dev/null
 cargo fmt --all -- --check
 
-cargo check --locked -p aurora-layout-playback-runtime --all-targets
-cargo test --locked -p aurora-layout-playback-runtime
-cargo clippy --locked -p aurora-layout-playback-runtime --all-targets -- -D warnings
+printf '\n== OpenJOC production adapter ==\n'
+cargo check --locked -p aurora-decoder-open --all-targets
+cargo test --locked -p aurora-decoder-open
+cargo clippy --locked -p aurora-decoder-open --all-targets -- -D warnings
 
+printf '\n== Dynamic speaker DSP/output boundary ==\n'
 cargo check --locked -p aurora-speaker-output --all-targets
 cargo test --locked -p aurora-speaker-output
 cargo clippy --locked -p aurora-speaker-output --all-targets -- -D warnings
 
+printf '\n== Layout playback runtime ==\n'
+cargo check --locked -p aurora-layout-playback-runtime --all-targets
+cargo test --locked -p aurora-layout-playback-runtime
+cargo clippy --locked -p aurora-layout-playback-runtime --all-targets -- -D warnings
+
+printf '\n== Native ALSA output backend ==\n'
+cargo check --locked -p aurora-alsa-output --all-targets
+cargo test --locked -p aurora-alsa-output
+cargo clippy --locked -p aurora-alsa-output --all-targets -- -D warnings
+
+printf '\n== Wider-layout appliance ==\n'
 cargo check --locked -p aurora-cli --no-default-features --features layout-runtime --bin aurora-layout-runtime
 cargo test --locked -p aurora-cli --no-default-features --features layout-runtime --bin aurora-layout-runtime
 cargo clippy --locked -p aurora-cli --no-default-features --features layout-runtime --bin aurora-layout-runtime -- -D warnings
+cargo run --quiet --locked -p aurora-cli --no-default-features --features layout-runtime --bin aurora-layout-runtime -- --help >/dev/null
 
 if ! git diff --quiet -- Cargo.lock; then
   git diff --stat -- Cargo.lock >&2
