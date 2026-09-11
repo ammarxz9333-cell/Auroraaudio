@@ -85,6 +85,7 @@ cargo +"$TOOLCHAIN" build --locked --release \
 
 JOC_FIXTURE="$HARLETTY_DIR/harletty/tests/fixtures/joc_atmos_1s.eac3"
 IEC_FILE="$WORK_DIR/joc_atmos_1s.spdif"
+PLAIN_IEC_FILE="$WORK_DIR/plain_eac3_5_1.spdif"
 BRIDGE_LIB="$HARLETTY_DIR/target/release/libharletty_bridge.so"
 ORENDER="$OMNIP_DIR/omniphony-renderer/target/release/orender"
 LAYOUT="$OMNIP_DIR/layouts/7.1.4.yaml"
@@ -100,25 +101,34 @@ done
 ffmpeg -nostdin -hide_banner -loglevel error -y \
   -i "$JOC_FIXTURE" -map 0:a:0 -c:a copy -f spdif "$IEC_FILE"
 
-python3 - "$IEC_FILE" <<'PY'
+# Negative control: ordinary channel-based E-AC-3 must traverse the same 0x15
+# transport without ever making Harletty report JOC objects.
+ffmpeg -nostdin -hide_banner -loglevel error -y \
+  -f lavfi -i "anullsrc=channel_layout=5.1:sample_rate=48000" \
+  -t 0.25 -c:a eac3 -b:a 448k -f spdif "$PLAIN_IEC_FILE"
+
+python3 - "$IEC_FILE" "$PLAIN_IEC_FILE" <<'PY'
 import pathlib, sys
-p = pathlib.Path(sys.argv[1])
-data = p.read_bytes()
-if len(data) < 8:
-    raise SystemExit("IEC61937 carrier is too short")
-if data[:4] != bytes.fromhex("72f81f4e"):
-    raise SystemExit(f"unexpected IEC61937 sync: {data[:4].hex()}")
-if data[4] & 0x1f != 0x15:
-    raise SystemExit(f"expected E-AC-3 IEC61937 data type 0x15, got 0x{data[4] & 0x1f:02x}")
-pd = int.from_bytes(data[6:8], "little")
-if pd <= 0:
-    raise SystemExit("first E-AC-3 burst has an empty Pd length")
-print(f"IEC61937 carrier PASS: bytes={len(data)} first_pd={pd} data_type=0x15")
+for filename in sys.argv[1:]:
+    p = pathlib.Path(filename)
+    data = p.read_bytes()
+    if len(data) < 8:
+        raise SystemExit(f"IEC61937 carrier is too short: {p}")
+    if data[:4] != bytes.fromhex("72f81f4e"):
+        raise SystemExit(f"unexpected IEC61937 sync in {p}: {data[:4].hex()}")
+    if data[4] & 0x1f != 0x15:
+        raise SystemExit(
+            f"expected E-AC-3 IEC61937 data type 0x15 in {p}, got 0x{data[4] & 0x1f:02x}"
+        )
+    pd = int.from_bytes(data[6:8], "little")
+    if pd <= 0:
+        raise SystemExit(f"first E-AC-3 burst has an empty Pd length: {p}")
+    print(f"IEC61937 carrier PASS: file={p.name} bytes={len(data)} first_pd={pd} data_type=0x15")
 PY
 
 # 4) Exercise the production transport contract directly: arbitrary carrier
 # chunks -> Omniphony SpdifParser -> Harletty push_packet(Iec61937, 0x15).
-# The gate requires actual object telemetry, not merely decoded multichannel PCM.
+# Run both a plain E-AC-3 negative control and a real JOC positive control.
 HARNESS_DIR="$WORK_DIR/iec-joc-harness"
 mkdir -p "$HARNESS_DIR/src"
 cat > "$HARNESS_DIR/Cargo.toml" <<EOF_CARGO
@@ -143,7 +153,13 @@ fn main() {
     let mut args = env::args().skip(1);
     let bridge_path = args.next().expect("bridge path argument");
     let carrier_path = args.next().expect("IEC61937 carrier argument");
+    let expectation = args.next().expect("expectation argument: objects|plain");
     assert!(args.next().is_none(), "unexpected extra arguments");
+    let expect_objects = match expectation.as_str() {
+        "objects" => true,
+        "plain" => false,
+        other => panic!("unknown expectation: {other}"),
+    };
 
     let lib = BridgeLibRef::load_from_file(Path::new(&bridge_path))
         .expect("load Harletty bridge");
@@ -163,7 +179,7 @@ fn main() {
         parser.push_bytes(chunk);
         while let Some(packet) = parser.get_next_packet() {
             packets += 1;
-            assert_eq!(packet.data_type, 0x15, "non-E-AC-3 burst in JOC fixture");
+            assert_eq!(packet.data_type, 0x15, "non-E-AC-3 burst in fixture");
             let result = bridge.push_packet(
                 packet.payload.as_slice().into(),
                 RInputTransport::Iec61937,
@@ -190,18 +206,28 @@ fn main() {
 
     assert!(packets > 0, "no IEC61937 packets extracted");
     assert!(frames > 0, "Harletty emitted no decoded frames");
-    assert!(metadata_frames > 0, "JOC fixture emitted no metadata frames");
-    assert!(events > 0, "JOC fixture emitted no object events");
-    assert!(object_channels > 0, "JOC fixture emitted no object-to-channel declarations");
-    assert!(saw_objects, "bridge.has_objects() never became true");
 
-    println!(
-        "JOC-IEC61937-PASS packets={packets} frames={frames} metadata_frames={metadata_frames} events={events} object_channels={object_channels}"
-    );
+    if expect_objects {
+        assert!(metadata_frames > 0, "JOC fixture emitted no metadata frames");
+        assert!(events > 0, "JOC fixture emitted no object events");
+        assert!(object_channels > 0, "JOC fixture emitted no object-to-channel declarations");
+        assert!(saw_objects, "bridge.has_objects() never became true for JOC");
+        println!(
+            "JOC-IEC61937-PASS packets={packets} frames={frames} metadata_frames={metadata_frames} events={events} object_channels={object_channels}"
+        );
+    } else {
+        assert!(!saw_objects, "plain E-AC-3 incorrectly reported JOC objects");
+        println!(
+            "PLAIN-EAC3-NEGATIVE-CONTROL-PASS packets={packets} frames={frames} metadata_frames={metadata_frames} events={events} object_channels={object_channels}"
+        );
+    }
 }
 EOF_RS
+
 cargo +"$TOOLCHAIN" run --quiet --release --manifest-path "$HARNESS_DIR/Cargo.toml" -- \
-  "$BRIDGE_LIB" "$IEC_FILE"
+  "$BRIDGE_LIB" "$PLAIN_IEC_FILE" plain
+cargo +"$TOOLCHAIN" run --quiet --release --manifest-path "$HARNESS_DIR/Cargo.toml" -- \
+  "$BRIDGE_LIB" "$IEC_FILE" objects
 
 # 5) Feed the same IEC61937 JOC carrier through the actual orender CLI and the
 # same runtime bridge, rendering to the pinned 7.1.4 speaker layout.
