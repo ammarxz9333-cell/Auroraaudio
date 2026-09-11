@@ -1,14 +1,22 @@
-//! Canonical 48 kHz, 7.1.4 output DSP used by the S6 stream and host validation.
-//! Audio is interleaved in Aurora canonical order. Construction may allocate;
-//! processing and control setters never allocate or access the operating system.
+//! Canonical 48 kHz output DSP used by the S6 stream and host validation.
+//! Audio is interleaved in the configured Aurora output-layout order. The
+//! current storage implementation remains twelve channels while layout
+//! semantics (LFE, height lanes and calibration roles) are contract-driven.
+//! Construction may allocate; processing and control setters never allocate or
+//! access the operating system.
+
 use anyhow::{bail, Result};
+use aurora_core::StandardLayout;
 use serde::{Deserialize, Serialize};
 use std::f32::consts::PI;
+
+use crate::output_layout::OutputLayoutContract;
+
 pub const SAMPLE_RATE: u32 = 48_000;
 pub const CHANNELS: usize = 12;
-const LFE: usize = 3;
 const MAX_LIPSYNC_FRAMES: usize = 24_000;
 const LIPSYNC_RING_FRAMES: usize = MAX_LIPSYNC_FRAMES + 1;
+
 fn db_to_linear(db: f32) -> f32 {
     10.0_f32.powf(db / 20.0)
 }
@@ -27,6 +35,7 @@ pub struct OutputDspConfig {
     pub limiter_release_ms: f32,
     pub lipsync_frames: usize,
 }
+
 impl Default for OutputDspConfig {
     fn default() -> Self {
         Self {
@@ -65,7 +74,8 @@ pub struct ChannelCalibration {
     pub peq: Vec<PeqBand>,
 }
 
-/// Versioned configuration accepted only for the canonical twelve-channel stream.
+/// Versioned configuration whose channel roles must match the active output
+/// layout contract exactly.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct SpeakerCalibration {
@@ -98,21 +108,24 @@ impl PreparedCalibration {
         }
     }
 
-    fn prepare(config: &SpeakerCalibration) -> Result<Self> {
+    fn prepare(config: &SpeakerCalibration, layout: &OutputLayoutContract) -> Result<Self> {
         if config.schema_version != 1
             || config.sample_rate != SAMPLE_RATE
-            || config.channels.len() != CHANNELS
+            || layout.channel_count() != CHANNELS
+            || config.channels.len() != layout.channel_count()
         {
-            bail!("calibration requires schema 1, 48000 Hz and twelve canonical channels");
+            bail!(
+                "calibration requires schema 1, 48000 Hz and exactly the active output-layout channels"
+            );
         }
         let mut prepared = Self::flat();
-        for (index, (channel, role)) in config
+        for (index, (channel, expected)) in config
             .channels
             .iter()
-            .zip(aurora_core::StandardLayout::SevenOneFour.canonical_roles())
+            .zip(layout.channels().iter())
             .enumerate()
         {
-            if &channel.role != role
+            if channel.role != expected.role
                 || channel.delay_frames >= CALIBRATION_DELAY_FRAMES
                 || !channel.trim_db.is_finite()
                 || !(-24.0..=12.0).contains(&channel.trim_db)
@@ -173,6 +186,7 @@ impl PreparedCalibration {
         self.write = 0;
     }
 }
+
 #[derive(Debug, Clone, Copy, Default)]
 struct Biquad {
     b0: f32,
@@ -409,8 +423,10 @@ pub struct OutputShapeError;
 
 /// One prepared cinema DSP chain shared by offline and appliance processing.
 pub struct SpeakerPostProcessor {
+    layout: OutputLayoutContract,
     calibration: PreparedCalibration,
     crossovers: [Crossover; CHANNELS],
+    lfe_index: usize,
     lfe_low_1: Biquad,
     lfe_low_2: Biquad,
     sub_high_1: Biquad,
@@ -428,8 +444,28 @@ pub struct SpeakerPostProcessor {
 }
 
 impl SpeakerPostProcessor {
-    /// Prepares all filter and delay state before audio processing.
+    /// Preserves the established product constructor by selecting Aurora's
+    /// canonical 7.1.4 contract explicitly.
     pub fn new(config: OutputDspConfig) -> Result<Self> {
+        let layout = OutputLayoutContract::for_standard(StandardLayout::SevenOneFour)?;
+        Self::new_for_layout(config, layout)
+    }
+
+    /// Prepares all filter and delay state for an explicit output layout. The
+    /// current storage implementation is intentionally still limited to twelve
+    /// channels; callers get a deterministic setup error for wider layouts
+    /// until the dynamic-buffer phase lands.
+    pub fn new_for_layout(config: OutputDspConfig, layout: OutputLayoutContract) -> Result<Self> {
+        if layout.channel_count() != CHANNELS {
+            bail!(
+                "current speaker postprocessor storage requires {CHANNELS} channels; layout {} has {}",
+                layout.name(),
+                layout.channel_count()
+            );
+        }
+        let Some(lfe_index) = layout.lfe_index() else {
+            bail!("current bass-managed speaker postprocessor requires exactly one LFE channel");
+        };
         let OutputDspConfig {
             bed_crossover_hz,
             height_crossover_hz,
@@ -450,17 +486,19 @@ impl SpeakerPostProcessor {
         let bed = Crossover::linkwitz_riley_4(SAMPLE_RATE as f32, bed_crossover_hz)?;
         let height = Crossover::linkwitz_riley_4(SAMPLE_RATE as f32, height_crossover_hz)?;
         let mut crossovers = [bed; CHANNELS];
-        for crossover in &mut crossovers[8..12] {
-            *crossover = height;
+        for &index in layout.height_indices() {
+            crossovers[index] = height;
         }
-        crossovers[LFE] = Crossover::default();
+        crossovers[lfe_index] = Crossover::default();
         let q = 1.0 / 2.0_f32.sqrt();
         let lfe_low = Biquad::low_pass(SAMPLE_RATE as f32, lfe_lowpass_hz, q)?;
         let sub_high = Biquad::high_pass(SAMPLE_RATE as f32, sub_highpass_hz, q)?;
         let gain_samples = 5.0 * SAMPLE_RATE as f32 / 1_000.0;
         Ok(Self {
+            layout,
             calibration: PreparedCalibration::flat(),
             crossovers,
+            lfe_index,
             lfe_low_1: lfe_low,
             lfe_low_2: lfe_low,
             sub_high_1: sub_high,
@@ -478,9 +516,13 @@ impl SpeakerPostProcessor {
         })
     }
 
+    pub fn layout(&self) -> &OutputLayoutContract {
+        &self.layout
+    }
+
     /// Replaces calibration transactionally at setup, never from an audio callback.
     pub fn configure_calibration(&mut self, config: &SpeakerCalibration) -> Result<()> {
-        let prepared = PreparedCalibration::prepare(config)?;
+        let prepared = PreparedCalibration::prepare(config, &self.layout)?;
         self.calibration = prepared;
         self.reset();
         Ok(())
@@ -518,10 +560,10 @@ impl SpeakerPostProcessor {
                     *sample = 0.0;
                 }
             }
-            let original_lfe = frame[LFE];
+            let original_lfe = frame[self.lfe_index];
             let mut redirected_bass = 0.0_f32;
             for (channel, sample) in frame.iter_mut().enumerate() {
-                if channel == LFE {
+                if channel == self.lfe_index {
                     continue;
                 }
                 let (high, low) = self.crossovers[channel].split(*sample);
@@ -532,7 +574,7 @@ impl SpeakerPostProcessor {
             let lfe_band =
                 self.lfe_low_2.process(self.lfe_low_1.process(original_lfe)) * self.lfe_gain;
             let summed_sub = lfe_band + redirected_bass * self.redirected_bass_gain;
-            frame[LFE] = self.sub_high_2.process(self.sub_high_1.process(summed_sub));
+            frame[self.lfe_index] = self.sub_high_2.process(self.sub_high_1.process(summed_sub));
 
             self.calibration.process_frame(frame);
             // Apply mute/gain after delay so a 500 ms lip-sync buffer cannot
@@ -571,20 +613,30 @@ impl SpeakerPostProcessor {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::output_layout::{OutputChannelClass, OutputChannelSpec};
+    use aurora_core::ChannelRole;
+
     const BLOCK_SAMPLES: usize = 40 * CHANNELS;
+
     fn processor() -> SpeakerPostProcessor {
         SpeakerPostProcessor::new(OutputDspConfig::default()).unwrap()
     }
+
+    fn canonical_layout() -> OutputLayoutContract {
+        OutputLayoutContract::for_standard(StandardLayout::SevenOneFour).unwrap()
+    }
+
     #[test]
     fn prepared_calibration_applies_exact_delay_and_peq_center_gain() {
+        let layout = canonical_layout();
         let mut config = SpeakerCalibration {
             schema_version: 1,
             sample_rate: SAMPLE_RATE,
-            channels: aurora_core::StandardLayout::SevenOneFour
-                .canonical_roles()
+            channels: layout
+                .channels()
                 .iter()
-                .map(|role| ChannelCalibration {
-                    role: role.clone(),
+                .map(|channel| ChannelCalibration {
+                    role: channel.role.clone(),
                     trim_db: 0.0,
                     delay_frames: 0,
                     invert_polarity: false,
@@ -598,7 +650,7 @@ mod tests {
             q: 1.0,
             gain_db: 6.0,
         });
-        let mut prepared = PreparedCalibration::prepare(&config).unwrap();
+        let mut prepared = PreparedCalibration::prepare(&config, &layout).unwrap();
         let mut power_in = 0.0_f64;
         let mut power_out = 0.0_f64;
         for index in 0..4800 {
@@ -614,6 +666,63 @@ mod tests {
             }
         }
         assert!(((power_out / power_in).sqrt() - f64::from(db_to_linear(6.0))).abs() < 0.002);
+    }
+
+    #[test]
+    fn explicit_layout_drives_lfe_and_height_indices() {
+        let mut channels = vec![
+            OutputChannelSpec {
+                role: ChannelRole::FrontLeft,
+                class: OutputChannelClass::Bed,
+            },
+            OutputChannelSpec {
+                role: ChannelRole::FrontRight,
+                class: OutputChannelClass::Bed,
+            },
+        ];
+        for index in 2..12 {
+            let (role, class) = if index == 5 {
+                (
+                    ChannelRole::Custom("sub".to_owned()),
+                    OutputChannelClass::Lfe,
+                )
+            } else if index >= 10 {
+                (
+                    ChannelRole::Custom(format!("height-{index}")),
+                    OutputChannelClass::Height,
+                )
+            } else {
+                (
+                    ChannelRole::Custom(format!("bed-{index}")),
+                    OutputChannelClass::Bed,
+                )
+            };
+            channels.push(OutputChannelSpec { role, class });
+        }
+        let layout = OutputLayoutContract::custom("test-12", channels).unwrap();
+        let post = SpeakerPostProcessor::new_for_layout(OutputDspConfig::default(), layout).unwrap();
+        assert_eq!(post.lfe_index, 5);
+        assert_eq!(post.layout().height_indices(), &[10, 11]);
+    }
+
+    #[test]
+    fn wider_layout_is_rejected_until_dynamic_storage_lands() {
+        let mut channels = Vec::new();
+        for index in 0..16 {
+            let class = if index == 3 {
+                OutputChannelClass::Lfe
+            } else if index >= 12 {
+                OutputChannelClass::Height
+            } else {
+                OutputChannelClass::Bed
+            };
+            channels.push(OutputChannelSpec {
+                role: ChannelRole::Custom(format!("lane-{index}")),
+                class,
+            });
+        }
+        let layout = OutputLayoutContract::custom("future-16", channels).unwrap();
+        assert!(SpeakerPostProcessor::new_for_layout(OutputDspConfig::default(), layout).is_err());
     }
 
     #[test]
