@@ -108,9 +108,10 @@ fn observe_batch(batch: LayoutPlaybackBatch, pcm_frames: &mut usize, bursts: &mu
 #[test]
 #[ignore = "requires exact OpenJOC synthetic joc.ec3 fixture via AURORA_OPENJOC_SYNTHETIC_FIXTURE"]
 fn pinned_joc_survives_production_s32_aurora_eleven_one_four_runtime() {
-    let path = PathBuf::from(std::env::var(FIXTURE_ENV).unwrap_or_else(|_| {
-        panic!("set {FIXTURE_ENV} to the verified OpenJOC joc.ec3 fixture")
-    }));
+    let path =
+        PathBuf::from(std::env::var(FIXTURE_ENV).unwrap_or_else(|_| {
+            panic!("set {FIXTURE_ENV} to the verified OpenJOC joc.ec3 fixture")
+        }));
     let fixture = fs::read(&path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     assert_eq!(fixture.len(), EXPECTED_BYTES);
