@@ -19,6 +19,8 @@ Latest integrated validation slice: **PR #133**, squash commit `1445f0f29b9144dd
 
 Completed trackers: **#118**, **#119**, **#130**, **#132**.
 
+Open critical-path tracker: **#137** — authorized positive moving-object JOC evidence.
+
 ## 2. Product goal
 
 Aurora is an open, modular, hardware-agnostic immersive-audio stack, primarily Rust.
@@ -103,6 +105,12 @@ The temporal evidence contract separates:
 
 The pinned public OpenJOC source provides inspector/renderer tooling and object-scene statistics, but no tracked public `.eac3/.ec3/.mp4/.m4a` moving-JOC corpus suitable as reproducible CI evidence. A previously researched 4-second dual-object carrier is private evidence and is not an acceptable repository/CI dependency.
 
+### In-development generated-carrier diagnostic — not merged proof
+
+Issue #137 tracks the remaining authorized positive moving-object proof. A short-lived validation branch adds an Aurora-owned deterministic moving DAMF source generator plus an optional manual runner that uses a separate, clean checkout of `raress96/dolby-atmos-encoder` pinned at `faf3ef16c48dca52958f3cd1276a9796477eba1d`. The external implementation is not vendored or linked into Aurora.
+
+If that generated-carrier lane passes, it proves only that the unchanged Aurora/OpenJOC temporal harness can admit deliberately time-varying OAMD/JOC produced by that external research implementation. It does **not** satisfy the genuine Dolby-authored/authorized carrier requirement and must not upgrade the main moving-object compatibility claim.
+
 ### Historical hardware proof — limited
 
 Previously demonstrated:
@@ -112,7 +120,7 @@ This proves only DD+/E-AC-3 5.1 extraction/decoding in that tested setup.
 
 ### Not yet proven
 
-- reproducible moving-object JOC carrier with sufficient timed OAMD/object-state diversity and positive temporal-harness result;
+- reproducible authorized genuine moving-object JOC carrier with sufficient timed OAMD/object-state diversity and positive temporal-harness result;
 - authored object-position correctness through OpenJOC rendering;
 - physical continuous eARC -> E-AC-3 JOC -> Aurora -> physical 7.1.4;
 - Netflix/other DRM-service Atmos compatibility through Aurora;
@@ -170,6 +178,7 @@ Current built-in backend implementation versions are `0.1.0`; realtime backend c
 - CLI/evaluation: `crates/aurora-cli/`
 - Immersive/JOC evidence: `validation/immersive/`
 - Temporal JOC analyzer/harness: `validation/immersive/joc_temporal_evidence.py`, `validation/immersive/test-joc-temporal-evidence.sh`
+- Synthetic moving-DAMF diagnostic source/runner: `validation/immersive/generate-synthetic-moving-damf.py`, `validation/immersive/test-synthetic-moving-joc.sh`
 - OpenJOC reference lane: `validation/immersive/test-openjoc-reference.sh`
 - Realtime JOC pacing lane: `validation/immersive/test-joc-realtime-soak.sh`
 - Immersive truth matrix: `validation/immersive/README.md`
@@ -186,15 +195,16 @@ Legacy invariants: implementation-selection `RendererConfiguration` and `Backend
 
 ## 7. Current work / Next actions — positive moving-object JOC proof
 
-The fail-closed harness is merged and validated. The next critical path is no longer analyzer implementation; it is acquiring or legally generating a **reproducible, authorized moving-object E-AC-3 JOC carrier** that can exercise the same harness in positive-proof mode.
+The fail-closed harness is merged and validated. **Issue #137** is the active critical-path tracker. The next main proof remains acquiring a reproducible, authorized **genuine moving-object E-AC-3 JOC carrier** that can exercise the same harness in positive-proof mode. The generated-carrier diagnostic is supplementary and must not be substituted for this requirement.
 
 Next actions, in order:
-1. Search for a publicly redistributable or otherwise reproducibly retrievable moving-object E-AC-3 JOC test carrier with clear provenance/licensing. Do not use DRM circumvention or protected-media extraction.
-2. For each candidate, record exact provenance and SHA-256 and run `validation/immersive/test-joc-temporal-evidence.sh` unchanged.
-3. A positive software proof requires all codec/JOC gates plus real timed OAMD/object-state diversity plus independent rendered temporal-energy diversity. Do not weaken thresholds to make a carrier pass.
-4. Preserve report artifacts and distinguish self-consistency from authored-position correctness.
-5. If no legal public carrier exists, support a documented manual/user-supplied authorized-carrier evidence path; do not commit private/copyrighted media merely to satisfy CI.
-6. Only after a real carrier passes may `AGENTS.md` and project docs upgrade the claim from “harness ready/fail-closed” to “positive moving-object software evidence”.
+1. Validate and merge the synthetic moving-DAMF diagnostic lane only if its generator self-test and official immersive/JOC CI are green; keep its claim explicitly diagnostic.
+2. Search for a publicly redistributable or otherwise reproducibly retrievable genuine moving-object E-AC-3 JOC test carrier with clear provenance/licensing. Do not use DRM circumvention or protected-media extraction.
+3. For each genuine candidate, record exact provenance and SHA-256 and run `validation/immersive/test-joc-temporal-evidence.sh` unchanged.
+4. A positive software proof requires all codec/JOC gates plus real timed OAMD/object-state diversity plus independent rendered temporal-energy diversity. Do not weaken thresholds to make a carrier pass.
+5. Preserve report artifacts and distinguish self-consistency from authored-position correctness.
+6. If no legal public genuine carrier exists, support a documented manual/user-supplied authorized-carrier evidence path; do not commit private/copyrighted media merely to satisfy CI.
+7. Only after a genuine carrier passes may `AGENTS.md` and project docs upgrade the claim from “harness ready/fail-closed” to “positive moving-object software evidence”.
 
 Other queued trackers:
 - #115: evaluate newer Omniphony behind a separate reference lane; do not upgrade the stable pinned reference by recency alone.
@@ -209,7 +219,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-For immersive/JOC validation changes, require the official `.github/workflows/immersive-joc-stack-ci.yml` PR run and inspect its emitted evidence. Synthetic analyzer tests prove only report/metric logic; they are never codec/JOC proof.
+For immersive/JOC validation changes, require the official `.github/workflows/immersive-joc-stack-ci.yml` PR run and inspect its emitted evidence. The synthetic DAMF generator must pass `python3 validation/immersive/generate-synthetic-moving-damf.py --self-test`. Synthetic analyzer/generator tests prove only deterministic metric/source-generation logic; they are never genuine codec/JOC proof.
 
 For performance/realtime changes also run relevant release benchmarks/allocation guards. For runtime/config PRs require official PR CI plus simulation smoke and sustained realtime-health soak when applicable.
 
