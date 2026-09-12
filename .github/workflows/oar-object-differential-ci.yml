@@ -7,9 +7,12 @@ on:
       - "config/oar-evaluation-v1.json"
       - "crates/aurora-renderer-vbap/**"
       - "validation/open-immersive/oar_stereo_object_probe.c"
+      - "validation/open-immersive/oar_7_1_4_object_probe.c"
       - "validation/open-immersive/oar_aurora_differential.py"
+      - "validation/open-immersive/oar_aurora_714_differential.py"
       - "validation/open-immersive/test-oar-reference.sh"
       - "validation/open-immersive/test-oar-aurora-object-differential.sh"
+      - "validation/open-immersive/test-oar-aurora-714-differential.sh"
       - ".github/workflows/oar-object-differential-ci.yml"
       - "AGENTS.md"
 
@@ -36,7 +39,7 @@ jobs:
         shell: bash
         run: bash validation/open-immersive/test-oar-aurora-object-differential.sh "${{ runner.temp }}/oar-object-differential"
 
-      - name: Upload differential evidence
+      - name: Upload stereo differential evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
@@ -46,5 +49,33 @@ jobs:
             ${{ runner.temp }}/oar-object-differential/oar-probe.log
             ${{ runner.temp }}/oar-object-differential/aurora-probe.log
             ${{ runner.temp }}/oar-object-differential/reference/oar-reference-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
+
+  immersive-7-1-4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install OAR build tooling
+        run: sudo apt-get update && sudo apt-get install --yes cmake ninja-build build-essential
+
+      - name: Run pinned OAR versus Aurora 7.1.4 height/object differential
+        shell: bash
+        run: bash validation/open-immersive/test-oar-aurora-714-differential.sh "${{ runner.temp }}/oar-714-differential"
+
+      - name: Upload 7.1.4 differential evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oar-714-differential-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/oar-714-differential/oar-aurora-714-differential.json
+            ${{ runner.temp }}/oar-714-differential/oar-714-probe.log
+            ${{ runner.temp }}/oar-714-differential/aurora-714-probe.log
+            ${{ runner.temp }}/oar-714-differential/reference/oar-reference-evidence.json
           if-no-files-found: warn
           retention-days: 14
