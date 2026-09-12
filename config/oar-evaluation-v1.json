@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "id": "aomedia-oar",
+    "upstream": "https://github.com/AOMediaCodec/oar",
+    "version": "1.0.0",
+    "commit": "5601d50c05a5e71cac7e80babeff7dd2a53b2060",
+    "license": "BSD-3-Clause-Clear",
+    "patent_file_required": true,
+    "integration": "external-reference-only",
+    "build": {
+      "generator": "cmake",
+      "build_examples": true,
+      "enable_binauralizer": true,
+      "enable_hoa_lfe": false
+    }
+  },
+  "acceptance": {
+    "exact_commit_required": true,
+    "upstream_tests_required": true,
+    "license_and_patents_required": true,
+    "promotion_to_aurora_coverage_requires_differential_evidence": true
+  },
+  "truth_boundary": "Successful upstream build/tests establish only that the pinned OAR reference is usable as an external oracle. They do not prove IAMF integration into Aurora, equivalence to Dolby Atmos, physical output, or certification."
+}
