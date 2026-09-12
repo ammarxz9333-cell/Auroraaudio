@@ -1,0 +1,65 @@
+name: Temporary config v2 renderer runner
+
+on:
+  push:
+    branches:
+      - feature/config-renderer-component-ref-v2
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: "!contains(github.event.head_commit.message, '[config-v2-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/config-renderer-component-ref-v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Extract and run renderer component-reference patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          source = Path('.github/workflows/temporary-config-v2-renderer.yml').read_text()
+          start = source.index('          from pathlib import Path\n')
+          end = source.index('      - name: Refresh lockfile and validate renderer reference slice\n')
+          block = source[start:end]
+          lines = []
+          for line in block.splitlines():
+              if line.startswith('          '):
+                  line = line[10:]
+              lines.append(line)
+          Path('/tmp/config_v2_patch.py').write_text('\n'.join(lines) + '\n')
+          PY
+          python /tmp/config_v2_patch.py
+      - name: Refresh lockfile and validate renderer reference slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo check --workspace --all-targets --all-features
+          cargo check --workspace --all-targets --all-features --locked
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test -p aurora-config -p aurora-runtime-assembly -p aurora-runtime-inspection --all-features --locked
+          cargo test -p aurora-runtime-materialization -p aurora-realtime-engine --all-features --locked
+          if grep -RIn 'RendererConfiguration' crates/aurora-config crates/aurora-runtime-assembly; then
+            echo 'legacy RendererConfiguration remains in current config/runtime assembly' >&2
+            exit 1
+          fi
+      - name: Commit production slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "aurora-config-v2-bot"
+          git config user.email "aurora-config-v2-bot@users.noreply.github.com"
+          git add Cargo.lock crates fixtures docs
+          git status --short
+          git commit -m "Migrate renderer selection to component references [config-v2-bot]"
+          git push origin HEAD:feature/config-renderer-component-ref-v2
