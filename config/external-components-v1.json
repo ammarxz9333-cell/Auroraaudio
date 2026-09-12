@@ -80,7 +80,12 @@
       "roles": ["iamf-open-render-reference", "object-render-reference", "hoa-render-reference", "binaural-reference", "differential-validation"],
       "object_metadata": "supported-by-upstream-reference-api",
       "production_ready": false,
-      "evidence": ["config/oar-evaluation-v1.json", "validation/open-immersive/test-oar-reference.sh"]
+      "evidence": [
+        "config/oar-evaluation-v1.json",
+        "validation/open-immersive/test-oar-reference.sh",
+        "docs/oar-reference.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
     },
     {
       "id": "libiamf",
