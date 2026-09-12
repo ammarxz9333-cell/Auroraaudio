@@ -1,6 +1,7 @@
 //! Basic offline DSP processors.
 
 pub mod output;
+mod realtime;
 
 use aurora_core::AudioBlock;
 use thiserror::Error;
