@@ -25,6 +25,8 @@ Latest full-system virtual-hardware proof: **PR #146**, squash commit `2d53aec6b
 
 Latest native Windows full-system proof: **PR #148**, squash commit `44746431975c65126c88b31ce253fc82c737cce7`.
 
+Physical Gate A admission tooling is being added in **PR #149**; its CI is tooling evidence only until a real Lindy/SiI9437 -> Pi capture is supplied.
+
 Completed trackers: **#118**, **#119**, **#130**, **#132**, **#135**, **#141**, **#145**, **#147**.
 
 Active physical critical-path tracker: **#143** — physical continuous eARC/JOC to synchronous 7.1.4 output.
@@ -171,6 +173,12 @@ Run locally on a native Windows checkout with:
 
 This Windows lane is functional/regression evidence only. It does not replace the independent OpenJOC Linux reference lane and does not prove physical eARC/UAC2/TDM/DAC behavior, Dolby certification, or acoustic parity.
 
+### PR #149 — physical Gate A admission tooling (pending physical evidence)
+
+PR #149 adds `validation/physical/aurora_physical_ingress.py` and dedicated Linux/Windows tooling CI. The validator admits only an exact physical IEC61937 E-AC-3 capture for issue #143: data type `0x15`, fixed 24576-byte burst grid, zero transport padding, no Pc error flag, exact 16-bit payload reconstruction, explicit reset/drop counters, and optional required monotonic capture timestamps. For the first physical test, the reconstructed raw E-AC-3 SHA-256 must equal `0219a241559de5231f31c6093072740ff9fe0657b3354541bc6838ef2d5e5be0` over 2360 bursts.
+
+The synthetic self-tests deliberately inject wrong type, payload mutation, non-zero padding, byte slip, and reset-counter failure and require fail-closed behavior. Passing that tooling CI is **not** a physical result. Gate A remains unproven until the real Lindy/SiI9437 -> Pi capture is supplied and passes the validator with real capture metadata.
+
 ### Historical physical ingress proof — limited
 
 Previously demonstrated:
@@ -196,6 +204,7 @@ Output selection facts:
 ### Not yet proven
 
 - physical continuous `eARC -> E-AC-3 JOC -> Aurora -> synchronous physical 7.1.4`;
+- physical Gate A exact pinned-carrier ingress under the new validator;
 - authored object-position correctness;
 - Netflix/other DRM-service Atmos compatibility through Aurora;
 - exact final DAC/amplifier/speaker design;
@@ -239,6 +248,7 @@ Stable built-in IDs include:
 - Aurora moving path: `validation/immersive/test-joc-aurora-moving.sh`, `aurora_joc_moving_evidence.py`
 - Full-system virtual hardware: `validation/virtual-hardware/`, `docs/aurora-full-system-sim.md`
 - Native Windows launcher: `validation/virtual-hardware/run-aurora-sim-windows.ps1`, `run_aurora_sim_windows.py`, `pace_orender.py`, `aurora_moving_telemetry.rs`
+- Physical Gate A tooling: `validation/physical/aurora_physical_ingress.py`
 - Physical v1 plan: `docs/physical-joc-validation-v1.md`
 - External components/licenses: `config/external-components-v1.json`, `THIRD_PARTY_LICENSES.md`
 
@@ -250,8 +260,8 @@ The laptop-only full-system simulator (#145/#146) and native Windows launcher (#
 
 Next physical actions, in order:
 1. Assemble/reuse the existing Lindy 38368 / SiI9437 -> Pi 5 physical ingress and play the exact pinned carrier from #140/#142.
-2. Capture the complete physical IEC61937 stream and prove all bursts are type `0x15`, with no unaccounted discontinuity, reset, re-encode, or payload mutation.
-3. Feed that physical capture into the unchanged Aurora moving-JOC path and require both the existing moving-JOC gates and the full-system Linux/Windows regression gates to remain green.
+2. Capture the complete raw physical IEC61937 byte stream and run `validation/physical/aurora_physical_ingress.py analyze` with `--require-capture-metadata`; require 2360 type-`0x15` bursts, exact 24576-byte burst-grid continuity, zero resets/drops/padding mutation, and reconstructed SHA-256 `0219a241559de5231f31c6093072740ff9fe0657b3354541bc6838ef2d5e5be0`.
+3. Feed the accepted physical capture into the unchanged Aurora moving-JOC path and require both the existing moving-JOC gates and the full-system Linux/Windows regression gates to remain green.
 4. Attach one MCHStreamer Lite in TDM16 @ 48 kHz and verify one synchronous 16-slot output clock domain before attaching DACs.
 5. Attach two synchronized 8-channel TDM DAC stages and verify electrical activity/channel mapping on all 12 used outputs.
 6. Record negotiated ALSA device identity/format, buffer/period settings, expected vs actual frames, xruns, CPU load, clock/drift observations, and physical loopback latency where a return path exists.
@@ -271,7 +281,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-For immersive/JOC changes require the official Immersive JOC Stack PR run and inspect emitted evidence. Moving-reference changes additionally require Official Dolby JOC Temporal CI; Aurora moving-path changes require Aurora Moving JOC CI. Full-system virtual-hardware changes require `Aurora Full-System Sim CI`, including healthy evidence plus all fail-closed fault profiles. Native Windows launcher changes additionally require `Aurora Full-System Sim Windows CI`. Hardware documentation or virtual hardware evidence alone is not physical proof.
+For immersive/JOC changes require the official Immersive JOC Stack PR run and inspect emitted evidence. Moving-reference changes additionally require Official Dolby JOC Temporal CI; Aurora moving-path changes require Aurora Moving JOC CI. Full-system virtual-hardware changes require `Aurora Full-System Sim CI`, including healthy evidence plus all fail-closed fault profiles. Native Windows launcher changes additionally require `Aurora Full-System Sim Windows CI`. Physical ingress tooling changes require `Aurora Physical Ingress Tooling CI` on Linux and Windows; this is tooling validation only and must never be reported as physical evidence. Hardware documentation or virtual hardware evidence alone is not physical proof.
 
 Do not merge while required gates are red.
 

@@ -1,0 +1,38 @@
+name: Aurora Physical Ingress Tooling CI
+
+on:
+  pull_request:
+    paths:
+      - "validation/physical/**"
+      - "docs/physical-joc-validation-v1.md"
+      - "AGENTS.md"
+      - ".github/workflows/aurora-physical-ingress-tooling-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-physical-ingress-tooling-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  physical-ingress-tooling:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Compile validator
+        run: python -m py_compile validation/physical/aurora_physical_ingress.py
+
+      - name: Run positive and fail-closed self-tests
+        run: python validation/physical/aurora_physical_ingress.py self-test
