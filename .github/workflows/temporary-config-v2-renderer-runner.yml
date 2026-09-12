@@ -105,6 +105,28 @@ jobs:
               raise SystemExit(f'expected one stale schema-version assertion, found {text.count(old)}')
           p.write_text(text.replace(old, new, 1))
           PY
+      - name: Refresh runtime inspection schema-v2 snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          root = Path('crates/aurora-runtime-inspection/src/model/expected')
+          for name in ['stereo-redacted.json', 'stereo-unredacted.json']:
+              p = root / name
+              text = p.read_text()
+              old = '"configuration_schema_version":1'
+              if text.count(old) != 1:
+                  raise SystemExit(f'{name}: expected one schema-version snapshot field, found {text.count(old)}')
+              p.write_text(text.replace(old, '"configuration_schema_version":2', 1))
+          for name in ['stereo-redacted.txt', 'stereo-unredacted.txt']:
+              p = root / name
+              text = p.read_text()
+              old = 'metadata.configuration_schema_version: 1'
+              if text.count(old) != 1:
+                  raise SystemExit(f'{name}: expected one schema-version snapshot line, found {text.count(old)}')
+              p.write_text(text.replace(old, 'metadata.configuration_schema_version: 2', 1))
+          PY
       - name: Refresh deterministic v2 fixture checksums
         shell: bash
         run: |
