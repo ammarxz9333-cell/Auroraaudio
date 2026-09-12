@@ -1,0 +1,120 @@
+name: Dolby JOC First-AU Trim Probe
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - ".github/workflows/dolby-joc-trim-probe.yml"
+      - "validation/immersive/**"
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host tooling
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+      - name: Install checksum-pinned OpenJOC reference binary
+        id: openjoc
+        shell: bash
+        run: |
+          OPENJOC_BIN="$(bash validation/immersive/install-openjoc-reference.sh "${{ runner.temp }}/openjoc-reference")"
+          echo "bin=$OPENJOC_BIN" >> "$GITHUB_OUTPUT"
+      - name: Download, verify, trim exactly one E-AC-3 AU, and run temporal proof
+        shell: bash
+        env:
+          OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
+        run: |
+          set -euo pipefail
+          URL="https://ott.dolby.com/OnDelKits/DDP/Dolby_Digital_Plus_Online_Delivery_Kit_v1.4.1/Test_Signals/elementary_streams/audio.zip"
+          NAME="Living-Room-Atmos_6ch_640kbps_ddp_joc.ec3"
+          EXPECTED_ZIP_SHA256="f94d5e3e933f756856686546763f42a8a5f16b10c264fc7af1d228acc09baa62"
+          EXPECTED_SOURCE_SHA256="2470373db2c3621d56a2852df070e140293e9a99fdaa07e5c06de3c86bec307f"
+          WORK="${{ runner.temp }}/dolby-joc-trim"
+          ZIP="$WORK/audio.zip"
+          SOURCE="$WORK/$NAME"
+          TRIMMED="$WORK/Living-Room-Atmos_after_first_au.ec3"
+          OUT="$WORK/evidence"
+          DERIVATION="$WORK/derivation.json"
+          mkdir -p "$WORK"
+
+          curl --fail --location --retry 3 --silent --show-error "$URL" --output "$ZIP"
+          ZIP_SHA256="$(sha256sum "$ZIP" | awk '{print $1}')"
+          test "$ZIP_SHA256" = "$EXPECTED_ZIP_SHA256"
+
+          python3 - "$ZIP" "$SOURCE" "$NAME" <<'PY'
+          import pathlib, sys, zipfile
+          archive = pathlib.Path(sys.argv[1])
+          output = pathlib.Path(sys.argv[2])
+          wanted = sys.argv[3]
+          with zipfile.ZipFile(archive) as zf:
+              matches = [n for n in zf.namelist() if pathlib.PurePosixPath(n).name == wanted]
+              if len(matches) != 1:
+                  raise SystemExit(f"expected one {wanted!r}, found {matches!r}")
+              output.write_bytes(zf.read(matches[0]))
+          PY
+          SOURCE_SHA256="$(sha256sum "$SOURCE" | awk '{print $1}')"
+          test "$SOURCE_SHA256" = "$EXPECTED_SOURCE_SHA256"
+
+          python3 - "$SOURCE" "$TRIMMED" "$DERIVATION" <<'PY'
+          import hashlib, json, pathlib, sys
+          source = pathlib.Path(sys.argv[1])
+          trimmed = pathlib.Path(sys.argv[2])
+          manifest = pathlib.Path(sys.argv[3])
+          data = source.read_bytes()
+          if len(data) < 8 or data[:2] != b"\x0b\x77":
+              raise SystemExit("unexpected E-AC-3 syncword")
+          # E-AC-3 frmsiz is the low 3 bits of byte 2 plus byte 3, in 16-bit words minus 1.
+          frmsiz = ((data[2] & 0x07) << 8) | data[3]
+          first_au_bytes = 2 * (frmsiz + 1)
+          if first_au_bytes != 2560:
+              raise SystemExit(f"unexpected first AU size: {first_au_bytes}")
+          remainder = data[first_au_bytes:]
+          if not remainder or remainder[:2] != b"\x0b\x77":
+              raise SystemExit("trim did not land on the next E-AC-3 syncword")
+          trimmed.write_bytes(remainder)
+          payload = {
+              "source_sha256": hashlib.sha256(data).hexdigest(),
+              "source_bytes": len(data),
+              "transform": "drop_exactly_first_raw_eac3_access_unit_no_reencode",
+              "dropped_bytes": first_au_bytes,
+              "trimmed_sha256": hashlib.sha256(remainder).hexdigest(),
+              "trimmed_bytes": len(remainder),
+              "byte_identity_check": remainder == data[first_au_bytes:],
+          }
+          manifest.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+          print(json.dumps(payload, sort_keys=True))
+          PY
+          TRIMMED_SHA256="$(sha256sum "$TRIMMED" | awk '{print $1}')"
+
+          bash validation/immersive/test-joc-temporal-evidence.sh \
+            "$TRIMMED" \
+            "$TRIMMED_SHA256" \
+            "Official Dolby DDP Online Delivery Kit v1.4.1 Living-Room JOC vector; original SHA-256 $SOURCE_SHA256; derived only by dropping the first 2560-byte raw E-AC-3 access unit because OpenJOC 0.17.0 flags AU0 OAMD object-size index 3 as reserved; no re-encoding" \
+            "$OUT"
+
+          python3 - "$OUT/joc-temporal-evidence.json" <<'PY'
+          import json, pathlib, sys
+          report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if report.get("verdict") != "pass":
+              raise SystemExit(f"temporal proof did not pass: {report.get('primary_reason')!r}")
+          if report.get("codec_joc", {}).get("gate_pass") is not True:
+              raise SystemExit("codec/JOC gate did not pass")
+          print("DOLBY-JOC-FIRST-AU-TRIM-TEMPORAL-PASS")
+          PY
+      - name: Upload derivation and evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dolby-joc-trim-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/dolby-joc-trim/derivation.json
+            ${{ runner.temp }}/dolby-joc-trim/evidence/joc-temporal-evidence.json
+            ${{ runner.temp }}/dolby-joc-trim/evidence/openjoc/openjoc-inspect.json
+            ${{ runner.temp }}/dolby-joc-trim/evidence/openjoc/openjoc-7.1.4-ffprobe.json
+          if-no-files-found: warn
+          retention-days: 14
