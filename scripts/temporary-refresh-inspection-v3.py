@@ -22,11 +22,11 @@ fn exact_redacted_and_unredacted_json_fixtures_are_stable() {
     let redacted = JsonFormatter::format(&report(InspectionOptions::redacted())).unwrap();
     let unredacted = JsonFormatter::format(&report(InspectionOptions::unredacted_local())).unwrap();
     std::fs::write(
-        "crates/aurora-runtime-inspection/src/model/expected/stereo-redacted.json",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/model/expected/stereo-redacted.json"),
         &redacted,
     ).unwrap();
     std::fs::write(
-        "crates/aurora-runtime-inspection/src/model/expected/stereo-unredacted.json",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/model/expected/stereo-unredacted.json"),
         &unredacted,
     ).unwrap();
 }'''
@@ -48,11 +48,11 @@ fn exact_redacted_and_unredacted_text_fixtures_are_stable() {
     let redacted = TextFormatter::format(&report(InspectionOptions::redacted())).unwrap();
     let unredacted = TextFormatter::format(&report(InspectionOptions::unredacted_local())).unwrap();
     std::fs::write(
-        "crates/aurora-runtime-inspection/src/model/expected/stereo-redacted.txt",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/model/expected/stereo-redacted.txt"),
         &redacted,
     ).unwrap();
     std::fs::write(
-        "crates/aurora-runtime-inspection/src/model/expected/stereo-unredacted.txt",
+        concat!(env!("CARGO_MANIFEST_DIR"), "/src/model/expected/stereo-unredacted.txt"),
         &unredacted,
     ).unwrap();
 }'''
