@@ -1,5 +1,5 @@
 [package]
-name = "aurora-realtime-acceptance"
+name = "aurora-runtime-materialization"
 version = "0.1.0"
 edition.workspace = true
 license.workspace = true
@@ -7,11 +7,6 @@ repository.workspace = true
 rust-version.workspace = true
 
 [dependencies]
+aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-realtime-engine = { path = "../aurora-realtime-engine" }
-aurora-runtime-materialization = { path = "../aurora-runtime-materialization" }
-serde.workspace = true
-serde_json.workspace = true
-
-[dev-dependencies]
-aurora-core = { path = "../aurora-core" }
 aurora-scene = { path = "../aurora-scene" }

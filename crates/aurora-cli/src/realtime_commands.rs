@@ -22,6 +22,7 @@ use aurora_realtime_engine::{
     DuplexFaultPolicy, DuplexHealth, DuplexStateEvent, DuplexStateMachine, DuplexStreamState,
     ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RubatoAsrc, TestSignal,
 };
+use aurora_runtime_materialization::materialize_default_realtime_engine;
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
 use serde::Serialize;
 
@@ -160,7 +161,7 @@ fn run_duplex_once(options: &DuplexOptions) -> Result<(DuplexSummary, bool)> {
     .context("create adaptive duplex bridge")?;
 
     let scene = live_scene(options.channels, options.block_size)?;
-    let mut engine = RealTimeEngine::new(
+    let mut engine = materialize_default_realtime_engine(
         scene,
         RealTimeEngineConfig {
             sample_rate: options.output_rate,

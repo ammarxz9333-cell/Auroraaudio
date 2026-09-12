@@ -8,6 +8,7 @@ use aurora_realtime_engine::{
     BasicRendererMode, ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RealTimeFault,
     TestSignal,
 };
+use aurora_runtime_materialization::materialize_default_realtime_engine;
 use aurora_scene::RenderScene;
 
 const SAMPLE_RATE: u32 = 48_000;
@@ -36,7 +37,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let scene: RenderScene = serde_json::from_str(include_str!(
         "../../../fixtures/scenes/7_1_4_reference.json"
     ))?;
-    let mut engine = RealTimeEngine::new(
+    let mut engine = materialize_default_realtime_engine(
         scene,
         RealTimeEngineConfig {
             sample_rate: SAMPLE_RATE,

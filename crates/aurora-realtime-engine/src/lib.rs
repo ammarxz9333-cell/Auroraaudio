@@ -38,7 +38,6 @@ use std::time::{Duration, Instant};
 
 use aurora_core::{ChannelRole, StandardLayout, Vector3};
 use aurora_dsp_api::{RealtimeDelayProcessor, RealtimeDspFault};
-use aurora_dsp_basic::DelayProcessor;
 use aurora_renderer_api::{RenderObject, Renderer, RendererError, RendererScratch, SpeakerGain};
 use aurora_renderer_basic::{calculate_geometric_delays, BasicRenderer};
 use aurora_scene::RenderScene;
@@ -239,6 +238,25 @@ pub enum RealTimeEngineError {
     InvalidConfig(String),
 }
 
+/// Realtime delay capabilities required before a prepared DSP can be activated.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct RealtimeDelayRequirements {
+    channel_count: usize,
+    max_delay_samples: f32,
+}
+
+impl RealtimeDelayRequirements {
+    /// Required rendered output channel count.
+    pub const fn channel_count(&self) -> usize {
+        self.channel_count
+    }
+
+    /// Minimum supported per-channel delay range in samples.
+    pub const fn max_delay_samples(&self) -> f32 {
+        self.max_delay_samples
+    }
+}
+
 /// Fixed buffer capacities exposed for steady-state allocation guards.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct BufferCapacities {
@@ -342,13 +360,53 @@ pub struct RealTimeEngine {
 }
 
 impl RealTimeEngine {
-    /// Creates a real-time engine using Aurora's current compatibility delay implementation.
-    pub fn new(
-        scene: RenderScene,
-        config: RealTimeEngineConfig,
-        estimated_device_latency_frames: usize,
-    ) -> Result<Self, RealTimeEngineError> {
-        Self::build(scene, config, estimated_device_latency_frames, None)
+    /// Returns the delay capabilities required for this scene and configuration.
+    ///
+    /// Materializers call this on the control thread before constructing a concrete DSP.
+    pub fn delay_requirements(
+        scene: &RenderScene,
+        config: &RealTimeEngineConfig,
+    ) -> Result<RealtimeDelayRequirements, RealTimeEngineError> {
+        if config.sample_rate == 0 || config.block_size == 0 {
+            return Err(RealTimeEngineError::InvalidConfig(
+                "sample_rate and block_size must be greater than zero".to_owned(),
+            ));
+        }
+        if config.test_signal == TestSignal::None && config.input_channels == 0 {
+            return Err(RealTimeEngineError::InvalidConfig(
+                "live input requires at least one input channel".to_owned(),
+            ));
+        }
+        let ordered_speakers = scene.ordered_speakers()?;
+        if ordered_speakers.is_empty() {
+            return Err(RealTimeEngineError::InvalidConfig(
+                "scene must contain at least one output speaker".to_owned(),
+            ));
+        }
+        let geometric = calculate_geometric_delays(
+            &ordered_speakers,
+            scene.listener,
+            config.sample_rate,
+            config.speed_of_sound,
+        );
+        let delays = if config.apply_geometric_delay {
+            geometric
+                .iter()
+                .map(|delay| delay.delay_samples)
+                .collect::<Vec<_>>()
+        } else {
+            vec![0.0; ordered_speakers.len()]
+        };
+        let mut max_delay_samples = delays.iter().copied().fold(0.0_f32, f32::max).ceil() + 2.0;
+        if config.apply_geometric_delay
+            || config.renderer_mode == BasicRendererMode::GeometricBinaural
+        {
+            max_delay_samples = max_delay_samples.max(CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES);
+        }
+        Ok(RealtimeDelayRequirements {
+            channel_count: ordered_speakers.len(),
+            max_delay_samples,
+        })
     }
 
     /// Creates a real-time engine from a caller-supplied prepared delay processor.
@@ -367,7 +425,7 @@ impl RealTimeEngine {
             scene,
             config,
             estimated_device_latency_frames,
-            Some(delay_processor),
+            delay_processor,
         )
     }
 
@@ -375,7 +433,7 @@ impl RealTimeEngine {
         scene: RenderScene,
         config: RealTimeEngineConfig,
         estimated_device_latency_frames: usize,
-        prepared_delay_processor: Option<Box<dyn RealtimeDelayProcessor>>,
+        mut delay_processor: Box<dyn RealtimeDelayProcessor>,
     ) -> Result<Self, RealTimeEngineError> {
         if config.sample_rate == 0 || config.block_size == 0 {
             return Err(RealTimeEngineError::InvalidConfig(
@@ -438,34 +496,25 @@ impl RealTimeEngine {
             max_delay = max_delay.max(CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES);
         }
         let channel_count = ordered_speakers.len();
-        let delay_processor: Box<dyn RealtimeDelayProcessor> =
-            if let Some(mut delay_processor) = prepared_delay_processor {
-                let actual_channels = delay_processor.channel_count();
-                if actual_channels != channel_count {
-                    return Err(PreparedDspError::ChannelCount {
-                        expected: channel_count,
-                        actual: actual_channels,
-                    }
-                    .into());
-                }
-                let actual_capacity = delay_processor.max_delay_samples();
-                if !actual_capacity.is_finite() || actual_capacity < max_delay {
-                    return Err(PreparedDspError::DelayCapacity {
-                        required: max_delay,
-                        actual: actual_capacity,
-                    }
-                    .into());
-                }
-                delay_processor
-                    .set_delays(&delays)
-                    .map_err(PreparedDspError::from_initial_fault)?;
-                delay_processor
-            } else {
-                let mut delay_processor: Box<dyn RealtimeDelayProcessor> =
-                    Box::new(DelayProcessor::new(channel_count, max_delay));
-                delay_processor.set_delays(&delays)?;
-                delay_processor
-            };
+        let actual_channels = delay_processor.channel_count();
+        if actual_channels != channel_count {
+            return Err(PreparedDspError::ChannelCount {
+                expected: channel_count,
+                actual: actual_channels,
+            }
+            .into());
+        }
+        let actual_capacity = delay_processor.max_delay_samples();
+        if !actual_capacity.is_finite() || actual_capacity < max_delay {
+            return Err(PreparedDspError::DelayCapacity {
+                required: max_delay,
+                actual: actual_capacity,
+            }
+            .into());
+        }
+        delay_processor
+            .set_delays(&delays)
+            .map_err(PreparedDspError::from_initial_fault)?;
         let dsp_latency_frames = delay_processor.latency_frames();
         let renderer_latency_frames = renderer.latency_frames();
         let block_duration_budget =
@@ -902,7 +951,7 @@ mod tests {
     fn geometric_binaural_processing_allocates_zero_times_after_startup() {
         let mut config = config(TestSignal::RotatingSine, false);
         config.renderer_mode = BasicRendererMode::GeometricBinaural;
-        let mut engine = RealTimeEngine::new(scene(), config, 64).unwrap();
+        let mut engine = test_engine(scene(), config, 64).unwrap();
         let mut output = vec![0.0; 128];
         for _ in 0..16 {
             assert_eq!(
@@ -1055,7 +1104,7 @@ mod tests {
 
     #[test]
     fn malformed_live_input_propagates_fault_without_panic() {
-        let mut engine = RealTimeEngine::new(
+        let mut engine = test_engine(
             scene(),
             RealTimeEngineConfig {
                 sample_rate: 48_000,
@@ -1136,8 +1185,7 @@ mod tests {
             ),
         ] {
             let scene: RenderScene = serde_json::from_str(json).unwrap();
-            let engine =
-                RealTimeEngine::new(scene, config(TestSignal::Silence, false), 64).unwrap();
+            let engine = test_engine(scene, config(TestSignal::Silence, false), 64).unwrap();
             assert_eq!(engine.output_roles(), layout.canonical_roles());
         }
     }
@@ -1159,8 +1207,26 @@ mod tests {
         }
     }
 
+    fn test_engine(
+        scene: RenderScene,
+        config: RealTimeEngineConfig,
+        estimated_device_latency_frames: usize,
+    ) -> Result<RealTimeEngine, RealTimeEngineError> {
+        let requirements = RealTimeEngine::delay_requirements(&scene, &config)?;
+        let delay = aurora_dsp_basic::DelayProcessor::new(
+            requirements.channel_count(),
+            requirements.max_delay_samples(),
+        );
+        RealTimeEngine::new_with_prepared_delay_processor(
+            scene,
+            config,
+            estimated_device_latency_frames,
+            Box::new(delay),
+        )
+    }
+
     fn engine(test_signal: TestSignal, apply_delay: bool) -> RealTimeEngine {
-        RealTimeEngine::new(scene(), config(test_signal, apply_delay), 64).unwrap()
+        test_engine(scene(), config(test_signal, apply_delay), 64).unwrap()
     }
 
     fn scene() -> RenderScene {
