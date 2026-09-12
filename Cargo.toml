@@ -25,6 +25,7 @@ members = [
     "crates/aurora-realtime-engine",
     "crates/aurora-realtime-acceptance",
     "crates/aurora-measurement",
+    "crates/aurora-plugin-api",
     "crates/aurora-cli",
 ]
 resolver = "2"
