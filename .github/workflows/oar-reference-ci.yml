@@ -1,0 +1,46 @@
+name: OAR Reference CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/oar-evaluation-v1.json"
+      - "validation/open-immersive/oar_reference_evidence.py"
+      - "validation/open-immersive/test-oar-reference.sh"
+      - ".github/workflows/oar-reference-ci.yml"
+      - "AGENTS.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oar-reference-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pinned-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tooling
+        run: sudo apt-get update && sudo apt-get install --yes cmake ninja-build
+
+      - name: Self-test OAR evidence analyzer
+        run: python3 validation/open-immersive/oar_reference_evidence.py self-test
+
+      - name: Build and test exact pinned OAR reference
+        shell: bash
+        run: bash validation/open-immersive/test-oar-reference.sh "${{ runner.temp }}/oar-reference"
+
+      - name: Upload OAR reference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: oar-reference-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/oar-reference/oar-reference-evidence.json
+            ${{ runner.temp }}/oar-reference/ctest.log
+          if-no-files-found: warn
+          retention-days: 14
