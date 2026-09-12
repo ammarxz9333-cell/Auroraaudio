@@ -91,6 +91,20 @@ jobs:
               text = text.replace(signature, '#[allow(dead_code)]\n' + signature, 1)
           p.write_text(text)
           PY
+      - name: Align runtime metadata test with schema v2
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('crates/aurora-runtime-assembly/src/derivation.rs')
+          text = p.read_text()
+          old = '        assert_eq!(plan.metadata().configuration_schema_version(), 1);'
+          new = '        assert_eq!(\n            plan.metadata().configuration_schema_version(),\n            aurora_config::CURRENT_SCHEMA_VERSION\n        );'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one stale schema-version assertion, found {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
+          PY
       - name: Refresh deterministic v2 fixture checksums
         shell: bash
         run: |
