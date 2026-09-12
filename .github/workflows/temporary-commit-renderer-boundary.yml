@@ -1,0 +1,76 @@
+name: Temporary commit renderer boundary
+
+on:
+  push:
+    branches:
+      - refactor/runtime-materialize-renderer-v1
+
+permissions:
+  contents: write
+
+jobs:
+  validate-and-commit:
+    if: "!contains(github.event.head_commit.message, '[renderer-boundary-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/runtime-materialize-renderer-v1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Apply refactor from canonical temporary script
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+          path = Path('.github/workflows/temporary-apply-renderer-boundary.yml')
+          text = path.read_text()
+          marker = '      - name: Apply renderer materialization boundary\n'
+          start = text.index(marker)
+          run = text.index('        run: |\n', start) + len('        run: |\n')
+          end = text.index('      - name: Format and verify focused workspace\n', run)
+          code = textwrap.dedent(text[run:end])
+          exec(compile(code, str(path), 'exec'))
+      - name: Validate renderer boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo check --workspace --all-targets --all-features
+          cargo clippy --workspace --all-targets --all-features -- -D warnings
+          cargo test -p aurora-renderer-api -p aurora-renderer-basic -p aurora-runtime-materialization -p aurora-realtime-engine -p aurora-realtime-acceptance -p aurora-realtime-audio-sim --all-features
+          if grep -nE 'renderer: BasicRenderer|config\.renderer_mode|pub renderer_mode' crates/aurora-realtime-engine/src/lib.rs; then
+            echo 'production concrete renderer state remains in realtime engine' >&2
+            exit 1
+          fi
+          if grep -n '^aurora-renderer-basic = ' crates/aurora-realtime-engine/Cargo.toml | head -1 | grep -qv '^.*\[dev-dependencies\]'; then
+            true
+          fi
+          python3 - <<'PY'
+          from pathlib import Path
+          text = Path('crates/aurora-realtime-engine/src/lib.rs').read_text()
+          production = text.split('#[cfg(test)]', 1)[0]
+          forbidden = ['aurora_renderer_basic', 'BasicRendererMode', 'renderer: BasicRenderer']
+          found = [item for item in forbidden if item in production]
+          if found:
+              raise SystemExit(f'production renderer coupling remains: {found}')
+          cargo = Path('crates/aurora-realtime-engine/Cargo.toml').read_text()
+          deps, dev = cargo.split('[dev-dependencies]', 1)
+          if 'aurora-renderer-basic' in deps:
+              raise SystemExit('aurora-renderer-basic remains a production dependency')
+          if 'aurora-renderer-basic' not in dev:
+              raise SystemExit('aurora-renderer-basic dev dependency missing')
+          print('renderer-boundary: PASS')
+          PY
+      - name: Commit refactor
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock crates docs/plugin-architecture.md
+          git commit -m "Decouple realtime renderer materialization [renderer-boundary-bot]"
+          git push origin HEAD:refactor/runtime-materialize-renderer-v1
