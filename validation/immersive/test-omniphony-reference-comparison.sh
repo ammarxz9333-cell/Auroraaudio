@@ -180,7 +180,7 @@ RUST_LOG="${RUST_LOG:-info}" "$EVAL_OR" "$IEC_FILE" \
   --output-backend file \
   --output-file "$EVAL_RENDER" \
   --output-file-format raw-f32 \
-  --no-continuous \
+  --continuous \
   >"$EVAL_LOG" 2>&1 &
 EVAL_PID=$!
 
