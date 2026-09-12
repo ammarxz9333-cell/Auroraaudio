@@ -7,11 +7,13 @@ on:
       - main-v2
     paths:
       - "config/external-components-v1.json"
+      - "config/omniphony-evaluation-v1.json"
       - "validation/immersive/**"
       - ".github/workflows/immersive-joc-stack-ci.yml"
   pull_request:
     paths:
       - "config/external-components-v1.json"
+      - "config/omniphony-evaluation-v1.json"
       - "validation/immersive/**"
       - ".github/workflows/immersive-joc-stack-ci.yml"
 
@@ -36,7 +38,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/joc
-          key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/test-joc-realtime-soak.sh', 'validation/immersive/test-openjoc-reference.sh', 'validation/immersive/test-joc-differential.sh', 'validation/immersive/test-joc-temporal-evidence.sh', 'validation/immersive/joc_temporal_evidence.py', 'validation/immersive/install-openjoc-reference.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
+          key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'config/omniphony-evaluation-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/test-joc-realtime-soak.sh', 'validation/immersive/test-openjoc-reference.sh', 'validation/immersive/test-joc-differential.sh', 'validation/immersive/test-joc-temporal-evidence.sh', 'validation/immersive/test-omniphony-reference-comparison.sh', 'validation/immersive/joc_temporal_evidence.py', 'validation/immersive/install-openjoc-reference.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
           restore-keys: |
             ${{ runner.os }}-joc-
       - name: Install host audio tooling
@@ -45,7 +47,6 @@ jobs:
         run: python3 validation/immersive/joc_temporal_evidence.py self-test
       - name: Validate baseline and paced E-AC-3 JOC through IEC61937, Harletty, and Omniphony 7.1.4
         env:
-          # Throughput/realtime claims must be evaluated on an optimized build.
           AURORA_JOC_BUILD_MODE: release
           AURORA_JOC_REALTIME_LOOPS: 4
           AURORA_JOC_TEST_WORKDIR: ${{ runner.temp }}/aurora-joc-work
@@ -53,6 +54,15 @@ jobs:
           AURORA_OMNIP_TARGET_DIR: ${{ github.workspace }}/.cache/joc/omniphony-target
           AURORA_JOC_HARNESS_TARGET_DIR: ${{ github.workspace }}/.cache/joc/harness-target
         run: bash validation/immersive/test-joc-realtime-soak.sh
+      - name: Compare stable and pinned evaluation Omniphony references
+        env:
+          AURORA_JOC_BUILD_MODE: release
+          AURORA_JOC_TEST_WORKDIR: ${{ runner.temp }}/aurora-joc-work
+          AURORA_HARLETTY_TARGET_DIR: ${{ github.workspace }}/.cache/joc/harletty-target
+          AURORA_OMNIP_TARGET_DIR: ${{ github.workspace }}/.cache/joc/omniphony-target
+          AURORA_OMNIP_EVAL_TARGET_DIR: ${{ github.workspace }}/.cache/joc/omniphony-eval-target
+          AURORA_OMNIP_EVAL_REPORT: ${{ runner.temp }}/aurora-joc-work/omniphony-reference-comparison.json
+        run: bash validation/immersive/test-omniphony-reference-comparison.sh
       - name: Install checksum-pinned OpenJOC reference binary
         id: openjoc
         shell: bash
@@ -107,12 +117,14 @@ jobs:
               raise SystemExit("public fixture failed codec/JOC gate rather than temporal-diversity gate")
           print("JOC-TEMPORAL-PUBLIC-FIXTURE-FAIL-CLOSED-PASS")
           PY
-      - name: Upload differential and temporal JOC evidence
+      - name: Upload immersive reference evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: joc-differential-${{ github.sha }}
           path: |
+            ${{ runner.temp }}/aurora-joc-work/omniphony-reference-comparison.json
+            ${{ runner.temp }}/aurora-joc-work/omniphony-label-contract.json
             ${{ runner.temp }}/aurora-joc-differential/joc-differential-report.json
             ${{ runner.temp }}/aurora-joc-differential/temporal-public-fixture/joc-temporal-evidence.json
             ${{ runner.temp }}/aurora-joc-differential/temporal-public-fixture/openjoc/openjoc-inspect.json
