@@ -1,10 +1,8 @@
 use std::{error::Error, fmt};
 
-use aurora_config::BackendIntent;
-
 use crate::{
-    PreparedAudioFormatIntent, PreparedDeviceIntent, PreparedDspPlan, PreparedRendererPlan,
-    PreparedRuntimePlan, PreparedTopologyPlan,
+    PreparedAudioFormatIntent, PreparedBackendComponentIntent, PreparedDeviceIntent,
+    PreparedDspPlan, PreparedRendererPlan, PreparedRuntimePlan, PreparedTopologyPlan,
 };
 
 const SETUP_STAGE_COUNT: usize = 6;
@@ -285,8 +283,8 @@ impl PreparedDspSetupIntent {
 /// confirm a backend.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PreparedBackendSetupIntent {
-    requested_input_backend: Option<BackendIntent>,
-    requested_output_backend: Option<BackendIntent>,
+    requested_input_backend: Option<PreparedBackendComponentIntent>,
+    requested_output_backend: Option<PreparedBackendComponentIntent>,
 }
 
 impl PreparedBackendSetupIntent {
@@ -298,12 +296,12 @@ impl PreparedBackendSetupIntent {
     }
 
     /// Returns the requested input backend family, if one was configured.
-    pub fn requested_input_backend(self) -> Option<BackendIntent> {
+    pub fn requested_input_backend(self) -> Option<PreparedBackendComponentIntent> {
         self.requested_input_backend
     }
 
     /// Returns the requested output backend family, if one was configured.
-    pub fn requested_output_backend(self) -> Option<BackendIntent> {
+    pub fn requested_output_backend(self) -> Option<PreparedBackendComponentIntent> {
         self.requested_output_backend
     }
 }
@@ -442,15 +440,51 @@ fn validate_acyclic(
 #[cfg(test)]
 mod tests {
     use aurora_config::{
-        AmbiguityPolicy, BackendIntent, DeviceDirection, DeviceSelectionIntent,
-        ValidatedConfiguration,
+        AmbiguityPolicy, CompatibleMinorRange, ComponentContractKind, ComponentReference,
+        DeviceDirection, DeviceSelectionIntent, ValidatedConfiguration,
     };
 
     use super::*;
     use crate::{prepare_runtime_plan, PreparedRendererKind};
 
-    const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v2.json");
-    const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v2.json");
+    fn common_backend_reference(
+        component_id: &str,
+        direction: DeviceDirection,
+    ) -> ComponentReference {
+        ComponentReference {
+            component_id: component_id.to_owned(),
+            contract_kind: match direction {
+                DeviceDirection::Input => ComponentContractKind::AudioInputBackend,
+                DeviceDirection::Output => ComponentContractKind::AudioOutputBackend,
+            },
+            contract_major: 1,
+            compatible_minor: CompatibleMinorRange {
+                minimum: 0,
+                maximum: 0,
+            },
+            implementation_version_pin: None,
+            configuration_schema: 1,
+            configuration: serde_json::json!({}),
+        }
+    }
+
+    fn prepared_backend(
+        component_id: &'static str,
+        implementation_version: &'static str,
+        direction: DeviceDirection,
+    ) -> PreparedBackendComponentIntent {
+        PreparedBackendComponentIntent::new(
+            crate::PreparedComponentIdentity::new(component_id, implementation_version, 1, 0),
+            match direction {
+                DeviceDirection::Input => ComponentContractKind::AudioInputBackend,
+                DeviceDirection::Output => ComponentContractKind::AudioOutputBackend,
+            },
+            1,
+        )
+    }
+
+    const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v3.json");
+    const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v3.json");
 
     fn runtime_plan(bytes: &[u8]) -> PreparedRuntimePlan {
         let validated = ValidatedConfiguration::from_json(bytes).unwrap();
@@ -523,14 +557,17 @@ mod tests {
         config.input_device = Some(DeviceSelectionIntent {
             stable_id: Some("requested-input".to_owned()),
             friendly_name: None,
-            backend: BackendIntent::Cpal,
+            backend: common_backend_reference("org.aurora.backend.cpal", DeviceDirection::Input),
             direction: DeviceDirection::Input,
             ambiguity_policy: AmbiguityPolicy::RequireStableIdentifier,
         });
         config.output_device = Some(DeviceSelectionIntent {
             stable_id: None,
             friendly_name: Some("requested-output".to_owned()),
-            backend: BackendIntent::Virtual,
+            backend: common_backend_reference(
+                "org.aurora.backend.virtual",
+                DeviceDirection::Output,
+            ),
             direction: DeviceDirection::Output,
             ambiguity_policy: AmbiguityPolicy::Reject,
         });
@@ -546,12 +583,20 @@ mod tests {
             Some("requested-output")
         );
         assert_eq!(
-            plan.backend().requested_input_backend(),
-            Some(BackendIntent::Cpal)
+            plan.backend()
+                .requested_input_backend()
+                .unwrap()
+                .identity()
+                .implementation_id(),
+            crate::CPAL_BACKEND_IMPLEMENTATION_ID
         );
         assert_eq!(
-            plan.backend().requested_output_backend(),
-            Some(BackendIntent::Virtual)
+            plan.backend()
+                .requested_output_backend()
+                .unwrap()
+                .identity()
+                .implementation_id(),
+            crate::VIRTUAL_BACKEND_IMPLEMENTATION_ID
         );
     }
 
@@ -644,7 +689,11 @@ mod tests {
         let plan = setup_plan(STEREO);
         let mismatched_backend = PreparedBackendSetupIntent {
             requested_input_backend: None,
-            requested_output_backend: Some(BackendIntent::Virtual),
+            requested_output_backend: Some(prepared_backend(
+                crate::VIRTUAL_BACKEND_IMPLEMENTATION_ID,
+                crate::VIRTUAL_BACKEND_IMPLEMENTATION_VERSION,
+                DeviceDirection::Output,
+            )),
         };
         assert_eq!(
             PreparedSetupPlan::new(

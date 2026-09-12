@@ -1,15 +1,16 @@
 use aurora_config::{
-    AmbiguityPolicy, BackendIntent, DeviceDirection, DeviceSelectionIntent, ValidatedConfiguration,
+    AmbiguityPolicy, CompatibleMinorRange, ComponentContractKind, ComponentReference,
+    DeviceDirection, DeviceSelectionIntent, ValidatedConfiguration,
 };
 use aurora_runtime_assembly::{
     prepare_runtime_plan, prepare_setup_plan, PreparedDspPlan, PreparedRuntimePlan,
     RuntimeCapacityPlan, RuntimeInvariant, RuntimePreparationError, SetupStage,
 };
 
-const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v2.json");
-const FIVE_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-5-1-v2.json");
-const SEVEN_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-v2.json");
-const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v2.json");
+const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v3.json");
+const FIVE_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-5-1-v3.json");
+const SEVEN_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-v3.json");
+const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v3.json");
 
 fn validated(bytes: &[u8]) -> ValidatedConfiguration {
     ValidatedConfiguration::from_json(bytes).unwrap()
@@ -17,6 +18,24 @@ fn validated(bytes: &[u8]) -> ValidatedConfiguration {
 
 fn runtime(bytes: &[u8]) -> PreparedRuntimePlan {
     prepare_runtime_plan(&validated(bytes)).unwrap()
+}
+
+fn common_backend_reference(component_id: &str, direction: DeviceDirection) -> ComponentReference {
+    ComponentReference {
+        component_id: component_id.to_owned(),
+        contract_kind: match direction {
+            DeviceDirection::Input => ComponentContractKind::AudioInputBackend,
+            DeviceDirection::Output => ComponentContractKind::AudioOutputBackend,
+        },
+        contract_major: 1,
+        compatible_minor: CompatibleMinorRange {
+            minimum: 0,
+            maximum: 0,
+        },
+        implementation_version_pin: None,
+        configuration_schema: 1,
+        configuration: serde_json::json!({}),
+    }
 }
 
 #[test]
@@ -82,14 +101,14 @@ fn requested_device_format_and_backend_values_remain_unresolved_intent() {
     config.input_device = Some(DeviceSelectionIntent {
         stable_id: Some("requested-input".to_owned()),
         friendly_name: None,
-        backend: BackendIntent::Cpal,
+        backend: common_backend_reference("org.aurora.backend.cpal", DeviceDirection::Input),
         direction: DeviceDirection::Input,
         ambiguity_policy: AmbiguityPolicy::RequireStableIdentifier,
     });
     config.output_device = Some(DeviceSelectionIntent {
         stable_id: None,
         friendly_name: Some("requested-output".to_owned()),
-        backend: BackendIntent::Virtual,
+        backend: common_backend_reference("org.aurora.backend.virtual", DeviceDirection::Output),
         direction: DeviceDirection::Output,
         ambiguity_policy: AmbiguityPolicy::Reject,
     });
@@ -105,12 +124,22 @@ fn requested_device_format_and_backend_values_remain_unresolved_intent() {
         Some("requested-output")
     );
     assert_eq!(
-        setup.backend().requested_input_backend(),
-        Some(BackendIntent::Cpal)
+        setup
+            .backend()
+            .requested_input_backend()
+            .unwrap()
+            .identity()
+            .implementation_id(),
+        aurora_runtime_assembly::CPAL_BACKEND_IMPLEMENTATION_ID
     );
     assert_eq!(
-        setup.backend().requested_output_backend(),
-        Some(BackendIntent::Virtual)
+        setup
+            .backend()
+            .requested_output_backend()
+            .unwrap()
+            .identity()
+            .implementation_id(),
+        aurora_runtime_assembly::VIRTUAL_BACKEND_IMPLEMENTATION_ID
     );
     assert_eq!(
         setup.requested_audio_format(),

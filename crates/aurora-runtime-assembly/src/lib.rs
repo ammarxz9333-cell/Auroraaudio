@@ -25,18 +25,28 @@
 
 use std::{collections::BTreeSet, error::Error, fmt};
 
-use aurora_config::{AmbiguityPolicy, BackendIntent, FormatFallbackPolicy, SampleFormatIntent};
+use aurora_config::{
+    AmbiguityPolicy, ComponentContractKind, FormatFallbackPolicy, SampleFormatIntent,
+};
 use aurora_core::{ChannelRole, StandardLayout, Vector3};
 
+mod backend_registry;
 mod derivation;
 mod renderer_registry;
 mod setup;
 
-pub use derivation::{prepare_runtime_plan, prepare_runtime_plan_with_registry};
+pub use backend_registry::{
+    BackendComponentCapabilities, BackendComponentRegistration, BackendComponentRegistry,
+    BackendConfigurationResolver, BackendPlatformAvailability, CPAL_BACKEND_IMPLEMENTATION_ID,
+    CPAL_BACKEND_IMPLEMENTATION_VERSION, OFFLINE_BACKEND_IMPLEMENTATION_ID,
+    OFFLINE_BACKEND_IMPLEMENTATION_VERSION, REALTIME_BACKEND_CONTRACT_MINOR,
+    VIRTUAL_BACKEND_IMPLEMENTATION_ID, VIRTUAL_BACKEND_IMPLEMENTATION_VERSION,
+};
+pub use derivation::{
+    prepare_runtime_plan, prepare_runtime_plan_with_registries, prepare_runtime_plan_with_registry,
+};
 pub use renderer_registry::{
     RendererComponentRegistration, RendererComponentRegistry, RendererConfigurationResolver,
-    BASIC_RENDERER_IMPLEMENTATION_VERSION, REALTIME_RENDERER_CONTRACT_MINOR,
-    VBAP_RENDERER_IMPLEMENTATION_VERSION,
 };
 pub use setup::{
     prepare_setup_plan, PreparedBackendSetupIntent, PreparedDspSetupIntent,
@@ -48,8 +58,18 @@ pub use setup::{
 pub const RUNTIME_PLAN_CONTRACT_VERSION: u16 = 1;
 /// Compatible renderer contract version selected by runtime assembly.
 pub const REALTIME_RENDERER_CONTRACT_VERSION: u16 = 1;
+/// Compatible renderer contract minor selected by runtime assembly.
+pub const REALTIME_RENDERER_CONTRACT_MINOR: u16 = 0;
+/// Aurora basic renderer implementation version.
+pub const BASIC_RENDERER_IMPLEMENTATION_VERSION: &str = "0.1.0";
+/// Aurora VBAP renderer implementation version.
+pub const VBAP_RENDERER_IMPLEMENTATION_VERSION: &str = "0.1.0";
 /// Compatible realtime-delay contract version selected by runtime assembly.
 pub const REALTIME_DELAY_CONTRACT_VERSION: u16 = 1;
+/// Compatible realtime-delay contract minor selected by runtime assembly.
+pub const REALTIME_DELAY_CONTRACT_MINOR: u16 = 0;
+/// Aurora basic delay implementation version.
+pub const BASIC_DELAY_IMPLEMENTATION_VERSION: &str = "0.1.0";
 /// Stable implementation identity for Aurora's current basic renderer.
 pub const BASIC_RENDERER_IMPLEMENTATION_ID: &str = "org.aurora.renderer.basic";
 /// Stable implementation identity for Aurora's current VBAP renderer family.
@@ -171,36 +191,54 @@ impl PreparedExecutionPlan {
             renderer: self.renderer.component_identity(),
             realtime_delay: PreparedComponentIdentity::new(
                 BASIC_DELAY_IMPLEMENTATION_ID,
+                BASIC_DELAY_IMPLEMENTATION_VERSION,
                 REALTIME_DELAY_CONTRACT_VERSION,
+                REALTIME_DELAY_CONTRACT_MINOR,
             ),
         }
     }
 }
 
-/// Stable implementation identity plus the Aurora contract version it is prepared against.
+/// Stable implementation identity plus exact implementation and Aurora contract versions.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct PreparedComponentIdentity {
     implementation_id: &'static str,
-    contract_version: u16,
+    implementation_version: &'static str,
+    contract_major: u16,
+    contract_minor: u16,
 }
 
 impl PreparedComponentIdentity {
     /// Creates one deterministic prepared component identity.
-    pub const fn new(implementation_id: &'static str, contract_version: u16) -> Self {
+    pub const fn new(
+        implementation_id: &'static str,
+        implementation_version: &'static str,
+        contract_major: u16,
+        contract_minor: u16,
+    ) -> Self {
         Self {
             implementation_id,
-            contract_version,
+            implementation_version,
+            contract_major,
+            contract_minor,
         }
     }
 
-    /// Returns the stable implementation identifier.
     pub const fn implementation_id(self) -> &'static str {
         self.implementation_id
     }
-
-    /// Returns the compatible Aurora component-contract version.
+    pub const fn implementation_version(self) -> &'static str {
+        self.implementation_version
+    }
+    pub const fn contract_major(self) -> u16 {
+        self.contract_major
+    }
+    pub const fn contract_minor(self) -> u16 {
+        self.contract_minor
+    }
+    /// Compatibility alias retained for callers that treated the old version as major.
     pub const fn contract_version(self) -> u16 {
-        self.contract_version
+        self.contract_major
     }
 }
 
@@ -593,7 +631,9 @@ impl PreparedRendererPlan {
             horizontal_spread: None,
             component_identity: PreparedComponentIdentity::new(
                 BASIC_RENDERER_IMPLEMENTATION_ID,
+                BASIC_RENDERER_IMPLEMENTATION_VERSION,
                 REALTIME_RENDERER_CONTRACT_VERSION,
+                REALTIME_RENDERER_CONTRACT_MINOR,
             ),
         }
     }
@@ -605,7 +645,9 @@ impl PreparedRendererPlan {
             horizontal_spread: None,
             component_identity: PreparedComponentIdentity::new(
                 VBAP_RENDERER_IMPLEMENTATION_ID,
+                VBAP_RENDERER_IMPLEMENTATION_VERSION,
                 REALTIME_RENDERER_CONTRACT_VERSION,
+                REALTIME_RENDERER_CONTRACT_MINOR,
             ),
         }
     }
@@ -622,7 +664,9 @@ impl PreparedRendererPlan {
             horizontal_spread: Some(spread),
             component_identity: PreparedComponentIdentity::new(
                 VBAP_RENDERER_IMPLEMENTATION_ID,
+                VBAP_RENDERER_IMPLEMENTATION_VERSION,
                 REALTIME_RENDERER_CONTRACT_VERSION,
+                REALTIME_RENDERER_CONTRACT_MINOR,
             ),
         })
     }
@@ -685,12 +729,43 @@ impl PreparedDeviceIntent {
     }
 }
 
-/// Passive selector copied from validated configuration intent.
+/// Prepared backend component selected by a fail-closed registry.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreparedBackendComponentIntent {
+    identity: PreparedComponentIdentity,
+    contract_kind: ComponentContractKind,
+    configuration_schema: u16,
+}
+
+impl PreparedBackendComponentIntent {
+    pub const fn new(
+        identity: PreparedComponentIdentity,
+        contract_kind: ComponentContractKind,
+        configuration_schema: u16,
+    ) -> Self {
+        Self {
+            identity,
+            contract_kind,
+            configuration_schema,
+        }
+    }
+    pub const fn identity(self) -> PreparedComponentIdentity {
+        self.identity
+    }
+    pub const fn contract_kind(self) -> ComponentContractKind {
+        self.contract_kind
+    }
+    pub const fn configuration_schema(self) -> u16 {
+        self.configuration_schema
+    }
+}
+
+/// Passive selector copied from validated configuration intent after backend resolution.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PreparedDeviceSelectorIntent {
     stable_id: Option<String>,
     friendly_name: Option<String>,
-    backend: BackendIntent,
+    backend: PreparedBackendComponentIntent,
     ambiguity_policy: AmbiguityPolicy,
 }
 
@@ -699,7 +774,7 @@ impl PreparedDeviceSelectorIntent {
     pub fn new(
         stable_id: Option<String>,
         friendly_name: Option<String>,
-        backend: BackendIntent,
+        backend: PreparedBackendComponentIntent,
         ambiguity_policy: AmbiguityPolicy,
     ) -> Result<Self, RuntimePreparationError> {
         let stable_id = optional_nonempty(stable_id, RuntimeInvariant::EmptyDeviceSelector)?;
@@ -728,8 +803,8 @@ impl PreparedDeviceSelectorIntent {
         self.friendly_name.as_deref()
     }
 
-    /// Returns the requested backend family.
-    pub fn backend(&self) -> BackendIntent {
+    /// Returns the prepared backend component selection.
+    pub fn backend(&self) -> PreparedBackendComponentIntent {
         self.backend
     }
 
@@ -901,6 +976,11 @@ pub enum RuntimePreparationError {
         component_id: String,
         issue: RendererComponentIssue,
     },
+    /// Audio backend component registry resolution failed before activation.
+    BackendComponent {
+        component_id: String,
+        issue: BackendComponentIssue,
+    },
     /// A required plan-known count is zero or otherwise invalid.
     InvalidCapacity { field: CapacityField },
     /// A checked capacity calculation overflowed.
@@ -931,6 +1011,21 @@ pub enum RendererComponentIssue {
     /// The requested layout cannot satisfy component capabilities.
     LayoutCapabilityMismatch,
     /// Registry construction attempted to add a duplicate component ID.
+    DuplicateRegistration,
+}
+
+/// Stable audio-backend component registry failure categories.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BackendComponentIssue {
+    UnknownComponentId,
+    ContractKindMismatch,
+    IncompatibleContractVersion,
+    IncompatibleImplementationVersion,
+    UnsupportedConfigurationSchema,
+    InvalidConfiguration,
+    FormatCapabilityMismatch,
+    RealtimeSafetyMismatch,
+    PlatformUnavailable,
     DuplicateRegistration,
 }
 
@@ -1033,6 +1128,15 @@ impl fmt::Display for RuntimePreparationError {
                     "renderer component {component_id} rejected: {issue:?}"
                 )
             }
+            Self::BackendComponent {
+                component_id,
+                issue,
+            } => {
+                write!(
+                    formatter,
+                    "backend component {component_id} rejected: {issue:?}"
+                )
+            }
             Self::InvalidCapacity { field } => write!(formatter, "invalid capacity: {field:?}"),
             Self::ArithmeticOverflow { operation } => {
                 write!(formatter, "capacity arithmetic overflow: {operation:?}")
@@ -1098,6 +1202,18 @@ mod tests {
 
     fn identity(id: &str) -> PreparedChannelIdentity {
         PreparedChannelIdentity::new(id, id.to_uppercase()).unwrap()
+    }
+
+    fn prepared_backend(
+        component_id: &'static str,
+        implementation_version: &'static str,
+        direction: ComponentContractKind,
+    ) -> PreparedBackendComponentIntent {
+        PreparedBackendComponentIntent::new(
+            PreparedComponentIdentity::new(component_id, implementation_version, 1, 0),
+            direction,
+            1,
+        )
     }
 
     fn route(input: &str, output: &str) -> PreparedRoute {
@@ -1265,7 +1381,11 @@ mod tests {
         let selector = PreparedDeviceSelectorIntent::new(
             Some("stable-output".to_owned()),
             None,
-            BackendIntent::Virtual,
+            prepared_backend(
+                VIRTUAL_BACKEND_IMPLEMENTATION_ID,
+                VIRTUAL_BACKEND_IMPLEMENTATION_VERSION,
+                ComponentContractKind::AudioOutputBackend,
+            ),
             AmbiguityPolicy::RequireStableIdentifier,
         )
         .unwrap();
@@ -1280,7 +1400,11 @@ mod tests {
             PreparedDeviceSelectorIntent::new(
                 None,
                 None,
-                BackendIntent::Offline,
+                prepared_backend(
+                    OFFLINE_BACKEND_IMPLEMENTATION_ID,
+                    OFFLINE_BACKEND_IMPLEMENTATION_VERSION,
+                    ComponentContractKind::AudioOutputBackend
+                ),
                 AmbiguityPolicy::Reject,
             ),
             Err(RuntimePreparationError::InternalInvariantViolation {

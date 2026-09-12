@@ -117,16 +117,37 @@ impl TextFormatter {
             quote(&runtime.prepared_components.renderer.implementation_id)?
         ))?;
         output.line(&format!(
-            "component.renderer.contract_version: {}",
-            runtime.prepared_components.renderer.contract_version
+            "component.renderer.implementation_version: {}",
+            quote(&runtime.prepared_components.renderer.implementation_version)?
+        ))?;
+        output.line(&format!(
+            "component.renderer.contract_major: {}",
+            runtime.prepared_components.renderer.contract_major
+        ))?;
+        output.line(&format!(
+            "component.renderer.contract_minor: {}",
+            runtime.prepared_components.renderer.contract_minor
         ))?;
         output.line(&format!(
             "component.realtime_delay.implementation_id: {}",
             quote(&runtime.prepared_components.realtime_delay.implementation_id)?
         ))?;
         output.line(&format!(
-            "component.realtime_delay.contract_version: {}",
-            runtime.prepared_components.realtime_delay.contract_version
+            "component.realtime_delay.implementation_version: {}",
+            quote(
+                &runtime
+                    .prepared_components
+                    .realtime_delay
+                    .implementation_version
+            )?
+        ))?;
+        output.line(&format!(
+            "component.realtime_delay.contract_major: {}",
+            runtime.prepared_components.realtime_delay.contract_major
+        ))?;
+        output.line(&format!(
+            "component.realtime_delay.contract_minor: {}",
+            runtime.prepared_components.realtime_delay.contract_minor
         ))?;
         output.line(&format!(
             "topology.layout_kind: {}",
@@ -227,8 +248,28 @@ fn write_device(
                 option_string(device.friendly_name.as_deref())?
             ))?;
             output.line(&format!(
-                "{label}.backend: {}",
-                quote(&device.requested_backend)?
+                "{label}.backend.implementation_id: {}",
+                quote(&device.backend_component.implementation_id)?
+            ))?;
+            output.line(&format!(
+                "{label}.backend.implementation_version: {}",
+                quote(&device.backend_component.implementation_version)?
+            ))?;
+            output.line(&format!(
+                "{label}.backend.contract_kind: {}",
+                quote(&device.backend_contract_kind)?
+            ))?;
+            output.line(&format!(
+                "{label}.backend.contract_major: {}",
+                device.backend_component.contract_major
+            ))?;
+            output.line(&format!(
+                "{label}.backend.contract_minor: {}",
+                device.backend_component.contract_minor
+            ))?;
+            output.line(&format!(
+                "{label}.backend.configuration_schema: {}",
+                device.backend_configuration_schema
             ))?;
             output.line(&format!(
                 "{label}.ambiguity_policy: {}",

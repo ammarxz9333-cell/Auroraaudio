@@ -8,14 +8,13 @@ Last updated: **2026-09-12**
 
 ## 1. Repository state and branch policy
 
-- **Single source of truth and only branch:** `main-v2`.
-- All stale feature/debug/validation branches were purged on 2026-09-12 after their accepted work was consolidated.
-- There are currently no open pull requests at this handoff point.
+- **Single long-lived source of truth:** `main-v2`.
+- All stale feature/debug/validation branches were purged on 2026-09-12 after accepted work was consolidated.
 - Feature/debug branches may be created temporarily when isolation is useful, but must be deleted immediately after accepted work is merged.
-- Never leave temporary GitHub Actions workflows on `main-v2`.
+- Never leave temporary GitHub Actions workflows or patch scripts on `main-v2` or in a PR diff.
 - If the user says **“كمل” / “continue”**, continue the first unfinished item in **Current work / Next actions** below. Do not redo project discovery first.
 
-Latest integrated architecture slice: **PR #129**, squash commit `8ac1db7293628456eded4dc61fb79f791eaf497d`.
+Latest integrated architecture slice: **PR #129**, squash commit `8ac1db7293628456eded4dc61fb79f791eaf497d`. Current `main-v2` baseline before the backend slice: `04cb0f1eb3fce29b6f6e169e17907f97a10d2164`. Active short-lived branch: `refactor/backend-component-ref-v2` for issue #130 / parent #119.
 
 ## 2. Product goal
 
@@ -56,14 +55,26 @@ Read only when relevant: `README.md`, `VISION.md`, `docs/architecture.md`, `docs
 - Basic and VBAP renderers materialize through the same engine boundary.
 - Second `RealtimeDelayProcessor` test adapter uses the same boundary.
 - Failed replacement preparation leaves the active engine unchanged.
-- Runtime assembly owns stable prepared component identities/compatible contract versions; runtime inspection reports them as prepared control-plane intent.
-- Root renderer configuration now uses versioned `ComponentReference` selection rather than hard-coded renderer implementation enum variants.
+- Root renderer configuration uses versioned `ComponentReference` selection rather than hard-coded renderer implementation enum variants.
 - Config schema v2 has explicit deterministic v0/v1 migration and canonical v2 fixtures.
 - Runtime assembly has a fail-closed `RendererComponentRegistry`; adding a test renderer does not require a new root config enum variant.
+- Prepared component identities are Aurora-owned and runtime inspection reports them as prepared control-plane intent.
 - Software JOC/IEC61937 validation lanes exist using pinned external Harletty/Omniphony references.
 - OpenJOC is an independent external fail-closed/differential reference lane.
 
 Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129. Issue #118 is completed.
+
+### Backend component-reference slice — implemented on branch, not merged yet
+
+- Root input/output backend selection now uses versioned `ComponentReference` instead of `BackendIntent::{Virtual,Cpal,Offline}`.
+- Root config schema is **v3** with explicit deterministic v2 -> v3 migration layered on existing v0/v1 migration; no silent reinterpretation.
+- `BackendComponentRegistry` resolves built-ins by stable Aurora IDs and fails closed on unknown IDs, contract mismatch, implementation-version pin mismatch, config-schema/payload mismatch, direction/platform/format/channel incompatibility, and realtime-safety mismatch.
+- A custom test backend registers without adding a root config enum variant.
+- `PreparedComponentIdentity` now carries implementation ID, implementation version, contract major, and contract minor.
+- Runtime inspection schema is **v3** and reports exact requested backend identity/version/contract/config schema plus renderer/delay identities as control-plane intent.
+- Final focused validation run `34693520855` passed compile, locked compile, clippy `-D warnings`, config/runtime-assembly/runtime-inspection tests, realtime materialization/engine tests, snapshot stability, and the legacy-`BackendIntent` rejection check.
+- All temporary backend validation workflows/scripts were removed from the branch diff after the green run.
+- **Official PR CI/simulation/soak gates are still pending; do not merge yet.**
 
 ### Historical hardware proof — limited
 
@@ -94,10 +105,15 @@ Media/realtime direction:
 Provider/application integrations:
 `application plugin <-> aurora-plugin-host <-> Aurora source/control APIs`
 
-Stable prepared IDs already established:
+Stable prepared/component IDs established:
 - `org.aurora.renderer.basic`
 - `org.aurora.renderer.vbap`
 - `org.aurora.dsp.basic-delay`
+- `org.aurora.backend.virtual`
+- `org.aurora.backend.cpal`
+- `org.aurora.backend.offline`
+
+Current built-in backend implementation versions are `0.1.0`; realtime backend contract is 1.0.
 
 ## 6. Fast repository map
 
@@ -115,6 +131,7 @@ Stable prepared IDs already established:
 - Config model/validation/migration/presets: `crates/aurora-config/src/{model,validation,migration,preset}.rs`
 - Config fixtures: `fixtures/config/`
 - Runtime assembly/registries: `crates/aurora-runtime-assembly/src/`
+- Backend registry: `crates/aurora-runtime-assembly/src/backend_registry.rs`
 - Runtime materialization: `crates/aurora-runtime-materialization/src/lib.rs`
 - Runtime inspection/snapshots: `crates/aurora-runtime-inspection/`
 - Source Manager: `crates/aurora-source-runtime/`
@@ -128,7 +145,9 @@ Stable prepared IDs already established:
 - External component/license decisions: `config/external-components-v1.json`, `THIRD_PARTY_LICENSES.md`
 
 Useful search symbols:
-`RealTimeEngine::new_with_prepared_components`, `RendererCapabilities`, `RealtimeDelayProcessor`, `PreparedComponentIdentity`, `PreparedRealtimeComponentSelection`, `ComponentReference`, `RendererComponentRegistry`, `CURRENT_SCHEMA_VERSION`, `BackendIntent`, `SourceManager`.
+`RealTimeEngine::new_with_prepared_components`, `RendererCapabilities`, `RealtimeDelayProcessor`, `PreparedComponentIdentity`, `PreparedRealtimeComponentSelection`, `ComponentReference`, `RendererComponentRegistry`, `BackendComponentRegistry`, `VIRTUAL_BACKEND_IMPLEMENTATION_ID`, `CPAL_BACKEND_IMPLEMENTATION_ID`, `OFFLINE_BACKEND_IMPLEMENTATION_ID`, `CURRENT_SCHEMA_VERSION`, `SourceManager`.
+
+Legacy invariant: `BackendIntent` must not exist in current production/config/test/docs surfaces after the v3 backend slice.
 
 ## 7. Current work / Next actions — Issue #119
 
@@ -148,15 +167,22 @@ Issue #119 removes remaining control-plane coupling to replaceable implementatio
 
 Official #129 gates all passed: Linux, Windows, MSRV 1.78, Simulation Assurance PR Smoke, Sustained Realtime Health Soak, Criterion/regression policy, deterministic renderer evaluation, 3D VBAP evaluation, generic 7.1.4 rendering/output DSP, and public API docs.
 
-### Next slice — backend component references
+### Backend slice — READY FOR PR (#130)
 
-1. Replace `BackendIntent::{Virtual,Cpal,Offline}` implementation selection with versioned audio-backend `ComponentReference` values while preserving stable product intent.
-2. Add explicit backend registry with contract/version/config-schema validation before activation.
-3. Prove a second/test backend can be added without a root `AuroraConfiguration` enum change.
-4. Provide deterministic migration from old `Virtual/Cpal/Offline` values.
-5. Report selected backend contract + implementation identity/version in runtime inspection/evidence with correct truth semantics.
-6. Run full config/assembly/inspection/realtime CI + simulation + soak gates.
-7. Close #119 only after all acceptance criteria are met.
+Implemented:
+1. `BackendIntent::{Virtual,Cpal,Offline}` implementation selection replaced by versioned input/output backend `ComponentReference` values.
+2. Config schema v3 with explicit deterministic v2 -> v3 migration and canonical v3 fixtures/checksums.
+3. Explicit fail-closed `BackendComponentRegistry` validates ID, contract/version, payload schema, direction, platform, sample rate, channel count, and realtime safety before activation.
+4. Custom test backend proves no root `AuroraConfiguration` enum change is required.
+5. Prepared runtime plan and inspection report exact backend implementation ID/version + contract 1.0 as prepared control-plane intent.
+6. Renderer/realtime-delay prepared identities also expose exact implementation versions and contract major/minor.
+7. Focused validation run `34693520855` is green and branch diff contains no temporary validation files.
+
+Next action:
+- open the focused PR against `main-v2` and run official CI + Simulation Assurance PR Smoke + Sustained Realtime Health Soak;
+- squash-merge only if every required gate is green;
+- close #130 after merge;
+- then review #119 acceptance literally and close it only if the merged renderer + backend slices satisfy every criterion.
 
 After #119, re-evaluate the critical path toward stronger JOC/Atmos realtime evidence rather than doing unrelated refactors.
 

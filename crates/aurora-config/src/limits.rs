@@ -1,9 +1,9 @@
 //! Published bounds enforced by the configuration system.
 
 /// Current production configuration schema version.
-pub const CURRENT_SCHEMA_VERSION: u16 = 2;
+pub const CURRENT_SCHEMA_VERSION: u16 = 3;
 /// Oldest schema version readable without migration.
-pub const MINIMUM_READER_VERSION: u16 = 2;
+pub const MINIMUM_READER_VERSION: u16 = 3;
 /// Maximum UTF-8 bytes in an ordinary string field.
 pub const MAX_STRING_BYTES: usize = 256;
 /// Maximum UTF-8 bytes in a user description.

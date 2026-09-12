@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::{InspectionError, InspectionLimit, InspectionOptions, PlanRelationship};
 
 /// Current inspection projection schema version.
-pub const INSPECTION_SCHEMA_VERSION: u16 = 2;
+pub const INSPECTION_SCHEMA_VERSION: u16 = 3;
 /// Maximum retained deterministic findings.
 pub const MAX_FINDINGS: usize = 32;
 /// Maximum bytes in one source string.
@@ -246,8 +246,12 @@ pub enum RendererKindProjection {
 pub struct ComponentIdentityProjection {
     /// Stable implementation identifier selected by runtime assembly.
     pub implementation_id: String,
-    /// Aurora contract version the selection is prepared against.
-    pub contract_version: u16,
+    /// Exact selected implementation version.
+    pub implementation_version: String,
+    /// Aurora contract major version.
+    pub contract_major: u16,
+    /// Aurora contract minor version.
+    pub contract_minor: u16,
 }
 
 /// Prepared realtime component selections.
@@ -341,8 +345,12 @@ pub struct DeviceSelectorProjection {
     pub stable_id: Option<String>,
     /// Present friendly name, retained or replaced by a category marker.
     pub friendly_name: Option<String>,
-    /// Requested backend family.
-    pub requested_backend: String,
+    /// Prepared backend component identity selected from the requested reference.
+    pub backend_component: ComponentIdentityProjection,
+    /// Direction-specific Aurora backend contract kind.
+    pub backend_contract_kind: String,
+    /// Backend component configuration schema.
+    pub backend_configuration_schema: u16,
     /// Requested ambiguity policy.
     pub ambiguity_policy: String,
 }
@@ -629,11 +637,17 @@ impl ProjectionContext {
                 renderer: ComponentIdentityProjection {
                     implementation_id: self
                         .source_string(renderer_component.implementation_id())?,
-                    contract_version: renderer_component.contract_version(),
+                    implementation_version: self
+                        .source_string(renderer_component.implementation_version())?,
+                    contract_major: renderer_component.contract_major(),
+                    contract_minor: renderer_component.contract_minor(),
                 },
                 realtime_delay: ComponentIdentityProjection {
                     implementation_id: self.source_string(delay_component.implementation_id())?,
-                    contract_version: delay_component.contract_version(),
+                    implementation_version: self
+                        .source_string(delay_component.implementation_version())?,
+                    contract_major: delay_component.contract_major(),
+                    contract_minor: delay_component.contract_minor(),
                 },
             },
             prepared_topology: TopologyProjection {
@@ -693,7 +707,18 @@ impl ProjectionContext {
                             )
                         })
                         .transpose()?,
-                    requested_backend: debug_value(selector.backend()),
+                    backend_component: {
+                        let identity = selector.backend().identity();
+                        ComponentIdentityProjection {
+                            implementation_id: self.source_string(identity.implementation_id())?,
+                            implementation_version: self
+                                .source_string(identity.implementation_version())?,
+                            contract_major: identity.contract_major(),
+                            contract_minor: identity.contract_minor(),
+                        }
+                    },
+                    backend_contract_kind: debug_value(selector.backend().contract_kind()),
+                    backend_configuration_schema: selector.backend().configuration_schema(),
                     ambiguity_policy: debug_value(selector.ambiguity_policy()),
                 })
             })
@@ -722,8 +747,14 @@ impl ProjectionContext {
             descriptive_plan_complete: stages.contains(&SetupStageProjection::SetupPlanComplete),
             stages,
             dependencies,
-            requested_input_backend: plan.backend().requested_input_backend().map(debug_value),
-            requested_output_backend: plan.backend().requested_output_backend().map(debug_value),
+            requested_input_backend: plan
+                .backend()
+                .requested_input_backend()
+                .map(|backend| backend.identity().implementation_id().to_owned()),
+            requested_output_backend: plan
+                .backend()
+                .requested_output_backend()
+                .map(|backend| backend.identity().implementation_id().to_owned()),
         })
     }
 }
