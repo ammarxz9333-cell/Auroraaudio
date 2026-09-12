@@ -13,10 +13,10 @@ use crate::{
     JsonFormatter, TextFormatter, MAX_JSON_BYTES, MAX_SERIALIZED_COLLECTION_ENTRIES, MAX_TEXT_BYTES,
 };
 
-const STEREO: &[u8] = include_bytes!("../../../../fixtures/config/stereo-basic-v1.json");
-const POINT: &[u8] = include_bytes!("../../../../fixtures/config/phase-3a-point-source-v1.json");
-const SPREAD: &[u8] = include_bytes!("../../../../fixtures/config/phase-3b-spread-v1.json");
-const IRREGULAR: &[u8] = include_bytes!("../../../../fixtures/config/irregular-horizontal-v1.json");
+const STEREO: &[u8] = include_bytes!("../../../../fixtures/config/stereo-basic-v2.json");
+const POINT: &[u8] = include_bytes!("../../../../fixtures/config/phase-3a-point-source-v2.json");
+const SPREAD: &[u8] = include_bytes!("../../../../fixtures/config/phase-3b-spread-v2.json");
+const IRREGULAR: &[u8] = include_bytes!("../../../../fixtures/config/irregular-horizontal-v2.json");
 
 fn plans_with_devices() -> (PreparedRuntimePlan, PreparedSetupPlan) {
     let mut config = ValidatedConfiguration::from_json(STEREO)

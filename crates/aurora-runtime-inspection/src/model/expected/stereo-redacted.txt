@@ -24,7 +24,7 @@ output_device.backend: "Virtual"
 output_device.ambiguity_policy: "Reject"
 
 [prepared]
-metadata.configuration_schema_version: 1
+metadata.configuration_schema_version: 2
 metadata.contract_version: 1
 metadata.evidence: "DeterministicControlPlaneIntent"
 renderer.kind: basic_inverse_distance

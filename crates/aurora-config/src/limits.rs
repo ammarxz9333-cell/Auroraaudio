@@ -1,9 +1,9 @@
 //! Published bounds enforced by the configuration system.
 
 /// Current production configuration schema version.
-pub const CURRENT_SCHEMA_VERSION: u16 = 1;
+pub const CURRENT_SCHEMA_VERSION: u16 = 2;
 /// Oldest schema version readable without migration.
-pub const MINIMUM_READER_VERSION: u16 = 1;
+pub const MINIMUM_READER_VERSION: u16 = 2;
 /// Maximum UTF-8 bytes in an ordinary string field.
 pub const MAX_STRING_BYTES: usize = 256;
 /// Maximum UTF-8 bytes in a user description.
@@ -26,3 +26,8 @@ pub const MAX_COMPOSITION_DEPTH: usize = 8;
 pub const MAX_MIGRATION_DIAGNOSTICS: usize = 32;
 /// Maximum allow-listed sample rates in a fallback policy.
 pub const MAX_FALLBACK_SAMPLE_RATES: usize = 8;
+
+/// Maximum nesting depth in one component-specific configuration payload.
+pub const MAX_COMPONENT_CONFIG_DEPTH: usize = 8;
+/// Maximum total map/array entries in one component-specific configuration payload.
+pub const MAX_COMPONENT_CONFIG_ENTRIES: usize = 128;

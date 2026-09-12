@@ -3,7 +3,48 @@ use std::collections::BTreeSet;
 use aurora_config::*;
 use aurora_diagnostics::{Severity, TruthSource};
 
-pub fn configuration(kind: LayoutKind, renderer: RendererConfiguration) -> AuroraConfiguration {
+#[allow(dead_code)]
+pub fn basic_renderer_reference() -> ComponentReference {
+    renderer_reference("org.aurora.renderer.basic", serde_json::json!({}))
+}
+
+#[allow(dead_code)]
+pub fn point_source_vbap_reference() -> ComponentReference {
+    renderer_reference(
+        "org.aurora.renderer.vbap",
+        serde_json::json!({"mode":"point_source"}),
+    )
+}
+
+#[allow(dead_code)]
+pub fn horizontal_spread_reference(spread: f32) -> ComponentReference {
+    renderer_reference(
+        "org.aurora.renderer.vbap",
+        serde_json::json!({"mode":"horizontal_spread","spread":spread}),
+    )
+}
+
+#[allow(dead_code)]
+pub fn unknown_renderer_reference() -> ComponentReference {
+    renderer_reference("org.aurora.renderer.test-unknown", serde_json::json!({}))
+}
+
+fn renderer_reference(component_id: &str, configuration: serde_json::Value) -> ComponentReference {
+    ComponentReference {
+        component_id: component_id.to_owned(),
+        contract_kind: ComponentContractKind::Renderer,
+        contract_major: 1,
+        compatible_minor: CompatibleMinorRange {
+            minimum: 0,
+            maximum: 0,
+        },
+        implementation_version_pin: None,
+        configuration_schema: 1,
+        configuration,
+    }
+}
+
+pub fn configuration(kind: LayoutKind, renderer: ComponentReference) -> AuroraConfiguration {
     let roles: &[(&str, f32)] = match kind {
         LayoutKind::Stereo => &[("FL", -30.0), ("FR", 30.0)],
         LayoutKind::Surround51 => &[
@@ -134,7 +175,7 @@ pub fn configuration(kind: LayoutKind, renderer: RendererConfiguration) -> Auror
 }
 
 pub fn stereo() -> AuroraConfiguration {
-    configuration(LayoutKind::Stereo, RendererConfiguration::Basic)
+    configuration(LayoutKind::Stereo, basic_renderer_reference())
 }
 
 #[allow(dead_code)]

@@ -1,15 +1,15 @@
 use aurora_config::{
-    ChannelIdentity, DeviceDirection, DeviceSelectionIntent, LayoutKind, RendererConfiguration,
-    RoutingConfiguration, SpeakerConfiguration, SpeakerLayoutConfiguration, ValidatedConfiguration,
+    ChannelIdentity, DeviceDirection, DeviceSelectionIntent, LayoutKind, RoutingConfiguration,
+    SpeakerConfiguration, SpeakerLayoutConfiguration, ValidatedConfiguration,
 };
 use aurora_core::{ChannelRole, StandardLayout, Vector3};
 
 use crate::{
     ArithmeticOperation, PreparedAudioFormatIntent, PreparedChannelIdentity, PreparedDeviceIntent,
     PreparedDeviceSelectorIntent, PreparedDspPlan, PreparedExecutionPlan, PreparedLayoutKind,
-    PreparedLayoutPlan, PreparedRendererPlan, PreparedRoute, PreparedRoutingPlan,
-    PreparedRuntimePlan, PreparedSpeaker, PreparedTopologyPlan, RuntimeCapacityPlan,
-    RuntimeInvariant, RuntimePlanMetadata, RuntimePreparationError,
+    PreparedLayoutPlan, PreparedRoute, PreparedRoutingPlan, PreparedRuntimePlan, PreparedSpeaker,
+    PreparedTopologyPlan, RendererComponentRegistry, RuntimeCapacityPlan, RuntimeInvariant,
+    RuntimePlanMetadata, RuntimePreparationError,
 };
 
 /// Derives an immutable runtime preparation plan from validated configuration.
@@ -30,6 +30,15 @@ use crate::{
 /// components, routing, capacities, selectors, renderer intent, or geometry.
 pub fn prepare_runtime_plan(
     configuration: &ValidatedConfiguration,
+) -> Result<PreparedRuntimePlan, RuntimePreparationError> {
+    let registry = RendererComponentRegistry::builtin();
+    prepare_runtime_plan_with_registry(configuration, &registry)
+}
+
+/// Derives a runtime plan using an explicit renderer-component registry.
+pub fn prepare_runtime_plan_with_registry(
+    configuration: &ValidatedConfiguration,
+    registry: &RendererComponentRegistry,
 ) -> Result<PreparedRuntimePlan, RuntimePreparationError> {
     let config = configuration.config();
     let routing = prepare_routing(&config.routing)?;
@@ -59,7 +68,12 @@ pub fn prepare_runtime_plan(
         config.audio_format.callback_frames,
         config.audio_format.fallback_policy.clone(),
     )?;
-    let renderer = prepare_renderer(&config.renderer)?;
+    let active_speakers = layout
+        .speakers()
+        .iter()
+        .filter(|speaker| speaker.is_active())
+        .count();
+    let renderer = registry.resolve(&config.renderer, active_speakers)?;
     let device_intent = PreparedDeviceIntent::new(
         prepare_device_selector(config.input_device.as_ref(), DeviceDirection::Input)?,
         prepare_device_selector(config.output_device.as_ref(), DeviceDirection::Output)?,
@@ -185,23 +199,6 @@ fn canonical_axis(value: f32) -> f32 {
     }
 }
 
-fn prepare_renderer(
-    renderer: &RendererConfiguration,
-) -> Result<PreparedRendererPlan, RuntimePreparationError> {
-    match renderer {
-        RendererConfiguration::Basic => Ok(PreparedRendererPlan::basic_inverse_distance()),
-        RendererConfiguration::PointSourceVbap => {
-            Ok(PreparedRendererPlan::point_source_horizontal_vbap())
-        }
-        RendererConfiguration::HorizontalSpread { spread } => {
-            PreparedRendererPlan::horizontal_spread_vbap(*spread)
-        }
-        RendererConfiguration::Unsupported => {
-            Err(RuntimePreparationError::UnsupportedRendererIntent)
-        }
-    }
-}
-
 fn prepare_device_selector(
     selector: Option<&DeviceSelectionIntent>,
     expected_direction: DeviceDirection,
@@ -229,23 +226,25 @@ fn prepare_device_selector(
 #[cfg(test)]
 mod tests {
     use aurora_config::{
-        AmbiguityPolicy, BackendIntent, DeviceDirection, DeviceSelectionIntent,
-        FormatFallbackPolicy, RendererConfiguration, SampleFormatIntent, ValidatedConfiguration,
+        AmbiguityPolicy, BackendIntent, CompatibleMinorRange, ComponentContractKind,
+        ComponentReference, DeviceDirection, DeviceSelectionIntent, FormatFallbackPolicy,
+        SampleFormatIntent, ValidatedConfiguration,
     };
 
     use super::*;
     use crate::{
-        PreparedDspPlan, PreparedLayoutKind, PreparedRendererKind, RuntimePlanEvidence,
-        SetupDerivedCapacity, RUNTIME_PLAN_CONTRACT_VERSION,
+        PreparedDspPlan, PreparedLayoutKind, PreparedRendererKind, PreparedRendererPlan,
+        RuntimePlanEvidence, SetupDerivedCapacity, BASIC_RENDERER_IMPLEMENTATION_ID,
+        RUNTIME_PLAN_CONTRACT_VERSION, VBAP_RENDERER_IMPLEMENTATION_ID,
     };
 
-    const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v1.json");
-    const FIVE_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-5-1-v1.json");
-    const SEVEN_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-v1.json");
-    const POINT: &[u8] = include_bytes!("../../../fixtures/config/phase-3a-point-source-v1.json");
-    const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v1.json");
+    const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v2.json");
+    const FIVE_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-5-1-v2.json");
+    const SEVEN_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-v2.json");
+    const POINT: &[u8] = include_bytes!("../../../fixtures/config/phase-3a-point-source-v2.json");
+    const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v2.json");
     const IRREGULAR: &[u8] =
-        include_bytes!("../../../fixtures/config/irregular-horizontal-v1.json");
+        include_bytes!("../../../fixtures/config/irregular-horizontal-v2.json");
 
     fn validated(bytes: &[u8]) -> ValidatedConfiguration {
         ValidatedConfiguration::from_json(bytes).unwrap()
@@ -331,6 +330,89 @@ mod tests {
             speakers[3].channel_role(),
             &ChannelRole::Custom("south-east".to_owned())
         );
+    }
+
+    fn renderer_ref(component_id: &str, configuration: serde_json::Value) -> ComponentReference {
+        ComponentReference {
+            component_id: component_id.to_owned(),
+            contract_kind: ComponentContractKind::Renderer,
+            contract_major: 1,
+            compatible_minor: CompatibleMinorRange {
+                minimum: 0,
+                maximum: 0,
+            },
+            implementation_version_pin: None,
+            configuration_schema: 1,
+            configuration,
+        }
+    }
+
+    fn resolve_test_renderer(
+        payload: &serde_json::Value,
+        _active_speakers: usize,
+    ) -> Result<PreparedRendererPlan, crate::RendererComponentIssue> {
+        if payload.as_object().is_some_and(|value| value.is_empty()) {
+            Ok(PreparedRendererPlan::basic_inverse_distance())
+        } else {
+            Err(crate::RendererComponentIssue::InvalidConfiguration)
+        }
+    }
+
+    #[test]
+    fn test_renderer_registration_needs_no_root_configuration_enum_change() {
+        let registry = RendererComponentRegistry::builtin()
+            .with_registration(crate::RendererComponentRegistration::new(
+                "org.aurora.renderer.test-fixture",
+                "9.9.9-test",
+                1,
+                0,
+                1,
+                resolve_test_renderer,
+            ))
+            .unwrap();
+        let mut config = validated(STEREO).config().clone();
+        config.renderer = renderer_ref("org.aurora.renderer.test-fixture", serde_json::json!({}));
+        let validated = ValidatedConfiguration::new(config).unwrap();
+        let plan = prepare_runtime_plan_with_registry(&validated, &registry).unwrap();
+        assert_eq!(
+            plan.execution()
+                .realtime_components()
+                .renderer()
+                .implementation_id(),
+            "org.aurora.renderer.test-fixture"
+        );
+    }
+
+    #[test]
+    fn renderer_registry_rejects_unknown_incompatible_and_invalid_payloads() {
+        let registry = RendererComponentRegistry::builtin();
+        for (reference, issue) in [
+            (
+                renderer_ref("org.aurora.renderer.missing", serde_json::json!({})),
+                crate::RendererComponentIssue::UnknownComponentId,
+            ),
+            (
+                {
+                    let mut value =
+                        renderer_ref(BASIC_RENDERER_IMPLEMENTATION_ID, serde_json::json!({}));
+                    value.contract_major = 2;
+                    value
+                },
+                crate::RendererComponentIssue::IncompatibleContractVersion,
+            ),
+            (
+                renderer_ref(
+                    VBAP_RENDERER_IMPLEMENTATION_ID,
+                    serde_json::json!({"mode":"horizontal_spread","spread":2.0}),
+                ),
+                crate::RendererComponentIssue::InvalidConfiguration,
+            ),
+        ] {
+            let error = registry.resolve(&reference, 2).unwrap_err();
+            assert!(
+                matches!(error, RuntimePreparationError::RendererComponent { issue: actual, .. } if actual == issue)
+            );
+        }
     }
 
     #[test]
@@ -423,7 +505,10 @@ mod tests {
     #[test]
     fn metadata_and_capacities_use_authoritative_sources() {
         let plan = plan(SEVEN_ONE);
-        assert_eq!(plan.metadata().configuration_schema_version(), 1);
+        assert_eq!(
+            plan.metadata().configuration_schema_version(),
+            aurora_config::CURRENT_SCHEMA_VERSION
+        );
         assert_eq!(
             plan.metadata().contract_version(),
             RUNTIME_PLAN_CONTRACT_VERSION
@@ -474,14 +559,6 @@ mod tests {
         let second = ValidatedConfiguration::new(different_provenance).unwrap();
         assert!(first.semantically_eq(&second));
         assert_eq!(prepare_runtime_plan(&first), prepare_runtime_plan(&second));
-    }
-
-    #[test]
-    fn unsupported_renderer_returns_structured_error() {
-        assert_eq!(
-            prepare_renderer(&RendererConfiguration::Unsupported),
-            Err(RuntimePreparationError::UnsupportedRendererIntent)
-        );
     }
 
     #[test]

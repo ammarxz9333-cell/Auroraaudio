@@ -26,6 +26,8 @@ pub enum ErrorCode {
     AmbiguousDeviceSelection,
     /// Renderer kind is unsupported or incompatible with the layout.
     UnsupportedRenderer,
+    /// A replaceable component reference is structurally invalid.
+    InvalidComponentReference,
     /// Reserved metadata was requested as active behavior.
     UnsupportedReservedField,
     /// Buffer bounds are inconsistent.
@@ -60,6 +62,8 @@ pub enum ErrorCategory {
     Routing,
     /// Renderer intent is unsupported.
     Renderer,
+    /// Replaceable component reference or payload validation failed.
+    Component,
     /// Preset materialization failed.
     Preset,
     /// Schema migration failed.

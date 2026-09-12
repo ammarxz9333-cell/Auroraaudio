@@ -150,7 +150,7 @@ checked by the focused contract suite.
 ```rust
 use aurora_config::ValidatedConfiguration;
 
-let bytes = include_bytes!("../fixtures/config/stereo-basic-v1.json");
+let bytes = include_bytes!("../fixtures/config/stereo-basic-v2.json");
 let configuration = ValidatedConfiguration::from_json(bytes)?;
 let canonical = configuration.canonical_json()?;
 # Ok::<(), aurora_config::ConfigError>(())
@@ -180,3 +180,8 @@ No runtime hot reload, CLI command, automatic reconfiguration, UI, database,
 network/cloud control, hardware probing, physical acceptance, renderer/DSP
 algorithm, callback wiring, Phase 3C, elevation rendering, HRTF, Ambisonics,
 room correction, codec, or Dolby feature is included.
+
+
+## Renderer component references (schema v2)
+
+Schema v2 replaces the root renderer implementation enum with a versioned `ComponentReference`. The root configuration validates only the Aurora-owned renderer contract envelope and bounded payload shape. `aurora-runtime-assembly` resolves the component ID through its explicit renderer registry, validates contract/configuration compatibility, and converts the payload into a typed prepared renderer plan before activation. Schema-v1 documents are not silently reinterpreted; use `migrate_v1_to_v2`.

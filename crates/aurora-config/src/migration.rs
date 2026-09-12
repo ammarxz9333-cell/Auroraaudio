@@ -7,31 +7,28 @@ use crate::{
     MAX_MIGRATION_DIAGNOSTICS, MAX_SERIALIZED_BYTES,
 };
 
-/// Bounded migration warning.
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct MigrationWarning {
-    /// Stable field path affected by migration.
     pub field_path: String,
-    /// Concise warning message.
     pub detail: String,
 }
 
-/// Deterministic migration output and audit information.
 #[derive(Clone, Debug, PartialEq)]
 pub struct MigrationResult {
-    /// Validated destination configuration.
     pub configuration: ValidatedConfiguration,
-    /// Deterministically sorted changed field paths.
     pub changed_fields: BTreeSet<String>,
-    /// Bounded deprecation warnings.
     pub warnings: Vec<MigrationWarning>,
 }
 
-/// Migrates the reviewable fixture schema version 0 into production version 1.
-///
-/// Version 0 differs only in schema metadata and the deprecated
-/// `renderer.spread_percent` field. No unknown field is dropped.
-pub fn migrate_v0_to_v1(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
+pub fn migrate_v1_to_v2(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
+    migrate_to_v2(bytes, 1)
+}
+
+pub fn migrate_v0_to_v2(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
+    migrate_to_v2(bytes, 0)
+}
+
+fn migrate_to_v2(bytes: &[u8], source_version: u16) -> Result<MigrationResult, ConfigError> {
     if bytes.len() > MAX_SERIALIZED_BYTES {
         return Err(migration_error(
             ErrorCode::SerializedSizeExceeded,
@@ -54,45 +51,30 @@ pub fn migrate_v0_to_v1(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
         )
     })?;
     let schema = root
-        .get_mut("schema")
-        .and_then(serde_json::Value::as_object_mut)
+        .get("schema")
+        .and_then(serde_json::Value::as_object)
         .ok_or_else(|| {
             migration_error(
                 ErrorCode::UnsupportedMigration,
                 "schema",
-                "version 0 schema metadata is missing",
+                "schema metadata is missing",
             )
         })?;
     if schema
         .get("schema_version")
         .and_then(serde_json::Value::as_u64)
-        != Some(0)
+        != Some(u64::from(source_version))
+        || schema
+            .get("minimum_reader_version")
+            .and_then(serde_json::Value::as_u64)
+            != Some(u64::from(source_version))
     {
         return Err(migration_error(
             ErrorCode::UnsupportedMigration,
-            "schema.schema_version",
-            "only source version 0 can migrate to version 1",
+            "schema",
+            "migration source schema metadata does not match the requested source version",
         ));
     }
-    if schema
-        .get("minimum_reader_version")
-        .and_then(serde_json::Value::as_u64)
-        != Some(0)
-    {
-        return Err(migration_error(
-            ErrorCode::UnsupportedMigration,
-            "schema.minimum_reader_version",
-            "version 0 minimum reader metadata is missing or unsupported",
-        ));
-    }
-    schema.insert(
-        "schema_version".to_owned(),
-        serde_json::Value::from(CURRENT_SCHEMA_VERSION),
-    );
-    schema.insert(
-        "minimum_reader_version".to_owned(),
-        serde_json::Value::from(CURRENT_SCHEMA_VERSION),
-    );
 
     let renderer = root
         .get_mut("renderer")
@@ -101,30 +83,132 @@ pub fn migrate_v0_to_v1(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
             migration_error(
                 ErrorCode::UnsupportedMigration,
                 "renderer",
-                "version 0 renderer object is missing",
+                "legacy renderer object is missing",
             )
         })?;
-    let percent = renderer
-        .remove("spread_percent")
-        .and_then(|value| value.as_f64())
+    let mut changed_fields = BTreeSet::from([
+        "schema.minimum_reader_version".to_owned(),
+        "schema.schema_version".to_owned(),
+        "renderer".to_owned(),
+    ]);
+    let mut warnings = Vec::new();
+    if source_version == 0 {
+        let percent = renderer
+            .remove("spread_percent")
+            .and_then(|value| value.as_f64())
+            .ok_or_else(|| {
+                migration_error(
+                    ErrorCode::MigrationDataLoss,
+                    "renderer.spread_percent",
+                    "deprecated spread percentage is missing or ambiguous",
+                )
+            })?;
+        if !percent.is_finite() || !(0.0..=100.0).contains(&percent) {
+            return Err(migration_error(
+                ErrorCode::MigrationDataLoss,
+                "renderer.spread_percent",
+                "deprecated spread percentage is outside 0..=100",
+            ));
+        }
+        renderer.insert(
+            "spread".to_owned(),
+            serde_json::Value::from(percent / 100.0),
+        );
+        changed_fields.insert("renderer.spread_percent".to_owned());
+        warnings.push(MigrationWarning {
+  field_path: "renderer.spread_percent".to_owned(),
+  detail: "deprecated percentage converted to normalized spread before renderer-component migration".to_owned(),
+        });
+    }
+
+    let legacy = renderer.clone();
+    let renderer_type = legacy
+        .get("type")
+        .and_then(serde_json::Value::as_str)
         .ok_or_else(|| {
             migration_error(
                 ErrorCode::MigrationDataLoss,
-                "renderer.spread_percent",
-                "deprecated spread percentage is missing or ambiguous",
+                "renderer.type",
+                "legacy renderer type is missing",
             )
         })?;
-    if !percent.is_finite() || !(0.0..=100.0).contains(&percent) {
-        return Err(migration_error(
-            ErrorCode::MigrationDataLoss,
-            "renderer.spread_percent",
-            "deprecated spread percentage is outside 0..=100",
-        ));
-    }
-    renderer.insert(
-        "spread".to_owned(),
-        serde_json::Value::from(percent / 100.0),
+    let migrated_renderer = match renderer_type {
+        "basic" if legacy.len() == 1 => serde_json::json!({
+        "component_id": "org.aurora.renderer.basic",
+        "contract_kind": "renderer",
+        "contract_major": 1,
+        "compatible_minor": {"minimum": 0, "maximum": 0},
+        "configuration_schema": 1,
+        "configuration": {}
+              }),
+        "point_source_vbap" if legacy.len() == 1 => serde_json::json!({
+        "component_id": "org.aurora.renderer.vbap",
+        "contract_kind": "renderer",
+        "contract_major": 1,
+        "compatible_minor": {"minimum": 0, "maximum": 0},
+        "configuration_schema": 1,
+        "configuration": {"mode": "point_source"}
+              }),
+        "horizontal_spread" if legacy.len() == 2 => {
+            let spread = legacy
+                .get("spread")
+                .and_then(serde_json::Value::as_f64)
+                .ok_or_else(|| {
+                    migration_error(
+                        ErrorCode::MigrationDataLoss,
+                        "renderer.spread",
+                        "legacy horizontal spread is missing or ambiguous",
+                    )
+                })?;
+            if !spread.is_finite() || !(0.0..=1.0).contains(&spread) {
+                return Err(migration_error(
+                    ErrorCode::MigrationDataLoss,
+                    "renderer.spread",
+                    "legacy horizontal spread is outside 0..=1",
+                ));
+            }
+            serde_json::json!({
+                "component_id": "org.aurora.renderer.vbap",
+                "contract_kind": "renderer",
+                "contract_major": 1,
+                "compatible_minor": {"minimum": 0, "maximum": 0},
+                "configuration_schema": 1,
+                "configuration": {"mode": "horizontal_spread", "spread": spread}
+            })
+        }
+        _ => {
+            return Err(migration_error(
+                ErrorCode::MigrationDataLoss,
+                "renderer",
+                "legacy renderer cannot be migrated without ambiguity or data loss",
+            ))
+        }
+    };
+    root.insert("renderer".to_owned(), migrated_renderer);
+    let schema = root
+        .get_mut("schema")
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or_else(|| {
+            migration_error(
+                ErrorCode::UnsupportedMigration,
+                "schema",
+                "schema metadata is missing",
+            )
+        })?;
+    schema.insert(
+        "schema_version".to_owned(),
+        serde_json::Value::from(CURRENT_SCHEMA_VERSION),
     );
+    schema.insert(
+        "minimum_reader_version".to_owned(),
+        serde_json::Value::from(CURRENT_SCHEMA_VERSION),
+    );
+    warnings.push(MigrationWarning {
+        field_path: "renderer".to_owned(),
+        detail: "legacy renderer enum migrated to a versioned renderer component reference"
+            .to_owned(),
+    });
+    warnings.truncate(MAX_MIGRATION_DIAGNOSTICS);
 
     let migrated = serde_json::to_vec(&value).map_err(|_| {
         migration_error(
@@ -134,20 +218,6 @@ pub fn migrate_v0_to_v1(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
         )
     })?;
     let configuration = ValidatedConfiguration::from_json(&migrated)?;
-    let changed_fields = [
-        "schema.minimum_reader_version",
-        "schema.schema_version",
-        "renderer.spread",
-        "renderer.spread_percent",
-    ]
-    .into_iter()
-    .map(str::to_owned)
-    .collect();
-    let mut warnings = vec![MigrationWarning {
-        field_path: "renderer.spread_percent".to_owned(),
-        detail: "deprecated percentage converted to normalized spread".to_owned(),
-    }];
-    warnings.truncate(MAX_MIGRATION_DIAGNOSTICS);
     Ok(MigrationResult {
         configuration,
         changed_fields,
@@ -168,6 +238,6 @@ fn migration_error(code: ErrorCode, path: &str, detail: &str) -> ConfigError {
         path,
         category,
         detail,
-        Some("use a supported explicit migration source without dropping fields"),
+        Some("use the explicit migration matching the source schema version"),
     )
 }

@@ -346,6 +346,7 @@ version = "0.1.0"
 dependencies = [
  "aurora-config",
  "aurora-core",
+ "serde_json",
 ]
 
 [[package]]

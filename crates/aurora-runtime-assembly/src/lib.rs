@@ -29,9 +29,15 @@ use aurora_config::{AmbiguityPolicy, BackendIntent, FormatFallbackPolicy, Sample
 use aurora_core::{ChannelRole, StandardLayout, Vector3};
 
 mod derivation;
+mod renderer_registry;
 mod setup;
 
-pub use derivation::prepare_runtime_plan;
+pub use derivation::{prepare_runtime_plan, prepare_runtime_plan_with_registry};
+pub use renderer_registry::{
+    RendererComponentRegistration, RendererComponentRegistry, RendererConfigurationResolver,
+    BASIC_RENDERER_IMPLEMENTATION_VERSION, REALTIME_RENDERER_CONTRACT_MINOR,
+    VBAP_RENDERER_IMPLEMENTATION_VERSION,
+};
 pub use setup::{
     prepare_setup_plan, PreparedBackendSetupIntent, PreparedDspSetupIntent,
     PreparedRendererSetupIntent, PreparedSetupPlan, SetupDependency, SetupPlanInvariant,
@@ -161,19 +167,8 @@ impl PreparedExecutionPlan {
     /// These identities are control-plane selections only. They do not prove that
     /// an implementation was loaded, activated, negotiated, or observed at runtime.
     pub fn realtime_components(&self) -> PreparedRealtimeComponentSelection {
-        let renderer = match self.renderer.kind() {
-            PreparedRendererKind::BasicInverseDistance => PreparedComponentIdentity::new(
-                BASIC_RENDERER_IMPLEMENTATION_ID,
-                REALTIME_RENDERER_CONTRACT_VERSION,
-            ),
-            PreparedRendererKind::PointSourceHorizontalVbap
-            | PreparedRendererKind::HorizontalSpreadVbap => PreparedComponentIdentity::new(
-                VBAP_RENDERER_IMPLEMENTATION_ID,
-                REALTIME_RENDERER_CONTRACT_VERSION,
-            ),
-        };
         PreparedRealtimeComponentSelection {
-            renderer,
+            renderer: self.renderer.component_identity(),
             realtime_delay: PreparedComponentIdentity::new(
                 BASIC_DELAY_IMPLEMENTATION_ID,
                 REALTIME_DELAY_CONTRACT_VERSION,
@@ -587,6 +582,7 @@ pub enum PreparedRendererKind {
 pub struct PreparedRendererPlan {
     kind: PreparedRendererKind,
     horizontal_spread: Option<f32>,
+    component_identity: PreparedComponentIdentity,
 }
 
 impl PreparedRendererPlan {
@@ -595,6 +591,10 @@ impl PreparedRendererPlan {
         Self {
             kind: PreparedRendererKind::BasicInverseDistance,
             horizontal_spread: None,
+            component_identity: PreparedComponentIdentity::new(
+                BASIC_RENDERER_IMPLEMENTATION_ID,
+                REALTIME_RENDERER_CONTRACT_VERSION,
+            ),
         }
     }
 
@@ -603,6 +603,10 @@ impl PreparedRendererPlan {
         Self {
             kind: PreparedRendererKind::PointSourceHorizontalVbap,
             horizontal_spread: None,
+            component_identity: PreparedComponentIdentity::new(
+                VBAP_RENDERER_IMPLEMENTATION_ID,
+                REALTIME_RENDERER_CONTRACT_VERSION,
+            ),
         }
     }
 
@@ -616,7 +620,22 @@ impl PreparedRendererPlan {
         Ok(Self {
             kind: PreparedRendererKind::HorizontalSpreadVbap,
             horizontal_spread: Some(spread),
+            component_identity: PreparedComponentIdentity::new(
+                VBAP_RENDERER_IMPLEMENTATION_ID,
+                REALTIME_RENDERER_CONTRACT_VERSION,
+            ),
         })
+    }
+
+    /// Overrides the implementation identity after registry resolution.
+    pub fn with_component_identity(mut self, identity: PreparedComponentIdentity) -> Self {
+        self.component_identity = identity;
+        self
+    }
+
+    /// Returns the prepared renderer implementation identity.
+    pub fn component_identity(&self) -> PreparedComponentIdentity {
+        self.component_identity
     }
 
     /// Returns the selected renderer family.
@@ -877,6 +896,11 @@ pub enum RuntimePreparationError {
     UnsupportedRendererIntent,
     /// A DSP intent cannot be represented by the accepted schema.
     UnsupportedDspIntent,
+    /// Renderer component registry resolution failed before activation.
+    RendererComponent {
+        component_id: String,
+        issue: RendererComponentIssue,
+    },
     /// A required plan-known count is zero or otherwise invalid.
     InvalidCapacity { field: CapacityField },
     /// A checked capacity calculation overflowed.
@@ -887,6 +911,27 @@ pub enum RuntimePreparationError {
     PolicyLimitedAdapter { adapter: PolicyLimitedAdapter },
     /// Caller-supplied prepared components violate a local invariant.
     InternalInvariantViolation { invariant: RuntimeInvariant },
+}
+
+/// Stable renderer-component registry failure categories.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RendererComponentIssue {
+    /// No registry entry exists for the requested component ID.
+    UnknownComponentId,
+    /// The component reference does not target the renderer contract.
+    ContractKindMismatch,
+    /// Contract major/minor compatibility does not include the registered contract.
+    IncompatibleContractVersion,
+    /// An exact requested implementation version differs from the registered version.
+    IncompatibleImplementationVersion,
+    /// The component-specific configuration schema is unsupported.
+    UnsupportedConfigurationSchema,
+    /// Component-specific configuration could not be validated.
+    InvalidConfiguration,
+    /// The requested layout cannot satisfy component capabilities.
+    LayoutCapabilityMismatch,
+    /// Registry construction attempted to add a duplicate component ID.
+    DuplicateRegistration,
 }
 
 /// Fields whose plan-known capacities may be reported as invalid.
@@ -979,6 +1024,15 @@ impl fmt::Display for RuntimePreparationError {
         match self {
             Self::UnsupportedRendererIntent => formatter.write_str("unsupported renderer intent"),
             Self::UnsupportedDspIntent => formatter.write_str("unsupported DSP intent"),
+            Self::RendererComponent {
+                component_id,
+                issue,
+            } => {
+                write!(
+                    formatter,
+                    "renderer component {component_id} rejected: {issue:?}"
+                )
+            }
             Self::InvalidCapacity { field } => write!(formatter, "invalid capacity: {field:?}"),
             Self::ArithmeticOverflow { operation } => {
                 write!(formatter, "capacity arithmetic overflow: {operation:?}")

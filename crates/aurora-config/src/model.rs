@@ -242,51 +242,60 @@ pub struct SpeakerLayoutConfiguration {
     pub elevation_rendering: bool,
 }
 
-/// Existing renderer selection vocabulary.
-#[derive(Clone, Debug, PartialEq, Serialize)]
-#[serde(tag = "type", rename_all = "snake_case")]
-pub enum RendererConfiguration {
-    /// Existing Basic inverse-distance renderer.
-    Basic,
-    /// Existing Phase 3A point-source VBAP renderer.
-    PointSourceVbap,
-    /// Existing Phase 3B horizontal spread renderer.
-    HorizontalSpread {
-        /// Normalized spread in `0.0..=1.0`.
-        spread: f32,
-    },
-    /// Unknown serialized renderer type retained for structured rejection.
-    Unsupported,
+/// Stable Aurora-owned component contract families.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ComponentContractKind {
+    /// Spatial renderer contract.
+    Renderer,
+    /// DSP processing contract.
+    Dsp,
+    /// Media decoder contract.
+    Decoder,
+    /// Audio capture backend contract.
+    AudioInputBackend,
+    /// Audio playback backend contract.
+    AudioOutputBackend,
+    /// Media/network transport contract.
+    Transport,
+    /// Future physical hardware adapter contract.
+    HardwareAdapter,
 }
 
-impl<'de> Deserialize<'de> for RendererConfiguration {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        #[serde(tag = "type", rename_all = "snake_case", deny_unknown_fields)]
-        enum WireRendererConfiguration {
-            Basic {},
-            PointSourceVbap {},
-            HorizontalSpread {
-                spread: f32,
-            },
-            #[serde(other)]
-            Unsupported,
-        }
+/// Inclusive compatible minor-version range for one component contract major.
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CompatibleMinorRange {
+    /// Oldest compatible contract minor.
+    pub minimum: u16,
+    /// Newest compatible contract minor.
+    pub maximum: u16,
+}
 
-        Ok(
-            match WireRendererConfiguration::deserialize(deserializer)? {
-                WireRendererConfiguration::Basic {} => Self::Basic,
-                WireRendererConfiguration::PointSourceVbap {} => Self::PointSourceVbap,
-                WireRendererConfiguration::HorizontalSpread { spread } => {
-                    Self::HorizontalSpread { spread }
-                }
-                WireRendererConfiguration::Unsupported => Self::Unsupported,
-            },
-        )
-    }
+/// Versioned reference to a replaceable component implementation.
+///
+/// `configuration` is control-plane data only. A contract-specific registry must
+/// validate and convert it into typed Aurora-owned runtime descriptors before
+/// materialization; this opaque payload never enters the realtime callback.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComponentReference {
+    /// Stable component identity independent of package or repository name.
+    pub component_id: String,
+    /// Aurora-owned contract family this component must implement.
+    pub contract_kind: ComponentContractKind,
+    /// Required contract major version.
+    pub contract_major: u16,
+    /// Inclusive compatible contract-minor range.
+    pub compatible_minor: CompatibleMinorRange,
+    /// Optional exact implementation-version pin.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub implementation_version_pin: Option<String>,
+    /// Component-specific configuration schema version.
+    pub configuration_schema: u16,
+    /// Component-specific bounded configuration payload.
+    #[serde(default)]
+    pub configuration: serde_json::Value,
 }
 
 /// Bounded audio transport policy intent.
@@ -393,8 +402,8 @@ pub struct AuroraConfiguration {
     pub routing: RoutingConfiguration,
     /// Speaker layout intent.
     pub speaker_layout: SpeakerLayoutConfiguration,
-    /// Renderer selection intent.
-    pub renderer: RendererConfiguration,
+    /// Versioned renderer component reference.
+    pub renderer: ComponentReference,
     /// Bounded buffering policy.
     pub buffering: BufferingPolicy,
     /// Diagnostics policy.

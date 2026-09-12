@@ -3,8 +3,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use serde::{Deserialize, Serialize};
 
 use crate::{
-    AuroraConfiguration, ConfigError, DiagnosticsPolicy, ErrorCategory, ErrorCode,
-    RendererConfiguration, RoutingConfiguration, SimulationProfile, SpeakerLayoutConfiguration,
+    AuroraConfiguration, ComponentReference, ConfigError, DiagnosticsPolicy, ErrorCategory,
+    ErrorCode, RoutingConfiguration, SimulationProfile, SpeakerLayoutConfiguration,
     ValidatedConfiguration, CURRENT_SCHEMA_VERSION, MAX_COMPOSITION_DEPTH, MAX_DESCRIPTION_BYTES,
     MAX_PRESETS, MAX_SERIALIZED_BYTES, MAX_STRING_BYTES, MAX_TAGS,
 };
@@ -34,7 +34,7 @@ pub enum PresetPayload {
     /// Complete configuration payload.
     FullConfiguration(Box<AuroraConfiguration>),
     /// Renderer configuration payload.
-    Renderer(RendererConfiguration),
+    Renderer(ComponentReference),
     /// Speaker-layout payload.
     SpeakerLayout(SpeakerLayoutConfiguration),
     /// Routing payload.
