@@ -1,0 +1,30 @@
+name: Temporary backend coupling inventory
+
+on:
+  push:
+    branches:
+      - refactor/backend-component-ref-v2
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/backend-component-ref-v2
+          fetch-depth: 1
+      - name: Inventory backend coupling
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== BackendIntent references ==='
+          git grep -n 'BackendIntent' -- ':!target' || true
+          echo '=== backend field references in config/runtime ==='
+          git grep -n '\.backend\|backend:' crates/aurora-config crates/aurora-runtime-assembly crates/aurora-runtime-inspection crates/aurora-runtime-materialization fixtures docs || true
+          echo '=== DeviceSelectionIntent references ==='
+          git grep -n 'DeviceSelectionIntent' -- ':!target' || true
+          echo '=== Component identity / backend related ==='
+          git grep -n 'PreparedComponentIdentity\|AudioInputBackend\|AudioOutputBackend\|implementation_version' crates/aurora-runtime-assembly crates/aurora-runtime-inspection crates/aurora-config || true
