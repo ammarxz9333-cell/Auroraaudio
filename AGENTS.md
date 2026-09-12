@@ -15,9 +15,9 @@ Last updated: **2026-09-12**
 
 Latest integrated architecture slice: **PR #131**, squash commit `0f37b6df1587d429587b74eac714309dc8299d34`.
 
-Completed control-plane trackers: **#118**, **#119**, **#130**.
+Latest integrated validation slice: **PR #133**, squash commit `1445f0f29b9144dd2a958d6b57ff59285e439dec`.
 
-Active validation slice: **#132** on `validation/joc-temporal-evidence-v1` — fail-closed temporal JOC evidence.
+Completed trackers: **#118**, **#119**, **#130**, **#132**.
 
 ## 2. Product goal
 
@@ -68,8 +68,9 @@ Read only when relevant: `README.md`, `VISION.md`, `docs/architecture.md`, `docs
 - Realtime-engine boundary is documented in `crates/aurora-realtime-engine/README.md`: only prepared typed components cross into realtime execution; component JSON/registry logic stays in the control plane.
 - Software JOC/IEC61937 validation lanes exist using pinned external Harletty/Omniphony references.
 - OpenJOC is an independent external fail-closed/differential reference lane.
+- Temporal JOC evidence is fail-closed: codec/JOC validity, timed OAMD/object-state diversity, rendered 12-channel temporal-energy diversity, and pacing/health are reported separately.
 
-Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131.
+Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133.
 
 ### PR #131 / issue #119 completion evidence
 
@@ -81,19 +82,26 @@ PR #131 merged as `0f37b6df1587d429587b74eac714309dc8299d34` after every require
 
 Issue #130 closed automatically by #131. Issue #119 was reviewed against its literal acceptance criteria after the green merge and closed **completed**.
 
-### Temporal JOC truth boundary under active #132
+### PR #133 / issue #132 temporal JOC evidence
 
-The public Harletty `joc_atmos_1s.eac3` carrier is valid positive JOC/admission/differential input but is **not** sufficient evidence of moving-object behavior: its public metadata is temporally weak and must not be upgraded into a motion claim by repetition/soak alone.
+PR #133 merged as `1445f0f29b9144dd2a958d6b57ff59285e439dec` from validated head `b67f29fe1ba7fdfdefeb2b83762726d365926c2d`.
 
-The pinned public OpenJOC source provides inspector/renderer tooling and object-scene statistics, but no tracked public `.eac3/.ec3/.mp4/.m4a` moving-JOC corpus suitable as reproducible CI evidence. A previously researched 4-second dual-object carrier is private evidence and is not an acceptable repository/CI dependency.
+Official final-head validation:
+- General CI run `34694981490`: Linux stable, Windows stable, MSRV 1.78, fmt/check/clippy/workspace tests/docs, Criterion regression policy, renderer/3D-VBAP evaluation, generic 7.1.4 + output DSP — **PASS**.
+- Immersive JOC Stack run `34694981484`: analyzer self-test, baseline + paced IEC61937/Harletty/Omniphony 7.1.4, checksum-pinned OpenJOC install, independent differential validation, end-to-end temporal shell harness, and artifact upload — **PASS**.
+- The public Harletty `joc_atmos_1s.eac3` carrier passes the codec/JOC admission/timing gate but the temporal harness deliberately returns the stable classification `insufficient_temporal_diversity`. CI requires that exact fail-closed result, preventing the static fixture from being misrepresented as moving-object proof.
 
-Issue #132 therefore separates four evidence classes:
+Issue #132 closed **completed** by #133.
+
+The temporal evidence contract separates:
 1. codec/JOC admission and timing continuity;
 2. timed OAMD/object-state diversity from OpenJOC inspection;
 3. independent 12-channel rendered temporal-energy diversity;
 4. realtime pacing/health evidence.
 
 `render-joc` remains self-consistency evidence, **not** an independent oracle for original authored object-position correctness.
+
+The pinned public OpenJOC source provides inspector/renderer tooling and object-scene statistics, but no tracked public `.eac3/.ec3/.mp4/.m4a` moving-JOC corpus suitable as reproducible CI evidence. A previously researched 4-second dual-object carrier is private evidence and is not an acceptable repository/CI dependency.
 
 ### Historical hardware proof — limited
 
@@ -104,7 +112,7 @@ This proves only DD+/E-AC-3 5.1 extraction/decoding in that tested setup.
 
 ### Not yet proven
 
-- reproducible public moving-object JOC carrier with sufficient timed OAMD/object-state diversity;
+- reproducible moving-object JOC carrier with sufficient timed OAMD/object-state diversity and positive temporal-harness result;
 - authored object-position correctness through OpenJOC rendering;
 - physical continuous eARC -> E-AC-3 JOC -> Aurora -> physical 7.1.4;
 - Netflix/other DRM-service Atmos compatibility through Aurora;
@@ -176,25 +184,17 @@ Useful search symbols:
 
 Legacy invariants: implementation-selection `RendererConfiguration` and `BackendIntent` enums must not reappear in current root config/runtime-control surfaces.
 
-## 7. Current work / Next actions — issue #132 temporal JOC evidence
+## 7. Current work / Next actions — positive moving-object JOC proof
 
-Branch: `validation/joc-temporal-evidence-v1`.
-
-Implemented on the branch:
-- `joc_temporal_evidence.py`: deterministic analyzer for codec/JOC gates, timed object-scene diversity, windowed 12-channel RMS/peak/active-lane diversity, pacing metadata, stable machine-readable report, and fail-closed classifications.
-- `test-joc-temporal-evidence.sh`: requires input carrier, exact SHA-256, non-empty provenance; runs pinned OpenJOC reference first; normalizes 7.1.4 output; returns `0` only for sufficient temporal evidence, `3` for `insufficient_temporal_diversity`, and `2` for invalid/contract evidence.
-- `test-openjoc-reference.sh` now requests `--aus` so AU timestamps are retained alongside object/EMDF evidence.
-- Immersive JOC CI runs analyzer self-tests and then asserts that the current public Harletty carrier reaches the codec/JOC gates but fails the temporal proof for the expected insufficient-diversity reason.
-- `validation/immersive/README.md` documents the evidence matrix and truth boundary.
+The fail-closed harness is merged and validated. The next critical path is no longer analyzer implementation; it is acquiring or legally generating a **reproducible, authorized moving-object E-AC-3 JOC carrier** that can exercise the same harness in positive-proof mode.
 
 Next actions, in order:
-1. Open the focused #132 PR against `main-v2`.
-2. Run the official Immersive JOC Stack CI on the PR head and inspect the real analyzer JSON/artifacts.
-3. If the public Harletty carrier does not fail for exactly `insufficient_temporal_diversity`, fix the harness/contract rather than weakening the gate.
-4. Preserve #114 OpenJOC/differential/realtime-soak behavior; no regressions accepted.
-5. Merge only after green official evidence and update this file with PR/run/SHA evidence.
-6. Do **not** close the broader PC moving-object proof as “proven” until a reproducible carrier actually satisfies timed object-state and rendered temporal-diversity requirements.
-7. After #132 lands, find/acquire or legally generate a reproducible moving-object JOC carrier; only then run the harness in positive-proof mode.
+1. Search for a publicly redistributable or otherwise reproducibly retrievable moving-object E-AC-3 JOC test carrier with clear provenance/licensing. Do not use DRM circumvention or protected-media extraction.
+2. For each candidate, record exact provenance and SHA-256 and run `validation/immersive/test-joc-temporal-evidence.sh` unchanged.
+3. A positive software proof requires all codec/JOC gates plus real timed OAMD/object-state diversity plus independent rendered temporal-energy diversity. Do not weaken thresholds to make a carrier pass.
+4. Preserve report artifacts and distinguish self-consistency from authored-position correctness.
+5. If no legal public carrier exists, support a documented manual/user-supplied authorized-carrier evidence path; do not commit private/copyrighted media merely to satisfy CI.
+6. Only after a real carrier passes may `AGENTS.md` and project docs upgrade the claim from “harness ready/fail-closed” to “positive moving-object software evidence”.
 
 Other queued trackers:
 - #115: evaluate newer Omniphony behind a separate reference lane; do not upgrade the stable pinned reference by recency alone.
@@ -220,6 +220,6 @@ Do not merge while any required gate is red. Delete temporary validation workflo
 - `main-v2` is the only long-lived branch and source of truth.
 - Use short-lived branches only when needed for isolation.
 - Merge only green accepted work, preferably squash when a branch contains exploratory/debug commits.
-- Delete the merged branch immediately.
+- Delete the merged branch immediately when tooling permits; if branch-ref deletion is unavailable through the active connector, record that limitation instead of claiming deletion.
 - PR/commit history preserves experiments; do not keep abandoned branches as alternate baselines.
 - Keep this file current so the next agent can resume without chat history.
