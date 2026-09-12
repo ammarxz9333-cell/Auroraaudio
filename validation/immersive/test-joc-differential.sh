@@ -24,7 +24,9 @@ if [[ $# -gt 1 ]]; then
   exit 64
 fi
 
+USER_OUTPUT_DIR=0
 if [[ $# -eq 1 ]]; then
+  USER_OUTPUT_DIR=1
   WORK_DIR=$1
   rm -rf "$WORK_DIR"
   mkdir -p "$WORK_DIR"
@@ -33,7 +35,7 @@ else
 fi
 
 cleanup() {
-  if [[ "$KEEP_WORKDIR" == "1" || $# -eq 1 ]]; then
+  if [[ "$KEEP_WORKDIR" == "1" || "$USER_OUTPUT_DIR" == "1" ]]; then
     echo "Keeping JOC differential artifacts: $WORK_DIR"
   else
     rm -rf "$WORK_DIR"
@@ -109,6 +111,7 @@ report_path = pathlib.Path(sys.argv[3])
 input_sha256 = sys.argv[4]
 channels = 12
 sample_rate = 48000
+active_rms_threshold = 1e-5
 
 
 def read_f32(path):
@@ -136,6 +139,10 @@ def channel_stats(values):
     return frames, rms, peak
 
 
+def active_channels(rms):
+    return [index for index, value in enumerate(rms) if value >= active_rms_threshold]
+
+
 def correlation(a, b, ch, frames):
     if frames <= 1:
         return None
@@ -150,20 +157,33 @@ def correlation(a, b, ch, frames):
     cov = sum((xa[i] - ma) * (xb[i] - mb) for i in range(frames))
     return cov / math.sqrt(va * vb)
 
+
 stack = read_f32(stack_path)
 openjoc = read_f32(openjoc_path)
 stack_frames, stack_rms, stack_peak = channel_stats(stack)
 openjoc_frames, openjoc_rms, openjoc_peak = channel_stats(openjoc)
+stack_active = active_channels(stack_rms)
+openjoc_active = active_channels(openjoc_rms)
 common_frames = min(stack_frames, openjoc_frames)
 duration_delta = abs(stack_frames - openjoc_frames) / sample_rate
 
 # Renderer PCM is intentionally not required to match numerically. Duration,
-# layout validity and continuity are the semantic gates here; correlations are
-# evidence for later investigation only.
+# layout validity, active-channel identity, and continuity are the semantic
+# gates here; correlations are evidence for later investigation only.
 if duration_delta > 0.25:
     raise SystemExit(
         "AURORA-JOC-DIFFERENTIAL-FAIL: programme duration divergence exceeds 250 ms: "
         f"stack_frames={stack_frames} openjoc_frames={openjoc_frames} delta_s={duration_delta:.6f}"
+    )
+if not stack_active or not openjoc_active:
+    raise SystemExit(
+        "AURORA-JOC-DIFFERENTIAL-FAIL: active-channel detection produced an empty set: "
+        f"stack={stack_active} openjoc={openjoc_active} threshold={active_rms_threshold}"
+    )
+if stack_active != openjoc_active:
+    raise SystemExit(
+        "AURORA-JOC-DIFFERENTIAL-FAIL: independent renderers disagree on active channel identity: "
+        f"stack={stack_active} openjoc={openjoc_active} threshold={active_rms_threshold}"
     )
 
 correlations = [correlation(stack, openjoc, ch, common_frames) for ch in range(channels)]
@@ -172,21 +192,25 @@ report = {
     "input_sha256": input_sha256,
     "sample_rate": sample_rate,
     "channels": channels,
+    "active_rms_threshold": active_rms_threshold,
     "harletty_omniphony": {
         "frames": stack_frames,
         "duration_s": stack_frames / sample_rate,
         "rms": stack_rms,
         "peak": stack_peak,
+        "active_channels": stack_active,
     },
     "openjoc": {
         "frames": openjoc_frames,
         "duration_s": openjoc_frames / sample_rate,
         "rms": openjoc_rms,
         "peak": openjoc_peak,
+        "active_channels": openjoc_active,
     },
     "comparison": {
         "common_frames": common_frames,
         "duration_delta_s": duration_delta,
+        "active_channels_match": stack_active == openjoc_active,
         "per_channel_correlation_non_gating": correlations,
     },
 }
@@ -194,7 +218,7 @@ report_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
 print(
     "JOC-DIFFERENTIAL-METRICS-PASS "
     f"stack_frames={stack_frames} openjoc_frames={openjoc_frames} "
-    f"duration_delta_s={duration_delta:.6f}"
+    f"duration_delta_s={duration_delta:.6f} active_channels={stack_active}"
 )
 PY
 
