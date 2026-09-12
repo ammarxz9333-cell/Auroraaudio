@@ -9,9 +9,7 @@
 use aurora_core::{AudioBlock, AudioFormat, AudioObject, Listener, Speaker};
 use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError};
 use aurora_plugin_api::source_manager::{PlayableMediaRef, SourceManager, SourceSessionId};
-use aurora_renderer_api::{
-    RenderObject, Renderer, RendererError, RendererScratch, SpeakerGain,
-};
+use aurora_renderer_api::{RenderObject, Renderer, RendererError, RendererScratch, SpeakerGain};
 use thiserror::Error;
 
 /// Failure returned by a source-media loader adapter.

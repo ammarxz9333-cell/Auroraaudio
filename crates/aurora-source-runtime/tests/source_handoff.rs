@@ -19,7 +19,9 @@ impl MediaLoader for FixtureLoader {
         match media {
             PlayableMediaRef::LocalFile { path } => {
                 if self.fail_path.as_deref() == Some(path.as_str()) {
-                    Err(MediaLoadError::LoadFailed("fixture load failure".to_owned()))
+                    Err(MediaLoadError::LoadFailed(
+                        "fixture load failure".to_owned(),
+                    ))
                 } else {
                     Ok(path.as_bytes().to_vec())
                 }
@@ -200,10 +202,7 @@ fn local_source_flows_through_manager_decoder_and_real_renderer() {
     assert_eq!(prepared.audio().frame_count, 4);
     assert_eq!(prepared.objects().len(), 1);
     assert_eq!(prepared.speaker_gains().len(), 2);
-    assert!(prepared
-        .speaker_gains()
-        .iter()
-        .any(|gain| gain.gain > 0.0));
+    assert!(prepared.speaker_gains().iter().any(|gain| gain.gain > 0.0));
 
     assert!(matches!(
         runtime.commit_active(&manager, prepared.clone()),

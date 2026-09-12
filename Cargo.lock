@@ -380,6 +380,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-source-runtime"
+version = "0.1.0"
+dependencies = [
+ "aurora-core",
+ "aurora-decoder-api",
+ "aurora-plugin-api",
+ "aurora-renderer-api",
+ "aurora-renderer-basic",
+ "thiserror",
+]
+
+[[package]]
 name = "aurora-test-alloc"
 version = "0.1.0"
 
