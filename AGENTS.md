@@ -21,11 +21,11 @@ Latest positive moving-object reference proof: **PR #140**, squash commit `5d6a1
 
 Latest Aurora-side moving-JOC proof: **PR #142**, squash commit `9b153e1d34754aa47672fe2a6e5d46fb0e0966dc`.
 
-Completed trackers: **#118**, **#119**, **#130**, **#132**, **#135**, **#141**.
+Latest full-system virtual-hardware proof: **PR #146**, squash commit `2d53aec6b7180a1480b781b23680098f40f23cf0`.
+
+Completed trackers: **#118**, **#119**, **#130**, **#132**, **#135**, **#141**, **#145**.
 
 Active physical critical-path tracker: **#143** — physical continuous eARC/JOC to synchronous 7.1.4 output.
-
-Active laptop-only validation tracker: **#145** — full-system virtual hardware lab. This is software/simulation evidence only and must not be confused with #143 physical proof.
 
 ## 2. Product goal
 
@@ -63,8 +63,9 @@ Long-term direction:
 - OpenJOC remains a separate external fail-closed/differential reference lane.
 - Authorized-carrier handling is checksum-pinned and provenance-aware; raw carriers are never silently re-encoded.
 - Temporal JOC evidence separates codec admission, timed object metadata, rendered 12-channel diversity, and pacing/health.
+- A deterministic laptop-only virtual-hardware gate now extends the proven moving-JOC output through a synchronous 16-slot virtual transport and fail-closed device fault profiles.
 
-Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133, #136, #140, #142.
+Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133, #136, #140, #142, #146.
 
 ### PR #140 — positive moving-object reference
 
@@ -106,15 +107,37 @@ Aurora-side evidence using the exact derived SHA above:
 
 This proves moving-object JOC behavior through Aurora's pinned Harletty/Omniphony **software** path. It does not prove physical eARC/DAC output, streaming-service compatibility, authored-position correctness, Dolby certification, or acoustic parity.
 
-### Issue #145 — full-system virtual hardware lab (in progress, not merged evidence yet)
+### PR #146 / issue #145 — full-system virtual hardware lab
 
-Branch `aurora-full-system-sim` adds a laptop-only validation lane documented in `docs/aurora-full-system-sim.md`:
+PR #146 merged as `2d53aec6b7180a1480b781b23680098f40f23cf0` and adds `validation/virtual-hardware/`, `docs/aurora-full-system-sim.md`, and dedicated `Aurora Full-System Sim CI`.
 
-`pinned moving JOC -> IEC61937 -> Harletty -> Omniphony 7.1.4 -> paced 12ch PCM -> deterministic virtual TDM16/DAC sink`
+Final validated head: `768c481e8dd751e3eb3d2c9af1b16de5085b372a`.
 
-The proposed healthy gate requires exact frame preservation, 12 active output channels, finite samples, zero virtual xruns/disconnects, deterministic PCM/TDM hashes, and order-preserving 12-of-16 slot mapping. Negative profiles inject dropout/xrun, channel silence, disconnect and excessive simulated clock drift and must fail closed.
+Final-head CI:
+- `CI` run `34715335037` — **PASS**;
+- `Aurora Full-System Sim CI` run `34715335081` — **PASS**.
 
-Until its dedicated CI is green and the PR is merged, this section is **work-in-progress only**, not accepted evidence. Even after merge it will remain simulation evidence, not physical proof.
+Healthy path:
+`pinned moving JOC -> IEC61937 -> Harletty -> Omniphony 7.1.4 -> paced 12ch/48 kHz PCM -> deterministic virtual TDM16/DAC sink`.
+
+Healthy emitted evidence:
+- expected/actual source frames: `3,624,960 / 3,624,960`;
+- virtual sink frames: `3,624,960`, dropped frames `0`, virtual xruns `0`, disconnect `false`;
+- all 12 output channel indices 0..11 active;
+- one synchronous virtual clock domain; drift `0 ppm`;
+- source PCM SHA-256 = virtual sink PCM SHA-256 = `904ec61978e60f4418893188e684b1f32ef25d3826cd00af2b4a187a2f5ccaef`;
+- virtual TDM16 SHA-256 = `5e90e42271ff2173773e2399b6b64ab0599fafda5a0fa809336e06a058f0fda9`;
+- slots 0..11 assigned in order; 12..15 unused/zero;
+- configured virtual latency = 256 frames = 5.333 ms, explicitly **simulated, not measured**;
+- healthy verdict `pass`, failures `[]`.
+
+Fail-closed profiles all behaved as required:
+- `dropout`: failed with sink-frame mismatch and 75 virtual xruns;
+- `channel-silence`: failed with inactive output channel 11;
+- `disconnect`: failed with half-stream frame mismatch and virtual disconnect;
+- `drift`: failed at simulated +250 ppm.
+
+This proves Aurora's tested software path plus the deterministic virtual output model on a laptop. It does **not** prove physical eARC, physical UAC2/TDM timing/electrical behavior, DAC/amplifier/speaker behavior, physically measured latency/drift, DRM-service compatibility, Dolby certification, or acoustic parity.
 
 ### Historical physical ingress proof — limited
 
@@ -186,23 +209,16 @@ Stable built-in IDs include:
 - Physical v1 plan: `docs/physical-joc-validation-v1.md`
 - External components/licenses: `config/external-components-v1.json`, `THIRD_PARTY_LICENSES.md`
 
-## 7. Current work / Next actions
+## 7. Current work / Next actions — issue #143 physical continuous JOC
 
-### A. Issue #145 laptop-only full-system simulation
-
-1. Run dedicated `Aurora Full-System Sim CI` on the `aurora-full-system-sim` PR.
-2. Inspect the emitted healthy JSON and every negative fault report; do not accept a simulator that passes an injected fault.
-3. Fix implementation/contract defects without weakening the upstream #140/#142 JOC gates.
-4. Merge #145 only after the dedicated gate and normal required CI are green, then update this file with the final PR/commit/run IDs and evidence metrics.
-
-### B. Issue #143 physical continuous JOC
+The laptop-only full-system simulator (#145/#146) is complete and is now the pre-hardware regression gate. It does not replace physical acceptance.
 
 **Selection step is complete.** The first hardware chain is frozen in `docs/physical-joc-validation-v1.md`; do not reopen board selection unless the chosen hardware fails its explicit stop conditions.
 
 Next physical actions, in order:
 1. Assemble/reuse the existing Lindy 38368 / SiI9437 -> Pi 5 physical ingress and play the exact pinned carrier from #140/#142.
 2. Capture the complete physical IEC61937 stream and prove all bursts are type `0x15`, with no unaccounted discontinuity, reset, re-encode, or payload mutation.
-3. Feed that physical capture into the unchanged Aurora moving-JOC path and require the same fail-closed moving-object/12-channel gates.
+3. Feed that physical capture into the unchanged Aurora moving-JOC path and require both the existing moving-JOC gates and the new full-system virtual-hardware regression gate to remain green.
 4. Attach one MCHStreamer Lite in TDM16 @ 48 kHz and verify one synchronous 16-slot output clock domain before attaching DACs.
 5. Attach two synchronized 8-channel TDM DAC stages and verify electrical activity/channel mapping on all 12 used outputs.
 6. Record negotiated ALSA device identity/format, buffer/period settings, expected vs actual frames, xruns, CPU load, clock/drift observations, and physical loopback latency where a return path exists.
