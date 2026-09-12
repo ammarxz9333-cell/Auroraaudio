@@ -6,16 +6,16 @@
 
 Last updated: **2026-09-12**
 
-## 1. Branch policy and resume point
+## 1. Repository state and branch policy
 
-- **Only long-lived branch:** `main-v2`.
-- Feature/debug/validation branches are temporary. Delete them immediately after their accepted work is merged.
-- Never leave temporary GitHub Actions workflows in a PR or on `main-v2`.
-- Default continuation rule: if the user says **“كمل”**, continue the first unfinished item in **Current work / Next actions** below.
+- **Single source of truth and only branch:** `main-v2`.
+- All stale feature/debug/validation branches were purged on 2026-09-12 after their accepted work was consolidated.
+- There are currently no open pull requests at this handoff point.
+- Feature/debug branches may be created temporarily when isolation is useful, but must be deleted immediately after accepted work is merged.
+- Never leave temporary GitHub Actions workflows on `main-v2`.
+- If the user says **“كمل” / “continue”**, continue the first unfinished item in **Current work / Next actions** below. Do not redo project discovery first.
 
-Current temporary branch: `feature/config-renderer-component-ref-v2`.
-Current validated production commit on that branch: `309171a5575d19a509eed67b0cc9b4583c7a1f85` (`Migrate renderer selection to component references`).
-Temporary config-v2 validation workflows have been removed from the branch.
+Latest integrated architecture slice: **PR #129**, squash commit `8ac1db7293628456eded4dc61fb79f791eaf497d`.
 
 ## 2. Product goal
 
@@ -48,7 +48,7 @@ Read only when relevant: `README.md`, `VISION.md`, `docs/architecture.md`, `docs
 
 ## 4. Evidence truth
 
-### Merged/proven software baseline
+### Proven/merged software behavior
 
 - Hardware-agnostic Rust workspace with Linux/Windows/MSRV CI.
 - Deterministic simulation assurance and sustained accelerated realtime-health soak.
@@ -57,10 +57,13 @@ Read only when relevant: `README.md`, `VISION.md`, `docs/architecture.md`, `docs
 - Second `RealtimeDelayProcessor` test adapter uses the same boundary.
 - Failed replacement preparation leaves the active engine unchanged.
 - Runtime assembly owns stable prepared component identities/compatible contract versions; runtime inspection reports them as prepared control-plane intent.
+- Root renderer configuration now uses versioned `ComponentReference` selection rather than hard-coded renderer implementation enum variants.
+- Config schema v2 has explicit deterministic v0/v1 migration and canonical v2 fixtures.
+- Runtime assembly has a fail-closed `RendererComponentRegistry`; adding a test renderer does not require a new root config enum variant.
 - Software JOC/IEC61937 validation lanes exist using pinned external Harletty/Omniphony references.
 - OpenJOC is an independent external fail-closed/differential reference lane.
 
-Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128. Issue #118 is completed.
+Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129. Issue #118 is completed.
 
 ### Historical hardware proof — limited
 
@@ -111,7 +114,7 @@ Stable prepared IDs already established:
 - Duplex/transport/device/latency: `crates/aurora-realtime-engine/src/{duplex,transport,device_state,latency}.rs`
 - Config model/validation/migration/presets: `crates/aurora-config/src/{model,validation,migration,preset}.rs`
 - Config fixtures: `fixtures/config/`
-- Runtime assembly/registry: `crates/aurora-runtime-assembly/src/`
+- Runtime assembly/registries: `crates/aurora-runtime-assembly/src/`
 - Runtime materialization: `crates/aurora-runtime-materialization/src/lib.rs`
 - Runtime inspection/snapshots: `crates/aurora-runtime-inspection/`
 - Source Manager: `crates/aurora-source-runtime/`
@@ -127,51 +130,38 @@ Stable prepared IDs already established:
 Useful search symbols:
 `RealTimeEngine::new_with_prepared_components`, `RendererCapabilities`, `RealtimeDelayProcessor`, `PreparedComponentIdentity`, `PreparedRealtimeComponentSelection`, `ComponentReference`, `RendererComponentRegistry`, `CURRENT_SCHEMA_VERSION`, `BackendIntent`, `SourceManager`.
 
-## 7. Current work — Issue #119
+## 7. Current work / Next actions — Issue #119
 
 Issue #119 removes remaining control-plane coupling to replaceable implementation enums.
 
-### Renderer slice — VALIDATED, pending merge to main-v2
+### Renderer slice — DONE / merged in #129
 
-Implemented/validated on `feature/config-renderer-component-ref-v2`:
-- root renderer selection moved to generic versioned `ComponentReference` instead of hard-coded renderer enum variants;
-- current root config schema is v2;
+- generic versioned renderer `ComponentReference` in root config;
+- config schema v2;
 - explicit deterministic v0/v1 -> v2 migration;
-- v1 fixtures retained as migration sources; v2 fixtures are canonical current fixtures;
-- explicit fail-closed `RendererComponentRegistry` in runtime assembly;
-- Basic and VBAP resolve by stable component references;
-- unknown IDs, incompatible contracts, and invalid component config schemas/payloads fail closed;
-- a test renderer can be registered without adding a root `AuroraConfiguration` enum variant;
-- runtime inspection snapshots correctly report configuration schema v2;
-- this is a control-plane/config change, not new audio/hardware capability.
+- v1 migration fixtures + canonical v2 fixtures/checksums;
+- fail-closed `RendererComponentRegistry`;
+- Basic and VBAP resolve by stable component IDs/contracts;
+- unknown/incompatible IDs/contracts/config schemas fail closed;
+- test renderer proves no new root config enum variant is required;
+- runtime inspection metadata/snapshots updated for config schema v2.
 
-Validated before production commit:
-- workspace check + locked check PASS;
-- full workspace clippy for the validation slice PASS;
-- `aurora-config` contracts 17/17 PASS + zero-allocation immutable read PASS;
-- runtime assembly 48/48 + contract suite 6/6 PASS;
-- runtime inspection 22/22 PASS including exact JSON/TXT snapshots;
-- realtime engine 48/48 PASS;
-- prepared-delay tests 3/3 PASS;
-- runtime materialization 5/5 PASS;
-- relevant doc tests PASS.
+Official #129 gates all passed: Linux, Windows, MSRV 1.78, Simulation Assurance PR Smoke, Sustained Realtime Health Soak, Criterion/regression policy, deterministic renderer evaluation, 3D VBAP evaluation, generic 7.1.4 rendering/output DSP, and public API docs.
 
-The validator initially falsely matched the new symbol `RendererConfigurationResolver`; final gate correctly checks only legacy `RendererConfiguration::` enum usage.
+### Next slice — backend component references
 
-### What remains for Issue #119
+1. Replace `BackendIntent::{Virtual,Cpal,Offline}` implementation selection with versioned audio-backend `ComponentReference` values while preserving stable product intent.
+2. Add explicit backend registry with contract/version/config-schema validation before activation.
+3. Prove a second/test backend can be added without a root `AuroraConfiguration` enum change.
+4. Provide deterministic migration from old `Virtual/Cpal/Offline` values.
+5. Report selected backend contract + implementation identity/version in runtime inspection/evidence with correct truth semantics.
+6. Run full config/assembly/inspection/realtime CI + simulation + soak gates.
+7. Close #119 only after all acceptance criteria are met.
 
-After the renderer slice is merged:
-1. migrate `BackendIntent::{Virtual,Cpal,Offline}` to versioned audio-backend component references;
-2. add explicit backend registry and capability/contract validation before activation;
-3. prove adding a second backend needs no root config enum change;
-4. migrate old backend values deterministically;
-5. update runtime inspection/evidence with selected backend contract + implementation identity/version;
-6. run full CI/simulation/realtime gates;
-7. close #119 only when all acceptance criteria are actually satisfied.
+After #119, re-evaluate the critical path toward stronger JOC/Atmos realtime evidence rather than doing unrelated refactors.
 
 ## 8. Required validation before merge
 
-Normally run:
 ```bash
 cargo fmt --all --check
 cargo check --workspace --all-targets --all-features --locked
@@ -179,17 +169,15 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-For performance/realtime changes also run the relevant release benchmarks/allocation guards.
-For PRs affecting runtime/config behavior, require official PR CI plus simulation PR smoke and sustained realtime-health soak when those workflows apply.
+For performance/realtime changes also run relevant release benchmarks/allocation guards. For runtime/config PRs require official PR CI plus simulation smoke and sustained realtime-health soak when applicable.
 
-Do not merge while any required gate is red. Delete temporary validation workflows before opening the PR.
+Do not merge while any required gate is red. Delete temporary validation workflows before PR/merge.
 
 ## 9. Clean-development protocol
 
-- `main-v2` is the single source of truth.
-- Create a short-lived branch only when isolation is needed.
-- Keep changes reviewable and evidence explicit.
-- Merge only green accepted work.
-- Immediately delete the merged branch.
-- Never keep abandoned experimental branches as alternate baselines; PR/commit history already preserves them.
-- Update this file so the next agent can resume without chat history.
+- `main-v2` is the only long-lived branch and source of truth.
+- Use short-lived branches only when needed for isolation.
+- Merge only green accepted work, preferably squash when a branch contains exploratory/debug commits.
+- Delete the merged branch immediately.
+- PR/commit history preserves experiments; do not keep abandoned branches as alternate baselines.
+- Keep this file current so the next agent can resume without chat history.
