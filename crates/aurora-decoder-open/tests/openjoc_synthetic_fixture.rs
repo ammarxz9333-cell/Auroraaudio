@@ -12,10 +12,15 @@ use std::{fs, path::PathBuf};
 use aurora_core::{AudioFormat, SampleType, StandardLayout};
 use aurora_decoder_api::{DecodedFrame, Decoder};
 use aurora_decoder_open::{OpenCodecKind, OpenDecoderConfig, UniversalOpenDecoder};
-use openjoc_api::trace_access_units;
 
 const FIXTURE_ENV: &str = "AURORA_OPENJOC_SYNTHETIC_FIXTURE";
 const EXPECTED_BYTES: usize = 32_768;
+// Exact PCM frame count produced by the pinned OpenJOC revision for this exact
+// verified fixture in 7.1.4 Speaker mode, including the renderer tail. The
+// streaming-parity integration test independently proves Aurora matches the
+// same direct OpenJOC session instead of inferring duration from EC-3 substream
+// metadata.
+const EXPECTED_PINNED_OPENJOC_PCM_FRAMES: usize = 1_568;
 
 fn format_7_1_4() -> AudioFormat {
     AudioFormat {
@@ -74,12 +79,6 @@ fn synthetic_openjoc_fixture_renders_aurora_7_1_4() {
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     assert_eq!(fixture.len(), EXPECTED_BYTES, "unexpected fixture size");
 
-    let trace = trace_access_units(&fixture, None).expect("trace synthetic JOC access units");
-    assert!(!trace.is_empty(), "synthetic fixture contains no access units");
-    let expected_output_frames = trace.iter().fold(0_usize, |total, unit| {
-        total.saturating_add(usize::from(unit.sample_count))
-    });
-
     let config = OpenDecoderConfig {
         codec_hint: Some(OpenCodecKind::Eac3),
         joc_stereo_reference: false,
@@ -123,8 +122,8 @@ fn synthetic_openjoc_fixture_renders_aurora_7_1_4() {
 
     assert!(full_blocks > 0, "Aurora never emitted its 40-frame realtime block");
     assert_eq!(
-        output_frames, expected_output_frames,
-        "Aurora must preserve the complete decoded JOC sample timeline without dropping tail PCM or padding the stream"
+        output_frames, EXPECTED_PINNED_OPENJOC_PCM_FRAMES,
+        "Aurora must preserve the exact PCM timeline produced by the pinned direct OpenJOC renderer"
     );
     assert_eq!(decoder.detected_codec(), Some(OpenCodecKind::Eac3Joc));
     assert!(decoder.joc_render_info().is_none());
