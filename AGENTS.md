@@ -15,7 +15,9 @@ Last updated: **2026-09-12**
 
 Latest integrated architecture slice: **PR #131**, squash commit `0f37b6df1587d429587b74eac714309dc8299d34`.
 
-Latest integrated validation slice: **PR #133**, squash commit `1445f0f29b9144dd2a958d6b57ff59285e439dec`.
+Latest integrated validation-infrastructure slice: **PR #136**, squash commit `02e5495c9ad891372fca706c233940e35a2d9464`.
+
+Positive moving-object reference proof is being promoted by **PR #140** after the official green validation described below.
 
 Completed trackers: **#118**, **#119**, **#130**, **#132**.
 
@@ -69,8 +71,9 @@ Read only when relevant: `README.md`, `VISION.md`, `docs/architecture.md`, `docs
 - Software JOC/IEC61937 validation lanes exist using pinned external Harletty/Omniphony references.
 - OpenJOC is an independent external fail-closed/differential reference lane.
 - Temporal JOC evidence is fail-closed: codec/JOC validity, timed OAMD/object-state diversity, rendered 12-channel temporal-energy diversity, and pacing/health are reported separately.
+- Authorized-carrier handling is checksum-pinned and provenance-aware; raw carriers are never silently re-encoded.
 
-Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133.
+Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133, #136.
 
 ### PR #131 / issue #119 completion evidence
 
@@ -101,7 +104,24 @@ The temporal evidence contract separates:
 
 `render-joc` remains self-consistency evidence, **not** an independent oracle for original authored object-position correctness.
 
-The pinned public OpenJOC source provides inspector/renderer tooling and object-scene statistics, but no tracked public `.eac3/.ec3/.mp4/.m4a` moving-JOC corpus suitable as reproducible CI evidence. A previously researched 4-second dual-object carrier is private evidence and is not an acceptable repository/CI dependency.
+### PR #140 positive moving-object reference evidence
+
+PR #140 adds a permanent checksum-pinned lane using Dolby's publicly hosted Digital Plus Online Delivery Kit v1.4.1 carrier `Living-Room-Atmos_6ch_640kbps_ddp_joc.ec3`.
+
+Truth-preserving boundary:
+- untouched carrier SHA-256: `2470373db2c3621d56a2852df070e140293e9a99fdaa07e5c06de3c86bec307f`;
+- pinned OpenJOC 0.17.0 identifies the untouched carrier as JOC and deployed-compatible, but classifies exactly AU0 with `MALFORMED_OAMD_METADATA` / `reserved OAMD object size index 3`;
+- Aurora therefore does **not** claim the untouched carrier passes OpenJOC 0.17.0;
+- the positive lane removes exactly that first raw E-AC-3 AU (2560 bytes), performs no re-encoding, verifies the remaining bytes are an exact suffix, and pins derived SHA-256 `0219a241559de5231f31c6093072740ff9fe0657b3354541bc6838ef2d5e5be0`.
+
+Official PR #140 `Official Dolby JOC Temporal CI` run `34707477177` — **PASS**:
+- derived carrier: 2360 accepted access units, continuous frame/metadata timing, zero diagnostics;
+- 37,760 metadata updates and 15 dynamic object indices;
+- OpenJOC 7.1.4 render: 12 channels, 48 kHz, 75.520667 s;
+- fail-closed analyzer: `metadata_diversity=true`, `rendered_diversity=true`, verdict `pass`;
+- no parser gate, threshold, or evidence requirement was weakened.
+
+This proves a reproducibly retrievable authorized source path plus positive moving-object **reference/software evidence**. It does **not** prove Dolby conformance, original authored-position correctness, DRM-service compatibility, physical output, or that Aurora's Harletty/Omniphony path itself has yet reproduced the same moving-object temporal behavior.
 
 ### Historical hardware proof — limited
 
@@ -112,8 +132,8 @@ This proves only DD+/E-AC-3 5.1 extraction/decoding in that tested setup.
 
 ### Not yet proven
 
-- reproducible moving-object JOC carrier with sufficient timed OAMD/object-state diversity and positive temporal-harness result;
-- authored object-position correctness through OpenJOC rendering;
+- moving-object temporal behavior through Aurora's Harletty/Omniphony JOC path using the new official-source-derived carrier;
+- authored object-position correctness through OpenJOC or Aurora rendering;
 - physical continuous eARC -> E-AC-3 JOC -> Aurora -> physical 7.1.4;
 - Netflix/other DRM-service Atmos compatibility through Aurora;
 - physical STM32/TDM16/USB multichannel path;
@@ -170,11 +190,13 @@ Current built-in backend implementation versions are `0.1.0`; realtime backend c
 - CLI/evaluation: `crates/aurora-cli/`
 - Immersive/JOC evidence: `validation/immersive/`
 - Temporal JOC analyzer/harness: `validation/immersive/joc_temporal_evidence.py`, `validation/immersive/test-joc-temporal-evidence.sh`
+- Official Dolby moving-JOC reference lane: `validation/immersive/test-dolby-official-joc-temporal.sh`
 - OpenJOC reference lane: `validation/immersive/test-openjoc-reference.sh`
 - Realtime JOC pacing lane: `validation/immersive/test-joc-realtime-soak.sh`
 - Immersive truth matrix: `validation/immersive/README.md`
 - Main CI: `.github/workflows/ci.yml`
 - Immersive JOC CI: `.github/workflows/immersive-joc-stack-ci.yml`
+- Official Dolby temporal CI: `.github/workflows/dolby-joc-temporal-ci.yml`
 - PR simulation smoke: `.github/workflows/simulation-assurance-pr.yml`
 - Realtime soak: `.github/workflows/realtime-health-soak-ci.yml`
 - External component/license decisions: `config/external-components-v1.json`, `THIRD_PARTY_LICENSES.md`
@@ -184,17 +206,17 @@ Useful search symbols:
 
 Legacy invariants: implementation-selection `RendererConfiguration` and `BackendIntent` enums must not reappear in current root config/runtime-control surfaces.
 
-## 7. Current work / Next actions — positive moving-object JOC proof
+## 7. Current work / Next actions — moving JOC through Aurora's own path
 
-The fail-closed harness is merged and validated. The next critical path is no longer analyzer implementation; it is acquiring or legally generating a **reproducible, authorized moving-object E-AC-3 JOC carrier** that can exercise the same harness in positive-proof mode.
+The authorized/reproducible moving-object reference gate now has a positive software result. The next critical PC/software gate is to feed the same checksum-pinned official-source-derived JOC carrier through Aurora's actual Harletty/Omniphony path and prove that Aurora's own rendered output changes coherently over time before moving the critical path to physical hardware.
 
 Next actions, in order:
-1. Search for a publicly redistributable or otherwise reproducibly retrievable moving-object E-AC-3 JOC test carrier with clear provenance/licensing. Do not use DRM circumvention or protected-media extraction.
-2. For each candidate, record exact provenance and SHA-256 and run `validation/immersive/test-joc-temporal-evidence.sh` unchanged.
-3. A positive software proof requires all codec/JOC gates plus real timed OAMD/object-state diversity plus independent rendered temporal-energy diversity. Do not weaken thresholds to make a carrier pass.
-4. Preserve report artifacts and distinguish self-consistency from authored-position correctness.
-5. If no legal public carrier exists, support a documented manual/user-supplied authorized-carrier evidence path; do not commit private/copyrighted media merely to satisfy CI.
-6. Only after a real carrier passes may `AGENTS.md` and project docs upgrade the claim from “harness ready/fail-closed” to “positive moving-object software evidence”.
+1. Reuse the exact derived carrier identity from `test-dolby-official-joc-temporal.sh`; do not create another unpinned demo source.
+2. Extend the Harletty/Omniphony validation lane to accept that carrier without weakening codec/JOC or temporal gates.
+3. Capture Aurora-side timed object/metadata evidence and 12-channel output over the moving sections; require more than one meaningful rendered temporal profile.
+4. Differentially compare Aurora-side timing/object census/render health against the independent OpenJOC evidence where semantics permit; do not treat channel-energy similarity as authored-position proof.
+5. Add media-paced/realtime execution for the moving carrier and preserve underrun/overrun/timing evidence.
+6. Only after Aurora's own moving-object path is positive should the critical path advance to physical continuous `eARC -> JOC -> Aurora -> 7.1.4` I/O validation.
 
 Other queued trackers:
 - #115: evaluate newer Omniphony behind a separate reference lane; do not upgrade the stable pinned reference by recency alone.
@@ -209,7 +231,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-For immersive/JOC validation changes, require the official `.github/workflows/immersive-joc-stack-ci.yml` PR run and inspect its emitted evidence. Synthetic analyzer tests prove only report/metric logic; they are never codec/JOC proof.
+For immersive/JOC validation changes, require the official `.github/workflows/immersive-joc-stack-ci.yml` PR run and inspect its emitted evidence. Changes to the moving-object carrier/reference lane additionally require `.github/workflows/dolby-joc-temporal-ci.yml` to pass and its artifact to preserve the untouched-carrier boundary plus the positive derived-suffix report. Synthetic analyzer tests prove only report/metric logic; they are never codec/JOC proof.
 
 For performance/realtime changes also run relevant release benchmarks/allocation guards. For runtime/config PRs require official PR CI plus simulation smoke and sustained realtime-health soak when applicable.
 
