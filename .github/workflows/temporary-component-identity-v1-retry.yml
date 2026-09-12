@@ -1,0 +1,54 @@
+name: Temporary component identity v1 retry
+
+on:
+  push:
+    branches:
+      - feature/runtime-component-identity-v1
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: "!contains(github.event.head_commit.message, '[component-identity-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/runtime-component-identity-v1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Apply canonical component identity patch
+        shell: python
+        run: |
+          from pathlib import Path
+          import textwrap
+          source = Path('.github/workflows/temporary-component-identity-v1.yml').read_text()
+          start_marker = '      - name: Add prepared component identities and alternate DSP proof\n'
+          start = source.index(start_marker)
+          run = source.index('        run: |\n', start) + len('        run: |\n')
+          end = source.index('      - name: Format and validate identity slice\n', run)
+          code = textwrap.dedent(source[run:end])
+          exec(compile(code, 'component-identity-patch', 'exec'))
+      - name: Refresh lockfile then validate locked workspace
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo check --workspace --all-targets --all-features
+          cargo check --workspace --all-targets --all-features --locked
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test -p aurora-runtime-assembly -p aurora-runtime-inspection -p aurora-runtime-materialization --all-features --locked
+          cargo test -p aurora-realtime-engine --all-features --locked
+      - name: Commit production slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock crates docs/plugin-architecture.md
+          git commit -m "Add prepared runtime component identities [component-identity-bot]"
+          git push origin HEAD:feature/runtime-component-identity-v1
