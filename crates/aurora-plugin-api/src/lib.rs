@@ -5,6 +5,8 @@
 //! execute on the audio callback. Realtime decoders, renderers, DSP engines,
 //! and hardware backends continue to use their dedicated Aurora API crates.
 
+pub mod source_manager;
+
 use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
