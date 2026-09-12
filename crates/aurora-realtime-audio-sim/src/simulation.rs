@@ -3,9 +3,9 @@ use std::time::Instant;
 use aurora_core::{ChannelRole, Listener, Speaker, StandardLayout, Vector3};
 use aurora_realtime_audio_api::{AudioDeviceDirection, AudioStreamFault};
 use aurora_realtime_engine::{
-    create_adaptive_duplex_bridge, BasicRendererMode, DriftController, DriftControllerConfig,
-    DriftControllerFault, DuplexBridgeConfig, DuplexFaultPolicy, DuplexStateEvent,
-    DuplexStateMachine, ProcessStatus, RealTimeEngineConfig, RubatoAsrc, TestSignal,
+    create_adaptive_duplex_bridge, DriftController, DriftControllerConfig, DriftControllerFault,
+    DuplexBridgeConfig, DuplexFaultPolicy, DuplexStateEvent, DuplexStateMachine, ProcessStatus,
+    RealTimeEngineConfig, RubatoAsrc, TestSignal,
 };
 use aurora_runtime_materialization::materialize_default_realtime_engine;
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
@@ -530,7 +530,6 @@ fn run_sample_pipeline_probe(
             apply_geometric_delay: false,
             speed_of_sound: 343.0,
             test_signal: TestSignal::None,
-            renderer_mode: BasicRendererMode::InverseDistance,
         },
         device_latency_frames,
     )

@@ -122,7 +122,7 @@ Examples:
 
 ## Current migration debt
 
-The long-term rule above is stricter than the current implementation in one known area. `aurora-realtime-engine` still constructs/imports `BasicRenderer` and `BasicRendererMode`, and its compatibility constructor still creates the basic `DelayProcessor`. However, the callback-facing delay path stores and invokes `RealtimeDelayProcessor`, and realtime-engine no longer exposes `BasicDspError` or calls the concrete `DelayProcessor` callback methods directly.
+`aurora-realtime-engine` now owns only Aurora renderer/DSP contracts and caller-supplied prepared component instances. Concrete BasicRenderer/VBAP and basic-delay selection is performed by `aurora-runtime-materialization` on the control thread; renderer and DSP capability mismatches fail before callback activation. Application/provider plugins remain outside this realtime component injection path.
 
 The DSP boundary has advanced one step further: `RealTimeEngine::new_with_prepared_delay_processor` can accept a caller-supplied prepared `RealtimeDelayProcessor`. The engine validates the supplied component's output-channel count and maximum dynamic-delay capacity before activation, initializes it on the setup thread, and then uses only the realtime contract in callback processing. This proves that an alternate DSP implementation can be integrated without changing callback code. The legacy constructor remains as a compatibility path and still constructs the basic implementation internally.
 

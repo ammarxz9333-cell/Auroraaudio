@@ -9,4 +9,10 @@ rust-version.workspace = true
 [dependencies]
 aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-realtime-engine = { path = "../aurora-realtime-engine" }
+aurora-renderer-api = { path = "../aurora-renderer-api" }
+aurora-renderer-basic = { path = "../aurora-renderer-basic" }
+aurora-renderer-vbap = { path = "../aurora-renderer-vbap" }
 aurora-scene = { path = "../aurora-scene" }
+
+[dev-dependencies]
+serde_json.workspace = true

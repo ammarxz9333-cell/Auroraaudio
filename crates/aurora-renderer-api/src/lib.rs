@@ -98,8 +98,33 @@ pub enum RendererError {
     Unavailable(&'static str),
 }
 
+/// Setup-time capabilities of a configured renderer.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RendererCapabilities {
+    dynamic_delay_values: bool,
+}
+
+impl RendererCapabilities {
+    /// Creates renderer capabilities.
+    pub const fn new(dynamic_delay_values: bool) -> Self {
+        Self {
+            dynamic_delay_values,
+        }
+    }
+
+    /// Returns whether per-speaker delay values emitted by `render_gains` must be applied dynamically.
+    pub const fn dynamic_delay_values(self) -> bool {
+        self.dynamic_delay_values
+    }
+}
+
 /// Replaceable renderer abstraction used by offline and real-time pipelines.
-pub trait Renderer {
+pub trait Renderer: Send {
+    /// Reports configured renderer capabilities used by realtime materialization.
+    fn capabilities(&self) -> RendererCapabilities {
+        RendererCapabilities::default()
+    }
+
     /// Configures layout and fixed processing limits before rendering starts.
     fn configure(
         &mut self,

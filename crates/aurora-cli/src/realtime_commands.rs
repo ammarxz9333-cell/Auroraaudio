@@ -18,9 +18,9 @@ use aurora_realtime_audio_api::{
 use aurora_realtime_audio_cpal::CpalAudioBackend;
 use aurora_realtime_engine::{
     create_adaptive_duplex_bridge, estimate_repeated_latency, generate_measurement_sequence,
-    AdaptiveDuplexFault, BasicRendererMode, DriftControllerConfig, DuplexBridgeConfig,
-    DuplexFaultPolicy, DuplexHealth, DuplexStateEvent, DuplexStateMachine, DuplexStreamState,
-    ProcessStatus, RealTimeEngineConfig, RubatoAsrc, TestSignal,
+    AdaptiveDuplexFault, DriftControllerConfig, DuplexBridgeConfig, DuplexFaultPolicy,
+    DuplexHealth, DuplexStateEvent, DuplexStateMachine, DuplexStreamState, ProcessStatus,
+    RealTimeEngineConfig, RubatoAsrc, TestSignal,
 };
 use aurora_runtime_materialization::materialize_default_realtime_engine;
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
@@ -170,7 +170,6 @@ fn run_duplex_once(options: &DuplexOptions) -> Result<(DuplexSummary, bool)> {
             apply_geometric_delay: false,
             speed_of_sound: 343.0,
             test_signal: TestSignal::None,
-            renderer_mode: BasicRendererMode::InverseDistance,
         },
         options.block_size,
     )?;
