@@ -14,9 +14,7 @@ use aurora_core::{AudioFormat, SampleType};
 use aurora_decoder_engine::EngineConfig;
 use aurora_decoder_open::joc_access_unit::JocAccessUnitAssembler;
 use aurora_direct_earc_decoder::DirectEarcDecoder;
-use aurora_iec61937::{
-    CarrierWordHalf, S32LeCarrierNormalizer, TransportCodec, DATA_TYPE_EAC3,
-};
+use aurora_iec61937::{CarrierWordHalf, S32LeCarrierNormalizer, TransportCodec, DATA_TYPE_EAC3};
 
 const FIXTURE_ENV: &str = "AURORA_OPENJOC_SYNTHETIC_FIXTURE";
 const EXPECTED_BYTES: usize = 32_768;
@@ -82,21 +80,17 @@ fn observe_frames(
     for frame in frames {
         assert_eq!(frame.audio.channels.len(), 12);
         assert!(frame.audio.frame_count > 0 && frame.audio.frame_count <= 40);
-        assert!(
-            frame
-                .audio
-                .channels
-                .iter()
-                .all(|channel| channel.len() == frame.audio.frame_count)
-        );
-        assert!(
-            frame
-                .audio
-                .channels
-                .iter()
-                .flatten()
-                .all(|sample| sample.is_finite())
-        );
+        assert!(frame
+            .audio
+            .channels
+            .iter()
+            .all(|channel| channel.len() == frame.audio.frame_count));
+        assert!(frame
+            .audio
+            .channels
+            .iter()
+            .flatten()
+            .all(|sample| sample.is_finite()));
 
         // DirectEarcDecoder owns the presentation clock. Every emitted block,
         // including the short EOF retirement tail, must start exactly where the
@@ -108,17 +102,17 @@ fn observe_frames(
             "non-contiguous direct-eARC PTS: expected {expected_pts:.12}, got {:.12}",
             frame.audio.presentation_time_seconds
         );
-        *pcm_frames = pcm_frames.saturating_add(frame.audio.frame_count);
+        *pcm_frames = (*pcm_frames).saturating_add(frame.audio.frame_count);
     }
 }
 
 #[test]
 #[ignore = "requires exact OpenJOC synthetic joc.ec3 fixture via AURORA_OPENJOC_SYNTHETIC_FIXTURE"]
 fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
-    let path = PathBuf::from(
-        std::env::var(FIXTURE_ENV)
-            .unwrap_or_else(|_| panic!("set {FIXTURE_ENV} to the verified OpenJOC joc.ec3 fixture")),
-    );
+    let path =
+        PathBuf::from(std::env::var(FIXTURE_ENV).unwrap_or_else(|_| {
+            panic!("set {FIXTURE_ENV} to the verified OpenJOC joc.ec3 fixture")
+        }));
     let fixture = fs::read(&path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     assert_eq!(fixture.len(), EXPECTED_BYTES, "unexpected fixture size");
@@ -165,12 +159,10 @@ fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
                 .expect("decode normalized synthetic direct-eARC carrier chunk");
             let prior_bursts = bursts;
             bursts = bursts.saturating_add(batch.bursts);
-            assert!(
-                batch
-                    .transport_codecs
-                    .iter()
-                    .all(|codec| *codec == TransportCodec::Eac3)
-            );
+            assert!(batch
+                .transport_codecs
+                .iter()
+                .all(|codec| *codec == TransportCodec::Eac3));
 
             if prior_bursts == 0 && batch.bursts > 0 {
                 // The IEC61937 0x15 burst itself is an authenticated complete
@@ -209,9 +201,18 @@ fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
     let transport = decoder.transport_telemetry();
     assert!(transport.iec61937_locked);
     assert_eq!(transport.total_bursts, EXPECTED_ACCESS_UNITS as u64);
-    assert_eq!(transport.last_burst_spacing_bytes, Some(EAC3_PERIOD_BYTES as u64));
-    assert_eq!(transport.min_burst_spacing_bytes, Some(EAC3_PERIOD_BYTES as u64));
-    assert_eq!(transport.max_burst_spacing_bytes, Some(EAC3_PERIOD_BYTES as u64));
+    assert_eq!(
+        transport.last_burst_spacing_bytes,
+        Some(EAC3_PERIOD_BYTES as u64)
+    );
+    assert_eq!(
+        transport.min_burst_spacing_bytes,
+        Some(EAC3_PERIOD_BYTES as u64)
+    );
+    assert_eq!(
+        transport.max_burst_spacing_bytes,
+        Some(EAC3_PERIOD_BYTES as u64)
+    );
     assert_eq!(transport.total_format_changes, 0);
 
     let joc = decoder.engine().joc_status();
