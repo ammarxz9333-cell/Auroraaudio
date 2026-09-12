@@ -129,7 +129,21 @@ jobs:
           for name in names:
               text = text.replace(f'"{name}-v1"', f'"{name}-v2"', 1)
           p.write_text(text)
-          print('v2 canonical fixture hashes:', ', '.join(f'0x{value:016x}' for value in hashes))
+          print('raw v2 fixture hashes:', ', '.join(f'0x{value:016x}' for value in hashes))
+          PY
+      - name: Aggregate canonical checksum diagnostics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('crates/aurora-config/tests/contracts.rs')
+          text = p.read_text()
+          old = '''    for ((name, fixture), expected) in fixtures.into_iter().zip(expected) {\n        let canonical = ValidatedConfiguration::from_json(fixture)\n            .unwrap()\n            .canonical_json()\n            .unwrap();\n        assert_eq!(fnv1a64(canonical.as_bytes()), expected, "{name}");\n    }\n'''
+          new = '''    let actual = fixtures\n        .into_iter()\n        .map(|(_, fixture)| {\n            let canonical = ValidatedConfiguration::from_json(fixture)\n                .unwrap()\n                .canonical_json()\n                .unwrap();\n            fnv1a64(canonical.as_bytes())\n        })\n        .collect::<Vec<_>>();\n    assert_eq!(actual, expected);\n'''
+          if text.count(old) != 1:
+              raise SystemExit(f'expected checksum assertion loop once, found {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
           PY
       - name: Refresh lockfile and validate renderer reference slice
         shell: bash
