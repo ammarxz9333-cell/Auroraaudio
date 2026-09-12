@@ -23,10 +23,11 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
       - name: Apply backend schema v3 patch
         run: python scripts/temporary-backend-v3.py
-      - name: Fix remaining migration call sites
+      - name: Apply backend v3 compile cleanup
         shell: bash
         run: |
           set -euo pipefail
+          python scripts/temporary-backend-v3-fixes.py
           python - <<'PY'
           from pathlib import Path
           p = Path('crates/aurora-config/benches/configuration.rs')
