@@ -13,10 +13,18 @@ ALLOWED_DECISIONS = {
     "adopted-offline",
     "validation-only",
     "evaluate",
+    "evaluate-active",
     "defer-headphones",
     "defer-dialogue",
     "defer-streaming",
     "defer-multiroom",
+}
+
+SELECTED_DECISIONS = {
+    "adopted",
+    "adopted-offline",
+    "validation-only",
+    "evaluate-active",
 }
 
 
@@ -51,7 +59,8 @@ def main() -> None:
             fail(f"duplicate component id: {component_id}")
         ids.add(component_id)
 
-        if component.get("decision") not in ALLOWED_DECISIONS:
+        decision = component.get("decision")
+        if decision not in ALLOWED_DECISIONS:
             fail(f"{component_id}: unknown decision")
         if not str(component.get("upstream", "")).startswith("https://"):
             fail(f"{component_id}: upstream must be an HTTPS URL")
@@ -61,11 +70,13 @@ def main() -> None:
         evidence = component.get("evidence")
         if not isinstance(evidence, list):
             fail(f"{component_id}: evidence must be a list")
-        if component["decision"] in {"adopted", "adopted-offline", "validation-only"}:
+        if decision in SELECTED_DECISIONS:
             if not component.get("tested_version"):
                 fail(f"{component_id}: selected components require a tested_version")
             if not evidence:
                 fail(f"{component_id}: selected components require evidence")
+        if decision == "evaluate-active" and not component.get("pinned_commit"):
+            fail(f"{component_id}: active evaluation requires a pinned_commit")
         if component.get("production_ready") and not evidence:
             fail(f"{component_id}: production_ready requires evidence")
         if component.get("object_metadata") == "supported" and not evidence:
