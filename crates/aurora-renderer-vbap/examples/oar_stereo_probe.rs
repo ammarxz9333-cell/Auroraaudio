@@ -65,19 +65,8 @@ fn main() -> Result<(), Box<dyn Error>> {
     let mut scratch = RendererScratch::new(renderer.required_scratch_size()?);
 
     println!("AURORA-OAR-DIFF-PROBE schema=1 layout=stereo samples_per_channel={BLOCK_SIZE} sample_rate={SAMPLE_RATE}");
-    for &(azimuth, gain_db) in &[
-        (30.0_f32, 0.0_f32),
-        (0.0, 0.0),
-        (-30.0, 0.0),
-        (0.0, -6.0),
-    ] {
-        let [left, right] = probe(
-            &mut renderer,
-            &listener,
-            &mut scratch,
-            azimuth,
-            gain_db,
-        )?;
+    for &(azimuth, gain_db) in &[(30.0_f32, 0.0_f32), (0.0, 0.0), (-30.0, 0.0), (0.0, -6.0)] {
+        let [left, right] = probe(&mut renderer, &listener, &mut scratch, azimuth, gain_db)?;
         println!(
             "AURORA-PROBE azimuth={azimuth:.3} gain_db={gain_db:.3} left={left:.9} right={right:.9}"
         );
