@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "upstream": "https://github.com/mgth/Omniphony",
+  "stable": {
+    "label": "v0.5.2",
+    "commit": "f9a79721af64ad9c39042d4deded158b568fc598"
+  },
+  "candidate": {
+    "label": "main-evaluation-2026-09-12",
+    "commit": "4903c893d25ffac9012707bd320d5e66103f3e69"
+  },
+  "integration": "external-process-validation-only",
+  "promotion_policy": {
+    "automatic_promotion": false,
+    "require_bridge_abi_compatibility": true,
+    "require_canonical_channel_label_compatibility": true,
+    "require_layout_compatibility": true,
+    "require_equal_render_frame_count": true,
+    "require_finite_non_silent_output": true,
+    "notes": "A green evaluation lane does not replace the stable reference pin. Promotion requires explicit review of the emitted metrics and truth boundaries."
+  }
+}
