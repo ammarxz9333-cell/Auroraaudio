@@ -98,13 +98,8 @@ mod tests {
                     &second_delays[..]
                 };
                 if RealtimeDelayProcessor::set_delays(&mut delay, delays).is_err()
-                    || RealtimeDelayProcessor::process_planar(
-                        &mut delay,
-                        &input,
-                        &mut output,
-                        64,
-                    )
-                    .is_err()
+                    || RealtimeDelayProcessor::process_planar(&mut delay, &input, &mut output, 64)
+                        .is_err()
                 {
                     failed = true;
                     break;
