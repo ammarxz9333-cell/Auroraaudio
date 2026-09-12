@@ -19,7 +19,9 @@ Latest integrated validation-infrastructure slice: **PR #136**, squash commit `0
 
 Latest integrated positive moving-object reference proof: **PR #140**, squash commit `5d6a164d6c4bad603aacebe9756e418a0d93ae26`.
 
-Completed trackers: **#118**, **#119**, **#130**, **#132**, **#135**. Tracker **#141** is completed by the Aurora-side moving-JOC validation described below once PR #142 is merged.
+Latest integrated Aurora-side moving-JOC proof: **PR #142**, squash commit `9b153e1d34754aa47672fe2a6e5d46fb0e0966dc`.
+
+Completed trackers: **#118**, **#119**, **#130**, **#132**, **#135**, **#141**.
 
 ## 2. Product goal
 
@@ -68,7 +70,7 @@ Read only when relevant: `README.md`, `VISION.md`, `docs/architecture.md`, `docs
 - Authorized-carrier handling is checksum-pinned and provenance-aware; raw carriers are never silently re-encoded.
 - Aurora now has a dedicated fail-closed moving-JOC lane through the pinned `IEC61937 -> Harletty bridge -> Omniphony 7.1.4` software path.
 
-Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133, #136, #140.
+Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133, #136, #140, #142.
 
 ### PR #131 / issue #119 completion evidence
 
@@ -109,17 +111,17 @@ This is positive moving-object **reference/software evidence**. It is not Dolby 
 
 ### PR #142 / issue #141 — Aurora-side moving JOC proof
 
-PR #142 adds:
+PR #142 merged as `9b153e1d34754aa47672fe2a6e5d46fb0e0966dc` and adds:
 - `validation/immersive/aurora_joc_moving_evidence.py`;
 - `validation/immersive/test-joc-aurora-moving.sh`;
 - `.github/workflows/aurora-moving-joc-ci.yml`.
 
-Final validated head before merge: `2dba5b4a0a31c0ee7d9fd74714bc4e93345b602b`.
+Final validated head before merge: `7c0728a090b1b265d977960072a862e402b7cafa`.
 
 Official final-head CI:
-- `CI` run `34708144163` — **PASS**;
-- `Immersive JOC Stack CI` run `34708144183` — **PASS**;
-- `Aurora Moving JOC CI` run `34708144273`, job `103591852476` — **PASS**.
+- `CI` run `34709483752` — **PASS**;
+- `Immersive JOC Stack CI` run `34709483748` — **PASS**;
+- `Aurora Moving JOC CI` run `34709483759` — **PASS**.
 
 Emitted Aurora-side evidence on the exact PR #140 derived carrier SHA-256 `0219a241559de5231f31c6093072740ff9fe0657b3354541bc6838ef2d5e5be0`:
 - IEC61937 data type `0x15`, 2360 packets/bursts;
