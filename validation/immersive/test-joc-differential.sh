@@ -16,8 +16,8 @@ for cmd in git python3 ffmpeg ffprobe; do
   command -v "$cmd" >/dev/null 2>&1 || fail "missing required command: $cmd"
 done
 [[ -f "$MANIFEST" ]] || fail "missing component manifest: $MANIFEST"
-[[ -x "$STACK_TEST" ]] || fail "missing executable validation lane: $STACK_TEST"
-[[ -x "$OPENJOC_TEST" ]] || fail "missing executable validation lane: $OPENJOC_TEST"
+[[ -f "$STACK_TEST" ]] || fail "missing validation lane: $STACK_TEST"
+[[ -f "$OPENJOC_TEST" ]] || fail "missing validation lane: $OPENJOC_TEST"
 
 if [[ $# -gt 1 ]]; then
   echo "usage: $0 [OUTPUT_DIR]" >&2
@@ -80,9 +80,9 @@ mkdir -p "$STACK_DIR" "$OPENJOC_DIR"
 
 AURORA_KEEP_JOC_TEST_WORKDIR=1 \
 AURORA_JOC_TEST_WORKDIR="$STACK_DIR" \
-  "$STACK_TEST"
+  bash "$STACK_TEST"
 
-"$OPENJOC_TEST" "$INPUT" "$OPENJOC_DIR"
+bash "$OPENJOC_TEST" "$INPUT" "$OPENJOC_DIR"
 
 STACK_RAW="$STACK_DIR/joc_atmos_7_1_4.f32"
 OPENJOC_WAV="$OPENJOC_DIR/openjoc-7.1.4.wav"
