@@ -1,0 +1,586 @@
+name: Temporary config v2 renderer
+
+on:
+  push:
+    branches:
+      - feature/config-renderer-component-ref-v2
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: "!contains(github.event.head_commit.message, '[config-v2-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/config-renderer-component-ref-v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Apply renderer component-reference schema v2 slice
+        shell: python
+        run: |
+          from pathlib import Path
+          import json, re
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one anchor, found {count}: {old[:120]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Schema version and generic component payload bounds.
+          p = Path('crates/aurora-config/src/limits.rs')
+          text = p.read_text().replace('pub const CURRENT_SCHEMA_VERSION: u16 = 1;', 'pub const CURRENT_SCHEMA_VERSION: u16 = 2;')
+          text = text.replace('pub const MINIMUM_READER_VERSION: u16 = 1;', 'pub const MINIMUM_READER_VERSION: u16 = 2;')
+          text += '\n/// Maximum nesting depth in one component-specific configuration payload.\npub const MAX_COMPONENT_CONFIG_DEPTH: usize = 8;\n/// Maximum total map/array entries in one component-specific configuration payload.\npub const MAX_COMPONENT_CONFIG_ENTRIES: usize = 128;\n'
+          p.write_text(text)
+
+          # Replace implementation-hard-coded renderer enum with a versioned component reference envelope.
+          p = Path('crates/aurora-config/src/model.rs')
+          text = p.read_text()
+          start = text.index('/// Existing renderer selection vocabulary.')
+          end = text.index('/// Bounded audio transport policy intent.')
+          component_model = '''/// Stable Aurora-owned component contract families.\n#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]\n#[serde(rename_all = "snake_case")]\npub enum ComponentContractKind {\n    /// Spatial renderer contract.\n    Renderer,\n    /// DSP processing contract.\n    Dsp,\n    /// Media decoder contract.\n    Decoder,\n    /// Audio capture backend contract.\n    AudioInputBackend,\n    /// Audio playback backend contract.\n    AudioOutputBackend,\n    /// Media/network transport contract.\n    Transport,\n    /// Future physical hardware adapter contract.\n    HardwareAdapter,\n}\n\n/// Inclusive compatible minor-version range for one component contract major.\n#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct CompatibleMinorRange {\n    /// Oldest compatible contract minor.\n    pub minimum: u16,\n    /// Newest compatible contract minor.\n    pub maximum: u16,\n}\n\n/// Versioned reference to a replaceable component implementation.\n///\n/// `configuration` is control-plane data only. A contract-specific registry must\n/// validate and convert it into typed Aurora-owned runtime descriptors before\n/// materialization; this opaque payload never enters the realtime callback.\n#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]\n#[serde(deny_unknown_fields)]\npub struct ComponentReference {\n    /// Stable component identity independent of package or repository name.\n    pub component_id: String,\n    /// Aurora-owned contract family this component must implement.\n    pub contract_kind: ComponentContractKind,\n    /// Required contract major version.\n    pub contract_major: u16,\n    /// Inclusive compatible contract-minor range.\n    pub compatible_minor: CompatibleMinorRange,\n    /// Optional exact implementation-version pin.\n    #[serde(default, skip_serializing_if = "Option::is_none")]\n    pub implementation_version_pin: Option<String>,\n    /// Component-specific configuration schema version.\n    pub configuration_schema: u16,\n    /// Component-specific bounded configuration payload.\n    #[serde(default)]\n    pub configuration: serde_json::Value,\n}\n\n'''
+          p.write_text(text[:start] + component_model + text[end:])
+          replace_once(
+              'crates/aurora-config/src/model.rs',
+              '    /// Renderer selection intent.\n    pub renderer: RendererConfiguration,',
+              '    /// Versioned renderer component reference.\n    pub renderer: ComponentReference,'
+          )
+
+          # Structured component-reference validation without knowing implementation IDs.
+          p = Path('crates/aurora-config/src/error.rs')
+          text = p.read_text()
+          text = text.replace('    /// Renderer kind is unsupported or incompatible with the layout.\n    UnsupportedRenderer,', '    /// Renderer kind is unsupported or incompatible with the layout.\n    UnsupportedRenderer,\n    /// A replaceable component reference is structurally invalid.\n    InvalidComponentReference,')
+          text = text.replace('    /// Renderer intent is unsupported.\n    Renderer,', '    /// Renderer intent is unsupported.\n    Renderer,\n    /// Replaceable component reference or payload validation failed.\n    Component,')
+          p.write_text(text)
+
+          p = Path('crates/aurora-config/src/validation.rs')
+          text = p.read_text()
+          text = text.replace('    FormatFallbackPolicy, LayoutKind, RendererConfiguration, CURRENT_SCHEMA_VERSION, MAX_CHANNELS,\n    MAX_FALLBACK_SAMPLE_RATES, MAX_ROUTES, MAX_SERIALIZED_BYTES, MAX_SPEAKERS, MAX_STRING_BYTES,\n    MINIMUM_READER_VERSION,', '    ComponentContractKind, FormatFallbackPolicy, LayoutKind, CURRENT_SCHEMA_VERSION, MAX_CHANNELS,\n    MAX_COMPONENT_CONFIG_DEPTH, MAX_COMPONENT_CONFIG_ENTRIES, MAX_FALLBACK_SAMPLE_RATES, MAX_ROUTES,\n    MAX_SERIALIZED_BYTES, MAX_SPEAKERS, MAX_STRING_BYTES, MINIMUM_READER_VERSION,')
+          text = text.replace('        ("speaker_layout.id", config.speaker_layout.id.as_str()),\n    ];', '        ("speaker_layout.id", config.speaker_layout.id.as_str()),\n        ("renderer.component_id", config.renderer.component_id.as_str()),\n    ];\n    if let Some(value) = config.renderer.implementation_version_pin.as_deref() {\n        fields.push(("renderer.implementation_version_pin", value));\n    }')
+          old_start = text.index('fn validate_renderer(config: &AuroraConfiguration) -> Result<(), ConfigError> {')
+          old_end = text.index('fn validate_buffering(config: &AuroraConfiguration) -> Result<(), ConfigError> {')
+          new_validation = '''fn validate_renderer(config: &AuroraConfiguration) -> Result<(), ConfigError> {\n    let reference = &config.renderer;\n    if reference.contract_kind != ComponentContractKind::Renderer\n        || reference.contract_major == 0\n        || reference.compatible_minor.minimum > reference.compatible_minor.maximum\n        || reference.configuration_schema == 0\n        || !reference.configuration.is_object()\n    {\n        return Err(error(\n            ErrorCode::InvalidComponentReference,\n            "renderer",\n            ErrorCategory::Component,\n            "renderer component reference has an invalid contract, version range, or payload shape",\n        ));\n    }\n    let mut entries = 0usize;\n    validate_component_payload(&reference.configuration, "renderer.configuration", 0, &mut entries)\n}\n\nfn validate_component_payload(\n    value: &serde_json::Value,\n    path: &str,\n    depth: usize,\n    entries: &mut usize,\n) -> Result<(), ConfigError> {\n    if depth > MAX_COMPONENT_CONFIG_DEPTH {\n        return Err(limit(path));\n    }\n    match value {\n        serde_json::Value::Object(values) => {\n            *entries = entries.checked_add(values.len()).ok_or_else(|| limit(path))?;\n            if *entries > MAX_COMPONENT_CONFIG_ENTRIES {\n                return Err(limit(path));\n            }\n            for (key, child) in values {\n                if key.trim().is_empty() || key.len() > MAX_STRING_BYTES {\n                    return Err(error(\n                        ErrorCode::InvalidString,\n                        path,\n                        ErrorCategory::Component,\n                        "component configuration key is empty or oversized",\n                    ));\n                }\n                validate_component_payload(child, path, depth + 1, entries)?;\n            }\n        }\n        serde_json::Value::Array(values) => {\n            *entries = entries.checked_add(values.len()).ok_or_else(|| limit(path))?;\n            if *entries > MAX_COMPONENT_CONFIG_ENTRIES {\n                return Err(limit(path));\n            }\n            for child in values {\n                validate_component_payload(child, path, depth + 1, entries)?;\n            }\n        }\n        serde_json::Value::String(value) => {\n            if value.len() > MAX_STRING_BYTES {\n                return Err(error(\n                    ErrorCode::InvalidString,\n                    path,\n                    ErrorCategory::Component,\n                    "component configuration string exceeds its bound",\n                ));\n            }\n        }\n        serde_json::Value::Number(value) => {\n            if value.as_f64().is_some_and(|value| !value.is_finite()) {\n                return Err(numeric(path));\n            }\n        }\n        serde_json::Value::Null | serde_json::Value::Bool(_) => {}\n    }\n    Ok(())\n}\n\n'''
+          p.write_text(text[:old_start] + new_validation + text[old_end:])
+
+          # Presets carry the generic component reference too.
+          p = Path('crates/aurora-config/src/preset.rs')
+          text = p.read_text().replace('    RendererConfiguration, RoutingConfiguration, SimulationProfile, SpeakerLayoutConfiguration,', '    ComponentReference, RoutingConfiguration, SimulationProfile, SpeakerLayoutConfiguration,')
+          text = text.replace('    Renderer(RendererConfiguration),', '    Renderer(ComponentReference),')
+          p.write_text(text)
+
+          # Schema migration is explicit. Old schema documents are not silently read as v2.
+          Path('crates/aurora-config/src/migration.rs').write_text(r'''use std::collections::BTreeSet;
+
+use serde::{Deserialize, Serialize};
+
+use crate::{
+    ConfigError, ErrorCategory, ErrorCode, ValidatedConfiguration, CURRENT_SCHEMA_VERSION,
+    MAX_MIGRATION_DIAGNOSTICS, MAX_SERIALIZED_BYTES,
+};
+
+#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+pub struct MigrationWarning {
+    pub field_path: String,
+    pub detail: String,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct MigrationResult {
+    pub configuration: ValidatedConfiguration,
+    pub changed_fields: BTreeSet<String>,
+    pub warnings: Vec<MigrationWarning>,
+}
+
+pub fn migrate_v1_to_v2(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
+    migrate_to_v2(bytes, 1)
+}
+
+pub fn migrate_v0_to_v2(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
+    migrate_to_v2(bytes, 0)
+}
+
+fn migrate_to_v2(bytes: &[u8], source_version: u16) -> Result<MigrationResult, ConfigError> {
+    if bytes.len() > MAX_SERIALIZED_BYTES {
+        return Err(migration_error(ErrorCode::SerializedSizeExceeded, "$", "migration input exceeds the serialized byte limit"));
+    }
+    let mut value: serde_json::Value = serde_json::from_slice(bytes).map_err(|_| migration_error(ErrorCode::InvalidJson, "$", "migration input is not valid JSON"))?;
+    let root = value.as_object_mut().ok_or_else(|| migration_error(ErrorCode::UnsupportedMigration, "$", "migration input must be an object"))?;
+    let schema = root.get_mut("schema").and_then(serde_json::Value::as_object_mut).ok_or_else(|| migration_error(ErrorCode::UnsupportedMigration, "schema", "schema metadata is missing"))?;
+    if schema.get("schema_version").and_then(serde_json::Value::as_u64) != Some(u64::from(source_version))
+        || schema.get("minimum_reader_version").and_then(serde_json::Value::as_u64) != Some(u64::from(source_version))
+    {
+        return Err(migration_error(ErrorCode::UnsupportedMigration, "schema", "migration source schema metadata does not match the requested source version"));
+    }
+
+    let renderer = root.get_mut("renderer").and_then(serde_json::Value::as_object_mut).ok_or_else(|| migration_error(ErrorCode::UnsupportedMigration, "renderer", "legacy renderer object is missing"))?;
+    let mut changed_fields = BTreeSet::from([
+        "schema.minimum_reader_version".to_owned(),
+        "schema.schema_version".to_owned(),
+        "renderer".to_owned(),
+    ]);
+    let mut warnings = Vec::new();
+    if source_version == 0 {
+        let percent = renderer.remove("spread_percent").and_then(|value| value.as_f64()).ok_or_else(|| migration_error(ErrorCode::MigrationDataLoss, "renderer.spread_percent", "deprecated spread percentage is missing or ambiguous"))?;
+        if !percent.is_finite() || !(0.0..=100.0).contains(&percent) {
+            return Err(migration_error(ErrorCode::MigrationDataLoss, "renderer.spread_percent", "deprecated spread percentage is outside 0..=100"));
+        }
+        renderer.insert("spread".to_owned(), serde_json::Value::from(percent / 100.0));
+        changed_fields.insert("renderer.spread_percent".to_owned());
+        warnings.push(MigrationWarning {
+            field_path: "renderer.spread_percent".to_owned(),
+            detail: "deprecated percentage converted to normalized spread before renderer-component migration".to_owned(),
+        });
+    }
+
+    let legacy = renderer.clone();
+    let renderer_type = legacy.get("type").and_then(serde_json::Value::as_str).ok_or_else(|| migration_error(ErrorCode::MigrationDataLoss, "renderer.type", "legacy renderer type is missing"))?;
+    let migrated_renderer = match renderer_type {
+        "basic" if legacy.len() == 1 => serde_json::json!({
+            "component_id": "org.aurora.renderer.basic",
+            "contract_kind": "renderer",
+            "contract_major": 1,
+            "compatible_minor": {"minimum": 0, "maximum": 0},
+            "configuration_schema": 1,
+            "configuration": {}
+        }),
+        "point_source_vbap" if legacy.len() == 1 => serde_json::json!({
+            "component_id": "org.aurora.renderer.vbap",
+            "contract_kind": "renderer",
+            "contract_major": 1,
+            "compatible_minor": {"minimum": 0, "maximum": 0},
+            "configuration_schema": 1,
+            "configuration": {"mode": "point_source"}
+        }),
+        "horizontal_spread" if legacy.len() == 2 => {
+            let spread = legacy.get("spread").and_then(serde_json::Value::as_f64).ok_or_else(|| migration_error(ErrorCode::MigrationDataLoss, "renderer.spread", "legacy horizontal spread is missing or ambiguous"))?;
+            if !spread.is_finite() || !(0.0..=1.0).contains(&spread) {
+                return Err(migration_error(ErrorCode::MigrationDataLoss, "renderer.spread", "legacy horizontal spread is outside 0..=1"));
+            }
+            serde_json::json!({
+                "component_id": "org.aurora.renderer.vbap",
+                "contract_kind": "renderer",
+                "contract_major": 1,
+                "compatible_minor": {"minimum": 0, "maximum": 0},
+                "configuration_schema": 1,
+                "configuration": {"mode": "horizontal_spread", "spread": spread}
+            })
+        }
+        _ => return Err(migration_error(ErrorCode::MigrationDataLoss, "renderer", "legacy renderer cannot be migrated without ambiguity or data loss")),
+    };
+    root.insert("renderer".to_owned(), migrated_renderer);
+    schema.insert("schema_version".to_owned(), serde_json::Value::from(CURRENT_SCHEMA_VERSION));
+    schema.insert("minimum_reader_version".to_owned(), serde_json::Value::from(CURRENT_SCHEMA_VERSION));
+    warnings.push(MigrationWarning {
+        field_path: "renderer".to_owned(),
+        detail: "legacy renderer enum migrated to a versioned renderer component reference".to_owned(),
+    });
+    warnings.truncate(MAX_MIGRATION_DIAGNOSTICS);
+
+    let migrated = serde_json::to_vec(&value).map_err(|_| migration_error(ErrorCode::InvalidJson, "$", "migrated document could not be serialized"))?;
+    let configuration = ValidatedConfiguration::from_json(&migrated)?;
+    Ok(MigrationResult { configuration, changed_fields, warnings })
+}
+
+fn migration_error(code: ErrorCode, path: &str, detail: &str) -> ConfigError {
+    let category = if code == ErrorCode::SerializedSizeExceeded {
+        ErrorCategory::Bounds
+    } else if code == ErrorCode::InvalidJson {
+        ErrorCategory::Schema
+    } else {
+        ErrorCategory::Migration
+    };
+    ConfigError::new(code, path, category, detail, Some("use the explicit migration matching the source schema version"))
+}
+''')
+          replace_once(
+              'crates/aurora-config/src/lib.rs',
+              'pub use migration::{migrate_v0_to_v1, MigrationResult, MigrationWarning};',
+              'pub use migration::{migrate_v0_to_v2, migrate_v1_to_v2, MigrationResult, MigrationWarning};'
+          )
+
+          # Generate deterministic v2 fixtures while preserving v1 files as migration inputs.
+          fixture_dir = Path('fixtures/config')
+          source_names = [
+              'invalid-ambiguous-device-v1.json', 'invalid-duplicate-speaker-v1.json',
+              'irregular-horizontal-v1.json', 'minimal-v1.json', 'phase-3a-point-source-v1.json',
+              'phase-3b-spread-v1.json', 'stereo-basic-v1.json', 'surround-5-1-v1.json',
+              'surround-7-1-v1.json', 'migration-expected-v1.json'
+          ]
+          def convert_renderer(doc):
+              old = doc['renderer']
+              kind = old['type']
+              if kind == 'basic':
+                  cid, cfg = 'org.aurora.renderer.basic', {}
+              elif kind == 'point_source_vbap':
+                  cid, cfg = 'org.aurora.renderer.vbap', {'mode':'point_source'}
+              elif kind == 'horizontal_spread':
+                  cid, cfg = 'org.aurora.renderer.vbap', {'mode':'horizontal_spread','spread':old['spread']}
+              else:
+                  cid, cfg = 'org.aurora.renderer.unknown', {}
+              doc['renderer'] = {
+                  'component_id': cid,
+                  'contract_kind': 'renderer',
+                  'contract_major': 1,
+                  'compatible_minor': {'minimum':0,'maximum':0},
+                  'configuration_schema': 1,
+                  'configuration': cfg,
+              }
+          for name in source_names:
+              src = fixture_dir / name
+              doc = json.loads(src.read_text())
+              doc['schema']['schema_version'] = 2
+              doc['schema']['minimum_reader_version'] = 2
+              convert_renderer(doc)
+              out = fixture_dir / name.replace('-v1.json','-v2.json')
+              out.write_text(json.dumps(doc, separators=(',', ':')) + '\n')
+
+          # Config test helpers own fixture-only constructors; production config has no renderer implementation enum.
+          p = Path('crates/aurora-config/tests/common/mod.rs')
+          text = p.read_text()
+          text = text.replace('pub fn configuration(kind: LayoutKind, renderer: RendererConfiguration) -> AuroraConfiguration {', 'pub fn configuration(kind: LayoutKind, renderer: ComponentReference) -> AuroraConfiguration {')
+          helper = '''\npub fn basic_renderer_reference() -> ComponentReference {\n    renderer_reference("org.aurora.renderer.basic", serde_json::json!({}))\n}\n\npub fn point_source_vbap_reference() -> ComponentReference {\n    renderer_reference("org.aurora.renderer.vbap", serde_json::json!({"mode":"point_source"}))\n}\n\npub fn horizontal_spread_reference(spread: f32) -> ComponentReference {\n    renderer_reference("org.aurora.renderer.vbap", serde_json::json!({"mode":"horizontal_spread","spread":spread}))\n}\n\npub fn unknown_renderer_reference() -> ComponentReference {\n    renderer_reference("org.aurora.renderer.test-unknown", serde_json::json!({}))\n}\n\nfn renderer_reference(component_id: &str, configuration: serde_json::Value) -> ComponentReference {\n    ComponentReference {\n        component_id: component_id.to_owned(),\n        contract_kind: ComponentContractKind::Renderer,\n        contract_major: 1,\n        compatible_minor: CompatibleMinorRange { minimum: 0, maximum: 0 },\n        implementation_version_pin: None,\n        configuration_schema: 1,\n        configuration,\n    }\n}\n'''
+          text = text.replace('use aurora_diagnostics::{Severity, TruthSource};\n', 'use aurora_diagnostics::{Severity, TruthSource};\n' + helper)
+          text = text.replace('configuration(LayoutKind::Stereo, RendererConfiguration::Basic)', 'configuration(LayoutKind::Stereo, basic_renderer_reference())')
+          p.write_text(text)
+
+          # Mechanical test call-site migration to local component-reference helpers.
+          paths = [Path('crates/aurora-config/tests/contracts.rs')]
+          for p in paths:
+              text = p.read_text()
+              text = text.replace('use common::{configuration, full_preset, stereo};', 'use common::{basic_renderer_reference, configuration, full_preset, horizontal_spread_reference, point_source_vbap_reference, stereo, unknown_renderer_reference};')
+              text = text.replace('RendererConfiguration::Basic', 'basic_renderer_reference()')
+              text = text.replace('RendererConfiguration::PointSourceVbap', 'point_source_vbap_reference()')
+              text = re.sub(r'RendererConfiguration::HorizontalSpread \{ spread: ([^}]+) \}', r'horizontal_spread_reference(\1)', text)
+              p.write_text(text)
+
+          # Replace the old implementation-aware config rejection test with structural-reference truth.
+          p = Path('crates/aurora-config/tests/contracts.rs')
+          text = p.read_text()
+          start = text.index('#[test]\nfn unsupported_renderer_and_schema_are_rejected() {')
+          end = text.index('#[test]\nfn routing_rejects_unknown_inactive_and_unassigned_input_channels() {')
+          replacement = '''#[test]\nfn renderer_component_reference_is_structural_and_schema_fail_closed() {\n    let mut schema = stereo();\n    schema.schema.schema_version = 99;\n    assert_eq!(\n        ValidatedConfiguration::new(schema).unwrap_err().code,\n        ErrorCode::UnsupportedSchemaVersion\n    );\n\n    let mut wrong_contract = stereo();\n    wrong_contract.renderer.contract_kind = ComponentContractKind::Dsp;\n    assert_eq!(\n        ValidatedConfiguration::new(wrong_contract).unwrap_err().code,\n        ErrorCode::InvalidComponentReference\n    );\n\n    let mut invalid_range = stereo();\n    invalid_range.renderer.compatible_minor = CompatibleMinorRange { minimum: 2, maximum: 1 };\n    assert_eq!(\n        ValidatedConfiguration::new(invalid_range).unwrap_err().code,\n        ErrorCode::InvalidComponentReference\n    );\n\n    let mut non_object = stereo();\n    non_object.renderer.configuration = serde_json::json!(["not", "an", "object"]);\n    assert_eq!(\n        ValidatedConfiguration::new(non_object).unwrap_err().code,\n        ErrorCode::InvalidComponentReference\n    );\n\n    let mut unknown = stereo();\n    unknown.renderer = unknown_renderer_reference();\n    assert!(ValidatedConfiguration::new(unknown).is_ok(), "config validates structure; registry resolves IDs later");\n\n    let json = ValidatedConfiguration::new(stereo())\n        .unwrap()\n        .canonical_json()\n        .unwrap()\n        .replace("\\\"configuration_schema\\\":1", "\\\"configuration_schema\\\":1,\\\"unexpected\\\":true");\n    assert_eq!(\n        ValidatedConfiguration::from_json(json.as_bytes()).unwrap_err().code,\n        ErrorCode::InvalidJson\n    );\n}\n\n'''
+          p.write_text(text[:start] + replacement + text[end:])
+
+          # Preset assertions/call sites are component refs now.
+          p = Path('crates/aurora-config/tests/contracts.rs')
+          text = p.read_text()
+          text = text.replace('horizontal_spread_reference(0.7)', 'horizontal_spread_reference(0.7)')
+          text = text.replace('horizontal_spread_reference(0.5)', 'horizontal_spread_reference(0.5)')
+          # Migration test now proves v0 and v1 explicitly migrate to v2.
+          start = text.index('#[test]\nfn migration_succeeds_warns_and_rejects_ambiguous_input() {')
+          end = text.index('#[test]\nfn redaction_removes_identifiers_and_reports_truth_source() {')
+          migration_test = '''#[test]\nfn migration_to_v2_is_explicit_deterministic_and_fail_closed() {\n    let v1 = include_bytes!("../../../fixtures/config/migration-expected-v1.json");\n    let migrated_v1 = migrate_v1_to_v2(v1).unwrap();\n    assert!(migrated_v1.changed_fields.contains("renderer"));\n    assert_eq!(migrated_v1.configuration.config().schema.schema_version, 2);\n    assert_eq!(migrated_v1.configuration.config().renderer.component_id, "org.aurora.renderer.vbap");\n    let expected = ValidatedConfiguration::from_json(include_bytes!("../../../fixtures/config/migration-expected-v2.json")).unwrap();\n    assert!(migrated_v1.configuration.semantically_eq(&expected));\n\n    let v0 = include_bytes!("../../../fixtures/config/migration-source-v0.json");\n    let migrated_v0 = migrate_v0_to_v2(v0).unwrap();\n    assert!(migrated_v0.changed_fields.contains("renderer.spread_percent"));\n    assert!(migrated_v0.configuration.semantically_eq(&expected));\n\n    let invalid = br#"{\"schema\":{\"schema_version\":2}}"#;\n    assert_eq!(migrate_v1_to_v2(invalid).unwrap_err().code, ErrorCode::UnsupportedMigration);\n    let missing_reader = String::from_utf8(v1.to_vec()).unwrap().replace("\\\"minimum_reader_version\\\":1,", "");\n    assert_eq!(migrate_v1_to_v2(missing_reader.as_bytes()).unwrap_err().code, ErrorCode::UnsupportedMigration);\n}\n\n'''
+          p.write_text(text[:start] + migration_test + text[end:])
+
+          # Configuration benchmark follows current v2 fixtures/migration.
+          p = Path('crates/aurora-config/benches/configuration.rs')
+          text = p.read_text().replace('-v1.json', '-v2.json')
+          text = text.replace('migrate_v0_to_v1', 'migrate_v0_to_v2')
+          text = text.replace('config/migrate_v0_to_v1', 'config/migrate_v0_to_v2')
+          # migration source remains intentionally v0.
+          text = text.replace('migration-source-v2.json', 'migration-source-v0.json')
+          p.write_text(text)
+
+          # All normal current-schema consumers move to v2 fixture siblings. Migration v1 remains explicit.
+          for p in list(Path('crates').rglob('*.rs')) + [Path('docs/configuration.md')]:
+              if not p.exists():
+                  continue
+              text = p.read_text()
+              for stem in ['minimal','stereo-basic','surround-5-1','surround-7-1','irregular-horizontal','phase-3a-point-source','phase-3b-spread','invalid-duplicate-speaker','invalid-ambiguous-device']:
+                  text = text.replace(f'{stem}-v1.json', f'{stem}-v2.json')
+              p.write_text(text)
+
+          # Runtime assembly registry decouples the root config from renderer implementations.
+          p = Path('crates/aurora-runtime-assembly/Cargo.toml')
+          text = p.read_text().replace('aurora-core = { path = "../aurora-core" }\n', 'aurora-core = { path = "../aurora-core" }\nserde_json.workspace = true\n')
+          p.write_text(text)
+
+          Path('crates/aurora-runtime-assembly/src/renderer_registry.rs').write_text(r'''use aurora_config::{ComponentContractKind, ComponentReference};
+use serde_json::Value;
+
+use crate::{
+    PreparedComponentIdentity, PreparedRendererPlan, RendererComponentIssue,
+    RuntimePreparationError, BASIC_RENDERER_IMPLEMENTATION_ID,
+    REALTIME_RENDERER_CONTRACT_VERSION, VBAP_RENDERER_IMPLEMENTATION_ID,
+};
+
+pub const REALTIME_RENDERER_CONTRACT_MINOR: u16 = 0;
+pub const BASIC_RENDERER_IMPLEMENTATION_VERSION: &str = "0.1.0";
+pub const VBAP_RENDERER_IMPLEMENTATION_VERSION: &str = "0.1.0";
+
+pub type RendererConfigurationResolver =
+    fn(&Value, usize) -> Result<PreparedRendererPlan, RendererComponentIssue>;
+
+#[derive(Clone, Copy)]
+pub struct RendererComponentRegistration {
+    component_id: &'static str,
+    implementation_version: &'static str,
+    contract_major: u16,
+    contract_minor: u16,
+    configuration_schema: u16,
+    resolver: RendererConfigurationResolver,
+}
+
+impl RendererComponentRegistration {
+    pub const fn new(
+        component_id: &'static str,
+        implementation_version: &'static str,
+        contract_major: u16,
+        contract_minor: u16,
+        configuration_schema: u16,
+        resolver: RendererConfigurationResolver,
+    ) -> Self {
+        Self { component_id, implementation_version, contract_major, contract_minor, configuration_schema, resolver }
+    }
+
+    pub const fn component_id(self) -> &'static str { self.component_id }
+    pub const fn implementation_version(self) -> &'static str { self.implementation_version }
+    pub const fn contract_major(self) -> u16 { self.contract_major }
+    pub const fn contract_minor(self) -> u16 { self.contract_minor }
+    pub const fn configuration_schema(self) -> u16 { self.configuration_schema }
+}
+
+#[derive(Clone)]
+pub struct RendererComponentRegistry {
+    registrations: Vec<RendererComponentRegistration>,
+}
+
+impl RendererComponentRegistry {
+    pub fn builtin() -> Self {
+        Self {
+            registrations: vec![
+                RendererComponentRegistration::new(
+                    BASIC_RENDERER_IMPLEMENTATION_ID,
+                    BASIC_RENDERER_IMPLEMENTATION_VERSION,
+                    REALTIME_RENDERER_CONTRACT_VERSION,
+                    REALTIME_RENDERER_CONTRACT_MINOR,
+                    1,
+                    resolve_basic,
+                ),
+                RendererComponentRegistration::new(
+                    VBAP_RENDERER_IMPLEMENTATION_ID,
+                    VBAP_RENDERER_IMPLEMENTATION_VERSION,
+                    REALTIME_RENDERER_CONTRACT_VERSION,
+                    REALTIME_RENDERER_CONTRACT_MINOR,
+                    1,
+                    resolve_vbap,
+                ),
+            ],
+        }
+    }
+
+    pub fn with_registration(
+        mut self,
+        registration: RendererComponentRegistration,
+    ) -> Result<Self, RuntimePreparationError> {
+        if self.registrations.iter().any(|entry| entry.component_id == registration.component_id) {
+            return Err(component_error(registration.component_id, RendererComponentIssue::DuplicateRegistration));
+        }
+        self.registrations.push(registration);
+        Ok(self)
+    }
+
+    pub fn resolve(
+        &self,
+        reference: &ComponentReference,
+        active_speakers: usize,
+    ) -> Result<PreparedRendererPlan, RuntimePreparationError> {
+        if reference.contract_kind != ComponentContractKind::Renderer {
+            return Err(component_error(&reference.component_id, RendererComponentIssue::ContractKindMismatch));
+        }
+        let registration = self.registrations.iter().find(|entry| entry.component_id == reference.component_id).copied().ok_or_else(|| component_error(&reference.component_id, RendererComponentIssue::UnknownComponentId))?;
+        if reference.contract_major != registration.contract_major
+            || reference.compatible_minor.minimum > registration.contract_minor
+            || reference.compatible_minor.maximum < registration.contract_minor
+        {
+            return Err(component_error(&reference.component_id, RendererComponentIssue::IncompatibleContractVersion));
+        }
+        if reference.implementation_version_pin.as_deref().is_some_and(|pin| pin != registration.implementation_version) {
+            return Err(component_error(&reference.component_id, RendererComponentIssue::IncompatibleImplementationVersion));
+        }
+        if reference.configuration_schema != registration.configuration_schema {
+            return Err(component_error(&reference.component_id, RendererComponentIssue::UnsupportedConfigurationSchema));
+        }
+        let plan = (registration.resolver)(&reference.configuration, active_speakers)
+            .map_err(|issue| component_error(&reference.component_id, issue))?;
+        Ok(plan.with_component_identity(PreparedComponentIdentity::new(
+            registration.component_id,
+            registration.contract_major,
+        )))
+    }
+}
+
+fn resolve_basic(payload: &Value, _active_speakers: usize) -> Result<PreparedRendererPlan, RendererComponentIssue> {
+    match payload.as_object() {
+        Some(values) if values.is_empty() => Ok(PreparedRendererPlan::basic_inverse_distance()),
+        _ => Err(RendererComponentIssue::InvalidConfiguration),
+    }
+}
+
+fn resolve_vbap(payload: &Value, active_speakers: usize) -> Result<PreparedRendererPlan, RendererComponentIssue> {
+    if active_speakers < 2 {
+        return Err(RendererComponentIssue::LayoutCapabilityMismatch);
+    }
+    let values = payload.as_object().ok_or(RendererComponentIssue::InvalidConfiguration)?;
+    match values.get("mode").and_then(Value::as_str) {
+        Some("point_source") if values.len() == 1 => Ok(PreparedRendererPlan::point_source_horizontal_vbap()),
+        Some("horizontal_spread") if values.len() == 2 => {
+            let spread = values.get("spread").and_then(Value::as_f64).ok_or(RendererComponentIssue::InvalidConfiguration)?;
+            if !spread.is_finite() || !(0.0..=1.0).contains(&spread) {
+                return Err(RendererComponentIssue::InvalidConfiguration);
+            }
+            PreparedRendererPlan::horizontal_spread_vbap(spread as f32)
+                .map_err(|_| RendererComponentIssue::InvalidConfiguration)
+        }
+        _ => Err(RendererComponentIssue::InvalidConfiguration),
+    }
+}
+
+fn component_error(component_id: &str, issue: RendererComponentIssue) -> RuntimePreparationError {
+    RuntimePreparationError::RendererComponent {
+        component_id: component_id.to_owned(),
+        issue,
+    }
+}
+''')
+
+          p = Path('crates/aurora-runtime-assembly/src/lib.rs')
+          text = p.read_text()
+          text = text.replace('mod derivation;\nmod setup;\n\npub use derivation::prepare_runtime_plan;', 'mod derivation;\nmod renderer_registry;\nmod setup;\n\npub use derivation::{prepare_runtime_plan, prepare_runtime_plan_with_registry};\npub use renderer_registry::{\n    RendererComponentRegistration, RendererComponentRegistry, RendererConfigurationResolver,\n    BASIC_RENDERER_IMPLEMENTATION_VERSION, REALTIME_RENDERER_CONTRACT_MINOR,\n    VBAP_RENDERER_IMPLEMENTATION_VERSION,\n};')
+          old = '''    pub fn realtime_components(&self) -> PreparedRealtimeComponentSelection {\n        let renderer = match self.renderer.kind() {\n            PreparedRendererKind::BasicInverseDistance => PreparedComponentIdentity::new(\n                BASIC_RENDERER_IMPLEMENTATION_ID,\n                REALTIME_RENDERER_CONTRACT_VERSION,\n            ),\n            PreparedRendererKind::PointSourceHorizontalVbap\n            | PreparedRendererKind::HorizontalSpreadVbap => PreparedComponentIdentity::new(\n                VBAP_RENDERER_IMPLEMENTATION_ID,\n                REALTIME_RENDERER_CONTRACT_VERSION,\n            ),\n        };\n        PreparedRealtimeComponentSelection {\n            renderer,\n'''
+          new = '''    pub fn realtime_components(&self) -> PreparedRealtimeComponentSelection {\n        PreparedRealtimeComponentSelection {\n            renderer: self.renderer.component_identity(),\n'''
+          if old not in text:
+              raise SystemExit('realtime_components anchor missing')
+          text = text.replace(old, new, 1)
+          text = text.replace('pub struct PreparedRendererPlan {\n    kind: PreparedRendererKind,\n    horizontal_spread: Option<f32>,\n}', 'pub struct PreparedRendererPlan {\n    kind: PreparedRendererKind,\n    horizontal_spread: Option<f32>,\n    component_identity: PreparedComponentIdentity,\n}')
+          text = text.replace('            kind: PreparedRendererKind::BasicInverseDistance,\n            horizontal_spread: None,', '            kind: PreparedRendererKind::BasicInverseDistance,\n            horizontal_spread: None,\n            component_identity: PreparedComponentIdentity::new(BASIC_RENDERER_IMPLEMENTATION_ID, REALTIME_RENDERER_CONTRACT_VERSION),', 1)
+          text = text.replace('            kind: PreparedRendererKind::PointSourceHorizontalVbap,\n            horizontal_spread: None,', '            kind: PreparedRendererKind::PointSourceHorizontalVbap,\n            horizontal_spread: None,\n            component_identity: PreparedComponentIdentity::new(VBAP_RENDERER_IMPLEMENTATION_ID, REALTIME_RENDERER_CONTRACT_VERSION),', 1)
+          text = text.replace('            kind: PreparedRendererKind::HorizontalSpreadVbap,\n            horizontal_spread: Some(spread),', '            kind: PreparedRendererKind::HorizontalSpreadVbap,\n            horizontal_spread: Some(spread),\n            component_identity: PreparedComponentIdentity::new(VBAP_RENDERER_IMPLEMENTATION_ID, REALTIME_RENDERER_CONTRACT_VERSION),', 1)
+          text = text.replace('    /// Returns the selected renderer family.\n    pub fn kind(&self) -> PreparedRendererKind {', '    /// Overrides the implementation identity after registry resolution.\n    pub fn with_component_identity(mut self, identity: PreparedComponentIdentity) -> Self {\n        self.component_identity = identity;\n        self\n    }\n\n    /// Returns the prepared renderer implementation identity.\n    pub fn component_identity(&self) -> PreparedComponentIdentity {\n        self.component_identity\n    }\n\n    /// Returns the selected renderer family.\n    pub fn kind(&self) -> PreparedRendererKind {')
+          text = text.replace('    /// A DSP intent cannot be represented by the accepted schema.\n    UnsupportedDspIntent,', '    /// A DSP intent cannot be represented by the accepted schema.\n    UnsupportedDspIntent,\n    /// Renderer component registry resolution failed before activation.\n    RendererComponent { component_id: String, issue: RendererComponentIssue },')
+          text = text.replace('/// Fields whose plan-known capacities may be reported as invalid.\n', '/// Stable renderer-component registry failure categories.\n#[derive(Clone, Copy, Debug, Eq, PartialEq)]\npub enum RendererComponentIssue {\n    /// No registry entry exists for the requested component ID.\n    UnknownComponentId,\n    /// The component reference does not target the renderer contract.\n    ContractKindMismatch,\n    /// Contract major/minor compatibility does not include the registered contract.\n    IncompatibleContractVersion,\n    /// An exact requested implementation version differs from the registered version.\n    IncompatibleImplementationVersion,\n    /// The component-specific configuration schema is unsupported.\n    UnsupportedConfigurationSchema,\n    /// Component-specific configuration could not be validated.\n    InvalidConfiguration,\n    /// The requested layout cannot satisfy component capabilities.\n    LayoutCapabilityMismatch,\n    /// Registry construction attempted to add a duplicate component ID.\n    DuplicateRegistration,\n}\n\n/// Fields whose plan-known capacities may be reported as invalid.\n')
+          text = text.replace('            Self::UnsupportedDspIntent => formatter.write_str("unsupported DSP intent"),', '            Self::UnsupportedDspIntent => formatter.write_str("unsupported DSP intent"),\n            Self::RendererComponent { component_id, issue } => {\n                write!(formatter, "renderer component {component_id} rejected: {issue:?}")\n            },')
+          p.write_text(text)
+
+          # Derivation resolves the reference through the explicit registry.
+          p = Path('crates/aurora-runtime-assembly/src/derivation.rs')
+          text = p.read_text()
+          text = text.replace('    ChannelIdentity, DeviceDirection, DeviceSelectionIntent, LayoutKind, RendererConfiguration,\n    RoutingConfiguration, SpeakerConfiguration, SpeakerLayoutConfiguration, ValidatedConfiguration,', '    ChannelIdentity, DeviceDirection, DeviceSelectionIntent, LayoutKind, RoutingConfiguration,\n    SpeakerConfiguration, SpeakerLayoutConfiguration, ValidatedConfiguration,')
+          text = text.replace('    RuntimeInvariant, RuntimePlanMetadata, RuntimePreparationError,', '    RendererComponentRegistry, RuntimeInvariant, RuntimePlanMetadata, RuntimePreparationError,')
+          text = text.replace('pub fn prepare_runtime_plan(\n    configuration: &ValidatedConfiguration,\n) -> Result<PreparedRuntimePlan, RuntimePreparationError> {\n    let config = configuration.config();', 'pub fn prepare_runtime_plan(\n    configuration: &ValidatedConfiguration,\n) -> Result<PreparedRuntimePlan, RuntimePreparationError> {\n    let registry = RendererComponentRegistry::builtin();\n    prepare_runtime_plan_with_registry(configuration, &registry)\n}\n\n/// Derives a runtime plan using an explicit renderer-component registry.\npub fn prepare_runtime_plan_with_registry(\n    configuration: &ValidatedConfiguration,\n    registry: &RendererComponentRegistry,\n) -> Result<PreparedRuntimePlan, RuntimePreparationError> {\n    let config = configuration.config();')
+          text = text.replace('    let renderer = prepare_renderer(&config.renderer)?;', '    let active_speakers = layout.speakers().iter().filter(|speaker| speaker.is_active()).count();\n    let renderer = registry.resolve(&config.renderer, active_speakers)?;')
+          start = text.index('fn prepare_renderer(')
+          end = text.index('fn prepare_device_selector(')
+          text = text[:start] + text[end:]
+          # Test imports no longer use renderer implementation enum.
+          text = text.replace('        FormatFallbackPolicy, RendererConfiguration, SampleFormatIntent, ValidatedConfiguration,', '        ComponentContractKind, ComponentReference, CompatibleMinorRange, FormatFallbackPolicy,\n        SampleFormatIntent, ValidatedConfiguration,')
+          # Rewrite direct unsupported-renderer unit test later if present; remove old prepare_renderer assertion block mechanically.
+          text = re.sub(r'\n    #\[test\]\n    fn unsupported_renderer[^\{]*\{.*?\n    \}\n', '\n', text, flags=re.S)
+          p.write_text(text)
+
+          # Add registry tests including a test implementation ID without changing config schema vocabulary.
+          p = Path('crates/aurora-runtime-assembly/src/derivation.rs')
+          text = p.read_text()
+          marker = '\n    #[test]\n    fn inactive_speakers_are_preserved_without_filtering() {'
+          registry_tests = r'''
+    fn renderer_ref(component_id: &str, configuration: serde_json::Value) -> ComponentReference {
+        ComponentReference {
+            component_id: component_id.to_owned(),
+            contract_kind: ComponentContractKind::Renderer,
+            contract_major: 1,
+            compatible_minor: CompatibleMinorRange { minimum: 0, maximum: 0 },
+            implementation_version_pin: None,
+            configuration_schema: 1,
+            configuration,
+        }
+    }
+
+    fn resolve_test_renderer(
+        payload: &serde_json::Value,
+        _active_speakers: usize,
+    ) -> Result<PreparedRendererPlan, crate::RendererComponentIssue> {
+        if payload.as_object().is_some_and(|value| value.is_empty()) {
+            Ok(PreparedRendererPlan::basic_inverse_distance())
+        } else {
+            Err(crate::RendererComponentIssue::InvalidConfiguration)
+        }
+    }
+
+    #[test]
+    fn test_renderer_registration_needs_no_root_configuration_enum_change() {
+        let registry = RendererComponentRegistry::builtin()
+            .with_registration(crate::RendererComponentRegistration::new(
+                "org.aurora.renderer.test-fixture",
+                "9.9.9-test",
+                1,
+                0,
+                1,
+                resolve_test_renderer,
+            ))
+            .unwrap();
+        let mut config = validated(STEREO).config().clone();
+        config.renderer = renderer_ref("org.aurora.renderer.test-fixture", serde_json::json!({}));
+        let validated = ValidatedConfiguration::new(config).unwrap();
+        let plan = prepare_runtime_plan_with_registry(&validated, &registry).unwrap();
+        assert_eq!(
+            plan.execution().realtime_components().renderer().implementation_id(),
+            "org.aurora.renderer.test-fixture"
+        );
+    }
+
+    #[test]
+    fn renderer_registry_rejects_unknown_incompatible_and_invalid_payloads() {
+        let registry = RendererComponentRegistry::builtin();
+        for (reference, issue) in [
+            (renderer_ref("org.aurora.renderer.missing", serde_json::json!({})), crate::RendererComponentIssue::UnknownComponentId),
+            ({ let mut value = renderer_ref(BASIC_RENDERER_IMPLEMENTATION_ID, serde_json::json!({})); value.contract_major = 2; value }, crate::RendererComponentIssue::IncompatibleContractVersion),
+            (renderer_ref(VBAP_RENDERER_IMPLEMENTATION_ID, serde_json::json!({"mode":"horizontal_spread","spread":2.0})), crate::RendererComponentIssue::InvalidConfiguration),
+        ] {
+            let error = registry.resolve(&reference, 2).unwrap_err();
+            assert!(matches!(error, RuntimePreparationError::RendererComponent { issue: actual, .. } if actual == issue));
+        }
+    }
+'''
+          if marker not in text:
+              raise SystemExit('derivation test insertion anchor missing')
+          p.write_text(text.replace(marker, registry_tests + marker, 1))
+
+          # Current fixture references are v2 everywhere outside explicit migration assertions.
+          # Docs state the migration boundary.
+          p = Path('docs/configuration.md')
+          text = p.read_text()
+          text += '\n\n## Renderer component references (schema v2)\n\nSchema v2 replaces the root renderer implementation enum with a versioned `ComponentReference`. The root configuration validates only the Aurora-owned renderer contract envelope and bounded payload shape. `aurora-runtime-assembly` resolves the component ID through its explicit renderer registry, validates contract/configuration compatibility, and converts the payload into a typed prepared renderer plan before activation. Schema-v1 documents are not silently reinterpreted; use `migrate_v1_to_v2`.\n'
+          p.write_text(text)
+      - name: Refresh lockfile and validate renderer reference slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo check --workspace --all-targets --all-features
+          cargo check --workspace --all-targets --all-features --locked
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test -p aurora-config -p aurora-runtime-assembly -p aurora-runtime-inspection --all-features --locked
+          cargo test -p aurora-runtime-materialization -p aurora-realtime-engine --all-features --locked
+          if grep -RIn 'RendererConfiguration' crates/aurora-config crates/aurora-runtime-assembly; then
+            echo 'legacy RendererConfiguration remains in current config/runtime assembly' >&2
+            exit 1
+          fi
+      - name: Commit production slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "aurora-config-v2-bot"
+          git config user.email "aurora-config-v2-bot@users.noreply.github.com"
+          git add Cargo.lock crates fixtures docs
+          git status --short
+          git commit -m "Migrate renderer selection to component references [config-v2-bot]"
+          git push origin HEAD:feature/config-renderer-component-ref-v2
