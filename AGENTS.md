@@ -17,6 +17,8 @@ Latest integrated architecture slice: **PR #131**, squash commit `0f37b6df1587d4
 
 Completed control-plane trackers: **#118**, **#119**, **#130**.
 
+Active validation slice: **#132** on `validation/joc-temporal-evidence-v1` — fail-closed temporal JOC evidence.
+
 ## 2. Product goal
 
 Aurora is an open, modular, hardware-agnostic immersive-audio stack, primarily Rust.
@@ -79,6 +81,20 @@ PR #131 merged as `0f37b6df1587d429587b74eac714309dc8299d34` after every require
 
 Issue #130 closed automatically by #131. Issue #119 was reviewed against its literal acceptance criteria after the green merge and closed **completed**.
 
+### Temporal JOC truth boundary under active #132
+
+The public Harletty `joc_atmos_1s.eac3` carrier is valid positive JOC/admission/differential input but is **not** sufficient evidence of moving-object behavior: its public metadata is temporally weak and must not be upgraded into a motion claim by repetition/soak alone.
+
+The pinned public OpenJOC source provides inspector/renderer tooling and object-scene statistics, but no tracked public `.eac3/.ec3/.mp4/.m4a` moving-JOC corpus suitable as reproducible CI evidence. A previously researched 4-second dual-object carrier is private evidence and is not an acceptable repository/CI dependency.
+
+Issue #132 therefore separates four evidence classes:
+1. codec/JOC admission and timing continuity;
+2. timed OAMD/object-state diversity from OpenJOC inspection;
+3. independent 12-channel rendered temporal-energy diversity;
+4. realtime pacing/health evidence.
+
+`render-joc` remains self-consistency evidence, **not** an independent oracle for original authored object-position correctness.
+
 ### Historical hardware proof — limited
 
 Previously demonstrated:
@@ -88,6 +104,8 @@ This proves only DD+/E-AC-3 5.1 extraction/decoding in that tested setup.
 
 ### Not yet proven
 
+- reproducible public moving-object JOC carrier with sufficient timed OAMD/object-state diversity;
+- authored object-position correctness through OpenJOC rendering;
 - physical continuous eARC -> E-AC-3 JOC -> Aurora -> physical 7.1.4;
 - Netflix/other DRM-service Atmos compatibility through Aurora;
 - physical STM32/TDM16/USB multichannel path;
@@ -143,7 +161,12 @@ Current built-in backend implementation versions are `0.1.0`; realtime backend c
 - Simulation/acceptance: `crates/aurora-simulation-assurance/`, `crates/aurora-realtime-acceptance/`
 - CLI/evaluation: `crates/aurora-cli/`
 - Immersive/JOC evidence: `validation/immersive/`
+- Temporal JOC analyzer/harness: `validation/immersive/joc_temporal_evidence.py`, `validation/immersive/test-joc-temporal-evidence.sh`
+- OpenJOC reference lane: `validation/immersive/test-openjoc-reference.sh`
+- Realtime JOC pacing lane: `validation/immersive/test-joc-realtime-soak.sh`
+- Immersive truth matrix: `validation/immersive/README.md`
 - Main CI: `.github/workflows/ci.yml`
+- Immersive JOC CI: `.github/workflows/immersive-joc-stack-ci.yml`
 - PR simulation smoke: `.github/workflows/simulation-assurance-pr.yml`
 - Realtime soak: `.github/workflows/realtime-health-soak-ci.yml`
 - External component/license decisions: `config/external-components-v1.json`, `THIRD_PARTY_LICENSES.md`
@@ -153,16 +176,25 @@ Useful search symbols:
 
 Legacy invariants: implementation-selection `RendererConfiguration` and `BackendIntent` enums must not reappear in current root config/runtime-control surfaces.
 
-## 7. Current work / Next actions — stronger Atmos/JOC evidence
+## 7. Current work / Next actions — issue #132 temporal JOC evidence
 
-The control-plane decoupling track (#118/#119) is complete. Do not start another broad refactor by default.
+Branch: `validation/joc-temporal-evidence-v1`.
 
-Next critical-path task:
-1. Audit the existing merged/draft immersive evidence paths (#114 and draft #113) against the actual source tree and artifacts.
-2. Identify the smallest reproducible **PC/software** test that proves continuous E-AC-3 JOC input preserves object/metadata behavior through decoder -> renderer -> multichannel output evidence, before committing to new hardware.
-3. Require explicit artifacts separating bed output, object contribution/telemetry, rendered channel output, timing/health, and fail-closed behavior.
-4. Compare Harletty/Omniphony and OpenJOC evidence only within their license/architecture boundaries; do not claim equivalence from configuration alone.
-5. Only after PC JOC proof is reproducible should the next physical eARC/TDM/USB hardware slice be promoted.
+Implemented on the branch:
+- `joc_temporal_evidence.py`: deterministic analyzer for codec/JOC gates, timed object-scene diversity, windowed 12-channel RMS/peak/active-lane diversity, pacing metadata, stable machine-readable report, and fail-closed classifications.
+- `test-joc-temporal-evidence.sh`: requires input carrier, exact SHA-256, non-empty provenance; runs pinned OpenJOC reference first; normalizes 7.1.4 output; returns `0` only for sufficient temporal evidence, `3` for `insufficient_temporal_diversity`, and `2` for invalid/contract evidence.
+- `test-openjoc-reference.sh` now requests `--aus` so AU timestamps are retained alongside object/EMDF evidence.
+- Immersive JOC CI runs analyzer self-tests and then asserts that the current public Harletty carrier reaches the codec/JOC gates but fails the temporal proof for the expected insufficient-diversity reason.
+- `validation/immersive/README.md` documents the evidence matrix and truth boundary.
+
+Next actions, in order:
+1. Open the focused #132 PR against `main-v2`.
+2. Run the official Immersive JOC Stack CI on the PR head and inspect the real analyzer JSON/artifacts.
+3. If the public Harletty carrier does not fail for exactly `insufficient_temporal_diversity`, fix the harness/contract rather than weakening the gate.
+4. Preserve #114 OpenJOC/differential/realtime-soak behavior; no regressions accepted.
+5. Merge only after green official evidence and update this file with PR/run/SHA evidence.
+6. Do **not** close the broader PC moving-object proof as “proven” until a reproducible carrier actually satisfies timed object-state and rendered temporal-diversity requirements.
+7. After #132 lands, find/acquire or legally generate a reproducible moving-object JOC carrier; only then run the harness in positive-proof mode.
 
 Other queued trackers:
 - #115: evaluate newer Omniphony behind a separate reference lane; do not upgrade the stable pinned reference by recency alone.
@@ -176,6 +208,8 @@ cargo check --workspace --all-targets --all-features --locked
 cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
+
+For immersive/JOC validation changes, require the official `.github/workflows/immersive-joc-stack-ci.yml` PR run and inspect its emitted evidence. Synthetic analyzer tests prove only report/metric logic; they are never codec/JOC proof.
 
 For performance/realtime changes also run relevant release benchmarks/allocation guards. For runtime/config PRs require official PR CI plus simulation smoke and sustained realtime-health soak when applicable.
 
