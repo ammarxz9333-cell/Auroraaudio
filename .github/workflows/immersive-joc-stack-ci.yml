@@ -72,39 +72,30 @@ jobs:
           "${{ runner.temp }}/aurora-joc-differential"
       - name: Prove the public JOC fixture cannot overclaim temporal object evidence
         shell: bash
+        env:
+          OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
         run: |
           set -euo pipefail
           WORK="${{ runner.temp }}/aurora-joc-differential"
           INPUT="$WORK/fixture-source/harletty/tests/fixtures/joc_atmos_1s.eac3"
-          INSPECT="$WORK/openjoc/openjoc-inspect.json"
-          WAV="$WORK/openjoc/openjoc-7.1.4.wav"
-          PCM="$WORK/openjoc/openjoc-7.1.4-temporal.f32"
-          REPORT="$WORK/joc-temporal-public-fixture.json"
+          TEMPORAL_DIR="$WORK/temporal-public-fixture"
+          REPORT="$TEMPORAL_DIR/joc-temporal-evidence.json"
           test -s "$INPUT"
-          test -s "$INSPECT"
-          test -s "$WAV"
           SHA256="$(sha256sum "$INPUT" | awk '{print $1}')"
-          ffmpeg -nostdin -hide_banner -loglevel error -y \
-            -i "$WAV" -map 0:a:0 -ar 48000 -ac 12 -c:a pcm_f32le -f f32le "$PCM"
           set +e
-          python3 validation/immersive/joc_temporal_evidence.py analyze \
-            --input "$INPUT" \
-            --expected-sha256 "$SHA256" \
-            --provenance "pinned public Harletty joc_atmos_1s.eac3" \
-            --inspect "$INSPECT" \
-            --pcm "$PCM" \
-            --sample-rate 48000 \
-            --channels 12 \
-            --pacing-status pass \
-            --pacing-evidence "same pinned public fixture validated by the preceding paced realtime lane" \
-            --output "$REPORT"
+          bash validation/immersive/test-joc-temporal-evidence.sh \
+            "$INPUT" \
+            "$SHA256" \
+            "pinned public Harletty joc_atmos_1s.eac3" \
+            "$TEMPORAL_DIR"
           RC=$?
           set -e
           if [[ "$RC" != "3" ]]; then
-            echo "expected public fixture to fail closed with insufficient temporal diversity; rc=$RC" >&2
+            echo "expected public fixture harness to fail closed with insufficient temporal diversity; rc=$RC" >&2
             cat "$REPORT" >&2 || true
             exit 1
           fi
+          test -s "$REPORT"
           python3 - "$REPORT" <<'PY'
           import json, pathlib, sys
           report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
@@ -123,7 +114,9 @@ jobs:
           name: joc-differential-${{ github.sha }}
           path: |
             ${{ runner.temp }}/aurora-joc-differential/joc-differential-report.json
-            ${{ runner.temp }}/aurora-joc-differential/joc-temporal-public-fixture.json
+            ${{ runner.temp }}/aurora-joc-differential/temporal-public-fixture/joc-temporal-evidence.json
+            ${{ runner.temp }}/aurora-joc-differential/temporal-public-fixture/openjoc/openjoc-inspect.json
+            ${{ runner.temp }}/aurora-joc-differential/temporal-public-fixture/openjoc/openjoc-7.1.4-ffprobe.json
             ${{ runner.temp }}/aurora-joc-differential/openjoc/openjoc-inspect.json
             ${{ runner.temp }}/aurora-joc-differential/openjoc/openjoc-7.1.4-ffprobe.json
           if-no-files-found: warn
