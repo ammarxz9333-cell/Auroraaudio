@@ -36,13 +36,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/joc
-          key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/test-joc-realtime-soak.sh', 'validation/immersive/test-openjoc-reference.sh', 'validation/immersive/test-joc-differential.sh', 'validation/immersive/test-joc-temporal-evidence.sh', 'validation/immersive/joc_temporal_evidence.py', 'validation/immersive/install-openjoc-reference.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
+          key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/test-joc-realtime-soak.sh', 'validation/immersive/test-openjoc-reference.sh', 'validation/immersive/test-joc-differential.sh', 'validation/immersive/test-joc-temporal-evidence.sh', 'validation/immersive/joc_temporal_evidence.py', 'validation/immersive/generate-synthetic-moving-damf.py', 'validation/immersive/install-openjoc-reference.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
           restore-keys: |
             ${{ runner.os }}-joc-
       - name: Install host audio tooling
         run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev
       - name: Self-test temporal JOC metric/report logic
         run: python3 validation/immersive/joc_temporal_evidence.py self-test
+      - name: Self-test deterministic synthetic moving DAMF generator
+        run: python3 validation/immersive/generate-synthetic-moving-damf.py --self-test
       - name: Validate baseline and paced E-AC-3 JOC through IEC61937, Harletty, and Omniphony 7.1.4
         env:
           # Throughput/realtime claims must be evaluated on an optimized build.
