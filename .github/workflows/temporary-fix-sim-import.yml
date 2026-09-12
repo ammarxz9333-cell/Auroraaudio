@@ -1,0 +1,44 @@
+name: Temporary simulator clippy fix
+
+on:
+  push:
+    branches:
+      - refactor/runtime-materialize-delay-v1
+
+permissions:
+  contents: write
+
+jobs:
+  fix:
+    if: "!contains(github.event.head_commit.message, '[sim-import-fix-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/runtime-materialize-delay-v1
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Remove stale engine import
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path('crates/aurora-realtime-audio-sim/src/simulation.rs')
+          text = path.read_text()
+          old = '    DuplexStateMachine, ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RubatoAsrc,\n'
+          new = '    DuplexStateMachine, ProcessStatus, RealTimeEngineConfig, RubatoAsrc,\n'
+          if old not in text:
+              raise SystemExit('stale import anchor missing')
+          path.write_text(text.replace(old, new, 1))
+      - name: Verify formatting and simulator clippy
+        run: |
+          cargo fmt --all --check
+          cargo clippy -p aurora-realtime-audio-sim --all-targets --all-features -- -D warnings
+      - name: Commit fix
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/aurora-realtime-audio-sim/src/simulation.rs
+          git commit -m "Remove stale realtime engine import [sim-import-fix-bot]"
+          git push origin HEAD:refactor/runtime-materialize-delay-v1
