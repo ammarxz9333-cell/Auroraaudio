@@ -7,11 +7,14 @@ use std::collections::BTreeMap;
 use std::fmt;
 
 use aurora_plugin_api::{ApiVersion, PluginManifest, PluginManifestError};
-use serde::{Deserialize, Serialize};
+use serde::{Deserialize, Deserializer, Serialize};
 use thiserror::Error;
 
+/// Current persistent plugin-registry snapshot schema.
+pub const PLUGIN_REGISTRY_SCHEMA_VERSION: u16 = 1;
+
 /// Canonical SHA-256 digest attached to an admitted plugin package.
-#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
 #[serde(transparent)]
 pub struct PackageDigest(String);
 
@@ -19,11 +22,7 @@ impl PackageDigest {
     /// Validates and stores one lowercase hexadecimal SHA-256 digest.
     pub fn parse(value: impl Into<String>) -> Result<Self, PluginRegistryError> {
         let value = value.into();
-        let valid = value.len() == 64
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
-        if !valid {
+        if !is_canonical_sha256(&value) {
             return Err(PluginRegistryError::InvalidPackageDigest(value));
         }
         Ok(Self(value))
@@ -32,6 +31,16 @@ impl PackageDigest {
     /// Returns the canonical lowercase hexadecimal digest.
     pub fn as_str(&self) -> &str {
         &self.0
+    }
+}
+
+impl<'de> Deserialize<'de> for PackageDigest {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        PackageDigest::parse(value).map_err(serde::de::Error::custom)
     }
 }
 
@@ -86,6 +95,34 @@ impl PluginSlot {
     pub fn rollback_target(&self) -> Option<&PluginPackageRecord> {
         self.rollback_target.as_ref()
     }
+
+    fn packages(&self) -> impl Iterator<Item = &PluginPackageRecord> {
+        [
+            self.active.as_ref(),
+            self.staged.as_ref(),
+            self.rollback_target.as_ref(),
+        ]
+        .into_iter()
+        .flatten()
+    }
+
+    fn is_empty(&self) -> bool {
+        self.active.is_none() && self.staged.is_none() && self.rollback_target.is_none()
+    }
+}
+
+/// Versioned persistent representation of the plugin package registry.
+///
+/// `host_api_at_write` is diagnostic provenance only. Restore always validates
+/// every retained package against the *current* host API supplied by the caller.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct PluginRegistrySnapshot {
+    /// Snapshot schema generation.
+    pub schema_version: u16,
+    /// Host API active when the snapshot was written.
+    pub host_api_at_write: ApiVersion,
+    /// Deterministically ordered plugin slots.
+    pub slots: BTreeMap<String, PluginSlot>,
 }
 
 /// In-memory source of truth for admitted application-plugin packages.
@@ -108,9 +145,41 @@ impl PluginRegistry {
         }
     }
 
+    /// Restores a versioned snapshot after revalidating every package against
+    /// the current Plugin Host API.
+    pub fn from_snapshot(
+        host_api: ApiVersion,
+        snapshot: PluginRegistrySnapshot,
+    ) -> Result<Self, PluginRegistryError> {
+        if snapshot.schema_version != PLUGIN_REGISTRY_SCHEMA_VERSION {
+            return Err(PluginRegistryError::UnsupportedRegistrySchema {
+                actual: snapshot.schema_version,
+                expected: PLUGIN_REGISTRY_SCHEMA_VERSION,
+            });
+        }
+
+        for (plugin_id, slot) in &snapshot.slots {
+            validate_restored_slot(host_api, plugin_id, slot)?;
+        }
+
+        Ok(Self {
+            host_api,
+            slots: snapshot.slots,
+        })
+    }
+
     /// Host API used for all package admission decisions.
     pub const fn host_api(&self) -> ApiVersion {
         self.host_api
+    }
+
+    /// Produces a deterministic persistent snapshot of the current registry.
+    pub fn snapshot(&self) -> PluginRegistrySnapshot {
+        PluginRegistrySnapshot {
+            schema_version: PLUGIN_REGISTRY_SCHEMA_VERSION,
+            host_api_at_write: self.host_api,
+            slots: self.slots.clone(),
+        }
     }
 
     /// Returns the update slot for one plugin ID.
@@ -173,12 +242,18 @@ impl PluginRegistry {
 
     /// Discards a candidate package without disturbing active/rollback state.
     pub fn discard_staged(&mut self, plugin_id: &str) -> Result<(), PluginRegistryError> {
-        let slot = self
-            .slots
-            .get_mut(plugin_id)
-            .ok_or_else(|| PluginRegistryError::UnknownPlugin(plugin_id.to_owned()))?;
-        if slot.staged.take().is_none() {
-            return Err(PluginRegistryError::NoStagedPackage(plugin_id.to_owned()));
+        let remove_empty_slot = {
+            let slot = self
+                .slots
+                .get_mut(plugin_id)
+                .ok_or_else(|| PluginRegistryError::UnknownPlugin(plugin_id.to_owned()))?;
+            if slot.staged.take().is_none() {
+                return Err(PluginRegistryError::NoStagedPackage(plugin_id.to_owned()));
+            }
+            slot.is_empty()
+        };
+        if remove_empty_slot {
+            self.slots.remove(plugin_id);
         }
         Ok(())
     }
@@ -204,6 +279,13 @@ impl PluginRegistry {
     }
 }
 
+fn is_canonical_sha256(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
 fn same_package(existing: Option<&PluginPackageRecord>, candidate: &PluginPackageRecord) -> bool {
     existing.is_some_and(|known| {
         known.manifest.version == candidate.manifest.version && known.digest == candidate.digest
@@ -214,15 +296,9 @@ fn ensure_version_digest_consistency(
     slot: &PluginSlot,
     candidate: &PluginPackageRecord,
 ) -> Result<(), PluginRegistryError> {
-    for known in [
-        slot.active.as_ref(),
-        slot.staged.as_ref(),
-        slot.rollback_target.as_ref(),
-    ]
-    .into_iter()
-    .flatten()
-    {
-        if known.manifest.version == candidate.manifest.version && known.digest != candidate.digest {
+    for known in slot.packages() {
+        if known.manifest.version == candidate.manifest.version && known.digest != candidate.digest
+        {
             return Err(PluginRegistryError::VersionDigestMismatch {
                 plugin_id: candidate.manifest.id.clone(),
                 version: candidate.manifest.version.clone(),
@@ -231,6 +307,51 @@ fn ensure_version_digest_consistency(
             });
         }
     }
+    Ok(())
+}
+
+fn validate_restored_slot(
+    host_api: ApiVersion,
+    plugin_id: &str,
+    slot: &PluginSlot,
+) -> Result<(), PluginRegistryError> {
+    if slot.is_empty() {
+        return Err(PluginRegistryError::EmptyRestoredSlot(plugin_id.to_owned()));
+    }
+
+    let packages = slot.packages().collect::<Vec<_>>();
+    for package in &packages {
+        if package.manifest.id != plugin_id {
+            return Err(PluginRegistryError::RestoredPluginIdMismatch {
+                slot_id: plugin_id.to_owned(),
+                manifest_id: package.manifest.id.clone(),
+            });
+        }
+        package.manifest.validate_for_host(host_api)?;
+    }
+
+    for (index, package) in packages.iter().enumerate() {
+        for other in packages.iter().skip(index + 1) {
+            if package.manifest.version == other.manifest.version && package.digest != other.digest {
+                return Err(PluginRegistryError::VersionDigestMismatch {
+                    plugin_id: plugin_id.to_owned(),
+                    version: package.manifest.version.clone(),
+                    known_digest: package.digest.clone(),
+                    candidate_digest: other.digest.clone(),
+                });
+            }
+        }
+    }
+
+    if let (Some(active), Some(staged)) = (slot.active.as_ref(), slot.staged.as_ref()) {
+        if active == staged {
+            return Err(PluginRegistryError::PackageAlreadyActive {
+                plugin_id: plugin_id.to_owned(),
+                version: active.manifest.version.clone(),
+            });
+        }
+    }
+
     Ok(())
 }
 
@@ -243,9 +364,21 @@ pub enum PluginRegistryError {
     /// SHA-256 package digest is not canonical lowercase hexadecimal.
     #[error("invalid plugin package SHA-256 digest `{0}`")]
     InvalidPackageDigest(String),
+    /// Persistent registry schema is not supported by this host.
+    #[error("unsupported plugin registry schema {actual}; expected {expected}")]
+    UnsupportedRegistrySchema { actual: u16, expected: u16 },
     /// Stable plugin ID is not known to the registry.
     #[error("unknown plugin `{0}`")]
     UnknownPlugin(String),
+    /// A persisted slot cannot be empty.
+    #[error("restored plugin slot `{0}` is empty")]
+    EmptyRestoredSlot(String),
+    /// Snapshot map key and package manifest ID disagree.
+    #[error("restored slot `{slot_id}` contains package for `{manifest_id}`")]
+    RestoredPluginIdMismatch {
+        slot_id: String,
+        manifest_id: String,
+    },
     /// A different candidate is already staged and requires explicit discard.
     #[error("plugin `{plugin_id}` already has staged version `{version}`")]
     StagedPackageExists { plugin_id: String, version: String },
@@ -474,6 +607,41 @@ mod tests {
                 .version,
             "1.0.0"
         );
+    }
+
+    #[test]
+    fn snapshot_round_trip_revalidates_against_current_host() {
+        let mut registry = installed_registry();
+        registry
+            .stage(package("org.aurora.localmusic", "2.0.0", 'b'))
+            .unwrap();
+        let json = serde_json::to_string(&registry.snapshot()).unwrap();
+        let snapshot: PluginRegistrySnapshot = serde_json::from_str(&json).unwrap();
+        let restored = PluginRegistry::from_snapshot(HOST_API, snapshot).unwrap();
+        assert_eq!(restored, registry);
+    }
+
+    #[test]
+    fn restore_rejects_packages_incompatible_with_new_host() {
+        let registry = installed_registry();
+        let snapshot = registry.snapshot();
+        let newer_incompatible_host = ApiVersion { major: 2, minor: 0 };
+
+        assert!(matches!(
+            PluginRegistry::from_snapshot(newer_incompatible_host, snapshot),
+            Err(PluginRegistryError::Manifest(
+                PluginManifestError::IncompatibleHostApi { .. }
+            ))
+        ));
+    }
+
+    #[test]
+    fn digest_deserialization_is_fail_closed() {
+        let bad = format!(
+            "{{\"manifest\":{},\"digest\":\"ABC\"}}",
+            serde_json::to_string(&manifest("org.aurora.localmusic", "1.0.0")).unwrap()
+        );
+        assert!(serde_json::from_str::<PluginPackageRecord>(&bad).is_err());
     }
 
     fn installed_registry() -> PluginRegistry {
