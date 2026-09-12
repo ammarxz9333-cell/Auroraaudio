@@ -1,0 +1,69 @@
+name: Omniphony Evaluation CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/omniphony-evaluation-v1.json"
+      - "validation/immersive/omniphony_candidate_evidence.py"
+      - "validation/immersive/test-omniphony-candidate.sh"
+      - "validation/immersive/test-joc-stack.sh"
+      - "validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"
+      - "config/external-components-v1.json"
+      - ".github/workflows/omniphony-evaluation-ci.yml"
+      - "AGENTS.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: omniphony-evaluation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stable-vs-candidate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache external Rust builds
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .cache/omniphony-evaluation
+          key: ${{ runner.os }}-omniphony-eval-${{ hashFiles('config/omniphony-evaluation-v1.json', 'config/external-components-v1.json', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
+          restore-keys: |
+            ${{ runner.os }}-omniphony-eval-
+            ${{ runner.os }}-joc-
+
+      - name: Install host audio tooling
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev
+
+      - name: Self-test candidate evidence analyzer
+        run: python3 validation/immersive/omniphony_candidate_evidence.py self-test
+
+      - name: Compare stable Omniphony with pinned evaluation candidate
+        shell: bash
+        env:
+          AURORA_EXTERNAL_RUST_TOOLCHAIN: stable
+        run: >-
+          bash validation/immersive/test-omniphony-candidate.sh
+          "${{ runner.temp }}/omniphony-evaluation"
+
+      - name: Upload evaluation evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: omniphony-evaluation-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/omniphony-evaluation/omniphony-candidate-evidence.json
+            ${{ runner.temp }}/omniphony-evaluation/candidate-bridge.log
+            ${{ runner.temp }}/omniphony-evaluation/candidate-orender.log
+            ${{ runner.temp }}/omniphony-evaluation/stable/orender-joc.log
+          if-no-files-found: warn
+          retention-days: 14
