@@ -140,6 +140,12 @@
       "truth_boundary": "Aurora currently has only an IAMF adapter placeholder; no decode/render proof is claimed."
     },
     {
+      "id": "hoa-scene-based-rendering",
+      "status": "planned",
+      "evidence_class": "software_reference",
+      "truth_boundary": "Aurora has no proven Higher-Order Ambisonics scene-rendering lane; OAR supports scene-based elements up to fourth order and will be evaluated as an external reference."
+    },
+    {
       "id": "adm-bs2127-differential-rendering",
       "status": "planned",
       "evidence_class": "software_reference",
@@ -149,7 +155,25 @@
       "id": "binaural-head-tracking",
       "status": "planned",
       "evidence_class": "software_reference",
-      "truth_boundary": "Binaural/head-tracking reference validation is not yet implemented."
+      "truth_boundary": "Binaural/head-tracking reference validation is not yet implemented; OAR/OBR/BEAR are candidate external oracles."
+    },
+    {
+      "id": "personalized-audio-element-timeline",
+      "status": "planned",
+      "evidence_class": "virtual",
+      "truth_boundary": "Aurora does not yet provide a codec-neutral authored audio-element/group timeline with bounded user personalization, deterministic mix presentations, and gain/position interpolation."
+    },
+    {
+      "id": "flexible-speaker-layout-adaptation",
+      "status": "planned",
+      "evidence_class": "virtual",
+      "truth_boundary": "Aurora represents custom speaker geometry but has no proven end-to-end layout-negotiation, speaker-loss/degraded-layout, or automatic placement-adaptation policy comparable in product goal to flexible-layout systems."
+    },
+    {
+      "id": "standards-loudness-normalization",
+      "status": "planned",
+      "evidence_class": "virtual",
+      "truth_boundary": "Aurora output DSP has explicit headroom and a linked limiter, but no proven BS.1770/EBU-style loudness measurement/normalization layer."
     },
     {
       "id": "adaptive-clock-rate-correction",
@@ -162,6 +186,12 @@
       "status": "planned",
       "evidence_class": "virtual",
       "truth_boundary": "Disconnect detection is covered; controlled reconnection/recovery is not yet implemented."
+    },
+    {
+      "id": "multi-speaker-room-field-control-simulation",
+      "status": "planned",
+      "evidence_class": "virtual",
+      "truth_boundary": "No MIMO/SIMO multi-speaker low-frequency field-control optimizer has been implemented; synthetic-room validation would precede any acoustic claim."
     },
     {
       "id": "physical-earc-ingress",
