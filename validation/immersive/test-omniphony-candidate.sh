@@ -174,21 +174,36 @@ CARGO_TARGET_DIR="$HARNESS_TARGET" cargo +"$TOOLCHAIN" run --quiet --release \
   "$BRIDGE_LIB" "$IEC_FILE" | tee "$BRIDGE_LOG"
 
 printf '\n== Omniphony evaluation: render same JOC fixture through candidate ==\n'
-if ! timeout 45s env RUST_LOG="${RUST_LOG:-info}" "$CANDIDATE_ORENDER" "$IEC_FILE" \
+CANDIDATE_COMPLETION_STATUS=completed
+set +e
+timeout 45s env RUST_LOG="${RUST_LOG:-info}" "$CANDIDATE_ORENDER" "$IEC_FILE" \
   --bridge-path "$BRIDGE_LIB" \
   --enable-vbap \
   --speaker-layout "$CANDIDATE_LAYOUT" \
   --output-backend file \
   --output-file "$CANDIDATE_PCM" \
   --output-file-format raw-f32 \
-  >"$CANDIDATE_LOG" 2>&1; then
-  echo "candidate orender failed or did not finish finite fixture:" >&2
-  cat "$CANDIDATE_LOG" >&2
-  exit 1
-fi
+  >"$CANDIDATE_LOG" 2>&1
+RENDER_STATUS=$?
+set -e
+case "$RENDER_STATUS" in
+  0)
+    CANDIDATE_COMPLETION_STATUS=completed
+    ;;
+  124)
+    CANDIDATE_COMPLETION_STATUS=timeout
+    echo "candidate decoded/rendered finite input but did not self-terminate within 45s; recording candidate rejection evidence" >&2
+    ;;
+  *)
+    echo "candidate orender failed with infrastructure/runtime status $RENDER_STATUS:" >&2
+    cat "$CANDIDATE_LOG" >&2
+    exit 1
+    ;;
+esac
 [[ -s "$CANDIDATE_PCM" ]] || { echo "candidate produced no PCM output" >&2; exit 1; }
 
 printf '\n== Omniphony evaluation: compare evidence ==\n'
+set +e
 python3 "$ANALYZER" analyze \
   --stable-pcm "$STABLE_PCM" \
   --candidate-pcm "$CANDIDATE_PCM" \
@@ -199,7 +214,34 @@ python3 "$ANALYZER" analyze \
   --candidate-log "$CANDIDATE_LOG" \
   --stable-commit "$STABLE_COMMIT" \
   --candidate-commit "$CANDIDATE_COMMIT" \
+  --candidate-completion-status "$CANDIDATE_COMPLETION_STATUS" \
   --output "$REPORT"
+ANALYZER_STATUS=$?
+set -e
+[[ -s "$REPORT" ]] || {
+  echo "candidate analyzer did not produce an evidence report" >&2
+  exit "${ANALYZER_STATUS:-1}"
+}
 
-echo "AURORA OMNIPHONY EVALUATION PASS"
+VERDICT="$(python3 - "$REPORT" <<'PY'
+import json, sys
+payload = json.load(open(sys.argv[1], encoding="utf-8"))
+print(payload.get("verdict", ""))
+PY
+)"
+case "$VERDICT" in
+  pass)
+    [[ "$ANALYZER_STATUS" -eq 0 ]] || { echo "PASS report returned analyzer status $ANALYZER_STATUS" >&2; exit 1; }
+    ;;
+  reject)
+    [[ "$ANALYZER_STATUS" -eq 1 ]] || { echo "REJECT report returned analyzer status $ANALYZER_STATUS" >&2; exit 1; }
+    ;;
+  *)
+    echo "unknown candidate evaluation verdict: $VERDICT" >&2
+    exit 1
+    ;;
+esac
+
+echo "AURORA OMNIPHONY EVALUATION COMPLETED verdict=$VERDICT"
+echo "Stable pin remains unchanged unless verdict=pass and a separate promotion decision is made."
 echo "report=$REPORT"
