@@ -1,0 +1,78 @@
+name: Aurora Full-System Sim CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "validation/virtual-hardware/**"
+      - "validation/immersive/test-joc-aurora-moving.sh"
+      - "validation/immersive/aurora_joc_moving_evidence.py"
+      - "validation/immersive/test-dolby-official-joc-temporal.sh"
+      - "validation/immersive/test-joc-stack.sh"
+      - "validation/immersive/joc_temporal_evidence.py"
+      - "validation/immersive/install-openjoc-reference.sh"
+      - "config/external-components-v1.json"
+      - ".github/workflows/aurora-full-system-sim-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-full-system-sim-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  full-system-virtual-hardware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo and external JOC builds
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            .cache/joc-full-sim
+          key: ${{ runner.os }}-full-system-sim-${{ hashFiles('Cargo.lock', 'config/external-components-v1.json', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
+          restore-keys: |
+            ${{ runner.os }}-full-system-sim-
+            ${{ runner.os }}-moving-joc-
+            ${{ runner.os }}-joc-
+      - name: Install host audio tooling
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev
+      - name: Self-test virtual hardware analyzer
+        run: python3 validation/virtual-hardware/aurora_full_system_sim.py self-test
+      - name: Install checksum-pinned OpenJOC reference binary
+        id: openjoc
+        shell: bash
+        run: |
+          OPENJOC_BIN="$(bash validation/immersive/install-openjoc-reference.sh "${{ runner.temp }}/openjoc-reference")"
+          echo "bin=$OPENJOC_BIN" >> "$GITHUB_OUTPUT"
+      - name: Exercise complete Aurora virtual hardware path
+        shell: bash
+        env:
+          OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
+          AURORA_JOC_BUILD_MODE: release
+          AURORA_HARLETTY_TARGET_DIR: ${{ github.workspace }}/.cache/joc-full-sim/harletty-target
+          AURORA_OMNIP_TARGET_DIR: ${{ github.workspace }}/.cache/joc-full-sim/omniphony-target
+          AURORA_JOC_HARNESS_TARGET_DIR: ${{ github.workspace }}/.cache/joc-full-sim/baseline-harness-target
+          AURORA_MOVING_JOC_HARNESS_TARGET_DIR: ${{ github.workspace }}/.cache/joc-full-sim/moving-harness-target
+        run: >-
+          bash validation/virtual-hardware/test-aurora-full-system-sim.sh
+          "${{ runner.temp }}/aurora-full-system-sim"
+      - name: Upload full-system virtual hardware evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-full-system-sim-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/aurora-full-system-sim/moving-joc/reference/derivation.json
+            ${{ runner.temp }}/aurora-full-system-sim/moving-joc/reference/temporal/joc-temporal-evidence.json
+            ${{ runner.temp }}/aurora-full-system-sim/moving-joc/aurora-moving/aurora-bridge-telemetry.json
+            ${{ runner.temp }}/aurora-full-system-sim/moving-joc/aurora-moving/pacing.json
+            ${{ runner.temp }}/aurora-full-system-sim/moving-joc/aurora-moving/aurora-joc-moving-evidence.json
+            ${{ runner.temp }}/aurora-full-system-sim/virtual-hardware/*.json
+          if-no-files-found: warn
+          retention-days: 14

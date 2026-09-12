@@ -23,7 +23,9 @@ Latest Aurora-side moving-JOC proof: **PR #142**, squash commit `9b153e1d34754aa
 
 Completed trackers: **#118**, **#119**, **#130**, **#132**, **#135**, **#141**.
 
-Active critical-path tracker: **#143** — physical continuous eARC/JOC to synchronous 7.1.4 output.
+Active physical critical-path tracker: **#143** — physical continuous eARC/JOC to synchronous 7.1.4 output.
+
+Active laptop-only validation tracker: **#145** — full-system virtual hardware lab. This is software/simulation evidence only and must not be confused with #143 physical proof.
 
 ## 2. Product goal
 
@@ -104,6 +106,16 @@ Aurora-side evidence using the exact derived SHA above:
 
 This proves moving-object JOC behavior through Aurora's pinned Harletty/Omniphony **software** path. It does not prove physical eARC/DAC output, streaming-service compatibility, authored-position correctness, Dolby certification, or acoustic parity.
 
+### Issue #145 — full-system virtual hardware lab (in progress, not merged evidence yet)
+
+Branch `aurora-full-system-sim` adds a laptop-only validation lane documented in `docs/aurora-full-system-sim.md`:
+
+`pinned moving JOC -> IEC61937 -> Harletty -> Omniphony 7.1.4 -> paced 12ch PCM -> deterministic virtual TDM16/DAC sink`
+
+The proposed healthy gate requires exact frame preservation, 12 active output channels, finite samples, zero virtual xruns/disconnects, deterministic PCM/TDM hashes, and order-preserving 12-of-16 slot mapping. Negative profiles inject dropout/xrun, channel silence, disconnect and excessive simulated clock drift and must fail closed.
+
+Until its dedicated CI is green and the PR is merged, this section is **work-in-progress only**, not accepted evidence. Even after merge it will remain simulation evidence, not physical proof.
+
 ### Historical physical ingress proof — limited
 
 Previously demonstrated:
@@ -170,14 +182,24 @@ Stable built-in IDs include:
 - Immersive/JOC validation: `validation/immersive/`
 - Moving reference: `validation/immersive/test-dolby-official-joc-temporal.sh`
 - Aurora moving path: `validation/immersive/test-joc-aurora-moving.sh`, `aurora_joc_moving_evidence.py`
+- Full-system virtual hardware: `validation/virtual-hardware/`, `docs/aurora-full-system-sim.md`
 - Physical v1 plan: `docs/physical-joc-validation-v1.md`
 - External components/licenses: `config/external-components-v1.json`, `THIRD_PARTY_LICENSES.md`
 
-## 7. Current work / Next actions — issue #143 physical continuous JOC
+## 7. Current work / Next actions
+
+### A. Issue #145 laptop-only full-system simulation
+
+1. Run dedicated `Aurora Full-System Sim CI` on the `aurora-full-system-sim` PR.
+2. Inspect the emitted healthy JSON and every negative fault report; do not accept a simulator that passes an injected fault.
+3. Fix implementation/contract defects without weakening the upstream #140/#142 JOC gates.
+4. Merge #145 only after the dedicated gate and normal required CI are green, then update this file with the final PR/commit/run IDs and evidence metrics.
+
+### B. Issue #143 physical continuous JOC
 
 **Selection step is complete.** The first hardware chain is frozen in `docs/physical-joc-validation-v1.md`; do not reopen board selection unless the chosen hardware fails its explicit stop conditions.
 
-Next actions, in order:
+Next physical actions, in order:
 1. Assemble/reuse the existing Lindy 38368 / SiI9437 -> Pi 5 physical ingress and play the exact pinned carrier from #140/#142.
 2. Capture the complete physical IEC61937 stream and prove all bursts are type `0x15`, with no unaccounted discontinuity, reset, re-encode, or payload mutation.
 3. Feed that physical capture into the unchanged Aurora moving-JOC path and require the same fail-closed moving-object/12-channel gates.
@@ -200,7 +222,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-For immersive/JOC changes require the official Immersive JOC Stack PR run and inspect emitted evidence. Moving-reference changes additionally require Official Dolby JOC Temporal CI; Aurora moving-path changes require Aurora Moving JOC CI. Hardware documentation alone is not physical proof.
+For immersive/JOC changes require the official Immersive JOC Stack PR run and inspect emitted evidence. Moving-reference changes additionally require Official Dolby JOC Temporal CI; Aurora moving-path changes require Aurora Moving JOC CI. Full-system virtual-hardware changes require `Aurora Full-System Sim CI`, including healthy evidence plus all fail-closed fault profiles. Hardware documentation or virtual hardware evidence alone is not physical proof.
 
 Do not merge while required gates are red.
 
