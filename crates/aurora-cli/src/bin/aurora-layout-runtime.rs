@@ -286,7 +286,11 @@ fn main() -> Result<()> {
         }
         OutputMode::AlsaS32 => {
             let config = AlsaOutputConfig {
-                device: args.output_device.as_deref().unwrap_or("default").to_owned(),
+                device: args
+                    .output_device
+                    .as_deref()
+                    .unwrap_or("default")
+                    .to_owned(),
                 sample_rate: OUTPUT_SAMPLE_RATE,
                 logical_channels,
                 hardware_channels: args.hardware_output_channels,
