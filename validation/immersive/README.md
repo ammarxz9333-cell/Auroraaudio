@@ -11,6 +11,7 @@ This directory contains software evidence lanes.  It does **not** establish Dolb
 | `test-openjoc-reference.sh` | independent OpenJOC JOC/admission/timing census and experimental 7.1.4 render | authored object-position correctness |
 | `test-joc-differential.sh` | independent implementation agreement on active-channel identity plus non-gating correlations | all 12 channels active; moving objects |
 | `test-joc-temporal-evidence.sh` | fail-closed separation of timed OAMD/object-state diversity and windowed rendered-energy diversity | proof that rendered speaker energy is an independent oracle for authored trajectories |
+| `run-authorized-joc-carrier.sh` | checksum-pinned admission of an authorized local/container carrier and stream-copy handoff into the temporal harness | authorization by itself; DRM bypass; positive moving-object evidence unless the temporal harness passes |
 
 ## Temporal JOC evidence
 
@@ -37,6 +38,39 @@ The metadata and render tests are intentionally independent.  `render-joc` is an
 Exit status `3` means the carrier passed the codec/JOC contract but did not establish enough temporal diversity.  This is an expected fail-closed result for a static or temporally weak carrier, not a codec failure.
 
 `python3 validation/immersive/joc_temporal_evidence.py self-test` exercises only deterministic metric/report logic using synthetic data.  Synthetic data is never counted as codec/JOC evidence.
+
+## Authorized external carrier lane
+
+Use `run-authorized-joc-carrier.sh` when the candidate is an authorized local file or a container such as MP4/M4A/MKV with exactly one E-AC-3 audio stream.  The runner deliberately does not download media or infer that a public URL grants redistribution rights.
+
+```bash
+sha256sum AUTHORIZED_INPUT.mp4
+
+bash validation/immersive/run-authorized-joc-carrier.sh \
+  AUTHORIZED_INPUT.mp4 \
+  EXPECTED_SOURCE_SHA256 \
+  "source/provenance/authorization note" \
+  OUTPUT_DIR
+```
+
+The runner:
+
+1. verifies the exact source SHA-256 before inspecting media;
+2. requires exactly one E-AC-3 audio stream;
+3. copies an elementary E-AC-3 input directly, or extracts a container stream with `ffmpeg -c copy -f eac3` without decode/re-encode;
+4. records `source-ffprobe.json`, `authorized-carrier-manifest.json`, the extracted JOC SHA-256, and the exact provenance text;
+5. passes the extracted elementary stream into `test-joc-temporal-evidence.sh` unchanged;
+6. propagates the temporal harness result: `0` pass, `3` insufficient temporal diversity, other nonzero values invalid/rejected evidence.
+
+If the extracted JOC hash is already known independently, set `EXPECTED_JOC_SHA256` to add a second integrity gate:
+
+```bash
+EXPECTED_JOC_SHA256=... \
+  bash validation/immersive/run-authorized-joc-carrier.sh \
+  AUTHORIZED_INPUT.mp4 EXPECTED_SOURCE_SHA256 "provenance" OUTPUT_DIR
+```
+
+A source hash proves byte identity, not authorization.  Provenance must state why the carrier is permitted for the intended validation use.  Do not use this lane to capture protected streaming media or to bypass DRM/service restrictions.
 
 ## Current public fixture limitation
 
