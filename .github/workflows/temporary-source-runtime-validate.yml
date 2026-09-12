@@ -1,0 +1,41 @@
+name: Temporary source runtime validation
+
+on:
+  push:
+    branches:
+      - feature/source-media-handoff-v1
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: "!contains(github.event.head_commit.message, '[source-runtime-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/source-media-handoff-v1
+      - uses: dtolnay/rust-toolchain@1.78.0
+        with:
+          components: rustfmt,clippy
+      - name: Format
+        run: cargo fmt --all
+      - name: Check and refresh workspace lock entry
+        run: cargo check -p aurora-source-runtime
+      - name: Test
+        run: cargo test -p aurora-source-runtime
+      - name: Clippy
+        run: cargo clippy -p aurora-source-runtime --all-targets -- -D warnings
+      - name: Commit generated formatting and lockfile changes
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock crates/aurora-source-runtime
+          git commit -m "Validate and format source runtime [source-runtime-bot]"
+          git push origin HEAD:feature/source-media-handoff-v1
