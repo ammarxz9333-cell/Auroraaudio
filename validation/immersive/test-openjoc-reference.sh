@@ -31,7 +31,10 @@ VERSION_TEXT=$($OPENJOC_BIN --version 2>&1) || fail "openjoc --version failed"
 printf '%s\n' "$VERSION_TEXT"
 [[ "$VERSION_TEXT" == *"$EXPECTED_VERSION"* ]] || fail "expected OpenJOC $EXPECTED_VERSION, got: $VERSION_TEXT"
 
-"$OPENJOC_BIN" inspect "$INPUT" --json --objects --emdf >"$INSPECT_JSON" || fail "OpenJOC inspect failed"
+# Keep complete AU timestamps in the machine-readable report.  They are used as
+# timing evidence only; authored object state still comes from the scene/OAMD
+# summary, never from inferred channel energy.
+"$OPENJOC_BIN" inspect "$INPUT" --json --objects --emdf --aus >"$INSPECT_JSON" || fail "OpenJOC inspect failed"
 python3 - "$INSPECT_JSON" <<'PY' || exit 1
 import json
 import pathlib
