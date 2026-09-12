@@ -23,7 +23,9 @@ Latest Aurora-side moving-JOC proof: **PR #142**, squash commit `9b153e1d34754aa
 
 Latest full-system virtual-hardware proof: **PR #146**, squash commit `2d53aec6b7180a1480b781b23680098f40f23cf0`.
 
-Completed trackers: **#118**, **#119**, **#130**, **#132**, **#135**, **#141**, **#145**.
+Latest native Windows full-system proof: **PR #148**, squash commit `44746431975c65126c88b31ce253fc82c737cce7`.
+
+Completed trackers: **#118**, **#119**, **#130**, **#132**, **#135**, **#141**, **#145**, **#147**.
 
 Active physical critical-path tracker: **#143** — physical continuous eARC/JOC to synchronous 7.1.4 output.
 
@@ -64,8 +66,9 @@ Long-term direction:
 - Authorized-carrier handling is checksum-pinned and provenance-aware; raw carriers are never silently re-encoded.
 - Temporal JOC evidence separates codec admission, timed object metadata, rendered 12-channel diversity, and pacing/health.
 - A deterministic laptop-only virtual-hardware gate now extends the proven moving-JOC output through a synchronous 16-slot virtual transport and fail-closed device fault profiles.
+- A native Windows launcher now reproduces the pinned Aurora moving-JOC + virtual-hardware functional path without Simics/QSP/WSL; the independent OpenJOC lane remains Linux-only reference evidence.
 
-Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133, #136, #140, #142, #146.
+Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133, #136, #140, #142, #146, #148.
 
 ### PR #140 — positive moving-object reference
 
@@ -139,6 +142,35 @@ Fail-closed profiles all behaved as required:
 
 This proves Aurora's tested software path plus the deterministic virtual output model on a laptop. It does **not** prove physical eARC, physical UAC2/TDM timing/electrical behavior, DAC/amplifier/speaker behavior, physically measured latency/drift, DRM-service compatibility, Dolby certification, or acoustic parity.
 
+### PR #148 / issue #147 — native Windows AuroraSim launcher
+
+PR #148 merged as `44746431975c65126c88b31ce253fc82c737cce7`. Final validated head: `f6fdd20523c319f350d149514f649cc3e2605074`.
+
+Final-head CI:
+- `CI` run `34716256141` — **PASS**;
+- `Aurora Full-System Sim Windows CI` run `34716256185` — **PASS**;
+- `Aurora Full-System Sim CI` run `34716256159` — **PASS**.
+
+Native Windows path:
+`official checksum-pinned carrier -> exact byte-identical suffix -> IEC61937 0x15 -> pinned Harletty Windows DLL -> pinned+patched Omniphony 7.1.4 -> paced 12ch PCM -> deterministic virtual TDM16/DAC sink`.
+
+Windows evidence:
+- carrier SHA-256 expected/actual `0219a241559de5231f31c6093072740ff9fe0657b3354541bc6838ef2d5e5be0`;
+- Harletty: 2360 packets/frames, 48 kHz, 3,624,960 samples, zero resets, 2360 metadata frames, 35,400 object events, 15 object-channel declarations;
+- 15 object IDs are position-varying;
+- paced render: expected/actual frames `3,624,960 / 3,624,960`, media 75.52 s, elapsed `75.5579752 s`, realtime factor `0.9994974031543353`, zero xrun markers, feeder/renderer exit 0;
+- virtual sink: `3,624,960` frames, 12/12 channels active, order preserved, dropped frames `0`, virtual xruns `0`, disconnect `false`;
+- source/sink PCM SHA-256 = `4a8d413bf4f196583bb777b273a1ef94c119ac5c0c23ee7ad7ae98f3965867a8`;
+- virtual TDM16 SHA-256 = `237fc3566fa7f3fef51caf6dfbfb9fe466ac1694c3fe08630252d8e77225a914`;
+- fail-closed faults: `dropout` -> 75 xruns + frame mismatch; `channel-silence` -> inactive channel 11; `disconnect` -> half-stream frame mismatch + disconnect; `drift` -> +250 ppm failure.
+
+Run locally on a native Windows checkout with:
+```powershell
+.\validation\virtual-hardware\run-aurora-sim-windows.ps1
+```
+
+This Windows lane is functional/regression evidence only. It does not replace the independent OpenJOC Linux reference lane and does not prove physical eARC/UAC2/TDM/DAC behavior, Dolby certification, or acoustic parity.
+
 ### Historical physical ingress proof — limited
 
 Previously demonstrated:
@@ -206,19 +238,20 @@ Stable built-in IDs include:
 - Moving reference: `validation/immersive/test-dolby-official-joc-temporal.sh`
 - Aurora moving path: `validation/immersive/test-joc-aurora-moving.sh`, `aurora_joc_moving_evidence.py`
 - Full-system virtual hardware: `validation/virtual-hardware/`, `docs/aurora-full-system-sim.md`
+- Native Windows launcher: `validation/virtual-hardware/run-aurora-sim-windows.ps1`, `run_aurora_sim_windows.py`, `pace_orender.py`, `aurora_moving_telemetry.rs`
 - Physical v1 plan: `docs/physical-joc-validation-v1.md`
 - External components/licenses: `config/external-components-v1.json`, `THIRD_PARTY_LICENSES.md`
 
 ## 7. Current work / Next actions — issue #143 physical continuous JOC
 
-The laptop-only full-system simulator (#145/#146) is complete and is now the pre-hardware regression gate. It does not replace physical acceptance.
+The laptop-only full-system simulator (#145/#146) and native Windows launcher (#147/#148) are complete and are now pre-hardware regression gates. They do not replace physical acceptance.
 
 **Selection step is complete.** The first hardware chain is frozen in `docs/physical-joc-validation-v1.md`; do not reopen board selection unless the chosen hardware fails its explicit stop conditions.
 
 Next physical actions, in order:
 1. Assemble/reuse the existing Lindy 38368 / SiI9437 -> Pi 5 physical ingress and play the exact pinned carrier from #140/#142.
 2. Capture the complete physical IEC61937 stream and prove all bursts are type `0x15`, with no unaccounted discontinuity, reset, re-encode, or payload mutation.
-3. Feed that physical capture into the unchanged Aurora moving-JOC path and require both the existing moving-JOC gates and the new full-system virtual-hardware regression gate to remain green.
+3. Feed that physical capture into the unchanged Aurora moving-JOC path and require both the existing moving-JOC gates and the full-system Linux/Windows regression gates to remain green.
 4. Attach one MCHStreamer Lite in TDM16 @ 48 kHz and verify one synchronous 16-slot output clock domain before attaching DACs.
 5. Attach two synchronized 8-channel TDM DAC stages and verify electrical activity/channel mapping on all 12 used outputs.
 6. Record negotiated ALSA device identity/format, buffer/period settings, expected vs actual frames, xruns, CPU load, clock/drift observations, and physical loopback latency where a return path exists.
@@ -238,7 +271,7 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-For immersive/JOC changes require the official Immersive JOC Stack PR run and inspect emitted evidence. Moving-reference changes additionally require Official Dolby JOC Temporal CI; Aurora moving-path changes require Aurora Moving JOC CI. Full-system virtual-hardware changes require `Aurora Full-System Sim CI`, including healthy evidence plus all fail-closed fault profiles. Hardware documentation or virtual hardware evidence alone is not physical proof.
+For immersive/JOC changes require the official Immersive JOC Stack PR run and inspect emitted evidence. Moving-reference changes additionally require Official Dolby JOC Temporal CI; Aurora moving-path changes require Aurora Moving JOC CI. Full-system virtual-hardware changes require `Aurora Full-System Sim CI`, including healthy evidence plus all fail-closed fault profiles. Native Windows launcher changes additionally require `Aurora Full-System Sim Windows CI`. Hardware documentation or virtual hardware evidence alone is not physical proof.
 
 Do not merge while required gates are red.
 
