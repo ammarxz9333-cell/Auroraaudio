@@ -1,0 +1,29 @@
+name: Temporary config v2 inventory
+
+on:
+  push:
+    branches:
+      - feature/config-renderer-component-ref-v2
+
+permissions:
+  contents: read
+
+jobs:
+  inventory:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Inventory renderer/config schema coupling
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== RendererConfiguration references ==='
+          grep -RIn --exclude-dir=target 'RendererConfiguration' crates tests fixtures docs || true
+          echo '=== BackendIntent references ==='
+          grep -RIn --exclude-dir=target 'BackendIntent' crates tests fixtures docs || true
+          echo '=== v1 config fixture references ==='
+          grep -RIn --exclude-dir=target 'fixtures/config/.*-v1.json\|config/.*-v1.json' crates tests docs .github || true
+          echo '=== migration references ==='
+          grep -RIn --exclude-dir=target 'migrate_v0_to_v1\|MigrationResult' crates tests docs || true
+          echo '=== current schema constants ==='
+          grep -RIn --exclude-dir=target 'CURRENT_SCHEMA_VERSION\|MINIMUM_READER_VERSION' crates tests docs || true
