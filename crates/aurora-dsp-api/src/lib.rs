@@ -49,12 +49,18 @@ pub enum RealtimeDspFault {
     BufferShape,
 }
 
-/// Prepared, allocation-free dynamic delay component used by Aurora's realtime
+/// Prepared dynamic-delay component allowed to execute inside Aurora's audio
 /// callback.
 ///
-/// Implementations are fully configured and allocate all internal storage before
-/// they cross this boundary. `set_delays` and `process_planar` must not allocate,
-/// block on external I/O, or grow internal buffers.
+/// Implementations must be fully configured and allocate all storage before
+/// crossing this boundary. Every callback-reachable method (`set_delays`,
+/// `process_planar`, `reset`, and latency/capability accessors) must be bounded,
+/// deterministic, and callback-safe: no heap allocation or deallocation, no
+/// buffer growth, no blocking or contended locks, no sleeping/yielding/waiting,
+/// no filesystem/network/device I/O, no process spawn or IPC/RPC, no logging or
+/// string formatting, and no other operation that can block or have unbounded
+/// execution time. Setup, diagnostics, telemetry formatting, and external I/O
+/// belong on the control thread before activation.
 pub trait RealtimeDelayProcessor: std::fmt::Debug + Send {
     /// Number of channels fixed at component preparation time.
     fn channel_count(&self) -> usize;
@@ -62,10 +68,12 @@ pub trait RealtimeDelayProcessor: std::fmt::Debug + Send {
     /// Maximum supported dynamic delay in samples.
     fn max_delay_samples(&self) -> f32;
 
-    /// Updates finite, non-negative per-channel delays without allocation.
+    /// Updates finite, non-negative per-channel delays using only bounded,
+    /// callback-safe work and without allocation or blocking.
     fn set_delays(&mut self, delays_samples: &[f32]) -> Result<(), RealtimeDspFault>;
 
-    /// Processes caller-owned planar buffers without allocation.
+    /// Processes caller-owned planar buffers using only bounded, callback-safe
+    /// work and without allocation, blocking, logging, or external I/O.
     fn process_planar(
         &mut self,
         input: &[Vec<f32>],
@@ -73,10 +81,10 @@ pub trait RealtimeDelayProcessor: std::fmt::Debug + Send {
         frame_count: usize,
     ) -> Result<(), RealtimeDspFault>;
 
-    /// Clears processing history without reallocating.
+    /// Clears processing history using bounded callback-safe work only.
     fn reset(&mut self);
 
-    /// Current delay latency in frames.
+    /// Current delay latency in frames; this accessor must be callback-safe.
     fn latency_frames(&self) -> usize;
 }
 
