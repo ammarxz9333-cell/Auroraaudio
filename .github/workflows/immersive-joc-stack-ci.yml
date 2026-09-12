@@ -36,11 +36,13 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/joc
-          key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/test-joc-realtime-soak.sh', 'validation/immersive/test-openjoc-reference.sh', 'validation/immersive/test-joc-differential.sh', 'validation/immersive/install-openjoc-reference.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
+          key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/test-joc-realtime-soak.sh', 'validation/immersive/test-openjoc-reference.sh', 'validation/immersive/test-joc-differential.sh', 'validation/immersive/test-joc-temporal-evidence.sh', 'validation/immersive/joc_temporal_evidence.py', 'validation/immersive/install-openjoc-reference.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
           restore-keys: |
             ${{ runner.os }}-joc-
       - name: Install host audio tooling
         run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev
+      - name: Self-test temporal JOC metric/report logic
+        run: python3 validation/immersive/joc_temporal_evidence.py self-test
       - name: Validate baseline and paced E-AC-3 JOC through IEC61937, Harletty, and Omniphony 7.1.4
         env:
           # Throughput/realtime claims must be evaluated on an optimized build.
@@ -68,13 +70,60 @@ jobs:
         run: >-
           bash validation/immersive/test-joc-differential.sh
           "${{ runner.temp }}/aurora-joc-differential"
-      - name: Upload differential JOC evidence
+      - name: Prove the public JOC fixture cannot overclaim temporal object evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          WORK="${{ runner.temp }}/aurora-joc-differential"
+          INPUT="$WORK/fixture-source/harletty/tests/fixtures/joc_atmos_1s.eac3"
+          INSPECT="$WORK/openjoc/openjoc-inspect.json"
+          WAV="$WORK/openjoc/openjoc-7.1.4.wav"
+          PCM="$WORK/openjoc/openjoc-7.1.4-temporal.f32"
+          REPORT="$WORK/joc-temporal-public-fixture.json"
+          test -s "$INPUT"
+          test -s "$INSPECT"
+          test -s "$WAV"
+          SHA256="$(sha256sum "$INPUT" | awk '{print $1}')"
+          ffmpeg -nostdin -hide_banner -loglevel error -y \
+            -i "$WAV" -map 0:a:0 -ar 48000 -ac 12 -c:a pcm_f32le -f f32le "$PCM"
+          set +e
+          python3 validation/immersive/joc_temporal_evidence.py analyze \
+            --input "$INPUT" \
+            --expected-sha256 "$SHA256" \
+            --provenance "pinned public Harletty joc_atmos_1s.eac3" \
+            --inspect "$INSPECT" \
+            --pcm "$PCM" \
+            --sample-rate 48000 \
+            --channels 12 \
+            --pacing-status pass \
+            --pacing-evidence "same pinned public fixture validated by the preceding paced realtime lane" \
+            --output "$REPORT"
+          RC=$?
+          set -e
+          if [[ "$RC" != "3" ]]; then
+            echo "expected public fixture to fail closed with insufficient temporal diversity; rc=$RC" >&2
+            cat "$REPORT" >&2 || true
+            exit 1
+          fi
+          python3 - "$REPORT" <<'PY'
+          import json, pathlib, sys
+          report = json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
+          if report.get("verdict") != "fail":
+              raise SystemExit("public fixture unexpectedly passed temporal evidence")
+          if report.get("primary_reason") != "insufficient_temporal_diversity":
+              raise SystemExit(f"unexpected fail-closed reason: {report.get('primary_reason')!r}")
+          if report.get("codec_joc", {}).get("gate_pass") is not True:
+              raise SystemExit("public fixture failed codec/JOC gate rather than temporal-diversity gate")
+          print("JOC-TEMPORAL-PUBLIC-FIXTURE-FAIL-CLOSED-PASS")
+          PY
+      - name: Upload differential and temporal JOC evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: joc-differential-${{ github.sha }}
           path: |
             ${{ runner.temp }}/aurora-joc-differential/joc-differential-report.json
+            ${{ runner.temp }}/aurora-joc-differential/joc-temporal-public-fixture.json
             ${{ runner.temp }}/aurora-joc-differential/openjoc/openjoc-inspect.json
             ${{ runner.temp }}/aurora-joc-differential/openjoc/openjoc-7.1.4-ffprobe.json
           if-no-files-found: warn
