@@ -36,7 +36,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/joc
-          key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/test-joc-realtime-soak.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
+          key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/test-joc-realtime-soak.sh', 'validation/immersive/test-openjoc-reference.sh', 'validation/immersive/test-joc-differential.sh', 'validation/immersive/install-openjoc-reference.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
           restore-keys: |
             ${{ runner.os }}-joc-
       - name: Install host audio tooling
@@ -51,3 +51,31 @@ jobs:
           AURORA_OMNIP_TARGET_DIR: ${{ github.workspace }}/.cache/joc/omniphony-target
           AURORA_JOC_HARNESS_TARGET_DIR: ${{ github.workspace }}/.cache/joc/harness-target
         run: bash validation/immersive/test-joc-realtime-soak.sh
+      - name: Install checksum-pinned OpenJOC reference binary
+        id: openjoc
+        shell: bash
+        run: |
+          OPENJOC_BIN="$(bash validation/immersive/install-openjoc-reference.sh "${{ runner.temp }}/openjoc-reference")"
+          echo "bin=$OPENJOC_BIN" >> "$GITHUB_OUTPUT"
+      - name: Differential JOC validation with independent OpenJOC reference
+        env:
+          OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
+          AURORA_JOC_BUILD_MODE: release
+          AURORA_HARLETTY_TARGET_DIR: ${{ github.workspace }}/.cache/joc/harletty-target
+          AURORA_OMNIP_TARGET_DIR: ${{ github.workspace }}/.cache/joc/omniphony-target
+          AURORA_JOC_HARNESS_TARGET_DIR: ${{ github.workspace }}/.cache/joc/harness-target
+          AURORA_KEEP_JOC_DIFF_WORKDIR: 1
+        run: >-
+          bash validation/immersive/test-joc-differential.sh
+          "${{ runner.temp }}/aurora-joc-differential"
+      - name: Upload differential JOC evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: joc-differential-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/aurora-joc-differential/joc-differential-report.json
+            ${{ runner.temp }}/aurora-joc-differential/openjoc/openjoc-inspect.json
+            ${{ runner.temp }}/aurora-joc-differential/openjoc/openjoc-7.1.4-ffprobe.json
+          if-no-files-found: warn
+          retention-days: 14

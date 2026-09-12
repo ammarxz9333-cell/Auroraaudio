@@ -78,6 +78,15 @@ JOC-IEC61937-PASS
 AURORA JOC SOFTWARE STACK PASS
 ```
 
+Aurora also tracks pinned OpenJOC as an **independent reference backend**, kept outside the Aurora Rust workspace. Its fail-closed reference lane requires positive JOC admission before accepting a 7.1.4 render, and the differential lane runs the same pinned fixture through OpenJOC and the Harletty/Omniphony path and records duration, level, and non-gating correlation evidence.
+
+```bash
+bash validation/immersive/test-openjoc-reference.sh INPUT_JOC
+bash validation/immersive/test-joc-differential.sh
+```
+
+These OpenJOC lanes are evaluation evidence only; they do not make OpenJOC an Aurora core dependency or establish hardware eARC, proprietary-streaming compatibility, certification, or production readiness.
+
 A separate experimental surround-upmix path exists for channel-based E-AC-3. It explicitly does not claim object recovery.
 
 ## Run examples
