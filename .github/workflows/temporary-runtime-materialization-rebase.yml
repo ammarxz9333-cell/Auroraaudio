@@ -1,0 +1,253 @@
+name: Temporary clean runtime materialization validation
+
+on:
+  push:
+    branches:
+      - refactor/runtime-materialize-delay-v1
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: "!contains(github.event.head_commit.message, '[materialization-rebase-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/runtime-materialize-delay-v1
+
+      - name: Apply clean materialization slice
+        shell: python
+        run: |
+          from pathlib import Path
+
+          # Workspace member.
+          root = Path('Cargo.toml')
+          text = root.read_text()
+          anchor = '    "crates/aurora-runtime-assembly",\n'
+          member = '    "crates/aurora-runtime-materialization",\n'
+          if member not in text:
+              if anchor not in text:
+                  raise SystemExit('workspace runtime-assembly anchor missing')
+              text = text.replace(anchor, anchor + member, 1)
+              root.write_text(text)
+
+          # Realtime engine: remove production ownership of the basic delay implementation.
+          cargo = Path('crates/aurora-realtime-engine/Cargo.toml')
+          text = cargo.read_text()
+          prod = 'aurora-dsp-basic = { path = "../aurora-dsp-basic" }\n'
+          text = text.replace(prod, '', 1)
+          dev_anchor = '[dev-dependencies]\n'
+          if dev_anchor not in text:
+              raise SystemExit('engine dev dependency anchor missing')
+          if prod not in text.split(dev_anchor, 1)[1]:
+              text = text.replace(dev_anchor, dev_anchor + prod, 1)
+          cargo.write_text(text)
+
+          lib = Path('crates/aurora-realtime-engine/src/lib.rs')
+          text = lib.read_text()
+          text = text.replace('use aurora_dsp_basic::DelayProcessor;\n', '', 1)
+
+          requirements_type = '''/// Realtime delay capabilities required before a prepared DSP can be activated.\n#[derive(Debug, Clone, Copy, PartialEq)]\npub struct RealtimeDelayRequirements {\n    channel_count: usize,\n    max_delay_samples: f32,\n}\n\nimpl RealtimeDelayRequirements {\n    /// Required rendered output channel count.\n    pub const fn channel_count(&self) -> usize {\n        self.channel_count\n    }\n\n    /// Minimum supported per-channel delay range in samples.\n    pub const fn max_delay_samples(&self) -> f32 {\n        self.max_delay_samples\n    }\n}\n\n'''
+          type_anchor = '/// Fixed buffer capacities exposed for steady-state allocation guards.\n'
+          if 'pub struct RealtimeDelayRequirements' not in text:
+              if type_anchor not in text:
+                  raise SystemExit('requirements type anchor missing')
+              text = text.replace(type_anchor, requirements_type + type_anchor, 1)
+
+          compat = '''    /// Creates a real-time engine using Aurora's current compatibility delay implementation.\n    pub fn new(\n        scene: RenderScene,\n        config: RealTimeEngineConfig,\n        estimated_device_latency_frames: usize,\n    ) -> Result<Self, RealTimeEngineError> {\n        Self::build(scene, config, estimated_device_latency_frames, None)\n    }\n\n'''
+          if compat not in text:
+              raise SystemExit('compatibility constructor anchor missing')
+          text = text.replace(compat, '', 1)
+
+          req_method = '''    /// Returns the delay capabilities required for this scene and configuration.\n    ///\n    /// Materializers call this on the control thread before constructing a concrete DSP.\n    pub fn delay_requirements(\n        scene: &RenderScene,\n        config: &RealTimeEngineConfig,\n    ) -> Result<RealtimeDelayRequirements, RealTimeEngineError> {\n        if config.sample_rate == 0 || config.block_size == 0 {\n            return Err(RealTimeEngineError::InvalidConfig(\n                "sample_rate and block_size must be greater than zero".to_owned(),\n            ));\n        }\n        if config.test_signal == TestSignal::None && config.input_channels == 0 {\n            return Err(RealTimeEngineError::InvalidConfig(\n                "live input requires at least one input channel".to_owned(),\n            ));\n        }\n        let ordered_speakers = scene.ordered_speakers()?;\n        if ordered_speakers.is_empty() {\n            return Err(RealTimeEngineError::InvalidConfig(\n                "scene must contain at least one output speaker".to_owned(),\n            ));\n        }\n        let geometric = calculate_geometric_delays(\n            &ordered_speakers,\n            scene.listener,\n            config.sample_rate,\n            config.speed_of_sound,\n        );\n        let delays = if config.apply_geometric_delay {\n            geometric.iter().map(|delay| delay.delay_samples).collect::<Vec<_>>()\n        } else {\n            vec![0.0; ordered_speakers.len()]\n        };\n        let mut max_delay_samples =\n            delays.iter().copied().fold(0.0_f32, f32::max).ceil() + 2.0;\n        if config.apply_geometric_delay\n            || config.renderer_mode == BasicRendererMode::GeometricBinaural\n        {\n            max_delay_samples = max_delay_samples.max(CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES);\n        }\n        Ok(RealtimeDelayRequirements {\n            channel_count: ordered_speakers.len(),\n            max_delay_samples,\n        })\n    }\n\n'''
+          prepared_doc = '    /// Creates a real-time engine from a caller-supplied prepared delay processor.\n'
+          if 'pub fn delay_requirements(' not in text:
+              if prepared_doc not in text:
+                  raise SystemExit('prepared constructor anchor missing')
+              text = text.replace(prepared_doc, req_method + prepared_doc, 1)
+
+          old_call = '''        Self::build(\n            scene,\n            config,\n            estimated_device_latency_frames,\n            Some(delay_processor),\n        )\n'''
+          new_call = '''        Self::build(\n            scene,\n            config,\n            estimated_device_latency_frames,\n            delay_processor,\n        )\n'''
+          if old_call not in text:
+              raise SystemExit('prepared constructor build call anchor missing')
+          text = text.replace(old_call, new_call, 1)
+
+          old_sig = '        prepared_delay_processor: Option<Box<dyn RealtimeDelayProcessor>>,\n'
+          if old_sig not in text:
+              raise SystemExit('build prepared DSP parameter anchor missing')
+          text = text.replace(old_sig, '        mut delay_processor: Box<dyn RealtimeDelayProcessor>,\n', 1)
+
+          old_branch = '''        let channel_count = ordered_speakers.len();\n        let delay_processor: Box<dyn RealtimeDelayProcessor> =\n            if let Some(mut delay_processor) = prepared_delay_processor {\n                let actual_channels = delay_processor.channel_count();\n                if actual_channels != channel_count {\n                    return Err(PreparedDspError::ChannelCount {\n                        expected: channel_count,\n                        actual: actual_channels,\n                    }\n                    .into());\n                }\n                let actual_capacity = delay_processor.max_delay_samples();\n                if !actual_capacity.is_finite() || actual_capacity < max_delay {\n                    return Err(PreparedDspError::DelayCapacity {\n                        required: max_delay,\n                        actual: actual_capacity,\n                    }\n                    .into());\n                }\n                delay_processor\n                    .set_delays(&delays)\n                    .map_err(PreparedDspError::from_initial_fault)?;\n                delay_processor\n            } else {\n                let mut delay_processor: Box<dyn RealtimeDelayProcessor> =\n                    Box::new(DelayProcessor::new(channel_count, max_delay));\n                delay_processor.set_delays(&delays)?;\n                delay_processor\n            };\n'''
+          new_branch = '''        let channel_count = ordered_speakers.len();\n        let actual_channels = delay_processor.channel_count();\n        if actual_channels != channel_count {\n            return Err(PreparedDspError::ChannelCount {\n                expected: channel_count,\n                actual: actual_channels,\n            }\n            .into());\n        }\n        let actual_capacity = delay_processor.max_delay_samples();\n        if !actual_capacity.is_finite() || actual_capacity < max_delay {\n            return Err(PreparedDspError::DelayCapacity {\n                required: max_delay,\n                actual: actual_capacity,\n            }\n            .into());\n        }\n        delay_processor\n            .set_delays(&delays)\n            .map_err(PreparedDspError::from_initial_fault)?;\n'''
+          if old_branch not in text:
+              raise SystemExit('default/prepared DSP branch anchor missing')
+          text = text.replace(old_branch, new_branch, 1)
+
+          # Keep the basic DSP only as a test fixture inside this crate.
+          test_split = text.find('#[cfg(test)]')
+          if test_split < 0:
+              raise SystemExit('test module anchor missing')
+          prod_text, test_text = text[:test_split], text[test_split:]
+          test_text = test_text.replace('RealTimeEngine::new(', 'test_engine(')
+          helper_anchor = '    fn engine(test_signal: TestSignal, apply_delay: bool) -> RealTimeEngine {\n'
+          helper = '''    fn test_engine(\n        scene: RenderScene,\n        config: RealTimeEngineConfig,\n        estimated_device_latency_frames: usize,\n    ) -> Result<RealTimeEngine, RealTimeEngineError> {\n        let requirements = RealTimeEngine::delay_requirements(&scene, &config)?;\n        let delay = aurora_dsp_basic::DelayProcessor::new(\n            requirements.channel_count(),\n            requirements.max_delay_samples(),\n        );\n        RealTimeEngine::new_with_prepared_delay_processor(\n            scene,\n            config,\n            estimated_device_latency_frames,\n            Box::new(delay),\n        )\n    }\n\n'''
+          if 'fn test_engine(' not in test_text:
+              if helper_anchor not in test_text:
+                  raise SystemExit('unit-test helper anchor missing')
+              test_text = test_text.replace(helper_anchor, helper + helper_anchor, 1)
+          lib.write_text(prod_text + test_text)
+
+          # Benchmarks use the same dev-only basic DSP fixture explicitly.
+          bench = Path('crates/aurora-realtime-engine/benches/common/mod.rs')
+          text = bench.read_text()
+          old_fn = '''pub fn engine(\n    channel_count: usize,\n    block_size: usize,\n    signal: TestSignal,\n    apply_delay: bool,\n) -> RealTimeEngine {\n    RealTimeEngine::new(\n        channel_scene(channel_count, block_size),\n        RealTimeEngineConfig {\n            sample_rate: 48_000,\n            block_size,\n            input_channels: 0,\n            apply_geometric_delay: apply_delay,\n            speed_of_sound: 343.0,\n            test_signal: signal,\n            renderer_mode: BasicRendererMode::InverseDistance,\n        },\n        block_size,\n    )\n    .expect("benchmark scene and engine configuration must be valid")\n}\n'''
+          new_fn = '''pub fn engine(\n    channel_count: usize,\n    block_size: usize,\n    signal: TestSignal,\n    apply_delay: bool,\n) -> RealTimeEngine {\n    let scene = channel_scene(channel_count, block_size);\n    let config = RealTimeEngineConfig {\n        sample_rate: 48_000,\n        block_size,\n        input_channels: 0,\n        apply_geometric_delay: apply_delay,\n        speed_of_sound: 343.0,\n        test_signal: signal,\n        renderer_mode: BasicRendererMode::InverseDistance,\n    };\n    let requirements = RealTimeEngine::delay_requirements(&scene, &config)\n        .expect("benchmark delay requirements must be valid");\n    let delay = aurora_dsp_basic::DelayProcessor::new(\n        requirements.channel_count(),\n        requirements.max_delay_samples(),\n    );\n    RealTimeEngine::new_with_prepared_delay_processor(scene, config, block_size, Box::new(delay))\n        .expect("benchmark scene and engine configuration must be valid")\n}\n'''
+          if old_fn not in text:
+              raise SystemExit('benchmark engine helper anchor missing')
+          bench.write_text(text.replace(old_fn, new_fn, 1))
+
+          # Concrete control-thread factory.
+          crate = Path('crates/aurora-runtime-materialization')
+          crate.joinpath('src').mkdir(parents=True, exist_ok=True)
+          crate.joinpath('Cargo.toml').write_text('''[package]\nname = "aurora-runtime-materialization"\nversion = "0.1.0"\nedition.workspace = true\nlicense.workspace = true\nrepository.workspace = true\nrust-version.workspace = true\n\n[dependencies]\naurora-dsp-basic = { path = "../aurora-dsp-basic" }\naurora-realtime-engine = { path = "../aurora-realtime-engine" }\naurora-scene = { path = "../aurora-scene" }\n''')
+          crate.joinpath('src/lib.rs').write_text('''//! Control-thread materialization of concrete Aurora runtime components.\n//!\n//! `aurora-runtime-assembly` stays passive and deterministic; this crate owns\n//! concrete implementation selection and construction before callback activation.\n\n#![forbid(unsafe_code)]\n\nuse aurora_dsp_basic::DelayProcessor;\nuse aurora_realtime_engine::{RealTimeEngine, RealTimeEngineConfig, RealTimeEngineError};\nuse aurora_scene::RenderScene;\n\n/// Stable identity for Aurora's current default realtime delay implementation.\npub const BASIC_DELAY_IMPLEMENTATION_ID: &str = "org.aurora.dsp.basic-delay";\n\n/// Materializes Aurora's current default realtime engine on the control thread.\npub fn materialize_default_realtime_engine(\n    scene: RenderScene,\n    config: RealTimeEngineConfig,\n    estimated_device_latency_frames: usize,\n) -> Result<RealTimeEngine, RealTimeEngineError> {\n    let requirements = RealTimeEngine::delay_requirements(&scene, &config)?;\n    let delay = DelayProcessor::new(\n        requirements.channel_count(),\n        requirements.max_delay_samples(),\n    );\n    RealTimeEngine::new_with_prepared_delay_processor(\n        scene,\n        config,\n        estimated_device_latency_frames,\n        Box::new(delay),\n    )\n}\n''')
+
+          def add_dep(path, anchor, dep):
+              p = Path(path)
+              t = p.read_text()
+              if dep not in t:
+                  if anchor not in t:
+                      raise SystemExit(f'{path}: dependency anchor missing')
+                  t = t.replace(anchor, anchor + dep, 1)
+              p.write_text(t)
+
+          # Acceptance exercises the production materializer.
+          add_dep(
+              'crates/aurora-realtime-acceptance/Cargo.toml',
+              'aurora-realtime-engine = { path = "../aurora-realtime-engine" }\n',
+              'aurora-runtime-materialization = { path = "../aurora-runtime-materialization" }\n',
+          )
+          for rel in ['examples/sustained_soak.rs', 'tests/engine_acceptance.rs']:
+              p = Path('crates/aurora-realtime-acceptance') / rel
+              t = p.read_text()
+              if 'materialize_default_realtime_engine' not in t:
+                  marker = 'use aurora_scene'
+                  idx = t.find(marker)
+                  if idx < 0:
+                      raise SystemExit(f'{rel}: scene import anchor missing')
+                  t = t[:idx] + 'use aurora_runtime_materialization::materialize_default_realtime_engine;\n' + t[idx:]
+              t = t.replace('RealTimeEngine::new(', 'materialize_default_realtime_engine(')
+              p.write_text(t)
+
+          # CLI routes both realtime paths through production materialization.
+          cli_cargo = Path('crates/aurora-cli/Cargo.toml')
+          t = cli_cargo.read_text()
+          old_feature = 'realtime = ["dep:aurora-realtime-acceptance", "dep:aurora-realtime-audio-api", "dep:aurora-realtime-audio-cpal", "dep:aurora-realtime-engine"]'
+          new_feature = 'realtime = ["dep:aurora-realtime-acceptance", "dep:aurora-realtime-audio-api", "dep:aurora-realtime-audio-cpal", "dep:aurora-realtime-engine", "dep:aurora-runtime-materialization"]'
+          if old_feature in t:
+              t = t.replace(old_feature, new_feature, 1)
+          dep = 'aurora-runtime-materialization = { path = "../aurora-runtime-materialization", optional = true }\n'
+          anchor = 'aurora-realtime-engine = { path = "../aurora-realtime-engine", optional = true }\n'
+          if dep not in t:
+              if anchor not in t:
+                  raise SystemExit('CLI realtime-engine dependency anchor missing')
+              t = t.replace(anchor, anchor + dep, 1)
+          cli_cargo.write_text(t)
+
+          for rel in ['src/main.rs', 'src/realtime_commands.rs']:
+              p = Path('crates/aurora-cli') / rel
+              t = p.read_text()
+              if 'materialize_default_realtime_engine' not in t:
+                  marker = 'use aurora_scene'
+                  idx = t.find(marker)
+                  if idx < 0:
+                      raise SystemExit(f'{rel}: scene import anchor missing')
+                  prefix = '#[cfg(feature = "realtime")]\n' if rel == 'src/main.rs' else ''
+                  t = t[:idx] + prefix + 'use aurora_runtime_materialization::materialize_default_realtime_engine;\n' + t[idx:]
+              t = t.replace('RealTimeEngine::new(', 'materialize_default_realtime_engine(')
+              p.write_text(t)
+
+          # Accelerated simulation also exercises production materialization.
+          add_dep(
+              'crates/aurora-realtime-audio-sim/Cargo.toml',
+              'aurora-realtime-engine = { path = "../aurora-realtime-engine" }\n',
+              'aurora-runtime-materialization = { path = "../aurora-runtime-materialization" }\n',
+          )
+          sim = Path('crates/aurora-realtime-audio-sim/src/simulation.rs')
+          t = sim.read_text()
+          if 'materialize_default_realtime_engine' not in t:
+              marker = 'use aurora_scene'
+              idx = t.find(marker)
+              if idx < 0:
+                  raise SystemExit('simulation scene import anchor missing')
+              t = t[:idx] + 'use aurora_runtime_materialization::materialize_default_realtime_engine;\n' + t[idx:]
+          t = t.replace('RealTimeEngine::new(', 'materialize_default_realtime_engine(')
+          sim.write_text(t)
+
+          # Architecture note.
+          arch = Path('docs/architecture.md')
+          t = arch.read_text()
+          note = '`aurora-runtime-materialization` owns control-thread construction of concrete runtime components. `aurora-runtime-assembly` remains a passive deterministic planner, while the realtime engine accepts only prepared DSP implementations and validates their capabilities before activation.\n\n'
+          if '`aurora-runtime-materialization` owns control-thread construction' not in t:
+              marker = '### 5. Realtime engine\n'
+              if marker not in t:
+                  raise SystemExit('architecture realtime section anchor missing')
+              t = t.replace(marker, note + marker, 1)
+              arch.write_text(t)
+
+      - uses: dtolnay/rust-toolchain@1.78.0
+        with:
+          components: rustfmt
+
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+
+      - name: Format and refresh lockfile
+        run: |
+          cargo fmt --all
+          cargo check -p aurora-cli -p aurora-realtime-audio-sim -p aurora-realtime-acceptance -p aurora-runtime-materialization --all-targets
+
+      - name: Commit generated clean slice
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.toml Cargo.lock crates docs/architecture.md
+          if ! git diff --cached --quiet; then
+            git commit -m "Move default realtime DSP construction to materializer [materialization-rebase-bot]"
+            git push origin HEAD:refactor/runtime-materialize-delay-v1
+          fi
+
+      - name: Enforce decoupling
+        shell: bash
+        run: |
+          if grep -R --line-number --include='*.rs' 'RealTimeEngine::new(' crates; then
+            echo 'legacy RealTimeEngine::new callers remain' >&2
+            exit 1
+          fi
+          if grep -n '^aurora-dsp-basic = ' crates/aurora-realtime-engine/Cargo.toml | head -1 | grep -q '^'; then
+            first_line=$(grep -n '^aurora-dsp-basic = ' crates/aurora-realtime-engine/Cargo.toml | cut -d: -f1 | head -1)
+            dev_line=$(grep -n '^\[dev-dependencies\]' crates/aurora-realtime-engine/Cargo.toml | cut -d: -f1)
+            if [ "$first_line" -lt "$dev_line" ]; then
+              echo 'aurora-dsp-basic still present as production dependency' >&2
+              exit 1
+            fi
+          fi
+          if grep -n 'aurora_dsp_basic' crates/aurora-realtime-engine/src/lib.rs | grep -v '#\[cfg(test)\]' >/dev/null 2>&1; then
+            # Source references are allowed only inside the cfg(test) module; verify by line position.
+            test_line=$(grep -n '^#\[cfg(test)\]' crates/aurora-realtime-engine/src/lib.rs | cut -d: -f1 | head -1)
+            while IFS=: read -r line _; do
+              if [ "$line" -lt "$test_line" ]; then
+                echo 'production engine still references aurora_dsp_basic' >&2
+                exit 1
+              fi
+            done < <(grep -n 'aurora_dsp_basic' crates/aurora-realtime-engine/src/lib.rs || true)
+          fi
+
+      - name: MSRV workspace check
+        run: cargo check --workspace --all-targets --all-features --locked
+
+      - name: Test changed runtime surfaces
+        run: cargo test -p aurora-realtime-engine -p aurora-runtime-materialization -p aurora-realtime-acceptance -p aurora-realtime-audio-sim -p aurora-cli --locked
