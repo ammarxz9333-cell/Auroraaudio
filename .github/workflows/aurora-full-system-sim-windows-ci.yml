@@ -1,0 +1,62 @@
+name: Aurora Full-System Sim Windows CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "validation/virtual-hardware/run-aurora-sim-windows.ps1"
+      - "validation/virtual-hardware/run_aurora_sim_windows.py"
+      - "validation/virtual-hardware/pace_orender.py"
+      - "validation/virtual-hardware/aurora_moving_telemetry.rs"
+      - "validation/virtual-hardware/aurora_full_system_sim.py"
+      - "validation/immersive/aurora_joc_moving_evidence.py"
+      - "validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"
+      - "config/external-components-v1.json"
+      - ".github/workflows/aurora-full-system-sim-windows-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-full-system-sim-windows-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  native-windows-full-system:
+    runs-on: windows-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Ensure FFmpeg
+        shell: pwsh
+        run: |
+          if (-not (Get-Command ffmpeg -ErrorAction SilentlyContinue)) {
+            choco install ffmpeg -y --no-progress
+            $env:PATH = [System.Environment]::GetEnvironmentVariable('PATH','Machine') + ';' + [System.Environment]::GetEnvironmentVariable('PATH','User')
+          }
+          ffmpeg -version | Select-Object -First 1
+
+      - name: Run complete native Windows AuroraSim path
+        shell: pwsh
+        run: |
+          ./validation/virtual-hardware/run-aurora-sim-windows.ps1 `
+            -OutputDir "${{ runner.temp }}\aurora-sim-windows" `
+            -CacheDir "${{ runner.temp }}\aurora-sim-cache"
+
+      - name: Upload native Windows evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-full-system-sim-windows-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}\aurora-sim-windows\*.json
+            ${{ runner.temp }}\aurora-sim-windows\*.log
+          if-no-files-found: warn
+          retention-days: 14
