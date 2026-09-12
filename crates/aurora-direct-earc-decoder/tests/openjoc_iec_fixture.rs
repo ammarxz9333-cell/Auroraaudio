@@ -1,6 +1,8 @@
 //! Opt-in direct-eARC software proof using OpenJOC's published synthetic JOC
 //! fixture. This wraps each complete JOC AU in a canonical IEC61937 E-AC-3
-//! burst and exercises Aurora's real transport parser -> decoder-engine path.
+//! burst, embeds that carrier into native ALSA-shaped S32_LE stereo slots, then
+//! exercises Aurora's real S32 normalizer -> transport parser -> decoder-engine
+//! path.
 //!
 //! This remains synthetic software validation. It does not prove a TV/eARC
 //! receiver, commercial streaming interoperability, DRM, TDM hardware or
@@ -12,12 +14,17 @@ use aurora_core::{AudioFormat, SampleType};
 use aurora_decoder_engine::EngineConfig;
 use aurora_decoder_open::joc_access_unit::JocAccessUnitAssembler;
 use aurora_direct_earc_decoder::DirectEarcDecoder;
-use aurora_iec61937::{TransportCodec, DATA_TYPE_EAC3};
+use aurora_iec61937::{
+    CarrierWordHalf, S32LeCarrierNormalizer, TransportCodec, DATA_TYPE_EAC3,
+};
 
 const FIXTURE_ENV: &str = "AURORA_OPENJOC_SYNTHETIC_FIXTURE";
 const EXPECTED_BYTES: usize = 32_768;
 const EXPECTED_ACCESS_UNITS: usize = 8;
+const EXPECTED_PINNED_OPENJOC_PCM_FRAMES: usize = 1_568;
 const EAC3_PERIOD_BYTES: usize = 24_576;
+const CAPTURE_SLOTS: usize = 2;
+const S32_CAPTURE_CHUNK_SAMPLES: usize = 97 * CAPTURE_SLOTS;
 const OUTPUT_RATE: f64 = 48_000.0;
 
 fn format_7_1_4() -> AudioFormat {
@@ -52,6 +59,20 @@ fn canonical_eac3_period(payload: &[u8]) -> Vec<u8> {
     );
     burst.resize(EAC3_PERIOD_BYTES, 0);
     burst
+}
+
+/// Models the proven Linux capture contract: two S32_LE ALSA slots carry one
+/// IEC61937 S16 word each in the high half of the native 32-bit slot. Casting
+/// through u32 preserves every carrier bit, including sign-bit patterns.
+fn carrier_to_s32_high_slots(carrier: &[u8]) -> Vec<i32> {
+    assert_eq!(carrier.len() % 2, 0);
+    carrier
+        .chunks_exact(2)
+        .map(|word| {
+            let carrier_word = u16::from_le_bytes([word[0], word[1]]);
+            (u32::from(carrier_word) << 16) as i32
+        })
+        .collect()
 }
 
 fn observe_frames(
@@ -113,6 +134,8 @@ fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
     );
     assert_eq!(units.len(), EXPECTED_ACCESS_UNITS);
 
+    let mut normalizer = S32LeCarrierNormalizer::new(CAPTURE_SLOTS, CarrierWordHalf::High)
+        .expect("construct native ALSA S32 direct-eARC normalizer");
     let mut decoder = DirectEarcDecoder::new(EngineConfig::default());
     decoder
         .configure(format_7_1_4())
@@ -123,10 +146,23 @@ fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
     let mut first_burst_admission_checked = false;
     for unit in &units {
         let period = canonical_eac3_period(unit);
-        for chunk in period.chunks(997) {
+        let s32_capture = carrier_to_s32_high_slots(&period);
+        assert_eq!(s32_capture.len() % CAPTURE_SLOTS, 0);
+
+        // 97 two-slot ALSA frames deliberately fragment IEC61937 headers,
+        // payloads and idle padding across calls. The production normalizer must
+        // still recover the canonical carrier bit-for-bit before decoding it.
+        let mut reconstructed_period = Vec::with_capacity(period.len());
+        for samples in s32_capture.chunks(S32_CAPTURE_CHUNK_SAMPLES) {
+            assert_eq!(samples.len() % CAPTURE_SLOTS, 0);
+            let carrier = normalizer
+                .push_s32_words(samples)
+                .expect("normalize native ALSA S32 capture samples");
+            reconstructed_period.extend_from_slice(&carrier);
+
             let batch = decoder
-                .push_carrier(chunk, false)
-                .expect("decode synthetic direct-eARC carrier chunk");
+                .push_carrier(&carrier, false)
+                .expect("decode normalized synthetic direct-eARC carrier chunk");
             let prior_bursts = bursts;
             bursts = bursts.saturating_add(batch.bursts);
             assert!(
@@ -149,7 +185,21 @@ fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
 
             observe_frames(batch.frames, &mut pcm_frames);
         }
+        assert_eq!(
+            reconstructed_period, period,
+            "S32 ALSA normalization changed IEC61937 carrier bits"
+        );
     }
+
+    normalizer
+        .finish()
+        .expect("S32 capture stream must end on a complete ALSA frame");
+    let expected_carrier_words = EXPECTED_ACCESS_UNITS * EAC3_PERIOD_BYTES / 2;
+    assert_eq!(normalizer.output_words(), expected_carrier_words as u64);
+    assert_eq!(
+        normalizer.carrier_frames(),
+        (expected_carrier_words / CAPTURE_SLOTS) as u64
+    );
 
     assert!(
         first_burst_admission_checked,
@@ -179,7 +229,10 @@ fn synthetic_joc_survives_full_direct_earc_iec61937_chain() {
         .finish()
         .expect("finish synthetic direct-eARC JOC carrier");
     observe_frames(final_batch.frames, &mut pcm_frames);
-    assert!(pcm_frames > 0, "full direct-eARC JOC chain produced no PCM");
+    assert_eq!(
+        pcm_frames, EXPECTED_PINNED_OPENJOC_PCM_FRAMES,
+        "S32 direct-eARC path must preserve the exact pinned OpenJOC PCM timeline"
+    );
 
     // EOF retires the live OpenJOC session, but Aurora must retain truthful
     // evidence of the last successful render in this decoder epoch.
