@@ -39,16 +39,12 @@ pub struct ApiCompatibility {
 impl ApiCompatibility {
     /// Returns whether this plugin declares compatibility with a host API.
     pub const fn accepts(self, host: ApiVersion) -> bool {
-        self.major == host.major
-            && host.minor >= self.min_minor
-            && host.minor <= self.max_minor
+        self.major == host.major && host.minor >= self.min_minor && host.minor <= self.max_minor
     }
 }
 
 /// Stable application-level capability exposed by a plugin.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginCapability {
     /// Produces a selectable media source or stream for Aurora playback.
@@ -81,9 +77,7 @@ pub enum PluginCapability {
 ///
 /// Deliberately absent are permissions for realtime callback access, raw
 /// amplifier control, direct MCU access, and unrestricted hardware access.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum PluginPermission {
     /// Make outbound network connections through the plugin sandbox policy.
@@ -178,7 +172,11 @@ impl PluginManifest {
                 self.entrypoint.clone(),
             ));
         }
-        if self.entrypoint.split('/').any(|part| part == ".." || part.is_empty()) {
+        if self
+            .entrypoint
+            .split('/')
+            .any(|part| part == ".." || part.is_empty())
+        {
             return Err(PluginManifestError::InvalidEntrypoint(
                 self.entrypoint.clone(),
             ));
@@ -276,7 +274,10 @@ pub enum PluginManifestError {
     DuplicatePermission(PluginPermission),
 }
 
-fn ensure_unique<T>(items: &[T], make_error: fn(T) -> PluginManifestError) -> Result<(), PluginManifestError>
+fn ensure_unique<T>(
+    items: &[T],
+    make_error: fn(T) -> PluginManifestError,
+) -> Result<(), PluginManifestError>
 where
     T: Copy + Ord,
 {
