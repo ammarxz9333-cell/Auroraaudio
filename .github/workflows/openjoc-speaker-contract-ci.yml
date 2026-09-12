@@ -7,6 +7,9 @@ on:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
+      - "crates/aurora-cli/**"
+      - "crates/aurora-alsa-input/**"
+      - "crates/aurora-alsa-output/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-runtime/**"
@@ -14,12 +17,14 @@ on:
       - "crates/aurora-speaker-output/**"
       - "crates/aurora-iec61937/**"
       - "crates/aurora-dsp-basic/**"
-      - "crates/aurora-alsa-output/**"
       - ".github/workflows/openjoc-speaker-contract-ci.yml"
   pull_request:
     paths:
       - "Cargo.toml"
       - "Cargo.lock"
+      - "crates/aurora-cli/**"
+      - "crates/aurora-alsa-input/**"
+      - "crates/aurora-alsa-output/**"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-encoded-runtime/**"
@@ -27,7 +32,6 @@ on:
       - "crates/aurora-speaker-output/**"
       - "crates/aurora-iec61937/**"
       - "crates/aurora-dsp-basic/**"
-      - "crates/aurora-alsa-output/**"
       - ".github/workflows/openjoc-speaker-contract-ci.yml"
   workflow_dispatch:
 
@@ -75,6 +79,8 @@ jobs:
           rustfmt --edition 2021 --check crates/aurora-direct-earc-decoder/tests/openjoc_iec_fixture.rs
           rustfmt --edition 2021 --check crates/aurora-encoded-runtime/tests/openjoc_s32_playback.rs
           rustfmt --edition 2021 --check crates/aurora-layout-playback-runtime/tests/openjoc_s32_eleven_one_four.rs
+          rustfmt --edition 2021 --check crates/aurora-cli/src/bin/aurora-layout-runtime.rs
+          rustfmt --edition 2021 --check crates/aurora-cli/src/bin/aurora-layout-runtime-threaded.rs
 
       - name: Check OpenJOC decoder adapter
         run: cargo check --locked -p aurora-decoder-open --all-targets
@@ -102,6 +108,18 @@ jobs:
         run: |
           cargo check --locked -p aurora-layout-playback-runtime \
             --test openjoc_s32_eleven_one_four
+
+      - name: Check native ALSA 16ch layout appliance
+        run: |
+          cargo check --locked -p aurora-cli \
+            --no-default-features --features layout-runtime \
+            --bin aurora-layout-runtime
+
+      - name: Test native ALSA 16ch layout appliance contracts
+        run: |
+          cargo test --locked -p aurora-cli \
+            --no-default-features --features layout-runtime \
+            --bin aurora-layout-runtime
 
       - name: Fetch and verify pinned synthetic JOC fixture
         run: |
