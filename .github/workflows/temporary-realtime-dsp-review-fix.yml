@@ -1,0 +1,44 @@
+name: Temporary realtime DSP review-fix validation
+
+on:
+  push:
+    branches:
+      - refactor/realtime-dsp-contract-v1
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: "!contains(github.event.head_commit.message, '[dsp-review-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/realtime-dsp-contract-v1
+      - uses: dtolnay/rust-toolchain@1.78.0
+        with:
+          components: rustfmt
+      - name: Format
+        run: cargo fmt --all
+      - name: MSRV check DSP crates
+        run: cargo check -p aurora-dsp-api -p aurora-dsp-basic --all-targets --locked
+      - name: Run realtime trait allocation and behavior tests
+        run: cargo test -p aurora-dsp-basic realtime::tests --locked
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Stable clippy DSP crates
+        run: cargo clippy -p aurora-dsp-api -p aurora-dsp-basic --all-targets -- -D warnings
+      - name: Commit formatting
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/aurora-dsp-basic/src/realtime.rs crates/aurora-dsp-api/src/lib.rs
+          git commit -m "Format and validate realtime DSP review fixes [dsp-review-bot]"
+          git push origin HEAD:refactor/realtime-dsp-contract-v1
