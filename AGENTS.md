@@ -23,6 +23,9 @@ Latest merged milestones:
 - physical Gate A IEC61937 validator: PR #149, `9c380c64818057e10b0b488ecba4129efe86de56`;
 - hardware-neutral ALSA encoded-ingress capture adapter: PR #150, `1afe66ab40ab2c7391610d5e5def27b6ba426644`.
 
+In-flight hardening:
+- PR #152, `world-class-sim-coverage`: mandatory simulation coverage contract, real Aurora output-DSP in the full-system path, expanded fail-closed virtual fault model, Linux/Windows parity. Do not call this accepted evidence until all required checks are green and the PR is merged.
+
 Completed trackers include #118, #119, #130, #132, #135, #141, #145, #147.
 
 **Active physical critical-path tracker: #143** — physical continuous eARC/JOC to synchronous 7.1.4 output.
@@ -47,7 +50,8 @@ Rules:
 - only physical loopback may be called measured latency;
 - no DRM/Widevine circumvention, protected-media extraction or device-identity spoofing;
 - no Dolby certification/conformance claim from software CI;
-- GPL/incompatible references remain external.
+- GPL/incompatible references remain external;
+- every new or materially changed simulator-testable capability must be declared in `config/simulation-coverage-v1.json` in the same change; a virtual capability may be marked `covered` only when it maps to an exported AuroraSim capability plus executable healthy/fault profile evidence, while unimplemented gaps remain explicit as `planned`/pending.
 
 ## 3. Evidence truth
 
@@ -112,6 +116,21 @@ Run locally on native Windows:
 .\validation\virtual-hardware\run-aurora-sim-windows.ps1
 ```
 
+### PR #152 — AuroraSim v2 hardening (in flight; not accepted evidence yet)
+
+Proposed healthy path:
+`pinned moving JOC -> IEC61937 -> Harletty -> Omniphony 7.1.4 -> media-paced PCM -> real Aurora SpeakerPostProcessor -> deterministic virtual TDM16/DAC sink`.
+
+Proposed mandatory simulation policy:
+- `config/simulation-coverage-v1.json` is the machine-readable coverage contract;
+- `validation/virtual-hardware/validate_simulation_coverage.py` fails CI for undeclared simulator capabilities, missing evidence, duplicate mappings, or unmapped fault profiles;
+- healthy transport computes per-channel SHA-256 and full PCM identity instead of asserting channel order by declaration;
+- negative profiles cover dropout, channel silence, channel swap, device disconnect, excessive drift, sample-rate change, latency spike, non-finite PCM and TDM padding corruption;
+- Linux and native Windows run the same real Aurora output-DSP boundary before virtual transport analysis;
+- IAMF/OAR, ADM/BS.2127 differential rendering, binaural/head tracking, adaptive runtime clock correction, reconnect recovery and physical/external acceptance remain explicit non-covered gaps until separately proven.
+
+No PR #152 result may be promoted to evidence truth until required CI is green and the PR is merged.
+
 ### PR #149 — physical Gate A admission validator
 
 Merged file: `validation/physical/aurora_physical_ingress.py`.
@@ -169,6 +188,11 @@ This proves only DD+/E-AC-3 extraction/5.1 decoding in that tested setup. The lo
 - physical continuous `eARC -> E-AC-3 JOC -> Aurora -> synchronous physical 7.1.4`;
 - a real #143 Gate A capture under the merged validator;
 - authored object-position correctness;
+- IAMF/OAR decode/render integration;
+- ADM/BS.2127 differential rendering against EAR/libear;
+- binaural/head-tracked rendering validation;
+- adaptive runtime clock-rate correction/ASRC;
+- controlled output-device reconnect recovery;
 - Netflix/other DRM-service Atmos compatibility through Aurora;
 - final DAC/amplifier/speaker design;
 - acoustic parity with Samsung Q995-class systems;
@@ -208,27 +232,32 @@ Key locations:
 - config/runtime: `crates/aurora-config/`, `aurora-runtime-assembly/`, `aurora-runtime-materialization/`, `aurora-runtime-inspection/`;
 - immersive/JOC validation: `validation/immersive/`;
 - full-system virtual hardware: `validation/virtual-hardware/`, `docs/aurora-full-system-sim.md`;
+- mandatory simulation coverage: `config/simulation-coverage-v1.json`, `validation/virtual-hardware/validate_simulation_coverage.py`;
 - physical Gate A: `validation/physical/aurora_physical_ingress.py`;
 - ALSA capture adapter: `validation/physical/aurora_alsa_iec61937_capture.py`, `docs/physical-alsa-capture.md`;
 - physical chain: `docs/physical-joc-validation-v1.md`;
 - external components/licenses: `config/external-components-v1.json`, `THIRD_PARTY_LICENSES.md`.
 
-## 6. Current work / Next actions — issue #143
+## 6. Current work / Next actions — issue #143 + requested world-class hardening
 
-Software/simulation/tooling preparation is complete through PR #150. **The next unfinished item is hardware-bound.**
+The physical #143 chain remains the acceptance critical path. In parallel, the user explicitly requested continuous comparison against leading immersive-audio platforms/projects and a simulator that cannot silently omit new Aurora capabilities. PR #152 is the current non-physical hardening item and must finish green before returning to the hardware-only #143 steps.
 
 Next actions, in order:
-1. Physically assemble/reuse the existing Lindy 38368 / SiI9437 -> Pi 5 I2S capture path.
-2. On the real Linux capture host run `arecord -l`; identify the actual capture PCM. Do not invent or hard-code a device name before this step.
-3. Play the exact pinned carrier and run `validation/physical/aurora_alsa_iec61937_capture.py capture` with the real PCM device. Preserve raw ALSA capture, `arecord` hw params/stderr, monotonic timestamps and canonical `.spdif` output.
-4. Obtain trustworthy reset/drop counters from the real capture driver/adapter. `arecord` xrun text alone is diagnostic and does not substitute for these counters.
-5. Run `validation/physical/aurora_physical_ingress.py analyze --require-capture-metadata`; require 2360 type-`0x15` bursts, exact 24576-byte grid, zero resets/drops/padding mutation and reconstructed pinned SHA.
-6. Feed the accepted physical capture into the unchanged Aurora moving-JOC path and require moving-JOC plus full-system Linux/Windows gates to remain green.
-7. Attach MCHStreamer Lite TDM16 @48 kHz; verify one synchronous 16-slot output clock domain.
-8. Attach two synchronized 8-channel DAC stages; verify electrical activity and exact mapping on 12 used outputs.
-9. Record ALSA identity/format, buffer/period settings, expected vs actual frames, xruns, CPU load, clock/drift and physical loopback latency where a return path exists.
-10. Close #143 only after one full-duration run proves `physical eARC capture -> raw JOC preservation -> Aurora moving-object render -> synchronous physical 12-channel output`.
-11. Only then test legitimate Netflix/other service Atmos separately, followed by final DAC/amplifier/speaker and wireless transport work.
+1. Finish PR #152: require Linux + Windows full-system simulation, base CI and relevant immersive/JOC gates green; fix any harness/regression failure rather than weakening gates.
+2. After #152 merges, evaluate the newly identified AOMedia Open Audio Renderer (OAR) as an external IAMF/open-rendering reference lane. Do not replace the stable JOC renderer by recency alone.
+3. Add independent ADM/BS.2127 differential-reference coverage with EBU EAR/libear/BEAR where licensing and interfaces permit; keep GPL/incompatible code external.
+4. Only promote IAMF/OAR, ADM, binaural/head-tracking, adaptive clock correction or reconnect recovery from `planned` when executable evidence exists and the simulator/coverage contract is updated in the same change.
+5. Resume physical #143: assemble/reuse the existing Lindy 38368 / SiI9437 -> Pi 5 I2S capture path.
+6. On the real Linux capture host run `arecord -l`; identify the actual capture PCM. Do not invent or hard-code a device name before this step.
+7. Play the exact pinned carrier and run `validation/physical/aurora_alsa_iec61937_capture.py capture` with the real PCM device. Preserve raw ALSA capture, `arecord` hw params/stderr, monotonic timestamps and canonical `.spdif` output.
+8. Obtain trustworthy reset/drop counters from the real capture driver/adapter. `arecord` xrun text alone is diagnostic and does not substitute for these counters.
+9. Run `validation/physical/aurora_physical_ingress.py analyze --require-capture-metadata`; require 2360 type-`0x15` bursts, exact 24576-byte grid, zero resets/drops/padding mutation and reconstructed pinned SHA.
+10. Feed the accepted physical capture into the unchanged Aurora moving-JOC path and require moving-JOC plus full-system Linux/Windows gates to remain green.
+11. Attach MCHStreamer Lite TDM16 @48 kHz; verify one synchronous 16-slot output clock domain.
+12. Attach two synchronized 8-channel DAC stages; verify electrical activity and exact mapping on 12 used outputs.
+13. Record ALSA identity/format, buffer/period settings, expected vs actual frames, xruns, CPU load, clock/drift and physical loopback latency where a return path exists.
+14. Close #143 only after one full-duration run proves `physical eARC capture -> raw JOC preservation -> Aurora moving-object render -> synchronous physical 12-channel output`.
+15. Only then test legitimate Netflix/other service Atmos separately, followed by final DAC/amplifier/speaker and wireless transport work.
 
 Other queued trackers:
 - #115: evaluate newer Omniphony behind a separate reference lane; do not upgrade stable pin by recency alone;
@@ -247,8 +276,9 @@ Additional gates:
 - immersive/JOC changes: official Immersive JOC Stack evidence;
 - moving reference: Official Dolby JOC Temporal CI;
 - Aurora moving path: Aurora Moving JOC CI;
-- full-system virtual hardware: `Aurora Full-System Sim CI`;
-- native Windows launcher: `Aurora Full-System Sim Windows CI`;
+- simulation coverage contract: `python3 validation/virtual-hardware/validate_simulation_coverage.py self-test` and `check`;
+- full-system virtual hardware, including real Aurora output DSP: `Aurora Full-System Sim CI`;
+- native Windows launcher with coverage parity: `Aurora Full-System Sim Windows CI`;
 - physical ingress/capture tooling: `Aurora Physical Ingress Tooling CI` on Linux and Windows.
 
 Tooling/simulation gates must never be reported as physical proof. Do not merge while required gates are red.
