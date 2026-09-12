@@ -1,0 +1,86 @@
+name: Sustained Realtime Health Soak
+
+on:
+  pull_request:
+    branches:
+      - main-v2
+    paths:
+      - '.github/workflows/realtime-health-soak-ci.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/aurora-core/**'
+      - 'crates/aurora-scene/**'
+      - 'crates/aurora-renderer-api/**'
+      - 'crates/aurora-renderer-basic/**'
+      - 'crates/aurora-dsp-basic/**'
+      - 'crates/aurora-realtime-engine/**'
+      - 'crates/aurora-realtime-acceptance/**'
+      - 'fixtures/scenes/7_1_4_reference.json'
+  push:
+    branches:
+      - main-v2
+    paths:
+      - '.github/workflows/realtime-health-soak-ci.yml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'crates/aurora-core/**'
+      - 'crates/aurora-scene/**'
+      - 'crates/aurora-renderer-api/**'
+      - 'crates/aurora-renderer-basic/**'
+      - 'crates/aurora-dsp-basic/**'
+      - 'crates/aurora-realtime-engine/**'
+      - 'crates/aurora-realtime-acceptance/**'
+      - 'fixtures/scenes/7_1_4_reference.json'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  accelerated-7-1-4-soak:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo dependencies and release build
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target/release
+          key: ${{ runner.os }}-realtime-health-soak-${{ hashFiles('Cargo.lock') }}
+          restore-keys: |
+            ${{ runner.os }}-realtime-health-soak-
+      - name: Run accelerated 10-minute media-time 7.1.4 soak
+        run: |
+          mkdir -p output/validation
+          cargo run --locked --release -p aurora-realtime-acceptance --example sustained_soak -- \
+            600 output/validation/realtime-health-soak-v1.json | tee output/validation/realtime-health-soak.log
+          grep -F 'AURORA REALTIME HEALTH SOAK PASS' output/validation/realtime-health-soak.log
+      - name: Validate report shape
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('output/validation/realtime-health-soak-v1.json').read_text())
+          assert report['schema_version'] == 1
+          assert report['accepted'] is True
+          assert report['metrics']['callback_count'] == 112500
+          assert report['metrics']['processed_blocks'] == 112500
+          assert report['metrics']['input_underruns'] == 0
+          assert report['metrics']['output_underruns'] == 0
+          assert report['metrics']['dropped_blocks'] == 0
+          assert report['metrics']['fault_code'] == 0
+          assert report['violations'] == []
+          print('AURORA REALTIME HEALTH REPORT PASS')
+          PY
+      - name: Upload sustained soak evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: realtime-health-soak-${{ github.sha }}
+          path: |
+            output/validation/realtime-health-soak-v1.json
+            output/validation/realtime-health-soak.log
+          retention-days: 14
