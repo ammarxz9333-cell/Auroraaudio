@@ -1,0 +1,28 @@
+name: Temporary sync main-v2
+
+on:
+  push:
+    branches:
+      - feature/config-renderer-component-ref-v2
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    if: "!contains(github.event.head_commit.message, '[sync-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/config-renderer-component-ref-v2
+          fetch-depth: 0
+      - name: Merge current main-v2 into temporary branch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "aurora-sync-bot"
+          git config user.email "aurora-sync-bot@users.noreply.github.com"
+          git fetch origin main-v2
+          git merge --no-edit origin/main-v2 -m "Sync main-v2 before PR merge [sync-bot]"
+          git push origin HEAD:feature/config-renderer-component-ref-v2
