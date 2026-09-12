@@ -61,6 +61,55 @@ jobs:
         run: |
           OPENJOC_BIN="$(bash validation/immersive/install-openjoc-reference.sh "${{ runner.temp }}/openjoc-reference")"
           echo "bin=$OPENJOC_BIN" >> "$GITHUB_OUTPUT"
+      - name: Probe official Dolby Living-Room JOC test vector for temporal diversity
+        id: dolby_candidate
+        shell: bash
+        env:
+          OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
+        run: |
+          set -euo pipefail
+          URL="https://ott.dolby.com/OnDelKits/DDP/Dolby_Digital_Plus_Online_Delivery_Kit_v1.4.1/Test_Signals/elementary_streams/audio.zip"
+          NAME="Living-Room-Atmos_6ch_640kbps_ddp_joc.ec3"
+          WORK="${{ runner.temp }}/dolby-official-candidate"
+          ZIP="$WORK/audio.zip"
+          INPUT="$WORK/$NAME"
+          REPORT="$WORK/temporal/joc-temporal-evidence.json"
+          mkdir -p "$WORK"
+          curl --fail --location --retry 3 --silent --show-error "$URL" --output "$ZIP"
+          ZIP_SHA256="$(sha256sum "$ZIP" | awk '{print $1}')"
+          python3 - "$ZIP" "$INPUT" "$NAME" <<'PY'
+          import pathlib, sys, zipfile
+          archive = pathlib.Path(sys.argv[1])
+          output = pathlib.Path(sys.argv[2])
+          wanted = sys.argv[3]
+          with zipfile.ZipFile(archive) as zf:
+              matches = [name for name in zf.namelist() if pathlib.PurePosixPath(name).name == wanted]
+              if len(matches) != 1:
+                  raise SystemExit(f"expected exactly one {wanted!r}, found {matches!r}")
+              output.write_bytes(zf.read(matches[0]))
+          print(f"extracted {output} ({output.stat().st_size} bytes)")
+          PY
+          INPUT_SHA256="$(sha256sum "$INPUT" | awk '{print $1}')"
+          printf 'dolby_zip_sha256=%s\ncarrier_sha256=%s\n' "$ZIP_SHA256" "$INPUT_SHA256"
+          set +e
+          bash validation/immersive/test-joc-temporal-evidence.sh \
+            "$INPUT" \
+            "$INPUT_SHA256" \
+            "Official Dolby Digital Plus Online Delivery Kit v1.4.1 test vector $NAME; downloaded at test time from $URL; Dolby test-use material; not redistributed by Aurora" \
+            "$WORK/temporal"
+          RC=$?
+          set -e
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+          echo "carrier_sha256=$INPUT_SHA256" >> "$GITHUB_OUTPUT"
+          echo "zip_sha256=$ZIP_SHA256" >> "$GITHUB_OUTPUT"
+          echo "Dolby official candidate temporal harness exit=$RC"
+          if [[ -s "$REPORT" ]]; then
+            cat "$REPORT"
+          fi
+          # Discovery pass: capture the exact result without making this candidate a merge gate yet.
+          # Once provenance/checksum/diversity are confirmed, this step must be converted to a pinned
+          # fail-closed assertion or removed before merge.
+          exit 0
       - name: Differential JOC validation with independent OpenJOC reference
         env:
           OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
@@ -121,5 +170,8 @@ jobs:
             ${{ runner.temp }}/aurora-joc-differential/temporal-public-fixture/openjoc/openjoc-7.1.4-ffprobe.json
             ${{ runner.temp }}/aurora-joc-differential/openjoc/openjoc-inspect.json
             ${{ runner.temp }}/aurora-joc-differential/openjoc/openjoc-7.1.4-ffprobe.json
+            ${{ runner.temp }}/dolby-official-candidate/temporal/joc-temporal-evidence.json
+            ${{ runner.temp }}/dolby-official-candidate/temporal/openjoc/openjoc-inspect.json
+            ${{ runner.temp }}/dolby-official-candidate/temporal/openjoc/openjoc-7.1.4-ffprobe.json
           if-no-files-found: warn
           retention-days: 14
