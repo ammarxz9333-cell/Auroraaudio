@@ -46,13 +46,7 @@ fn layout() -> Vec<Speaker> {
         speaker("fc", "Front Center", ChannelRole::FrontCenter, 0.0, 0.0),
         // OAR's 7.1.4 reference places LFE1 at +45/-30. Aurora's 3D VBAP excludes
         // LFE from spatial panning by semantic channel role, which is what this probe verifies.
-        speaker(
-            "lfe",
-            "LFE",
-            ChannelRole::LowFrequencyEffects,
-            45.0,
-            -30.0,
-        ),
+        speaker("lfe", "LFE", ChannelRole::LowFrequencyEffects, 45.0, -30.0),
         speaker("sl", "Side Left", ChannelRole::SurroundLeft, 90.0, 0.0),
         speaker("sr", "Side Right", ChannelRole::SurroundRight, -90.0, 0.0),
         speaker(
