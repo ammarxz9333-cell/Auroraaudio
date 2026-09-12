@@ -71,6 +71,18 @@
       "evidence": ["docs/openjoc-integration.md", "THIRD_PARTY_LICENSES.md"]
     },
     {
+      "id": "aomedia-oar",
+      "upstream": "https://github.com/AOMediaCodec/oar",
+      "decision": "evaluate-active",
+      "integration": "external-reference-only",
+      "tested_version": "1.0.0",
+      "pinned_commit": "5601d50c05a5e71cac7e80babeff7dd2a53b2060",
+      "roles": ["iamf-open-render-reference", "object-render-reference", "hoa-render-reference", "binaural-reference", "differential-validation"],
+      "object_metadata": "supported-by-upstream-reference-api",
+      "production_ready": false,
+      "evidence": ["config/oar-evaluation-v1.json", "validation/open-immersive/test-oar-reference.sh"]
+    },
+    {
       "id": "libiamf",
       "upstream": "https://github.com/AOMediaCodec/libiamf",
       "decision": "evaluate",
