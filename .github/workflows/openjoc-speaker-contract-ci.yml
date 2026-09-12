@@ -9,6 +9,7 @@ on:
       - "Cargo.lock"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-direct-earc-decoder/**"
+      - "crates/aurora-encoded-runtime/**"
       - "crates/aurora-iec61937/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-alsa-output/**"
@@ -19,6 +20,7 @@ on:
       - "Cargo.lock"
       - "crates/aurora-decoder-open/**"
       - "crates/aurora-direct-earc-decoder/**"
+      - "crates/aurora-encoded-runtime/**"
       - "crates/aurora-iec61937/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-alsa-output/**"
@@ -67,6 +69,7 @@ jobs:
         run: |
           rustfmt --edition 2021 --check crates/aurora-decoder-open/src/openjoc_native.rs
           rustfmt --edition 2021 --check crates/aurora-direct-earc-decoder/tests/openjoc_iec_fixture.rs
+          rustfmt --edition 2021 --check crates/aurora-encoded-runtime/tests/openjoc_s32_playback.rs
 
       - name: Check OpenJOC decoder adapter
         run: cargo check --locked -p aurora-decoder-open --all-targets
@@ -84,6 +87,11 @@ jobs:
         run: |
           cargo check --locked -p aurora-direct-earc-decoder \
             --test openjoc_iec_fixture
+
+      - name: Check production S32 playback proof target
+        run: |
+          cargo check --locked -p aurora-encoded-runtime \
+            --test openjoc_s32_playback
 
       - name: Fetch and verify pinned synthetic JOC fixture
         run: |
@@ -134,4 +142,11 @@ jobs:
           cargo test --locked -p aurora-direct-earc-decoder \
             --test openjoc_iec_fixture \
             synthetic_joc_survives_full_direct_earc_iec61937_chain \
+            -- --ignored --exact --nocapture
+
+      - name: Prove production S32 playback runtime through speaker DSP
+        run: |
+          cargo test --locked -p aurora-encoded-runtime \
+            --test openjoc_s32_playback \
+            pinned_joc_survives_production_s32_playback_runtime \
             -- --ignored --exact --nocapture
