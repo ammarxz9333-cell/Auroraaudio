@@ -91,6 +91,46 @@ jobs:
               text = text.replace(signature, '#[allow(dead_code)]\n' + signature, 1)
           p.write_text(text)
           PY
+      - name: Refresh deterministic v2 fixture checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          names = [
+              'minimal',
+              'stereo-basic',
+              'surround-5-1',
+              'surround-7-1',
+              'irregular-horizontal',
+              'phase-3a-point-source',
+              'phase-3b-spread',
+          ]
+
+          def fnv1a64(data: bytes) -> int:
+              value = 0xcbf29ce484222325
+              for byte in data:
+                  value = ((value ^ byte) * 0x100000001b3) & 0xffffffffffffffff
+              return value
+
+          hashes = []
+          for name in names:
+              data = (Path('fixtures/config') / f'{name}-v2.json').read_bytes().rstrip(b'\r\n')
+              hashes.append(fnv1a64(data))
+
+          p = Path('crates/aurora-config/tests/contracts.rs')
+          text = p.read_text()
+          function_start = text.index('fn canonical_fixture_checksums_are_stable() {')
+          start = text.index('    let expected = [\n', function_start)
+          end = text.index('    ];', start) + len('    ];')
+          replacement = '    let expected = [\n' + ''.join(f'        0x{value:016x},\n' for value in hashes) + '    ];'
+          text = text[:start] + replacement + text[end:]
+          for name in names:
+              text = text.replace(f'"{name}-v1"', f'"{name}-v2"', 1)
+          p.write_text(text)
+          print('v2 canonical fixture hashes:', ', '.join(f'0x{value:016x}' for value in hashes))
+          PY
       - name: Refresh lockfile and validate renderer reference slice
         shell: bash
         run: |
