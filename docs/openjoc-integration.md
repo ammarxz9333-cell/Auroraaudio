@@ -8,6 +8,7 @@ Aurora tracks OpenJOC as an independent E-AC-3 JOC decode/render reference backe
 - version: `0.17.0`
 - commit: `9b2158bd787f9ef4d62971c1773a5d1bb7408ecd`
 - license: Apache-2.0 for the OpenJOC core; package-specific notices still apply
+- Linux x86_64 release artifact name and SHA-256 are pinned in `config/external-components-v1.json`
 
 ## Boundary
 
@@ -17,6 +18,12 @@ OpenJOC is not part of `aurora-core`. Aurora may use it through either:
 2. a future versioned C-ABI adapter loaded outside the realtime callback.
 
 No OpenJOC Rust crate is added to the Aurora workspace while the two projects have incompatible MSRV policies.
+
+## Reproducible reference installation
+
+`validation/immersive/install-openjoc-reference.sh` resolves the expected version and Linux x86_64 release artifact from the external-component manifest, downloads it from the pinned upstream release, verifies the manifest SHA-256 before extraction, locates exactly one `openjoc` executable, and checks `openjoc --version` before returning the binary path.
+
+The installer is intentionally narrow: unsupported operating systems or architectures fail closed rather than downloading an untracked substitute. The immersive CI workflow uses this installer instead of an unpinned `cargo install` or floating release URL.
 
 ## Reference acceptance lane
 
@@ -52,7 +59,7 @@ The script records the fixture SHA-256, keeps each renderer's artifacts in a com
 
 PCM correlation is deliberately non-gating because the renderers are independent and are not expected to produce numerically identical samples. The initial semantic gate rejects invalid/silent outputs and programme-duration divergence above 250 ms. That tolerance is intentionally conservative until a larger fixture corpus establishes a tighter evidence-based bound.
 
-A successful run emits `AURORA-JOC-DIFFERENTIAL-PASS` only after both underlying JOC lanes have passed.
+A successful run emits `AURORA-JOC-DIFFERENTIAL-PASS` only after both underlying JOC lanes have passed. `.github/workflows/immersive-joc-stack-ci.yml` runs the baseline/realtime-soak lane first, installs the checksum-pinned OpenJOC binary, runs the differential lane, and uploads the differential JSON/inspection evidence as a short-retention CI artifact.
 
 Future extensions should add channel-label normalization, object-count/scene telemetry comparison, decoder/render timing, and discontinuity/error counters before correlations are interpreted more strongly.
 
