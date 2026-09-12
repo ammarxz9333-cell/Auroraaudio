@@ -120,6 +120,14 @@ Examples:
 - New SBC/MCU/DAC: implement hardware/audio adapters; core scene/renderer/plugin contracts unchanged.
 - Plugin protocol v2: add a protocol adapter/host generation; do not rewrite media plugins and realtime code together.
 
+## Current migration debt
+
+The long-term rule above is stricter than the current implementation in one known area: `aurora-realtime-engine` still constructs/imports `BasicRenderer`, `BasicRendererMode`, `DelayProcessor`, and `BasicDspError` directly. Therefore renderer/DSP replacement is **not yet fully implementation-independent**, even though the renderer/DSP API crates already exist.
+
+Issue #118 owns that migration. Completion requires moving concrete renderer/DSP construction into runtime assembly and making the realtime engine consume only prepared contract implementations. Until #118 is accepted, Aurora must not claim that renderer or DSP backends can be replaced with zero realtime-engine integration work.
+
+This debt is intentionally documented rather than hidden behind the plugin architecture. Application-plugin isolation in this document remains independent of that migration.
+
 ## Anti-coupling rules
 
 A change must be rejected or split if it:
