@@ -12,6 +12,9 @@ on:
       - "validation/immersive/joc_temporal_evidence.py"
       - "validation/immersive/install-openjoc-reference.sh"
       - "config/external-components-v1.json"
+      - "config/simulation-coverage-v1.json"
+      - "crates/aurora-dsp-basic/src/output.rs"
+      - "crates/aurora-dsp-basic/examples/process_7_1_4_file.rs"
       - ".github/workflows/aurora-full-system-sim-ci.yml"
 
 permissions:
@@ -24,7 +27,7 @@ concurrency:
 jobs:
   full-system-virtual-hardware:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
@@ -35,13 +38,17 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             .cache/joc-full-sim
-          key: ${{ runner.os }}-full-system-sim-${{ hashFiles('Cargo.lock', 'config/external-components-v1.json', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
+          key: ${{ runner.os }}-full-system-sim-${{ hashFiles('Cargo.lock', 'config/external-components-v1.json', 'config/simulation-coverage-v1.json', 'crates/aurora-dsp-basic/src/output.rs', 'crates/aurora-dsp-basic/examples/process_7_1_4_file.rs', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
           restore-keys: |
             ${{ runner.os }}-full-system-sim-
             ${{ runner.os }}-moving-joc-
             ${{ runner.os }}-joc-
       - name: Install host audio tooling
         run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev
+      - name: Enforce simulation coverage contract
+        run: |
+          python3 validation/virtual-hardware/validate_simulation_coverage.py self-test
+          python3 validation/virtual-hardware/validate_simulation_coverage.py check
       - name: Self-test virtual hardware analyzer
         run: python3 validation/virtual-hardware/aurora_full_system_sim.py self-test
       - name: Install checksum-pinned OpenJOC reference binary
@@ -74,5 +81,6 @@ jobs:
             ${{ runner.temp }}/aurora-full-system-sim/moving-joc/aurora-moving/pacing.json
             ${{ runner.temp }}/aurora-full-system-sim/moving-joc/aurora-moving/aurora-joc-moving-evidence.json
             ${{ runner.temp }}/aurora-full-system-sim/virtual-hardware/*.json
+            ${{ runner.temp }}/aurora-full-system-sim/virtual-hardware/*.log
           if-no-files-found: warn
           retention-days: 14
