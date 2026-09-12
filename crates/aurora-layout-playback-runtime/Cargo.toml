@@ -18,4 +18,5 @@ aurora-speaker-output = { path = "../aurora-speaker-output" }
 thiserror.workspace = true
 
 [dev-dependencies]
+aurora-alsa-output = { path = "../aurora-alsa-output" }
 aurora-iec61937 = { path = "../aurora-iec61937" }
