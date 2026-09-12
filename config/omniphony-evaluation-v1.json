@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "stable_pin_is_unchanged": true,
+    "evaluation_only": true,
+    "promotion_requires_candidate_verdict": "pass",
+    "promotion_requires_manual_review": true,
+    "gpl_integration": "external-process-reference-only"
+  },
+  "stable": {
+    "upstream": "https://github.com/mgth/Omniphony",
+    "version": "v0.5.2",
+    "commit": "f9a79721af64ad9c39042d4deded158b568fc598"
+  },
+  "candidate": {
+    "upstream": "https://github.com/mgth/Omniphony",
+    "source_branch_observed": "main",
+    "commit": "3dd301bd225ac1f626d6eaa7eabb88fd45d6611b",
+    "observed_at_utc": "2026-09-12T20:31:18Z"
+  },
+  "required_checks": [
+    "candidate-build",
+    "bridge-abi-load",
+    "canonical-channel-labels-stable",
+    "joc-object-metadata-present",
+    "7.1.4-channel-count",
+    "frame-count-parity",
+    "finite-output",
+    "non-silent-output",
+    "per-channel-rms-peak-recorded"
+  ]
+}
