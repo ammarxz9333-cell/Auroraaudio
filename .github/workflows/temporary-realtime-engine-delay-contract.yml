@@ -1,0 +1,97 @@
+name: Temporary realtime engine delay-contract validation
+
+on:
+  push:
+    branches:
+      - refactor/realtime-engine-delay-contract-v1
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: "!contains(github.event.head_commit.message, '[engine-delay-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/realtime-engine-delay-contract-v1
+      - name: Switch realtime engine callback to DSP contract
+        shell: python
+        run: |
+          from pathlib import Path
+
+          cargo = Path("crates/aurora-realtime-engine/Cargo.toml")
+          cargo_text = cargo.read_text()
+          old = 'aurora-core = { path = "../aurora-core" }\naurora-dsp-basic = { path = "../aurora-dsp-basic" }\n'
+          new = 'aurora-core = { path = "../aurora-core" }\naurora-dsp-api = { path = "../aurora-dsp-api" }\naurora-dsp-basic = { path = "../aurora-dsp-basic" }\n'
+          if old not in cargo_text:
+              raise SystemExit("expected realtime-engine dependency block not found")
+          cargo.write_text(cargo_text.replace(old, new, 1))
+
+          path = Path("crates/aurora-realtime-engine/src/lib.rs")
+          text = path.read_text()
+          replacements = [
+              (
+                  'use aurora_dsp_basic::{BasicDspError, DelayProcessor};',
+                  'use aurora_dsp_api::{RealtimeDelayProcessor, RealtimeDspFault};\nuse aurora_dsp_basic::DelayProcessor;',
+              ),
+              (
+                  '    /// DSP setup failed.\n    #[error("dsp error: {0}")]\n    Dsp(#[from] BasicDspError),',
+                  '    /// Prepared realtime DSP rejected setup.\n    #[error("realtime DSP setup fault: {0}")]\n    Dsp(#[from] RealtimeDspFault),',
+              ),
+              (
+                  '    delay_processor: DelayProcessor,',
+                  '    delay_processor: Box<dyn RealtimeDelayProcessor>,',
+              ),
+              (
+                  '        let mut delay_processor = DelayProcessor::new(ordered_speakers.len(), max_delay);\n        delay_processor.set_delays(delays)?;',
+                  '        let mut delay_processor: Box<dyn RealtimeDelayProcessor> =\n            Box::new(DelayProcessor::new(ordered_speakers.len(), max_delay));\n        delay_processor.set_delays(&delays)?;',
+              ),
+              (
+                  '        self.delay_processor\n            .process_block_into(&self.planar, &mut self.delayed, frame_count)\n            .map_err(|_| RealTimeFault::Dsp)?;',
+                  '        self.delay_processor\n            .process_planar(&self.planar, &mut self.delayed, frame_count)\n            .map_err(|_| RealTimeFault::Dsp)?;',
+              ),
+              (
+                  '            self.delay_processor\n                .set_delays_slice(&self.delays_scratch)\n                .map_err(|_| RealTimeFault::Dsp)?;',
+                  '            self.delay_processor\n                .set_delays(&self.delays_scratch)\n                .map_err(|_| RealTimeFault::Dsp)?;',
+              ),
+          ]
+          for old, new in replacements:
+              if old not in text:
+                  raise SystemExit(f"expected source fragment not found: {old[:80]!r}")
+              text = text.replace(old, new, 1)
+          path.write_text(text)
+      - uses: dtolnay/rust-toolchain@1.78.0
+        with:
+          components: rustfmt
+      - name: Format
+        run: cargo fmt --all
+      - name: Refresh lockfile and MSRV-check engine
+        run: cargo check -p aurora-realtime-engine --all-targets
+      - name: MSRV-test engine
+        run: cargo test -p aurora-realtime-engine
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - name: Stable clippy engine
+        run: cargo clippy -p aurora-realtime-engine --all-targets -- -D warnings
+      - name: Verify concrete callback coupling is gone
+        shell: bash
+        run: |
+          ! grep -q 'BasicDspError' crates/aurora-realtime-engine/src/lib.rs
+          ! grep -q 'process_block_into' crates/aurora-realtime-engine/src/lib.rs
+          ! grep -q 'set_delays_slice' crates/aurora-realtime-engine/src/lib.rs
+          grep -q 'Box<dyn RealtimeDelayProcessor>' crates/aurora-realtime-engine/src/lib.rs
+      - name: Commit generated engine migration
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add Cargo.lock crates/aurora-realtime-engine
+          git commit -m "Route realtime engine delay path through DSP contract [engine-delay-bot]"
+          git push origin HEAD:refactor/realtime-engine-delay-contract-v1
