@@ -25,7 +25,7 @@ Latest full-system virtual-hardware proof: **PR #146**, squash commit `2d53aec6b
 
 Latest native Windows full-system proof: **PR #148**, squash commit `44746431975c65126c88b31ce253fc82c737cce7`.
 
-Physical Gate A admission tooling is being added in **PR #149**; its CI is tooling evidence only until a real Lindy/SiI9437 -> Pi capture is supplied.
+Latest physical Gate A admission tooling: **PR #149**, squash commit `9c380c64818057e10b0b488ecba4129efe86de56`. Its CI is tooling evidence only until a real Lindy/SiI9437 -> Pi capture is supplied.
 
 Completed trackers: **#118**, **#119**, **#130**, **#132**, **#135**, **#141**, **#145**, **#147**.
 
@@ -69,8 +69,9 @@ Long-term direction:
 - Temporal JOC evidence separates codec admission, timed object metadata, rendered 12-channel diversity, and pacing/health.
 - A deterministic laptop-only virtual-hardware gate now extends the proven moving-JOC output through a synchronous 16-slot virtual transport and fail-closed device fault profiles.
 - A native Windows launcher now reproduces the pinned Aurora moving-JOC + virtual-hardware functional path without Simics/QSP/WSL; the independent OpenJOC lane remains Linux-only reference evidence.
+- A fail-closed physical Gate A admission tool now validates raw IEC61937 E-AC-3 captures before they enter the proven moving-JOC path; CI validates the tool only, not a physical capture.
 
-Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133, #136, #140, #142, #146, #148.
+Key merged landmarks: #107, #108, #109-#112, #114, #117, #120, #121, #125, #126, #127, #128, #129, #131, #133, #136, #140, #142, #146, #148, #149.
 
 ### PR #140 — positive moving-object reference
 
@@ -173,9 +174,15 @@ Run locally on a native Windows checkout with:
 
 This Windows lane is functional/regression evidence only. It does not replace the independent OpenJOC Linux reference lane and does not prove physical eARC/UAC2/TDM/DAC behavior, Dolby certification, or acoustic parity.
 
-### PR #149 — physical Gate A admission tooling (pending physical evidence)
+### PR #149 — physical Gate A admission tooling (physical evidence still pending)
 
-PR #149 adds `validation/physical/aurora_physical_ingress.py` and dedicated Linux/Windows tooling CI. The validator admits only an exact physical IEC61937 E-AC-3 capture for issue #143: data type `0x15`, fixed 24576-byte burst grid, zero transport padding, no Pc error flag, exact 16-bit payload reconstruction, explicit reset/drop counters, and optional required monotonic capture timestamps. For the first physical test, the reconstructed raw E-AC-3 SHA-256 must equal `0219a241559de5231f31c6093072740ff9fe0657b3354541bc6838ef2d5e5be0` over 2360 bursts.
+PR #149 merged as `9c380c64818057e10b0b488ecba4129efe86de56` and adds `validation/physical/aurora_physical_ingress.py` plus dedicated Linux/Windows tooling CI.
+
+Final-head CI:
+- `Aurora Physical Ingress Tooling CI` run `34717647820` — **PASS** on Ubuntu and Windows;
+- `CI` run `34717647839` — **PASS** (MSRV, Linux stable, Windows stable).
+
+The validator admits only an exact physical IEC61937 E-AC-3 capture for issue #143: data type `0x15`, fixed 24576-byte burst grid, zero transport padding, no Pc error flag, exact 16-bit payload reconstruction, explicit reset/drop counters, and optional required monotonic capture timestamps. For the first physical test, the reconstructed raw E-AC-3 SHA-256 must equal `0219a241559de5231f31c6093072740ff9fe0657b3354541bc6838ef2d5e5be0` over 2360 bursts.
 
 The synthetic self-tests deliberately inject wrong type, payload mutation, non-zero padding, byte slip, and reset-counter failure and require fail-closed behavior. Passing that tooling CI is **not** a physical result. Gate A remains unproven until the real Lindy/SiI9437 -> Pi capture is supplied and passes the validator with real capture metadata.
 
@@ -254,7 +261,7 @@ Stable built-in IDs include:
 
 ## 7. Current work / Next actions — issue #143 physical continuous JOC
 
-The laptop-only full-system simulator (#145/#146) and native Windows launcher (#147/#148) are complete and are now pre-hardware regression gates. They do not replace physical acceptance.
+The laptop-only full-system simulator (#145/#146), native Windows launcher (#147/#148), and physical Gate A admission tooling (#149) are complete as pre-hardware/tooling gates. They do not replace physical acceptance.
 
 **Selection step is complete.** The first hardware chain is frozen in `docs/physical-joc-validation-v1.md`; do not reopen board selection unless the chosen hardware fails its explicit stop conditions.
 
