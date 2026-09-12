@@ -81,28 +81,31 @@ Key paths:
 
 ## Current work / next actions
 
-### #115 — Omniphony reference evaluation (ACTIVE)
+### #115 — Omniphony reference evaluation (ACTIVE, PR #134)
 Branch: `validation/omniphony-eval-v1`.
 
 Implemented on branch:
-- `config/omniphony-evaluation-v1.json` pins stable v0.5.2 `f9a79721af64ad9c39042d4deded158b568fc598` and evaluation-only current-main commit `4903c893d25ffac9012707bd320d5e66103f3e69` independently; no automatic promotion.
+- `config/omniphony-evaluation-v1.json` pins stable v0.5.2 `f9a79721af64ad9c39042d4deded158b568fc598` and evaluation-only candidate `4903c893d25ffac9012707bd320d5e66103f3e69` independently; no automatic promotion.
 - `validation/immersive/test-omniphony-reference-comparison.sh` reuses the exact baseline JOC carrier/Harletty bridge, fetches candidate by exact SHA, fails closed on bridge ABI/layout/canonical-label incompatibility, builds the candidate externally, renders the same 7.1.4 input, records frame/duration/SHA/RMS/peak/active-lane metrics and informational wall time, and rejects frame-count or active-lane regressions.
-- Current upstream audit: stable release still points to `f9a797...`; upstream `main` observed 2026-09-12 points to `4903c893...`; bridge API source and `layouts/7.1.4.yaml` are identical between those commits; channel-label changes are additive aliases while enum discriminants/canonical labels are unchanged.
-- Immersive JOC workflow now runs the comparison and uploads JSON evidence.
+- Upstream audit: bridge API source and `layouts/7.1.4.yaml` are identical between stable/candidate; enum discriminants and canonical labels are unchanged.
+- First PR #134 Immersive run `34696195145`: baseline JOC + paced realtime proof passed; candidate build passed; comparison then hung because candidate `orender` now keeps the process alive after `StreamEnd` even with one file. Source audit confirmed `handle_stream_end()` finalizes/resets then waits for another stream while a sender remains live.
+- Follow-up comparison behavior is bounded and fail-closed: explicitly request `--no-continuous`, wait for the post-finalize `Handler reset complete, ready for next stream` marker, request normal SIGTERM shutdown, reject non-zero exit/timeout/forced kill/incomplete output, and record the lifecycle termination mode in JSON. Future candidates that exit naturally remain accepted if render metrics pass.
+- Immersive JOC workflow uploads comparison + label-contract JSON evidence.
 
 Next:
-1. Open focused PR for #115.
-2. Run official Immersive JOC Stack CI on the final head; fix any source/build/runtime incompatibility rather than bypassing it.
-3. Inspect comparison JSON. A green lane does not promote the candidate; stable pin remains v0.5.2 unless a separate explicit promotion decision is justified.
-4. Merge green #115 and close it.
+1. Require fresh PR #134 general CI + Immersive JOC CI green on the lifecycle-fix head.
+2. Inspect comparison JSON; a pass does not promote the candidate. Stable remains v0.5.2 unless a separate explicit promotion decision is justified.
+3. Squash-merge green #134; verify #115 closes.
+4. Reconcile #38 3D loudspeaker truth registry with already-merged software evidence, then close only if literal acceptance is satisfied.
+5. Implement #70 out-of-process Plugin Host runtime/isolation needed for literal kill/restart evidence.
+6. Finish #116 Source Manager acceptance using the real plugin-isolation proof.
+7. Continue the critical-path software audit until remaining blockers genuinely require physical hardware, lawful external service/media behavior, or acoustic measurement.
 
-### Then #116 — Source Manager literal acceptance
-Reassess the implementation landed by #121 against every literal #116 acceptance item. Implement missing pieces and tests rather than closing from architecture intent alone. Required evidence includes stale-session rejection, transactional prepare failure, unrelated-plugin isolation, local-source -> decode -> render simulation, and no provider-plugin dependency on realtime-engine implementation crates.
+### #70 / #116 dependency
+`aurora-plugin-api` and package registry/update/rollback foundations exist, and Source Manager already implements most typed lifecycle/session/arbitration behavior. However, `aurora-plugin-host` does not yet spawn/manage isolated plugin processes, so #116's literal “killing/upgrading an unrelated plugin does not disturb the active source” proof depends on #70 process-host work. Do not close #116 on architecture intent alone.
 
-### After #116
-Perform a critical-path software audit aimed at the user's requested state: **all hardware-independent blockers needed for the TV/eARC -> JOC -> render/DSP -> generic multichannel output path should be merged and tested; remaining claims must require actual hardware, lawful external media/service behavior, or acoustic measurement.** Do not spend critical-path time on optional product extras (Music Hub, Home Assistant, UI polish) unless they block that path.
-
-Queued/noncritical trackers remain visible in GitHub and must be classified honestly rather than falsely marked complete. Hardware-dependent acceptance stays open until measured on hardware.
+### Critical-path target
+All hardware-independent blockers needed for `TV/eARC -> JOC -> render/DSP -> generic multichannel output` should be merged and tested. Optional product extras (Music Hub, Home Assistant, UI polish) are not critical unless they become necessary dependencies. Queued trackers must be classified honestly; hardware-dependent acceptance stays open until measured on hardware.
 
 ## Validation policy
 
