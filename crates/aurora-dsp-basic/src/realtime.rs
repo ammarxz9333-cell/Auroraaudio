@@ -50,6 +50,10 @@ fn map_realtime_fault(error: BasicDspError) -> RealtimeDspFault {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use aurora_test_alloc::{count_allocations, CountingAllocator};
+
+    #[global_allocator]
+    static ALLOCATOR: CountingAllocator = CountingAllocator;
 
     #[test]
     fn trait_path_matches_delay_processor_behavior() {
@@ -64,6 +68,67 @@ mod tests {
         assert_eq!(RealtimeDelayProcessor::channel_count(&delay), 1);
         assert_eq!(RealtimeDelayProcessor::max_delay_samples(&delay), 8.0);
         assert_eq!(RealtimeDelayProcessor::latency_frames(&delay), 2);
+    }
+
+    #[test]
+    fn trait_path_is_allocation_free_and_capacity_invariant() {
+        let mut delay = DelayProcessor::new(2, 16.0);
+        let input = vec![vec![0.1; 64], vec![-0.2; 64]];
+        let mut output = vec![vec![0.0; 64], vec![0.0; 64]];
+        let first_delays = [1.25, 3.5];
+        let second_delays = [2.0, 4.25];
+
+        RealtimeDelayProcessor::set_delays(&mut delay, &first_delays).unwrap();
+        RealtimeDelayProcessor::process_planar(&mut delay, &input, &mut output, 64).unwrap();
+        let _ = count_allocations(|| {});
+
+        let input_capacities = input.iter().map(Vec::capacity).collect::<Vec<_>>();
+        let output_capacities = output.iter().map(Vec::capacity).collect::<Vec<_>>();
+        let delay_capacity = delay.delays_samples.capacity();
+        let history_outer_capacity = delay.history.capacity();
+        let history_capacities = delay.history.iter().map(Vec::capacity).collect::<Vec<_>>();
+        let write_positions_capacity = delay.write_positions.capacity();
+
+        let mut failed = false;
+        let allocations = count_allocations(|| {
+            for iteration in 0..1_000 {
+                let delays = if iteration % 2 == 0 {
+                    &first_delays[..]
+                } else {
+                    &second_delays[..]
+                };
+                if RealtimeDelayProcessor::set_delays(&mut delay, delays).is_err()
+                    || RealtimeDelayProcessor::process_planar(
+                        &mut delay,
+                        &input,
+                        &mut output,
+                        64,
+                    )
+                    .is_err()
+                {
+                    failed = true;
+                    break;
+                }
+            }
+        });
+
+        assert!(!failed);
+        assert_eq!(allocations, 0, "trait-path processing allocated");
+        assert_eq!(
+            input.iter().map(Vec::capacity).collect::<Vec<_>>(),
+            input_capacities
+        );
+        assert_eq!(
+            output.iter().map(Vec::capacity).collect::<Vec<_>>(),
+            output_capacities
+        );
+        assert_eq!(delay.delays_samples.capacity(), delay_capacity);
+        assert_eq!(delay.history.capacity(), history_outer_capacity);
+        assert_eq!(
+            delay.history.iter().map(Vec::capacity).collect::<Vec<_>>(),
+            history_capacities
+        );
+        assert_eq!(delay.write_positions.capacity(), write_positions_capacity);
     }
 
     #[test]
