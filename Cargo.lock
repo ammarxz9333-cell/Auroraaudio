@@ -229,6 +229,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-plugin-host"
+version = "0.1.0"
+dependencies = [
+ "aurora-plugin-api",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "aurora-realtime-acceptance"
 version = "0.1.0"
 dependencies = [
