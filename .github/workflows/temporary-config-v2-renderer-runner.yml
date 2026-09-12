@@ -58,6 +58,39 @@ jobs:
               raise SystemExit(f'expected one schema reborrow anchor, found {text.count(anchor)}')
           p.write_text(text.replace(anchor, replacement, 1))
           PY
+      - name: Fix registry compile hygiene
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+
+          p = Path('crates/aurora-runtime-assembly/src/derivation.rs')
+          text = p.read_text()
+          old = '    PreparedLayoutPlan, PreparedRendererPlan, PreparedRoute, PreparedRoutingPlan,'
+          new = '    PreparedLayoutPlan, PreparedRoute, PreparedRoutingPlan,'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected production PreparedRendererPlan import once, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          old = '        PreparedDspPlan, PreparedLayoutKind, PreparedRendererKind, RuntimePlanEvidence,\n        SetupDerivedCapacity, RUNTIME_PLAN_CONTRACT_VERSION,\n'
+          new = '        PreparedDspPlan, PreparedLayoutKind, PreparedRendererKind, PreparedRendererPlan,\n        RuntimePlanEvidence, SetupDerivedCapacity, BASIC_RENDERER_IMPLEMENTATION_ID,\n        RUNTIME_PLAN_CONTRACT_VERSION, VBAP_RENDERER_IMPLEMENTATION_ID,\n'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected test crate import anchor once, found {text.count(old)}')
+          p.write_text(text.replace(old, new, 1))
+
+          p = Path('crates/aurora-config/tests/common/mod.rs')
+          text = p.read_text()
+          for signature in [
+              'pub fn basic_renderer_reference() -> ComponentReference {',
+              'pub fn point_source_vbap_reference() -> ComponentReference {',
+              'pub fn horizontal_spread_reference(spread: f32) -> ComponentReference {',
+              'pub fn unknown_renderer_reference() -> ComponentReference {',
+          ]:
+              if signature not in text:
+                  raise SystemExit(f'missing shared helper signature: {signature}')
+              text = text.replace(signature, '#[allow(dead_code)]\n' + signature, 1)
+          p.write_text(text)
+          PY
       - name: Refresh lockfile and validate renderer reference slice
         shell: bash
         run: |
