@@ -71,11 +71,14 @@ fn carrier_to_s32_high_slots(carrier: &[u8]) -> Vec<i32> {
 }
 
 fn observe_batch(batch: PlaybackBatch, pcm_frames: &mut usize, bursts: &mut usize) {
-    *bursts = bursts.saturating_add(batch.bursts);
+    *bursts = (*bursts).saturating_add(batch.bursts);
     for frame in batch.frames {
         assert!(frame.frame_count > 0 && frame.frame_count <= 40);
         assert_eq!(frame.interleaved_f32.len(), frame.frame_count * CHANNELS);
-        assert!(frame.interleaved_f32.iter().all(|sample| sample.is_finite()));
+        assert!(frame
+            .interleaved_f32
+            .iter()
+            .all(|sample| sample.is_finite()));
         let expected_pts = *pcm_frames as f64 / f64::from(SAMPLE_RATE);
         assert!(
             (frame.presentation_time_seconds - expected_pts).abs() < 1.0e-12,
@@ -89,10 +92,10 @@ fn observe_batch(batch: PlaybackBatch, pcm_frames: &mut usize, bursts: &mut usiz
 #[test]
 #[ignore = "requires exact OpenJOC synthetic joc.ec3 fixture via AURORA_OPENJOC_SYNTHETIC_FIXTURE"]
 fn pinned_joc_survives_production_s32_playback_runtime() {
-    let path = PathBuf::from(
-        std::env::var(FIXTURE_ENV)
-            .unwrap_or_else(|_| panic!("set {FIXTURE_ENV} to the verified OpenJOC joc.ec3 fixture")),
-    );
+    let path =
+        PathBuf::from(std::env::var(FIXTURE_ENV).unwrap_or_else(|_| {
+            panic!("set {FIXTURE_ENV} to the verified OpenJOC joc.ec3 fixture")
+        }));
     let fixture = fs::read(&path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     assert_eq!(fixture.len(), EXPECTED_BYTES);
