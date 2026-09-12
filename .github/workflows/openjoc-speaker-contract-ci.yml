@@ -92,6 +92,13 @@ jobs:
             exit 1
           }
 
+      - name: Prove streaming wrapper matches direct OpenJOC
+        run: |
+          cargo test --locked -p aurora-decoder-open \
+            --test openjoc_streaming_parity \
+            streaming_wrapper_matches_direct_openjoc_timeline \
+            -- --ignored --exact --nocapture
+
       - name: Prove production OpenJOC adapter renders JOC
         run: |
           cargo test --locked -p aurora-decoder-open \
@@ -112,5 +119,3 @@ jobs:
             --test openjoc_earc_reference_layout \
             canonical_earc_carrier_reaches_aurora_eleven_one_four_reference_tdm16 \
             -- --ignored --exact
-
-# Trigger focused proof after behavior-preserving Clippy codemod.
