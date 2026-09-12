@@ -332,7 +332,8 @@ fn validate_restored_slot(
 
     for (index, package) in packages.iter().enumerate() {
         for other in packages.iter().skip(index + 1) {
-            if package.manifest.version == other.manifest.version && package.digest != other.digest {
+            if package.manifest.version == other.manifest.version && package.digest != other.digest
+            {
                 return Err(PluginRegistryError::VersionDigestMismatch {
                     plugin_id: plugin_id.to_owned(),
                     version: package.manifest.version.clone(),
