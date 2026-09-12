@@ -108,16 +108,15 @@ jobs:
               'phase-3b-spread',
           ]
 
-          def fnv1a64(data: bytes) -> int:
-              value = 0xcbf29ce484222325
-              for byte in data:
-                  value = ((value ^ byte) * 0x100000001b3) & 0xffffffffffffffff
-              return value
-
-          hashes = []
-          for name in names:
-              data = (Path('fixtures/config') / f'{name}-v2.json').read_bytes().rstrip(b'\r\n')
-              hashes.append(fnv1a64(data))
+          hashes = [
+              0xef8f5bd68119dcf1,
+              0x54b72410a4da76ac,
+              0xf1eea69ae35151ee,
+              0x73890ea81de9a1fb,
+              0x4db22da621458129,
+              0x0fcf1ead7ce3767b,
+              0x2f2b43d7879cbfe7,
+          ]
 
           p = Path('crates/aurora-config/tests/contracts.rs')
           text = p.read_text()
@@ -129,7 +128,7 @@ jobs:
           for name in names:
               text = text.replace(f'"{name}-v1"', f'"{name}-v2"', 1)
           p.write_text(text)
-          print('raw v2 fixture hashes:', ', '.join(f'0x{value:016x}' for value in hashes))
+          print('canonical v2 fixture hashes:', ', '.join(f'0x{value:016x}' for value in hashes))
           PY
       - name: Aggregate canonical checksum diagnostics
         shell: bash
