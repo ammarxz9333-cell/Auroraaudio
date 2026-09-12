@@ -120,6 +120,7 @@ dependencies = [
  "aurora-realtime-engine",
  "aurora-renderer-api",
  "aurora-renderer-basic",
+ "aurora-runtime-materialization",
  "aurora-scene",
  "aurora-test-alloc",
  "clap",
@@ -244,6 +245,7 @@ version = "0.1.0"
 dependencies = [
  "aurora-core",
  "aurora-realtime-engine",
+ "aurora-runtime-materialization",
  "aurora-scene",
  "serde",
  "serde_json",
@@ -274,6 +276,7 @@ dependencies = [
  "aurora-core",
  "aurora-realtime-audio-api",
  "aurora-realtime-engine",
+ "aurora-runtime-materialization",
  "aurora-scene",
  "aurora-test-alloc",
  "criterion",
@@ -353,6 +356,15 @@ dependencies = [
  "aurora-runtime-assembly",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "aurora-runtime-materialization"
+version = "0.1.0"
+dependencies = [
+ "aurora-dsp-basic",
+ "aurora-realtime-engine",
+ "aurora-scene",
 ]
 
 [[package]]

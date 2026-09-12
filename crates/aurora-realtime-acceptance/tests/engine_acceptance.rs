@@ -6,6 +6,7 @@ use aurora_realtime_engine::{
     BasicRendererMode, ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RealTimeFault,
     TestSignal,
 };
+use aurora_runtime_materialization::materialize_default_realtime_engine;
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
 
 #[test]
@@ -68,7 +69,7 @@ fn malformed_engine_callback_is_rejected_by_strict_health_policy() {
 }
 
 fn engine() -> RealTimeEngine {
-    RealTimeEngine::new(
+    materialize_default_realtime_engine(
         scene(),
         RealTimeEngineConfig {
             sample_rate: 48_000,

@@ -13,6 +13,7 @@ bench = false
 aurora-core = { path = "../aurora-core" }
 aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api" }
 aurora-realtime-engine = { path = "../aurora-realtime-engine" }
+aurora-runtime-materialization = { path = "../aurora-runtime-materialization" }
 aurora-scene = { path = "../aurora-scene" }
 serde.workspace = true
 serde_json.workspace = true

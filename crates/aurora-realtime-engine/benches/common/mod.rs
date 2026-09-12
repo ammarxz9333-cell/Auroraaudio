@@ -27,20 +27,24 @@ pub fn engine(
     signal: TestSignal,
     apply_delay: bool,
 ) -> RealTimeEngine {
-    RealTimeEngine::new(
-        channel_scene(channel_count, block_size),
-        RealTimeEngineConfig {
-            sample_rate: 48_000,
-            block_size,
-            input_channels: 0,
-            apply_geometric_delay: apply_delay,
-            speed_of_sound: 343.0,
-            test_signal: signal,
-            renderer_mode: BasicRendererMode::InverseDistance,
-        },
+    let scene = channel_scene(channel_count, block_size);
+    let config = RealTimeEngineConfig {
+        sample_rate: 48_000,
         block_size,
-    )
-    .expect("benchmark scene and engine configuration must be valid")
+        input_channels: 0,
+        apply_geometric_delay: apply_delay,
+        speed_of_sound: 343.0,
+        test_signal: signal,
+        renderer_mode: BasicRendererMode::InverseDistance,
+    };
+    let requirements = RealTimeEngine::delay_requirements(&scene, &config)
+        .expect("benchmark delay requirements must be valid");
+    let delay = aurora_dsp_basic::DelayProcessor::new(
+        requirements.channel_count(),
+        requirements.max_delay_samples(),
+    );
+    RealTimeEngine::new_with_prepared_delay_processor(scene, config, block_size, Box::new(delay))
+        .expect("benchmark scene and engine configuration must be valid")
 }
 
 fn scene_with_roles(

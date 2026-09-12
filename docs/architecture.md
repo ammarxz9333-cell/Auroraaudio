@@ -34,6 +34,8 @@ Every method reachable through this realtime contract must have bounded executio
 
 This is an intermediate state of issue #118. An external materialization/component-assembly layer can now supply a prepared DSP without changing callback code. The remaining DSP migration debt is to move default DSP selection/construction out of the realtime-engine crate so `aurora-dsp-basic` can disappear from its dependency graph. `aurora-runtime-assembly` itself remains a passive control-plane planner; it should not be turned into a hidden implementation factory merely to complete this migration.
 
+`aurora-runtime-materialization` owns control-thread construction of concrete runtime components. `aurora-runtime-assembly` remains a passive deterministic planner, while the realtime engine accepts only prepared DSP implementations and validates their capabilities before activation.
+
 ### 5. Realtime engine
 
 The realtime crates own scheduling, bounded queues, device state, asynchronous resampling, drift control, latency accounting, and fault recovery. They are transport-independent and do not assume USB, eARC, TDM, or any other physical link.

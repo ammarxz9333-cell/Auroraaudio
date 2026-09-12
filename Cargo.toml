@@ -21,6 +21,7 @@ members = [
     "crates/aurora-diagnostics",
     "crates/aurora-config",
     "crates/aurora-runtime-assembly",
+    "crates/aurora-runtime-materialization",
     "crates/aurora-runtime-inspection",
     "crates/aurora-realtime-engine",
     "crates/aurora-realtime-acceptance",

@@ -19,7 +19,7 @@ bench = false
 [features]
 default = ["camilladsp", "realtime", "simulation"]
 camilladsp = ["dep:aurora-dsp-camilladsp", "aurora-dsp-camilladsp/camilladsp-process"]
-realtime = ["dep:aurora-realtime-acceptance", "dep:aurora-realtime-audio-api", "dep:aurora-realtime-audio-cpal", "dep:aurora-realtime-engine"]
+realtime = ["dep:aurora-realtime-acceptance", "dep:aurora-realtime-audio-api", "dep:aurora-realtime-audio-cpal", "dep:aurora-realtime-engine", "dep:aurora-runtime-materialization"]
 simulation = ["dep:aurora-realtime-audio-sim", "dep:aurora-realtime-engine"]
 
 [dependencies]
@@ -35,6 +35,7 @@ aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api", optional = 
 aurora-realtime-audio-cpal = { path = "../aurora-realtime-audio-cpal", optional = true }
 aurora-realtime-audio-sim = { path = "../aurora-realtime-audio-sim", optional = true }
 aurora-realtime-engine = { path = "../aurora-realtime-engine", optional = true }
+aurora-runtime-materialization = { path = "../aurora-runtime-materialization", optional = true }
 aurora-scene = { path = "../aurora-scene" }
 clap.workspace = true
 serde.workspace = true

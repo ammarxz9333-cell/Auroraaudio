@@ -5,9 +5,9 @@ use aurora_realtime_audio_api::{AudioDeviceDirection, AudioStreamFault};
 use aurora_realtime_engine::{
     create_adaptive_duplex_bridge, BasicRendererMode, DriftController, DriftControllerConfig,
     DriftControllerFault, DuplexBridgeConfig, DuplexFaultPolicy, DuplexStateEvent,
-    DuplexStateMachine, ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RubatoAsrc,
-    TestSignal,
+    DuplexStateMachine, ProcessStatus, RealTimeEngineConfig, RubatoAsrc, TestSignal,
 };
+use aurora_runtime_materialization::materialize_default_realtime_engine;
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -521,7 +521,7 @@ fn run_sample_pipeline_probe(
         block_size,
     )
     .map_err(|error| SimulationError::State(error.to_string()))?;
-    let mut engine = RealTimeEngine::new(
+    let mut engine = materialize_default_realtime_engine(
         simulation_scene(output_channels, block_size),
         RealTimeEngineConfig {
             sample_rate: output_rate,
