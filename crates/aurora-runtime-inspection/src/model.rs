@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::{InspectionError, InspectionLimit, InspectionOptions, PlanRelationship};
 
 /// Current inspection projection schema version.
-pub const INSPECTION_SCHEMA_VERSION: u16 = 1;
+pub const INSPECTION_SCHEMA_VERSION: u16 = 2;
 /// Maximum retained deterministic findings.
 pub const MAX_FINDINGS: usize = 32;
 /// Maximum bytes in one source string.
@@ -180,8 +180,10 @@ pub struct RuntimePlanProjection {
     pub requested_audio_format: AudioFormatProjection,
     /// Prepared renderer intent.
     pub prepared_renderer: RendererProjection,
-    /// Prepared DSP state.
+    /// Prepared DSP graph state from configuration intent.
     pub prepared_dsp: DspProjection,
+    /// Prepared renderer and realtime-delay implementation identities.
+    pub prepared_components: RealtimeComponentProjection,
     /// Prepared routing and layout facts.
     pub prepared_topology: TopologyProjection,
     /// Unresolved requested device intent.
@@ -237,6 +239,26 @@ pub enum RendererKindProjection {
     PointSourceHorizontalVbap,
     /// Horizontal spread VBAP intent.
     HorizontalSpreadVbap,
+}
+
+/// One prepared component implementation identity.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct ComponentIdentityProjection {
+    /// Stable implementation identifier selected by runtime assembly.
+    pub implementation_id: String,
+    /// Aurora contract version the selection is prepared against.
+    pub contract_version: u16,
+}
+
+/// Prepared realtime component selections.
+///
+/// These are deterministic control-plane selections, not observed or activated runtime state.
+#[derive(Clone, Debug, Eq, PartialEq, Serialize)]
+pub struct RealtimeComponentProjection {
+    /// Prepared renderer implementation identity.
+    pub renderer: ComponentIdentityProjection,
+    /// Prepared realtime delay implementation identity.
+    pub realtime_delay: ComponentIdentityProjection,
 }
 
 /// Prepared DSP state supported by the accepted schema.
@@ -581,6 +603,9 @@ impl ProjectionContext {
 
         let format = plan.execution().audio_format();
         let capacity = plan.capacity();
+        let components = plan.execution().realtime_components();
+        let renderer_component = components.renderer();
+        let delay_component = components.realtime_delay();
         Ok(RuntimePlanProjection {
             metadata: MetadataProjection {
                 configuration_schema_version: plan.metadata().configuration_schema_version(),
@@ -600,6 +625,17 @@ impl ProjectionContext {
                 horizontal_spread: plan.execution().renderer().horizontal_spread(),
             },
             prepared_dsp: dsp(plan.execution().dsp()),
+            prepared_components: RealtimeComponentProjection {
+                renderer: ComponentIdentityProjection {
+                    implementation_id: self
+                        .source_string(renderer_component.implementation_id())?,
+                    contract_version: renderer_component.contract_version(),
+                },
+                realtime_delay: ComponentIdentityProjection {
+                    implementation_id: self.source_string(delay_component.implementation_id())?,
+                    contract_version: delay_component.contract_version(),
+                },
+            },
             prepared_topology: TopologyProjection {
                 inputs,
                 outputs,

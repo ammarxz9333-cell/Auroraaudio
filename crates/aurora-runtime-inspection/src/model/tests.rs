@@ -134,6 +134,57 @@ fn explicit_local_projection_retains_identifiers() {
 }
 
 #[test]
+fn prepared_component_identities_are_reported_as_control_plane_intent() {
+    let report = report(InspectionOptions::default());
+    assert_eq!(report.inspection_schema_version(), 2);
+    assert_eq!(
+        report
+            .runtime()
+            .prepared_components
+            .renderer
+            .implementation_id,
+        "org.aurora.renderer.basic"
+    );
+    assert_eq!(
+        report
+            .runtime()
+            .prepared_components
+            .renderer
+            .contract_version,
+        1
+    );
+    assert_eq!(
+        report
+            .runtime()
+            .prepared_components
+            .realtime_delay
+            .implementation_id,
+        "org.aurora.dsp.basic-delay"
+    );
+    assert_eq!(
+        report
+            .runtime()
+            .prepared_components
+            .realtime_delay
+            .contract_version,
+        1
+    );
+}
+
+#[test]
+fn vbap_intent_uses_vbap_component_identity() {
+    let report = fixture_report(POINT, InspectionOptions::default());
+    assert_eq!(
+        report
+            .runtime()
+            .prepared_components
+            .renderer
+            .implementation_id,
+        "org.aurora.renderer.vbap"
+    );
+}
+
+#[test]
 fn fact_semantics_exclude_unrepresented_runtime_evidence() {
     assert_eq!(
         report(InspectionOptions::default()).represented_semantics(),

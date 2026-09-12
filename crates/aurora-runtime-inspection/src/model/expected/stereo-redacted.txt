@@ -1,5 +1,5 @@
 Aurora Runtime Plan Inspection
-inspection_schema_version: 1
+inspection_schema_version: 2
 source_plan_schema_version: 1
 redaction_state: redacted
 represented_semantics: requested, prepared, deferred
@@ -30,6 +30,10 @@ metadata.evidence: "DeterministicControlPlaneIntent"
 renderer.kind: basic_inverse_distance
 renderer.horizontal_spread: absent
 dsp.state: none
+component.renderer.implementation_id: "org.aurora.renderer.basic"
+component.renderer.contract_version: 1
+component.realtime_delay.implementation_id: "org.aurora.dsp.basic-delay"
+component.realtime_delay.contract_version: 1
 topology.layout_kind: "Standard(Stereo)"
 topology.inputs:
   - id="<redacted:input-channel-id:0>" label="<redacted:input-channel-label:0>"

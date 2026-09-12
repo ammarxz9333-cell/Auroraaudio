@@ -113,6 +113,22 @@ impl TextFormatter {
         ))?;
         output.line(&format!("dsp.state: {}", dsp(runtime.prepared_dsp)))?;
         output.line(&format!(
+            "component.renderer.implementation_id: {}",
+            quote(&runtime.prepared_components.renderer.implementation_id)?
+        ))?;
+        output.line(&format!(
+            "component.renderer.contract_version: {}",
+            runtime.prepared_components.renderer.contract_version
+        ))?;
+        output.line(&format!(
+            "component.realtime_delay.implementation_id: {}",
+            quote(&runtime.prepared_components.realtime_delay.implementation_id)?
+        ))?;
+        output.line(&format!(
+            "component.realtime_delay.contract_version: {}",
+            runtime.prepared_components.realtime_delay.contract_version
+        ))?;
+        output.line(&format!(
             "topology.layout_kind: {}",
             quote(&runtime.prepared_topology.layout_kind)?
         ))?;

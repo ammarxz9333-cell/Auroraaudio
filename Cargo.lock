@@ -362,11 +362,13 @@ dependencies = [
 name = "aurora-runtime-materialization"
 version = "0.1.0"
 dependencies = [
+ "aurora-dsp-api",
  "aurora-dsp-basic",
  "aurora-realtime-engine",
  "aurora-renderer-api",
  "aurora-renderer-basic",
  "aurora-renderer-vbap",
+ "aurora-runtime-assembly",
  "aurora-scene",
  "serde_json",
 ]
