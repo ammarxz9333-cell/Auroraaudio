@@ -23,3 +23,6 @@ of rewriting history.
 | [0015](0015-deterministic-runtime-setup-planning.md) | Deterministic runtime setup planning boundary |
 | [0016](0016-runtime-plan-inspection-boundary.md) | Read-only runtime plan inspection boundary |
 | [0017](0017-runtime-materialization-contracts-boundary.md) | Runtime materialization contracts boundary |
+| [0018](0018-linux-audio-architecture.md) | Linux audio architecture |
+| [0019](0019-gstreamer-media-pipeline-evaluation.md) | GStreamer media-pipeline evaluation boundary |
+| [0020](0020-modular-upgrades-and-application-plugins.md) | Modular upgrades and out-of-process application plugins |
