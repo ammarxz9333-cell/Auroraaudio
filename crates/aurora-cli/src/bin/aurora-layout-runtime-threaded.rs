@@ -11,9 +11,9 @@ use std::collections::VecDeque;
 #[cfg(target_os = "linux")]
 use std::sync::mpsc::{sync_channel, Receiver, SyncSender};
 
-use anyhow::{bail, Result};
 #[cfg(target_os = "linux")]
 use anyhow::Context;
+use anyhow::{bail, Result};
 #[cfg(target_os = "linux")]
 use aurora_alsa_input::{AlsaInputConfig, NativeAlsaCapture, OwnedCaptureBlock};
 #[cfg(target_os = "linux")]
@@ -230,19 +230,13 @@ pub(super) fn run_direct_native_alsa<S: SpeakerSink>(
             if capture_discontinuity {
                 runtime.reset();
                 sink.reset_for_transport_discontinuity()?;
-                stats.transport_discontinuities =
-                    stats.transport_discontinuities.saturating_add(1);
+                stats.transport_discontinuities = stats.transport_discontinuities.saturating_add(1);
             }
 
             let batch = runtime
                 .push_direct_s32_words(&packet.block.interleaved_s32)
                 .context("native explicit-layout direct-eARC S32-word ingest failed")?;
-            consume_batch_without_duplicate_reset(
-                batch,
-                runtime,
-                sink,
-                capture_discontinuity,
-            )?;
+            consume_batch_without_duplicate_reset(batch, runtime, sink, capture_discontinuity)?;
 
             stats.xruns = packet.counters.xruns;
             stats.recoveries = packet.counters.recoveries;
