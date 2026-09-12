@@ -218,10 +218,7 @@ impl PluginRegistry {
         if let Some(slot) = self.slots.get(&plugin_id) {
             ensure_known_version_consistency(&plugin_id, slot, &package)?;
             if same_package(slot.active.as_ref(), &package) {
-                return Err(PluginRegistryError::PackageAlreadyActive {
-                    plugin_id,
-                    version,
-                });
+                return Err(PluginRegistryError::PackageAlreadyActive { plugin_id, version });
             }
             if let Some(existing) = slot.staged.as_ref() {
                 return Err(PluginRegistryError::StagedPackageExists {
@@ -380,12 +377,13 @@ fn validate_restored_slot(
             });
         }
         package.manifest.validate_for_host(host_api)?;
-        let known_digest = slot.known_versions.get(&package.manifest.version).ok_or_else(|| {
-            PluginRegistryError::MissingKnownVersionIdentity {
+        let known_digest = slot
+            .known_versions
+            .get(&package.manifest.version)
+            .ok_or_else(|| PluginRegistryError::MissingKnownVersionIdentity {
                 plugin_id: plugin_id.to_owned(),
                 version: package.manifest.version.clone(),
-            }
-        })?;
+            })?;
         if known_digest != &package.digest {
             return Err(PluginRegistryError::VersionDigestMismatch {
                 plugin_id: plugin_id.to_owned(),
