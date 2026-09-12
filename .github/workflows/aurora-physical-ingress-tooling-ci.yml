@@ -31,8 +31,13 @@ jobs:
         with:
           python-version: "3.13"
 
-      - name: Compile validator
-        run: python -m py_compile validation/physical/aurora_physical_ingress.py
+      - name: Compile physical tooling
+        run: |
+          python -m py_compile validation/physical/aurora_physical_ingress.py
+          python -m py_compile validation/physical/aurora_alsa_iec61937_capture.py
 
-      - name: Run positive and fail-closed self-tests
+      - name: Run ingress positive and fail-closed self-tests
         run: python validation/physical/aurora_physical_ingress.py self-test
+
+      - name: Run ALSA slot conversion self-tests
+        run: python validation/physical/aurora_alsa_iec61937_capture.py self-test
