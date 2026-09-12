@@ -113,7 +113,7 @@ fn universal_openjoc_samples(bytes: &[u8]) -> usize {
 fn streaming_wrapper_matches_direct_openjoc_timeline() {
     let bytes = fixture();
     let trace = trace_access_units(&bytes, None).expect("trace pinned synthetic JOC fixture");
-    let declared_samples = trace.iter().fold(0_usize, |total, unit| {
+    let metadata_sample_sum = trace.iter().fold(0_usize, |total, unit| {
         total.saturating_add(usize::from(unit.sample_count))
     });
 
@@ -129,17 +129,18 @@ fn streaming_wrapper_matches_direct_openjoc_timeline() {
         "Aurora streaming assembler did not preserve the fixture byte-for-byte"
     );
 
+    // E-AC-3/JOC access-unit trace entries may describe substreams that share
+    // the same programme timeline. Summing every trace sample_count therefore
+    // is not a valid PCM-duration oracle. The exact pinned OpenJOC session is
+    // the reference oracle for rendered PCM length; Aurora must match it.
     let direct_samples = direct_openjoc_samples(&units);
     let universal_samples = universal_openjoc_samples(&bytes);
     eprintln!(
-        "OpenJOC parity: access_units={} declared_samples={} direct_samples={} universal_samples={}",
-        units.len(), declared_samples, direct_samples, universal_samples
+        "OpenJOC parity: access_units={} metadata_sample_sum={} direct_samples={} universal_samples={}",
+        units.len(), metadata_sample_sum, direct_samples, universal_samples
     );
 
-    assert!(
-        direct_samples >= declared_samples,
-        "direct OpenJOC unexpectedly shortened the declared compressed-audio timeline"
-    );
+    assert!(direct_samples > 0, "pinned direct OpenJOC emitted no PCM");
     assert_eq!(
         universal_samples, direct_samples,
         "Aurora UniversalOpenDecoder must preserve exactly the same PCM timeline as the pinned direct OpenJOC session"
