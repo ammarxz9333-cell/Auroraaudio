@@ -1,0 +1,53 @@
+name: Temporary realtime DSP contract validation
+
+on:
+  push:
+    branches:
+      - refactor/realtime-dsp-contract-v1
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: "!contains(github.event.head_commit.message, '[realtime-dsp-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/realtime-dsp-contract-v1
+      - name: Wire basic DSP implementation module
+        shell: python
+        run: |
+          from pathlib import Path
+          path = Path("crates/aurora-dsp-basic/src/lib.rs")
+          text = path.read_text()
+          needle = "pub mod output;\n"
+          replacement = "pub mod output;\nmod realtime;\n"
+          if "mod realtime;" not in text:
+              if needle not in text:
+                  raise SystemExit("expected output module declaration not found")
+              path.write_text(text.replace(needle, replacement, 1))
+      - uses: dtolnay/rust-toolchain@1.78.0
+        with:
+          components: rustfmt,clippy
+      - name: Format
+        run: cargo fmt --all
+      - name: Check
+        run: cargo check -p aurora-dsp-api -p aurora-dsp-basic --all-targets --locked
+      - name: Test
+        run: cargo test -p aurora-dsp-api -p aurora-dsp-basic --locked
+      - name: Clippy
+        run: cargo clippy -p aurora-dsp-api -p aurora-dsp-basic --all-targets -- -D warnings
+      - name: Commit generated module wiring and formatting
+        shell: bash
+        run: |
+          if git diff --quiet; then
+            echo "No generated changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add crates/aurora-dsp-api crates/aurora-dsp-basic
+          git commit -m "Validate realtime DSP contract [realtime-dsp-bot]"
+          git push origin HEAD:refactor/realtime-dsp-contract-v1
