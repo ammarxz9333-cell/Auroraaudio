@@ -189,15 +189,48 @@ impl Default for RealTimeMetrics {
     }
 }
 
+/// Setup-time validation errors for a caller-supplied realtime delay processor.
+#[derive(Debug, Error, PartialEq)]
+pub enum PreparedDspError {
+    /// Prepared DSP channel count does not match the rendered output topology.
+    #[error("prepared realtime DSP has {actual} channels, expected {expected}")]
+    ChannelCount { expected: usize, actual: usize },
+    /// Prepared DSP cannot represent Aurora's required dynamic delay capacity.
+    #[error("prepared realtime DSP delay capacity {actual} is below required {required} samples")]
+    DelayCapacity { required: f32, actual: f32 },
+    /// Prepared DSP rejected the initial per-channel delay shape.
+    #[error("prepared realtime DSP rejected the initial delay shape")]
+    InitialDelayShape,
+    /// Prepared DSP rejected one or more initial delay values.
+    #[error("prepared realtime DSP rejected an initial delay value")]
+    InitialDelayValue,
+    /// Prepared DSP returned a callback-only buffer-shape fault during setup.
+    #[error("prepared realtime DSP returned an unexpected buffer-shape fault during setup")]
+    UnexpectedInitializationFault,
+}
+
+impl PreparedDspError {
+    fn from_initial_fault(fault: RealtimeDspFault) -> Self {
+        match fault {
+            RealtimeDspFault::DelayShape => Self::InitialDelayShape,
+            RealtimeDspFault::DelayValue => Self::InitialDelayValue,
+            RealtimeDspFault::BufferShape => Self::UnexpectedInitializationFault,
+        }
+    }
+}
+
 /// Setup-time real-time engine errors.
 #[derive(Debug, Error)]
 pub enum RealTimeEngineError {
     /// Renderer setup failed.
     #[error("renderer error: {0}")]
     Renderer(#[from] RendererError),
-    /// Prepared realtime DSP rejected setup.
+    /// DSP setup failed on the compatibility/default implementation path.
     #[error("realtime DSP setup fault: {0}")]
     Dsp(#[from] RealtimeDspFault),
+    /// Caller-supplied realtime DSP failed setup validation.
+    #[error("prepared realtime DSP setup error: {0}")]
+    PreparedDsp(#[from] PreparedDspError),
     /// Scene setup failed.
     #[error("scene error: {0}")]
     Scene(#[from] aurora_scene::SceneError),
@@ -309,11 +342,40 @@ pub struct RealTimeEngine {
 }
 
 impl RealTimeEngine {
-    /// Creates a real-time engine and allocates all steady-state buffers.
+    /// Creates a real-time engine using Aurora's current compatibility delay implementation.
     pub fn new(
         scene: RenderScene,
         config: RealTimeEngineConfig,
         estimated_device_latency_frames: usize,
+    ) -> Result<Self, RealTimeEngineError> {
+        Self::build(scene, config, estimated_device_latency_frames, None)
+    }
+
+    /// Creates a real-time engine from a caller-supplied prepared delay processor.
+    ///
+    /// The processor is validated on the setup thread before activation. Its channel
+    /// count must match the rendered output topology and its advertised delay capacity
+    /// must cover Aurora's required dynamic-delay range. No active engine is mutated if
+    /// validation fails.
+    pub fn new_with_prepared_delay_processor(
+        scene: RenderScene,
+        config: RealTimeEngineConfig,
+        estimated_device_latency_frames: usize,
+        delay_processor: Box<dyn RealtimeDelayProcessor>,
+    ) -> Result<Self, RealTimeEngineError> {
+        Self::build(
+            scene,
+            config,
+            estimated_device_latency_frames,
+            Some(delay_processor),
+        )
+    }
+
+    fn build(
+        scene: RenderScene,
+        config: RealTimeEngineConfig,
+        estimated_device_latency_frames: usize,
+        prepared_delay_processor: Option<Box<dyn RealtimeDelayProcessor>>,
     ) -> Result<Self, RealTimeEngineError> {
         if config.sample_rate == 0 || config.block_size == 0 {
             return Err(RealTimeEngineError::InvalidConfig(
@@ -375,9 +437,35 @@ impl RealTimeEngine {
         {
             max_delay = max_delay.max(CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES);
         }
-        let mut delay_processor: Box<dyn RealtimeDelayProcessor> =
-            Box::new(DelayProcessor::new(ordered_speakers.len(), max_delay));
-        delay_processor.set_delays(&delays)?;
+        let channel_count = ordered_speakers.len();
+        let delay_processor: Box<dyn RealtimeDelayProcessor> =
+            if let Some(mut delay_processor) = prepared_delay_processor {
+                let actual_channels = delay_processor.channel_count();
+                if actual_channels != channel_count {
+                    return Err(PreparedDspError::ChannelCount {
+                        expected: channel_count,
+                        actual: actual_channels,
+                    }
+                    .into());
+                }
+                let actual_capacity = delay_processor.max_delay_samples();
+                if !actual_capacity.is_finite() || actual_capacity < max_delay {
+                    return Err(PreparedDspError::DelayCapacity {
+                        required: max_delay,
+                        actual: actual_capacity,
+                    }
+                    .into());
+                }
+                delay_processor
+                    .set_delays(&delays)
+                    .map_err(PreparedDspError::from_initial_fault)?;
+                delay_processor
+            } else {
+                let mut delay_processor: Box<dyn RealtimeDelayProcessor> =
+                    Box::new(DelayProcessor::new(channel_count, max_delay));
+                delay_processor.set_delays(&delays)?;
+                delay_processor
+            };
         let dsp_latency_frames = delay_processor.latency_frames();
         let renderer_latency_frames = renderer.latency_frames();
         let block_duration_budget =
@@ -392,8 +480,6 @@ impl RealTimeEngine {
             block_duration_budget,
             ..RealTimeMetrics::default()
         };
-        let channel_count = ordered_speakers.len();
-
         Ok(Self {
             mono: vec![0.0; config.block_size],
             planar: vec![vec![0.0; config.block_size]; channel_count],
