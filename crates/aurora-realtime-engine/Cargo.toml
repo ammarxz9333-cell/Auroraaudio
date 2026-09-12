@@ -11,6 +11,7 @@ bench = false
 
 [dependencies]
 aurora-core = { path = "../aurora-core" }
+aurora-dsp-api = { path = "../aurora-dsp-api" }
 aurora-dsp-basic = { path = "../aurora-dsp-basic" }
 aurora-renderer-api = { path = "../aurora-renderer-api" }
 aurora-renderer-basic = { path = "../aurora-renderer-basic" }
