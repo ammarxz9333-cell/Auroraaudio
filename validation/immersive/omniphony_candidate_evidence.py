@@ -17,6 +17,7 @@ from pathlib import Path
 CHANNELS = 12
 SAMPLE_RATE = 48000
 ACTIVE_EPSILON = 1.0e-8
+COMPLETION_STATUSES = ("completed", "timeout")
 
 
 @dataclass
@@ -135,6 +136,8 @@ def analyze(args: argparse.Namespace) -> int:
 
     failures: list[str] = []
     labels_compatible = stable_labels == candidate_labels
+    if args.candidate_completion_status == "timeout":
+        failures.append("finite_file_completion_timeout")
     if not labels_compatible:
         failures.append("canonical channel-label mapping changed")
     if candidate.channels != 12:
@@ -156,7 +159,7 @@ def analyze(args: argparse.Namespace) -> int:
             failures.append(f"candidate bridge evidence has non-positive {field}")
 
     report = {
-        "schema_version": 1,
+        "schema_version": 2,
         "verdict": "pass" if not failures else "reject",
         "stable": {
             "commit": args.stable_commit,
@@ -166,6 +169,7 @@ def analyze(args: argparse.Namespace) -> int:
         },
         "candidate": {
             "commit": args.candidate_commit,
+            "completion_status": args.candidate_completion_status,
             "pcm": asdict(candidate),
             "canonical_labels": candidate_labels,
             "latency_diagnostics": latency_lines(args.candidate_log),
@@ -173,6 +177,7 @@ def analyze(args: argparse.Namespace) -> int:
         },
         "comparison": {
             "canonical_labels_compatible": labels_compatible,
+            "finite_file_completed": args.candidate_completion_status == "completed",
             "frame_count_equal": candidate.frames == stable.frames,
             "duration_delta_seconds": candidate.duration_seconds - stable.duration_seconds,
             "active_channel_count_stable": len(stable.active_channel_indices),
@@ -183,13 +188,15 @@ def analyze(args: argparse.Namespace) -> int:
         "truth_boundary": (
             "Evaluation-only external GPL renderer evidence. PASS does not change Aurora's stable Omniphony pin, "
             "does not prove physical hardware, authored-position correctness, Dolby conformance/certification, "
-            "or protected streaming-service compatibility."
+            "or protected streaming-service compatibility. A REJECT means the candidate is not eligible for "
+            "promotion under this evaluation contract; it is not an Aurora stable-lane failure."
         ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     print(
         f"AURORA-OMNIPHONY-CANDIDATE-{report['verdict'].upper()} "
+        f"completion={args.candidate_completion_status} "
         f"stable_frames={stable.frames} candidate_frames={candidate.frames} "
         f"stable_active={len(stable.active_channel_indices)} candidate_active={len(candidate.active_channel_indices)}"
     )
@@ -238,6 +245,7 @@ def self_test() -> int:
             candidate_log=candidate_log,
             stable_commit="stable",
             candidate_commit="candidate",
+            candidate_completion_status="completed",
             output=output,
         )
         if analyze(ns) != 0:
@@ -246,6 +254,14 @@ def self_test() -> int:
         if payload["verdict"] != "pass" or not payload["comparison"]["canonical_labels_compatible"]:
             raise AssertionError(payload)
 
+        ns.candidate_completion_status = "timeout"
+        if analyze(ns) != 1:
+            raise AssertionError("finite-file timeout did not reject candidate")
+        payload = json.loads(output.read_text(encoding="utf-8"))
+        if payload["verdict"] != "reject" or "finite_file_completion_timeout" not in payload["failures"]:
+            raise AssertionError(payload)
+
+        ns.candidate_completion_status = "completed"
         changed = labels.replace('Tfl => "TFL"', 'Tfl => "TopFrontLeft"')
         candidate_labels.write_text(changed, encoding="utf-8")
         if analyze(ns) != 1:
@@ -269,6 +285,12 @@ def main() -> int:
     analyze_parser.add_argument("--candidate-log", type=Path, required=True)
     analyze_parser.add_argument("--stable-commit", required=True)
     analyze_parser.add_argument("--candidate-commit", required=True)
+    analyze_parser.add_argument(
+        "--candidate-completion-status",
+        choices=COMPLETION_STATUSES,
+        default="completed",
+        help="whether the candidate renderer self-terminated after finite input",
+    )
     analyze_parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
     if args.command == "self-test":
