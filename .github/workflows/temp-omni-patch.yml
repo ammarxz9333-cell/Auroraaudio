@@ -1,0 +1,24 @@
+name: temp-omni-patch
+on:
+  push:
+    branches: [validation/omniphony-eval-v1]
+permissions:
+  contents: write
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/omniphony-eval-v1
+      - name: Patch
+        run: |
+          FILE=validation/immersive/test-omniphony-reference-comparison.sh
+          python3 -c "from pathlib import Path; p=Path('$FILE'); s=p.read_text(); assert '--no-continuous' in s; p.write_text(s.replace('--no-continuous','--continuous',1))"
+          if git diff --quiet -- "$FILE"; then exit 0; fi
+          git config user.name github-actions-bot
+          git config user.email github-actions-bot@users.noreply.github.com
+          git add "$FILE"
+          git diff --cached --check
+          git commit -m 'Fix Omniphony candidate continuous stream finalization'
+          git push origin HEAD:validation/omniphony-eval-v1
