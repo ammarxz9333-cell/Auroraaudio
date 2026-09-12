@@ -53,6 +53,18 @@
       "evidence": ["docs/immersive-validation.md"]
     },
     {
+      "id": "openjoc",
+      "upstream": "https://github.com/chyinan/OpenJOC",
+      "decision": "evaluate-active",
+      "integration": "external-process-or-versioned-c-abi",
+      "tested_version": "0.17.0",
+      "pinned_commit": "9b2158bd787f9ef4d62971c1773a5d1bb7408ecd",
+      "roles": ["eac3-joc-decode", "object-scene-reconstruction", "speaker-render-reference", "differential-validation"],
+      "object_metadata": "supported-with-documented-reconstruction-boundary",
+      "production_ready": false,
+      "evidence": ["docs/openjoc-integration.md"]
+    },
+    {
       "id": "libiamf",
       "upstream": "https://github.com/AOMediaCodec/libiamf",
       "decision": "evaluate",
