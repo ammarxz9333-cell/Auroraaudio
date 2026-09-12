@@ -31,7 +31,7 @@ VERSION_TEXT=$($OPENJOC_BIN --version 2>&1) || fail "openjoc --version failed"
 printf '%s\n' "$VERSION_TEXT"
 [[ "$VERSION_TEXT" == *"$EXPECTED_VERSION"* ]] || fail "expected OpenJOC $EXPECTED_VERSION, got: $VERSION_TEXT"
 
-"$OPENJOC_BIN" inspect "$INPUT" --json >"$INSPECT_JSON" || fail "OpenJOC inspect failed"
+"$OPENJOC_BIN" inspect "$INPUT" --json --objects --emdf >"$INSPECT_JSON" || fail "OpenJOC inspect failed"
 python3 - "$INSPECT_JSON" <<'PY' || exit 1
 import json
 import pathlib
@@ -46,9 +46,38 @@ except Exception as exc:
 if payload in ({}, [], None):
     print("OPENJOC-REFERENCE-FAIL: inspector JSON is empty", file=sys.stderr)
     raise SystemExit(1)
-PY
 
-echo "OPENJOC-INSPECT-PASS"
+try:
+    joc = payload["joc"]
+    eac3 = payload["eac3"]
+    validation = payload["validation"]
+except Exception as exc:
+    print(f"OPENJOC-REFERENCE-FAIL: inspector JSON missing required contract fields: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+
+if joc.get("present") is not True:
+    print("OPENJOC-REFERENCE-FAIL: input was not positively identified as JOC", file=sys.stderr)
+    raise SystemExit(1)
+if int(eac3.get("access_unit_count", 0)) <= 0:
+    print("OPENJOC-REFERENCE-FAIL: inspector reported no complete E-AC-3 access units", file=sys.stderr)
+    raise SystemExit(1)
+if validation.get("stream_parse") != "pass":
+    print(
+        f"OPENJOC-REFERENCE-FAIL: stream_parse={validation.get('stream_parse')!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+profiles = joc.get("profiles") or []
+if not profiles:
+    print("OPENJOC-REFERENCE-FAIL: JOC was signaled but no profile was reported", file=sys.stderr)
+    raise SystemExit(1)
+
+print(
+    "OPENJOC-INSPECT-PASS "
+    f"access_units={eac3['access_unit_count']} profiles={len(profiles)} "
+    f"presence_status={joc.get('presence_status', 'unknown')}"
+)
+PY
 
 "$OPENJOC_BIN" render-joc "$INPUT" --layout 7.1.4 --output "$OUTPUT_WAV" || fail "OpenJOC 7.1.4 render failed"
 [[ -s "$OUTPUT_WAV" ]] || fail "rendered WAV is missing or empty"
@@ -69,13 +98,23 @@ except Exception as exc:
     raise SystemExit(1)
 channels = int(stream.get("channels", 0))
 sample_rate = int(stream.get("sample_rate", 0))
+try:
+    duration = float(stream.get("duration", 0) or 0)
+except (TypeError, ValueError):
+    duration = 0.0
 if channels != 12:
     print(f"OPENJOC-REFERENCE-FAIL: expected 12 channels for 7.1.4, got {channels}", file=sys.stderr)
     raise SystemExit(1)
 if sample_rate <= 0:
     print("OPENJOC-REFERENCE-FAIL: invalid output sample rate", file=sys.stderr)
     raise SystemExit(1)
-print(f"OPENJOC-7.1.4-PASS channels={channels} sample_rate={sample_rate}")
+if duration <= 0:
+    print("OPENJOC-REFERENCE-FAIL: rendered output has no positive duration", file=sys.stderr)
+    raise SystemExit(1)
+print(
+    f"OPENJOC-7.1.4-PASS channels={channels} sample_rate={sample_rate} "
+    f"duration={duration:.6f} codec={stream.get('codec_name', 'unknown')}"
+)
 PY
 
 echo "OPENJOC-REFERENCE-PASS"
