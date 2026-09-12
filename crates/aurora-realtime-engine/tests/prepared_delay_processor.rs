@@ -1,9 +1,11 @@
 use aurora_core::{ChannelRole, Listener, Speaker, StandardLayout, Vector3};
 use aurora_dsp_api::{RealtimeDelayProcessor, RealtimeDspFault};
 use aurora_realtime_engine::{
-    BasicRendererMode, PreparedDspError, ProcessStatus, RealTimeEngine, RealTimeEngineConfig,
-    RealTimeEngineError, TestSignal,
+    PreparedDspError, ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RealTimeEngineError,
+    TestSignal,
 };
+use aurora_renderer_api::Renderer;
+use aurora_renderer_basic::{BasicRenderer, BasicRendererMode};
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
 use aurora_test_alloc::{count_allocations, CountingAllocator};
 
@@ -80,7 +82,7 @@ impl RealtimeDelayProcessor for ExternalDelay {
 
 #[test]
 fn external_prepared_delay_processor_can_drive_the_engine_without_callback_allocations() {
-    let mut engine = RealTimeEngine::new_with_prepared_delay_processor(
+    let mut engine = engine_with_delay(
         scene(),
         config(false),
         64,
@@ -106,7 +108,7 @@ fn external_prepared_delay_processor_can_drive_the_engine_without_callback_alloc
 
 #[test]
 fn prepared_delay_channel_mismatch_fails_before_activation() {
-    let result = RealTimeEngine::new_with_prepared_delay_processor(
+    let result = engine_with_delay(
         scene(),
         config(false),
         64,
@@ -125,7 +127,7 @@ fn prepared_delay_channel_mismatch_fails_before_activation() {
 
 #[test]
 fn prepared_delay_capacity_mismatch_fails_before_activation() {
-    let result = RealTimeEngine::new_with_prepared_delay_processor(
+    let result = engine_with_delay(
         scene(),
         config(true),
         64,
@@ -139,6 +141,24 @@ fn prepared_delay_capacity_mismatch_fails_before_activation() {
     ));
 }
 
+fn engine_with_delay(
+    scene: RenderScene,
+    config: RealTimeEngineConfig,
+    estimated_device_latency_frames: usize,
+    delay: Box<dyn RealtimeDelayProcessor>,
+) -> Result<RealTimeEngine, RealTimeEngineError> {
+    let speakers = scene.ordered_speakers()?;
+    let mut renderer = BasicRenderer::new(BasicRendererMode::InverseDistance).with_smoothing(0.35);
+    renderer.configure(speakers, config.sample_rate, config.block_size, 1)?;
+    RealTimeEngine::new_with_prepared_components(
+        scene,
+        config,
+        estimated_device_latency_frames,
+        Box::new(renderer),
+        delay,
+    )
+}
+
 fn config(apply_geometric_delay: bool) -> RealTimeEngineConfig {
     RealTimeEngineConfig {
         sample_rate: 48_000,
@@ -147,7 +167,6 @@ fn config(apply_geometric_delay: bool) -> RealTimeEngineConfig {
         apply_geometric_delay,
         speed_of_sound: 343.0,
         test_signal: TestSignal::Sine,
-        renderer_mode: BasicRendererMode::InverseDistance,
     }
 }
 

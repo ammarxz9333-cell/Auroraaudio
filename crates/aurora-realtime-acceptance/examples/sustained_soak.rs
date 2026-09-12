@@ -4,9 +4,7 @@ use std::time::Instant;
 use aurora_realtime_acceptance::{
     evaluate_realtime_acceptance, RealTimeAcceptancePolicy, RealTimeHealthReportV1,
 };
-use aurora_realtime_engine::{
-    BasicRendererMode, ProcessStatus, RealTimeEngineConfig, RealTimeFault, TestSignal,
-};
+use aurora_realtime_engine::{ProcessStatus, RealTimeEngineConfig, RealTimeFault, TestSignal};
 use aurora_runtime_materialization::materialize_default_realtime_engine;
 use aurora_scene::RenderScene;
 
@@ -45,7 +43,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             apply_geometric_delay: false,
             speed_of_sound: 343.0,
             test_signal: TestSignal::RotatingSine,
-            renderer_mode: BasicRendererMode::InverseDistance,
         },
         0,
     )?;

@@ -364,7 +364,11 @@ version = "0.1.0"
 dependencies = [
  "aurora-dsp-basic",
  "aurora-realtime-engine",
+ "aurora-renderer-api",
+ "aurora-renderer-basic",
+ "aurora-renderer-vbap",
  "aurora-scene",
+ "serde_json",
 ]
 
 [[package]]

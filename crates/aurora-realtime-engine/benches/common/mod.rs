@@ -1,5 +1,7 @@
 use aurora_core::{ChannelRole, Listener, Speaker, StandardLayout, Vector3};
-use aurora_realtime_engine::{BasicRendererMode, RealTimeEngine, RealTimeEngineConfig, TestSignal};
+use aurora_realtime_engine::{RealTimeEngine, RealTimeEngineConfig, TestSignal};
+use aurora_renderer_api::Renderer;
+use aurora_renderer_basic::{BasicRenderer, BasicRendererMode};
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
 
 pub fn standard_scene(layout: StandardLayout, block_size: usize) -> RenderScene {
@@ -35,16 +37,26 @@ pub fn engine(
         apply_geometric_delay: apply_delay,
         speed_of_sound: 343.0,
         test_signal: signal,
-        renderer_mode: BasicRendererMode::InverseDistance,
     };
-    let requirements = RealTimeEngine::delay_requirements(&scene, &config)
+    let speakers = scene.ordered_speakers().expect("valid benchmark scene");
+    let mut renderer = BasicRenderer::new(BasicRendererMode::InverseDistance).with_smoothing(0.35);
+    renderer
+        .configure(speakers, config.sample_rate, config.block_size, 1)
+        .expect("valid benchmark renderer");
+    let requirements = RealTimeEngine::delay_requirements(&scene, &config, renderer.capabilities())
         .expect("benchmark delay requirements must be valid");
     let delay = aurora_dsp_basic::DelayProcessor::new(
         requirements.channel_count(),
         requirements.max_delay_samples(),
     );
-    RealTimeEngine::new_with_prepared_delay_processor(scene, config, block_size, Box::new(delay))
-        .expect("benchmark scene and engine configuration must be valid")
+    RealTimeEngine::new_with_prepared_components(
+        scene,
+        config,
+        block_size,
+        Box::new(renderer),
+        Box::new(delay),
+    )
+    .expect("benchmark scene and engine configuration must be valid")
 }
 
 fn scene_with_roles(

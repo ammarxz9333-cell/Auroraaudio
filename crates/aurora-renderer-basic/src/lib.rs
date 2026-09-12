@@ -2,7 +2,8 @@
 
 use aurora_core::{ChannelRole, Listener, Speaker, Vector3};
 use aurora_renderer_api::{
-    RenderObject, Renderer, RendererError, RendererScratch, RendererScratchSize, SpeakerGain,
+    RenderObject, Renderer, RendererCapabilities, RendererError, RendererScratch,
+    RendererScratchSize, SpeakerGain,
 };
 
 const DISTANCE_EPSILON: f32 = 0.001;
@@ -263,6 +264,10 @@ pub fn calculate_geometric_delays(
 }
 
 impl Renderer for BasicRenderer {
+    fn capabilities(&self) -> RendererCapabilities {
+        RendererCapabilities::new(self.mode == BasicRendererMode::GeometricBinaural)
+    }
+
     fn configure(
         &mut self,
         layout: Vec<Speaker>,

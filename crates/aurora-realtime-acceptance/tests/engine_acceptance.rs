@@ -3,8 +3,7 @@ use aurora_realtime_acceptance::{
     evaluate_realtime_acceptance, RealTimeAcceptancePolicy, RealTimeAcceptanceViolation,
 };
 use aurora_realtime_engine::{
-    BasicRendererMode, ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RealTimeFault,
-    TestSignal,
+    ProcessStatus, RealTimeEngine, RealTimeEngineConfig, RealTimeFault, TestSignal,
 };
 use aurora_runtime_materialization::materialize_default_realtime_engine;
 use aurora_scene::{RenderScene, SceneObject, Trajectory};
@@ -78,7 +77,6 @@ fn engine() -> RealTimeEngine {
             apply_geometric_delay: false,
             speed_of_sound: 343.0,
             test_signal: TestSignal::Silence,
-            renderer_mode: BasicRendererMode::InverseDistance,
         },
         128,
     )

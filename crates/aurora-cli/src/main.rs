@@ -34,7 +34,7 @@ use aurora_renderer_basic::{
     calculate_geometric_delays, BasicRenderer, BasicRendererMode, GeometricDelay,
 };
 #[cfg(feature = "realtime")]
-use aurora_runtime_materialization::materialize_default_realtime_engine;
+use aurora_runtime_materialization::{materialize_realtime_engine, RealtimeRendererSelection};
 use aurora_scene::{load_render_scene, RenderScene};
 use clap::{Parser, Subcommand, ValueEnum};
 
@@ -662,10 +662,14 @@ fn run_realtime(
         apply_geometric_delay,
         speed_of_sound,
         test_signal: test_signal.into(),
-        renderer_mode,
     };
-    let mut engine = materialize_default_realtime_engine(scene, engine_config, block_size)
-        .context("create real-time engine")?;
+    let mut engine = materialize_realtime_engine(
+        scene,
+        engine_config,
+        RealtimeRendererSelection::Basic(renderer_mode),
+        block_size,
+    )
+    .context("create real-time engine")?;
     let initial_metrics = engine.metrics().clone();
     let block_duration_budget = initial_metrics.block_duration_budget;
     let renderer_latency_frames = initial_metrics.renderer_latency_frames;
