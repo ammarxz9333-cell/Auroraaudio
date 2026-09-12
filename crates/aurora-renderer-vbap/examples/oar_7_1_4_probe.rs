@@ -2,7 +2,7 @@ use std::error::Error;
 
 use aurora_core::{ChannelRole, Listener, Speaker, Vector3};
 use aurora_renderer_api::{RenderObject, Renderer, RendererScratch, SpeakerGain};
-use aurora_renderer_vbap::Vbap3dRenderer;
+use aurora_renderer_vbap::ImmersiveLayeredRenderer;
 
 const SAMPLE_RATE: u32 = 48_000;
 const BLOCK_SIZE: usize = 256;
@@ -44,8 +44,8 @@ fn layout() -> Vec<Speaker> {
         speaker("fl", "Front Left", ChannelRole::FrontLeft, 30.0, 0.0),
         speaker("fr", "Front Right", ChannelRole::FrontRight, -30.0, 0.0),
         speaker("fc", "Front Center", ChannelRole::FrontCenter, 0.0, 0.0),
-        // OAR's 7.1.4 reference places LFE1 at +45/-30. Aurora's 3D VBAP excludes
-        // LFE from spatial panning by semantic channel role, which is what this probe verifies.
+        // OAR's 7.1.4 reference places LFE1 at +45/-30. Aurora's immersive
+        // renderer excludes LFE from object panning by semantic channel role.
         speaker("lfe", "LFE", ChannelRole::LowFrequencyEffects, 45.0, -30.0),
         speaker("sl", "Side Left", ChannelRole::SurroundLeft, 90.0, 0.0),
         speaker("sr", "Side Right", ChannelRole::SurroundRight, -90.0, 0.0),
@@ -99,7 +99,7 @@ fn linear_gain(db: f32) -> f32 {
 }
 
 fn probe(
-    renderer: &mut Vbap3dRenderer,
+    renderer: &mut ImmersiveLayeredRenderer,
     listener: &Listener,
     scratch: &mut RendererScratch,
     azimuth_degrees: f32,
@@ -128,13 +128,13 @@ fn main() -> Result<(), Box<dyn Error>> {
         // makes the acoustic origin identical for this differential fixture.
         ear_height: 0.0,
     };
-    let mut renderer = Vbap3dRenderer::new().with_smoothing(1.0);
+    let mut renderer = ImmersiveLayeredRenderer::new().with_smoothing(1.0);
     renderer.configure(layout(), SAMPLE_RATE, BLOCK_SIZE, 1)?;
     renderer.prepare_listener(&listener)?;
     let mut scratch = RendererScratch::new(renderer.required_scratch_size()?);
 
     println!(
-        "AURORA714-DIFF-PROBE schema=1 layout=7.1.4 channels={CHANNELS} samples_per_channel={BLOCK_SIZE} sample_rate={SAMPLE_RATE} inside_hull={}",
+        "AURORA714-DIFF-PROBE schema=1 renderer=immersive-layered layout=7.1.4 channels={CHANNELS} samples_per_channel={BLOCK_SIZE} sample_rate={SAMPLE_RATE} inside_hull={}",
         renderer.listener_inside_hull()
     );
 
