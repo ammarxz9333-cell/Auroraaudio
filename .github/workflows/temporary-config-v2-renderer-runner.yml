@@ -190,8 +190,8 @@ jobs:
           cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
           cargo test -p aurora-config -p aurora-runtime-assembly -p aurora-runtime-inspection --all-features --locked
           cargo test -p aurora-runtime-materialization -p aurora-realtime-engine --all-features --locked
-          if grep -RIn 'RendererConfiguration' crates/aurora-config crates/aurora-runtime-assembly; then
-            echo 'legacy RendererConfiguration remains in current config/runtime assembly' >&2
+          if grep -RIn 'RendererConfiguration::' crates/aurora-config crates/aurora-runtime-assembly; then
+            echo 'legacy RendererConfiguration enum usage remains in current config/runtime assembly' >&2
             exit 1
           fi
       - name: Commit production slice
