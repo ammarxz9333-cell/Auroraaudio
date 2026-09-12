@@ -39,6 +39,25 @@ jobs:
           Path('/tmp/config_v2_patch.py').write_text('\n'.join(lines) + '\n')
           PY
           python /tmp/config_v2_patch.py
+      - name: Fix migration borrow scopes
+        shell: bash
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('crates/aurora-config/src/migration.rs')
+          text = p.read_text()
+          old = 'root\n        .get_mut("schema")\n        .and_then(serde_json::Value::as_object_mut)'
+          new = 'root\n        .get("schema")\n        .and_then(serde_json::Value::as_object)'
+          if text.count(old) != 1:
+              raise SystemExit(f'expected one initial schema borrow, found {text.count(old)}')
+          text = text.replace(old, new, 1)
+          anchor = '    root.insert("renderer".to_owned(), migrated_renderer);\n    schema.insert('
+          replacement = '    root.insert("renderer".to_owned(), migrated_renderer);\n    let schema = root\n        .get_mut("schema")\n        .and_then(serde_json::Value::as_object_mut)\n        .ok_or_else(|| {\n            migration_error(\n                ErrorCode::UnsupportedMigration,\n                "schema",\n                "schema metadata is missing",\n            )\n        })?;\n    schema.insert('
+          if text.count(anchor) != 1:
+              raise SystemExit(f'expected one schema reborrow anchor, found {text.count(anchor)}')
+          p.write_text(text.replace(anchor, replacement, 1))
+          PY
       - name: Refresh lockfile and validate renderer reference slice
         shell: bash
         run: |
