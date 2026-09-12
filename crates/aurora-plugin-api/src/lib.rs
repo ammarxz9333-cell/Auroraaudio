@@ -389,7 +389,7 @@ mod tests {
     #[test]
     fn entrypoint_cannot_escape_package_root() {
         let mut manifest = spotify_like_manifest();
-        manifest.entrypoint = "../escape".to_owned();
+        "../escape".clone_into(&mut manifest.entrypoint);
         assert!(matches!(
             manifest.validate_for_host(HOST_PLUGIN_API_VERSION),
             Err(PluginManifestError::InvalidEntrypoint(_))
@@ -399,7 +399,7 @@ mod tests {
     #[test]
     fn plugin_id_requires_canonical_segments() {
         let mut manifest = spotify_like_manifest();
-        manifest.id = "Spotify.Plugin".to_owned();
+        "Spotify.Plugin".clone_into(&mut manifest.id);
         assert!(matches!(
             manifest.validate_for_host(HOST_PLUGIN_API_VERSION),
             Err(PluginManifestError::InvalidPluginId(_))
