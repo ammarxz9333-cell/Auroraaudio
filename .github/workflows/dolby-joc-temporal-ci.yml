@@ -1,0 +1,64 @@
+name: Official Dolby JOC Temporal CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main-v2
+    paths:
+      - "validation/immersive/test-dolby-official-joc-temporal.sh"
+      - "validation/immersive/test-joc-temporal-evidence.sh"
+      - "validation/immersive/test-openjoc-reference.sh"
+      - "validation/immersive/joc_temporal_evidence.py"
+      - "validation/immersive/install-openjoc-reference.sh"
+      - ".github/workflows/dolby-joc-temporal-ci.yml"
+  pull_request:
+    paths:
+      - "validation/immersive/test-dolby-official-joc-temporal.sh"
+      - "validation/immersive/test-joc-temporal-evidence.sh"
+      - "validation/immersive/test-openjoc-reference.sh"
+      - "validation/immersive/joc_temporal_evidence.py"
+      - "validation/immersive/install-openjoc-reference.sh"
+      - ".github/workflows/dolby-joc-temporal-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: dolby-joc-temporal-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  moving-object-temporal-proof:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host audio tooling
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+      - name: Install checksum-pinned OpenJOC reference binary
+        id: openjoc
+        shell: bash
+        run: |
+          OPENJOC_BIN="$(bash validation/immersive/install-openjoc-reference.sh "${{ runner.temp }}/openjoc-reference")"
+          echo "bin=$OPENJOC_BIN" >> "$GITHUB_OUTPUT"
+      - name: Prove moving JOC metadata and rendered temporal diversity
+        shell: bash
+        env:
+          OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
+        run: >-
+          bash validation/immersive/test-dolby-official-joc-temporal.sh
+          "${{ runner.temp }}/dolby-joc-temporal"
+      - name: Upload Dolby JOC temporal evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dolby-joc-temporal-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/dolby-joc-temporal/derivation.json
+            ${{ runner.temp }}/dolby-joc-temporal/original-openjoc-inspect.json
+            ${{ runner.temp }}/dolby-joc-temporal/temporal/joc-temporal-evidence.json
+            ${{ runner.temp }}/dolby-joc-temporal/temporal/openjoc/openjoc-inspect.json
+            ${{ runner.temp }}/dolby-joc-temporal/temporal/openjoc/openjoc-7.1.4-ffprobe.json
+          if-no-files-found: warn
+          retention-days: 14
