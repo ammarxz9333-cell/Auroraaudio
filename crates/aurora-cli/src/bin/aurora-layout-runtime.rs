@@ -1,14 +1,18 @@
 //! Explicit-layout Aurora encoded playback appliance.
 //!
 //! This additive binary leaves the canonical 7.1.4 `aurora-encoded-runtime`
-//! untouched. It consumes proven direct-eARC S32_LE carrier input from stdin,
-//! binds one explicit speaker-layout identity end to end, then writes dynamic
-//! interleaved speaker PCM either as F32_LE on stdout or through Aurora's native
-//! ALSA S32_LE/TDM backend.
+//! untouched. It consumes proven direct-eARC S32_LE carrier input either from
+//! stdin or Aurora's bounded native ALSA capture worker, binds one explicit
+//! speaker-layout identity end to end, then writes dynamic interleaved speaker
+//! PCM either as F32_LE on stdout or through Aurora's native ALSA S32_LE/TDM
+//! backend.
 //!
-//! Native threaded ALSA capture remains in the canonical appliance until the
-//! generic capture/runtime boundary is validated separately. No layout is ever
-//! inferred from a bare channel count.
+//! Native capture remains fail-closed to the proven 192 kHz, two-slot,
+//! high-half S32 carrier geometry. No input or output layout is inferred from a
+//! bare channel count.
+
+#[path = "aurora-layout-runtime-threaded.rs"]
+mod threaded_native_capture;
 
 use std::io::{self, Read, Write};
 
@@ -22,8 +26,12 @@ use aurora_iec61937::CarrierWordHalf;
 use aurora_layout_playback_runtime::{LayoutPlaybackBatch, LayoutPlaybackRuntime};
 use clap::{Parser, ValueEnum};
 
+const DEFAULT_CARRIER_RATE_HZ: u32 = 192_000;
 const DEFAULT_SLOTS: usize = 2;
 const DEFAULT_READ_BYTES: usize = 64 * 1024;
+const DEFAULT_INPUT_PERIOD_FRAMES: usize = 1_024;
+const DEFAULT_INPUT_BUFFER_FRAMES: usize = 8_192;
+const DEFAULT_INPUT_QUEUE_DEPTH: usize = 16;
 const DEFAULT_OUTPUT_PERIOD_FRAMES: usize = 256;
 const DEFAULT_OUTPUT_BUFFER_FRAMES: usize = 1_024;
 
@@ -117,6 +125,18 @@ impl From<WordHalfArg> for CarrierWordHalf {
 struct Args {
     #[arg(long, value_enum, default_value = "aurora-11.1.4-reference")]
     layout: LayoutArg,
+    /// Native Linux ALSA capture device for live direct-eARC S32_LE carrier
+    /// input. When omitted, carrier samples are read from stdin.
+    #[arg(long)]
+    alsa_device: Option<String>,
+    #[arg(long, default_value_t = DEFAULT_CARRIER_RATE_HZ)]
+    carrier_rate: u32,
+    #[arg(long, default_value_t = DEFAULT_INPUT_PERIOD_FRAMES)]
+    input_period_frames: usize,
+    #[arg(long, default_value_t = DEFAULT_INPUT_BUFFER_FRAMES)]
+    input_buffer_frames: usize,
+    #[arg(long, default_value_t = DEFAULT_INPUT_QUEUE_DEPTH)]
+    input_queue_depth: usize,
     #[arg(long, value_enum, default_value = "stdout-f32")]
     output: OutputMode,
     #[arg(long)]
@@ -256,12 +276,13 @@ fn main() -> Result<()> {
         bail!("constructed runtime layout does not match the explicit CLI layout identity");
     }
 
-    match args.output {
+    let capture_stats = match args.output {
         OutputMode::StdoutF32 => {
             let stdout = io::stdout();
             let mut sink = StdoutF32Sink::new(stdout.lock());
-            run_stdin(&args, &mut runtime, &mut sink)?;
+            let stats = run_selected_input(&args, &mut runtime, &mut sink)?;
             sink.finish()?;
+            stats
         }
         OutputMode::AlsaS32 => {
             let config = AlsaOutputConfig {
@@ -273,17 +294,24 @@ fn main() -> Result<()> {
                 buffer_frames: args.output_buffer_frames,
             };
             let mut sink = NativeAlsaSink::open(config)?;
-            run_stdin(&args, &mut runtime, &mut sink)?;
+            let stats = run_selected_input(&args, &mut runtime, &mut sink)?;
             sink.finish()?;
+            stats
         }
-    }
+    };
 
     let decoder = runtime.encoded().decoder();
     let joc = decoder.engine().joc_status();
     eprintln!(
-        "aurora-layout-runtime: layout={} channels={} joc_classified={} joc_render_active={} joc_layout={:?} joc_channels={:?} joc_objects={:?} joc_fallback={:?}",
+        "aurora-layout-runtime: layout={} channels={} native_capture={} capture_xruns={} capture_recoveries={} capture_discontinuities={} capture_queue_starvations={} transport_discontinuities={} joc_classified={} joc_render_active={} joc_layout={:?} joc_channels={:?} joc_objects={:?} joc_fallback={:?}",
         runtime.output_layout().name(),
         runtime.output_layout().channel_count(),
+        args.alsa_device.is_some(),
+        capture_stats.xruns,
+        capture_stats.recoveries,
+        capture_stats.discontinuities,
+        capture_stats.queue_starvations,
+        capture_stats.transport_discontinuities,
         joc.codec_classified_joc,
         joc.speaker_render_active,
         joc.layout_name,
@@ -295,7 +323,7 @@ fn main() -> Result<()> {
 }
 
 fn validate_args(args: &Args) -> Result<()> {
-    if args.read_bytes == 0 {
+    if args.alsa_device.is_none() && args.read_bytes == 0 {
         bail!("stdin read size must be greater than zero");
     }
     if args.block_size == 0 {
@@ -306,6 +334,23 @@ fn validate_args(args: &Args) -> Result<()> {
     }
     if args.word_half != WordHalfArg::High {
         bail!("direct eARC wider-layout runtime currently requires proven high-half S32 packing");
+    }
+    if args.alsa_device.is_some() {
+        if args.carrier_rate != DEFAULT_CARRIER_RATE_HZ {
+            bail!(
+                "native direct-eARC capture currently requires the proven {DEFAULT_CARRIER_RATE_HZ} Hz carrier rate; got {} Hz",
+                args.carrier_rate
+            );
+        }
+        if args.input_period_frames == 0 {
+            bail!("ALSA input period must be greater than zero");
+        }
+        if args.input_buffer_frames < args.input_period_frames.saturating_mul(2) {
+            bail!("ALSA input buffer must be at least two periods");
+        }
+        if !(2..=256).contains(&args.input_queue_depth) {
+            bail!("ALSA input queue depth must be between 2 and 256 periods");
+        }
     }
     if matches!(args.output, OutputMode::StdoutF32) && args.output_device.is_some() {
         bail!("--output-device is valid only with --output alsa-s32");
@@ -329,6 +374,19 @@ fn validate_output_geometry(logical_channels: usize, hardware_channels: usize) -
         );
     }
     Ok(())
+}
+
+fn run_selected_input<S: SpeakerSink>(
+    args: &Args,
+    runtime: &mut LayoutPlaybackRuntime,
+    sink: &mut S,
+) -> Result<threaded_native_capture::NativeCaptureStats> {
+    if let Some(device) = args.alsa_device.as_deref() {
+        threaded_native_capture::run_direct_native_alsa(args, device, runtime, sink)
+    } else {
+        run_stdin(args, runtime, sink)?;
+        Ok(threaded_native_capture::NativeCaptureStats::default())
+    }
 }
 
 fn run_stdin<S: SpeakerSink>(
