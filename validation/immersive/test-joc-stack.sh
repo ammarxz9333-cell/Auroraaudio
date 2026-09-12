@@ -4,6 +4,7 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/config/external-components-v1.json"
 OMNIP_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"
+OMNIP_DEP_PATCH="$ROOT_DIR/validation/immersive/omniphony-external-cargo-pins.patch"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
 KEEP_WORKDIR="${AURORA_KEEP_JOC_TEST_WORKDIR:-0}"
 BUILD_MODE="${AURORA_JOC_BUILD_MODE:-debug}"
@@ -37,6 +38,7 @@ for cmd in git python3 ffmpeg rustup cargo; do
 done
 [[ -f "$MANIFEST" ]] || { echo "missing external component manifest: $MANIFEST" >&2; exit 2; }
 [[ -f "$OMNIP_PATCH" ]] || { echo "missing Omniphony latency patch: $OMNIP_PATCH" >&2; exit 2; }
+[[ -f "$OMNIP_DEP_PATCH" ]] || { echo "missing Omniphony dependency pin patch: $OMNIP_DEP_PATCH" >&2; exit 2; }
 
 if [[ -n "${AURORA_JOC_TEST_WORKDIR:-}" ]]; then
   WORK_DIR="$AURORA_JOC_TEST_WORKDIR"
@@ -103,7 +105,20 @@ CARGO_TARGET_DIR="$HARLETTY_TARGET_DIR" cargo +"$TOOLCHAIN" build --locked "${PR
 phase "patch and build Omniphony renderer ($BUILD_MODE)"
 git -C "$OMNIP_DIR/omniphony-renderer" apply --check "$OMNIP_PATCH"
 git -C "$OMNIP_DIR/omniphony-renderer" apply "$OMNIP_PATCH"
-CARGO_TARGET_DIR="$OMNIP_TARGET_DIR" cargo +"$TOOLCHAIN" build "${PROFILE_ARGS[@]}" \
+git -C "$OMNIP_DIR" apply --check "$OMNIP_DEP_PATCH"
+git -C "$OMNIP_DIR" apply "$OMNIP_DEP_PATCH"
+CARGO_TARGET_DIR="$OMNIP_TARGET_DIR" cargo +"$TOOLCHAIN" generate-lockfile \
+  --manifest-path "$OMNIP_DIR/omniphony-renderer/Cargo.toml"
+python3 - "$OMNIP_DIR/omniphony-renderer/Cargo.lock" <<'PY_LOCK'
+import pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+for name, version in [('env_logger', '0.11.8'), ('jiff', '0.2.15')]:
+    pattern = rf'\[\[package\]\]\nname = "{re.escape(name)}"\nversion = "{re.escape(version)}"'
+    if not re.search(pattern, text):
+        raise SystemExit(f'locked external dependency mismatch: expected {name} {version}')
+print('OMNIP-EXTERNAL-DEPENDENCY-PINS-PASS env_logger=0.11.8 jiff=0.2.15')
+PY_LOCK
+CARGO_TARGET_DIR="$OMNIP_TARGET_DIR" cargo +"$TOOLCHAIN" build --locked "${PROFILE_ARGS[@]}" \
   --manifest-path "$OMNIP_DIR/omniphony-renderer/Cargo.toml" \
   -p omniphony-renderer
 

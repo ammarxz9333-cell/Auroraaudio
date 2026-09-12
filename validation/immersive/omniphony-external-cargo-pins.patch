@@ -1,0 +1,13 @@
+diff --git a/omniphony-renderer/Cargo.toml b/omniphony-renderer/Cargo.toml
+--- a/omniphony-renderer/Cargo.toml
++++ b/omniphony-renderer/Cargo.toml
+@@ -32,7 +32,8 @@ libloading = "0.8"
+ 
+ anyhow = "1.0.99"
+ clap = { version = "4.5.45", features = ["derive"] }
+-env_logger = "0.11.8"
++env_logger = "=0.11.8"
++jiff = { version = "=0.2.15", default-features = false, features = ["std"] }
+ log = "0.4.27"
+ parking_lot = "0.12"
+ arc-swap = "1"

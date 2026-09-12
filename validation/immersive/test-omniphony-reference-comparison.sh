@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 EVAL_CONFIG="$ROOT_DIR/config/omniphony-evaluation-v1.json"
+OMNIP_DEP_PATCH="$ROOT_DIR/validation/immersive/omniphony-external-cargo-pins.patch"
 WORK_DIR="${AURORA_JOC_TEST_WORKDIR:-}"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
 BUILD_MODE="${AURORA_JOC_BUILD_MODE:-release}"
@@ -18,6 +19,7 @@ for cmd in git python3 cargo rustup grep; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
 [[ -f "$EVAL_CONFIG" ]] || { echo "missing evaluation config: $EVAL_CONFIG" >&2; exit 2; }
+[[ -f "$OMNIP_DEP_PATCH" ]] || { echo "missing Omniphony dependency pin patch: $OMNIP_DEP_PATCH" >&2; exit 2; }
 [[ -n "$WORK_DIR" ]] || { echo "AURORA_JOC_TEST_WORKDIR must point to a completed baseline JOC workdir" >&2; exit 2; }
 [[ "$EVAL_TIMEOUT_TENTHS" =~ ^[1-9][0-9]*$ ]] || { echo "invalid AURORA_OMNIP_EVAL_TIMEOUT_TENTHS" >&2; exit 2; }
 [[ "$EVAL_SHUTDOWN_GRACE_TENTHS" =~ ^[1-9][0-9]*$ ]] || { echo "invalid AURORA_OMNIP_EVAL_SHUTDOWN_GRACE_TENTHS" >&2; exit 2; }
@@ -156,7 +158,20 @@ import time
 print(time.monotonic_ns())
 PY
 )"
-CARGO_TARGET_DIR="$EVAL_TARGET_DIR" cargo +"$TOOLCHAIN" build "${PROFILE_ARGS[@]}" \
+git -C "$EVAL_DIR" apply --check "$OMNIP_DEP_PATCH"
+git -C "$EVAL_DIR" apply "$OMNIP_DEP_PATCH"
+CARGO_TARGET_DIR="$EVAL_TARGET_DIR" cargo +"$TOOLCHAIN" generate-lockfile \
+  --manifest-path "$EVAL_DIR/omniphony-renderer/Cargo.toml"
+python3 - "$EVAL_DIR/omniphony-renderer/Cargo.lock" <<'PY_LOCK'
+import pathlib, re, sys
+text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+for name, version in [('env_logger', '0.11.8'), ('jiff', '0.2.15')]:
+    pattern = rf'\[\[package\]\]\nname = "{re.escape(name)}"\nversion = "{re.escape(version)}"'
+    if not re.search(pattern, text):
+        raise SystemExit(f'locked candidate dependency mismatch: expected {name} {version}')
+print('OMNIP-CANDIDATE-DEPENDENCY-PINS-PASS env_logger=0.11.8 jiff=0.2.15')
+PY_LOCK
+CARGO_TARGET_DIR="$EVAL_TARGET_DIR" cargo +"$TOOLCHAIN" build --locked "${PROFILE_ARGS[@]}" \
   --manifest-path "$EVAL_DIR/omniphony-renderer/Cargo.toml" \
   -p omniphony-renderer
 BUILD_END_NS="$(python3 - <<'PY'
