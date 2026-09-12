@@ -4,14 +4,15 @@
 //! embedded into two native S32_LE capture slots, then fed only through
 //! `LayoutPlaybackRuntime::push_direct_s32_words`. The proof therefore covers
 //! Aurora's production S32 normalizer, IEC61937 transport parser, fail-closed
-//! OpenJOC speaker renderer, explicit 16-lane semantic contract and dynamic
-//! speaker DSP.
+//! OpenJOC speaker renderer, explicit 16-lane semantic contract, dynamic
+//! speaker DSP and the same F32 -> S32/TDM16 staging used by the Linux sink.
 //!
-//! This remains a software-fixture proof; physical HDMI/eARC capture and the
-//! hardware TDM16 sink are separate gates.
+//! This remains a software-fixture proof; physical HDMI/eARC capture and an
+//! actual hardware TDM16 write are separate gates.
 
 use std::{fs, path::PathBuf};
 
+use aurora_alsa_output::{encode_f32_to_s32_padded, f32_to_s32};
 use aurora_core::{AudioFormat, SampleType};
 use aurora_decoder_engine::EngineConfig;
 use aurora_decoder_open::joc_access_unit::JocAccessUnitAssembler;
@@ -83,6 +84,17 @@ fn observe_batch(batch: LayoutPlaybackBatch, pcm_frames: &mut usize, bursts: &mu
             .interleaved_f32
             .iter()
             .all(|sample| sample.is_finite()));
+
+        let staged = encode_f32_to_s32_padded(&frame.interleaved_f32, CHANNELS, CHANNELS)
+            .expect("Aurora 16ch DSP output must stage as S32/TDM16");
+        assert_eq!(staged.len(), frame.frame_count * CHANNELS);
+        for (&pcm, &s32) in frame.interleaved_f32.iter().zip(staged.iter()) {
+            assert_eq!(
+                s32,
+                f32_to_s32(pcm).expect("finite Aurora DSP sample must convert to S32")
+            );
+        }
+
         let expected_pts = *pcm_frames as f64 / f64::from(SAMPLE_RATE);
         assert!(
             (frame.presentation_time_seconds - expected_pts).abs() < 1.0e-12,
@@ -96,10 +108,9 @@ fn observe_batch(batch: LayoutPlaybackBatch, pcm_frames: &mut usize, bursts: &mu
 #[test]
 #[ignore = "requires exact OpenJOC synthetic joc.ec3 fixture via AURORA_OPENJOC_SYNTHETIC_FIXTURE"]
 fn pinned_joc_survives_production_s32_aurora_eleven_one_four_runtime() {
-    let path =
-        PathBuf::from(std::env::var(FIXTURE_ENV).unwrap_or_else(|_| {
-            panic!("set {FIXTURE_ENV} to the verified OpenJOC joc.ec3 fixture")
-        }));
+    let path = PathBuf::from(std::env::var(FIXTURE_ENV).unwrap_or_else(|_| {
+        panic!("set {FIXTURE_ENV} to the verified OpenJOC joc.ec3 fixture")
+    }));
     let fixture = fs::read(&path)
         .unwrap_or_else(|error| panic!("failed to read {}: {error}", path.display()));
     assert_eq!(fixture.len(), EXPECTED_BYTES);
@@ -168,7 +179,7 @@ fn pinned_joc_survives_production_s32_aurora_eleven_one_four_runtime() {
     assert_eq!(bursts, EXPECTED_ACCESS_UNITS);
     assert_eq!(
         pcm_frames, EXPECTED_PCM_FRAMES,
-        "production S32 -> JOC -> Aurora 16ch DSP changed the pinned OpenJOC timeline"
+        "production S32 -> JOC -> Aurora 16ch DSP/TDM16 staging changed the pinned OpenJOC timeline"
     );
 
     let final_joc = runtime.encoded().decoder().engine().joc_status();
