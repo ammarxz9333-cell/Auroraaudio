@@ -122,9 +122,13 @@ Examples:
 
 ## Current migration debt
 
-The long-term rule above is stricter than the current implementation in one known area. `aurora-realtime-engine` still constructs/imports `BasicRenderer` and `BasicRendererMode`, and its compatibility constructor still creates the basic `DelayProcessor`. However, the callback-facing delay path now stores and invokes `RealtimeDelayProcessor`, and realtime-engine no longer exposes `BasicDspError` or calls the concrete `DelayProcessor` callback methods directly. DSP callback dispatch is therefore contract-based, while concrete DSP construction is still temporary migration debt.
+The long-term rule above is stricter than the current implementation in one known area. `aurora-realtime-engine` still constructs/imports `BasicRenderer` and `BasicRendererMode`, and its compatibility constructor still creates the basic `DelayProcessor`. However, the callback-facing delay path stores and invokes `RealtimeDelayProcessor`, and realtime-engine no longer exposes `BasicDspError` or calls the concrete `DelayProcessor` callback methods directly.
 
-Issue #118 owns the remaining migration. Completion requires moving concrete renderer/DSP construction into an appropriate runtime materialization/component-assembly layer and making the realtime engine consume only caller-supplied prepared contract implementations. Until #118 is accepted, Aurora must not claim that renderer or DSP backends can be replaced with zero realtime-engine integration work.
+The DSP boundary has advanced one step further: `RealTimeEngine::new_with_prepared_delay_processor` can accept a caller-supplied prepared `RealtimeDelayProcessor`. The engine validates the supplied component's output-channel count and maximum dynamic-delay capacity before activation, initializes it on the setup thread, and then uses only the realtime contract in callback processing. This proves that an alternate DSP implementation can be integrated without changing callback code. The legacy constructor remains as a compatibility path and still constructs the basic implementation internally.
+
+Issue #118 owns the remaining migration. DSP completion requires moving the compatibility/default DSP factory into an appropriate materialization/component-assembly layer and removing `aurora-dsp-basic` from the realtime-engine dependency graph. Renderer construction is still coupled separately and must be migrated behind the renderer contract as its own reviewable slice. `aurora-runtime-assembly` remains a passive control-plane planner and should not become a hidden implementation factory simply to satisfy the dependency rule.
+
+Until #118 is accepted, Aurora must not claim that renderer and DSP backends are both replaceable with zero realtime-engine integration work. The caller-supplied DSP path is now contract-level evidence for DSP injection, not evidence that the entire renderer/DSP migration is complete.
 
 This debt is intentionally documented rather than hidden behind the plugin architecture. Application-plugin isolation in this document remains independent of that migration.
 

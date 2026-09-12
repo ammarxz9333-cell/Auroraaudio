@@ -26,17 +26,19 @@ A decoder mode must state whether it provides real object metadata, channel PCM,
 
 #### Realtime DSP preparation boundary
 
-Callback-reachable DSP is narrower than the generic control/offline `DspEngine` interface. `aurora-dsp-api::RealtimeDelayProcessor` is the Aurora-owned contract for a delay component that has already been fully constructed, sized, configured, and validated before activation. Implementations allocate their storage on the control/runtime-assembly side and then cross into the realtime path only as a prepared component with fixed channel count, fixed maximum delay capability, caller-owned planar buffers, and fixed-size fault reporting.
+Callback-reachable DSP is narrower than the generic control/offline `DspEngine` interface. `aurora-dsp-api::RealtimeDelayProcessor` is the Aurora-owned contract for a delay component that has already been fully constructed, sized, configured, and validated before activation. Implementations allocate their storage on the control/materialization side and then cross into the realtime path only as a prepared component with fixed channel count, fixed maximum delay capability, caller-owned planar buffers, and fixed-size fault reporting.
 
 Every method reachable through this realtime contract must have bounded execution and must remain allocation-free, lock-free/nonblocking, free of logging or formatting, free of filesystem/network/device access, and free of process/IPC activity. Setup diagnostics and rich error reporting stay outside the callback. Allocation and capacity guards exercise the contract path itself so adapter-specific code cannot silently weaken the realtime invariant.
 
-`aurora-dsp-basic::DelayProcessor` is the current basic implementation of this contract. The migration tracked by issue #118 is intentionally staged: the contract and basic adapter land first; `aurora-realtime-engine` then consumes the prepared contract instead of implementation-specific methods; concrete DSP construction ultimately belongs in runtime assembly rather than in the realtime engine. Until that migration is complete, direct basic-DSP construction in the realtime engine is explicit technical debt, not the architectural boundary.
+`aurora-dsp-basic::DelayProcessor` remains the compatibility/default implementation, but it is no longer the only component the realtime engine can accept. `RealTimeEngine::new_with_prepared_delay_processor` accepts a caller-supplied `RealtimeDelayProcessor`, validates its channel count and advertised delay capacity before activation, initializes its delays on the setup thread, and then stores it only through the Aurora-owned realtime contract. The legacy `RealTimeEngine::new` path still constructs `DelayProcessor` internally so existing callers retain current behavior.
+
+This is an intermediate state of issue #118. An external materialization/component-assembly layer can now supply a prepared DSP without changing callback code. The remaining DSP migration debt is to move default DSP selection/construction out of the realtime-engine crate so `aurora-dsp-basic` can disappear from its dependency graph. `aurora-runtime-assembly` itself remains a passive control-plane planner; it should not be turned into a hidden implementation factory merely to complete this migration.
 
 ### 5. Realtime engine
 
 The realtime crates own scheduling, bounded queues, device state, asynchronous resampling, drift control, latency accounting, and fault recovery. They are transport-independent and do not assume USB, eARC, TDM, or any other physical link.
 
-The realtime engine may execute prepared renderer/DSP components behind Aurora-owned callback-safe contracts, but it must not depend on implementation-specific callback APIs. Runtime assembly is responsible for selecting and preparing replaceable implementations before they become active.
+The realtime engine may execute prepared renderer/DSP components behind Aurora-owned callback-safe contracts, but it must not depend on implementation-specific callback APIs. Component selection and construction belong outside the callback and, once the remaining migration is complete, outside the realtime-engine crate itself.
 
 ### 6. Audio I/O
 
