@@ -1,0 +1,135 @@
+name: Temporary Omniphony dependency pin fixer
+
+on:
+  push:
+    branches:
+      - validation/omniphony-eval-v1
+    paths:
+      - .github/workflows/temporary-fix-omniphony-deps.yml
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: validation/omniphony-eval-v1
+          fetch-depth: 0
+      - name: Apply deterministic external dependency pin wiring
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          root = Path('.')
+          dep_patch = root / 'validation/immersive/omniphony-external-cargo-pins.patch'
+          dep_patch.write_text('''diff --git a/omniphony-renderer/Cargo.toml b/omniphony-renderer/Cargo.toml
+          --- a/omniphony-renderer/Cargo.toml
+          +++ b/omniphony-renderer/Cargo.toml
+          @@ -32,7 +32,8 @@ libloading = "0.8"
+           
+           anyhow = "1.0.99"
+           clap = { version = "4.5.45", features = ["derive"] }
+          -env_logger = "0.11.8"
+          +env_logger = "=0.11.8"
+          +jiff = { version = "=0.2.15", default-features = false, features = ["std"] }
+           log = "0.4.27"
+           parking_lot = "0.12"
+           arc-swap = "1"
+          ''', encoding='utf-8')
+
+          joc = root / 'validation/immersive/test-joc-stack.sh'
+          text = joc.read_text(encoding='utf-8')
+          text = text.replace(
+              'OMNIP_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"\nTOOLCHAIN=',
+              'OMNIP_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"\nOMNIP_DEP_PATCH="$ROOT_DIR/validation/immersive/omniphony-external-cargo-pins.patch"\nTOOLCHAIN=',
+              1,
+          )
+          text = text.replace(
+              '[[ -f "$OMNIP_PATCH" ]] || { echo "missing Omniphony latency patch: $OMNIP_PATCH" >&2; exit 2; }',
+              '[[ -f "$OMNIP_PATCH" ]] || { echo "missing Omniphony latency patch: $OMNIP_PATCH" >&2; exit 2; }\n[[ -f "$OMNIP_DEP_PATCH" ]] || { echo "missing Omniphony dependency pin patch: $OMNIP_DEP_PATCH" >&2; exit 2; }',
+              1,
+          )
+          old = '''git -C "$OMNIP_DIR/omniphony-renderer" apply --check "$OMNIP_PATCH"
+          git -C "$OMNIP_DIR/omniphony-renderer" apply "$OMNIP_PATCH"
+          CARGO_TARGET_DIR="$OMNIP_TARGET_DIR" cargo +"$TOOLCHAIN" build "${PROFILE_ARGS[@]}" \\
+            --manifest-path "$OMNIP_DIR/omniphony-renderer/Cargo.toml" \\
+            -p omniphony-renderer
+          '''
+          new = '''git -C "$OMNIP_DIR/omniphony-renderer" apply --check "$OMNIP_PATCH"
+          git -C "$OMNIP_DIR/omniphony-renderer" apply "$OMNIP_PATCH"
+          git -C "$OMNIP_DIR" apply --check "$OMNIP_DEP_PATCH"
+          git -C "$OMNIP_DIR" apply "$OMNIP_DEP_PATCH"
+          CARGO_TARGET_DIR="$OMNIP_TARGET_DIR" cargo +"$TOOLCHAIN" generate-lockfile \\
+            --manifest-path "$OMNIP_DIR/omniphony-renderer/Cargo.toml"
+          python3 - "$OMNIP_DIR/omniphony-renderer/Cargo.lock" <<'PY_LOCK'
+          import pathlib, re, sys
+          text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          for name, version in [('env_logger', '0.11.8'), ('jiff', '0.2.15')]:
+              pattern = rf'\\[\\[package\\]\\]\\nname = "{re.escape(name)}"\\nversion = "{re.escape(version)}"'
+              if not re.search(pattern, text):
+                  raise SystemExit(f'locked external dependency mismatch: expected {name} {version}')
+          print('OMNIP-EXTERNAL-DEPENDENCY-PINS-PASS env_logger=0.11.8 jiff=0.2.15')
+          PY_LOCK
+          CARGO_TARGET_DIR="$OMNIP_TARGET_DIR" cargo +"$TOOLCHAIN" build --locked "${PROFILE_ARGS[@]}" \\
+            --manifest-path "$OMNIP_DIR/omniphony-renderer/Cargo.toml" \\
+            -p omniphony-renderer
+          '''
+          if old not in text:
+              raise SystemExit('test-joc-stack build block not found')
+          joc.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          cmp = root / 'validation/immersive/test-omniphony-reference-comparison.sh'
+          text = cmp.read_text(encoding='utf-8')
+          text = text.replace(
+              'EVAL_CONFIG="$ROOT_DIR/config/omniphony-evaluation-v1.json"\nWORK_DIR=',
+              'EVAL_CONFIG="$ROOT_DIR/config/omniphony-evaluation-v1.json"\nOMNIP_DEP_PATCH="$ROOT_DIR/validation/immersive/omniphony-external-cargo-pins.patch"\nWORK_DIR=',
+              1,
+          )
+          text = text.replace(
+              '[[ -f "$EVAL_CONFIG" ]] || { echo "missing evaluation config: $EVAL_CONFIG" >&2; exit 2; }',
+              '[[ -f "$EVAL_CONFIG" ]] || { echo "missing evaluation config: $EVAL_CONFIG" >&2; exit 2; }\n[[ -f "$OMNIP_DEP_PATCH" ]] || { echo "missing Omniphony dependency pin patch: $OMNIP_DEP_PATCH" >&2; exit 2; }',
+              1,
+          )
+          old = '''CARGO_TARGET_DIR="$EVAL_TARGET_DIR" cargo +"$TOOLCHAIN" build "${PROFILE_ARGS[@]}" \\
+            --manifest-path "$EVAL_DIR/omniphony-renderer/Cargo.toml" \\
+            -p omniphony-renderer
+          '''
+          new = '''git -C "$EVAL_DIR" apply --check "$OMNIP_DEP_PATCH"
+          git -C "$EVAL_DIR" apply "$OMNIP_DEP_PATCH"
+          CARGO_TARGET_DIR="$EVAL_TARGET_DIR" cargo +"$TOOLCHAIN" generate-lockfile \\
+            --manifest-path "$EVAL_DIR/omniphony-renderer/Cargo.toml"
+          python3 - "$EVAL_DIR/omniphony-renderer/Cargo.lock" <<'PY_LOCK'
+          import pathlib, re, sys
+          text = pathlib.Path(sys.argv[1]).read_text(encoding='utf-8')
+          for name, version in [('env_logger', '0.11.8'), ('jiff', '0.2.15')]:
+              pattern = rf'\\[\\[package\\]\\]\\nname = "{re.escape(name)}"\\nversion = "{re.escape(version)}"'
+              if not re.search(pattern, text):
+                  raise SystemExit(f'locked candidate dependency mismatch: expected {name} {version}')
+          print('OMNIP-CANDIDATE-DEPENDENCY-PINS-PASS env_logger=0.11.8 jiff=0.2.15')
+          PY_LOCK
+          CARGO_TARGET_DIR="$EVAL_TARGET_DIR" cargo +"$TOOLCHAIN" build --locked "${PROFILE_ARGS[@]}" \\
+            --manifest-path "$EVAL_DIR/omniphony-renderer/Cargo.toml" \\
+            -p omniphony-renderer
+          '''
+          if old not in text:
+              raise SystemExit('comparison candidate build block not found')
+          cmp.write_text(text.replace(old, new, 1), encoding='utf-8')
+
+          workflow = root / '.github/workflows/temporary-fix-omniphony-deps.yml'
+          workflow.unlink()
+          PY
+      - name: Commit production-only fix
+        shell: bash
+        run: |
+          git config user.name "aurora-ci-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add validation/immersive/test-joc-stack.sh \
+                  validation/immersive/test-omniphony-reference-comparison.sh \
+                  validation/immersive/omniphony-external-cargo-pins.patch \
+                  .github/workflows/temporary-fix-omniphony-deps.yml
+          git commit -m "Pin Omniphony external Cargo dependencies [dep-pin-bot]"
+          git push origin HEAD:validation/omniphony-eval-v1
