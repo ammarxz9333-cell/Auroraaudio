@@ -11,6 +11,7 @@ This directory contains software evidence lanes.  It does **not** establish Dolb
 | `test-openjoc-reference.sh` | independent OpenJOC JOC/admission/timing census and experimental 7.1.4 render | authored object-position correctness |
 | `test-joc-differential.sh` | independent implementation agreement on active-channel identity plus non-gating correlations | all 12 channels active; moving objects |
 | `test-joc-temporal-evidence.sh` | fail-closed separation of timed OAMD/object-state diversity and windowed rendered-energy diversity | proof that rendered speaker energy is an independent oracle for authored trajectories |
+| `test-synthetic-moving-joc.sh` | optional generated-carrier exercise of the unchanged temporal lane using Aurora-owned synthetic source | genuine Dolby-authored moving-object proof; Dolby encoder/hardware conformance |
 
 ## Temporal JOC evidence
 
@@ -43,3 +44,27 @@ Exit status `3` means the carrier passed the codec/JOC contract but did not esta
 The pinned public Harletty `joc_atmos_1s.eac3` fixture remains useful for the existing JOC/differential/realtime lanes, but its public object metadata is not a moving-object corpus.  CI therefore requires it to pass the codec/JOC gate and fail the temporal harness specifically with `insufficient_temporal_diversity`.  Aurora must not promote that fixture as moving-object proof.
 
 A carrier that passes the temporal harness may be supplied externally when its provenance and checksum are known.  Copyrighted/private Atmos media should not be committed merely to make CI pass.
+
+## Synthetic moving-object generated-carrier diagnostic
+
+`generate-synthetic-moving-damf.py` creates an Aurora-owned DAMF source containing an LFE-only bed and two deterministic object channels.  The object trajectories change horizontal position and height at known sample positions.  The generated source is uncompressed 24-bit integer CAF plus YAML manifest/metadata; it contains no protected or copyrighted programme material and is **not itself codec/JOC evidence**.
+
+The generator has a dependency-free deterministic self-test:
+
+```bash
+python3 validation/immersive/generate-synthetic-moving-damf.py --self-test
+```
+
+For an optional end-to-end diagnostic, `test-synthetic-moving-joc.sh` accepts a local, clean checkout of the external research project `raress96/dolby-atmos-encoder` pinned at commit `faf3ef16c48dca52958f3cd1276a9796477eba1d`.  Aurora does not vendor or link that project's code.  Review and accept its separate non-commercial/share-alike licence before using it.
+
+```bash
+git clone https://github.com/raress96/dolby-atmos-encoder.git /tmp/dolby-atmos-encoder
+git -C /tmp/dolby-atmos-encoder checkout faf3ef16c48dca52958f3cd1276a9796477eba1d
+bash validation/immersive/test-synthetic-moving-joc.sh \
+  /tmp/dolby-atmos-encoder \
+  /tmp/aurora-synthetic-moving-joc
+```
+
+The runner verifies the exact external commit and a clean checkout, generates the source, builds a 5.1 E-AC-3 core, asks the external research encoder to inject OAMD/JOC, records the resulting carrier SHA-256/provenance, and finally executes `test-joc-temporal-evidence.sh` unchanged.
+
+Even a pass in this lane is deliberately classified only as **generated-carrier software diagnostic evidence**: it shows that the Aurora/OpenJOC temporal path can observe a deliberately moving generated carrier.  It must not be used to claim genuine Dolby-authored moving-object compatibility, Dolby certification, protected-service compatibility, EMDF authentication validity, or physical-device Atmos behavior.  The critical-path requirement for an authorized genuine moving-object carrier therefore remains open.
