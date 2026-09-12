@@ -29,6 +29,7 @@ jobs:
           set -euo pipefail
           python scripts/temporary-backend-v3-fixes.py
           python scripts/temporary-backend-v3-import-fixes.py
+          python scripts/temporary-backend-v3-evidence.py
           python - <<'PY'
           from pathlib import Path
           p = Path('crates/aurora-config/benches/configuration.rs')
