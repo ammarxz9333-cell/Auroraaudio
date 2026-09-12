@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import string
 from pathlib import Path
 
 
@@ -30,6 +31,33 @@ SELECTED_DECISIONS = {
 
 def fail(message: str) -> None:
     raise SystemExit(f"external-components: {message}")
+
+
+def validate_release_artifacts(component_id: str, value: object) -> None:
+    if value is None:
+        return
+    if not isinstance(value, dict) or not value:
+        fail(f"{component_id}: release_artifacts must be a non-empty object when present")
+
+    for platform, artifact in value.items():
+        if not isinstance(platform, str) or not platform:
+            fail(f"{component_id}: release artifact platform must be a non-empty string")
+        if not isinstance(artifact, dict):
+            fail(f"{component_id}: release artifact {platform} must be an object")
+
+        name = artifact.get("name")
+        if not isinstance(name, str) or not name or "/" in name or "\\" in name:
+            fail(f"{component_id}: release artifact {platform} needs a safe file name")
+
+        digest = artifact.get("sha256")
+        if (
+            not isinstance(digest, str)
+            or len(digest) != 64
+            or any(character not in string.hexdigits for character in digest)
+        ):
+            fail(f"{component_id}: release artifact {platform} needs a 64-digit SHA-256")
+        if digest != digest.lower():
+            fail(f"{component_id}: release artifact {platform} SHA-256 must be lowercase")
 
 
 def main() -> None:
@@ -77,6 +105,9 @@ def main() -> None:
                 fail(f"{component_id}: selected components require evidence")
         if decision == "evaluate-active" and not component.get("pinned_commit"):
             fail(f"{component_id}: active evaluation requires a pinned_commit")
+
+        validate_release_artifacts(component_id, component.get("release_artifacts"))
+
         if component.get("production_ready") and not evidence:
             fail(f"{component_id}: production_ready requires evidence")
         if component.get("object_metadata") == "supported" and not evidence:
