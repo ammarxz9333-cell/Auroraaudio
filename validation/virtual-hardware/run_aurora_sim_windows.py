@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Run Aurora's full-system JOC + virtual-hardware regression natively on Windows.
+"""Run Aurora's full-system JOC + output-DSP + virtual-hardware regression on Windows.
 
 This is the laptop convenience lane. It verifies exact carrier/component identity,
 runs the real pinned Harletty/Omniphony path, captures moving-object telemetry,
-runs a media-paced 12-channel render, then drives the merged virtual TDM16/DAC
-model. The independent OpenJOC reference lane remains authoritative Linux CI.
+runs a media-paced 12-channel render through Aurora's real SpeakerPostProcessor,
+then drives the deterministic virtual TDM16/DAC model and every declared negative
+fault profile. The independent OpenJOC reference lane remains authoritative Linux CI.
 """
 
 from __future__ import annotations
@@ -28,10 +29,21 @@ SOURCE_SHA = "2470373db2c3621d56a2852df070e140293e9a99fdaa07e5c06de3c86bec307f"
 DERIVED_SHA = "0219a241559de5231f31c6093072740ff9fe0657b3354541bc6838ef2d5e5be0"
 FIRST_AU_BYTES = 2560
 HARLETTY_URL = "https://github.com/harletty/harletty-bridge/releases/download/v0.7.4/harletty-bridge-v0.7.4-windows-x86_64.zip"
-HARLETTY_ZIP_SHA = "3ed126e5bb837882c5c2abbc5d35d1ebede199f81ed64127fb968bfe86bd6686"
+HARLETTY_ZIP_SHA = "3ed126e5bb837882c5abbc5d35d1ebede199f81ed64127fb968bfe86bd6686"
 ASIO_COMMIT = "496a0765b8bb9c26f764f22f9a9712a937177db2"
 ASIO_URL = f"https://github.com/audiosdk/asio/archive/{ASIO_COMMIT}.zip"
 SYNC = bytes.fromhex("72f81f4e")
+FAULT_PROFILES = (
+    "dropout",
+    "channel-silence",
+    "channel-swap",
+    "disconnect",
+    "drift",
+    "sample-rate-change",
+    "latency-spike",
+    "non-finite",
+    "tdm-padding-corruption",
+)
 
 
 def phase(text: str) -> None:
@@ -178,9 +190,18 @@ def main() -> int:
     patch = root / "validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"
     moving_analyzer = root / "validation/immersive/aurora_joc_moving_evidence.py"
     virtual_analyzer = root / "validation/virtual-hardware/aurora_full_system_sim.py"
+    coverage_validator = root / "validation/virtual-hardware/validate_simulation_coverage.py"
     pacer = root / "validation/virtual-hardware/pace_orender.py"
     telemetry_source = root / "validation/virtual-hardware/aurora_moving_telemetry.rs"
-    for path in (manifest_path, patch, moving_analyzer, virtual_analyzer, pacer, telemetry_source):
+    for path in (
+        manifest_path,
+        patch,
+        moving_analyzer,
+        virtual_analyzer,
+        coverage_validator,
+        pacer,
+        telemetry_source,
+    ):
         if not path.is_file():
             raise RuntimeError(f"Missing Aurora validation dependency: {path}")
 
@@ -189,6 +210,11 @@ def main() -> int:
     rustup = command("rustup", "Install Rustup: winget install -e --id Rustlang.Rustup")
     cargo = command("cargo", "Install Rustup and reopen the terminal.")
     python = sys.executable
+
+    phase("validate mandatory simulator coverage contract")
+    run([python, str(coverage_validator), "self-test"], cwd=root)
+    run([python, str(coverage_validator), "check"], cwd=root)
+    run([python, str(virtual_analyzer), "self-test"], cwd=root)
 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     components = {item["id"]: item for item in manifest["components"]}
@@ -323,20 +349,61 @@ def main() -> int:
         "--telemetry", str(telemetry), "--pcm", str(unpaced), "--pacing", str(pacing), "--sample-rate", "48000", "--channels", "12", "--output", str(moving_evidence)
     ], env=env)
 
-    phase("drive merged deterministic virtual TDM16/DAC hardware model")
+    phase("run real Aurora output DSP before the virtual hardware boundary")
+    dsp_render = output / "aurora-output-dsp-7.1.4.f32"
+    dsp_log = output / "aurora-output-dsp.log"
+    dsp_env = env.copy()
+    dsp_env["CARGO_TARGET_DIR"] = str(cache / "aurora-output-dsp-target")
+    with dsp_log.open("w", encoding="utf-8", errors="replace") as log_handle:
+        result = subprocess.run(
+            [
+                cargo,
+                "+stable",
+                "run",
+                "--quiet",
+                "--release",
+                "-p",
+                "aurora-dsp-basic",
+                "--example",
+                "process_7_1_4_file",
+                "--",
+                str(paced),
+                str(dsp_render),
+                "0",
+            ],
+            cwd=root,
+            env=dsp_env,
+            stdout=log_handle,
+            stderr=subprocess.STDOUT,
+            text=True,
+        )
+    if result.returncode != 0:
+        raise RuntimeError(f"Aurora output DSP failed ({result.returncode}); see {dsp_log}")
+    if not dsp_render.is_file() or dsp_render.stat().st_size != paced.stat().st_size:
+        raise RuntimeError("Aurora output DSP changed frame count/channel shape or emitted no output")
+    paced_sha = sha256(paced)
+    dsp_sha = sha256(dsp_render)
+    if paced_sha == dsp_sha:
+        raise RuntimeError("Aurora output DSP unexpectedly behaved as a byte-identical passthrough")
+    print(
+        "AURORA-WINDOWS-OUTPUT-DSP-INTEGRATION-PASS "
+        f"bytes={dsp_render.stat().st_size} source_sha={paced_sha} processed_sha={dsp_sha}"
+    )
+
+    phase("drive deterministic virtual TDM16/DAC hardware model")
     virtual_report = output / "aurora-full-system-sim.json"
     run([
-        python, str(virtual_analyzer), "run", "--render", str(paced), "--joc-evidence", str(moving_evidence), "--report", str(virtual_report),
-        "--fault", "none", "--tdm-slots", "16", "--latency-frames", "256"
+        python, str(virtual_analyzer), "run", "--render", str(dsp_render), "--joc-evidence", str(moving_evidence), "--report", str(virtual_report),
+        "--fault", "none", "--tdm-slots", "16", "--latency-frames", "256", "--max-latency-frames", "1024"
     ], env=env)
 
     if not args.skip_fault_profiles:
-        phase("verify virtual hardware fails closed under injected faults")
-        for fault in ("dropout", "channel-silence", "disconnect", "drift"):
+        phase("verify every declared virtual fault fails closed")
+        for fault in FAULT_PROFILES:
             report = output / f"fault-{fault}.json"
             result = run([
-                python, str(virtual_analyzer), "run", "--render", str(paced), "--joc-evidence", str(moving_evidence), "--report", str(report),
-                "--fault", fault, "--tdm-slots", "16", "--latency-frames", "256"
+                python, str(virtual_analyzer), "run", "--render", str(dsp_render), "--joc-evidence", str(moving_evidence), "--report", str(report),
+                "--fault", fault, "--tdm-slots", "16", "--latency-frames", "256", "--max-latency-frames", "1024"
             ], env=env, check=False)
             if result.returncode != 1:
                 raise RuntimeError(f"Expected fail-closed exit 1 for fault {fault!r}, got {result.returncode}")
@@ -350,10 +417,25 @@ def main() -> int:
         raise RuntimeError(f"Final AuroraSim verdict is {final.get('verdict')!r}")
     hardware = final["virtual_hardware"]
     health = final["channel_health"]
+    if len(health["active_channel_indices"]) != 12:
+        raise RuntimeError("Healthy Windows simulation lost one or more output channels")
+    if not health.get("order_preserved") or not health.get("pcm_identity_preserved"):
+        raise RuntimeError("Healthy Windows simulation did not preserve channel/PCM identity")
+    if hardware["sink_sample_rate_hz"] != 48_000:
+        raise RuntimeError("Healthy Windows virtual sink changed sample rate")
+    if hardware["tdm_padding_nonzero_samples"] != 0:
+        raise RuntimeError("Healthy Windows TDM padding was not zero")
+    if hardware["simulated_latency_frames"] > hardware["simulated_latency_budget_frames"]:
+        raise RuntimeError("Healthy Windows virtual path exceeded latency budget")
+
     print("\nAURORA-WINDOWS-FULL-SYSTEM-SIM-PASS")
-    print(f"frames={hardware['sink_frames']} channels={len(health['active_channel_indices'])}/12 xruns={hardware['xrun_count']}")
+    print(
+        f"frames={hardware['sink_frames']} channels={len(health['active_channel_indices'])}/12 "
+        f"xruns={hardware['xrun_count']} order={health['order_preserved']} "
+        f"pcm_identity={health['pcm_identity_preserved']}"
+    )
     print(f"report={virtual_report}")
-    print("Truth boundary: local Windows functional/simulation evidence; not physical eARC/UAC2/TDM/DAC or independent OpenJOC reference proof.")
+    print("Truth boundary: local Windows functional/simulation evidence with real Aurora output DSP; not physical eARC/UAC2/TDM/DAC, acoustics, protected-service compatibility, or Dolby certification.")
     return 0
 
 
