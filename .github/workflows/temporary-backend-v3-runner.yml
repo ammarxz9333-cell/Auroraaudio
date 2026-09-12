@@ -1,0 +1,57 @@
+name: Temporary backend v3 runner
+
+on:
+  push:
+    branches:
+      - refactor/backend-component-ref-v2
+
+permissions:
+  contents: write
+
+jobs:
+  implement:
+    if: "!contains(github.event.head_commit.message, '[backend-v3-bot]')"
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: refactor/backend-component-ref-v2
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Install Linux audio build dependencies
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev pkg-config
+      - name: Apply backend schema v3 patch
+        run: python scripts/temporary-backend-v3.py
+      - name: Format and compile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          cargo check --workspace --all-targets --all-features
+          cargo check --workspace --all-targets --all-features --locked
+      - name: Clippy and focused tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
+          cargo test -p aurora-config -p aurora-runtime-assembly -p aurora-runtime-inspection --all-features --locked
+          cargo test -p aurora-runtime-materialization -p aurora-realtime-engine --all-features --locked
+      - name: Reject legacy backend enum in production contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git grep -n 'BackendIntent' -- crates fixtures docs ':!crates/**/target'; then
+            echo 'legacy BackendIntent remains in current production/test/docs surface' >&2
+            exit 1
+          fi
+      - name: Commit production slice
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name "aurora-backend-v3-bot"
+          git config user.email "aurora-backend-v3-bot@users.noreply.github.com"
+          git add Cargo.lock crates fixtures docs AGENTS.md
+          git status --short
+          git commit -m "Replace audio backend enums with component references [backend-v3-bot]"
+          git push origin HEAD:refactor/backend-component-ref-v2
