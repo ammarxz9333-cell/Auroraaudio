@@ -30,6 +30,7 @@ jobs:
           python scripts/temporary-backend-v3-fixes.py
           python scripts/temporary-backend-v3-import-fixes.py
           python scripts/temporary-backend-v3-evidence.py
+          python scripts/temporary-inspection-v3-fixes.py
           python - <<'PY'
           from pathlib import Path
           p = Path('crates/aurora-config/benches/configuration.rs')
@@ -45,6 +46,17 @@ jobs:
           cargo fmt --all
           cargo check --workspace --all-targets --all-features
           cargo check --workspace --all-targets --all-features --locked
+      - name: Regenerate exact inspection v3 snapshots
+        shell: bash
+        run: |
+          set -euo pipefail
+          python scripts/temporary-refresh-inspection-v3.py
+          trap 'cp /tmp/aurora-inspection-tests.rs crates/aurora-runtime-inspection/src/model/tests.rs' EXIT
+          cargo fmt --all
+          cargo test -p aurora-runtime-inspection exact_redacted_and_unredacted -- --nocapture
+          cp /tmp/aurora-inspection-tests.rs crates/aurora-runtime-inspection/src/model/tests.rs
+          trap - EXIT
+          cargo fmt --all
       - name: Clippy and focused tests
         shell: bash
         run: |
