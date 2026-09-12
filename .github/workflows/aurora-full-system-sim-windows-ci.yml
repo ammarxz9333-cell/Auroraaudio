@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "validation/virtual-hardware/run-aurora-sim-windows.ps1"
+      - "validation/virtual-hardware/run_aurora_sim_windows.py"
       - "validation/virtual-hardware/pace_orender.py"
       - "validation/virtual-hardware/aurora_moving_telemetry.rs"
       - "validation/virtual-hardware/aurora_full_system_sim.py"
