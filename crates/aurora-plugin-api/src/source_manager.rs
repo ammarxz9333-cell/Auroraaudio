@@ -43,11 +43,22 @@ pub enum SourceState {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum PlayableMediaRef {
-    LocalFile { path: String },
-    NetworkUrl { url: String },
-    ProviderResolved { provider_id: String, media_id: String },
-    LiveEndpoint { endpoint_id: String },
-    TvEarc { input_id: String },
+    LocalFile {
+        path: String,
+    },
+    NetworkUrl {
+        url: String,
+    },
+    ProviderResolved {
+        provider_id: String,
+        media_id: String,
+    },
+    LiveEndpoint {
+        endpoint_id: String,
+    },
+    TvEarc {
+        input_id: String,
+    },
 }
 
 /// Non-realtime metadata associated with a source.
@@ -81,7 +92,10 @@ pub struct SourceAuthorization {
 
 impl SourceAuthorization {
     fn permits_playback_control(&self) -> bool {
-        self.builtin_trusted || self.permissions.contains(&PluginPermission::PlaybackControl)
+        self.builtin_trusted
+            || self
+                .permissions
+                .contains(&PluginPermission::PlaybackControl)
     }
 }
 
@@ -169,10 +183,15 @@ impl SourceManager {
         Self::default()
     }
 
-    pub fn register(&mut self, registration: SourceRegistration) -> Result<SourceSessionId, SourceManagerError> {
+    pub fn register(
+        &mut self,
+        registration: SourceRegistration,
+    ) -> Result<SourceSessionId, SourceManagerError> {
         validate_registration(&registration)?;
         if self.sources.contains_key(&registration.source_id) {
-            return Err(SourceManagerError::SourceAlreadyRegistered(registration.source_id));
+            return Err(SourceManagerError::SourceAlreadyRegistered(
+                registration.source_id,
+            ));
         }
         let session = SourceSessionId {
             source_id: registration.source_id.clone(),
@@ -207,7 +226,11 @@ impl SourceManager {
             .generation
             .checked_add(1)
             .ok_or_else(|| SourceManagerError::GenerationExhausted(source_id.clone()))?;
-        if self.active.as_ref().is_some_and(|active| active.source_id == source_id) {
+        if self
+            .active
+            .as_ref()
+            .is_some_and(|active| active.source_id == source_id)
+        {
             self.active = None;
         }
         self.sources.insert(
@@ -220,7 +243,10 @@ impl SourceManager {
                 last_error: None,
             },
         );
-        Ok(SourceSessionId { source_id, generation })
+        Ok(SourceSessionId {
+            source_id,
+            generation,
+        })
     }
 
     /// Validates and stages a candidate without disturbing the currently active source.
@@ -269,7 +295,9 @@ impl SourceManager {
         {
             let record = self.record_for_session(session)?;
             if record.prepared.is_none() {
-                return Err(SourceManagerError::SourceNotPrepared(session.source_id.clone()));
+                return Err(SourceManagerError::SourceNotPrepared(
+                    session.source_id.clone(),
+                ));
             }
         }
 
@@ -349,12 +377,20 @@ impl SourceManager {
                 left.registration
                     .priority
                     .cmp(&right.registration.priority)
-                    .then_with(|| right.registration.source_id.cmp(&left.registration.source_id))
+                    .then_with(|| {
+                        right
+                            .registration
+                            .source_id
+                            .cmp(&left.registration.source_id)
+                    })
             })
             .map(|(_, prepared)| prepared)
     }
 
-    fn record_for_session(&self, session: &SourceSessionId) -> Result<&SourceRecord, SourceManagerError> {
+    fn record_for_session(
+        &self,
+        session: &SourceSessionId,
+    ) -> Result<&SourceRecord, SourceManagerError> {
         let record = self
             .sources
             .get(&session.source_id)
@@ -391,7 +427,11 @@ pub enum SourceManagerError {
     #[error("source generation exhausted for `{0}`")]
     GenerationExhausted(String),
     #[error("stale generation for `{source_id}`: got {actual}, current {current}")]
-    StaleGeneration { source_id: String, actual: u64, current: u64 },
+    StaleGeneration {
+        source_id: String,
+        actual: u64,
+        current: u64,
+    },
     #[error("playback control denied for principal `{0}`")]
     PlaybackControlDenied(String),
     #[error("source `{0}` has not been prepared")]
@@ -406,7 +446,10 @@ pub enum SourceManagerError {
     InvalidMediaReference(String),
 }
 
-fn ensure_generation(record: &SourceRecord, session: &SourceSessionId) -> Result<(), SourceManagerError> {
+fn ensure_generation(
+    record: &SourceRecord,
+    session: &SourceSessionId,
+) -> Result<(), SourceManagerError> {
     if record.generation != session.generation {
         return Err(SourceManagerError::StaleGeneration {
             source_id: session.source_id.clone(),
@@ -425,10 +468,14 @@ fn validate_registration(registration: &SourceRegistration) -> Result<(), Source
         });
     }
     if !is_canonical_id(&registration.source_id) {
-        return Err(SourceManagerError::InvalidSourceId(registration.source_id.clone()));
+        return Err(SourceManagerError::InvalidSourceId(
+            registration.source_id.clone(),
+        ));
     }
     if !is_canonical_id(&registration.provider_id) {
-        return Err(SourceManagerError::InvalidProviderId(registration.provider_id.clone()));
+        return Err(SourceManagerError::InvalidProviderId(
+            registration.provider_id.clone(),
+        ));
     }
     Ok(())
 }
@@ -440,23 +487,34 @@ fn validate_media_ref(media: &PlayableMediaRef) -> Result<(), SourceManagerError
             let lower = url.to_ascii_lowercase();
             !(lower.starts_with("https://") || lower.starts_with("http://"))
         }
-        PlayableMediaRef::ProviderResolved { provider_id, media_id } => {
-            !is_canonical_id(provider_id) || media_id.trim().is_empty()
-        }
+        PlayableMediaRef::ProviderResolved {
+            provider_id,
+            media_id,
+        } => !is_canonical_id(provider_id) || media_id.trim().is_empty(),
         PlayableMediaRef::LiveEndpoint { endpoint_id } => endpoint_id.trim().is_empty(),
         PlayableMediaRef::TvEarc { input_id } => input_id.trim().is_empty(),
     };
     if invalid {
-        return Err(SourceManagerError::InvalidMediaReference(format!("{media:?}")));
+        return Err(SourceManagerError::InvalidMediaReference(format!(
+            "{media:?}"
+        )));
     }
     Ok(())
 }
 
 fn is_canonical_id(value: &str) -> bool {
     !value.is_empty()
-        && value.bytes().all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'-' | b'_'))
-        && value.as_bytes().first().is_some_and(u8::is_ascii_alphanumeric)
-        && value.as_bytes().last().is_some_and(u8::is_ascii_alphanumeric)
+        && value.bytes().all(|b| {
+            b.is_ascii_lowercase() || b.is_ascii_digit() || matches!(b, b'.' | b'-' | b'_')
+        })
+        && value
+            .as_bytes()
+            .first()
+            .is_some_and(u8::is_ascii_alphanumeric)
+        && value
+            .as_bytes()
+            .last()
+            .is_some_and(u8::is_ascii_alphanumeric)
 }
 
 #[cfg(test)]
@@ -466,7 +524,10 @@ mod tests {
     fn authorization() -> SourceAuthorization {
         SourceAuthorization {
             principal_id: "org.aurora.local".to_owned(),
-            permissions: vec![PluginPermission::PlaybackControl, PluginPermission::LocalMediaRead],
+            permissions: vec![
+                PluginPermission::PlaybackControl,
+                PluginPermission::LocalMediaRead,
+            ],
             builtin_trusted: false,
         }
     }
@@ -483,7 +544,9 @@ mod tests {
     }
 
     fn media(path: &str) -> PlayableMediaRef {
-        PlayableMediaRef::LocalFile { path: path.to_owned() }
+        PlayableMediaRef::LocalFile {
+            path: path.to_owned(),
+        }
     }
 
     fn caps() -> SourceCapabilities {
@@ -502,10 +565,17 @@ mod tests {
     fn stale_session_is_rejected_after_replacement() {
         let mut manager = SourceManager::new();
         let old = manager.register(registration("local.main", 10)).unwrap();
-        let new = manager.replace_registration(registration("local.main", 10)).unwrap();
+        let new = manager
+            .replace_registration(registration("local.main", 10))
+            .unwrap();
         assert_eq!(new.generation, old.generation + 1);
         assert!(matches!(
-            manager.prepare(&old, media("/music/a.flac"), SourceMetadata::default(), caps()),
+            manager.prepare(
+                &old,
+                media("/music/a.flac"),
+                SourceMetadata::default(),
+                caps()
+            ),
             Err(SourceManagerError::StaleGeneration { .. })
         ));
     }
@@ -514,28 +584,57 @@ mod tests {
     fn failed_prepare_leaves_active_source_unchanged() {
         let mut manager = SourceManager::new();
         let first = manager.register(registration("local.first", 10)).unwrap();
-        manager.prepare(&first, media("/music/a.flac"), SourceMetadata::default(), caps()).unwrap();
+        manager
+            .prepare(
+                &first,
+                media("/music/a.flac"),
+                SourceMetadata::default(),
+                caps(),
+            )
+            .unwrap();
         manager.activate(&first).unwrap();
 
         let second = manager.register(registration("local.second", 20)).unwrap();
-        manager.fail_prepare(&second, "decoder probe failed").unwrap();
+        manager
+            .fail_prepare(&second, "decoder probe failed")
+            .unwrap();
         assert_eq!(manager.active_session(), Some(&first));
-        assert_eq!(manager.record("local.second").unwrap().state(), SourceState::Failed);
+        assert_eq!(
+            manager.record("local.second").unwrap().state(),
+            SourceState::Failed
+        );
     }
 
     #[test]
     fn switching_is_prepare_then_atomic_activate() {
         let mut manager = SourceManager::new();
         let first = manager.register(registration("local.first", 10)).unwrap();
-        manager.prepare(&first, media("/music/a.flac"), SourceMetadata::default(), caps()).unwrap();
+        manager
+            .prepare(
+                &first,
+                media("/music/a.flac"),
+                SourceMetadata::default(),
+                caps(),
+            )
+            .unwrap();
         manager.activate(&first).unwrap();
 
         let second = manager.register(registration("local.second", 20)).unwrap();
-        manager.prepare(&second, media("/music/b.flac"), SourceMetadata::default(), caps()).unwrap();
+        manager
+            .prepare(
+                &second,
+                media("/music/b.flac"),
+                SourceMetadata::default(),
+                caps(),
+            )
+            .unwrap();
         assert_eq!(manager.active_session(), Some(&first));
         manager.activate(&second).unwrap();
         assert_eq!(manager.active_session(), Some(&second));
-        assert_eq!(manager.record("local.first").unwrap().state(), SourceState::Draining);
+        assert_eq!(
+            manager.record("local.first").unwrap().state(),
+            SourceState::Draining
+        );
     }
 
     #[test]
@@ -544,14 +643,26 @@ mod tests {
         let session = manager.register(registration("local.main", 10)).unwrap();
         let mut capabilities = caps();
         capabilities.can_next = false;
-        manager.prepare(&session, media("/music/a.flac"), SourceMetadata::default(), capabilities).unwrap();
+        manager
+            .prepare(
+                &session,
+                media("/music/a.flac"),
+                SourceMetadata::default(),
+                capabilities,
+            )
+            .unwrap();
         manager.activate(&session).unwrap();
         assert_eq!(
             manager.transport(&session, TransportIntent::Next),
-            Err(SourceManagerError::UnsupportedTransport(TransportIntent::Next))
+            Err(SourceManagerError::UnsupportedTransport(
+                TransportIntent::Next
+            ))
         );
         manager.transport(&session, TransportIntent::Pause).unwrap();
-        assert_eq!(manager.record("local.main").unwrap().state(), SourceState::Paused);
+        assert_eq!(
+            manager.record("local.main").unwrap().state(),
+            SourceState::Paused
+        );
     }
 
     #[test]
@@ -561,9 +672,19 @@ mod tests {
         let high_b = manager.register(registration("source.high-b", 20)).unwrap();
         let high_a = manager.register(registration("source.high-a", 20)).unwrap();
         for session in [&low, &high_b, &high_a] {
-            manager.prepare(session, media("/music/a.flac"), SourceMetadata::default(), caps()).unwrap();
+            manager
+                .prepare(
+                    session,
+                    media("/music/a.flac"),
+                    SourceMetadata::default(),
+                    caps(),
+                )
+                .unwrap();
         }
-        assert_eq!(manager.preferred_prepared().unwrap().session.source_id, "source.high-a");
+        assert_eq!(
+            manager.preferred_prepared().unwrap().session.source_id,
+            "source.high-a"
+        );
     }
 
     #[test]
@@ -573,7 +694,12 @@ mod tests {
         let mut manager = SourceManager::new();
         let session = manager.register(reg).unwrap();
         assert!(matches!(
-            manager.prepare(&session, media("/music/a.flac"), SourceMetadata::default(), caps()),
+            manager.prepare(
+                &session,
+                media("/music/a.flac"),
+                SourceMetadata::default(),
+                caps()
+            ),
             Err(SourceManagerError::PlaybackControlDenied(_))
         ));
     }
@@ -581,7 +707,10 @@ mod tests {
     #[test]
     fn source_contract_round_trips_json() {
         let value = PreparedSource {
-            session: SourceSessionId { source_id: "local.main".to_owned(), generation: 7 },
+            session: SourceSessionId {
+                source_id: "local.main".to_owned(),
+                generation: 7,
+            },
             media: PlayableMediaRef::ProviderResolved {
                 provider_id: "org.aurora.provider".to_owned(),
                 media_id: "track-42".to_owned(),
