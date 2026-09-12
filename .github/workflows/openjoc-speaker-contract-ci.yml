@@ -8,6 +8,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-decoder-open/**"
+      - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-iec61937/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-alsa-output/**"
@@ -17,6 +18,7 @@ on:
       - "Cargo.toml"
       - "Cargo.lock"
       - "crates/aurora-decoder-open/**"
+      - "crates/aurora-direct-earc-decoder/**"
       - "crates/aurora-iec61937/**"
       - "crates/aurora-dsp-basic/**"
       - "crates/aurora-alsa-output/**"
@@ -61,8 +63,10 @@ jobs:
           cargo generate-lockfile
           cargo metadata --format-version 1 --locked > /tmp/aurora-metadata.json
 
-      - name: Check changed OpenJOC production adapter formatting
-        run: rustfmt --edition 2021 --check crates/aurora-decoder-open/src/openjoc_native.rs
+      - name: Check focused OpenJOC and direct-eARC proof formatting
+        run: |
+          rustfmt --edition 2021 --check crates/aurora-decoder-open/src/openjoc_native.rs
+          rustfmt --edition 2021 --check crates/aurora-direct-earc-decoder/tests/openjoc_iec_fixture.rs
 
       - name: Check OpenJOC decoder adapter
         run: cargo check --locked -p aurora-decoder-open --all-targets
@@ -75,6 +79,11 @@ jobs:
       # unreachable-pattern warning must not prevent the JOC functional proof.
       - name: Clippy OpenJOC decoder adapter
         run: cargo clippy --locked -p aurora-decoder-open --all-targets --no-deps -- -D warnings
+
+      - name: Check direct-eARC OpenJOC proof target
+        run: |
+          cargo check --locked -p aurora-direct-earc-decoder \
+            --test openjoc_iec_fixture
 
       - name: Fetch and verify pinned synthetic JOC fixture
         run: |
@@ -119,3 +128,10 @@ jobs:
             --test openjoc_earc_reference_layout \
             canonical_earc_carrier_reaches_aurora_eleven_one_four_reference_tdm16 \
             -- --ignored --exact
+
+      - name: Prove ALSA S32 direct-eARC ingress to OpenJOC speaker PCM
+        run: |
+          cargo test --locked -p aurora-direct-earc-decoder \
+            --test openjoc_iec_fixture \
+            synthetic_joc_survives_full_direct_earc_iec61937_chain \
+            -- --ignored --exact --nocapture
