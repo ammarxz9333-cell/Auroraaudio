@@ -155,6 +155,52 @@ jobs:
               raise SystemExit("wrapper fixture failed codec/JOC gate rather than temporal-diversity gate")
           print("AUTHORIZED-JOC-CARRIER-WRAPPER-FAIL-CLOSED-PASS")
           PY
+      - name: Discover temporal result for official Dolby Living-Room JOC test vector
+        id: dolby_living_room
+        shell: bash
+        env:
+          OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
+        run: |
+          set -euo pipefail
+          URL="https://ott.dolby.com/OnDelKits/DDP/Dolby_Digital_Plus_Online_Delivery_Kit_v1.4.1/Test_Signals/elementary_streams/audio.zip"
+          NAME="Living-Room-Atmos_6ch_640kbps_ddp_joc.ec3"
+          WORK="${{ runner.temp }}/dolby-living-room-candidate"
+          ZIP="$WORK/audio.zip"
+          INPUT="$WORK/$NAME"
+          AUTH_DIR="$WORK/authorized"
+          mkdir -p "$WORK"
+          curl --fail --location --retry 3 --silent --show-error "$URL" --output "$ZIP"
+          ZIP_SHA256="$(sha256sum "$ZIP" | awk '{print $1}')"
+          python3 - "$ZIP" "$INPUT" "$NAME" <<'PY'
+          import pathlib, sys, zipfile
+          archive = pathlib.Path(sys.argv[1])
+          output = pathlib.Path(sys.argv[2])
+          wanted = sys.argv[3]
+          with zipfile.ZipFile(archive) as zf:
+              matches = [name for name in zf.namelist() if pathlib.PurePosixPath(name).name == wanted]
+              if len(matches) != 1:
+                  raise SystemExit(f"expected exactly one {wanted!r}, found {matches!r}")
+              output.write_bytes(zf.read(matches[0]))
+          print(f"extracted {output.name}: {output.stat().st_size} bytes")
+          PY
+          INPUT_SHA256="$(sha256sum "$INPUT" | awk '{print $1}')"
+          echo "zip_sha256=$ZIP_SHA256"
+          echo "carrier_sha256=$INPUT_SHA256"
+          set +e
+          bash validation/immersive/run-authorized-joc-carrier.sh \
+            "$INPUT" \
+            "$INPUT_SHA256" \
+            "Official Dolby Digital Plus Online Delivery Kit v1.4.1 test vector $NAME; downloaded at validation time from $URL for testing; not redistributed by Aurora" \
+            "$AUTH_DIR"
+          RC=$?
+          set -e
+          echo "rc=$RC" >> "$GITHUB_OUTPUT"
+          echo "zip_sha256=$ZIP_SHA256" >> "$GITHUB_OUTPUT"
+          echo "carrier_sha256=$INPUT_SHA256" >> "$GITHUB_OUTPUT"
+          echo "DOLBY-LIVING-ROOM-CANDIDATE-RC=$RC"
+          cat "$AUTH_DIR/temporal/joc-temporal-evidence.json" || true
+          # Discovery only. Convert this into a checksum-pinned assertion or remove it before merge.
+          exit 0
       - name: Upload differential and temporal JOC evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -172,5 +218,10 @@ jobs:
             ${{ runner.temp }}/aurora-joc-differential/authorized-public-fixture/temporal/openjoc/openjoc-7.1.4-ffprobe.json
             ${{ runner.temp }}/aurora-joc-differential/openjoc/openjoc-inspect.json
             ${{ runner.temp }}/aurora-joc-differential/openjoc/openjoc-7.1.4-ffprobe.json
+            ${{ runner.temp }}/dolby-living-room-candidate/authorized/authorized-carrier-manifest.json
+            ${{ runner.temp }}/dolby-living-room-candidate/authorized/source-ffprobe.json
+            ${{ runner.temp }}/dolby-living-room-candidate/authorized/temporal/joc-temporal-evidence.json
+            ${{ runner.temp }}/dolby-living-room-candidate/authorized/temporal/openjoc/openjoc-inspect.json
+            ${{ runner.temp }}/dolby-living-room-candidate/authorized/temporal/openjoc/openjoc-7.1.4-ffprobe.json
           if-no-files-found: warn
           retention-days: 14
