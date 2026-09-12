@@ -4,21 +4,24 @@ use std::sync::Arc;
 
 use aurora_config::*;
 use aurora_diagnostics::TruthSource;
-use common::{configuration, full_preset, stereo};
+use common::{
+    basic_renderer_reference, configuration, full_preset, horizontal_spread_reference,
+    point_source_vbap_reference, stereo, unknown_renderer_reference,
+};
 
 #[test]
 fn valid_minimal_and_standard_configurations() {
-    let minimal = configuration(LayoutKind::CustomHorizontal, RendererConfiguration::Basic);
+    let minimal = configuration(LayoutKind::CustomHorizontal, basic_renderer_reference());
     assert!(ValidatedConfiguration::new(minimal).is_ok());
     assert!(ValidatedConfiguration::new(stereo()).is_ok());
     assert!(ValidatedConfiguration::new(configuration(
         LayoutKind::Surround51,
-        RendererConfiguration::PointSourceVbap,
+        point_source_vbap_reference(),
     ))
     .is_ok());
     assert!(ValidatedConfiguration::new(configuration(
         LayoutKind::Surround71,
-        RendererConfiguration::HorizontalSpread { spread: 0.6 },
+        horizontal_spread_reference(0.6),
     ))
     .is_ok());
 }
@@ -26,9 +29,9 @@ fn valid_minimal_and_standard_configurations() {
 #[test]
 fn irregular_horizontal_and_phase_renderer_vocabulary_validate() {
     for renderer in [
-        RendererConfiguration::PointSourceVbap,
-        RendererConfiguration::HorizontalSpread { spread: 0.0 },
-        RendererConfiguration::HorizontalSpread { spread: 1.0 },
+        point_source_vbap_reference(),
+        horizontal_spread_reference(0.0),
+        horizontal_spread_reference(1.0),
     ] {
         let validated =
             ValidatedConfiguration::new(configuration(LayoutKind::CustomHorizontal, renderer))
@@ -68,7 +71,7 @@ fn canonical_serialization_is_stable_and_semantic() {
 fn canonical_round_trip_preserves_validated_semantics() {
     let first = ValidatedConfiguration::new(configuration(
         LayoutKind::Surround51,
-        RendererConfiguration::HorizontalSpread { spread: 0.25 },
+        horizontal_spread_reference(0.25),
     ))
     .unwrap();
     let bytes = first.canonical_json().unwrap();
@@ -140,7 +143,7 @@ fn duplicate_ids_ambiguous_devices_and_invalid_routing_are_rejected() {
 }
 
 #[test]
-fn unsupported_renderer_and_schema_are_rejected() {
+fn renderer_component_reference_is_structural_and_schema_fail_closed() {
     let mut schema = stereo();
     schema.schema.schema_version = 99;
     assert_eq!(
@@ -148,23 +151,37 @@ fn unsupported_renderer_and_schema_are_rejected() {
         ErrorCode::UnsupportedSchemaVersion
     );
 
-    let mut renderer = stereo();
-    renderer.renderer = RendererConfiguration::HorizontalSpread { spread: 1.01 };
+    let mut wrong_contract = stereo();
+    wrong_contract.renderer.contract_kind = ComponentContractKind::Dsp;
     assert_eq!(
-        ValidatedConfiguration::new(renderer).unwrap_err().code,
-        ErrorCode::UnsupportedRenderer
-    );
-
-    let json = ValidatedConfiguration::new(stereo())
-        .unwrap()
-        .canonical_json()
-        .unwrap()
-        .replace("\"type\":\"basic\"", "\"type\":\"unknown\"");
-    assert_eq!(
-        ValidatedConfiguration::from_json(json.as_bytes())
+        ValidatedConfiguration::new(wrong_contract)
             .unwrap_err()
             .code,
-        ErrorCode::UnsupportedRenderer
+        ErrorCode::InvalidComponentReference
+    );
+
+    let mut invalid_range = stereo();
+    invalid_range.renderer.compatible_minor = CompatibleMinorRange {
+        minimum: 2,
+        maximum: 1,
+    };
+    assert_eq!(
+        ValidatedConfiguration::new(invalid_range).unwrap_err().code,
+        ErrorCode::InvalidComponentReference
+    );
+
+    let mut non_object = stereo();
+    non_object.renderer.configuration = serde_json::json!(["not", "an", "object"]);
+    assert_eq!(
+        ValidatedConfiguration::new(non_object).unwrap_err().code,
+        ErrorCode::InvalidComponentReference
+    );
+
+    let mut unknown = stereo();
+    unknown.renderer = unknown_renderer_reference();
+    assert!(
+        ValidatedConfiguration::new(unknown).is_ok(),
+        "config validates structure; registry resolves IDs later"
     );
 
     let json = ValidatedConfiguration::new(stereo())
@@ -172,8 +189,8 @@ fn unsupported_renderer_and_schema_are_rejected() {
         .canonical_json()
         .unwrap()
         .replace(
-            "\"type\":\"basic\"",
-            "\"type\":\"basic\",\"elevation\":true",
+            "\"configuration_schema\":1",
+            "\"configuration_schema\":1,\"unexpected\":true",
         );
     assert_eq!(
         ValidatedConfiguration::from_json(json.as_bytes())
@@ -217,7 +234,7 @@ fn preset_creation_composition_and_canonical_order_are_deterministic() {
         display_name: "Wide".to_owned(),
         schema_version: CURRENT_SCHEMA_VERSION,
         preset_type: PresetType::Renderer,
-        payload: PresetPayload::Renderer(RendererConfiguration::HorizontalSpread { spread: 0.7 }),
+        payload: PresetPayload::Renderer(horizontal_spread_reference(0.7)),
         description: None,
         tags: vec!["wide".to_owned()],
         extends: Vec::new(),
@@ -227,7 +244,7 @@ fn preset_creation_composition_and_canonical_order_are_deterministic() {
         display_name: "Composed".to_owned(),
         schema_version: CURRENT_SCHEMA_VERSION,
         preset_type: PresetType::Renderer,
-        payload: PresetPayload::Renderer(RendererConfiguration::HorizontalSpread { spread: 0.5 }),
+        payload: PresetPayload::Renderer(horizontal_spread_reference(0.5)),
         description: None,
         tags: vec!["two".to_owned(), "one".to_owned()],
         extends: vec!["base".to_owned()],
@@ -239,7 +256,7 @@ fn preset_creation_composition_and_canonical_order_are_deterministic() {
     let materialized = materialize_preset(&collection, "composed").unwrap();
     assert_eq!(
         materialized.config().renderer,
-        RendererConfiguration::HorizontalSpread { spread: 0.5 }
+        horizontal_spread_reference(0.5)
     );
     assert_eq!(
         collection.canonical_json().unwrap(),
@@ -254,7 +271,7 @@ fn preset_conflicts_cycles_and_depth_are_rejected() {
         display_name: id.to_owned(),
         schema_version: CURRENT_SCHEMA_VERSION,
         preset_type: PresetType::Renderer,
-        payload: PresetPayload::Renderer(RendererConfiguration::Basic),
+        payload: PresetPayload::Renderer(basic_renderer_reference()),
         description: None,
         tags: Vec::new(),
         extends,
@@ -303,39 +320,38 @@ fn preset_conflicts_cycles_and_depth_are_rejected() {
 }
 
 #[test]
-fn migration_succeeds_warns_and_rejects_ambiguous_input() {
-    let source = include_bytes!("../../../fixtures/config/migration-source-v0.json");
-    let migrated = migrate_v0_to_v1(source).unwrap();
-    assert_eq!(migrated.warnings.len(), 1);
-    assert!(migrated.changed_fields.contains("renderer.spread_percent"));
+fn migration_to_v2_is_explicit_deterministic_and_fail_closed() {
+    let v1 = include_bytes!("../../../fixtures/config/migration-expected-v1.json");
+    let migrated_v1 = migrate_v1_to_v2(v1).unwrap();
+    assert!(migrated_v1.changed_fields.contains("renderer"));
+    assert_eq!(migrated_v1.configuration.config().schema.schema_version, 2);
+    assert_eq!(
+        migrated_v1.configuration.config().renderer.component_id,
+        "org.aurora.renderer.vbap"
+    );
     let expected = ValidatedConfiguration::from_json(include_bytes!(
-        "../../../fixtures/config/migration-expected-v1.json"
+        "../../../fixtures/config/migration-expected-v2.json"
     ))
     .unwrap();
-    assert!(migrated.configuration.semantically_eq(&expected));
+    assert!(migrated_v1.configuration.semantically_eq(&expected));
+
+    let v0 = include_bytes!("../../../fixtures/config/migration-source-v0.json");
+    let migrated_v0 = migrate_v0_to_v2(v0).unwrap();
+    assert!(migrated_v0
+        .changed_fields
+        .contains("renderer.spread_percent"));
+    assert!(migrated_v0.configuration.semantically_eq(&expected));
 
     let invalid = br#"{"schema":{"schema_version":2}}"#;
     assert_eq!(
-        migrate_v0_to_v1(invalid).unwrap_err().code,
+        migrate_v1_to_v2(invalid).unwrap_err().code,
         ErrorCode::UnsupportedMigration
     );
-
-    let missing_reader = String::from_utf8(source.to_vec())
+    let missing_reader = String::from_utf8(v1.to_vec())
         .unwrap()
-        .replace("\"minimum_reader_version\":0,", "");
+        .replace("\"minimum_reader_version\":1,", "");
     assert_eq!(
-        migrate_v0_to_v1(missing_reader.as_bytes())
-            .unwrap_err()
-            .code,
-        ErrorCode::UnsupportedMigration
-    );
-
-    let incompatible_reader = String::from_utf8(source.to_vec()).unwrap().replace(
-        "\"minimum_reader_version\":0",
-        "\"minimum_reader_version\":1",
-    );
-    assert_eq!(
-        migrate_v0_to_v1(incompatible_reader.as_bytes())
+        migrate_v1_to_v2(missing_reader.as_bytes())
             .unwrap_err()
             .code,
         ErrorCode::UnsupportedMigration
@@ -398,20 +414,20 @@ fn immutable_validated_configuration_supports_concurrent_reads() {
 #[test]
 fn every_configuration_fixture_has_expected_validity() {
     let valid = [
-        include_bytes!("../../../fixtures/config/minimal-v1.json").as_slice(),
-        include_bytes!("../../../fixtures/config/stereo-basic-v1.json").as_slice(),
-        include_bytes!("../../../fixtures/config/surround-5-1-v1.json").as_slice(),
-        include_bytes!("../../../fixtures/config/surround-7-1-v1.json").as_slice(),
-        include_bytes!("../../../fixtures/config/irregular-horizontal-v1.json").as_slice(),
-        include_bytes!("../../../fixtures/config/phase-3a-point-source-v1.json").as_slice(),
-        include_bytes!("../../../fixtures/config/phase-3b-spread-v1.json").as_slice(),
+        include_bytes!("../../../fixtures/config/minimal-v2.json").as_slice(),
+        include_bytes!("../../../fixtures/config/stereo-basic-v2.json").as_slice(),
+        include_bytes!("../../../fixtures/config/surround-5-1-v2.json").as_slice(),
+        include_bytes!("../../../fixtures/config/surround-7-1-v2.json").as_slice(),
+        include_bytes!("../../../fixtures/config/irregular-horizontal-v2.json").as_slice(),
+        include_bytes!("../../../fixtures/config/phase-3a-point-source-v2.json").as_slice(),
+        include_bytes!("../../../fixtures/config/phase-3b-spread-v2.json").as_slice(),
     ];
     for fixture in valid {
         assert!(ValidatedConfiguration::from_json(fixture).is_ok());
     }
     for fixture in [
-        include_bytes!("../../../fixtures/config/invalid-duplicate-speaker-v1.json").as_slice(),
-        include_bytes!("../../../fixtures/config/invalid-ambiguous-device-v1.json").as_slice(),
+        include_bytes!("../../../fixtures/config/invalid-duplicate-speaker-v2.json").as_slice(),
+        include_bytes!("../../../fixtures/config/invalid-ambiguous-device-v2.json").as_slice(),
     ] {
         assert!(ValidatedConfiguration::from_json(fixture).is_err());
     }
@@ -421,50 +437,54 @@ fn every_configuration_fixture_has_expected_validity() {
 fn canonical_fixture_checksums_are_stable() {
     let fixtures = [
         (
-            "minimal-v1",
-            include_bytes!("../../../fixtures/config/minimal-v1.json").as_slice(),
+            "minimal-v2",
+            include_bytes!("../../../fixtures/config/minimal-v2.json").as_slice(),
         ),
         (
-            "stereo-basic-v1",
-            include_bytes!("../../../fixtures/config/stereo-basic-v1.json").as_slice(),
+            "stereo-basic-v2",
+            include_bytes!("../../../fixtures/config/stereo-basic-v2.json").as_slice(),
         ),
         (
-            "surround-5-1-v1",
-            include_bytes!("../../../fixtures/config/surround-5-1-v1.json").as_slice(),
+            "surround-5-1-v2",
+            include_bytes!("../../../fixtures/config/surround-5-1-v2.json").as_slice(),
         ),
         (
-            "surround-7-1-v1",
-            include_bytes!("../../../fixtures/config/surround-7-1-v1.json").as_slice(),
+            "surround-7-1-v2",
+            include_bytes!("../../../fixtures/config/surround-7-1-v2.json").as_slice(),
         ),
         (
-            "irregular-horizontal-v1",
-            include_bytes!("../../../fixtures/config/irregular-horizontal-v1.json").as_slice(),
+            "irregular-horizontal-v2",
+            include_bytes!("../../../fixtures/config/irregular-horizontal-v2.json").as_slice(),
         ),
         (
-            "phase-3a-point-source-v1",
-            include_bytes!("../../../fixtures/config/phase-3a-point-source-v1.json").as_slice(),
+            "phase-3a-point-source-v2",
+            include_bytes!("../../../fixtures/config/phase-3a-point-source-v2.json").as_slice(),
         ),
         (
-            "phase-3b-spread-v1",
-            include_bytes!("../../../fixtures/config/phase-3b-spread-v1.json").as_slice(),
+            "phase-3b-spread-v2",
+            include_bytes!("../../../fixtures/config/phase-3b-spread-v2.json").as_slice(),
         ),
     ];
     let expected = [
-        0x1a6b2e19637f9f5d,
-        0xb7b6f1dd07c388be,
-        0x822a3581edb281b2,
-        0x7e53ae5665aa9ae5,
-        0x9945c96aacf7a909,
-        0x47d3f9620e0cd07d,
-        0xf8660a0d16cb490b,
+        0xef8f5bd68119dcf1,
+        0x54b72410a4da76ac,
+        0xf1eea69ae35151ee,
+        0x73890ea81de9a1fb,
+        0x4db22da621458129,
+        0x0fcf1ead7ce3767b,
+        0x2f2b43d7879cbfe7,
     ];
-    for ((name, fixture), expected) in fixtures.into_iter().zip(expected) {
-        let canonical = ValidatedConfiguration::from_json(fixture)
-            .unwrap()
-            .canonical_json()
-            .unwrap();
-        assert_eq!(fnv1a64(canonical.as_bytes()), expected, "{name}");
-    }
+    let actual = fixtures
+        .into_iter()
+        .map(|(_, fixture)| {
+            let canonical = ValidatedConfiguration::from_json(fixture)
+                .unwrap()
+                .canonical_json()
+                .unwrap();
+            fnv1a64(canonical.as_bytes())
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(actual, expected);
 }
 
 fn fnv1a64(bytes: &[u8]) -> u64 {

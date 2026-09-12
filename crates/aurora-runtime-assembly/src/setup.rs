@@ -449,8 +449,8 @@ mod tests {
     use super::*;
     use crate::{prepare_runtime_plan, PreparedRendererKind};
 
-    const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v1.json");
-    const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v1.json");
+    const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v2.json");
+    const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v2.json");
 
     fn runtime_plan(bytes: &[u8]) -> PreparedRuntimePlan {
         let validated = ValidatedConfiguration::from_json(bytes).unwrap();

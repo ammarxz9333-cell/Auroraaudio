@@ -7,7 +7,7 @@ fn fixture(bytes: &[u8]) -> AuroraConfiguration {
 
 fn sixteen_speakers() -> AuroraConfiguration {
     let mut config = fixture(include_bytes!(
-        "../../../fixtures/config/irregular-horizontal-v1.json"
+        "../../../fixtures/config/irregular-horizontal-v2.json"
     ));
     config.audio_format.channel_count = 16;
     config.routing.inputs.clear();
@@ -55,7 +55,7 @@ fn preset_collection(config: AuroraConfiguration) -> PresetCollection {
 }
 
 fn benchmarks(criterion: &mut Criterion) {
-    let minimal = fixture(include_bytes!("../../../fixtures/config/minimal-v1.json"));
+    let minimal = fixture(include_bytes!("../../../fixtures/config/minimal-v2.json"));
     let sixteen = sixteen_speakers();
     let validated = ValidatedConfiguration::new(sixteen.clone()).unwrap();
     let canonical = validated.canonical_json().unwrap();
@@ -77,8 +77,8 @@ fn benchmarks(criterion: &mut Criterion) {
     criterion.bench_function("config/materialize_preset", |bencher| {
         bencher.iter(|| materialize_preset(black_box(&presets), "base").unwrap())
     });
-    criterion.bench_function("config/migrate_v0_to_v1", |bencher| {
-        bencher.iter(|| migrate_v0_to_v1(black_box(migration)).unwrap())
+    criterion.bench_function("config/migrate_v0_to_v2", |bencher| {
+        bencher.iter(|| migrate_v0_to_v2(black_box(migration)).unwrap())
     });
 }
 

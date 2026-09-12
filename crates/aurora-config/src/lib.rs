@@ -16,7 +16,7 @@ mod validation;
 
 pub use error::{ConfigError, ErrorCategory, ErrorCode};
 pub use limits::*;
-pub use migration::{migrate_v0_to_v1, MigrationResult, MigrationWarning};
+pub use migration::{migrate_v0_to_v2, migrate_v1_to_v2, MigrationResult, MigrationWarning};
 pub use model::*;
 pub use preset::{materialize_preset, Preset, PresetCollection, PresetPayload, PresetType};
 pub use redaction::{RedactedConfiguration, RedactedDeviceIntent};

@@ -6,10 +6,10 @@ use aurora_runtime_assembly::{
     RuntimeCapacityPlan, RuntimeInvariant, RuntimePreparationError, SetupStage,
 };
 
-const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v1.json");
-const FIVE_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-5-1-v1.json");
-const SEVEN_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-v1.json");
-const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v1.json");
+const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v2.json");
+const FIVE_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-5-1-v2.json");
+const SEVEN_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-v2.json");
+const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v2.json");
 
 fn validated(bytes: &[u8]) -> ValidatedConfiguration {
     ValidatedConfiguration::from_json(bytes).unwrap()

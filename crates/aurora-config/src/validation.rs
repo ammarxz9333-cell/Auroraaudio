@@ -1,10 +1,10 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    AmbiguityPolicy, AuroraConfiguration, ConfigError, ErrorCategory, ErrorCode,
-    FormatFallbackPolicy, LayoutKind, RendererConfiguration, CURRENT_SCHEMA_VERSION, MAX_CHANNELS,
-    MAX_FALLBACK_SAMPLE_RATES, MAX_ROUTES, MAX_SERIALIZED_BYTES, MAX_SPEAKERS, MAX_STRING_BYTES,
-    MINIMUM_READER_VERSION,
+    AmbiguityPolicy, AuroraConfiguration, ComponentContractKind, ConfigError, ErrorCategory,
+    ErrorCode, FormatFallbackPolicy, LayoutKind, CURRENT_SCHEMA_VERSION, MAX_CHANNELS,
+    MAX_COMPONENT_CONFIG_DEPTH, MAX_COMPONENT_CONFIG_ENTRIES, MAX_FALLBACK_SAMPLE_RATES,
+    MAX_ROUTES, MAX_SERIALIZED_BYTES, MAX_SPEAKERS, MAX_STRING_BYTES, MINIMUM_READER_VERSION,
 };
 
 /// Immutable normalized configuration that passed every validation phase.
@@ -136,7 +136,14 @@ fn strings(config: &AuroraConfiguration) -> Result<(), ConfigError> {
             config.engine.recovery_policy.as_str(),
         ),
         ("speaker_layout.id", config.speaker_layout.id.as_str()),
+        (
+            "renderer.component_id",
+            config.renderer.component_id.as_str(),
+        ),
     ];
+    if let Some(value) = config.renderer.implementation_version_pin.as_deref() {
+        fields.push(("renderer.implementation_version_pin", value));
+    }
     if let Some(value) = config.schema.generated_by.as_deref() {
         fields.push(("schema.generated_by", value));
     }
@@ -344,33 +351,87 @@ fn validate_layout(config: &AuroraConfiguration) -> Result<(), ConfigError> {
 }
 
 fn validate_renderer(config: &AuroraConfiguration) -> Result<(), ConfigError> {
-    let active = config
-        .speaker_layout
-        .speakers
-        .iter()
-        .filter(|speaker| speaker.active)
-        .count();
-    match config.renderer {
-        RendererConfiguration::Basic => Ok(()),
-        RendererConfiguration::PointSourceVbap if active >= 2 => Ok(()),
-        RendererConfiguration::HorizontalSpread { spread }
-            if active >= 2 && spread.is_finite() && (0.0..=1.0).contains(&spread) =>
-        {
-            Ok(())
-        }
-        RendererConfiguration::Unsupported => Err(error(
-            ErrorCode::UnsupportedRenderer,
-            "renderer.type",
-            ErrorCategory::Renderer,
-            "renderer type is unsupported",
-        )),
-        _ => Err(error(
-            ErrorCode::UnsupportedRenderer,
+    let reference = &config.renderer;
+    if reference.contract_kind != ComponentContractKind::Renderer
+        || reference.contract_major == 0
+        || reference.compatible_minor.minimum > reference.compatible_minor.maximum
+        || reference.configuration_schema == 0
+        || !reference.configuration.is_object()
+    {
+        return Err(error(
+            ErrorCode::InvalidComponentReference,
             "renderer",
-            ErrorCategory::Renderer,
-            "renderer is invalid or incompatible with the active layout",
-        )),
+            ErrorCategory::Component,
+            "renderer component reference has an invalid contract, version range, or payload shape",
+        ));
     }
+    let mut entries = 0usize;
+    validate_component_payload(
+        &reference.configuration,
+        "renderer.configuration",
+        0,
+        &mut entries,
+    )
+}
+
+fn validate_component_payload(
+    value: &serde_json::Value,
+    path: &str,
+    depth: usize,
+    entries: &mut usize,
+) -> Result<(), ConfigError> {
+    if depth > MAX_COMPONENT_CONFIG_DEPTH {
+        return Err(limit(path));
+    }
+    match value {
+        serde_json::Value::Object(values) => {
+            *entries = entries
+                .checked_add(values.len())
+                .ok_or_else(|| limit(path))?;
+            if *entries > MAX_COMPONENT_CONFIG_ENTRIES {
+                return Err(limit(path));
+            }
+            for (key, child) in values {
+                if key.trim().is_empty() || key.len() > MAX_STRING_BYTES {
+                    return Err(error(
+                        ErrorCode::InvalidString,
+                        path,
+                        ErrorCategory::Component,
+                        "component configuration key is empty or oversized",
+                    ));
+                }
+                validate_component_payload(child, path, depth + 1, entries)?;
+            }
+        }
+        serde_json::Value::Array(values) => {
+            *entries = entries
+                .checked_add(values.len())
+                .ok_or_else(|| limit(path))?;
+            if *entries > MAX_COMPONENT_CONFIG_ENTRIES {
+                return Err(limit(path));
+            }
+            for child in values {
+                validate_component_payload(child, path, depth + 1, entries)?;
+            }
+        }
+        serde_json::Value::String(value) => {
+            if value.len() > MAX_STRING_BYTES {
+                return Err(error(
+                    ErrorCode::InvalidString,
+                    path,
+                    ErrorCategory::Component,
+                    "component configuration string exceeds its bound",
+                ));
+            }
+        }
+        serde_json::Value::Number(value) => {
+            if value.as_f64().is_some_and(|value| !value.is_finite()) {
+                return Err(numeric(path));
+            }
+        }
+        serde_json::Value::Null | serde_json::Value::Bool(_) => {}
+    }
+    Ok(())
 }
 
 fn validate_buffering(config: &AuroraConfiguration) -> Result<(), ConfigError> {

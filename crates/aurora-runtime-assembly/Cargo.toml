@@ -9,3 +9,4 @@ rust-version.workspace = true
 [dependencies]
 aurora-config = { path = "../aurora-config" }
 aurora-core = { path = "../aurora-core" }
+serde_json.workspace = true
