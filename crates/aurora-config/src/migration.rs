@@ -20,15 +20,19 @@ pub struct MigrationResult {
     pub warnings: Vec<MigrationWarning>,
 }
 
-pub fn migrate_v1_to_v2(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
-    migrate_to_v2(bytes, 1)
+pub fn migrate_v2_to_v3(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
+    migrate_to_v3(bytes, 2)
 }
 
-pub fn migrate_v0_to_v2(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
-    migrate_to_v2(bytes, 0)
+pub fn migrate_v1_to_v3(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
+    migrate_to_v3(bytes, 1)
 }
 
-fn migrate_to_v2(bytes: &[u8], source_version: u16) -> Result<MigrationResult, ConfigError> {
+pub fn migrate_v0_to_v3(bytes: &[u8]) -> Result<MigrationResult, ConfigError> {
+    migrate_to_v3(bytes, 0)
+}
+
+fn migrate_to_v3(bytes: &[u8], source_version: u16) -> Result<MigrationResult, ConfigError> {
     if bytes.len() > MAX_SERIALIZED_BYTES {
         return Err(migration_error(
             ErrorCode::SerializedSizeExceeded,
@@ -50,6 +54,71 @@ fn migrate_to_v2(bytes: &[u8], source_version: u16) -> Result<MigrationResult, C
             "migration input must be an object",
         )
     })?;
+    validate_source_schema(root, source_version)?;
+
+    let mut changed_fields = BTreeSet::from([
+        "schema.minimum_reader_version".to_owned(),
+        "schema.schema_version".to_owned(),
+    ]);
+    let mut warnings = Vec::new();
+
+    if source_version < 2 {
+        migrate_renderer(root, source_version, &mut changed_fields, &mut warnings)?;
+    }
+    migrate_legacy_backend(
+        root,
+        "input_device",
+        "audio_input_backend",
+        &mut changed_fields,
+        &mut warnings,
+    )?;
+    migrate_legacy_backend(
+        root,
+        "output_device",
+        "audio_output_backend",
+        &mut changed_fields,
+        &mut warnings,
+    )?;
+
+    let schema = root
+        .get_mut("schema")
+        .and_then(serde_json::Value::as_object_mut)
+        .ok_or_else(|| {
+            migration_error(
+                ErrorCode::UnsupportedMigration,
+                "schema",
+                "schema metadata is missing",
+            )
+        })?;
+    schema.insert(
+        "schema_version".to_owned(),
+        serde_json::Value::from(CURRENT_SCHEMA_VERSION),
+    );
+    schema.insert(
+        "minimum_reader_version".to_owned(),
+        serde_json::Value::from(CURRENT_SCHEMA_VERSION),
+    );
+    warnings.truncate(MAX_MIGRATION_DIAGNOSTICS);
+
+    let migrated = serde_json::to_vec(&value).map_err(|_| {
+        migration_error(
+            ErrorCode::InvalidJson,
+            "$",
+            "migrated document could not be serialized",
+        )
+    })?;
+    let configuration = ValidatedConfiguration::from_json(&migrated)?;
+    Ok(MigrationResult {
+        configuration,
+        changed_fields,
+        warnings,
+    })
+}
+
+fn validate_source_schema(
+    root: &serde_json::Map<String, serde_json::Value>,
+    source_version: u16,
+) -> Result<(), ConfigError> {
     let schema = root
         .get("schema")
         .and_then(serde_json::Value::as_object)
@@ -75,7 +144,15 @@ fn migrate_to_v2(bytes: &[u8], source_version: u16) -> Result<MigrationResult, C
             "migration source schema metadata does not match the requested source version",
         ));
     }
+    Ok(())
+}
 
+fn migrate_renderer(
+    root: &mut serde_json::Map<String, serde_json::Value>,
+    source_version: u16,
+    changed_fields: &mut BTreeSet<String>,
+    warnings: &mut Vec<MigrationWarning>,
+) -> Result<(), ConfigError> {
     let renderer = root
         .get_mut("renderer")
         .and_then(serde_json::Value::as_object_mut)
@@ -86,12 +163,6 @@ fn migrate_to_v2(bytes: &[u8], source_version: u16) -> Result<MigrationResult, C
                 "legacy renderer object is missing",
             )
         })?;
-    let mut changed_fields = BTreeSet::from([
-        "schema.minimum_reader_version".to_owned(),
-        "schema.schema_version".to_owned(),
-        "renderer".to_owned(),
-    ]);
-    let mut warnings = Vec::new();
     if source_version == 0 {
         let percent = renderer
             .remove("spread_percent")
@@ -116,8 +187,8 @@ fn migrate_to_v2(bytes: &[u8], source_version: u16) -> Result<MigrationResult, C
         );
         changed_fields.insert("renderer.spread_percent".to_owned());
         warnings.push(MigrationWarning {
-  field_path: "renderer.spread_percent".to_owned(),
-  detail: "deprecated percentage converted to normalized spread before renderer-component migration".to_owned(),
+            field_path: "renderer.spread_percent".to_owned(),
+            detail: "deprecated percentage converted to normalized spread before renderer-component migration".to_owned(),
         });
     }
 
@@ -132,23 +203,17 @@ fn migrate_to_v2(bytes: &[u8], source_version: u16) -> Result<MigrationResult, C
                 "legacy renderer type is missing",
             )
         })?;
-    let migrated_renderer = match renderer_type {
-        "basic" if legacy.len() == 1 => serde_json::json!({
-        "component_id": "org.aurora.renderer.basic",
-        "contract_kind": "renderer",
-        "contract_major": 1,
-        "compatible_minor": {"minimum": 0, "maximum": 0},
-        "configuration_schema": 1,
-        "configuration": {}
-              }),
-        "point_source_vbap" if legacy.len() == 1 => serde_json::json!({
-        "component_id": "org.aurora.renderer.vbap",
-        "contract_kind": "renderer",
-        "contract_major": 1,
-        "compatible_minor": {"minimum": 0, "maximum": 0},
-        "configuration_schema": 1,
-        "configuration": {"mode": "point_source"}
-              }),
+    let migrated = match renderer_type {
+        "basic" if legacy.len() == 1 => component_reference(
+            "org.aurora.renderer.basic",
+            "renderer",
+            serde_json::json!({}),
+        ),
+        "point_source_vbap" if legacy.len() == 1 => component_reference(
+            "org.aurora.renderer.vbap",
+            "renderer",
+            serde_json::json!({"mode":"point_source"}),
+        ),
         "horizontal_spread" if legacy.len() == 2 => {
             let spread = legacy
                 .get("spread")
@@ -167,14 +232,11 @@ fn migrate_to_v2(bytes: &[u8], source_version: u16) -> Result<MigrationResult, C
                     "legacy horizontal spread is outside 0..=1",
                 ));
             }
-            serde_json::json!({
-                "component_id": "org.aurora.renderer.vbap",
-                "contract_kind": "renderer",
-                "contract_major": 1,
-                "compatible_minor": {"minimum": 0, "maximum": 0},
-                "configuration_schema": 1,
-                "configuration": {"mode": "horizontal_spread", "spread": spread}
-            })
+            component_reference(
+                "org.aurora.renderer.vbap",
+                "renderer",
+                serde_json::json!({"mode":"horizontal_spread","spread":spread}),
+            )
         }
         _ => {
             return Err(migration_error(
@@ -184,44 +246,104 @@ fn migrate_to_v2(bytes: &[u8], source_version: u16) -> Result<MigrationResult, C
             ))
         }
     };
-    root.insert("renderer".to_owned(), migrated_renderer);
-    let schema = root
-        .get_mut("schema")
-        .and_then(serde_json::Value::as_object_mut)
-        .ok_or_else(|| {
-            migration_error(
-                ErrorCode::UnsupportedMigration,
-                "schema",
-                "schema metadata is missing",
-            )
-        })?;
-    schema.insert(
-        "schema_version".to_owned(),
-        serde_json::Value::from(CURRENT_SCHEMA_VERSION),
-    );
-    schema.insert(
-        "minimum_reader_version".to_owned(),
-        serde_json::Value::from(CURRENT_SCHEMA_VERSION),
-    );
+    root.insert("renderer".to_owned(), migrated);
+    changed_fields.insert("renderer".to_owned());
     warnings.push(MigrationWarning {
         field_path: "renderer".to_owned(),
         detail: "legacy renderer enum migrated to a versioned renderer component reference"
             .to_owned(),
     });
-    warnings.truncate(MAX_MIGRATION_DIAGNOSTICS);
+    Ok(())
+}
 
-    let migrated = serde_json::to_vec(&value).map_err(|_| {
+fn migrate_legacy_backend(
+    root: &mut serde_json::Map<String, serde_json::Value>,
+    field: &str,
+    contract_kind: &str,
+    changed_fields: &mut BTreeSet<String>,
+    warnings: &mut Vec<MigrationWarning>,
+) -> Result<(), ConfigError> {
+    let Some(device) = root.get_mut(field) else {
+        return Ok(());
+    };
+    if device.is_null() {
+        return Ok(());
+    }
+    let device = device.as_object_mut().ok_or_else(|| {
         migration_error(
-            ErrorCode::InvalidJson,
-            "$",
-            "migrated document could not be serialized",
+            ErrorCode::MigrationDataLoss,
+            field,
+            "legacy device selector is not an object",
         )
     })?;
-    let configuration = ValidatedConfiguration::from_json(&migrated)?;
-    Ok(MigrationResult {
-        configuration,
-        changed_fields,
-        warnings,
+    let expected_direction = if field == "input_device" {
+        "input"
+    } else {
+        "output"
+    };
+    if device.get("direction").and_then(serde_json::Value::as_str) != Some(expected_direction) {
+        return Err(migration_error(
+            ErrorCode::MigrationDataLoss,
+            field,
+            "legacy device direction disagrees with its root field",
+        ));
+    }
+    let legacy = device.remove("backend").ok_or_else(|| {
+        migration_error(
+            ErrorCode::MigrationDataLoss,
+            field,
+            "legacy backend selection is missing",
+        )
+    })?;
+    if legacy.is_object() {
+        device.insert("backend".to_owned(), legacy);
+        return Ok(());
+    }
+    let legacy = legacy.as_str().ok_or_else(|| {
+        migration_error(
+            ErrorCode::MigrationDataLoss,
+            field,
+            "legacy backend selection is not a string",
+        )
+    })?;
+    let component_id = match legacy {
+        "virtual" => "org.aurora.backend.virtual",
+        "cpal" => "org.aurora.backend.cpal",
+        "offline" => "org.aurora.backend.offline",
+        _ => {
+            return Err(migration_error(
+                ErrorCode::MigrationDataLoss,
+                field,
+                "legacy backend value is unknown and cannot be migrated safely",
+            ))
+        }
+    };
+    device.insert(
+        "backend".to_owned(),
+        component_reference(component_id, contract_kind, serde_json::json!({})),
+    );
+    let path = format!("{field}.backend");
+    changed_fields.insert(path.clone());
+    warnings.push(MigrationWarning {
+        field_path: path,
+        detail: "legacy backend enum migrated to a versioned audio-backend component reference"
+            .to_owned(),
+    });
+    Ok(())
+}
+
+fn component_reference(
+    component_id: &str,
+    contract_kind: &str,
+    configuration: serde_json::Value,
+) -> serde_json::Value {
+    serde_json::json!({
+        "component_id": component_id,
+        "contract_kind": contract_kind,
+        "contract_major": 1,
+        "compatible_minor": {"minimum": 0, "maximum": 0},
+        "configuration_schema": 1,
+        "configuration": configuration,
     })
 }
 

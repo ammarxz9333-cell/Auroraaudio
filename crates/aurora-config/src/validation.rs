@@ -144,6 +144,24 @@ fn strings(config: &AuroraConfiguration) -> Result<(), ConfigError> {
     if let Some(value) = config.renderer.implementation_version_pin.as_deref() {
         fields.push(("renderer.implementation_version_pin", value));
     }
+    if let Some(device) = config.input_device.as_ref() {
+        fields.push((
+            "input_device.backend.component_id",
+            device.backend.component_id.as_str(),
+        ));
+        if let Some(value) = device.backend.implementation_version_pin.as_deref() {
+            fields.push(("input_device.backend.implementation_version_pin", value));
+        }
+    }
+    if let Some(device) = config.output_device.as_ref() {
+        fields.push((
+            "output_device.backend.component_id",
+            device.backend.component_id.as_str(),
+        ));
+        if let Some(value) = device.backend.implementation_version_pin.as_deref() {
+            fields.push(("output_device.backend.implementation_version_pin", value));
+        }
+    }
     if let Some(value) = config.schema.generated_by.as_deref() {
         fields.push(("schema.generated_by", value));
     }
@@ -227,6 +245,20 @@ fn validate_devices(config: &AuroraConfiguration) -> Result<(), ConfigError> {
                 ));
             }
         }
+        let expected_contract = match path {
+            "input_device" => ComponentContractKind::AudioInputBackend,
+            "output_device" => ComponentContractKind::AudioOutputBackend,
+            _ => unreachable!("device validation uses fixed root paths"),
+        };
+        validate_component_reference(
+            &device.backend,
+            expected_contract,
+            if path == "input_device" {
+                "input_device.backend"
+            } else {
+                "output_device.backend"
+            },
+        )?;
     }
     Ok(())
 }
@@ -351,8 +383,19 @@ fn validate_layout(config: &AuroraConfiguration) -> Result<(), ConfigError> {
 }
 
 fn validate_renderer(config: &AuroraConfiguration) -> Result<(), ConfigError> {
-    let reference = &config.renderer;
-    if reference.contract_kind != ComponentContractKind::Renderer
+    validate_component_reference(
+        &config.renderer,
+        ComponentContractKind::Renderer,
+        "renderer",
+    )
+}
+
+fn validate_component_reference(
+    reference: &crate::ComponentReference,
+    expected_contract: ComponentContractKind,
+    path: &str,
+) -> Result<(), ConfigError> {
+    if reference.contract_kind != expected_contract
         || reference.contract_major == 0
         || reference.compatible_minor.minimum > reference.compatible_minor.maximum
         || reference.configuration_schema == 0
@@ -360,15 +403,21 @@ fn validate_renderer(config: &AuroraConfiguration) -> Result<(), ConfigError> {
     {
         return Err(error(
             ErrorCode::InvalidComponentReference,
-            "renderer",
+            path,
             ErrorCategory::Component,
-            "renderer component reference has an invalid contract, version range, or payload shape",
+            "component reference has an invalid contract, version range, or payload shape",
         ));
     }
     let mut entries = 0usize;
+    let configuration_path = match expected_contract {
+        ComponentContractKind::Renderer => "renderer.configuration",
+        ComponentContractKind::AudioInputBackend => "input_device.backend.configuration",
+        ComponentContractKind::AudioOutputBackend => "output_device.backend.configuration",
+        _ => "component.configuration",
+    };
     validate_component_payload(
         &reference.configuration,
-        "renderer.configuration",
+        configuration_path,
         0,
         &mut entries,
     )

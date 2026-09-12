@@ -3,13 +3,11 @@ use serde_json::Value;
 
 use crate::{
     PreparedComponentIdentity, PreparedRendererPlan, RendererComponentIssue,
-    RuntimePreparationError, BASIC_RENDERER_IMPLEMENTATION_ID, REALTIME_RENDERER_CONTRACT_VERSION,
-    VBAP_RENDERER_IMPLEMENTATION_ID,
+    RuntimePreparationError, BASIC_RENDERER_IMPLEMENTATION_ID,
+    BASIC_RENDERER_IMPLEMENTATION_VERSION, REALTIME_RENDERER_CONTRACT_MINOR,
+    REALTIME_RENDERER_CONTRACT_VERSION, VBAP_RENDERER_IMPLEMENTATION_ID,
+    VBAP_RENDERER_IMPLEMENTATION_VERSION,
 };
-
-pub const REALTIME_RENDERER_CONTRACT_MINOR: u16 = 0;
-pub const BASIC_RENDERER_IMPLEMENTATION_VERSION: &str = "0.1.0";
-pub const VBAP_RENDERER_IMPLEMENTATION_VERSION: &str = "0.1.0";
 
 pub type RendererConfigurationResolver =
     fn(&Value, usize) -> Result<PreparedRendererPlan, RendererComponentIssue>;
@@ -158,7 +156,9 @@ impl RendererComponentRegistry {
             .map_err(|issue| component_error(&reference.component_id, issue))?;
         Ok(plan.with_component_identity(PreparedComponentIdentity::new(
             registration.component_id,
+            registration.implementation_version,
             registration.contract_major,
+            registration.contract_minor,
         )))
     }
 }

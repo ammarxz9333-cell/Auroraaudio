@@ -15,7 +15,7 @@ Last updated: **2026-09-12**
 - Never leave temporary GitHub Actions workflows on `main-v2`.
 - If the user says **“كمل” / “continue”**, continue the first unfinished item in **Current work / Next actions** below. Do not redo project discovery first.
 
-Latest integrated architecture slice: **PR #129**, squash commit `8ac1db7293628456eded4dc61fb79f791eaf497d`.
+Latest integrated architecture slice: **PR #129**, squash commit `8ac1db7293628456eded4dc61fb79f791eaf497d`. Active short-lived branch: `refactor/backend-component-ref-v2` for issue #130 / parent #119.
 
 ## 2. Product goal
 
@@ -148,7 +148,7 @@ Issue #119 removes remaining control-plane coupling to replaceable implementatio
 
 Official #129 gates all passed: Linux, Windows, MSRV 1.78, Simulation Assurance PR Smoke, Sustained Realtime Health Soak, Criterion/regression policy, deterministic renderer evaluation, 3D VBAP evaluation, generic 7.1.4 rendering/output DSP, and public API docs.
 
-### Next slice — backend component references
+### Active slice — backend component references (#130)
 
 1. Replace `BackendIntent::{Virtual,Cpal,Offline}` implementation selection with versioned audio-backend `ComponentReference` values while preserving stable product intent.
 2. Add explicit backend registry with contract/version/config-schema validation before activation.

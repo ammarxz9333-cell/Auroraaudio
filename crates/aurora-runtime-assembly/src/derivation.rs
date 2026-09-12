@@ -5,11 +5,12 @@ use aurora_config::{
 use aurora_core::{ChannelRole, StandardLayout, Vector3};
 
 use crate::{
-    ArithmeticOperation, PreparedAudioFormatIntent, PreparedChannelIdentity, PreparedDeviceIntent,
-    PreparedDeviceSelectorIntent, PreparedDspPlan, PreparedExecutionPlan, PreparedLayoutKind,
-    PreparedLayoutPlan, PreparedRoute, PreparedRoutingPlan, PreparedRuntimePlan, PreparedSpeaker,
-    PreparedTopologyPlan, RendererComponentRegistry, RuntimeCapacityPlan, RuntimeInvariant,
-    RuntimePlanMetadata, RuntimePreparationError,
+    ArithmeticOperation, BackendComponentRegistry, PreparedAudioFormatIntent,
+    PreparedChannelIdentity, PreparedDeviceIntent, PreparedDeviceSelectorIntent, PreparedDspPlan,
+    PreparedExecutionPlan, PreparedLayoutKind, PreparedLayoutPlan, PreparedRoute,
+    PreparedRoutingPlan, PreparedRuntimePlan, PreparedSpeaker, PreparedTopologyPlan,
+    RendererComponentRegistry, RuntimeCapacityPlan, RuntimeInvariant, RuntimePlanMetadata,
+    RuntimePreparationError,
 };
 
 /// Derives an immutable runtime preparation plan from validated configuration.
@@ -31,14 +32,25 @@ use crate::{
 pub fn prepare_runtime_plan(
     configuration: &ValidatedConfiguration,
 ) -> Result<PreparedRuntimePlan, RuntimePreparationError> {
-    let registry = RendererComponentRegistry::builtin();
-    prepare_runtime_plan_with_registry(configuration, &registry)
+    let renderer_registry = RendererComponentRegistry::builtin();
+    let backend_registry = BackendComponentRegistry::builtin();
+    prepare_runtime_plan_with_registries(configuration, &renderer_registry, &backend_registry)
 }
 
-/// Derives a runtime plan using an explicit renderer-component registry.
+/// Derives a runtime plan using an explicit renderer registry and the built-in backend registry.
 pub fn prepare_runtime_plan_with_registry(
     configuration: &ValidatedConfiguration,
-    registry: &RendererComponentRegistry,
+    renderer_registry: &RendererComponentRegistry,
+) -> Result<PreparedRuntimePlan, RuntimePreparationError> {
+    let backend_registry = BackendComponentRegistry::builtin();
+    prepare_runtime_plan_with_registries(configuration, renderer_registry, &backend_registry)
+}
+
+/// Derives a runtime plan using explicit renderer and audio-backend registries.
+pub fn prepare_runtime_plan_with_registries(
+    configuration: &ValidatedConfiguration,
+    renderer_registry: &RendererComponentRegistry,
+    backend_registry: &BackendComponentRegistry,
 ) -> Result<PreparedRuntimePlan, RuntimePreparationError> {
     let config = configuration.config();
     let routing = prepare_routing(&config.routing)?;
@@ -73,10 +85,24 @@ pub fn prepare_runtime_plan_with_registry(
         .iter()
         .filter(|speaker| speaker.is_active())
         .count();
-    let renderer = registry.resolve(&config.renderer, active_speakers)?;
+    let renderer = renderer_registry.resolve(&config.renderer, active_speakers)?;
     let device_intent = PreparedDeviceIntent::new(
-        prepare_device_selector(config.input_device.as_ref(), DeviceDirection::Input)?,
-        prepare_device_selector(config.output_device.as_ref(), DeviceDirection::Output)?,
+        prepare_device_selector(
+            config.input_device.as_ref(),
+            DeviceDirection::Input,
+            backend_registry,
+            config.engine.operating_mode,
+            config.audio_format.sample_rate,
+            input_channel_count,
+        )?,
+        prepare_device_selector(
+            config.output_device.as_ref(),
+            DeviceDirection::Output,
+            backend_registry,
+            config.engine.operating_mode,
+            config.audio_format.sample_rate,
+            output_channel_count,
+        )?,
     );
     let capacity = RuntimeCapacityPlan::new(
         input_channel_count,
@@ -202,6 +228,10 @@ fn canonical_axis(value: f32) -> f32 {
 fn prepare_device_selector(
     selector: Option<&DeviceSelectionIntent>,
     expected_direction: DeviceDirection,
+    backend_registry: &BackendComponentRegistry,
+    operating_mode: aurora_config::OperatingMode,
+    sample_rate: u32,
+    channel_count: usize,
 ) -> Result<Option<PreparedDeviceSelectorIntent>, RuntimePreparationError> {
     let Some(selector) = selector else {
         return Ok(None);
@@ -214,10 +244,17 @@ fn prepare_device_selector(
         return Err(RuntimePreparationError::InternalInvariantViolation { invariant });
     }
 
+    let backend = backend_registry.resolve(
+        &selector.backend,
+        expected_direction,
+        sample_rate,
+        channel_count,
+        operating_mode,
+    )?;
     PreparedDeviceSelectorIntent::new(
         selector.stable_id.clone(),
         selector.friendly_name.clone(),
-        selector.backend,
+        backend,
         selector.ambiguity_policy,
     )
     .map(Some)
@@ -226,9 +263,9 @@ fn prepare_device_selector(
 #[cfg(test)]
 mod tests {
     use aurora_config::{
-        AmbiguityPolicy, BackendIntent, CompatibleMinorRange, ComponentContractKind,
-        ComponentReference, DeviceDirection, DeviceSelectionIntent, FormatFallbackPolicy,
-        SampleFormatIntent, ValidatedConfiguration,
+        AmbiguityPolicy, CompatibleMinorRange, ComponentContractKind, ComponentReference,
+        DeviceDirection, DeviceSelectionIntent, FormatFallbackPolicy, SampleFormatIntent,
+        ValidatedConfiguration,
     };
 
     use super::*;
@@ -238,13 +275,34 @@ mod tests {
         RUNTIME_PLAN_CONTRACT_VERSION, VBAP_RENDERER_IMPLEMENTATION_ID,
     };
 
-    const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v2.json");
-    const FIVE_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-5-1-v2.json");
-    const SEVEN_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-v2.json");
-    const POINT: &[u8] = include_bytes!("../../../fixtures/config/phase-3a-point-source-v2.json");
-    const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v2.json");
+    const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v3.json");
+    const FIVE_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-5-1-v3.json");
+    const SEVEN_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-v3.json");
+    const POINT: &[u8] = include_bytes!("../../../fixtures/config/phase-3a-point-source-v3.json");
+    const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v3.json");
     const IRREGULAR: &[u8] =
-        include_bytes!("../../../fixtures/config/irregular-horizontal-v2.json");
+        include_bytes!("../../../fixtures/config/irregular-horizontal-v3.json");
+
+    fn common_backend_reference(
+        component_id: &str,
+        direction: DeviceDirection,
+    ) -> ComponentReference {
+        ComponentReference {
+            component_id: component_id.to_owned(),
+            contract_kind: match direction {
+                DeviceDirection::Input => ComponentContractKind::AudioInputBackend,
+                DeviceDirection::Output => ComponentContractKind::AudioOutputBackend,
+            },
+            contract_major: 1,
+            compatible_minor: CompatibleMinorRange {
+                minimum: 0,
+                maximum: 0,
+            },
+            implementation_version_pin: None,
+            configuration_schema: 1,
+            configuration: serde_json::json!({}),
+        }
+    }
 
     fn validated(bytes: &[u8]) -> ValidatedConfiguration {
         ValidatedConfiguration::from_json(bytes).unwrap()
@@ -476,14 +534,17 @@ mod tests {
         config.input_device = Some(DeviceSelectionIntent {
             stable_id: Some("input-1".to_owned()),
             friendly_name: Some("Requested Input".to_owned()),
-            backend: BackendIntent::Cpal,
+            backend: common_backend_reference("org.aurora.backend.cpal", DeviceDirection::Input),
             direction: DeviceDirection::Input,
             ambiguity_policy: AmbiguityPolicy::RequireStableIdentifier,
         });
         config.output_device = Some(DeviceSelectionIntent {
             stable_id: None,
             friendly_name: Some("Requested Output".to_owned()),
-            backend: BackendIntent::Virtual,
+            backend: common_backend_reference(
+                "org.aurora.backend.virtual",
+                DeviceDirection::Output,
+            ),
             direction: DeviceDirection::Output,
             ambiguity_policy: AmbiguityPolicy::Reject,
         });
@@ -497,8 +558,13 @@ mod tests {
             Some("Requested Output")
         );
         assert_eq!(
-            plan.device_intent().output().unwrap().backend(),
-            BackendIntent::Virtual
+            plan.device_intent()
+                .output()
+                .unwrap()
+                .backend()
+                .identity()
+                .implementation_id(),
+            crate::VIRTUAL_BACKEND_IMPLEMENTATION_ID
         );
     }
 
@@ -567,7 +633,7 @@ mod tests {
         config.input_device = Some(DeviceSelectionIntent {
             stable_id: Some("wrong-direction".to_owned()),
             friendly_name: None,
-            backend: BackendIntent::Virtual,
+            backend: common_backend_reference("org.aurora.backend.virtual", DeviceDirection::Input),
             direction: DeviceDirection::Output,
             ambiguity_policy: AmbiguityPolicy::Reject,
         });

@@ -5,8 +5,9 @@ use std::sync::Arc;
 use aurora_config::*;
 use aurora_diagnostics::TruthSource;
 use common::{
-    basic_renderer_reference, configuration, full_preset, horizontal_spread_reference,
-    point_source_vbap_reference, stereo, unknown_renderer_reference,
+    backend_reference as common_backend_reference, basic_renderer_reference, configuration,
+    full_preset, horizontal_spread_reference, point_source_vbap_reference, stereo,
+    unknown_renderer_reference,
 };
 
 #[test]
@@ -114,7 +115,7 @@ fn duplicate_ids_ambiguous_devices_and_invalid_routing_are_rejected() {
     ambiguous.output_device = Some(DeviceSelectionIntent {
         stable_id: None,
         friendly_name: Some("Speakers".to_owned()),
-        backend: BackendIntent::Cpal,
+        backend: common_backend_reference("org.aurora.backend.cpal", DeviceDirection::Output),
         direction: DeviceDirection::Output,
         ambiguity_policy: AmbiguityPolicy::AllowFirst,
     });
@@ -320,23 +321,23 @@ fn preset_conflicts_cycles_and_depth_are_rejected() {
 }
 
 #[test]
-fn migration_to_v2_is_explicit_deterministic_and_fail_closed() {
+fn migration_to_v3_is_explicit_deterministic_and_fail_closed() {
     let v1 = include_bytes!("../../../fixtures/config/migration-expected-v1.json");
-    let migrated_v1 = migrate_v1_to_v2(v1).unwrap();
+    let migrated_v1 = migrate_v1_to_v3(v1).unwrap();
     assert!(migrated_v1.changed_fields.contains("renderer"));
-    assert_eq!(migrated_v1.configuration.config().schema.schema_version, 2);
+    assert_eq!(migrated_v1.configuration.config().schema.schema_version, 3);
     assert_eq!(
         migrated_v1.configuration.config().renderer.component_id,
         "org.aurora.renderer.vbap"
     );
     let expected = ValidatedConfiguration::from_json(include_bytes!(
-        "../../../fixtures/config/migration-expected-v2.json"
+        "../../../fixtures/config/migration-expected-v3.json"
     ))
     .unwrap();
     assert!(migrated_v1.configuration.semantically_eq(&expected));
 
     let v0 = include_bytes!("../../../fixtures/config/migration-source-v0.json");
-    let migrated_v0 = migrate_v0_to_v2(v0).unwrap();
+    let migrated_v0 = migrate_v0_to_v3(v0).unwrap();
     assert!(migrated_v0
         .changed_fields
         .contains("renderer.spread_percent"));
@@ -344,14 +345,14 @@ fn migration_to_v2_is_explicit_deterministic_and_fail_closed() {
 
     let invalid = br#"{"schema":{"schema_version":2}}"#;
     assert_eq!(
-        migrate_v1_to_v2(invalid).unwrap_err().code,
+        migrate_v1_to_v3(invalid).unwrap_err().code,
         ErrorCode::UnsupportedMigration
     );
     let missing_reader = String::from_utf8(v1.to_vec())
         .unwrap()
         .replace("\"minimum_reader_version\":1,", "");
     assert_eq!(
-        migrate_v1_to_v2(missing_reader.as_bytes())
+        migrate_v1_to_v3(missing_reader.as_bytes())
             .unwrap_err()
             .code,
         ErrorCode::UnsupportedMigration
@@ -366,7 +367,7 @@ fn redaction_removes_identifiers_and_reports_truth_source() {
     source.output_device = Some(DeviceSelectionIntent {
         stable_id: Some("C:\\Users\\person\\device-id".to_owned()),
         friendly_name: Some("Personal speakers".to_owned()),
-        backend: BackendIntent::Cpal,
+        backend: common_backend_reference("org.aurora.backend.cpal", DeviceDirection::Output),
         direction: DeviceDirection::Output,
         ambiguity_policy: AmbiguityPolicy::RequireStableIdentifier,
     });
@@ -414,20 +415,20 @@ fn immutable_validated_configuration_supports_concurrent_reads() {
 #[test]
 fn every_configuration_fixture_has_expected_validity() {
     let valid = [
-        include_bytes!("../../../fixtures/config/minimal-v2.json").as_slice(),
-        include_bytes!("../../../fixtures/config/stereo-basic-v2.json").as_slice(),
-        include_bytes!("../../../fixtures/config/surround-5-1-v2.json").as_slice(),
-        include_bytes!("../../../fixtures/config/surround-7-1-v2.json").as_slice(),
-        include_bytes!("../../../fixtures/config/irregular-horizontal-v2.json").as_slice(),
-        include_bytes!("../../../fixtures/config/phase-3a-point-source-v2.json").as_slice(),
-        include_bytes!("../../../fixtures/config/phase-3b-spread-v2.json").as_slice(),
+        include_bytes!("../../../fixtures/config/minimal-v3.json").as_slice(),
+        include_bytes!("../../../fixtures/config/stereo-basic-v3.json").as_slice(),
+        include_bytes!("../../../fixtures/config/surround-5-1-v3.json").as_slice(),
+        include_bytes!("../../../fixtures/config/surround-7-1-v3.json").as_slice(),
+        include_bytes!("../../../fixtures/config/irregular-horizontal-v3.json").as_slice(),
+        include_bytes!("../../../fixtures/config/phase-3a-point-source-v3.json").as_slice(),
+        include_bytes!("../../../fixtures/config/phase-3b-spread-v3.json").as_slice(),
     ];
     for fixture in valid {
         assert!(ValidatedConfiguration::from_json(fixture).is_ok());
     }
     for fixture in [
-        include_bytes!("../../../fixtures/config/invalid-duplicate-speaker-v2.json").as_slice(),
-        include_bytes!("../../../fixtures/config/invalid-ambiguous-device-v2.json").as_slice(),
+        include_bytes!("../../../fixtures/config/invalid-duplicate-speaker-v3.json").as_slice(),
+        include_bytes!("../../../fixtures/config/invalid-ambiguous-device-v3.json").as_slice(),
     ] {
         assert!(ValidatedConfiguration::from_json(fixture).is_err());
     }
@@ -438,41 +439,41 @@ fn canonical_fixture_checksums_are_stable() {
     let fixtures = [
         (
             "minimal-v2",
-            include_bytes!("../../../fixtures/config/minimal-v2.json").as_slice(),
+            include_bytes!("../../../fixtures/config/minimal-v3.json").as_slice(),
         ),
         (
             "stereo-basic-v2",
-            include_bytes!("../../../fixtures/config/stereo-basic-v2.json").as_slice(),
+            include_bytes!("../../../fixtures/config/stereo-basic-v3.json").as_slice(),
         ),
         (
             "surround-5-1-v2",
-            include_bytes!("../../../fixtures/config/surround-5-1-v2.json").as_slice(),
+            include_bytes!("../../../fixtures/config/surround-5-1-v3.json").as_slice(),
         ),
         (
             "surround-7-1-v2",
-            include_bytes!("../../../fixtures/config/surround-7-1-v2.json").as_slice(),
+            include_bytes!("../../../fixtures/config/surround-7-1-v3.json").as_slice(),
         ),
         (
             "irregular-horizontal-v2",
-            include_bytes!("../../../fixtures/config/irregular-horizontal-v2.json").as_slice(),
+            include_bytes!("../../../fixtures/config/irregular-horizontal-v3.json").as_slice(),
         ),
         (
             "phase-3a-point-source-v2",
-            include_bytes!("../../../fixtures/config/phase-3a-point-source-v2.json").as_slice(),
+            include_bytes!("../../../fixtures/config/phase-3a-point-source-v3.json").as_slice(),
         ),
         (
             "phase-3b-spread-v2",
-            include_bytes!("../../../fixtures/config/phase-3b-spread-v2.json").as_slice(),
+            include_bytes!("../../../fixtures/config/phase-3b-spread-v3.json").as_slice(),
         ),
     ];
     let expected = [
-        0xef8f5bd68119dcf1,
-        0x54b72410a4da76ac,
-        0xf1eea69ae35151ee,
-        0x73890ea81de9a1fb,
-        0x4db22da621458129,
-        0x0fcf1ead7ce3767b,
-        0x2f2b43d7879cbfe7,
+        0x037b10224ccc54df,
+        0x984d8091d17afabe,
+        0xbe6d05d004aacd20,
+        0x1ef176bb12f32349,
+        0xd713ea8d14d6ab2b,
+        0xfae61eb5a163b755,
+        0xcdeadb7503268139,
     ];
     let actual = fixtures
         .into_iter()

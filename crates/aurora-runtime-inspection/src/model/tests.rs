@@ -1,5 +1,6 @@
 use aurora_config::{
-    AmbiguityPolicy, BackendIntent, DeviceDirection, DeviceSelectionIntent, ValidatedConfiguration,
+    AmbiguityPolicy, CompatibleMinorRange, ComponentContractKind, ComponentReference,
+    DeviceDirection, DeviceSelectionIntent, ValidatedConfiguration,
 };
 use aurora_runtime_assembly::{
     prepare_runtime_plan, prepare_setup_plan, PreparedAudioFormatIntent, PreparedChannelIdentity,
@@ -13,10 +14,10 @@ use crate::{
     JsonFormatter, TextFormatter, MAX_JSON_BYTES, MAX_SERIALIZED_COLLECTION_ENTRIES, MAX_TEXT_BYTES,
 };
 
-const STEREO: &[u8] = include_bytes!("../../../../fixtures/config/stereo-basic-v2.json");
-const POINT: &[u8] = include_bytes!("../../../../fixtures/config/phase-3a-point-source-v2.json");
-const SPREAD: &[u8] = include_bytes!("../../../../fixtures/config/phase-3b-spread-v2.json");
-const IRREGULAR: &[u8] = include_bytes!("../../../../fixtures/config/irregular-horizontal-v2.json");
+const STEREO: &[u8] = include_bytes!("../../../../fixtures/config/stereo-basic-v3.json");
+const POINT: &[u8] = include_bytes!("../../../../fixtures/config/phase-3a-point-source-v3.json");
+const SPREAD: &[u8] = include_bytes!("../../../../fixtures/config/phase-3b-spread-v3.json");
+const IRREGULAR: &[u8] = include_bytes!("../../../../fixtures/config/irregular-horizontal-v3.json");
 
 fn plans_with_devices() -> (PreparedRuntimePlan, PreparedSetupPlan) {
     let mut config = ValidatedConfiguration::from_json(STEREO)
@@ -26,14 +27,14 @@ fn plans_with_devices() -> (PreparedRuntimePlan, PreparedSetupPlan) {
     config.input_device = Some(DeviceSelectionIntent {
         stable_id: Some("local-input-id".to_owned()),
         friendly_name: Some("Local Input".to_owned()),
-        backend: BackendIntent::Cpal,
+        backend: common_backend_reference("org.aurora.backend.cpal", DeviceDirection::Input),
         direction: DeviceDirection::Input,
         ambiguity_policy: AmbiguityPolicy::RequireStableIdentifier,
     });
     config.output_device = Some(DeviceSelectionIntent {
         stable_id: Some("local-output-id".to_owned()),
         friendly_name: Some("Local Output".to_owned()),
-        backend: BackendIntent::Virtual,
+        backend: common_backend_reference("org.aurora.backend.virtual", DeviceDirection::Output),
         direction: DeviceDirection::Output,
         ambiguity_policy: AmbiguityPolicy::Reject,
     });
@@ -53,6 +54,24 @@ fn fixture_report(bytes: &[u8], options: InspectionOptions) -> InspectionReport 
     let runtime = prepare_runtime_plan(&validated).expect("runtime derivation must succeed");
     let setup = prepare_setup_plan(&runtime).expect("setup derivation must succeed");
     InspectionReport::project(&runtime, &setup, options).expect("projection must succeed")
+}
+
+fn common_backend_reference(component_id: &str, direction: DeviceDirection) -> ComponentReference {
+    ComponentReference {
+        component_id: component_id.to_owned(),
+        contract_kind: match direction {
+            DeviceDirection::Input => ComponentContractKind::AudioInputBackend,
+            DeviceDirection::Output => ComponentContractKind::AudioOutputBackend,
+        },
+        contract_major: 1,
+        compatible_minor: CompatibleMinorRange {
+            minimum: 0,
+            maximum: 0,
+        },
+        implementation_version_pin: None,
+        configuration_schema: 1,
+        configuration: serde_json::json!({}),
+    }
 }
 
 #[test]
@@ -136,7 +155,7 @@ fn explicit_local_projection_retains_identifiers() {
 #[test]
 fn prepared_component_identities_are_reported_as_control_plane_intent() {
     let report = report(InspectionOptions::default());
-    assert_eq!(report.inspection_schema_version(), 2);
+    assert_eq!(report.inspection_schema_version(), 3);
     assert_eq!(
         report
             .runtime()
@@ -146,12 +165,20 @@ fn prepared_component_identities_are_reported_as_control_plane_intent() {
         "org.aurora.renderer.basic"
     );
     assert_eq!(
+        report.runtime().prepared_components.renderer.contract_major,
+        1
+    );
+    assert_eq!(
         report
             .runtime()
             .prepared_components
             .renderer
-            .contract_version,
-        1
+            .implementation_version,
+        "0.1.0"
+    );
+    assert_eq!(
+        report.runtime().prepared_components.renderer.contract_minor,
+        0
     );
     assert_eq!(
         report
@@ -166,8 +193,24 @@ fn prepared_component_identities_are_reported_as_control_plane_intent() {
             .runtime()
             .prepared_components
             .realtime_delay
-            .contract_version,
+            .contract_major,
         1
+    );
+    assert_eq!(
+        report
+            .runtime()
+            .prepared_components
+            .realtime_delay
+            .implementation_version,
+        "0.1.0"
+    );
+    assert_eq!(
+        report
+            .runtime()
+            .prepared_components
+            .realtime_delay
+            .contract_minor,
+        0
     );
 }
 
@@ -358,7 +401,7 @@ fn json_and_text_escaping_is_exact() {
     config.output_device = Some(DeviceSelectionIntent {
         stable_id: Some("device/special".to_owned()),
         friendly_name: Some(special.to_owned()),
-        backend: BackendIntent::Virtual,
+        backend: common_backend_reference("org.aurora.backend.virtual", DeviceDirection::Output),
         direction: DeviceDirection::Output,
         ambiguity_policy: AmbiguityPolicy::Reject,
     });

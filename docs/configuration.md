@@ -185,3 +185,8 @@ room correction, codec, or Dolby feature is included.
 ## Renderer component references (schema v2)
 
 Schema v2 replaces the root renderer implementation enum with a versioned `ComponentReference`. The root configuration validates only the Aurora-owned renderer contract envelope and bounded payload shape. `aurora-runtime-assembly` resolves the component ID through its explicit renderer registry, validates contract/configuration compatibility, and converts the payload into a typed prepared renderer plan before activation. Schema-v1 documents are not silently reinterpreted; use `migrate_v1_to_v2`.
+
+
+## Audio backend component references (schema v3)
+
+Schema v3 replaces the legacy Virtual/Cpal/Offline backend enum in device selectors with direction-specific versioned `ComponentReference` values. The root configuration validates only the bounded Aurora-owned component envelope. Runtime assembly resolves input/output backend references through an explicit fail-closed registry and converts them to prepared typed backend intent before setup. Unknown IDs, incompatible contracts/versions/config schemas, invalid payloads, unsupported format/channel capability, realtime-safety mismatch, and unavailable platform class are rejected before activation. Migration from v0/v1/v2 is explicit; old documents are never silently reinterpreted as schema v3.

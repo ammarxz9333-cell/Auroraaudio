@@ -109,18 +109,6 @@ pub struct AudioFormatIntent {
     pub fallback_policy: FormatFallbackPolicy,
 }
 
-/// Audio backend selection intent.
-#[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum BackendIntent {
-    /// Use the deterministic Aurora virtual backend.
-    Virtual,
-    /// Use CPAL when a later control-plane integration resolves the intent.
-    Cpal,
-    /// Offline operation without a device backend.
-    Offline,
-}
-
 /// Device direction.
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -144,15 +132,15 @@ pub enum AmbiguityPolicy {
 }
 
 /// Device-selection intent that does not claim device existence.
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct DeviceSelectionIntent {
     /// Stable backend identifier when available.
     pub stable_id: Option<String>,
     /// Optional user-facing selector text.
     pub friendly_name: Option<String>,
-    /// Intended backend.
-    pub backend: BackendIntent,
+    /// Versioned backend component reference resolved before activation.
+    pub backend: ComponentReference,
     /// Intended stream direction.
     pub direction: DeviceDirection,
     /// Explicit ambiguity behavior.

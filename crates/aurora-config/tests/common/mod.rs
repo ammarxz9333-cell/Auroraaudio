@@ -44,6 +44,25 @@ fn renderer_reference(component_id: &str, configuration: serde_json::Value) -> C
     }
 }
 
+#[allow(dead_code)]
+pub fn backend_reference(component_id: &str, direction: DeviceDirection) -> ComponentReference {
+    ComponentReference {
+        component_id: component_id.to_owned(),
+        contract_kind: match direction {
+            DeviceDirection::Input => ComponentContractKind::AudioInputBackend,
+            DeviceDirection::Output => ComponentContractKind::AudioOutputBackend,
+        },
+        contract_major: 1,
+        compatible_minor: CompatibleMinorRange {
+            minimum: 0,
+            maximum: 0,
+        },
+        implementation_version_pin: None,
+        configuration_schema: 1,
+        configuration: serde_json::json!({}),
+    }
+}
+
 pub fn configuration(kind: LayoutKind, renderer: ComponentReference) -> AuroraConfiguration {
     let roles: &[(&str, f32)] = match kind {
         LayoutKind::Stereo => &[("FL", -30.0), ("FR", 30.0)],
