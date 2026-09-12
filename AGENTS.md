@@ -23,8 +23,9 @@ Latest merged milestones:
 - physical Gate A IEC61937 validator: PR #149, `9c380c64818057e10b0b488ecba4129efe86de56`;
 - hardware-neutral ALSA encoded-ingress capture adapter: PR #150, `1afe66ab40ab2c7391610d5e5def27b6ba426644`.
 
-In-flight hardening:
-- PR #152, `world-class-sim-coverage`: mandatory simulation coverage contract, real Aurora output-DSP in the full-system path, expanded fail-closed virtual fault model, Linux/Windows parity. Do not call this accepted evidence until all required checks are green and the PR is merged.
+Additional merged milestones:
+- PR #152, `b3a3d831062c1528720e7a25c7f42b4e5c227efe`: mandatory simulation coverage, real Aurora output DSP, expanded virtual faults and Linux/Windows parity; all six final-head workflows succeeded.
+- PR #154, `eee052e66efbe2ca1312616d0567c9561cd74c3d`: pinned external AOMedia OAR reference; all six final-head workflows succeeded. Aurora-vs-OAR differential rendering is still unproven.
 
 Completed trackers include #118, #119, #130, #132, #135, #141, #145, #147.
 
@@ -116,12 +117,12 @@ Run locally on native Windows:
 .\validation\virtual-hardware\run-aurora-sim-windows.ps1
 ```
 
-### PR #152 — AuroraSim v2 hardening (in flight; not accepted evidence yet)
+### PR #152 — merged AuroraSim v2 hardening
 
-Proposed healthy path:
+Accepted software-validation path:
 `pinned moving JOC -> IEC61937 -> Harletty -> Omniphony 7.1.4 -> media-paced PCM -> real Aurora SpeakerPostProcessor -> deterministic virtual TDM16/DAC sink`.
 
-Proposed mandatory simulation policy:
+Merged mandatory simulation policy:
 - `config/simulation-coverage-v1.json` is the machine-readable coverage contract;
 - `validation/virtual-hardware/validate_simulation_coverage.py` fails CI for undeclared simulator capabilities, missing evidence, duplicate mappings, or unmapped fault profiles;
 - healthy transport computes per-channel SHA-256 and full PCM identity instead of asserting channel order by declaration;
@@ -129,7 +130,13 @@ Proposed mandatory simulation policy:
 - Linux and native Windows run the same real Aurora output-DSP boundary before virtual transport analysis;
 - IAMF/OAR, ADM/BS.2127 differential rendering, binaural/head tracking, adaptive runtime clock correction, reconnect recovery and physical/external acceptance remain explicit non-covered gaps until separately proven.
 
-No PR #152 result may be promoted to evidence truth until required CI is green and the PR is merged.
+Verified final head `c4b5a6117b9c16d6dfec2a86a805dd33ad2808e5`: base CI 34720912124, Linux full-system 34720912143, Windows full-system 34720912122, physical tooling 34720912098, realtime soak 34720912090 and simulation smoke 34720912073 all succeeded. This is software/simulation evidence only.
+
+### PR #154 — merged external OAR reference
+
+OAR 1.0.0 is pinned to `5601d50c05a5e71cac7e80babeff7dd2a53b2060`; upstream reference evidence reports 6/6 tests passing. At final head `b6157af226fdd33e13a47518258bab4b4b27fa75`, OAR Reference CI 34721618582, base CI 34721618591, Linux simulation 34721618579, Windows simulation 34721618600, Immersive JOC Stack 34721618563 and Moving JOC 34721618569 all succeeded.
+
+See `docs/oar-reference.md` and `config/oar-evaluation-v1.json`. OAR stays external; `iamf-oar-open-rendering` remains planned until executable Aurora-vs-OAR differential evidence exists.
 
 ### PR #149 — physical Gate A admission validator
 
@@ -240,11 +247,11 @@ Key locations:
 
 ## 6. Current work / Next actions — issue #143 + requested world-class hardening
 
-The physical #143 chain remains the acceptance critical path. In parallel, the user explicitly requested continuous comparison against leading immersive-audio platforms/projects and a simulator that cannot silently omit new Aurora capabilities. PR #152 is the current non-physical hardening item and must finish green before returning to the hardware-only #143 steps.
+The physical #143 chain remains the acceptance critical path. In parallel, the user explicitly requested continuous comparison against leading immersive-audio platforms/projects and a simulator that cannot silently omit new Aurora capabilities. PR #152 and the initial external OAR reference (#154) are merged and green. The next software item is a focused Aurora-vs-OAR differential lane; #143 still requires real hardware.
 
 Next actions, in order:
-1. Finish PR #152: require Linux + Windows full-system simulation, base CI and relevant immersive/JOC gates green; fix any harness/regression failure rather than weakening gates.
-2. After #152 merges, evaluate the newly identified AOMedia Open Audio Renderer (OAR) as an external IAMF/open-rendering reference lane. Do not replace the stable JOC renderer by recency alone.
+1. Implement the first Aurora-vs-pinned-OAR differential slice described in `docs/oar-reference.md`: overlapping object-position/gain semantics, finite output, frame accounting and channel ordering. Use explicit tolerances/invariants, not raw PCM identity across different render algorithms.
+2. Preserve the green external OAR reference, Linux/Windows full-system, base CI and immersive/JOC gates. Keep IAMF/OAR integration marked planned until its own executable evidence exists; do not replace the stable JOC renderer by recency alone.
 3. Add independent ADM/BS.2127 differential-reference coverage with EBU EAR/libear/BEAR where licensing and interfaces permit; keep GPL/incompatible code external.
 4. Only promote IAMF/OAR, ADM, binaural/head-tracking, adaptive clock correction or reconnect recovery from `planned` when executable evidence exists and the simulator/coverage contract is updated in the same change.
 5. Resume physical #143: assemble/reuse the existing Lindy 38368 / SiI9437 -> Pi 5 I2S capture path.
