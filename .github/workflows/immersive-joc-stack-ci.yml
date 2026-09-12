@@ -31,13 +31,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
-      - name: Cache Cargo and external JOC validation builds
+      - name: Cache external JOC validation builds
         uses: actions/cache@v4
         with:
-          path: |
-            ~/.cargo/registry
-            ~/.cargo/git
-            .cache/joc
+          path: .cache/joc
           key: ${{ runner.os }}-joc-${{ hashFiles('config/external-components-v1.json', 'config/omniphony-evaluation-v1.json', 'validation/immersive/test-joc-stack.sh', 'validation/immersive/test-joc-realtime-soak.sh', 'validation/immersive/test-openjoc-reference.sh', 'validation/immersive/test-joc-differential.sh', 'validation/immersive/test-joc-temporal-evidence.sh', 'validation/immersive/test-omniphony-reference-comparison.sh', 'validation/immersive/joc_temporal_evidence.py', 'validation/immersive/install-openjoc-reference.sh', 'validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch') }}
           restore-keys: |
             ${{ runner.os }}-joc-
