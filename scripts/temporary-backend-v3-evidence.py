@@ -25,6 +25,26 @@ if old not in text:
     raise SystemExit('canonical v2 hash baseline not found after v3 transform')
 p.write_text(text.replace(old, new, 1))
 
+# The runtime invariant test intentionally exercises a selector whose root slot
+# says input while its device direction says output.  Keep the backend contract
+# itself valid for the input slot so config validation does not mask the runtime
+# direction invariant with a contract-kind error.
+p = Path('crates/aurora-runtime-assembly/src/derivation.rs')
+text = p.read_text()
+start = text.index('fn mismatched_device_direction_returns_structured_invariant()')
+end = text.index('\n    #[test]', start)
+block = text[start:end]
+old_backend = 'common_backend_reference("org.aurora.backend.virtual", DeviceDirection::Output)'
+if block.count(old_backend) != 1:
+    raise SystemExit(f'direction invariant test backend anchor count={block.count(old_backend)}')
+block = block.replace(
+    old_backend,
+    'common_backend_reference("org.aurora.backend.virtual", DeviceDirection::Input)',
+    1,
+)
+text = text[:start] + block + text[end:]
+p.write_text(text)
+
 # Add fail-closed/custom-component proof directly beside the backend registry.
 p = Path('crates/aurora-runtime-assembly/src/backend_registry.rs')
 text = p.read_text()
