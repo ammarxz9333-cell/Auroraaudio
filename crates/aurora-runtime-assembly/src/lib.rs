@@ -40,6 +40,16 @@ pub use setup::{
 
 /// Version of the runtime-plan contract defined by this crate.
 pub const RUNTIME_PLAN_CONTRACT_VERSION: u16 = 1;
+/// Compatible renderer contract version selected by runtime assembly.
+pub const REALTIME_RENDERER_CONTRACT_VERSION: u16 = 1;
+/// Compatible realtime-delay contract version selected by runtime assembly.
+pub const REALTIME_DELAY_CONTRACT_VERSION: u16 = 1;
+/// Stable implementation identity for Aurora's current basic renderer.
+pub const BASIC_RENDERER_IMPLEMENTATION_ID: &str = "org.aurora.renderer.basic";
+/// Stable implementation identity for Aurora's current VBAP renderer family.
+pub const VBAP_RENDERER_IMPLEMENTATION_ID: &str = "org.aurora.renderer.vbap";
+/// Stable implementation identity for Aurora's current basic realtime delay component.
+pub const BASIC_DELAY_IMPLEMENTATION_ID: &str = "org.aurora.dsp.basic-delay";
 
 /// Immutable aggregate of normalized intent prepared for a future setup step.
 #[derive(Clone, Debug, PartialEq)]
@@ -144,6 +154,77 @@ impl PreparedExecutionPlan {
     /// Returns the explicitly absent or deferred DSP state.
     pub fn dsp(&self) -> PreparedDspPlan {
         self.dsp
+    }
+
+    /// Returns deterministic component implementation intent for later setup.
+    ///
+    /// These identities are control-plane selections only. They do not prove that
+    /// an implementation was loaded, activated, negotiated, or observed at runtime.
+    pub fn realtime_components(&self) -> PreparedRealtimeComponentSelection {
+        let renderer = match self.renderer.kind() {
+            PreparedRendererKind::BasicInverseDistance => PreparedComponentIdentity::new(
+                BASIC_RENDERER_IMPLEMENTATION_ID,
+                REALTIME_RENDERER_CONTRACT_VERSION,
+            ),
+            PreparedRendererKind::PointSourceHorizontalVbap
+            | PreparedRendererKind::HorizontalSpreadVbap => PreparedComponentIdentity::new(
+                VBAP_RENDERER_IMPLEMENTATION_ID,
+                REALTIME_RENDERER_CONTRACT_VERSION,
+            ),
+        };
+        PreparedRealtimeComponentSelection {
+            renderer,
+            realtime_delay: PreparedComponentIdentity::new(
+                BASIC_DELAY_IMPLEMENTATION_ID,
+                REALTIME_DELAY_CONTRACT_VERSION,
+            ),
+        }
+    }
+}
+
+/// Stable implementation identity plus the Aurora contract version it is prepared against.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreparedComponentIdentity {
+    implementation_id: &'static str,
+    contract_version: u16,
+}
+
+impl PreparedComponentIdentity {
+    /// Creates one deterministic prepared component identity.
+    pub const fn new(implementation_id: &'static str, contract_version: u16) -> Self {
+        Self {
+            implementation_id,
+            contract_version,
+        }
+    }
+
+    /// Returns the stable implementation identifier.
+    pub const fn implementation_id(self) -> &'static str {
+        self.implementation_id
+    }
+
+    /// Returns the compatible Aurora component-contract version.
+    pub const fn contract_version(self) -> u16 {
+        self.contract_version
+    }
+}
+
+/// Prepared renderer and realtime-delay implementation selections.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct PreparedRealtimeComponentSelection {
+    renderer: PreparedComponentIdentity,
+    realtime_delay: PreparedComponentIdentity,
+}
+
+impl PreparedRealtimeComponentSelection {
+    /// Returns the prepared renderer implementation identity.
+    pub const fn renderer(self) -> PreparedComponentIdentity {
+        self.renderer
+    }
+
+    /// Returns the prepared realtime-delay implementation identity.
+    pub const fn realtime_delay(self) -> PreparedComponentIdentity {
+        self.realtime_delay
     }
 }
 

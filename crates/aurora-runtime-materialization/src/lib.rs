@@ -11,14 +11,12 @@ use aurora_renderer_api::Renderer;
 use aurora_renderer_basic::BasicRenderer;
 pub use aurora_renderer_basic::BasicRendererMode;
 use aurora_renderer_vbap::VbapRenderer;
+pub use aurora_runtime_assembly::{
+    BASIC_DELAY_IMPLEMENTATION_ID, BASIC_RENDERER_IMPLEMENTATION_ID,
+    REALTIME_DELAY_CONTRACT_VERSION, REALTIME_RENDERER_CONTRACT_VERSION,
+    VBAP_RENDERER_IMPLEMENTATION_ID,
+};
 use aurora_scene::RenderScene;
-
-/// Stable identity for Aurora's current default realtime delay implementation.
-pub const BASIC_DELAY_IMPLEMENTATION_ID: &str = "org.aurora.dsp.basic-delay";
-/// Stable identity for Aurora's basic geometric renderer implementation.
-pub const BASIC_RENDERER_IMPLEMENTATION_ID: &str = "org.aurora.renderer.basic";
-/// Stable identity for Aurora's horizontal VBAP renderer implementation.
-pub const VBAP_RENDERER_IMPLEMENTATION_ID: &str = "org.aurora.renderer.vbap";
 
 /// Concrete renderer choices owned by control-thread materialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -77,9 +75,64 @@ pub fn materialize_realtime_engine(
 
 #[cfg(test)]
 mod tests {
+    use aurora_dsp_api::{RealtimeDelayProcessor, RealtimeDspFault};
     use aurora_realtime_engine::{ProcessStatus, RealTimeEngineConfig, TestSignal};
 
     use super::*;
+
+    #[derive(Debug)]
+    struct AlternatePassThroughDelay {
+        channels: usize,
+        max_delay_samples: f32,
+    }
+
+    impl RealtimeDelayProcessor for AlternatePassThroughDelay {
+        fn channel_count(&self) -> usize {
+            self.channels
+        }
+
+        fn max_delay_samples(&self) -> f32 {
+            self.max_delay_samples
+        }
+
+        fn set_delays(&mut self, delays_samples: &[f32]) -> Result<(), RealtimeDspFault> {
+            if delays_samples.len() != self.channels {
+                return Err(RealtimeDspFault::DelayShape);
+            }
+            if delays_samples
+                .iter()
+                .any(|value| !value.is_finite() || *value < 0.0 || *value > self.max_delay_samples)
+            {
+                return Err(RealtimeDspFault::DelayValue);
+            }
+            Ok(())
+        }
+
+        fn process_planar(
+            &mut self,
+            input: &[Vec<f32>],
+            output: &mut [Vec<f32>],
+            frame_count: usize,
+        ) -> Result<(), RealtimeDspFault> {
+            if input.len() != self.channels
+                || output.len() != self.channels
+                || input.iter().any(|channel| channel.len() < frame_count)
+                || output.iter().any(|channel| channel.len() < frame_count)
+            {
+                return Err(RealtimeDspFault::BufferShape);
+            }
+            for (source, destination) in input.iter().zip(output.iter_mut()) {
+                destination[..frame_count].copy_from_slice(&source[..frame_count]);
+            }
+            Ok(())
+        }
+
+        fn reset(&mut self) {}
+
+        fn latency_frames(&self) -> usize {
+            0
+        }
+    }
 
     fn scene() -> RenderScene {
         serde_json::from_str(include_str!("../../../fixtures/scenes/stereo_circle.json"))
@@ -121,6 +174,95 @@ mod tests {
             );
             assert_eq!(default_output, explicit_output);
         }
+    }
+
+    #[test]
+    fn alternate_delay_adapter_uses_the_same_prepared_component_boundary() {
+        let scene = scene();
+        let config = config();
+        let speakers = scene.ordered_speakers().unwrap();
+        let mut renderer =
+            BasicRenderer::new(BasicRendererMode::InverseDistance).with_smoothing(0.35);
+        renderer
+            .configure(speakers, config.sample_rate, config.block_size, 1)
+            .unwrap();
+        let requirements =
+            RealTimeEngine::delay_requirements(&scene, &config, renderer.capabilities()).unwrap();
+        let alternate = AlternatePassThroughDelay {
+            channels: requirements.channel_count(),
+            max_delay_samples: requirements.max_delay_samples(),
+        };
+        let mut engine = RealTimeEngine::new_with_prepared_components(
+            scene,
+            config,
+            256,
+            Box::new(renderer),
+            Box::new(alternate),
+        )
+        .unwrap();
+        let mut output = vec![0.0_f32; 512];
+        assert_eq!(
+            engine.process_interleaved(None, &mut output),
+            ProcessStatus::Ok
+        );
+        assert!(output.iter().any(|sample| sample.abs() > f32::EPSILON));
+    }
+
+    #[test]
+    fn failed_replacement_preparation_does_not_mutate_existing_engine() {
+        let mut active = materialize_default_realtime_engine(scene(), config(), 256).unwrap();
+        let mut before = vec![0.0_f32; 512];
+        assert_eq!(
+            active.process_interleaved(None, &mut before),
+            ProcessStatus::Ok
+        );
+        let callbacks_before = active.metrics().callback_count;
+
+        let replacement_scene = scene();
+        let replacement_config = config();
+        let speakers = replacement_scene.ordered_speakers().unwrap();
+        let mut renderer =
+            BasicRenderer::new(BasicRendererMode::InverseDistance).with_smoothing(0.35);
+        renderer
+            .configure(
+                speakers,
+                replacement_config.sample_rate,
+                replacement_config.block_size,
+                1,
+            )
+            .unwrap();
+        let invalid_delay = AlternatePassThroughDelay {
+            channels: 1,
+            max_delay_samples: 0.0,
+        };
+        assert!(RealTimeEngine::new_with_prepared_components(
+            replacement_scene,
+            replacement_config,
+            256,
+            Box::new(renderer),
+            Box::new(invalid_delay),
+        )
+        .is_err());
+
+        let mut after = vec![0.0_f32; 512];
+        assert_eq!(
+            active.process_interleaved(None, &mut after),
+            ProcessStatus::Ok
+        );
+        assert_eq!(active.metrics().callback_count, callbacks_before + 1);
+        assert!(after.iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
+    fn component_identity_constants_come_from_runtime_assembly() {
+        assert_eq!(
+            BASIC_RENDERER_IMPLEMENTATION_ID,
+            "org.aurora.renderer.basic"
+        );
+        assert_eq!(VBAP_RENDERER_IMPLEMENTATION_ID, "org.aurora.renderer.vbap");
+        assert_eq!(BASIC_DELAY_IMPLEMENTATION_ID, "org.aurora.dsp.basic-delay");
+        assert_eq!(REALTIME_RENDERER_CONTRACT_VERSION, 1);
+        assert_eq!(REALTIME_DELAY_CONTRACT_VERSION, 1);
     }
 
     #[test]
