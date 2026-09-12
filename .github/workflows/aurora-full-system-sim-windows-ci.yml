@@ -9,9 +9,13 @@ on:
       - "validation/virtual-hardware/pace_orender.py"
       - "validation/virtual-hardware/aurora_moving_telemetry.rs"
       - "validation/virtual-hardware/aurora_full_system_sim.py"
+      - "validation/virtual-hardware/validate_simulation_coverage.py"
       - "validation/immersive/aurora_joc_moving_evidence.py"
       - "validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"
       - "config/external-components-v1.json"
+      - "config/simulation-coverage-v1.json"
+      - "crates/aurora-dsp-basic/src/output.rs"
+      - "crates/aurora-dsp-basic/examples/process_7_1_4_file.rs"
       - ".github/workflows/aurora-full-system-sim-windows-ci.yml"
 
 permissions:
@@ -24,7 +28,7 @@ concurrency:
 jobs:
   native-windows-full-system:
     runs-on: windows-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
@@ -33,6 +37,13 @@ jobs:
           python-version: "3.13"
 
       - uses: dtolnay/rust-toolchain@stable
+
+      - name: Enforce simulation coverage contract
+        shell: pwsh
+        run: |
+          python validation/virtual-hardware/validate_simulation_coverage.py self-test
+          python validation/virtual-hardware/validate_simulation_coverage.py check
+          python validation/virtual-hardware/aurora_full_system_sim.py self-test
 
       - name: Ensure FFmpeg
         shell: pwsh
