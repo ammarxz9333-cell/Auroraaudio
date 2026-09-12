@@ -49,8 +49,12 @@ fn encode_f32_le(samples: &[f32], output: &mut BufWriter<File>) -> Result<()> {
 
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);
-    let input_path = args.next().context("usage: process_7_1_4_file <input.f32> <output.f32> [lipsync_frames]")?;
-    let output_path = args.next().context("usage: process_7_1_4_file <input.f32> <output.f32> [lipsync_frames]")?;
+    let input_path = args
+        .next()
+        .context("usage: process_7_1_4_file <input.f32> <output.f32> [lipsync_frames]")?;
+    let output_path = args
+        .next()
+        .context("usage: process_7_1_4_file <input.f32> <output.f32> [lipsync_frames]")?;
     let lipsync_frames = match args.next() {
         Some(value) => value.parse::<usize>().context("invalid lipsync_frames")?,
         None => 0,
@@ -67,8 +71,11 @@ fn main() -> Result<()> {
     // the flat baseline used by the deterministic simulator.
     processor.configure_calibration(&flat_calibration())?;
 
-    let mut input = BufReader::new(File::open(&input_path).with_context(|| format!("open {input_path}"))?);
-    let mut output = BufWriter::new(File::create(&output_path).with_context(|| format!("create {output_path}"))?);
+    let mut input =
+        BufReader::new(File::open(&input_path).with_context(|| format!("open {input_path}"))?);
+    let mut output = BufWriter::new(
+        File::create(&output_path).with_context(|| format!("create {output_path}"))?,
+    );
     let frame_bytes = CHANNELS * SAMPLE_BYTES;
     let mut raw = vec![0_u8; CHUNK_FRAMES * frame_bytes];
     let mut frames = 0_u64;
