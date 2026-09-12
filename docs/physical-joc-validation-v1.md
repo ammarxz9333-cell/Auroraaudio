@@ -83,6 +83,38 @@ Record and preserve:
 
 Any discontinuity, non-`0x15` burst, hidden transcoding or unaccounted payload mutation fails the gate.
 
+### Executable Gate A validator
+
+`validation/physical/aurora_physical_ingress.py` is the fail-closed admission gate for a physical IEC61937 capture. It does not perform the I2S capture itself; the capture adapter must write the raw IEC61937 byte stream without decoding or re-encoding it.
+
+For the pinned first carrier, run:
+
+```bash
+python3 validation/physical/aurora_physical_ingress.py analyze \
+  --capture artifacts/physical/earc-joc.spdif \
+  --report artifacts/physical/ingress-report.json \
+  --write-payload artifacts/physical/reconstructed.ec3 \
+  --expected-bursts 2360 \
+  --expected-payload-sha256 0219a241559de5231f31c6093072740ff9fe0657b3354541bc6838ef2d5e5be0 \
+  --capture-start-monotonic-ns "$CAPTURE_START_NS" \
+  --capture-end-monotonic-ns "$CAPTURE_END_NS" \
+  --capture-reset-count "$CAPTURE_RESET_COUNT" \
+  --capture-drop-count "$CAPTURE_DROP_COUNT" \
+  --require-capture-metadata
+```
+
+The validator requires the exact E-AC-3 IEC61937 burst grid used by the proven reference lane: data type `0x15`, a 24576-byte repetition period, zero transport padding, no Pc error flag, and exact 16-bit payload reconstruction. It concatenates the reconstructed E-AC-3 payloads and requires the resulting SHA-256 to equal the pinned carrier hash above. Zero-only lead-in/trail-out around the burst train is accepted so capture can begin before playback and stop after it.
+
+A non-zero capture reset/drop counter, missing required capture metadata, byte slip, missing/extra burst, payload mutation, non-zero transport padding, wrong data type, Pc error flag, or SHA mismatch returns exit code `1` and an explicit JSON failure report.
+
+Tooling sanity can be checked without hardware using:
+
+```bash
+python3 validation/physical/aurora_physical_ingress.py self-test
+```
+
+The self-test and its Linux/Windows CI prove only the validator logic. They are not physical evidence and cannot advance Gate A by themselves.
+
 ### Gate B — Aurora render on physical host
 
 Feed the physical capture into the unchanged moving-JOC validation path and require:
