@@ -8,9 +8,26 @@ This directory contains software evidence lanes.  It does **not** establish Dolb
 | --- | --- | --- |
 | `test-joc-stack.sh` | pinned Harletty/Omniphony software path and 7.1.4-shaped output | independent object-position truth |
 | `test-joc-realtime-soak.sh` | repeated IEC61937/JOC metadata survival and paced 7.1.4 output | moving-object diversity; physical realtime hardware |
+| `test-omniphony-reference-comparison.sh` | stable-vs-candidate Omniphony source-contract compatibility plus deterministic 12-channel render metrics | automatic pin promotion; authored object-position truth; physical latency |
 | `test-openjoc-reference.sh` | independent OpenJOC JOC/admission/timing census and experimental 7.1.4 render | authored object-position correctness |
 | `test-joc-differential.sh` | independent implementation agreement on active-channel identity plus non-gating correlations | all 12 channels active; moving objects |
 | `test-joc-temporal-evidence.sh` | fail-closed separation of timed OAMD/object-state diversity and windowed rendered-energy diversity | proof that rendered speaker energy is an independent oracle for authored trajectories |
+
+## Omniphony stable/candidate evaluation
+
+`config/omniphony-evaluation-v1.json` pins the long-lived stable reference and one evaluation-only upstream commit independently. The stable reference remains `v0.5.2` / `f9a79721af64ad9c39042d4deded158b568fc598`; the current evaluation candidate is pinned by exact commit rather than by a moving branch name.
+
+`test-omniphony-reference-comparison.sh` consumes a completed baseline JOC work directory, then:
+
+1. fetches the candidate by exact commit;
+2. fails closed if `bridge_api` source or the 7.1.4 layout differs from the stable contract;
+3. compares `RChannelLabel` discriminants and canonical names, while allowing additive aliases that do not change canonical semantics;
+4. builds the candidate as an external GPL-3.0 process/reference implementation;
+5. renders the exact same IEC61937/JOC carrier through the exact same Harletty bridge;
+6. records channel count, frame count, duration, SHA-256, per-channel RMS/peak, active-lane count, and informational build/render wall time;
+7. requires equal frame count and no loss of active output lanes relative to stable.
+
+The emitted JSON explicitly records `promotion.performed=false`. A green candidate lane is compatibility/evaluation evidence only; it does not silently replace the stable pin. CI wall-clock timing is not physical or callback latency measurement.
 
 ## Temporal JOC evidence
 
