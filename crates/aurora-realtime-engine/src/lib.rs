@@ -37,7 +37,8 @@ pub use transport::{TransportKind, TransportPrototype};
 use std::time::{Duration, Instant};
 
 use aurora_core::{ChannelRole, StandardLayout, Vector3};
-use aurora_dsp_basic::{BasicDspError, DelayProcessor};
+use aurora_dsp_api::{RealtimeDelayProcessor, RealtimeDspFault};
+use aurora_dsp_basic::DelayProcessor;
 use aurora_renderer_api::{RenderObject, Renderer, RendererError, RendererScratch, SpeakerGain};
 use aurora_renderer_basic::{calculate_geometric_delays, BasicRenderer};
 use aurora_scene::RenderScene;
@@ -194,9 +195,9 @@ pub enum RealTimeEngineError {
     /// Renderer setup failed.
     #[error("renderer error: {0}")]
     Renderer(#[from] RendererError),
-    /// DSP setup failed.
-    #[error("dsp error: {0}")]
-    Dsp(#[from] BasicDspError),
+    /// Prepared realtime DSP rejected setup.
+    #[error("realtime DSP setup fault: {0}")]
+    Dsp(#[from] RealtimeDspFault),
     /// Scene setup failed.
     #[error("scene error: {0}")]
     Scene(#[from] aurora_scene::SceneError),
@@ -297,7 +298,7 @@ pub struct RealTimeEngine {
     gains: Vec<SpeakerGain>,
     delays_scratch: Vec<f32>,
     renderer_scratch: RendererScratch,
-    delay_processor: DelayProcessor,
+    delay_processor: Box<dyn RealtimeDelayProcessor>,
     metrics: RealTimeMetrics,
     frame_cursor: u64,
     phase: f32,
@@ -374,8 +375,9 @@ impl RealTimeEngine {
         {
             max_delay = max_delay.max(CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES);
         }
-        let mut delay_processor = DelayProcessor::new(ordered_speakers.len(), max_delay);
-        delay_processor.set_delays(delays)?;
+        let mut delay_processor: Box<dyn RealtimeDelayProcessor> =
+            Box::new(DelayProcessor::new(ordered_speakers.len(), max_delay));
+        delay_processor.set_delays(&delays)?;
         let dsp_latency_frames = delay_processor.latency_frames();
         let renderer_latency_frames = renderer.latency_frames();
         let block_duration_budget =
@@ -503,7 +505,7 @@ impl RealTimeEngine {
         self.fill_mono(input, frame_count)?;
         self.render_planar(frame_count)?;
         self.delay_processor
-            .process_block_into(&self.planar, &mut self.delayed, frame_count)
+            .process_planar(&self.planar, &mut self.delayed, frame_count)
             .map_err(|_| RealTimeFault::Dsp)?;
         if !interleave(&self.delayed, frame_count, output) {
             return Err(RealTimeFault::OutputBuffer);
@@ -608,7 +610,7 @@ impl RealTimeEngine {
                 self.delays_scratch[i] = gain.delay_samples;
             }
             self.delay_processor
-                .set_delays_slice(&self.delays_scratch)
+                .set_delays(&self.delays_scratch)
                 .map_err(|_| RealTimeFault::Dsp)?;
         }
 

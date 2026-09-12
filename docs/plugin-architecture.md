@@ -122,9 +122,9 @@ Examples:
 
 ## Current migration debt
 
-The long-term rule above is stricter than the current implementation in one known area: `aurora-realtime-engine` still constructs/imports `BasicRenderer`, `BasicRendererMode`, `DelayProcessor`, and `BasicDspError` directly. Therefore renderer/DSP replacement is **not yet fully implementation-independent**, even though the renderer/DSP API crates already exist.
+The long-term rule above is stricter than the current implementation in one known area. `aurora-realtime-engine` still constructs/imports `BasicRenderer` and `BasicRendererMode`, and its compatibility constructor still creates the basic `DelayProcessor`. However, the callback-facing delay path now stores and invokes `RealtimeDelayProcessor`, and realtime-engine no longer exposes `BasicDspError` or calls the concrete `DelayProcessor` callback methods directly. DSP callback dispatch is therefore contract-based, while concrete DSP construction is still temporary migration debt.
 
-Issue #118 owns that migration. Completion requires moving concrete renderer/DSP construction into runtime assembly and making the realtime engine consume only prepared contract implementations. Until #118 is accepted, Aurora must not claim that renderer or DSP backends can be replaced with zero realtime-engine integration work.
+Issue #118 owns the remaining migration. Completion requires moving concrete renderer/DSP construction into an appropriate runtime materialization/component-assembly layer and making the realtime engine consume only caller-supplied prepared contract implementations. Until #118 is accepted, Aurora must not claim that renderer or DSP backends can be replaced with zero realtime-engine integration work.
 
 This debt is intentionally documented rather than hidden behind the plugin architecture. Application-plugin isolation in this document remains independent of that migration.
 
