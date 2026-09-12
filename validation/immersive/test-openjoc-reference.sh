@@ -51,6 +51,7 @@ try:
     joc = payload["joc"]
     eac3 = payload["eac3"]
     validation = payload["validation"]
+    diagnostics = payload["diagnostics"]
 except Exception as exc:
     print(f"OPENJOC-REFERENCE-FAIL: inspector JSON missing required contract fields: {exc}", file=sys.stderr)
     raise SystemExit(1)
@@ -61,9 +62,43 @@ if joc.get("present") is not True:
 if int(eac3.get("access_unit_count", 0)) <= 0:
     print("OPENJOC-REFERENCE-FAIL: inspector reported no complete E-AC-3 access units", file=sys.stderr)
     raise SystemExit(1)
+if int(eac3.get("total_samples", 0)) <= 0:
+    print("OPENJOC-REFERENCE-FAIL: inspector reported no programme samples", file=sys.stderr)
+    raise SystemExit(1)
 if validation.get("stream_parse") != "pass":
     print(
         f"OPENJOC-REFERENCE-FAIL: stream_parse={validation.get('stream_parse')!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if validation.get("decoder_admissible") is not True:
+    print("OPENJOC-REFERENCE-FAIL: stream was not admitted by the decoder contract", file=sys.stderr)
+    raise SystemExit(1)
+if validation.get("frame_timing_continuity") != "continuous":
+    print(
+        "OPENJOC-REFERENCE-FAIL: frame timing is not continuous: "
+        f"{validation.get('frame_timing_continuity')!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if validation.get("metadata_timing_continuity") != "continuous":
+    print(
+        "OPENJOC-REFERENCE-FAIL: metadata timing is not continuous: "
+        f"{validation.get('metadata_timing_continuity')!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+compatibility = validation.get("deployed_compatibility") or {}
+if compatibility.get("status") != "pass":
+    print(
+        "OPENJOC-REFERENCE-FAIL: deployed compatibility gate did not pass: "
+        f"{compatibility.get('status')!r}",
+        file=sys.stderr,
+    )
+    raise SystemExit(1)
+if diagnostics.get("complete") is not True or int(diagnostics.get("issue_count", 0)) != 0:
+    print(
+        "OPENJOC-REFERENCE-FAIL: inspection diagnostics were incomplete or reported issues",
         file=sys.stderr,
     )
     raise SystemExit(1)
@@ -72,10 +107,13 @@ if not profiles:
     print("OPENJOC-REFERENCE-FAIL: JOC was signaled but no profile was reported", file=sys.stderr)
     raise SystemExit(1)
 
+strict = validation.get("etsi_strict") or {}
 print(
     "OPENJOC-INSPECT-PASS "
-    f"access_units={eac3['access_unit_count']} profiles={len(profiles)} "
-    f"presence_status={joc.get('presence_status', 'unknown')}"
+    f"access_units={eac3['access_unit_count']} samples={eac3['total_samples']} "
+    f"profiles={len(profiles)} presence_status={joc.get('presence_status', 'unknown')} "
+    f"decoder_admissible=true timing=continuous "
+    f"deployed_compatibility=pass etsi_strict={strict.get('status', 'unknown')}"
 )
 PY
 
