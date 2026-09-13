@@ -58,7 +58,9 @@ pub enum DecoderError {
     #[error("decoder backend panicked during {0}; explicit adapter recovery is required")]
     BackendPanic(&'static str),
     /// A panic-isolated decoder remains latched faulted until explicit adapter recovery.
-    #[error("decoder backend is latched faulted after a panic; explicit adapter recovery is required")]
+    #[error(
+        "decoder backend is latched faulted after a panic; explicit adapter recovery is required"
+    )]
     BackendFaulted,
 }
 
@@ -182,16 +184,26 @@ pub trait StreamingDecoder {
     /// Pushes one bounded packet and returns any decoded frames made available by it.
     fn push_packet(&mut self, packet: DecoderPacket<'_>) -> Result<DecodedBatch, DecoderError>;
 
-    /// Clears stream history after a discontinuity or explicit recovery.
+    /// Clears ordinary stream history after a discontinuity.
     fn reset_stream(&mut self);
+
+    /// Performs explicit control-plane recovery after a latched backend failure.
+    ///
+    /// Simple adapters may use the default reset-based recovery. Panic-isolated or externally
+    /// supervised adapters may override this to clear a fault latch only after a successful reset.
+    fn recover_stream(&mut self) -> Result<(), DecoderError> {
+        self.reset_stream();
+        Ok(())
+    }
 }
 
 /// Panic-isolating adapter for in-process streaming decoder backends.
 ///
 /// This wrapper belongs on the media/control side, not inside Aurora's hard realtime callback.
-/// Once a backend panic is observed, packet/configuration calls fail closed until [`Self::recover`]
-/// successfully resets the backend. Ordinary `reset_stream` calls intentionally do not clear a
-/// panic latch, so a discontinuity cannot accidentally turn a crashed backend audible again.
+/// Once a backend panic is observed, packet/configuration calls fail closed until explicit
+/// [`StreamingDecoder::recover_stream`] successfully resets the backend. Ordinary `reset_stream`
+/// calls intentionally do not clear a panic latch, so a discontinuity cannot accidentally turn a
+/// crashed backend audible again.
 pub struct PanicIsolatedStreamingDecoder<D> {
     inner: D,
     info: DecoderInfo,
@@ -216,20 +228,6 @@ where
     /// Returns whether a backend panic is currently latched.
     pub fn is_faulted(&self) -> bool {
         self.faulted
-    }
-
-    /// Explicitly attempts to reset and re-arm a backend after a panic.
-    pub fn recover(&mut self) -> Result<(), DecoderError> {
-        match catch_unwind(AssertUnwindSafe(|| self.inner.reset_stream())) {
-            Ok(()) => {
-                self.faulted = false;
-                Ok(())
-            }
-            Err(_) => {
-                self.faulted = true;
-                Err(DecoderError::BackendPanic("recovery reset"))
-            }
-        }
     }
 
     /// Borrows the wrapped backend for diagnostics on non-realtime control paths.
@@ -280,6 +278,19 @@ where
             self.faulted = true;
         }
     }
+
+    fn recover_stream(&mut self) -> Result<(), DecoderError> {
+        match catch_unwind(AssertUnwindSafe(|| self.inner.reset_stream())) {
+            Ok(()) => {
+                self.faulted = false;
+                Ok(())
+            }
+            Err(_) => {
+                self.faulted = true;
+                Err(DecoderError::BackendPanic("recovery reset"))
+            }
+        }
+    }
 }
 
 #[cfg(test)]
@@ -302,11 +313,17 @@ mod tests {
             }
         }
 
-        fn configure_stream(&mut self, _config: StreamingDecoderConfig) -> Result<(), DecoderError> {
+        fn configure_stream(
+            &mut self,
+            _config: StreamingDecoderConfig,
+        ) -> Result<(), DecoderError> {
             Ok(())
         }
 
-        fn push_packet(&mut self, _packet: DecoderPacket<'_>) -> Result<DecodedBatch, DecoderError> {
+        fn push_packet(
+            &mut self,
+            _packet: DecoderPacket<'_>,
+        ) -> Result<DecodedBatch, DecoderError> {
             if self.panic_on_push {
                 panic!("intentional decoder panic");
             }
@@ -344,8 +361,11 @@ mod tests {
         assert!(decoder.is_faulted());
         decoder.reset_stream();
         assert!(decoder.is_faulted());
-        assert_eq!(decoder.push_packet(packet()), Err(DecoderError::BackendFaulted));
-        decoder.recover().unwrap();
+        assert_eq!(
+            decoder.push_packet(packet()),
+            Err(DecoderError::BackendFaulted)
+        );
+        decoder.recover_stream().unwrap();
         assert!(!decoder.is_faulted());
         assert_eq!(decoder.push_packet(packet()), Ok(DecodedBatch::empty()));
     }
@@ -362,10 +382,13 @@ mod tests {
             Err(DecoderError::BackendPanic("push_packet"))
         );
         assert_eq!(
-            decoder.recover(),
+            decoder.recover_stream(),
             Err(DecoderError::BackendPanic("recovery reset"))
         );
         assert!(decoder.is_faulted());
-        assert_eq!(decoder.push_packet(packet()), Err(DecoderError::BackendFaulted));
+        assert_eq!(
+            decoder.push_packet(packet()),
+            Err(DecoderError::BackendFaulted)
+        );
     }
 }
