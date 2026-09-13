@@ -99,7 +99,7 @@ fn render_text(registry: &CapabilityRegistry) -> String {
         writeln!(output, "  name: {}", entry.name).unwrap();
         writeln!(
             output,
-            "  kind: {} | tested layouts: {} | adapter placeholder: {}",
+            "  kind: {} | tested layouts: {} | interface-only marker: {}",
             kind_label(entry.kind),
             list_or_none(&entry.tested_layouts),
             yes_no(entry.adapter_placeholder)
@@ -145,7 +145,7 @@ fn implementation_label(status: ImplementationStatus) -> &'static str {
     match status {
         ImplementationStatus::Experimental => "experimental",
         ImplementationStatus::Functional => "functional",
-        ImplementationStatus::AdapterPlaceholder => "adapter-placeholder",
+        ImplementationStatus::AdapterPlaceholder => "interface-only",
         ImplementationStatus::InactiveResearch => "inactive-research",
         ImplementationStatus::NotImplemented => "not-implemented",
     }
@@ -205,15 +205,17 @@ mod tests {
         let output = render_capabilities(CapabilityOutputFormat::Json).unwrap();
         assert!(output.contains("\"schema_version\": 1"));
         assert!(output.contains("\"geometric-binaural\""));
-        assert!(output.contains("\"adapter_placeholder\""));
+        assert!(output.contains("\"iamf\""));
+        assert!(output.contains("\"truehdd\""));
         assert!(output.contains("\"loudspeaker-3d\""));
     }
 
     #[test]
-    fn generated_markdown_never_marks_current_entries_production_ready() {
+    fn generated_markdown_matches_current_non_production_truth() {
         let output = render_capabilities(CapabilityOutputFormat::Markdown).unwrap();
-        assert!(output.contains("| `iamf` — IAMF decoder adapter | adapter-placeholder |"));
-        assert!(output.contains("| `loudspeaker-3d` — 3D loudspeaker renderer | not-implemented |"));
+        assert!(output.contains("| `iamf` — IAMF rendered-PCM decoder | functional | functional | unsupported | ci-artifact | stereo | no |"));
+        assert!(output.contains("| `truehdd` — truehdd channel-PCM decoder | experimental | experimental | unsupported | software-tested | none | no |"));
+        assert!(output.contains("| `loudspeaker-3d` — 3D VBAP loudspeaker renderer | experimental | functional | experimental | software-tested | 7.1.4 | no |"));
         assert!(!output.contains("| yes |"));
     }
 
