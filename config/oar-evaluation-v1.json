@@ -21,5 +21,27 @@
     "license_and_patents_required": true,
     "promotion_to_aurora_coverage_requires_differential_evidence": true
   },
-  "truth_boundary": "Successful upstream build/tests establish only that the pinned OAR reference is usable as an external oracle. They do not prove IAMF integration into Aurora, equivalence to Dolby Atmos, physical output, or certification."
+  "differential": {
+    "slice": "stereo-object-position-gain-v1",
+    "layout": "stereo",
+    "sample_rate": 48000,
+    "frames_per_case": 256,
+    "channel_order": [
+      "FL",
+      "FR"
+    ],
+    "cases": [
+      "left_unity",
+      "center_unity",
+      "right_unity",
+      "center_minus_6db"
+    ],
+    "expected_gain_db": -6.0,
+    "normalized_channel_tolerance": 0.15,
+    "center_balance_tolerance": 0.08,
+    "dominance_margin": 0.2,
+    "gain_db_tolerance": 0.5,
+    "cross_renderer_gain_db_tolerance": 0.25
+  },
+  "truth_boundary": "Successful upstream build/tests plus the focused stereo semantic differential establish only object-position/gain, finite-output, frame-accounting, and FL/FR ordering evidence against the exact pinned OAR reference. They do not prove IAMF ingestion or decoding, 5.1/7.1.4 differential equivalence, raw PCM identity, physical output, proprietary-format equivalence, or certification."
 }
