@@ -8,7 +8,7 @@ Last updated: **2026-09-13**
 
 ### Local Simics / live-ingress continuation (2026-09-13)
 
-- Local work started from remote `main-v2` base `d5ea4b2782867cb39f3b96acc7dd038129a9a965`; use only `C:\\Users\\ammar\\Auroraaudio-latest` as the working copy.
+- Local work started from remote `main-v2` base `d5ea4b2782867cb39f3b96acc7dd038129a9a965`; use only `C:\Users\ammar\Auroraaudio-latest` as the working copy.
 - Intel Simics 7.84.0 vacuum + Python `pyobj` harness now passes **21 profiles**, including MMIO/DMA timing, fail-closed negatives, complete 3,624,960-frame DSP replay, speaker-load routing, and the MCHStreamer/UAC2 transport contract. Healthy replay: 15,104 periods, 75.52 simulated seconds, zero healthy xruns.
 - The output transport model was corrected from a single abstract 16-slot lane to documented **MCHStreamer TDM16 as two parallel TDM8 lanes**: lane0 channels 1-8, lane1 channels 9-12 plus zero channels 13-16; 8 x 32-bit slots/lane, documented 24 valid bits, FSYNC 48 kHz, BCLK 12.288 MHz, MCLK 24.576 MHz.
 - Generic UAC2 asynchronous feedback contract tests +/-250 ppm clock offset without underrun/overrun when feedback tracks the device; removing feedback intentionally produces underrun/overrun. This is protocol/transport simulation, not XMOS firmware or USB PHY evidence.
@@ -18,6 +18,16 @@ Last updated: **2026-09-13**
 - Added `validation/physical/aurora_alsa_iec61937_stream.py`: continuous S32_LE/2ch/192 kHz ALSA -> canonical IEC61937 converter. It locks one of the four explicit high16/low16 x LR/RL layouts and feeds Gate A-Live incrementally. Self-test PASS for all 4 layouts. Physical live eARC capture, real hardware reset/drop counters, USB/TDM electrical timing, real DAC loopback, protected-service Atmos and acoustics remain unproven.
 - `validation/simics/run-simics.ps1` remains the standalone Simics entry; `validation/simics/run_tv_to_speakers.py` runs the staged encoded-source-to-load path. Generated reports live under ignored `artifacts/` and are evidence from the local run, not repository fixtures.
 - QSP feasibility audit remains negative for a ready audio/HDMI/eARC model; no Netflix/DRM bypass or protected-stream extraction is part of Aurora.
+
+### Native ARM64 platform validation (2026-09-13)
+
+- Added permanent `.github/workflows/arm64-platform-validation.yml` on GitHub's native `ubuntu-24.04-arm` runner with portable `-C target-cpu=generic` codegen. Current ARM64 run `34758032990` passes both `aurora-core-arm64` and `joc-render-arm64`.
+- Complete Aurora workspace tests, release `aurora-cli`, release `aurora-evaluate-vbap3d`, and the native 7.1.4 evaluator all PASS on `aarch64-unknown-linux-gnu`. The ARM64 runner used 4-core ARM Neoverse-N2; it is **not** an STM32MP257/Cortex-A35 performance proxy.
+- Native ARM64 Criterion evidence at 48 kHz / 256-frame blocks: 12ch realtime full block ~25.7 us, 12ch adaptive ASRC ~63.0 us, and 12ch x 128-tap deterministic convolution ~215.1 us versus a 5.333 ms block deadline. These establish large headroom on Neoverse-N2 only.
+- Harletty builds natively on ARM64 and its official JOC golden test passes. Real IEC61937/JOC evidence on ARM64: 47/47 metadata frames, 705 object events, 15 object channels, followed by a 72,192-frame 7.1.4 render PASS.
+- Continuous native ARM64 JOC soak PASS: 94 bursts, 94 metadata frames, 1,410 object events, 15 object channels. Media-paced 7.1.4 PASS: 144,384 frames, 3.008 s media, 3.055 s elapsed, pacing factor 0.985.
+- The first ARM64 attempt exposed one Omniphony PipeWire FFI portability bug (`*const i8` vs platform `c_char`). Aurora's pinned low-latency patch now uses `std::ffi::c_char`; ARM64 passes and x86_64 Immersive JOC Stack run `34758033040` also passes, proving no x86 regression.
+- **Platform conclusion:** Linux/AArch64 software compatibility for Aurora + Harletty + Omniphony 7.1.4 is proven. STM32MP257 remains **unproven** until the exact stack is benchmarked on its dual Cortex-A35/OpenSTLinux target with runtime memory, SAI/SPDIFRX DMA/IRQ, clocking, long-soak and physical I/O evidence.
 
 ## 1. Repository state and branch policy
 
