@@ -14,3 +14,5 @@ default = []
 cavern-process = []
 
 [dependencies]
+aurora-core = { path = "../aurora-core" }
+aurora-renderer-api = { path = "../aurora-renderer-api" }
