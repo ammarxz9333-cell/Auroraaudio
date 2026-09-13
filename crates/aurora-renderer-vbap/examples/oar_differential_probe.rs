@@ -1,4 +1,9 @@
-use std::{env, fs::File, io::{BufWriter, Write}, path::PathBuf};
+use std::{
+    env,
+    fs::File,
+    io::{BufWriter, Write},
+    path::PathBuf,
+};
 
 use aurora_core::{ChannelRole, Listener, Speaker, Vector3};
 use aurora_renderer_api::{RenderObject, Renderer, RendererScratch, SpeakerGain};
@@ -47,7 +52,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let file = File::create(&output_path)?;
     let mut output = BufWriter::new(file);
     writeln!(output, "AURORA_DIFF_V1")?;
-    writeln!(output, "azimuth_degrees\tleft_power_share\tright_power_share")?;
+    writeln!(
+        output,
+        "azimuth_degrees\tleft_power_share\tright_power_share"
+    )?;
 
     for azimuth in AZIMUTHS_DEGREES {
         let radians = azimuth.to_radians();
@@ -63,7 +71,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         let right = f64::from(gains[1].gain) * f64::from(gains[1].gain);
         let total = left + right;
         if !left.is_finite() || !right.is_finite() || !total.is_finite() || total <= 0.0 {
-            return Err(format!("non-finite or silent Aurora VBAP result at azimuth {azimuth}").into());
+            return Err(
+                format!("non-finite or silent Aurora VBAP result at azimuth {azimuth}").into(),
+            );
         }
 
         writeln!(
