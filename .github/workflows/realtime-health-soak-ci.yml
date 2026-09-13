@@ -14,7 +14,12 @@ on:
       - 'crates/aurora-renderer-basic/**'
       - 'crates/aurora-dsp-basic/**'
       - 'crates/aurora-realtime-engine/**'
+      - 'crates/aurora-realtime-audio-sim/**'
       - 'crates/aurora-realtime-acceptance/**'
+      - 'config/simulation-coverage-v1.json'
+      - 'validation/virtual-hardware/aurora_resilience_sim.py'
+      - 'validation/virtual-hardware/validate_simulation_coverage.py'
+      - 'validation/virtual-hardware/test-aurora-resilience-sim.sh'
       - 'fixtures/scenes/7_1_4_reference.json'
   push:
     branches:
@@ -29,7 +34,12 @@ on:
       - 'crates/aurora-renderer-basic/**'
       - 'crates/aurora-dsp-basic/**'
       - 'crates/aurora-realtime-engine/**'
+      - 'crates/aurora-realtime-audio-sim/**'
       - 'crates/aurora-realtime-acceptance/**'
+      - 'config/simulation-coverage-v1.json'
+      - 'validation/virtual-hardware/aurora_resilience_sim.py'
+      - 'validation/virtual-hardware/validate_simulation_coverage.py'
+      - 'validation/virtual-hardware/test-aurora-resilience-sim.sh'
       - 'fixtures/scenes/7_1_4_reference.json'
   workflow_dispatch:
 
@@ -50,7 +60,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target/release
-          key: ${{ runner.os }}-realtime-health-soak-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-realtime-health-soak-${{ hashFiles('Cargo.lock', 'crates/aurora-realtime-engine/**', 'crates/aurora-realtime-audio-sim/**', 'crates/aurora-realtime-acceptance/**', 'validation/virtual-hardware/test-aurora-resilience-sim.sh') }}
           restore-keys: |
             ${{ runner.os }}-realtime-health-soak-
       - name: Run accelerated 10-minute media-time 7.1.4 soak
@@ -76,6 +86,14 @@ jobs:
           assert report['violations'] == []
           print('AURORA REALTIME HEALTH REPORT PASS')
           PY
+      - name: Enforce resilience coverage registry
+        run: |
+          python3 validation/virtual-hardware/validate_simulation_coverage.py self-test
+          python3 validation/virtual-hardware/validate_simulation_coverage.py check
+      - name: Run clock and reconnect fault resilience evidence
+        run: |
+          bash validation/virtual-hardware/test-aurora-resilience-sim.sh \
+            output/validation/realtime-resilience-sim-v1.json | tee output/validation/realtime-resilience-sim.log
       - name: Run paced 15-second wall-clock 7.1.4 smoke soak
         run: |
           cargo run --locked --release -p aurora-realtime-acceptance --example wall_clock_soak -- \
@@ -107,6 +125,8 @@ jobs:
           path: |
             output/validation/realtime-health-soak-v1.json
             output/validation/realtime-health-soak.log
+            output/validation/realtime-resilience-sim-v1.json
+            output/validation/realtime-resilience-sim.log
             output/validation/realtime-wall-clock-soak-v1.json
             output/validation/realtime-wall-clock-soak.log
           retention-days: 14
