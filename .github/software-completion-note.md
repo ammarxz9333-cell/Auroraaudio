@@ -1,0 +1,1 @@
+Temporary branch note: software-completion is validated through PR CI before merge; physical/external gates remain separate.
