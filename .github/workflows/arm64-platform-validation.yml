@@ -1,0 +1,139 @@
+name: ARM64 Platform Validation
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main-v2
+    paths:
+      - "crates/**"
+      - "validation/immersive/**"
+      - "config/external-components-v1.json"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/arm64-platform-validation.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: arm64-platform-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  aurora-core-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 60
+    env:
+      RUSTFLAGS: -C target-cpu=generic
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install Linux audio dependencies
+        run: sudo apt-get update && sudo apt-get install --yes libasound2-dev libpipewire-0.3-dev ffmpeg pkg-config time
+      - name: Record native ARM64 environment
+        run: |
+          mkdir -p output/arm64-platform
+          {
+            echo "uname:"; uname -a
+            echo; echo "lscpu:"; lscpu
+            echo; echo "memory:"; free -h
+            echo; echo "rust:"; rustc -Vv
+          } | tee output/arm64-platform/environment.txt
+      - name: Build and test complete Aurora workspace on native ARM64
+        run: cargo test --workspace --all-features --locked
+      - name: Build release binaries with portable AArch64 codegen
+        run: |
+          cargo build --release --locked -p aurora-cli
+          cargo build --release --locked -p aurora-simulation-assurance --bin aurora-evaluate-vbap3d
+      - name: Exercise 7.1.4 renderer on native ARM64
+        run: |
+          /usr/bin/time -v target/release/aurora-evaluate-vbap3d \
+            --scene fixtures/scenes/7_1_4_reference.json \
+            --output-dir output/arm64-platform/vbap3d-7.1.4 \
+            --duration-seconds 10 \
+            --block-size 256 \
+            2>&1 | tee output/arm64-platform/vbap3d-time.txt
+      - name: Benchmark realtime engine on native ARM64
+        run: |
+          cargo bench --locked -p aurora-realtime-engine --bench performance -- --quick --noplot \
+            2>&1 | tee output/arm64-platform/realtime-engine-bench.txt
+      - name: Benchmark output DSP on native ARM64
+        run: |
+          cargo bench --locked -p aurora-dsp-basic --bench output -- --quick --noplot \
+            2>&1 | tee output/arm64-platform/output-dsp-bench.txt
+      - name: Summarize 12-channel realtime headroom evidence
+        run: |
+          python3 - <<'PY'
+          import json, pathlib, platform
+          root = pathlib.Path('target/criterion')
+          rows = []
+          for p in root.glob('**/new/estimates.json'):
+              s = str(p).replace('\\', '/')
+              if any(k in s for k in ('full_block_48khz', 'adaptive_asrc_48khz_256', 'deterministic_convolution_12ch_256_128tap')):
+                  data = json.loads(p.read_text())
+                  mean = data.get('mean', {}).get('point_estimate')
+                  rows.append({'path': s, 'mean_ns': mean})
+          deadline_ns_256 = 256 / 48000 * 1e9
+          for row in rows:
+              if row['mean_ns'] is not None and ('12ch' in row['path'] or 'deterministic_convolution' in row['path']):
+                  row['percent_of_256_frame_deadline'] = row['mean_ns'] / deadline_ns_256 * 100
+          summary = {
+              'schema_version': 1,
+              'architecture': platform.machine(),
+              'deadline_256_frames_48khz_ns': deadline_ns_256,
+              'criterion': rows,
+              'truth_boundary': 'Native GitHub ARM64 compatibility/performance evidence only. The runner CPU is not an STM32MP257 Cortex-A35, so these timings do not prove MP257 realtime headroom.'
+          }
+          out = pathlib.Path('output/arm64-platform/summary.json')
+          out.write_text(json.dumps(summary, indent=2) + '\n')
+          print(out.read_text())
+          PY
+      - name: Upload ARM64 platform evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-platform-${{ github.sha }}
+          path: output/arm64-platform
+          if-no-files-found: error
+          retention-days: 30
+
+  joc-render-arm64:
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 75
+    env:
+      RUSTFLAGS: -C target-cpu=generic
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install JOC/render build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev pkg-config time
+      - name: Run real Harletty plus Omniphony 7.1.4 stack on native ARM64
+        env:
+          AURORA_JOC_BUILD_MODE: release
+          AURORA_JOC_REALTIME_LOOPS: 2
+          AURORA_JOC_TEST_WORKDIR: ${{ runner.temp }}/aurora-arm64-joc
+          AURORA_HARLETTY_TARGET_DIR: ${{ github.workspace }}/.cache/arm64/harletty-target
+          AURORA_OMNIP_TARGET_DIR: ${{ github.workspace }}/.cache/arm64/omniphony-target
+          AURORA_JOC_HARNESS_TARGET_DIR: ${{ github.workspace }}/.cache/arm64/harness-target
+        run: |
+          mkdir -p output/arm64-joc
+          set -o pipefail
+          /usr/bin/time -v bash validation/immersive/test-joc-realtime-soak.sh \
+            2>&1 | tee output/arm64-joc/joc-realtime-soak.txt
+      - name: Record ARM64 JOC environment
+        if: always()
+        run: |
+          {
+            uname -a
+            lscpu
+            rustc -Vv
+          } > output/arm64-joc/environment.txt
+      - name: Upload ARM64 JOC evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: arm64-joc-${{ github.sha }}
+          path: output/arm64-joc
+          if-no-files-found: warn
+          retention-days: 30
