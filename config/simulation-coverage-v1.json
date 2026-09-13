@@ -198,15 +198,30 @@
       "truth_boundary": "Pinned OAR v1 and Aurora 2D VBAP are compared on identical stereo point-object azimuth cases at -60/-30/-15/0/+15/+30/+60 degrees using normalized left/right output power. Reference run 34773581397 measured maximum left-share absolute delta 3.6e-8, RMSE 1.9243e-8, zero mirror-symmetry error, exact center balance and no monotonicity violations. This proves only the declared stereo 2D point-object panning semantics; it does not prove IAMF parsing/decoding, 7.1.4/elevation/HOA/binaural behavior, acoustics, physical output, protected-service behavior, or certification."
     },
     {
+      "id": "iamf-rendered-channel-pcm-reference",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "evidence": [
+        "config/iamf-reference-v1.json",
+        "crates/aurora-decoder-iamf/src/lib.rs",
+        "crates/aurora-decoder-iamf/examples/iamf_rendered_pcm_probe.rs",
+        "validation/open-immersive/iamf_reference_evidence.py",
+        ".github/workflows/iamf-reference-ci.yml"
+      ],
+      "truth_boundary": "Pinned libiamf iamfdec is built from commit e55e1832a608affe602de2ee39929bd7759a75ab and exercised on the official iamf-tools noise_1024samp_5p1_opus.iamf fixture pinned at commit d13b8dd52211f0c77cde4a7a8fbc8ca84ae75b09. IAMF Reference CI run 34775520753 proved a real complete-file IAMF decode to 48 kHz stereo PCM, followed by Aurora import as ChannelPcm with 1024 frames, 2048 samples, finite non-silent output, zero fabricated objects and zero sample-bit mismatches versus direct libiamf PCM after the declared signed-PCM32-to-F32 normalization. This does not expose or prove IAMF source object metadata, object-to-PCM bindings, streaming IAMF, Aurora-side 7.1.4/elevation/HOA rendering, binaural behavior, physical output, protected-service compatibility, or certification."
+    },
+    {
       "id": "iamf-oar-open-rendering",
       "status": "planned",
       "evidence_class": "software_reference",
       "evidence": [
+        "config/iamf-reference-v1.json",
         "config/oar-evaluation-v1.json",
+        "validation/open-immersive/iamf_reference_evidence.py",
         "validation/open-immersive/test-oar-reference.sh",
         "validation/open-immersive/test-oar-differential.sh"
       ],
-      "truth_boundary": "The pinned OAR reference and a narrow stereo 2D point-object differential are proven, but Aurora still has only an IAMF adapter placeholder. No IAMF bitstream parse/decode-to-render integration, multichannel IAMF presentation, elevation/HOA, or end-to-end IAMF playback proof is claimed."
+      "truth_boundary": "Aurora now has executable evidence for complete-file IAMF decoding through pinned libiamf into rendered stereo ChannelPcm and separately has a narrow OAR-vs-Aurora stereo point-object renderer differential. These are separate reference lanes. Aurora still does not expose IAMF source object/audio-element metadata and complete object-to-PCM bindings into its own renderer, so IAMF bitstream-to-Aurora-object-render integration, multichannel/elevation/HOA playback and end-to-end IAMF rendering remain planned."
     },
     {
       "id": "hoa-scene-based-rendering",

@@ -8,8 +8,9 @@ This file is the compact source of truth for the next agent working on Aurora. A
 - Default branch: `main-v2`
 - Active software-gap branch: `gap-closure-software-p0`
 - Draft PR: `#156` — `Close P0 software resilience gaps without selecting hardware`
-- The last fully green pre-OAR baseline was `721eb7c68d8f34a6a371da06926c70f06a4e826b` with 9/9 PR workflows green.
+- Commit `7d9bd815d916a31356f40ca4b6ba1dc5b373aa11` completed a 9/9 green PR matrix after promoting the narrow OAR stereo object differential.
 - The OAR stereo object differential first passed on `9f7e19a73790527ff7ed2da2dd2dd48df5f34027`, OAR Reference CI run `34773581397`.
+- The first real IAMF rendered-channel reference lane passed on commit `6bd62667f429588b010f372d1aec51ea88340933`, IAMF Rendered PCM Reference CI run `34775520753`.
 - Do not merge or move `main-v2` without an explicit user request.
 
 ## Architecture rule: hardware is not selected
@@ -61,7 +62,7 @@ Pinned external reference:
 - commit `5601d50c05a5e71cac7e80babeff7dd2a53b2060`
 - external-reference-only; respect upstream license and PATENTS terms.
 
-The first implemented differential is intentionally narrow: stereo 2D point-object panning semantics, not IAMF playback.
+The implemented differential is intentionally narrow: stereo 2D point-object panning semantics, not IAMF playback.
 
 Evidence files:
 
@@ -82,12 +83,40 @@ Reference run `34773581397` passed with:
 - mirror-symmetry max error: `0` in both renderers;
 - no monotonicity or direction violations.
 
-Coverage must therefore distinguish:
-
-- `oar-vbap-object-differential`: covered software-reference evidence for this declared stereo 2D point-object scope;
-- `iamf-oar-open-rendering`: still planned.
+Coverage therefore distinguishes `oar-vbap-object-differential` as covered software-reference evidence while broader IAMF/OAR rendering remains planned.
 
 Do not infer IAMF parse/decode support, 7.1.4 equivalence, elevation rendering, HOA, binaural equivalence, Atmos equivalence or certification from the stereo differential.
+
+## IAMF rendered-channel reference lane
+
+Aurora now also has a deliberately separate IAMF complete-file reference path. It is a rendered-channel validation lane, not an IAMF object-scene integration.
+
+Pinned references:
+
+- `AOMediaCodec/libiamf` commit `e55e1832a608affe602de2ee39929bd7759a75ab`;
+- the libiamf OAR submodule commit `3d1d23b807543f993a1d0cf0a9839c7f0746d94b`;
+- official `AOMediaCodec/iamf-tools` fixture `iamf/cli/testdata/iamf/noise_1024samp_5p1_opus.iamf` at commit `d13b8dd52211f0c77cde4a7a8fbc8ca84ae75b09`.
+
+`IamfRenderedPcmReferenceDecoder`, behind the `libiamf-process` feature, invokes pinned `iamfdec` without a shell and imports only the rendered PCM as `DecoderOutputSemantics::ChannelPcm`. It accepts one complete standalone IAMF bitstream per offline `decode_chunk` call, currently fixes the reference output to stereo / 48 kHz / signed PCM32 from `iamfdec`, converts that deterministically to Aurora planar F32 and always emits an empty object list.
+
+IAMF Rendered PCM Reference CI run `34775520753` passed with:
+
+- real pinned libiamf build and `iamfdec` execution;
+- official IAMF fixture decode;
+- `1024` output frames / `2048` stereo samples at `48 kHz`;
+- peak absolute sample about `0.8912509`, RMS about `0.35538234`;
+- `0` sample-bit mismatches between direct libiamf PCM and Aurora-imported PCM after the declared PCM32-to-F32 normalization;
+- `0` fabricated objects.
+
+Coverage may therefore mark `iamf-rendered-channel-pcm-reference` as covered software-reference evidence. Keep `iamf-oar-open-rendering` planned: the current process adapter does not expose IAMF source object/audio-element metadata or complete object-to-PCM bindings into Aurora's renderer. It does not prove live IAMF streaming, 7.1.4/elevation/HOA rendering inside Aurora, binaural behavior, physical output, protected-service compatibility or certification.
+
+Evidence files:
+
+- `config/iamf-reference-v1.json`
+- `crates/aurora-decoder-iamf/src/lib.rs`
+- `crates/aurora-decoder-iamf/examples/iamf_rendered_pcm_probe.rs`
+- `validation/open-immersive/iamf_reference_evidence.py`
+- `.github/workflows/iamf-reference-ci.yml`
 
 ## Simulation / evidence truth boundaries
 
@@ -106,8 +135,8 @@ Protected-service validation must be performed lawfully on authorized paths. Do 
 
 ## Current next software work
 
-1. Keep the tightened OAR stereo point-object differential gate green.
-2. Implement the actual IAMF adapter / bitstream-or-decoded-element-to-Aurora render integration before promoting `iamf-oar-open-rendering`.
+1. Keep the libiamf rendered-ChannelPcm reference lane and tightened OAR stereo point-object differential green.
+2. Investigate a real IAMF source-element/object metadata boundary that can provide complete object/audio-element semantics and object-to-PCM bindings before promoting `iamf-oar-open-rendering`.
 3. Add OAR multichannel/elevation differential cases separately; add HOA only when Aurora has a real scene-based lane to compare.
 4. Build the ADM/BS.2127 EAR/libear differential lane.
 5. Review authored/sample-accurate object metadata interpolation/timeline semantics in Aurora's live mixer; do not overclaim full temporal Atmos fidelity from the current frame-level validation adapter.
