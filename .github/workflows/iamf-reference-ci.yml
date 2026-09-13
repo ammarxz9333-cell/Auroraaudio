@@ -1,0 +1,100 @@
+name: IAMF Rendered PCM Reference CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "crates/aurora-decoder-iamf/**"
+      - "config/iamf-reference-v1.json"
+      - "validation/open-immersive/iamf_reference_evidence.py"
+      - ".github/workflows/iamf-reference-ci.yml"
+      - "config/external-components-v1.json"
+      - "config/simulation-coverage-v1.json"
+      - "AGENTS.md"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iamf-reference-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rendered-pcm-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install libiamf build tooling
+        run: sudo apt-get update && sudo apt-get install --yes cmake ninja-build git
+
+      - name: Self-test IAMF evidence analyzer
+        run: python3 validation/open-immersive/iamf_reference_evidence.py self-test
+
+      - name: Test Aurora IAMF reference adapter boundary
+        run: cargo test -p aurora-decoder-iamf --all-features --locked
+
+      - name: Clone exact pinned IAMF references
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIBIAMF_COMMIT="$(python3 -c 'import json; print(json.load(open("config/iamf-reference-v1.json"))["libiamf"]["commit"])')"
+          IAMF_TOOLS_COMMIT="$(python3 -c 'import json; print(json.load(open("config/iamf-reference-v1.json"))["fixture_source"]["commit"])')"
+          git clone --no-checkout https://github.com/AOMediaCodec/libiamf.git "${RUNNER_TEMP}/libiamf"
+          git -C "${RUNNER_TEMP}/libiamf" checkout --detach "${LIBIAMF_COMMIT}"
+          git -C "${RUNNER_TEMP}/libiamf" submodule update --init --recursive
+          git clone --no-checkout --filter=blob:none https://github.com/AOMediaCodec/iamf-tools.git "${RUNNER_TEMP}/iamf-tools"
+          git -C "${RUNNER_TEMP}/iamf-tools" checkout --detach "${IAMF_TOOLS_COMMIT}"
+          test "$(git -C "${RUNNER_TEMP}/libiamf" rev-parse HEAD)" = "${LIBIAMF_COMMIT}"
+          test "$(git -C "${RUNNER_TEMP}/iamf-tools" rev-parse HEAD)" = "${IAMF_TOOLS_COMMIT}"
+          test -f "${RUNNER_TEMP}/libiamf/LICENSE"
+          test -f "${RUNNER_TEMP}/libiamf/PATENTS"
+          test -f "${RUNNER_TEMP}/iamf-tools/LICENSE"
+          test -f "${RUNNER_TEMP}/iamf-tools/PATENTS"
+
+      - name: Build exact pinned libiamf iamfdec
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S "${RUNNER_TEMP}/libiamf/code" -B "${RUNNER_TEMP}/libiamf-build" -G Ninja \
+            -DIAMF_TEST_TOOL=ON \
+            -DIAMF_ENABLE_BINAURALIZER=OFF
+          cmake --build "${RUNNER_TEMP}/libiamf-build" --target iamfdec --parallel 2
+          IAMFDEC="$(find "${RUNNER_TEMP}/libiamf-build" -type f -name iamfdec -perm -111 -print -quit)"
+          test -n "${IAMFDEC}"
+          printf '%s\n' "IAMFDEC=${IAMFDEC}" >> "${GITHUB_ENV}"
+
+      - name: Decode official IAMF fixture directly and through Aurora
+        shell: bash
+        run: |
+          set -euo pipefail
+          FIXTURE_REL="$(python3 -c 'import json; print(json.load(open("config/iamf-reference-v1.json"))["fixture_source"]["fixture"])')"
+          FIXTURE="${RUNNER_TEMP}/iamf-tools/${FIXTURE_REL}"
+          DIRECT_WAV="${RUNNER_TEMP}/iamf-direct.wav"
+          ADAPTER_F32="${RUNNER_TEMP}/iamf-adapter.f32le"
+          REPORT="${RUNNER_TEMP}/iamf-reference-evidence.json"
+          test -s "${FIXTURE}"
+          "${IAMFDEC}" -o3 "${DIRECT_WAV}" -s0 -r 48000 -d 32 "${FIXTURE}"
+          test -s "${DIRECT_WAV}"
+          cargo run --quiet --locked -p aurora-decoder-iamf \
+            --features libiamf-process \
+            --example iamf_rendered_pcm_probe -- \
+            "${IAMFDEC}" "${FIXTURE}" "${ADAPTER_F32}"
+          test -s "${ADAPTER_F32}"
+          python3 validation/open-immersive/iamf_reference_evidence.py \
+            "${DIRECT_WAV}" "${ADAPTER_F32}" "${REPORT}"
+          cat "${REPORT}"
+
+      - name: Upload IAMF rendered PCM evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iamf-rendered-pcm-${{ github.sha }}
+          path: ${{ runner.temp }}/iamf-reference-evidence.json
+          if-no-files-found: warn
+          retention-days: 14
