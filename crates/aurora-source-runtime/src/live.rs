@@ -1,17 +1,20 @@
-//! Hardware-agnostic live encoded-audio decode and object-render preparation.
+//! Hardware-agnostic live encoded-audio decode, object rendering, and speaker mixing.
 //!
 //! This module runs on the media/control side, not inside the hard realtime audio callback. It
-//! turns validated encoded packets into decoded PCM plus renderer gains while enforcing explicit
-//! object-scene semantics, bounded acquisition, fail-closed faults, and discontinuity recovery.
+//! consumes validated encoded packets through [`aurora_decoder_api::StreamingDecoder`], preserves
+//! source PCM channel semantics and object/channel bindings, renders object gains, routes bed
+//! channels, and emits final speaker PCM only after a bounded stable-acquisition gate.
 
-use aurora_core::{AudioBlock, AudioFormat, AudioObject, Listener, Speaker};
+use aurora_core::{AudioBlock, AudioFormat, AudioObject, ChannelRole, Listener, Speaker};
 use aurora_decoder_api::{
-    DecodedBatch, DecoderError, DecoderOutputSemantics, DecoderPacket, StreamingDecoder,
+    DecodedBatch, DecodedChannelKind, DecoderError, DecoderOutputSemantics, DecoderPacket,
+    DecoderPacketTransport, ObjectChannelBinding, StreamingDecodedFrame, StreamingDecoder,
+    StreamingDecoderConfig,
 };
 use aurora_renderer_api::{RenderObject, Renderer, RendererError, RendererScratch, SpeakerGain};
 use thiserror::Error;
 
-/// Default IEC61937 data type for E-AC-3.
+/// IEC61937 data type for E-AC-3.
 pub const IEC61937_EAC3_DATA_TYPE: u8 = 0x15;
 
 /// Live decoder lifecycle visible to diagnostics and callers.
@@ -20,26 +23,30 @@ pub enum LiveDecodeState {
     /// No stable decoder output has been observed yet.
     #[default]
     Searching,
-    /// Valid packets are arriving but the stability threshold has not yet been met.
+    /// Valid packets are arriving but the stability/object threshold has not yet been met.
     Priming,
     /// Stable validated output may be released downstream.
     Running,
     /// Output is muted while a fresh stable sequence is reacquired after an error.
     Muted,
-    /// Error budget was exhausted. Explicit recovery is required.
+    /// Error/probe budget was exhausted. Explicit recovery is required.
     Faulted,
 }
 
 /// Fail-closed policy for a live immersive decoder path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct LiveDecodePolicy {
-    /// Consecutive valid packet results required before output becomes audible.
+    /// Consecutive valid object-bearing packet results required before output becomes audible.
     pub required_stable_packets: u32,
     /// Consecutive decoder/validation failures allowed before entering `Faulted`.
     pub maximum_consecutive_errors: u32,
-    /// Consecutive successfully accepted packets that emit no frame before entering `Faulted`.
+    /// Consecutive accepted packets that emit no frame before entering `Faulted`.
     pub maximum_consecutive_empty_packets: u32,
-    /// Maximum object count accepted from one decoded frame.
+    /// Consecutive decoded packets allowed while waiting for native-object evidence.
+    pub maximum_object_probe_packets: u32,
+    /// Maximum decoded PCM channels accepted from a backend.
+    pub maximum_pcm_channels: usize,
+    /// Maximum native object count accepted from one decoded frame.
     pub maximum_objects: usize,
     /// Require native source object semantics rather than channel PCM or synthetic upmix.
     pub require_native_objects: bool,
@@ -53,6 +60,8 @@ impl Default for LiveDecodePolicy {
             required_stable_packets: 2,
             maximum_consecutive_errors: 3,
             maximum_consecutive_empty_packets: 8,
+            maximum_object_probe_packets: 8,
+            maximum_pcm_channels: 32,
             maximum_objects: 32,
             require_native_objects: true,
             required_data_type: Some(IEC61937_EAC3_DATA_TYPE),
@@ -77,19 +86,25 @@ pub struct LiveDecodeMetrics {
     pub discontinuities: u64,
     /// Explicit recoveries from `Faulted`.
     pub recoveries: u64,
+    /// Highest observed source PCM channel count.
+    pub maximum_observed_pcm_channels: usize,
     /// Highest observed native object count in one frame.
     pub maximum_observed_objects: usize,
 }
 
-/// One decoded frame ready for downstream PCM/object rendering/mixing.
+/// One frame after source decode, object rendering, bed routing, and speaker mixing.
 #[derive(Debug, Clone, PartialEq)]
 pub struct LiveRenderedFrame {
-    /// Decoder PCM output.
-    pub audio: AudioBlock,
-    /// Native object metadata accompanying the block.
+    /// Decoder PCM before object/bed mixing, retained for diagnostics and differential validation.
+    pub source_audio: AudioBlock,
+    /// Native object metadata accompanying the source block.
     pub objects: Vec<AudioObject>,
+    /// Complete active object-to-source-channel bindings.
+    pub object_channels: Vec<ObjectChannelBinding>,
     /// Object-major, speaker-minor gains for the configured output layout.
     pub speaker_gains: Vec<SpeakerGain>,
+    /// Final planar speaker PCM in configured layout order.
+    pub speaker_audio: AudioBlock,
 }
 
 /// Result of one packet submission.
@@ -97,7 +112,7 @@ pub struct LiveRenderedFrame {
 pub struct LiveProcessReport {
     /// Runtime state after processing the packet.
     pub state: LiveDecodeState,
-    /// True only when decoded frames were released downstream.
+    /// True only when decoded/mixed frames were released downstream.
     pub audible: bool,
     /// Valid frames released after stable acquisition. Priming output is intentionally discarded.
     pub frames: Vec<LiveRenderedFrame>,
@@ -108,8 +123,8 @@ pub struct LiveProcessReport {
 /// Live runtime setup or processing failure.
 #[derive(Debug, Error)]
 pub enum LiveDecodeError {
-    /// Policy values cannot produce a bounded runtime.
-    #[error("invalid live decode policy")]
+    /// Policy/layout values cannot produce a bounded runtime.
+    #[error("invalid live decode policy or output layout")]
     InvalidPolicy,
     /// Requested native-object semantics are not provided by the decoder adapter.
     #[error("decoder `{name}` exposes {actual:?}, native object-scene semantics are required")]
@@ -128,7 +143,7 @@ pub enum LiveDecodeError {
     /// Decoder adapter failure.
     #[error(transparent)]
     Decoder(#[from] DecoderError),
-    /// Decoded frame violates Aurora's PCM/object contract.
+    /// Decoded frame violates Aurora's PCM/object/channel contract.
     #[error("decoded live frame rejected: {0}")]
     InvalidDecodedFrame(String),
     /// Renderer setup or processing failure.
@@ -142,6 +157,7 @@ pub struct LiveImmersiveRuntime<D, R> {
     renderer: R,
     output_format: AudioFormat,
     listener: Listener,
+    layout: Vec<Speaker>,
     policy: LiveDecodePolicy,
     renderer_scratch: RendererScratch,
     output_channels: usize,
@@ -149,6 +165,7 @@ pub struct LiveImmersiveRuntime<D, R> {
     stable_packets: u32,
     consecutive_errors: u32,
     consecutive_empty_packets: u32,
+    consecutive_non_object_packets: u32,
     metrics: LiveDecodeMetrics,
 }
 
@@ -169,14 +186,21 @@ where
         if policy.required_stable_packets == 0
             || policy.maximum_consecutive_errors == 0
             || policy.maximum_consecutive_empty_packets == 0
+            || policy.maximum_object_probe_packets == 0
+            || policy.maximum_pcm_channels == 0
             || policy.maximum_objects == 0
             || output_format.sample_rate == 0
             || output_format.channel_count == 0
             || output_format.block_size == 0
             || layout.is_empty()
+            || layout.iter().any(|speaker| !speaker.enabled)
         {
             return Err(LiveDecodeError::InvalidPolicy);
         }
+        if layout.len() != output_format.channel_count || has_duplicate_roles(&layout) {
+            return Err(LiveDecodeError::InvalidPolicy);
+        }
+
         let info = decoder.info();
         if policy.require_native_objects && info.output_semantics != DecoderOutputSemantics::ObjectScene {
             return Err(LiveDecodeError::DecoderSemantics {
@@ -184,15 +208,19 @@ where
                 actual: info.output_semantics,
             });
         }
-        decoder.configure(output_format)?;
+        decoder.configure_stream(StreamingDecoderConfig {
+            sample_rate: output_format.sample_rate,
+            block_size: output_format.block_size,
+            maximum_pcm_channels: policy.maximum_pcm_channels,
+        })?;
         renderer.configure(
-            layout,
+            layout.clone(),
             output_format.sample_rate,
             output_format.block_size,
             policy.maximum_objects,
         )?;
         let output_channels = renderer.output_channel_count();
-        if output_channels == 0 {
+        if output_channels != output_format.channel_count {
             return Err(LiveDecodeError::InvalidPolicy);
         }
         let renderer_scratch = RendererScratch::new(renderer.required_scratch_size()?);
@@ -201,6 +229,7 @@ where
             renderer,
             output_format,
             listener,
+            layout,
             policy,
             renderer_scratch,
             output_channels,
@@ -208,6 +237,7 @@ where
             stable_packets: 0,
             consecutive_errors: 0,
             consecutive_empty_packets: 0,
+            consecutive_non_object_packets: 0,
             metrics: LiveDecodeMetrics::default(),
         })
     }
@@ -222,7 +252,7 @@ where
         self.metrics
     }
 
-    /// Pushes one validated ingress packet through decoder and renderer preparation.
+    /// Pushes one validated ingress packet through decoder, renderer, and speaker mixer.
     pub fn push_packet(
         &mut self,
         packet: DecoderPacket<'_>,
@@ -236,6 +266,12 @@ where
             self.mark_discontinuity();
         }
         if let Some(required) = self.policy.required_data_type {
+            if packet.transport != DecoderPacketTransport::Iec61937 {
+                self.register_failure();
+                return Err(LiveDecodeError::PacketContract(
+                    "IEC61937 transport is required for the configured data type",
+                ));
+            }
             if packet.data_type != Some(required) {
                 self.register_failure();
                 return Err(LiveDecodeError::PacketContract(
@@ -259,9 +295,6 @@ where
     }
 
     /// Marks a gap, seek, relock, format change, or clock epoch transition.
-    ///
-    /// The decoder and renderer histories are cleared and output stays muted until a new stable
-    /// sequence reaches the configured acquisition threshold.
     pub fn mark_discontinuity(&mut self) {
         self.decoder.reset_stream();
         self.renderer.reset();
@@ -269,6 +302,7 @@ where
         self.state = LiveDecodeState::Muted;
         self.stable_packets = 0;
         self.consecutive_empty_packets = 0;
+        self.consecutive_non_object_packets = 0;
     }
 
     /// Explicitly clears a latched fault and starts a fresh muted acquisition epoch.
@@ -279,6 +313,7 @@ where
         self.stable_packets = 0;
         self.consecutive_errors = 0;
         self.consecutive_empty_packets = 0;
+        self.consecutive_non_object_packets = 0;
         self.metrics.recoveries = self.metrics.recoveries.saturating_add(1);
     }
 
@@ -288,8 +323,7 @@ where
             self.stable_packets = 0;
             self.state = LiveDecodeState::Priming;
             if self.consecutive_empty_packets >= self.policy.maximum_consecutive_empty_packets {
-                self.register_failure();
-                self.state = LiveDecodeState::Faulted;
+                self.latch_fault();
                 return Err(LiveDecodeError::InvalidDecodedFrame(
                     "decoder emitted no frames for too many consecutive packets".to_owned(),
                 ));
@@ -298,50 +332,34 @@ where
         }
 
         if self.policy.require_native_objects && !batch.native_objects_present {
-            self.register_failure();
-            return Err(LiveDecodeError::InvalidDecodedFrame(
-                "native object-scene evidence missing from decoded batch".to_owned(),
-            ));
+            self.consecutive_non_object_packets =
+                self.consecutive_non_object_packets.saturating_add(1);
+            self.stable_packets = 0;
+            self.state = LiveDecodeState::Priming;
+            if self.consecutive_non_object_packets >= self.policy.maximum_object_probe_packets {
+                self.latch_fault();
+                return Err(LiveDecodeError::InvalidDecodedFrame(
+                    "native object-scene evidence did not appear within the probe budget".to_owned(),
+                ));
+            }
+            return Ok(self.report(false, Vec::new()));
         }
 
         let mut prepared = Vec::with_capacity(batch.frames.len());
         for frame in batch.frames {
-            self.validate_frame(&frame.audio, &frame.objects)?;
-            let render_objects = frame
-                .objects
-                .iter()
-                .map(|object| RenderObject {
-                    position: object.position,
-                    gain: db_to_linear(object.gain_db),
-                })
-                .collect::<Vec<_>>();
-            let mut speaker_gains = vec![
-                SpeakerGain::default();
-                render_objects.len().saturating_mul(self.output_channels)
-            ];
-            if !render_objects.is_empty() {
-                self.renderer.render_gains(
-                    &self.listener,
-                    &render_objects,
-                    &mut speaker_gains,
-                    &mut self.renderer_scratch,
-                )?;
+            match self.prepare_frame(frame) {
+                Ok(frame) => prepared.push(frame),
+                Err(error) => {
+                    self.register_failure();
+                    return Err(error);
+                }
             }
-            self.metrics.maximum_observed_objects = self
-                .metrics
-                .maximum_observed_objects
-                .max(frame.objects.len());
-            self.metrics.decoded_frames = self.metrics.decoded_frames.saturating_add(1);
-            prepared.push(LiveRenderedFrame {
-                audio: frame.audio,
-                objects: frame.objects,
-                speaker_gains,
-            });
         }
 
         self.metrics.packets_with_frames = self.metrics.packets_with_frames.saturating_add(1);
         self.consecutive_errors = 0;
         self.consecutive_empty_packets = 0;
+        self.consecutive_non_object_packets = 0;
         self.stable_packets = self.stable_packets.saturating_add(1);
         if self.stable_packets >= self.policy.required_stable_packets {
             self.state = LiveDecodeState::Running;
@@ -356,65 +374,86 @@ where
         }
     }
 
-    fn validate_frame(&mut self, audio: &AudioBlock, objects: &[AudioObject]) -> Result<(), LiveDecodeError> {
-        if audio.validate().is_err() {
-            self.register_failure();
-            return Err(LiveDecodeError::InvalidDecodedFrame(
-                "PCM channel length does not match frame_count".to_owned(),
-            ));
+    fn prepare_frame(
+        &mut self,
+        frame: StreamingDecodedFrame,
+    ) -> Result<LiveRenderedFrame, LiveDecodeError> {
+        let source_audio = frame.decoded.audio;
+        let objects = frame.decoded.objects;
+        validate_source_audio(&source_audio, &frame.channel_kinds, self.policy.maximum_pcm_channels)?;
+        validate_objects(&objects, self.policy.maximum_objects, self.policy.require_native_objects)?;
+        validate_bindings(
+            &objects,
+            &frame.channel_kinds,
+            &frame.object_channels,
+            self.policy.require_native_objects,
+        )?;
+
+        let render_objects = objects
+            .iter()
+            .map(|object| RenderObject {
+                position: object.position,
+                gain: db_to_linear(object.gain_db),
+            })
+            .collect::<Vec<_>>();
+        let mut speaker_gains = vec![
+            SpeakerGain::default();
+            render_objects.len().saturating_mul(self.output_channels)
+        ];
+        if !render_objects.is_empty() {
+            self.renderer.render_gains(
+                &self.listener,
+                &render_objects,
+                &mut speaker_gains,
+                &mut self.renderer_scratch,
+            )?;
         }
-        if audio.channels.len() != self.output_format.channel_count {
-            self.register_failure();
-            return Err(LiveDecodeError::InvalidDecodedFrame(format!(
-                "expected {} PCM channels, got {}",
-                self.output_format.channel_count,
-                audio.channels.len()
-            )));
-        }
-        if audio.frame_count == 0
-            || audio
-                .channels
-                .iter()
-                .flatten()
-                .any(|sample| !sample.is_finite())
-            || !audio.presentation_time_seconds.is_finite()
+
+        let mut speaker_audio = AudioBlock {
+            channels: vec![vec![0.0; source_audio.frame_count]; self.output_channels],
+            frame_count: source_audio.frame_count,
+            presentation_time_seconds: source_audio.presentation_time_seconds,
+            discontinuity: source_audio.discontinuity,
+        };
+        route_bed_channels(
+            &source_audio,
+            &frame.channel_kinds,
+            &self.layout,
+            &mut speaker_audio,
+        )?;
+        mix_object_channels(
+            &source_audio,
+            &objects,
+            &frame.object_channels,
+            &speaker_gains,
+            self.output_channels,
+            &mut speaker_audio,
+        )?;
+        if speaker_audio
+            .channels
+            .iter()
+            .flatten()
+            .any(|sample| !sample.is_finite())
         {
-            self.register_failure();
             return Err(LiveDecodeError::InvalidDecodedFrame(
-                "PCM is empty or contains non-finite values".to_owned(),
+                "speaker mix produced non-finite samples".to_owned(),
             ));
         }
-        if objects.len() > self.policy.maximum_objects {
-            self.register_failure();
-            return Err(LiveDecodeError::InvalidDecodedFrame(format!(
-                "object count {} exceeds configured maximum {}",
-                objects.len(),
-                self.policy.maximum_objects
-            )));
-        }
-        if self.policy.require_native_objects && objects.is_empty() {
-            self.register_failure();
-            return Err(LiveDecodeError::InvalidDecodedFrame(
-                "object-scene decoder emitted a frame without object metadata".to_owned(),
-            ));
-        }
-        if objects.iter().any(|object| {
-            !object.position.x.is_finite()
-                || !object.position.y.is_finite()
-                || !object.position.z.is_finite()
-                || !object.velocity.x.is_finite()
-                || !object.velocity.y.is_finite()
-                || !object.velocity.z.is_finite()
-                || !object.gain_db.is_finite()
-                || !object.spread.is_finite()
-                || !(0.0..=1.0).contains(&object.spread)
-        }) {
-            self.register_failure();
-            return Err(LiveDecodeError::InvalidDecodedFrame(
-                "object metadata contains invalid numeric values".to_owned(),
-            ));
-        }
-        Ok(())
+
+        self.metrics.maximum_observed_pcm_channels = self
+            .metrics
+            .maximum_observed_pcm_channels
+            .max(source_audio.channels.len());
+        self.metrics.maximum_observed_objects = self.metrics.maximum_observed_objects.max(objects.len());
+        self.metrics.decoded_frames = self.metrics.decoded_frames.saturating_add(1);
+
+        Ok(LiveRenderedFrame {
+            source_audio,
+            objects,
+            object_channels: frame.object_channels,
+            speaker_gains,
+            speaker_audio,
+        })
     }
 
     fn register_failure(&mut self) {
@@ -422,6 +461,7 @@ where
         self.consecutive_errors = self.consecutive_errors.saturating_add(1);
         self.stable_packets = 0;
         self.consecutive_empty_packets = 0;
+        self.consecutive_non_object_packets = 0;
         self.decoder.reset_stream();
         self.renderer.reset();
         self.state = if self.consecutive_errors >= self.policy.maximum_consecutive_errors {
@@ -429,6 +469,14 @@ where
         } else {
             LiveDecodeState::Muted
         };
+    }
+
+    fn latch_fault(&mut self) {
+        self.metrics.failures = self.metrics.failures.saturating_add(1);
+        self.decoder.reset_stream();
+        self.renderer.reset();
+        self.stable_packets = 0;
+        self.state = LiveDecodeState::Faulted;
     }
 
     fn report(&self, audible: bool, frames: Vec<LiveRenderedFrame>) -> LiveProcessReport {
@@ -441,6 +489,196 @@ where
     }
 }
 
+fn validate_source_audio(
+    audio: &AudioBlock,
+    channel_kinds: &[DecodedChannelKind],
+    maximum_pcm_channels: usize,
+) -> Result<(), LiveDecodeError> {
+    if audio.validate().is_err() {
+        return Err(LiveDecodeError::InvalidDecodedFrame(
+            "PCM channel length does not match frame_count".to_owned(),
+        ));
+    }
+    if audio.channels.is_empty()
+        || audio.channels.len() > maximum_pcm_channels
+        || audio.frame_count == 0
+        || channel_kinds.len() != audio.channels.len()
+        || audio
+            .channels
+            .iter()
+            .flatten()
+            .any(|sample| !sample.is_finite())
+        || !audio.presentation_time_seconds.is_finite()
+    {
+        return Err(LiveDecodeError::InvalidDecodedFrame(
+            "PCM/channel semantics are empty, oversized, mismatched, or non-finite".to_owned(),
+        ));
+    }
+    if channel_kinds
+        .iter()
+        .any(|kind| matches!(kind, DecodedChannelKind::Unknown))
+    {
+        return Err(LiveDecodeError::InvalidDecodedFrame(
+            "decoder exposed an unknown PCM channel role".to_owned(),
+        ));
+    }
+    Ok(())
+}
+
+fn validate_objects(
+    objects: &[AudioObject],
+    maximum_objects: usize,
+    require_native_objects: bool,
+) -> Result<(), LiveDecodeError> {
+    if objects.len() > maximum_objects || (require_native_objects && objects.is_empty()) {
+        return Err(LiveDecodeError::InvalidDecodedFrame(
+            "object count is empty or exceeds the configured maximum".to_owned(),
+        ));
+    }
+    for (index, object) in objects.iter().enumerate() {
+        if objects[..index].iter().any(|previous| previous.id == object.id)
+            || object.id.is_empty()
+            || !object.position.x.is_finite()
+            || !object.position.y.is_finite()
+            || !object.position.z.is_finite()
+            || !object.velocity.x.is_finite()
+            || !object.velocity.y.is_finite()
+            || !object.velocity.z.is_finite()
+            || !object.gain_db.is_finite()
+            || !object.spread.is_finite()
+            || !(0.0..=1.0).contains(&object.spread)
+        {
+            return Err(LiveDecodeError::InvalidDecodedFrame(
+                "object metadata contains duplicate IDs or invalid numeric values".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn validate_bindings(
+    objects: &[AudioObject],
+    channel_kinds: &[DecodedChannelKind],
+    bindings: &[ObjectChannelBinding],
+    require_native_objects: bool,
+) -> Result<(), LiveDecodeError> {
+    if require_native_objects && bindings.len() != objects.len() {
+        return Err(LiveDecodeError::InvalidDecodedFrame(
+            "native object table is not fully bound to PCM channels".to_owned(),
+        ));
+    }
+    for (index, binding) in bindings.iter().enumerate() {
+        if binding.channel_index >= channel_kinds.len()
+            || channel_kinds[binding.channel_index] != DecodedChannelKind::Object
+            || !objects.iter().any(|object| object.id == binding.object_id)
+            || bindings[..index].iter().any(|previous| {
+                previous.object_id == binding.object_id
+                    || previous.channel_index == binding.channel_index
+            })
+        {
+            return Err(LiveDecodeError::InvalidDecodedFrame(
+                "object/channel binding is stale, duplicate, or points to a non-object channel"
+                    .to_owned(),
+            ));
+        }
+    }
+    for (channel_index, kind) in channel_kinds.iter().enumerate() {
+        if *kind == DecodedChannelKind::Object
+            && !bindings
+                .iter()
+                .any(|binding| binding.channel_index == channel_index)
+        {
+            return Err(LiveDecodeError::InvalidDecodedFrame(
+                "object PCM channel has no active object binding".to_owned(),
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn route_bed_channels(
+    source: &AudioBlock,
+    channel_kinds: &[DecodedChannelKind],
+    layout: &[Speaker],
+    output: &mut AudioBlock,
+) -> Result<(), LiveDecodeError> {
+    for (source_index, kind) in channel_kinds.iter().enumerate() {
+        let DecodedChannelKind::Bed(role) = kind else {
+            continue;
+        };
+        let output_index = unique_layout_role_index(layout, role).ok_or_else(|| {
+            LiveDecodeError::InvalidDecodedFrame(format!(
+                "decoded bed role `{role}` has no unique output speaker"
+            ))
+        })?;
+        for frame_index in 0..source.frame_count {
+            output.channels[output_index][frame_index] += source.channels[source_index][frame_index];
+        }
+    }
+    Ok(())
+}
+
+fn mix_object_channels(
+    source: &AudioBlock,
+    objects: &[AudioObject],
+    bindings: &[ObjectChannelBinding],
+    gains: &[SpeakerGain],
+    output_channels: usize,
+    output: &mut AudioBlock,
+) -> Result<(), LiveDecodeError> {
+    if gains.len() != objects.len().saturating_mul(output_channels) {
+        return Err(LiveDecodeError::InvalidDecodedFrame(
+            "renderer gain shape does not match object/output dimensions".to_owned(),
+        ));
+    }
+    for (object_index, object) in objects.iter().enumerate() {
+        let binding = bindings
+            .iter()
+            .find(|binding| binding.object_id == object.id)
+            .ok_or_else(|| {
+                LiveDecodeError::InvalidDecodedFrame(format!(
+                    "object `{}` has no PCM channel binding",
+                    object.id
+                ))
+            })?;
+        let source_channel = &source.channels[binding.channel_index];
+        for gain in &gains[object_index * output_channels..(object_index + 1) * output_channels] {
+            if gain.speaker_index >= output_channels || !gain.gain.is_finite() {
+                return Err(LiveDecodeError::InvalidDecodedFrame(
+                    "renderer returned an invalid speaker index or gain".to_owned(),
+                ));
+            }
+            let output_channel = &mut output.channels[gain.speaker_index];
+            for frame_index in 0..source.frame_count {
+                output_channel[frame_index] += source_channel[frame_index] * gain.gain;
+            }
+        }
+    }
+    Ok(())
+}
+
+fn unique_layout_role_index(layout: &[Speaker], role: &ChannelRole) -> Option<usize> {
+    let mut matches = layout
+        .iter()
+        .enumerate()
+        .filter(|(_, speaker)| &speaker.channel_role == role)
+        .map(|(index, _)| index);
+    let first = matches.next()?;
+    if matches.next().is_some() {
+        None
+    } else {
+        Some(first)
+    }
+}
+
+fn has_duplicate_roles(layout: &[Speaker]) -> bool {
+    layout.iter().enumerate().any(|(index, speaker)| {
+        layout[..index]
+            .iter()
+            .any(|previous| previous.channel_role == speaker.channel_role)
+    })
+}
+
 fn db_to_linear(db: f32) -> f32 {
     10.0_f32.powf(db / 20.0)
 }
@@ -449,7 +687,9 @@ fn db_to_linear(db: f32) -> f32 {
 mod tests {
     use super::*;
     use aurora_core::{SampleType, Vector3};
-    use aurora_decoder_api::{DecodedFrame, DecoderInfo, DecoderPacketTransport};
+    use aurora_decoder_api::{
+        DecodedFrame, DecoderInfo, StreamingDecodedFrame, StreamingDecoderConfig,
+    };
     use aurora_renderer_basic::{BasicRenderer, BasicRendererMode};
 
     #[derive(Debug)]
@@ -460,22 +700,37 @@ mod tests {
     }
 
     impl MockDecoder {
-        fn object_frame() -> DecodedFrame {
-            DecodedFrame {
-                audio: AudioBlock {
-                    channels: vec![vec![0.25; 256], vec![0.25; 256]],
-                    frame_count: 256,
-                    presentation_time_seconds: 0.0,
-                    discontinuity: false,
+        fn object_frame() -> StreamingDecodedFrame {
+            StreamingDecodedFrame {
+                decoded: DecodedFrame {
+                    audio: AudioBlock {
+                        channels: vec![
+                            vec![0.10; 256],
+                            vec![0.25; 256],
+                            vec![0.10; 256],
+                        ],
+                        frame_count: 256,
+                        presentation_time_seconds: 0.0,
+                        discontinuity: false,
+                    },
+                    objects: vec![AudioObject {
+                        id: "object-1".to_owned(),
+                        position: Vector3::new(0.0, 1.0, 1.0),
+                        velocity: Vector3::ZERO,
+                        gain_db: 0.0,
+                        spread: 0.0,
+                        start_time_seconds: None,
+                        end_time_seconds: None,
+                    }],
                 },
-                objects: vec![AudioObject {
-                    id: "object-1".to_owned(),
-                    position: Vector3::new(0.0, 1.0, 1.0),
-                    velocity: Vector3::ZERO,
-                    gain_db: 0.0,
-                    spread: 0.0,
-                    start_time_seconds: None,
-                    end_time_seconds: None,
+                channel_kinds: vec![
+                    DecodedChannelKind::Bed(ChannelRole::FrontLeft),
+                    DecodedChannelKind::Object,
+                    DecodedChannelKind::Bed(ChannelRole::FrontRight),
+                ],
+                object_channels: vec![ObjectChannelBinding {
+                    object_id: "object-1".to_owned(),
+                    channel_index: 1,
                 }],
             }
         }
@@ -495,7 +750,9 @@ mod tests {
             }
         }
 
-        fn configure(&mut self, _output_format: AudioFormat) -> Result<(), DecoderError> {
+        fn configure_stream(&mut self, config: StreamingDecoderConfig) -> Result<(), DecoderError> {
+            assert_eq!(config.sample_rate, 48_000);
+            assert!(config.maximum_pcm_channels >= 3);
             self.configured = true;
             Ok(())
         }
@@ -537,7 +794,7 @@ mod tests {
             Speaker {
                 id: "left".to_owned(),
                 label: "Left".to_owned(),
-                channel_role: aurora_core::ChannelRole::FrontLeft,
+                channel_role: ChannelRole::FrontLeft,
                 position: Vector3::new(-1.0, 1.0, 1.2),
                 orientation: Vector3::new(0.0, -1.0, 0.0),
                 gain_db: 0.0,
@@ -547,7 +804,7 @@ mod tests {
             Speaker {
                 id: "right".to_owned(),
                 label: "Right".to_owned(),
-                channel_role: aurora_core::ChannelRole::FrontRight,
+                channel_role: ChannelRole::FrontRight,
                 position: Vector3::new(1.0, 1.0, 1.2),
                 orientation: Vector3::new(0.0, -1.0, 0.0),
                 gain_db: 0.0,
@@ -579,7 +836,7 @@ mod tests {
     }
 
     #[test]
-    fn two_clean_object_packets_are_required_before_audio_is_released() {
+    fn two_clean_object_packets_are_required_before_speaker_pcm_is_released() {
         let mut runtime = runtime(MockDecoder {
             native_objects: true,
             fail_packets: 0,
@@ -593,7 +850,17 @@ mod tests {
         assert_eq!(second.state, LiveDecodeState::Running);
         assert!(second.audible);
         assert_eq!(second.frames.len(), 1);
-        assert_eq!(second.frames[0].speaker_gains.len(), 2);
+        let frame = &second.frames[0];
+        assert_eq!(frame.speaker_gains.len(), 2);
+        assert_eq!(frame.speaker_audio.channels.len(), 2);
+        assert!(frame
+            .speaker_audio
+            .channels
+            .iter()
+            .flatten()
+            .all(|sample| sample.is_finite()));
+        assert!(frame.speaker_audio.channels[0][0] > 0.10);
+        assert!(frame.speaker_audio.channels[1][0] > 0.10);
     }
 
     #[test]
@@ -651,5 +918,18 @@ mod tests {
         assert!(!after_gap.audible);
         assert!(runtime.push_packet(packet(false)).unwrap().audible);
         assert_eq!(runtime.metrics().discontinuities, 1);
+    }
+
+    #[test]
+    fn stale_object_channel_mapping_is_rejected_fail_closed() {
+        let mut frame = MockDecoder::object_frame();
+        frame.object_channels[0].channel_index = 0;
+        assert!(validate_bindings(
+            &frame.decoded.objects,
+            &frame.channel_kinds,
+            &frame.object_channels,
+            true,
+        )
+        .is_err());
     }
 }
