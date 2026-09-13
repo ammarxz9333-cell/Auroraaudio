@@ -1,60 +1,24 @@
-//! IAMF decoder adapter boundaries.
+//! IAMF decoder integration.
 //!
-//! Aurora deliberately distinguishes a future object-scene integration from the
-//! validation-only rendered-PCM reference path implemented here. The reference
-//! path invokes a pinned `libiamf` `iamfdec` process and therefore exposes only
-//! the rendered channel PCM that process writes; it never fabricates IAMF object
-//! metadata or object-to-PCM bindings.
+//! The executable scope in this crate is deliberately narrow and truthful: when the
+//! `libiamf-process` feature is enabled Aurora can invoke a reviewed `iamfdec` executable
+//! for complete-file decoding and import its rendered channel PCM. Aurora does not expose
+//! an IAMF object-scene decoder until a backend can provide source object/audio-element
+//! metadata together with complete object-to-PCM bindings.
 
-use aurora_core::AudioFormat;
-use aurora_decoder_api::{
-    DecodedFrame, Decoder, DecoderError, DecoderInfo, DecoderOutputSemantics,
-};
-
-/// Preferred open immersive-audio object-scene adapter placeholder.
+/// Whether this source revision exposes a native IAMF object-scene decoder.
 ///
-/// This remains intentionally unavailable until Aurora has a reviewed backend
-/// that exposes source object metadata and complete object-to-PCM bindings.
-#[derive(Debug, Default, Clone)]
-pub struct IamfDecoderAdapter {
-    configured_format: Option<AudioFormat>,
-}
+/// `false` is a capability fact, not a callable decoder implementation. Callers that require
+/// native objects must fail capability negotiation before constructing a decoder.
+pub const IAMF_OBJECT_SCENE_AVAILABLE: bool = false;
 
-impl IamfDecoderAdapter {
-    /// Creates an IAMF object-scene adapter boundary.
-    pub fn new() -> Self {
-        Self::default()
-    }
-}
-
-impl Decoder for IamfDecoderAdapter {
-    fn info(&self) -> DecoderInfo {
-        DecoderInfo {
-            name: "libiamf object-scene adapter",
-            production_ready: false,
-            maturity: "preferred-open-planned",
-            output_semantics: DecoderOutputSemantics::ObjectScene,
-        }
-    }
-
-    fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError> {
-        self.configured_format = Some(output_format);
-        Ok(())
-    }
-
-    fn decode_chunk(&mut self, _input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
-        Err(DecoderError::Unavailable(
-            "libiamf object-scene integration is not implemented",
-        ))
-    }
-
-    fn reset(&mut self) {
-        self.configured_format = None;
-    }
+/// Explains why native IAMF object-scene decoding is not currently exposed.
+pub const fn iamf_object_scene_unavailable_reason() -> &'static str {
+    "no reviewed IAMF backend exposes complete source object metadata and object-to-PCM bindings"
 }
 
 #[cfg(feature = "libiamf-process")]
-mod rendered_pcm_reference {
+mod rendered_pcm {
     use std::{
         fs,
         path::PathBuf,
@@ -69,63 +33,67 @@ mod rendered_pcm_reference {
 
     const MAX_INPUT_BYTES: usize = 64 * 1024 * 1024;
     const MAX_OUTPUT_BYTES: u64 = 256 * 1024 * 1024;
-    const REFERENCE_SAMPLE_RATE: u32 = 48_000;
-    const REFERENCE_CHANNELS: usize = 2;
-    const REFERENCE_BITS_PER_SAMPLE: u16 = 32;
+    const OUTPUT_SAMPLE_RATE: u32 = 48_000;
+    const OUTPUT_CHANNELS: usize = 2;
+    const OUTPUT_BITS_PER_SAMPLE: u16 = 32;
     static NEXT_TEMP_ID: AtomicU64 = AtomicU64::new(1);
 
-    /// Validation-only adapter that imports `iamfdec` rendered stereo PCM.
+    /// Complete-file IAMF decoder backed by an external `iamfdec` executable.
     ///
-    /// `decode_chunk` expects one complete standalone IAMF bitstream. It is not a
-    /// streaming decoder and its output semantics are explicitly `ChannelPcm`.
+    /// The backend renders IAMF before Aurora receives it, therefore this adapter reports
+    /// [`DecoderOutputSemantics::ChannelPcm`] and never invents source objects.
     #[derive(Debug, Clone)]
-    pub struct IamfRenderedPcmReferenceDecoder {
+    pub struct IamfRenderedPcmDecoder {
         executable: PathBuf,
         configured_format: Option<AudioFormat>,
     }
 
-    impl IamfRenderedPcmReferenceDecoder {
-        /// Creates a reference adapter for the supplied `iamfdec` executable.
+    impl IamfRenderedPcmDecoder {
+        /// Creates an adapter using the supplied `iamfdec` executable.
         pub fn new(executable: impl Into<PathBuf>) -> Self {
             Self {
                 executable: executable.into(),
                 configured_format: None,
             }
         }
+
+        /// Returns the configured executable path.
+        pub fn executable(&self) -> &std::path::Path {
+            &self.executable
+        }
     }
 
-    impl Decoder for IamfRenderedPcmReferenceDecoder {
+    impl Decoder for IamfRenderedPcmDecoder {
         fn info(&self) -> DecoderInfo {
             DecoderInfo {
-                name: "libiamf iamfdec rendered-PCM reference",
+                name: "libiamf iamfdec rendered-PCM decoder",
                 production_ready: false,
-                maturity: "validation-reference",
+                maturity: "experimental-offline-reference",
                 output_semantics: DecoderOutputSemantics::ChannelPcm,
             }
         }
 
         fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError> {
-            if output_format.sample_rate != REFERENCE_SAMPLE_RATE {
+            if output_format.sample_rate != OUTPUT_SAMPLE_RATE {
                 return Err(DecoderError::UnsupportedInput(
-                    "IAMF rendered-PCM reference currently requires 48 kHz output",
+                    "IAMF rendered-PCM decode currently requires 48 kHz output",
                 ));
             }
-            if output_format.channel_count != REFERENCE_CHANNELS {
+            if output_format.channel_count != OUTPUT_CHANNELS {
                 return Err(DecoderError::UnsupportedInput(
-                    "IAMF rendered-PCM reference currently requires stereo output",
+                    "IAMF rendered-PCM decode currently requires stereo output",
                 ));
             }
             if output_format.sample_type != SampleType::F32 {
                 return Err(DecoderError::UnsupportedInput(
-                    "IAMF rendered-PCM reference requires Aurora F32 output",
+                    "IAMF rendered-PCM decode requires Aurora F32 output",
                 ));
             }
             if output_format.block_size == 0 {
                 return Err(DecoderError::UnsupportedInput(
-                    "IAMF rendered-PCM reference requires a non-zero block size",
+                    "IAMF rendered-PCM decode requires a non-zero block size",
                 ));
             }
-
             self.configured_format = Some(output_format);
             Ok(())
         }
@@ -134,16 +102,16 @@ mod rendered_pcm_reference {
             let format = self
                 .configured_format
                 .ok_or(DecoderError::UnsupportedInput(
-                    "IAMF rendered-PCM reference must be configured before decode",
+                    "IAMF rendered-PCM decoder must be configured before decode",
                 ))?;
             if input.is_empty() {
                 return Err(DecoderError::UnsupportedInput(
-                    "IAMF rendered-PCM reference requires a complete non-empty IAMF bitstream",
+                    "IAMF rendered-PCM decode requires a complete non-empty IAMF bitstream",
                 ));
             }
             if input.len() > MAX_INPUT_BYTES {
                 return Err(DecoderError::UnsupportedInput(
-                    "IAMF rendered-PCM reference input exceeds the validation byte limit",
+                    "IAMF bitstream exceeds the offline decoder byte limit",
                 ));
             }
 
@@ -157,9 +125,9 @@ mod rendered_pcm_reference {
                 .arg(&output_path)
                 .arg("-s0")
                 .arg("-r")
-                .arg(REFERENCE_SAMPLE_RATE.to_string())
+                .arg(OUTPUT_SAMPLE_RATE.to_string())
                 .arg("-d")
-                .arg(REFERENCE_BITS_PER_SAMPLE.to_string())
+                .arg(OUTPUT_BITS_PER_SAMPLE.to_string())
                 .arg(&input_path)
                 .output()
                 .map_err(|error| {
@@ -180,7 +148,7 @@ mod rendered_pcm_reference {
             let metadata = fs::metadata(&output_path).map_err(process_io_error)?;
             if metadata.len() == 0 || metadata.len() > MAX_OUTPUT_BYTES {
                 return Err(DecoderError::ExternalProcess(format!(
-                    "iamfdec output size {} is outside the validation bounds",
+                    "iamfdec output size {} is outside the accepted bounds",
                     metadata.len()
                 )));
             }
@@ -197,6 +165,9 @@ mod rendered_pcm_reference {
             self.configured_format = None;
         }
     }
+
+    /// Compatibility name retained for existing validation tooling.
+    pub type IamfRenderedPcmReferenceDecoder = IamfRenderedPcmDecoder;
 
     struct TempWorkdir {
         path: PathBuf,
@@ -217,7 +188,7 @@ mod rendered_pcm_reference {
             }
             Err(std::io::Error::new(
                 std::io::ErrorKind::AlreadyExists,
-                "could not allocate unique IAMF validation work directory",
+                "could not allocate a unique IAMF work directory",
             ))
         }
     }
@@ -229,7 +200,7 @@ mod rendered_pcm_reference {
     }
 
     fn process_io_error(error: std::io::Error) -> DecoderError {
-        DecoderError::ExternalProcess(format!("IAMF reference I/O failed: {error}"))
+        DecoderError::ExternalProcess(format!("IAMF decoder I/O failed: {error}"))
     }
 
     fn bounded_text(bytes: &[u8]) -> String {
@@ -302,25 +273,25 @@ mod rendered_pcm_reference {
                 "unsupported iamfdec WAVE encoding {encoding}; expected integer PCM"
             )));
         }
-        if channels as usize != format.channel_count || channels as usize != REFERENCE_CHANNELS {
+        if channels as usize != format.channel_count || channels as usize != OUTPUT_CHANNELS {
             return Err(DecoderError::ExternalProcess(format!(
                 "iamfdec WAVE has {channels} channels; expected {}",
                 format.channel_count
             )));
         }
-        if sample_rate != format.sample_rate || sample_rate != REFERENCE_SAMPLE_RATE {
+        if sample_rate != format.sample_rate || sample_rate != OUTPUT_SAMPLE_RATE {
             return Err(DecoderError::ExternalProcess(format!(
                 "iamfdec WAVE sample rate is {sample_rate}; expected {}",
                 format.sample_rate
             )));
         }
-        if bits_per_sample != REFERENCE_BITS_PER_SAMPLE {
+        if bits_per_sample != OUTPUT_BITS_PER_SAMPLE {
             return Err(DecoderError::ExternalProcess(format!(
-                "iamfdec WAVE bit depth is {bits_per_sample}; expected {REFERENCE_BITS_PER_SAMPLE}"
+                "iamfdec WAVE bit depth is {bits_per_sample}; expected {OUTPUT_BITS_PER_SAMPLE}"
             )));
         }
         let expected_block_align = channels
-            .checked_mul(REFERENCE_BITS_PER_SAMPLE / 8)
+            .checked_mul(OUTPUT_BITS_PER_SAMPLE / 8)
             .ok_or_else(|| {
                 DecoderError::ExternalProcess("WAVE block alignment overflow".to_owned())
             })?;
@@ -393,8 +364,7 @@ mod rendered_pcm_reference {
             let mut bytes = Vec::new();
             bytes.extend_from_slice(b"RIFF");
             bytes.extend_from_slice(&(36 + data_size).to_le_bytes());
-            bytes.extend_from_slice(b"WAVE");
-            bytes.extend_from_slice(b"fmt ");
+            bytes.extend_from_slice(b"WAVEfmt ");
             bytes.extend_from_slice(&16u32.to_le_bytes());
             bytes.extend_from_slice(&1u16.to_le_bytes());
             bytes.extend_from_slice(&2u16.to_le_bytes());
@@ -412,11 +382,10 @@ mod rendered_pcm_reference {
         }
 
         #[test]
-        fn reference_adapter_reports_channel_pcm_only() {
-            let adapter = IamfRenderedPcmReferenceDecoder::new("iamfdec");
+        fn decoder_reports_channel_pcm_only() {
+            let adapter = IamfRenderedPcmDecoder::new("iamfdec");
             let info = adapter.info();
             assert_eq!(info.output_semantics, DecoderOutputSemantics::ChannelPcm);
-            assert_eq!(info.maturity, "validation-reference");
             assert!(!info.production_ready);
         }
 
@@ -432,41 +401,29 @@ mod rendered_pcm_reference {
         }
 
         #[test]
-        fn parser_rejects_float_wave_claim() {
-            let mut wav = pcm32_wave(&[[0, 0]]);
-            wav[20..22].copy_from_slice(&3u16.to_le_bytes());
-            assert!(parse_pcm32_wave(&wav, stereo_format()).is_err());
-        }
-
-        #[test]
-        fn reference_adapter_fails_closed_when_process_is_missing() {
-            let mut adapter = IamfRenderedPcmReferenceDecoder::new(
+        fn missing_process_fails_closed() {
+            let mut adapter = IamfRenderedPcmDecoder::new(
                 "__aurora_iamfdec_executable_that_does_not_exist__",
             );
             adapter.configure(stereo_format()).expect("valid config");
-            let error = adapter
-                .decode_chunk(&[1, 2, 3])
-                .expect_err("must fail closed");
-            assert!(matches!(error, DecoderError::ExternalProcess(_)));
+            assert!(matches!(
+                adapter.decode_chunk(&[1, 2, 3]),
+                Err(DecoderError::ExternalProcess(_))
+            ));
         }
     }
 }
 
 #[cfg(feature = "libiamf-process")]
-pub use rendered_pcm_reference::IamfRenderedPcmReferenceDecoder;
+pub use rendered_pcm::{IamfRenderedPcmDecoder, IamfRenderedPcmReferenceDecoder};
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aurora_decoder_api::Decoder;
 
     #[test]
-    fn iamf_object_scene_adapter_remains_planned() {
-        let adapter = IamfDecoderAdapter::new();
-        let info = adapter.info();
-
-        assert_eq!(info.maturity, "preferred-open-planned");
-        assert_eq!(info.output_semantics, DecoderOutputSemantics::ObjectScene);
-        assert!(!info.production_ready);
+    fn native_object_scene_support_is_not_overclaimed() {
+        assert!(!IAMF_OBJECT_SCENE_AVAILABLE);
+        assert!(iamf_object_scene_unavailable_reason().contains("object-to-PCM"));
     }
 }
