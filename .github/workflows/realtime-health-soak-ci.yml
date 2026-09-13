@@ -118,6 +118,38 @@ jobs:
           assert report['violations'] == []
           print('AURORA WALL CLOCK HEALTH REPORT PASS')
           PY
+      - name: Run paced faulted wall-clock integration soak
+        run: |
+          cargo run --locked --release -p aurora-realtime-audio-sim --example faulted_wall_clock_soak -- \
+            15 output/validation/realtime-faulted-wall-clock-soak-v1.json | tee output/validation/realtime-faulted-wall-clock-soak.log
+          grep -F 'AURORA FAULTED WALL CLOCK SOAK PASS' output/validation/realtime-faulted-wall-clock-soak.log
+      - name: Validate faulted wall-clock integration report
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('output/validation/realtime-faulted-wall-clock-soak-v1.json').read_text())
+          assert report['schema_version'] == 1
+          assert report['accepted'] is True
+          assert report['wall_seconds_observed'] >= 15.0
+          assert report['callbacks'] > 0
+          assert report['processing_deadline_misses'] == 0
+          assert abs(float(report['clock_initial_trusted_ppm']) - 250.0) <= 5.0
+          assert report['clock_discontinuity_reset'] is True
+          assert abs(float(report['clock_reacquired_ppm']) + 250.0) <= 5.0
+          assert abs(float(report['clock_reacquired_feedforward_ppm']) - 250.0) <= 5.0
+          assert float(report['maximum_correction_step_ppm']) <= 2.000001
+          assert report['reconnect_backoff_ms'] == [250, 500, 1000]
+          assert report['reconnect_success_attempt'] == 3
+          assert report['reconnect_stable_reset_attempts'] == 0
+          assert report['reconnect_final_state'] == 'Running'
+          assert report['engine_input_underruns'] == 0
+          assert report['engine_output_underruns'] == 0
+          assert report['engine_dropped_blocks'] == 0
+          assert report['engine_fault'] == 'None'
+          assert report['violations'] == []
+          print('AURORA FAULTED WALL CLOCK HEALTH REPORT PASS')
+          PY
       - name: Upload sustained soak evidence
         uses: actions/upload-artifact@v4
         with:
@@ -130,4 +162,6 @@ jobs:
             output/validation/realtime-resilience-sim.log
             output/validation/realtime-wall-clock-soak-v1.json
             output/validation/realtime-wall-clock-soak.log
+            output/validation/realtime-faulted-wall-clock-soak-v1.json
+            output/validation/realtime-faulted-wall-clock-soak.log
           retention-days: 14
