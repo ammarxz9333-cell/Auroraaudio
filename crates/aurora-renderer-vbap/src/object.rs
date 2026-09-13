@@ -56,7 +56,11 @@ impl ObjectVbapRenderer {
         self
     }
 
-    fn validate_output(&self, object_count: usize, output_count: usize) -> Result<(), RendererError> {
+    fn validate_output(
+        &self,
+        object_count: usize,
+        output_count: usize,
+    ) -> Result<(), RendererError> {
         if !self.configured {
             return Err(RendererError::NotConfigured);
         }
@@ -207,7 +211,9 @@ mod tests {
     use std::f32::consts::PI;
 
     use aurora_core::{ChannelRole, Listener, Speaker, Vector3};
-    use aurora_renderer_api::{RenderObject, Renderer, RendererError, RendererScratch, SpeakerGain};
+    use aurora_renderer_api::{
+        RenderObject, Renderer, RendererError, RendererScratch, SpeakerGain,
+    };
 
     use super::ObjectVbapRenderer;
 
