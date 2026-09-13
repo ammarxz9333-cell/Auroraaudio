@@ -2,7 +2,8 @@ use std::{env, fs, path::PathBuf};
 
 use aurora_realtime_audio_api::AudioStreamFault;
 use aurora_realtime_engine::{
-    AsynchronousResampler, DriftController, DriftControllerConfig, DuplexStateEvent,
+    create_adaptive_duplex_bridge, AdaptiveDuplexFault, AsynchronousResampler, DriftController,
+    DriftControllerConfig, DuplexBridgeConfig, DuplexFaultPolicy, DuplexHealth, DuplexStateEvent,
     DuplexStateMachine, DuplexStreamState, RubatoAsrc,
 };
 use serde_json::{json, Value};
@@ -26,6 +27,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let negative = clock_case(-250.0)?;
     let discontinuity = clock_discontinuity_reacquire_case()?;
     let out_of_range = clock_out_of_range_case()?;
+    let hard_latch = adaptive_bridge_hard_latch_case()?;
     let reconnect = reconnect_case()?;
     let exhaustion = reconnect_exhaustion_case()?;
     let flapping = reconnect_flapping_case()?;
@@ -38,7 +40,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             "cases": [positive, negative],
             "discontinuity_reacquire": discontinuity,
             "out_of_range_fail_closed": out_of_range,
-            "truth_boundary": "hardware-independent virtual clocks using Aurora DriftController estimator/feed-forward/slew logic and RubatoAsrc ratio/sample processing; not physical clock measurement"
+            "adaptive_fault_latch": hard_latch,
+            "truth_boundary": "hardware-independent virtual clocks using Aurora DriftController estimator/feed-forward/slew logic plus the production adaptive duplex/RubatoAsrc path; not physical clock measurement"
         },
         "device_reconnect_recovery": {
             "successful_reconnect": reconnect,
@@ -55,7 +58,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
     println!(
-        "AURORA-RESILIENCE-SIM-PASS report={} clock_cases=4 reconnect_cases=3 bounded_attempts=5",
+        "AURORA-RESILIENCE-SIM-PASS report={} clock_cases=5 reconnect_cases=3 bounded_attempts=5",
         report_path.display()
     );
     Ok(())
@@ -219,6 +222,71 @@ fn clock_out_of_range_case() -> Result<Value, Box<dyn std::error::Error>> {
         "input_clock_ppm": 5_000.0,
         "rejected": true,
         "feedforward_after_rejection_ppm": controller.feedforward_correction_ppm()
+    }))
+}
+
+fn adaptive_bridge_hard_latch_case() -> Result<Value, Box<dyn std::error::Error>> {
+    let adaptive_config = DuplexBridgeConfig {
+        channels: 1,
+        capacity_frames: 4_096,
+        target_fill_frames: 1_024,
+        correction_threshold_frames: 128,
+    };
+    let controller_config = DriftControllerConfig {
+        input_rate: SAMPLE_RATE,
+        output_rate: SAMPLE_RATE,
+        target_fill_frames: 1_024,
+        maximum_correction_ppm: 1.0,
+        fatal_saturation_updates: 1,
+        ..DriftControllerConfig::default()
+    };
+    let (producer, mut consumer, status) = create_adaptive_duplex_bridge(
+        adaptive_config,
+        DuplexFaultPolicy {
+            maximum_excursion_frames: 4_096,
+            ..DuplexFaultPolicy::default()
+        },
+        controller_config,
+        Box::new(RubatoAsrc::default()),
+        BLOCK_SIZE,
+    )?;
+
+    producer.push_interleaved(&vec![0.25; 2_048], 1);
+    let mut first = vec![1.0; BLOCK_SIZE];
+    consumer.read_interleaved(&mut first, 1);
+    let faulted = status.snapshot();
+    if first.iter().any(|sample| *sample != 0.0)
+        || faulted.fault != AdaptiveDuplexFault::Controller
+        || faulted.duplex.health != DuplexHealth::Fatal
+        || faulted.duplex.underflow_count != 0
+    {
+        return Err("unsupported adaptive mismatch did not enter a clean fatal mute latch".into());
+    }
+
+    producer.push_interleaved(&vec![0.25; BLOCK_SIZE], 1);
+    let mut second = vec![1.0; BLOCK_SIZE];
+    consumer.read_interleaved(&mut second, 1);
+    let still_faulted = status.snapshot();
+    if second.iter().any(|sample| *sample != 0.0)
+        || still_faulted.fault != AdaptiveDuplexFault::Controller
+        || still_faulted.duplex.health != DuplexHealth::Fatal
+        || still_faulted.duplex.underflow_count != 0
+        || still_faulted.clock_epoch != faulted.clock_epoch
+    {
+        return Err("latched adaptive fault recovered or mutated itself without control-plane rebuild".into());
+    }
+
+    Ok(json!({
+        "controller_maximum_correction_ppm": 1.0,
+        "fault": format!("{:?}", still_faulted.fault),
+        "health": format!("{:?}", still_faulted.duplex.health),
+        "first_callback_muted": true,
+        "second_callback_muted": true,
+        "fault_latched": true,
+        "underflow_count": still_faulted.duplex.underflow_count,
+        "clock_epoch_unchanged_after_latched_callback": true,
+        "requires_control_plane_bridge_rebuild": true,
+        "passed": true
     }))
 }
 
