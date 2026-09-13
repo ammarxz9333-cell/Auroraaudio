@@ -46,7 +46,18 @@
         "validation/physical/aurora_live_ingress.py",
         "validation/physical/aurora_alsa_iec61937_stream.py"
       ],
-      "truth_boundary": "Software Gate A-Live classifier and continuous ALSA slot-conversion self-tests pass, including mid-stream acquisition and relock. Physical live eARC capture, hardware reset/drop counters and electrical timing remain pending."
+      "truth_boundary": "Software Gate A-Live now has bounded retained diagnostics, threshold-driven pass/fail verdicts and Linux/Windows self-tests for mid-stream acquisition and relock. Export into AuroraSim remains pending; physical live eARC capture, hardware reset/drop counters and electrical timing remain unproven."
+    },
+    {
+      "id": "live-joc-decoder-runtime",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "evidence": [
+        "crates/aurora-decoder-api/src/lib.rs",
+        "crates/aurora-source-runtime/src/live.rs",
+        "validation/immersive/test-joc-aurora-live-runtime.sh"
+      ],
+      "truth_boundary": "Pinned Harletty JOC software is exercised through Aurora's hardware-neutral StreamingDecoder contract, explicit object-to-PCM-channel bindings, bounded priming/fault policy, bed routing, object gain rendering and speaker PCM mixing. Plain E-AC-3 is a fail-closed negative control. This is software-reference evidence only; it does not prove physical eARC capture, protected-service compatibility, final renderer quality, or Dolby certification."
     },
     {
       "id": "output-dsp-chain",
@@ -276,13 +287,21 @@
       "id": "adaptive-clock-rate-correction",
       "status": "planned",
       "evidence_class": "virtual",
-      "truth_boundary": "Clock offset/rate estimation exists, but runtime ASRC/feedback correction is not yet proven end-to-end."
+      "evidence": [
+        "crates/aurora-realtime-engine/src/estimator.rs",
+        "crates/aurora-realtime-engine/src/drift_controller.rs"
+      ],
+      "truth_boundary": "Aurora now has a fixed-storage frame-count PPM estimator, discontinuity trust reset, slew-limited feed-forward and 24-hour +/-250 ppm controller simulation. Promotion to covered remains blocked on exporting the complete estimator/controller/runtime path as an AuroraSim capability with executable fault profiles."
     },
     {
       "id": "device-reconnect-recovery",
       "status": "planned",
       "evidence_class": "virtual",
-      "truth_boundary": "Disconnect detection is covered; controlled reconnection/recovery is not yet implemented."
+      "evidence": [
+        "crates/aurora-realtime-engine/src/device_state.rs",
+        "crates/aurora-realtime-audio-sim/src/simulation.rs"
+      ],
+      "truth_boundary": "Aurora now has bounded reconnect attempts, exponential backoff and stable-run reset semantics, while existing virtual device-loss recovery is deterministic. Promotion to covered remains blocked on exporting the bounded recovery policy and exhaustion/fail-closed cases through AuroraSim coverage profiles."
     },
     {
       "id": "multi-speaker-room-field-control-simulation",
@@ -294,19 +313,19 @@
       "id": "physical-earc-ingress",
       "status": "physical-pending",
       "evidence_class": "physical",
-      "truth_boundary": "Requires real Lindy/SiI9437 to Linux capture evidence under issue #143."
+      "truth_boundary": "Requires real hardware capture evidence under issue #143; no host, MCU, eARC bridge, or other hardware choice is fixed by the software architecture."
     },
     {
       "id": "physical-uac2-tdm-clock-domain",
       "status": "physical-pending",
       "evidence_class": "physical",
-      "truth_boundary": "Virtual TDM16 does not prove USB/TDM electrical timing or clock behavior."
+      "truth_boundary": "Virtual multichannel transport contracts do not prove any specific USB/TDM implementation, electrical timing, or clock behavior. Hardware remains intentionally unselected."
     },
     {
       "id": "physical-dac-loopback-channel-map",
       "status": "physical-pending",
       "evidence_class": "physical",
-      "truth_boundary": "Requires two synchronized DAC stages and electrical/loopback measurement."
+      "truth_boundary": "Requires a future selected output implementation and electrical/loopback measurement; Aurora software does not currently select a DAC architecture."
     },
     {
       "id": "acoustic-room-field-control",
