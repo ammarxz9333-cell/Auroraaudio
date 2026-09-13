@@ -28,11 +28,11 @@ The canonical capability state is a versioned typed registry owned by `aurora-co
 | Capability | Implementation | Offline | Realtime | Verification | Tested layouts | Production-ready |
 | --- | --- | --- | --- | --- | --- | --- |
 | `geometric-binaural` — Geometric binaural renderer | experimental | functional | experimental | ci-artifact | stereo | no |
-| `iamf` — IAMF decoder adapter | adapter-placeholder | unsupported | unsupported | none | none | no |
+| `iamf` — IAMF rendered-PCM decoder | functional | functional | unsupported | ci-artifact | stereo | no |
 | `camilladsp` — CamillaDSP external adapter | functional | functional | unsupported | software-tested | 5.1 | no |
-| `cavern` — Cavern renderer adapter | inactive-research | unsupported | unsupported | none | none | no |
-| `truehdd` — truehdd decoder adapter | inactive-research | unsupported | unsupported | none | none | no |
-| `loudspeaker-3d` — 3D loudspeaker renderer | not-implemented | unsupported | unsupported | none | none | no |
+| `cavern` — Cavern renderer research candidate | inactive-research | unsupported | unsupported | none | none | no |
+| `truehdd` — truehdd channel-PCM decoder | experimental | experimental | unsupported | software-tested | none | no |
+| `loudspeaker-3d` — 3D VBAP loudspeaker renderer | experimental | functional | experimental | software-tested | 7.1.4 | no |
 
 <!-- AURORA_CAPABILITIES_END -->
 
