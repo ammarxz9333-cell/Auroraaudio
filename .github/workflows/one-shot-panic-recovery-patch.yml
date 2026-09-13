@@ -1,0 +1,87 @@
+name: One-shot panic recovery runtime patch
+
+on:
+  push:
+    branches:
+      - gap-closure-software-p0
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gap-closure-software-p0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Wire explicit decoder panic recovery into live runtime
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"expected exactly one match in {path}, found {count}")
+              p.write_text(text.replace(old, new, 1))
+
+          replace_once(
+              "crates/aurora-decoder-api/src/lib.rs",
+              '''    /// Clears stream history after a discontinuity or explicit recovery.\n    fn reset_stream(&mut self);\n}''',
+              '''    /// Clears stream history after an ordinary discontinuity.\n    fn reset_stream(&mut self);\n\n    /// Explicitly re-arms a decoder after a latched backend failure.\n    ///\n    /// Ordinary decoders use a normal stream reset. Panic-isolating adapters override this so\n    /// a routine discontinuity cannot accidentally clear a crash latch.\n    fn recover_stream(&mut self) -> Result<(), DecoderError> {\n        self.reset_stream();\n        Ok(())\n    }\n}''',
+          )
+
+          replace_once(
+              "crates/aurora-decoder-api/src/lib.rs",
+              '''    fn reset_stream(&mut self) {\n        if self.faulted {\n            return;\n        }\n        if catch_unwind(AssertUnwindSafe(|| self.inner.reset_stream())).is_err() {\n            self.faulted = true;\n        }\n    }\n}''',
+              '''    fn reset_stream(&mut self) {\n        if self.faulted {\n            return;\n        }\n        if catch_unwind(AssertUnwindSafe(|| self.inner.reset_stream())).is_err() {\n            self.faulted = true;\n        }\n    }\n\n    fn recover_stream(&mut self) -> Result<(), DecoderError> {\n        PanicIsolatedStreamingDecoder::recover(self)\n    }\n}''',
+          )
+
+          replace_once(
+              "crates/aurora-source-runtime/src/live.rs",
+              '''    /// Explicitly clears a latched fault and starts a fresh muted acquisition epoch.\n    pub fn recover(&mut self) {\n        self.decoder.reset_stream();\n        self.renderer.reset();\n        self.state = LiveDecodeState::Searching;\n        self.stable_packets = 0;\n        self.consecutive_errors = 0;\n        self.consecutive_empty_packets = 0;\n        self.consecutive_non_object_packets = 0;\n        self.metrics.recoveries = self.metrics.recoveries.saturating_add(1);\n    }''',
+              '''    /// Explicitly re-arms the decoder and starts a fresh muted acquisition epoch.\n    ///\n    /// A panic-isolated decoder must successfully clear its crash latch here. Failure leaves the\n    /// runtime `Faulted` and is returned to the caller instead of presenting a false recovery.\n    pub fn try_recover(&mut self) -> Result<(), LiveDecodeError> {\n        if let Err(error) = self.decoder.recover_stream() {\n            self.renderer.reset();\n            self.state = LiveDecodeState::Faulted;\n            self.stable_packets = 0;\n            self.consecutive_empty_packets = 0;\n            self.consecutive_non_object_packets = 0;\n            self.metrics.failures = self.metrics.failures.saturating_add(1);\n            return Err(LiveDecodeError::Decoder(error));\n        }\n        self.renderer.reset();\n        self.state = LiveDecodeState::Searching;\n        self.stable_packets = 0;\n        self.consecutive_errors = 0;\n        self.consecutive_empty_packets = 0;\n        self.consecutive_non_object_packets = 0;\n        self.metrics.recoveries = self.metrics.recoveries.saturating_add(1);\n        Ok(())\n    }\n\n    /// Backward-compatible explicit recovery request.\n    ///\n    /// Call [`Self::try_recover`] when the caller needs the backend recovery error. If recovery\n    /// fails, this convenience method still leaves the runtime visibly `Faulted`.\n    pub fn recover(&mut self) {\n        let _ = self.try_recover();\n    }''',
+          )
+
+          replace_once(
+              "crates/aurora-source-runtime/src/live.rs",
+              '''    use aurora_decoder_api::{\n        DecodedFrame, DecoderInfo, StreamingDecodedFrame, StreamingDecoderConfig,\n    };''',
+              '''    use aurora_decoder_api::{\n        DecodedFrame, DecoderInfo, PanicIsolatedStreamingDecoder, StreamingDecodedFrame,\n        StreamingDecoderConfig,\n    };''',
+          )
+
+          replace_once(
+              "crates/aurora-source-runtime/src/live.rs",
+              '''    impl StreamingDecoder for MockDecoder {''',
+              '''    #[derive(Debug)]\n    struct PanicOnceDecoder {\n        configured: bool,\n        panic_on_push: bool,\n    }\n\n    impl StreamingDecoder for PanicOnceDecoder {\n        fn info(&self) -> DecoderInfo {\n            DecoderInfo {\n                name: "panic-once-live-object-decoder",\n                production_ready: false,\n                maturity: "test",\n                output_semantics: DecoderOutputSemantics::ObjectScene,\n            }\n        }\n\n        fn configure_stream(&mut self, _config: StreamingDecoderConfig) -> Result<(), DecoderError> {\n            self.configured = true;\n            Ok(())\n        }\n\n        fn push_packet(\n            &mut self,\n            _packet: DecoderPacket<'_>,\n        ) -> Result<DecodedBatch, DecoderError> {\n            assert!(self.configured);\n            if self.panic_on_push {\n                self.panic_on_push = false;\n                panic!("intentional live decoder panic");\n            }\n            Ok(DecodedBatch {\n                frames: vec![MockDecoder::object_frame()],\n                native_objects_present: true,\n            })\n        }\n\n        fn reset_stream(&mut self) {}\n    }\n\n    impl StreamingDecoder for MockDecoder {''',
+          )
+
+          replace_once(
+              "crates/aurora-source-runtime/src/live.rs",
+              '''    #[test]\n    fn discontinuity_discards_old_lock_and_requires_reprime() {''',
+              '''    #[test]\n    fn panic_isolation_requires_explicit_runtime_recovery_before_audio_rearms() {\n        let decoder = PanicIsolatedStreamingDecoder::try_new(PanicOnceDecoder {\n            configured: false,\n            panic_on_push: true,\n        })\n        .unwrap();\n        let mut runtime = LiveImmersiveRuntime::new(\n            decoder,\n            BasicRenderer::new(BasicRendererMode::InverseDistance),\n            output_format(),\n            listener(),\n            layout(),\n            LiveDecodePolicy::default(),\n        )\n        .unwrap();\n\n        assert!(matches!(\n            runtime.push_packet(packet(false)),\n            Err(LiveDecodeError::Decoder(DecoderError::BackendPanic(\n                "push_packet"\n            )))\n        ));\n        assert_eq!(runtime.state(), LiveDecodeState::Muted);\n\n        runtime.try_recover().unwrap();\n        assert_eq!(runtime.state(), LiveDecodeState::Searching);\n        assert_eq!(runtime.metrics().recoveries, 1);\n\n        let first = runtime.push_packet(packet(false)).unwrap();\n        assert_eq!(first.state, LiveDecodeState::Priming);\n        assert!(!first.audible);\n        let second = runtime.push_packet(packet(false)).unwrap();\n        assert_eq!(second.state, LiveDecodeState::Running);\n        assert!(second.audible);\n    }\n\n    #[test]\n    fn discontinuity_discards_old_lock_and_requires_reprime() {''',
+          )
+          PY
+
+          cargo fmt --all
+          cargo test --locked -p aurora-decoder-api
+          cargo test --locked -p aurora-source-runtime --all-features
+          rm -f .github/workflows/one-shot-panic-recovery-patch.yml
+          rm -f .github/workflows/one-shot-gap-runtime-patch.yml
+
+      - name: Commit panic recovery patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit -m "decoder: wire explicit panic recovery into live runtime"
+          git push origin HEAD:gap-closure-software-p0
