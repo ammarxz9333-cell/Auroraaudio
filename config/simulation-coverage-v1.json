@@ -57,7 +57,7 @@
         "crates/aurora-source-runtime/src/live.rs",
         "validation/immersive/test-joc-aurora-live-runtime.sh"
       ],
-      "truth_boundary": "Pinned Harletty JOC software is exercised through Aurora's hardware-neutral StreamingDecoder contract, explicit object-to-PCM-channel bindings, bounded priming/fault policy, bed routing, object gain rendering and speaker PCM mixing. Plain E-AC-3 is a fail-closed negative control. This is software-reference evidence only; it does not prove physical eARC capture, protected-service compatibility, final renderer quality, or Dolby certification."
+      "truth_boundary": "Pinned Harletty JOC software is exercised through Aurora's hardware-neutral StreamingDecoder contract, explicit object-to-PCM-channel bindings, bounded priming/fault policy, bed routing, object gain rendering and speaker PCM mixing. In-process decoder panics are isolated on the media/control side, latched fail-closed across ordinary discontinuities, and require explicit recover_stream/LiveImmersiveRuntime recovery before a fresh priming epoch. Plain E-AC-3 is a fail-closed negative control. This is software-reference evidence only; it does not prove physical eARC capture, protected-service compatibility, final renderer quality, or Dolby certification."
     },
     {
       "id": "output-dsp-chain",
@@ -300,12 +300,13 @@
         "crates/aurora-realtime-engine/src/estimator.rs",
         "crates/aurora-realtime-engine/src/drift_controller.rs",
         "crates/aurora-realtime-engine/src/asrc.rs",
+        "crates/aurora-realtime-engine/src/duplex.rs",
         "crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs",
         "crates/aurora-realtime-audio-sim/examples/resilience_transition_evidence.rs",
         "validation/virtual-hardware/aurora_resilience_sim.py",
         "validation/virtual-hardware/test-aurora-resilience-sim.sh"
       ],
-      "truth_boundary": "Executable virtual evidence drives Aurora's real fixed-storage PPM estimator, slew-limited DriftController feed-forward and RubatoAsrc ratio/sample path for both +250 ppm and -250 ppm over a simulated 24 hours while keeping a fixed-capacity ring bounded. It also requires median filtering to reject bounded window-to-window clock jitter, continuous +250 to -250 ppm clock steps to converge through the configured <=2 ppm/update ASRC slew path, discontinuity to clear stale trust/feed-forward before reacquiring a reversed clock epoch, and an out-of-range 5000 ppm relationship to fail closed. This does not constitute physical clock measurement or prove a specific USB/TDM/audio device."
+      "truth_boundary": "Executable virtual evidence drives Aurora's real fixed-storage PPM estimator, slew-limited DriftController feed-forward and RubatoAsrc ratio/sample path for both +250 ppm and -250 ppm over a simulated 24 hours while keeping a fixed-capacity ring bounded. It also requires median filtering to reject bounded window-to-window clock jitter, continuous +250 to -250 ppm clock steps to converge through the configured <=2 ppm/update ASRC slew path, discontinuity to clear stale trust/feed-forward before reacquiring a reversed clock epoch, and an out-of-range 5000 ppm relationship to fail closed. The production AdaptiveDuplexConsumer additionally proves unsupported controller/resampler/capacity faults latch Fatal silence across subsequent callbacks without being reclassified as ordinary underflow; recovery requires an explicit control-plane bridge rebuild. This does not constitute physical clock measurement or prove a specific USB/TDM/audio device."
     },
     {
       "id": "device-reconnect-recovery",
