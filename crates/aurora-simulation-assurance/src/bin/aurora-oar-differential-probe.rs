@@ -15,7 +15,9 @@ const FREQUENCY_HZ: f32 = 440.0;
 
 #[derive(Debug, Parser)]
 #[command(name = "aurora-oar-differential-probe")]
-#[command(about = "Emit deterministic Aurora stereo semantics for the pinned OAR differential lane")]
+#[command(
+    about = "Emit deterministic Aurora stereo semantics for the pinned OAR differential lane"
+)]
 struct Args {
     #[arg(long)]
     output: PathBuf,
