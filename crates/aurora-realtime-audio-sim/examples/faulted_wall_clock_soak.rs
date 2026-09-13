@@ -250,8 +250,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let metrics = engine.metrics();
     let discontinuity_reset = feedforward_after_discontinuity
         .is_some_and(|ppm| ppm.abs() <= f64::EPSILON)
-        && correction_after_discontinuity
-            .is_some_and(|ppm| ppm.abs() <= f64::EPSILON);
+        && correction_after_discontinuity.is_some_and(|ppm| ppm.abs() <= f64::EPSILON);
     let mut violations = Vec::new();
 
     if initial_trusted.is_none() {
@@ -259,7 +258,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if let Some(ppm) = initial_trusted {
         if (ppm - 250.0).abs() > 5.0 {
-            violations.push(format!("initial filtered clock estimate outside tolerance: {ppm}"));
+            violations.push(format!(
+                "initial filtered clock estimate outside tolerance: {ppm}"
+            ));
         }
     }
     match initial_feedforward {
@@ -279,7 +280,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     if let Some(ppm) = reacquired {
         if (ppm + 250.0).abs() > 5.0 {
-            violations.push(format!("reacquired clock estimate outside tolerance: {ppm}"));
+            violations.push(format!(
+                "reacquired clock estimate outside tolerance: {ppm}"
+            ));
         }
     } else {
         violations.push("reversed clock epoch was not reacquired".to_owned());
@@ -308,9 +311,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         violations.push("engine produced no usable callbacks or remained silent".to_owned());
     }
     if deadline_misses != 0 {
-        violations.push(format!("{deadline_misses} callback processing deadline misses"));
+        violations.push(format!(
+            "{deadline_misses} callback processing deadline misses"
+        ));
     }
-    if metrics.input_underruns != 0 || metrics.output_underruns != 0 || metrics.dropped_blocks != 0 {
+    if metrics.input_underruns != 0 || metrics.output_underruns != 0 || metrics.dropped_blocks != 0
+    {
         violations.push("engine underrun/drop counters changed during paced soak".to_owned());
     }
     if metrics.fault != RealTimeFault::None {
