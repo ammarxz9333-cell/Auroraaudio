@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "libiamf": {
+    "upstream": "https://github.com/AOMediaCodec/libiamf",
+    "commit": "e55e1832a608affe602de2ee39929bd7759a75ab",
+    "oar_submodule_commit": "3d1d23b807543f993a1d0cf0a9839c7f0746d94b",
+    "integration": "external-process-validation-reference",
+    "tool": "iamfdec",
+    "build_options": {
+      "IAMF_TEST_TOOL": true,
+      "IAMF_ENABLE_BINAURALIZER": false
+    }
+  },
+  "fixture_source": {
+    "upstream": "https://github.com/AOMediaCodec/iamf-tools",
+    "commit": "d13b8dd52211f0c77cde4a7a8fbc8ca84ae75b09",
+    "fixture": "iamf/cli/testdata/iamf/noise_1024samp_5p1_opus.iamf",
+    "provenance": "upstream in-tree IAMF testdata"
+  },
+  "adapter": {
+    "crate": "aurora-decoder-iamf",
+    "feature": "libiamf-process",
+    "type": "IamfRenderedPcmReferenceDecoder",
+    "input_contract": "one complete standalone IAMF bitstream per decode_chunk call",
+    "output_semantics": "ChannelPcm",
+    "output_layout": "stereo",
+    "sample_rate": 48000,
+    "sample_type": "F32",
+    "iamfdec_pcm_bit_depth": 32,
+    "objects_claimed": false
+  },
+  "acceptance": {
+    "exact_commits_required": true,
+    "real_iamf_fixture_required": true,
+    "direct_libiamf_decode_required": true,
+    "adapter_decode_required": true,
+    "sample_for_sample_pcm_agreement_required": true,
+    "finite_non_silent_pcm_required": true,
+    "object_scene_claim_forbidden": true
+  },
+  "truth_boundary": "This lane validates only a complete-file, out-of-process reference path in which pinned libiamf iamfdec renders an official IAMF fixture to stereo PCM and Aurora imports that rendered PCM as ChannelPcm without alteration. It does not expose or prove IAMF object metadata, object-to-PCM bindings, live streaming IAMF, 7.1.4/elevated output, HOA semantics inside Aurora, binaural rendering, physical output, protected-service compatibility, or certification."
+}

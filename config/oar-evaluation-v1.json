@@ -21,5 +21,30 @@
     "license_and_patents_required": true,
     "promotion_to_aurora_coverage_requires_differential_evidence": true
   },
-  "truth_boundary": "Successful upstream build/tests establish only that the pinned OAR reference is usable as an external oracle. They do not prove IAMF integration into Aurora, equivalence to Dolby Atmos, physical output, or certification."
+  "differential": {
+    "scope": "stereo_point_object_spatial_semantics",
+    "azimuth_degrees": [
+      -60.0,
+      -30.0,
+      -15.0,
+      0.0,
+      15.0,
+      30.0,
+      60.0
+    ],
+    "output_layout": "stereo",
+    "sample_rate": 48000,
+    "block_size": 256,
+    "thresholds": {
+      "power_sum_tolerance": 0.000001,
+      "center_balance_max": 0.0001,
+      "anchor_dominance_min": 0.999,
+      "mirror_max_abs": 0.0001,
+      "monotonic_slack": 0.0001,
+      "max_left_share_delta": 0.0001,
+      "left_share_rmse": 0.0001
+    },
+    "truth_boundary": "The differential lane compares pinned OAR v1 with Aurora 2D VBAP only for stereo point-object azimuth semantics using normalized output-channel power. It does not prove IAMF parsing/decoding, elevated objects, 7.1.4, HOA, binaural rendering, acoustics, physical output, or certification."
+  },
+  "truth_boundary": "Successful upstream build/tests establish that the pinned OAR reference is usable as an external oracle. Passing the differential section additionally establishes bounded agreement for the declared stereo point-object spatial semantics only; it does not prove IAMF integration into Aurora, equivalence to Dolby Atmos, physical output, or certification."
 }

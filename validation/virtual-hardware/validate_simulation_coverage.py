@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Aurora's mandatory full-system simulation coverage contract."""
+"""Validate Aurora's mandatory simulation coverage contract."""
 
 from __future__ import annotations
 
@@ -7,24 +7,62 @@ import argparse
 import copy
 import importlib.util
 import json
-import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_CONTRACT = ROOT / "config/simulation-coverage-v1.json"
-SIMULATOR = Path(__file__).resolve().with_name("aurora_full_system_sim.py")
+SIMULATORS = (
+    Path(__file__).resolve().with_name("aurora_full_system_sim.py"),
+    Path(__file__).resolve().with_name("aurora_resilience_sim.py"),
+)
 VALID_STATUSES = {"covered", "planned", "physical-pending", "external-pending"}
 VALID_CLASSES = {"virtual", "software_reference", "physical", "external_integration"}
 
 
-def load_simulator():
-    spec = importlib.util.spec_from_file_location("aurora_full_system_sim", SIMULATOR)
+def _load_simulator_module(path: Path):
+    spec = importlib.util.spec_from_file_location(path.stem, path)
     if spec is None or spec.loader is None:
-        raise RuntimeError("unable to load Aurora full-system simulator module")
+        raise RuntimeError(f"unable to load Aurora simulator module: {path}")
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
+
+
+def load_simulator():
+    """Load all exported simulator contracts as one fail-closed capability catalogue."""
+    capabilities: list[str] = []
+    profiles: list[str] = []
+    sources: list[str] = []
+    for path in SIMULATORS:
+        module = _load_simulator_module(path)
+        module_caps = tuple(getattr(module, "SIMULATOR_CAPABILITIES", ()))
+        module_profiles = tuple(getattr(module, "FAULT_PROFILES", ()))
+        if not module_caps:
+            raise RuntimeError(f"simulator exports no SIMULATOR_CAPABILITIES: {path.name}")
+        if not module_profiles:
+            raise RuntimeError(f"simulator exports no FAULT_PROFILES: {path.name}")
+        duplicate_caps = set(capabilities).intersection(module_caps)
+        if duplicate_caps:
+            raise RuntimeError(
+                "duplicate simulator capabilities across modules: "
+                + ",".join(sorted(duplicate_caps))
+            )
+        duplicate_profiles = set(profiles).intersection(module_profiles)
+        if duplicate_profiles:
+            raise RuntimeError(
+                "duplicate simulator fault profiles across modules: "
+                + ",".join(sorted(duplicate_profiles))
+            )
+        capabilities.extend(module_caps)
+        profiles.extend(module_profiles)
+        sources.append(path.name)
+    return SimpleNamespace(
+        SIMULATOR_CAPABILITIES=tuple(capabilities),
+        FAULT_PROFILES=tuple(profiles),
+        SIMULATOR_SOURCES=tuple(sources),
+    )
 
 
 def load_contract(path: Path) -> dict[str, Any]:
@@ -162,7 +200,10 @@ def self_test() -> None:
     if not any("unknown fault profile" in error for error in validate(bad_fault, simulator, check_paths=False)):
         raise AssertionError("unknown fault profile was not rejected")
 
-    print("AURORA-SIMULATION-COVERAGE-SELF-TEST-PASS")
+    print(
+        "AURORA-SIMULATION-COVERAGE-SELF-TEST-PASS "
+        f"simulators={len(simulator.SIMULATOR_SOURCES)}"
+    )
 
 
 def main() -> int:
@@ -182,12 +223,12 @@ def main() -> int:
     errors = validate(contract, simulator)
     if errors:
         for error in errors:
-            print(f"AURORA-SIMULATION-COVERAGE-ERROR {error}", file=sys.stderr)
+            print(f"AURORA-SIMULATION-COVERAGE-ERROR {error}")
         return 1
     print(
         "AURORA-SIMULATION-COVERAGE-PASS "
         f"capabilities={len(contract['capabilities'])} simulator_capabilities={len(simulator.SIMULATOR_CAPABILITIES)} "
-        f"fault_profiles={len(simulator.FAULT_PROFILES)}"
+        f"fault_profiles={len(simulator.FAULT_PROFILES)} simulators={len(simulator.SIMULATOR_SOURCES)}"
     )
     return 0
 

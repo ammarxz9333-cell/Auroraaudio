@@ -6,6 +6,8 @@
 //! can cross the activation boundary only when the same Source Manager session
 //! and generation are active.
 
+pub mod live;
+
 use aurora_core::{AudioBlock, AudioFormat, AudioObject, Listener, Speaker};
 use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError};
 use aurora_plugin_api::source_manager::{PlayableMediaRef, SourceManager, SourceSessionId};

@@ -6,7 +6,13 @@ on:
     paths:
       - "config/oar-evaluation-v1.json"
       - "validation/open-immersive/oar_reference_evidence.py"
+      - "validation/open-immersive/oar_differential_evidence.py"
+      - "validation/open-immersive/oar_differential_probe.c"
       - "validation/open-immersive/test-oar-reference.sh"
+      - "validation/open-immersive/test-oar-differential.sh"
+      - "crates/aurora-core/src/lib.rs"
+      - "crates/aurora-renderer-api/src/lib.rs"
+      - "crates/aurora-renderer-vbap/**"
       - ".github/workflows/oar-reference-ci.yml"
       - "AGENTS.md"
 
@@ -24,15 +30,23 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - uses: dtolnay/rust-toolchain@stable
+
       - name: Install build tooling
         run: sudo apt-get update && sudo apt-get install --yes cmake ninja-build
 
-      - name: Self-test OAR evidence analyzer
-        run: python3 validation/open-immersive/oar_reference_evidence.py self-test
+      - name: Self-test OAR evidence analyzers
+        run: |
+          python3 validation/open-immersive/oar_reference_evidence.py self-test
+          python3 validation/open-immersive/oar_differential_evidence.py self-test
 
       - name: Build and test exact pinned OAR reference
         shell: bash
         run: bash validation/open-immersive/test-oar-reference.sh "${{ runner.temp }}/oar-reference"
+
+      - name: Differential-test pinned OAR against Aurora VBAP
+        shell: bash
+        run: bash validation/open-immersive/test-oar-differential.sh "${{ runner.temp }}/oar-reference"
 
       - name: Upload OAR reference evidence
         if: always()
@@ -42,5 +56,8 @@ jobs:
           path: |
             ${{ runner.temp }}/oar-reference/oar-reference-evidence.json
             ${{ runner.temp }}/oar-reference/ctest.log
+            ${{ runner.temp }}/oar-reference/oar-differential-evidence.json
+            ${{ runner.temp }}/oar-reference/oar-differential.tsv
+            ${{ runner.temp }}/oar-reference/aurora-differential.tsv
           if-no-files-found: warn
           retention-days: 14
