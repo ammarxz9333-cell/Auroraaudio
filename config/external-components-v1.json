@@ -92,6 +92,7 @@
       "upstream": "https://github.com/AOMediaCodec/libiamf",
       "decision": "evaluate-active",
       "integration": "external-process-validation-reference",
+      "tested_version": "commit-e55e1832a608affe602de2ee39929bd7759a75ab",
       "pinned_commit": "e55e1832a608affe602de2ee39929bd7759a75ab",
       "roles": ["iamf-rendered-channel-pcm-reference"],
       "object_metadata": "not-exposed-by-rendered-process-adapter",
