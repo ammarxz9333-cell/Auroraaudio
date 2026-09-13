@@ -64,9 +64,7 @@
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "output-dsp-chain",
-      "profiles": [
-        "none"
-      ],
+      "profiles": ["none"],
       "evidence": [
         "crates/aurora-dsp-basic/examples/process_7_1_4_file.rs",
         "validation/virtual-hardware/test-aurora-full-system-sim.sh"
@@ -77,151 +75,96 @@
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "render-contract",
-      "profiles": [
-        "none"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "frame-accounting",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "frame-accounting",
-      "profiles": [
-        "none",
-        "dropout",
-        "disconnect"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "dropout", "disconnect"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "channel-activity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "channel-activity",
-      "profiles": [
-        "none",
-        "channel-silence"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "channel-silence"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "channel-order",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "channel-order",
-      "profiles": [
-        "none",
-        "channel-swap"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "channel-swap"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "pcm-identity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "pcm-identity",
-      "profiles": [
-        "none",
-        "channel-silence",
-        "channel-swap"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "channel-silence", "channel-swap"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "tdm16-slot-mapping",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "tdm16-slot-mapping",
-      "profiles": [
-        "none",
-        "tdm-padding-corruption"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "tdm-padding-corruption"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "xrun-dropout",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "xrun-dropout",
-      "profiles": [
-        "dropout"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["dropout"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "device-disconnect",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "device-disconnect",
-      "profiles": [
-        "disconnect"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["disconnect"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "clock-drift",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "clock-drift",
-      "profiles": [
-        "drift"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["drift"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "sample-rate-integrity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "sample-rate-integrity",
-      "profiles": [
-        "sample-rate-change"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["sample-rate-change"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "latency-budget",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "latency-budget",
-      "profiles": [
-        "latency-spike"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["latency-spike"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "non-finite-protection",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "non-finite-protection",
-      "profiles": [
-        "non-finite"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["non-finite"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "moving-joc-metadata",
@@ -242,10 +185,28 @@
       ]
     },
     {
+      "id": "oar-vbap-object-differential",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "evidence": [
+        "config/oar-evaluation-v1.json",
+        "crates/aurora-renderer-vbap/examples/oar_differential_probe.rs",
+        "validation/open-immersive/oar_differential_probe.c",
+        "validation/open-immersive/oar_differential_evidence.py",
+        "validation/open-immersive/test-oar-differential.sh"
+      ],
+      "truth_boundary": "Pinned OAR v1 and Aurora 2D VBAP are compared on identical stereo point-object azimuth cases at -60/-30/-15/0/+15/+30/+60 degrees using normalized left/right output power. Reference run 34773581397 measured maximum left-share absolute delta 3.6e-8, RMSE 1.9243e-8, zero mirror-symmetry error, exact center balance and no monotonicity violations. This proves only the declared stereo 2D point-object panning semantics; it does not prove IAMF parsing/decoding, 7.1.4/elevation/HOA/binaural behavior, acoustics, physical output, protected-service behavior, or certification."
+    },
+    {
       "id": "iamf-oar-open-rendering",
       "status": "planned",
       "evidence_class": "software_reference",
-      "truth_boundary": "Aurora currently has only an IAMF adapter placeholder; no decode/render proof is claimed."
+      "evidence": [
+        "config/oar-evaluation-v1.json",
+        "validation/open-immersive/test-oar-reference.sh",
+        "validation/open-immersive/test-oar-differential.sh"
+      ],
+      "truth_boundary": "The pinned OAR reference and a narrow stereo 2D point-object differential are proven, but Aurora still has only an IAMF adapter placeholder. No IAMF bitstream parse/decode-to-render integration, multichannel IAMF presentation, elevation/HOA, or end-to-end IAMF playback proof is claimed."
     },
     {
       "id": "hoa-scene-based-rendering",

@@ -36,13 +36,13 @@
     "sample_rate": 48000,
     "block_size": 256,
     "thresholds": {
-      "power_sum_tolerance": 0.001,
-      "center_balance_max": 0.1,
-      "anchor_dominance_min": 0.9,
-      "mirror_max_abs": 0.1,
-      "monotonic_slack": 0.02,
-      "max_left_share_delta": 0.25,
-      "left_share_rmse": 0.15
+      "power_sum_tolerance": 0.000001,
+      "center_balance_max": 0.0001,
+      "anchor_dominance_min": 0.999,
+      "mirror_max_abs": 0.0001,
+      "monotonic_slack": 0.0001,
+      "max_left_share_delta": 0.0001,
+      "left_share_rmse": 0.0001
     },
     "truth_boundary": "The differential lane compares pinned OAR v1 with Aurora 2D VBAP only for stereo point-object azimuth semantics using normalized output-channel power. It does not prove IAMF parsing/decoding, elevated objects, 7.1.4, HOA, binaural rendering, acoustics, physical output, or certification."
   },
