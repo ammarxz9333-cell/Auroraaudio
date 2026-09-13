@@ -305,9 +305,20 @@ where
         self.consecutive_non_object_packets = 0;
     }
 
-    /// Explicitly clears a latched fault and starts a fresh muted acquisition epoch.
-    pub fn recover(&mut self) {
-        self.decoder.reset_stream();
+    /// Explicitly re-arms the decoder and starts a fresh muted acquisition epoch.
+    ///
+    /// A panic-isolated decoder must successfully clear its crash latch here. Failure leaves the
+    /// runtime `Faulted` and is returned instead of presenting a false recovery.
+    pub fn try_recover(&mut self) -> Result<(), LiveDecodeError> {
+        if let Err(error) = self.decoder.recover_stream() {
+            self.renderer.reset();
+            self.state = LiveDecodeState::Faulted;
+            self.stable_packets = 0;
+            self.consecutive_empty_packets = 0;
+            self.consecutive_non_object_packets = 0;
+            self.metrics.failures = self.metrics.failures.saturating_add(1);
+            return Err(LiveDecodeError::Decoder(error));
+        }
         self.renderer.reset();
         self.state = LiveDecodeState::Searching;
         self.stable_packets = 0;
@@ -315,6 +326,15 @@ where
         self.consecutive_empty_packets = 0;
         self.consecutive_non_object_packets = 0;
         self.metrics.recoveries = self.metrics.recoveries.saturating_add(1);
+        Ok(())
+    }
+
+    /// Backward-compatible explicit recovery request.
+    ///
+    /// Call [`Self::try_recover`] when the caller needs the backend recovery error. A failed
+    /// recovery still leaves this runtime visibly `Faulted`.
+    pub fn recover(&mut self) {
+        let _ = self.try_recover();
     }
 
     fn accept_batch(&mut self, batch: DecodedBatch) -> Result<LiveProcessReport, LiveDecodeError> {
@@ -699,7 +719,8 @@ mod tests {
     use super::*;
     use aurora_core::{SampleType, Vector3};
     use aurora_decoder_api::{
-        DecodedFrame, DecoderInfo, StreamingDecodedFrame, StreamingDecoderConfig,
+        DecodedFrame, DecoderInfo, PanicIsolatedStreamingDecoder, StreamingDecodedFrame,
+        StreamingDecoderConfig,
     };
     use aurora_renderer_basic::{BasicRenderer, BasicRendererMode};
 
@@ -741,6 +762,48 @@ mod tests {
                 }],
             }
         }
+    }
+
+    #[derive(Debug)]
+    struct PanicOnceDecoder {
+        configured: bool,
+        panic_on_push: bool,
+    }
+
+    impl StreamingDecoder for PanicOnceDecoder {
+        fn info(&self) -> DecoderInfo {
+            DecoderInfo {
+                name: "panic-once-live-object-decoder",
+                production_ready: false,
+                maturity: "test",
+                output_semantics: DecoderOutputSemantics::ObjectScene,
+            }
+        }
+
+        fn configure_stream(
+            &mut self,
+            _config: StreamingDecoderConfig,
+        ) -> Result<(), DecoderError> {
+            self.configured = true;
+            Ok(())
+        }
+
+        fn push_packet(
+            &mut self,
+            _packet: DecoderPacket<'_>,
+        ) -> Result<DecodedBatch, DecoderError> {
+            assert!(self.configured);
+            if self.panic_on_push {
+                self.panic_on_push = false;
+                panic!("intentional live decoder panic");
+            }
+            Ok(DecodedBatch {
+                frames: vec![MockDecoder::object_frame()],
+                native_objects_present: true,
+            })
+        }
+
+        fn reset_stream(&mut self) {}
     }
 
     impl StreamingDecoder for MockDecoder {
@@ -920,6 +983,43 @@ mod tests {
         ));
         runtime.recover();
         assert_eq!(runtime.state(), LiveDecodeState::Searching);
+    }
+
+    #[test]
+    fn panic_isolation_requires_explicit_runtime_recovery_before_audio_rearms() {
+        let decoder = PanicIsolatedStreamingDecoder::try_new(PanicOnceDecoder {
+            configured: false,
+            panic_on_push: true,
+        })
+        .unwrap();
+        let mut runtime = LiveImmersiveRuntime::new(
+            decoder,
+            BasicRenderer::new(BasicRendererMode::InverseDistance),
+            output_format(),
+            listener(),
+            layout(),
+            LiveDecodePolicy::default(),
+        )
+        .unwrap();
+
+        assert!(matches!(
+            runtime.push_packet(packet(false)),
+            Err(LiveDecodeError::Decoder(DecoderError::BackendPanic(
+                "push_packet"
+            )))
+        ));
+        assert_eq!(runtime.state(), LiveDecodeState::Muted);
+
+        runtime.try_recover().unwrap();
+        assert_eq!(runtime.state(), LiveDecodeState::Searching);
+        assert_eq!(runtime.metrics().recoveries, 1);
+
+        let first = runtime.push_packet(packet(false)).unwrap();
+        assert_eq!(first.state, LiveDecodeState::Priming);
+        assert!(!first.audible);
+        let second = runtime.push_packet(packet(false)).unwrap();
+        assert_eq!(second.state, LiveDecodeState::Running);
+        assert!(second.audible);
     }
 
     #[test]
