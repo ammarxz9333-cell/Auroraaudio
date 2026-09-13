@@ -636,6 +636,8 @@ pub struct AdaptiveDuplexConsumer {
     observed_clock_epoch: u64,
     last_clock_input_frames: u64,
     last_clock_output_frames: u64,
+    /// Hard adaptive faults remain muted until the control plane rebuilds this bridge.
+    fault_latched: bool,
 }
 
 impl AdaptiveDuplexConsumer {
@@ -656,6 +658,10 @@ impl AdaptiveDuplexConsumer {
             self.duplex_status.mark_clock_discontinuity();
             return;
         }
+        if self.fault_latched {
+            output.fill(0.0);
+            return;
+        }
         let requested_frames = output.len() / channels;
         self.duplex_status
             .output_frames_requested
@@ -665,7 +671,9 @@ impl AdaptiveDuplexConsumer {
         while output_cursor < output.len() {
             if self.cache_cursor_samples >= self.output_cache.len() && !self.refill_cache() {
                 output[output_cursor..].fill(0.0);
-                underflow = true;
+                if !self.fault_latched {
+                    underflow = true;
+                }
                 break;
             }
             let available = self.output_cache.len() - self.cache_cursor_samples;
@@ -761,20 +769,26 @@ impl AdaptiveDuplexConsumer {
         Ok(())
     }
 
+    fn latch_adaptive_fault(&mut self, fault: AdaptiveDuplexFault) {
+        self.fault_latched = true;
+        self.adaptive_status
+            .clock_estimate_trusted
+            .store(false, Ordering::Release);
+        self.adaptive_status
+            .fault
+            .store(fault as u32, Ordering::Release);
+        self.duplex_status.raise_health(DuplexHealth::Fatal);
+    }
+
     fn refill_cache(&mut self) -> bool {
-        if let Err(error) = self.observe_runtime_clock() {
+        if self.fault_latched {
+            return false;
+        }
+        if self.observe_runtime_clock().is_err() {
             self.adaptive_status
                 .estimated_input_clock_ppm_bits
                 .store(0.0_f64.to_bits(), Ordering::Relaxed);
-            self.adaptive_status
-                .clock_estimate_trusted
-                .store(false, Ordering::Release);
-            self.adaptive_status
-                .fault
-                .store(AdaptiveDuplexFault::Controller as u32, Ordering::Release);
-            if matches!(error, DriftControllerFault::CorrectionOutOfRange) {
-                self.duplex_status.raise_health(DuplexHealth::Fatal);
-            }
+            self.latch_adaptive_fault(AdaptiveDuplexFault::Controller);
             return false;
         }
 
@@ -787,24 +801,14 @@ impl AdaptiveDuplexConsumer {
         );
         let report = match controller {
             Ok(report) => report,
-            Err(DriftControllerFault::CorrectionOutOfRange) => {
-                self.adaptive_status
-                    .fault
-                    .store(AdaptiveDuplexFault::Controller as u32, Ordering::Release);
-                self.duplex_status.raise_health(DuplexHealth::Fatal);
-                return false;
-            }
-            Err(DriftControllerFault::InvalidConfiguration) => {
-                self.adaptive_status
-                    .fault
-                    .store(AdaptiveDuplexFault::Controller as u32, Ordering::Release);
+            Err(DriftControllerFault::CorrectionOutOfRange)
+            | Err(DriftControllerFault::InvalidConfiguration) => {
+                self.latch_adaptive_fault(AdaptiveDuplexFault::Controller);
                 return false;
             }
         };
         if self.resampler.set_ratio(report.ratio).is_err() {
-            self.adaptive_status
-                .fault
-                .store(AdaptiveDuplexFault::Resampler as u32, Ordering::Release);
+            self.latch_adaptive_fault(AdaptiveDuplexFault::Resampler);
             return false;
         }
         self.adaptive_status
@@ -826,9 +830,7 @@ impl AdaptiveDuplexConsumer {
         let required_frames = self.resampler.required_input_frames();
         let required_samples = required_frames.saturating_mul(self.config.channels);
         if required_samples > self.input_scratch.len() {
-            self.adaptive_status
-                .fault
-                .store(AdaptiveDuplexFault::InputCapacity as u32, Ordering::Release);
+            self.latch_adaptive_fault(AdaptiveDuplexFault::InputCapacity);
             return false;
         }
         if self.queue.len_samples() < required_samples
@@ -846,9 +848,7 @@ impl AdaptiveDuplexConsumer {
             )
             .is_err()
         {
-            self.adaptive_status
-                .fault
-                .store(AdaptiveDuplexFault::Resampler as u32, Ordering::Release);
+            self.latch_adaptive_fault(AdaptiveDuplexFault::Resampler);
             return false;
         }
         self.cache_cursor_samples = 0;
@@ -924,6 +924,7 @@ pub fn create_adaptive_duplex_bridge(
             observed_clock_epoch: 0,
             last_clock_input_frames: 0,
             last_clock_output_frames: 0,
+            fault_latched: false,
         },
         adaptive_status,
     ))
@@ -1246,6 +1247,53 @@ mod tests {
         assert_eq!(snapshot.fault, AdaptiveDuplexFault::None);
         assert!(!snapshot.clock_estimate_trusted);
         assert_eq!(consumer.fixed_capacity(), capacity);
+    }
+
+    #[test]
+    fn unsupported_adaptive_mismatch_latches_silence_until_bridge_rebuild() {
+        let adaptive_config = DuplexBridgeConfig {
+            channels: 1,
+            capacity_frames: 4_096,
+            target_fill_frames: 1_024,
+            correction_threshold_frames: 128,
+        };
+        let controller = DriftControllerConfig {
+            input_rate: 48_000,
+            output_rate: 48_000,
+            target_fill_frames: 1_024,
+            maximum_correction_ppm: 1.0,
+            fatal_saturation_updates: 1,
+            ..DriftControllerConfig::default()
+        };
+        let (producer, mut consumer, status) = create_adaptive_duplex_bridge(
+            adaptive_config,
+            DuplexFaultPolicy {
+                maximum_excursion_frames: 4_096,
+                ..DuplexFaultPolicy::default()
+            },
+            controller,
+            Box::new(crate::RubatoAsrc::default()),
+            256,
+        )
+        .unwrap();
+
+        producer.push_interleaved(&vec![0.25; 2_048], 1);
+        let mut first = vec![1.0; 256];
+        consumer.read_interleaved(&mut first, 1);
+        assert!(first.iter().all(|sample| *sample == 0.0));
+        let faulted = status.snapshot();
+        assert_eq!(faulted.fault, AdaptiveDuplexFault::Controller);
+        assert_eq!(faulted.duplex.health, DuplexHealth::Fatal);
+        assert_eq!(faulted.duplex.underflow_count, 0);
+
+        producer.push_interleaved(&vec![0.25; 256], 1);
+        let mut second = vec![1.0; 256];
+        consumer.read_interleaved(&mut second, 1);
+        assert!(second.iter().all(|sample| *sample == 0.0));
+        let still_faulted = status.snapshot();
+        assert_eq!(still_faulted.fault, AdaptiveDuplexFault::Controller);
+        assert_eq!(still_faulted.duplex.underflow_count, 0);
+        assert_eq!(still_faulted.clock_epoch, faulted.clock_epoch);
     }
 
     #[test]
