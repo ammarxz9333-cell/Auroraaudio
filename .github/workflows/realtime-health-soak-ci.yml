@@ -126,6 +126,7 @@ jobs:
             output/validation/realtime-health-soak-v1.json
             output/validation/realtime-health-soak.log
             output/validation/realtime-resilience-sim-v1.json
+            output/validation/realtime-resilience-sim-v1.json.transitions.json
             output/validation/realtime-resilience-sim.log
             output/validation/realtime-wall-clock-soak-v1.json
             output/validation/realtime-wall-clock-soak.log
