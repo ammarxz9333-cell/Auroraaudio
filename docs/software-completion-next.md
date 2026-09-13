@@ -1,0 +1,1 @@
+Next branch gates: eliminate incomplete runtime adapters, run full CI, then merge only if all software-reference and simulation truth boundaries remain explicit.
