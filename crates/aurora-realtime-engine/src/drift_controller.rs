@@ -393,7 +393,10 @@ mod tests {
             }
         }
         assert!((controller.feedforward_correction_ppm() + 250.0).abs() <= 5.0);
-        assert!(controller.observe_clock_frames(128, 128, true).unwrap().is_none());
+        assert!(controller
+            .observe_clock_frames(128, 128, true)
+            .unwrap()
+            .is_none());
         assert_eq!(controller.feedforward_correction_ppm(), 0.0);
     }
 
@@ -492,20 +495,17 @@ mod tests {
             ..DriftControllerConfig::default()
         };
         for ppm in [-250.0, 250.0] {
-            let report = simulate_adaptive_drift_inner(
-                ppm,
-                24 * 3_600,
-                config,
-                4_096,
-                Some(ppm),
-            )
-            .unwrap();
+            let report =
+                simulate_adaptive_drift_inner(ppm, 24 * 3_600, config, 4_096, Some(ppm)).unwrap();
             assert!(report.bounded, "{report:?}");
             let maximum_excursion = (report.maximum_fill_frames - config.target_fill_frames as f64)
                 .abs()
                 .max((report.minimum_fill_frames - config.target_fill_frames as f64).abs());
             assert!(maximum_excursion <= 3_072.0, "{report:?}");
-            assert!((report.final_correction_ppm + ppm).abs() < 5.0, "{report:?}");
+            assert!(
+                (report.final_correction_ppm + ppm).abs() < 5.0,
+                "{report:?}"
+            );
         }
     }
 }

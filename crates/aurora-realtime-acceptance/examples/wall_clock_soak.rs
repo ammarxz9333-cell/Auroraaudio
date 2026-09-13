@@ -162,7 +162,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         ));
     }
     if metrics.dropped_blocks != 0 {
-        violations.push(format!("unexpected dropped blocks: {}", metrics.dropped_blocks));
+        violations.push(format!(
+            "unexpected dropped blocks: {}",
+            metrics.dropped_blocks
+        ));
     }
     if metrics.fault != RealTimeFault::None {
         violations.push(format!("engine fault: {:?}", metrics.fault));

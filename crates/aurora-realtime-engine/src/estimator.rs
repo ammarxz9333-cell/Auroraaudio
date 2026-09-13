@@ -135,7 +135,10 @@ impl PpmEstimator {
         let index = usize::from(self.history_cursor);
         self.history[index] = ppm;
         self.history_cursor = (self.history_cursor + 1) % MEDIAN_WINDOW_COUNT as u8;
-        self.history_len = self.history_len.saturating_add(1).min(MEDIAN_WINDOW_COUNT as u8);
+        self.history_len = self
+            .history_len
+            .saturating_add(1)
+            .min(MEDIAN_WINDOW_COUNT as u8);
 
         let filtered = self.filtered_ppm();
         Ok(Some(PpmEstimate {
@@ -196,9 +199,7 @@ mod tests {
             let mut estimator = PpmEstimator::new(PpmEstimatorConfig::default()).unwrap();
             let mut final_estimate = None;
             for _ in 0..3 {
-                final_estimate = estimator
-                    .observe(input_per_window, 480_000, false)
-                    .unwrap();
+                final_estimate = estimator.observe(input_per_window, 480_000, false).unwrap();
             }
             let report = final_estimate.unwrap();
             assert!(report.trusted);
@@ -210,7 +211,10 @@ mod tests {
     #[test]
     fn discontinuity_rejects_partial_window_and_restarts_trust() {
         let mut estimator = PpmEstimator::new(PpmEstimatorConfig::default()).unwrap();
-        assert!(estimator.observe(240_060, 240_000, false).unwrap().is_none());
+        assert!(estimator
+            .observe(240_060, 240_000, false)
+            .unwrap()
+            .is_none());
         assert!(estimator.observe(128, 128, true).unwrap().is_none());
         let first_clean = estimator.observe(480_120, 480_000, false).unwrap().unwrap();
         assert!(!first_clean.trusted);
