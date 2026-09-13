@@ -747,19 +747,16 @@ impl AdaptiveDuplexConsumer {
         self.last_clock_input_frames = input_frames;
         self.last_clock_output_frames = output_frames;
 
-        match self
+        if let Some(ppm) = self
             .controller
             .observe_clock_frames(input_delta, output_delta, false)?
         {
-            Some(ppm) => {
-                self.adaptive_status
-                    .estimated_input_clock_ppm_bits
-                    .store(ppm.to_bits(), Ordering::Relaxed);
-                self.adaptive_status
-                    .clock_estimate_trusted
-                    .store(true, Ordering::Release);
-            }
-            None => {}
+            self.adaptive_status
+                .estimated_input_clock_ppm_bits
+                .store(ppm.to_bits(), Ordering::Relaxed);
+            self.adaptive_status
+                .clock_estimate_trusted
+                .store(true, Ordering::Release);
         }
         Ok(())
     }
