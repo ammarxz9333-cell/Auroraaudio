@@ -123,9 +123,7 @@ fn clock_case(input_clock_ppm: f64) -> Result<Value, Box<dyn std::error::Error>>
         )?;
         asrc.set_ratio(report.ratio)?;
         final_correction_ppm = report.correction_ppm;
-        fill += f64::from(SAMPLE_RATE)
-            * (input_clock_ppm + report.correction_ppm)
-            / 1_000_000.0;
+        fill += f64::from(SAMPLE_RATE) * (input_clock_ppm + report.correction_ppm) / 1_000_000.0;
         minimum_fill = minimum_fill.min(fill);
         maximum_fill = maximum_fill.max(fill);
         if !(0.0..CAPACITY_FRAMES as f64).contains(&fill) {
@@ -180,7 +178,8 @@ fn clock_case(input_clock_ppm: f64) -> Result<Value, Box<dyn std::error::Error>>
 fn clock_discontinuity_reacquire_case() -> Result<Value, Box<dyn std::error::Error>> {
     let mut controller = controller()?;
     let before = acquire_clock_estimate(&mut controller, 250.0)?;
-    if (before - 250.0).abs() > 5.0 || (controller.feedforward_correction_ppm() + 250.0).abs() > 5.0 {
+    if (before - 250.0).abs() > 5.0 || (controller.feedforward_correction_ppm() + 250.0).abs() > 5.0
+    {
         return Err("failed to acquire initial +250 ppm clock epoch".into());
     }
 
@@ -190,7 +189,8 @@ fn clock_discontinuity_reacquire_case() -> Result<Value, Box<dyn std::error::Err
     }
 
     let after = acquire_clock_estimate(&mut controller, -250.0)?;
-    if (after + 250.0).abs() > 5.0 || (controller.feedforward_correction_ppm() - 250.0).abs() > 5.0 {
+    if (after + 250.0).abs() > 5.0 || (controller.feedforward_correction_ppm() - 250.0).abs() > 5.0
+    {
         return Err("failed to reacquire -250 ppm clock epoch after discontinuity".into());
     }
 
@@ -211,7 +211,9 @@ fn clock_out_of_range_case() -> Result<Value, Box<dyn std::error::Error>> {
         false,
     );
     if result.is_ok() || controller.feedforward_correction_ppm() != 0.0 {
-        return Err("out-of-range clock estimate did not fail closed with feed-forward cleared".into());
+        return Err(
+            "out-of-range clock estimate did not fail closed with feed-forward cleared".into(),
+        );
     }
     Ok(json!({
         "input_clock_ppm": 5_000.0,
@@ -325,8 +327,12 @@ fn reconnect_flapping_case() -> Result<Value, Box<dyn std::error::Error>> {
         observed_backoffs.push(backoff);
         machine.transition(DuplexStateEvent::RecoveryRequested)?;
         machine.transition(DuplexStateEvent::RecoverySucceeded)?;
-        if machine.recovery_attempts() != expected_attempt || machine.state() != DuplexStreamState::Running {
-            return Err("successful reopen incorrectly reset flapping-device recovery history".into());
+        if machine.recovery_attempts() != expected_attempt
+            || machine.state() != DuplexStreamState::Running
+        {
+            return Err(
+                "successful reopen incorrectly reset flapping-device recovery history".into(),
+            );
         }
     }
 
