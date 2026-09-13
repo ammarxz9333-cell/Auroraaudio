@@ -74,6 +74,20 @@ if out_of_range.get("rejected") is not True:
 if float(out_of_range.get("feedforward_after_rejection_ppm", 1.0)) != 0.0:
     raise SystemExit("out-of-range clock rejection left stale feed-forward active")
 
+hard_latch = clock.get("adaptive_fault_latch") or {}
+if hard_latch.get("passed") is not True or hard_latch.get("fault_latched") is not True:
+    raise SystemExit("unsupported adaptive fault did not enter a persistent mute latch")
+if hard_latch.get("fault") != "Controller" or hard_latch.get("health") != "Fatal":
+    raise SystemExit("adaptive hard-fault latch did not publish Controller/Fatal status")
+if hard_latch.get("first_callback_muted") is not True or hard_latch.get("second_callback_muted") is not True:
+    raise SystemExit("adaptive hard-fault latch leaked non-silent output")
+if int(hard_latch.get("underflow_count", -1)) != 0:
+    raise SystemExit("latched adaptive hard fault was miscounted as a normal underflow")
+if hard_latch.get("clock_epoch_unchanged_after_latched_callback") is not True:
+    raise SystemExit("latched adaptive hard fault mutated its clock epoch without recovery")
+if hard_latch.get("requires_control_plane_bridge_rebuild") is not True:
+    raise SystemExit("adaptive hard fault did not preserve explicit control-plane recovery policy")
+
 jitter = transitions.get("clock_jitter_median_filter") or {}
 if jitter.get("passed") is not True:
     raise SystemExit("clock jitter profile did not pass")
@@ -125,7 +139,7 @@ if flapping.get("final_state") != "Faulted":
 
 print(
     "AURORA-RESILIENCE-EVIDENCE-PASS "
-    "clock=+/-250ppm@24h+jitter+step+discontinuity+out_of_range estimator+feedforward+RubatoAsrc "
+    "clock=+/-250ppm@24h+jitter+step+discontinuity+out_of_range+hard_latch estimator+feedforward+RubatoAsrc "
     "reconnect=bounded_success+exhaustion+flapping fail_closed=true"
 )
 PY
