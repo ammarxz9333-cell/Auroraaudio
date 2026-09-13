@@ -155,7 +155,6 @@ pub enum LiveDecodeError {
 pub struct LiveImmersiveRuntime<D, R> {
     decoder: D,
     renderer: R,
-    output_format: AudioFormat,
     listener: Listener,
     layout: Vec<Speaker>,
     policy: LiveDecodePolicy,
@@ -202,7 +201,9 @@ where
         }
 
         let info = decoder.info();
-        if policy.require_native_objects && info.output_semantics != DecoderOutputSemantics::ObjectScene {
+        if policy.require_native_objects
+            && info.output_semantics != DecoderOutputSemantics::ObjectScene
+        {
             return Err(LiveDecodeError::DecoderSemantics {
                 name: info.name,
                 actual: info.output_semantics,
@@ -227,7 +228,6 @@ where
         Ok(Self {
             decoder,
             renderer,
-            output_format,
             listener,
             layout,
             policy,
@@ -339,7 +339,8 @@ where
             if self.consecutive_non_object_packets >= self.policy.maximum_object_probe_packets {
                 self.latch_fault();
                 return Err(LiveDecodeError::InvalidDecodedFrame(
-                    "native object-scene evidence did not appear within the probe budget".to_owned(),
+                    "native object-scene evidence did not appear within the probe budget"
+                        .to_owned(),
                 ));
             }
             return Ok(self.report(false, Vec::new()));
@@ -380,8 +381,16 @@ where
     ) -> Result<LiveRenderedFrame, LiveDecodeError> {
         let source_audio = frame.decoded.audio;
         let objects = frame.decoded.objects;
-        validate_source_audio(&source_audio, &frame.channel_kinds, self.policy.maximum_pcm_channels)?;
-        validate_objects(&objects, self.policy.maximum_objects, self.policy.require_native_objects)?;
+        validate_source_audio(
+            &source_audio,
+            &frame.channel_kinds,
+            self.policy.maximum_pcm_channels,
+        )?;
+        validate_objects(
+            &objects,
+            self.policy.maximum_objects,
+            self.policy.require_native_objects,
+        )?;
         validate_bindings(
             &objects,
             &frame.channel_kinds,
@@ -396,10 +405,8 @@ where
                 gain: db_to_linear(object.gain_db),
             })
             .collect::<Vec<_>>();
-        let mut speaker_gains = vec![
-            SpeakerGain::default();
-            render_objects.len().saturating_mul(self.output_channels)
-        ];
+        let mut speaker_gains =
+            vec![SpeakerGain::default(); render_objects.len().saturating_mul(self.output_channels)];
         if !render_objects.is_empty() {
             self.renderer.render_gains(
                 &self.listener,
@@ -444,7 +451,8 @@ where
             .metrics
             .maximum_observed_pcm_channels
             .max(source_audio.channels.len());
-        self.metrics.maximum_observed_objects = self.metrics.maximum_observed_objects.max(objects.len());
+        self.metrics.maximum_observed_objects =
+            self.metrics.maximum_observed_objects.max(objects.len());
         self.metrics.decoded_frames = self.metrics.decoded_frames.saturating_add(1);
 
         Ok(LiveRenderedFrame {
@@ -536,7 +544,9 @@ fn validate_objects(
         ));
     }
     for (index, object) in objects.iter().enumerate() {
-        if objects[..index].iter().any(|previous| previous.id == object.id)
+        if objects[..index]
+            .iter()
+            .any(|previous| previous.id == object.id)
             || object.id.is_empty()
             || !object.position.x.is_finite()
             || !object.position.y.is_finite()
@@ -612,7 +622,8 @@ fn route_bed_channels(
             ))
         })?;
         for frame_index in 0..source.frame_count {
-            output.channels[output_index][frame_index] += source.channels[source_index][frame_index];
+            output.channels[output_index][frame_index] +=
+                source.channels[source_index][frame_index];
         }
     }
     Ok(())
@@ -704,11 +715,7 @@ mod tests {
             StreamingDecodedFrame {
                 decoded: DecodedFrame {
                     audio: AudioBlock {
-                        channels: vec![
-                            vec![0.10; 256],
-                            vec![0.25; 256],
-                            vec![0.10; 256],
-                        ],
+                        channels: vec![vec![0.10; 256], vec![0.25; 256], vec![0.10; 256]],
                         frame_count: 256,
                         presentation_time_seconds: 0.0,
                         discontinuity: false,
@@ -757,11 +764,16 @@ mod tests {
             Ok(())
         }
 
-        fn push_packet(&mut self, _packet: DecoderPacket<'_>) -> Result<DecodedBatch, DecoderError> {
+        fn push_packet(
+            &mut self,
+            _packet: DecoderPacket<'_>,
+        ) -> Result<DecodedBatch, DecoderError> {
             assert!(self.configured);
             if self.fail_packets > 0 {
                 self.fail_packets -= 1;
-                return Err(DecoderError::ExternalProcess("synthetic decoder fault".to_owned()));
+                return Err(DecoderError::ExternalProcess(
+                    "synthetic decoder fault".to_owned(),
+                ));
             }
             Ok(DecodedBatch {
                 frames: vec![Self::object_frame()],
@@ -877,7 +889,10 @@ mod tests {
             layout(),
             LiveDecodePolicy::default(),
         );
-        assert!(matches!(result, Err(LiveDecodeError::DecoderSemantics { .. })));
+        assert!(matches!(
+            result,
+            Err(LiveDecodeError::DecoderSemantics { .. })
+        ));
     }
 
     #[test]
@@ -899,7 +914,10 @@ mod tests {
             assert!(runtime.push_packet(bad).is_err());
             assert_eq!(runtime.state(), expected_state);
         }
-        assert!(matches!(runtime.push_packet(packet(false)), Err(LiveDecodeError::Faulted)));
+        assert!(matches!(
+            runtime.push_packet(packet(false)),
+            Err(LiveDecodeError::Faulted)
+        ));
         runtime.recover();
         assert_eq!(runtime.state(), LiveDecodeState::Searching);
     }
