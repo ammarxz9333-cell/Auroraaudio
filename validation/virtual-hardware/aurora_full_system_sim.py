@@ -3,7 +3,7 @@
 
 AuroraSim models the software/hardware boundary after the real Aurora output-DSP
 stage. It does not emulate physical electrical behavior. The lab verifies frame
-accounting, per-channel identity/order, TDM16 mapping, health limits and explicit
+accounting, per-channel identity/order, MCHStreamer TDM16 dual-TDM8 mapping, health limits and explicit
 fail-closed fault profiles on a laptop.
 """
 
@@ -24,6 +24,10 @@ CHANNELS = 12
 SAMPLE_RATE_HZ = 48_000
 SAMPLE_BYTES = 4
 DEFAULT_TDM_SLOTS = 16
+TDM_LANES = 2
+SLOTS_PER_LANE = 8
+SLOT_BITS = 32
+VALID_BITS = 24
 DEFAULT_LATENCY_FRAMES = 256
 DEFAULT_MAX_LATENCY_FRAMES = 1024
 MAX_HEALTHY_DRIFT_PPM = 100.0
@@ -148,14 +152,15 @@ def _tdm_bytes_from_pcm(
 
 
 def _count_nonzero_tdm_padding(tdm_bytes: bytes, frames: int, slots: int) -> int:
-    if slots == CHANNELS:
-        return 0
-    slot_bytes = slots * SAMPLE_BYTES
+    if slots != TDM_LANES * SLOTS_PER_LANE:
+        raise ValueError("MCHStreamer TDM16 requires exactly 16 logical slots")
+    frame_bytes = slots * SAMPLE_BYTES
     count = 0
     for frame_index in range(frames):
-        base = frame_index * slot_bytes
-        for slot in range(CHANNELS, slots):
-            offset = base + slot * SAMPLE_BYTES
+        base = frame_index * frame_bytes
+        # lane 0 = ch1..8; lane 1 = ch9..12 + four unused zero slots.
+        for logical_slot in range(CHANNELS, slots):
+            offset = base + logical_slot * SAMPLE_BYTES
             value = struct.unpack_from("<f", tdm_bytes, offset)[0]
             if value != 0.0:
                 count += 1
@@ -172,6 +177,10 @@ def describe() -> dict[str, Any]:
             "sample_rate_hz": SAMPLE_RATE_HZ,
             "channels": CHANNELS,
             "tdm_slots": DEFAULT_TDM_SLOTS,
+            "tdm_lanes": TDM_LANES,
+            "slots_per_lane": SLOTS_PER_LANE,
+            "slot_bits": SLOT_BITS,
+            "documented_valid_bits": VALID_BITS,
             "simulated_latency_frames": DEFAULT_LATENCY_FRAMES,
             "simulated_latency_budget_frames": DEFAULT_MAX_LATENCY_FRAMES,
             "maximum_healthy_drift_ppm": MAX_HEALTHY_DRIFT_PPM,
@@ -194,8 +203,8 @@ def simulate(
         raise ValueError(f"unknown fault profile: {fault}")
     evidence = _load_json(evidence_path)
     _, sample_rate_hz, expected_frames = _evidence_contract(evidence)
-    if tdm_slots < CHANNELS:
-        raise ValueError(f"tdm-slots must be >= {CHANNELS}")
+    if tdm_slots != TDM_LANES * SLOTS_PER_LANE:
+        raise ValueError("MCHStreamer TDM16 model requires exactly 16 logical slots")
     if latency_frames < 0:
         raise ValueError("latency-frames must be non-negative")
     if max_latency_frames < 0:
@@ -204,6 +213,7 @@ def simulate(
     source_sha = hashlib.sha256()
     sink_sha = hashlib.sha256()
     tdm_sha = hashlib.sha256()
+    tdm_lane_sha = [hashlib.sha256(), hashlib.sha256()]
     source_channel_sha = [hashlib.sha256() for _ in range(CHANNELS)]
     sink_channel_sha = [hashlib.sha256() for _ in range(CHANNELS)]
     source_frames = 0
@@ -283,6 +293,12 @@ def simulate(
                     padding_sample=padding_sample,
                 )
                 tdm_sha.update(tdm_bytes)
+                frame_stride = tdm_slots * SAMPLE_BYTES
+                lane_stride = SLOTS_PER_LANE * SAMPLE_BYTES
+                for frame_index in range(out_frames):
+                    base = frame_index * frame_stride
+                    tdm_lane_sha[0].update(tdm_bytes[base : base + lane_stride])
+                    tdm_lane_sha[1].update(tdm_bytes[base + lane_stride : base + 2 * lane_stride])
                 tdm_padding_nonzero_samples += _count_nonzero_tdm_padding(
                     tdm_bytes, out_frames, tdm_slots
                 )
@@ -388,9 +404,15 @@ def simulate(
             "channel_sha256": source_channel_hex,
         },
         "virtual_hardware": {
-            "model": "aurora-virtual-tdm16-dac-v2",
+            "model": "mchstreamer-tdm16-dual-tdm8-abstract-v3",
             "synchronous_clock_domain": True,
+            "tdm_mode": "TDM16 as two parallel TDM8 data lanes",
+            "tdm_lanes": TDM_LANES,
+            "slots_per_lane": SLOTS_PER_LANE,
+            "slot_bits": SLOT_BITS,
+            "documented_valid_bits": VALID_BITS,
             "tdm_slots": tdm_slots,
+            "lane_channel_map": {"lane0": list(range(0, 8)), "lane1": list(range(8, 16))},
             "assigned_channel_slots": list(range(CHANNELS)),
             "unused_zero_slots": list(range(CHANNELS, tdm_slots)),
             "tdm_padding_nonzero_samples": tdm_padding_nonzero_samples,
@@ -409,6 +431,7 @@ def simulate(
             "sink_pcm_sha256": sink_sha.hexdigest(),
             "sink_channel_sha256": sink_channel_hex,
             "tdm_stream_sha256": tdm_sha.hexdigest(),
+            "tdm_lane_sha256": [h.hexdigest() for h in tdm_lane_sha],
         },
         "channel_health": {
             "active_channel_indices": active_channels,
@@ -426,7 +449,7 @@ def simulate(
             "latency": "simulated_not_measured",
             "clock_drift": "simulated_not_measured",
             "sample_rate_fault": "simulated_not_physical_negotiation",
-            "electrical_usb_tdm_dac_behavior": "not_evaluated",
+            "electrical_usb_tdm_dac_behavior": "abstract_dual_tdm8_mapping_only; executable UAC2/24-bit wire contract lives in validation/simics/mchstreamer_contract.py",
             "physical_earc": "not_evaluated",
             "drm_service_compatibility": "not_evaluated",
             "dolby_certification_or_conformance": "not_proven",
@@ -481,6 +504,11 @@ def self_test() -> None:
             raise AssertionError("healthy self-test did not prove channel order")
         if not healthy["channel_health"]["pcm_identity_preserved"]:
             raise AssertionError("healthy self-test did not prove PCM identity")
+        hw = healthy["virtual_hardware"]
+        if hw["tdm_lanes"] != 2 or hw["slots_per_lane"] != 8:
+            raise AssertionError("healthy self-test did not prove dual-TDM8 mapping")
+        if hw["unused_zero_slots"] != [12, 13, 14, 15]:
+            raise AssertionError("healthy self-test did not prove four zero padding slots")
 
         for fault in FAULT_PROFILES:
             if fault == "none":
@@ -551,7 +579,7 @@ def main() -> int:
         + f"fault={report['fault_profile']} "
         + f"frames={hw['sink_frames']} "
         + f"channels={len(channels['active_channel_indices'])}/{CHANNELS} "
-        + f"tdm_slots={hw['tdm_slots']} "
+        + f"tdm={hw['tdm_lanes']}x{hw['slots_per_lane']} slots "
         + f"xruns={hw['xrun_count']} "
         + f"drift_ppm={hw['simulated_clock_drift_ppm']:.3f} "
         + f"order={channels['order_preserved']} pcm_identity={channels['pcm_identity_preserved']}"

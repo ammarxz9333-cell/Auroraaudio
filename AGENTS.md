@@ -4,7 +4,20 @@
 >
 > **Mandatory maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge. Keep it factual and compact.
 
-Last updated: **2026-09-12**
+Last updated: **2026-09-13**
+
+### Local Simics / live-ingress continuation (2026-09-13)
+
+- Local work started from remote `main-v2` base `d5ea4b2782867cb39f3b96acc7dd038129a9a965`; use only `C:\\Users\\ammar\\Auroraaudio-latest` as the working copy.
+- Intel Simics 7.84.0 vacuum + Python `pyobj` harness now passes **21 profiles**, including MMIO/DMA timing, fail-closed negatives, complete 3,624,960-frame DSP replay, speaker-load routing, and the MCHStreamer/UAC2 transport contract. Healthy replay: 15,104 periods, 75.52 simulated seconds, zero healthy xruns.
+- The output transport model was corrected from a single abstract 16-slot lane to documented **MCHStreamer TDM16 as two parallel TDM8 lanes**: lane0 channels 1-8, lane1 channels 9-12 plus zero channels 13-16; 8 x 32-bit slots/lane, documented 24 valid bits, FSYNC 48 kHz, BCLK 12.288 MHz, MCLK 24.576 MHz.
+- Generic UAC2 asynchronous feedback contract tests +/-250 ppm clock offset without underrun/overrun when feedback tracks the device; removing feedback intentionally produces underrun/overrun. This is protocol/transport simulation, not XMOS firmware or USB PHY evidence.
+- Fresh staged run `ef7888bb-c08c-4234-9dec-7065313523d6` completed **PASS**: official encoded Dolby fixture -> Simics TV boundary -> Harletty/JOC -> Omniphony 7.1.4 -> media-paced render -> Aurora DSP -> healthy/nine-fault transport suite -> Simics DMA -> dual-TDM8 -> ideal DAC/amplifier/12 speaker loads. Result: 3,624,960 frames, 75.52 s, pacing factor 0.9993981392, JOC evidence PASS, Simics 21/21 profiles PASS, no speaker-model error.
+- AuroraSim itself now reports `mchstreamer-tdm16-dual-tdm8-abstract-v3`; full 3,624,960-frame regression PASSes healthy with 12/12 channels and rejects all 9 fault profiles fail-closed.
+- Added `validation/physical/aurora_live_ingress.py`: software Gate A-Live classifier with chunk-boundary parsing, mid-stream acquisition, E-AC-3/JOC (`0x15`) vs AC-3 (`0x01`) classification, gap/byte-slip recovery, relock accounting and fail-closed malformed-burst handling. Self-test PASS: 10 bursts, 4 relocks, 10 transitions.
+- Added `validation/physical/aurora_alsa_iec61937_stream.py`: continuous S32_LE/2ch/192 kHz ALSA -> canonical IEC61937 converter. It locks one of the four explicit high16/low16 x LR/RL layouts and feeds Gate A-Live incrementally. Self-test PASS for all 4 layouts. Physical live eARC capture, real hardware reset/drop counters, USB/TDM electrical timing, real DAC loopback, protected-service Atmos and acoustics remain unproven.
+- `validation/simics/run-simics.ps1` remains the standalone Simics entry; `validation/simics/run_tv_to_speakers.py` runs the staged encoded-source-to-load path. Generated reports live under ignored `artifacts/` and are evidence from the local run, not repository fixtures.
+- QSP feasibility audit remains negative for a ready audio/HDMI/eARC model; no Netflix/DRM bypass or protected-stream extraction is part of Aurora.
 
 ## 1. Repository state and branch policy
 

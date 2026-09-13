@@ -9,11 +9,53 @@
   },
   "capabilities": [
     {
+      "id": "simics-tv-audio-ingress",
+      "status": "planned",
+      "evidence_class": "virtual",
+      "evidence": [
+        "validation/simics/tv_ingress.py",
+        "validation/simics/run_tv_to_speakers.py"
+      ],
+      "truth_boundary": "Standalone Simics fixture TV-audio passthrough and receiver DMA suite; exported AuroraSim integration pending. Does not implement a TV OS, Netflix application, DRM or physical eARC discovery/signalling."
+    },
+    {
+      "id": "simics-dac-speaker-loads",
+      "status": "planned",
+      "evidence_class": "virtual",
+      "evidence": [
+        "validation/simics/speaker_load.py",
+        "validation/simics/run_in_simics.py"
+      ],
+      "truth_boundary": "Standalone ideal 24-bit DAC and resistive-load model fed by actual Simics DMA output; exported AuroraSim integration pending. No vendor DAC, amplifier, acoustic model or physical speaker measurement."
+    },
+    {
+      "id": "simics-audio-dma-register-timing",
+      "status": "planned",
+      "evidence_class": "virtual",
+      "evidence": [
+        "validation/simics/run_in_simics.py",
+        "validation/simics/README.md"
+      ],
+      "truth_boundary": "Standalone Simics 7.84.0 vacuum harness passes 21 profiles including MMIO/DMA timing, full DSP PCM replay and MCHStreamer/UAC2 transport-contract checks. Export into AuroraSim capability mapping is still pending; no guest driver, vendor register accuracy or physical electrical timing is proven."
+    },
+    {
+      "id": "live-iec61937-stream-relock",
+      "status": "planned",
+      "evidence_class": "virtual",
+      "evidence": [
+        "validation/physical/aurora_live_ingress.py",
+        "validation/physical/aurora_alsa_iec61937_stream.py"
+      ],
+      "truth_boundary": "Software Gate A-Live classifier and continuous ALSA slot-conversion self-tests pass, including mid-stream acquisition and relock. Physical live eARC capture, hardware reset/drop counters and electrical timing remain pending."
+    },
+    {
       "id": "output-dsp-chain",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "output-dsp-chain",
-      "profiles": ["none"],
+      "profiles": [
+        "none"
+      ],
       "evidence": [
         "crates/aurora-dsp-basic/examples/process_7_1_4_file.rs",
         "validation/virtual-hardware/test-aurora-full-system-sim.sh"
@@ -24,96 +66,151 @@
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "render-contract",
-      "profiles": ["none"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "none"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "frame-accounting",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "frame-accounting",
-      "profiles": ["none", "dropout", "disconnect"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "none",
+        "dropout",
+        "disconnect"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "channel-activity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "channel-activity",
-      "profiles": ["none", "channel-silence"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "none",
+        "channel-silence"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "channel-order",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "channel-order",
-      "profiles": ["none", "channel-swap"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "none",
+        "channel-swap"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "pcm-identity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "pcm-identity",
-      "profiles": ["none", "channel-silence", "channel-swap"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "none",
+        "channel-silence",
+        "channel-swap"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "tdm16-slot-mapping",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "tdm16-slot-mapping",
-      "profiles": ["none", "tdm-padding-corruption"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "none",
+        "tdm-padding-corruption"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "xrun-dropout",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "xrun-dropout",
-      "profiles": ["dropout"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "dropout"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "device-disconnect",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "device-disconnect",
-      "profiles": ["disconnect"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "disconnect"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "clock-drift",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "clock-drift",
-      "profiles": ["drift"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "drift"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "sample-rate-integrity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "sample-rate-integrity",
-      "profiles": ["sample-rate-change"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "sample-rate-change"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "latency-budget",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "latency-budget",
-      "profiles": ["latency-spike"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "latency-spike"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "non-finite-protection",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "non-finite-protection",
-      "profiles": ["non-finite"],
-      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
+      "profiles": [
+        "non-finite"
+      ],
+      "evidence": [
+        "validation/virtual-hardware/aurora_full_system_sim.py"
+      ]
     },
     {
       "id": "moving-joc-metadata",

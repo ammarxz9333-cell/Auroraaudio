@@ -25,3 +25,9 @@ Thumbs.db
 *.tmp
 *.bak
 *.log
+
+# Local simulation/build evidence
+/.cache/
+/artifacts/
+**/__pycache__/
+*.pyc

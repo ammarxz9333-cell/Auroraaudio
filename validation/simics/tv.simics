@@ -1,0 +1,2 @@
+run-script "%simics%/targets/vacuum/vacuum.simics"
+run-script "%script%/tv_ingress.py"

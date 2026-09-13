@@ -1,0 +1,4 @@
+# Instantiate actual QSP hardware without booting an OS or opening windows.
+run-script "%simics%/targets/qsp-x86/qsp-system.include" memory_megs=4096 use_vmp=FALSE hide_consoles=TRUE show_gfx_con=FALSE create_osa=FALSE bios_image="%simics%/targets/qsp-x86/images/SIMICSX58IA32X64_1_4_0_r.fd"
+instantiate-components
+run-script "%script%/audit_qsp.py"

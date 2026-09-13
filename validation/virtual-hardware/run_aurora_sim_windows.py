@@ -147,6 +147,22 @@ def setup_asio(cache: Path, env: dict[str, str]) -> None:
                 break
 
 
+def prepare_windows_sim_renderer(renderer_dir: Path) -> None:
+    cargo = renderer_dir / "audio_output/Cargo.toml"
+    source = renderer_dir / "audio_output/src/cpal_output.rs"
+    cargo_text = cargo.read_text(encoding="utf-8")
+    old_dep = 'cpal = { version = "0.15.3", features = ["asio"] }'
+    if old_dep not in cargo_text:
+        raise RuntimeError("Pinned Omniphony Windows ASIO dependency shape changed")
+    cargo.write_text(cargo_text.replace(old_dep, 'cpal = "0.15.3"', 1), encoding="utf-8")
+    source_text = source.read_text(encoding="utf-8")
+    source_text = source_text.replace('const BACKEND: &str = "ASIO";', 'const BACKEND: &str = "WASAPI";', 1)
+    old_host = 'cpal::host_from_id(cpal::HostId::Asio)\n            .map_err(|e| anyhow!("{BACKEND} host not available: {:?}", e))'
+    if old_host not in source_text:
+        raise RuntimeError("Pinned Omniphony ASIO host selection shape changed")
+    source.write_text(source_text.replace(old_host, 'Ok(cpal::default_host())', 1), encoding="utf-8")
+
+
 def parse_iec(path: Path) -> tuple[int, int]:
     data = path.read_bytes()
     if not data.startswith(SYNC):
@@ -223,15 +239,13 @@ def main() -> int:
     env = os.environ.copy()
     phase("prepare pinned Windows renderer dependencies")
     run([rustup, "toolchain", "install", "stable", "--profile", "minimal"], env=env)
-    setup_asio(cache, env)
-    if not env.get("LIBCLANG_PATH"):
-        print("WARNING: LIBCLANG_PATH is not set. If bindgen fails, install LLVM: winget install -e --id LLVM.LLVM", file=sys.stderr)
 
     omnip_dir = cache / "Omniphony"
     clone_pinned(git, str(omnip["upstream"]), str(omnip["tested_version"]), str(omnip["pinned_commit"]), omnip_dir)
     renderer_dir = omnip_dir / "omniphony-renderer"
     run([git, "-C", str(renderer_dir), "apply", "--check", str(patch)])
     run([git, "-C", str(renderer_dir), "apply", str(patch)])
+    prepare_windows_sim_renderer(renderer_dir)
 
     omnip_target = cache / "omniphony-target"
     omnip_target.mkdir(parents=True, exist_ok=True)
@@ -295,6 +309,8 @@ def main() -> int:
             'version = "0.1.0"',
             'edition = "2024"',
             "publish = false",
+            "",
+            "[workspace]",
             "",
             "[dependencies]",
             'abi_stable = "0.11"',

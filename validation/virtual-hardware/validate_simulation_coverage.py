@@ -146,7 +146,8 @@ def self_test() -> None:
         raise AssertionError("duplicate capability was not rejected")
 
     missing = copy.deepcopy(contract)
-    sim_cap = missing["capabilities"][0]["simulator_capability"]
+    sim_cap = next(item["simulator_capability"] for item in missing["capabilities"]
+                   if item.get("status") == "covered" and item.get("evidence_class") == "virtual")
     missing["capabilities"] = [
         item for item in missing["capabilities"] if item.get("simulator_capability") != sim_cap
     ]
