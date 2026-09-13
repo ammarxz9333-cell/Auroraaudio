@@ -1,7 +1,10 @@
 #[path = "estimator.rs"]
-pub(crate) mod estimator;
+mod estimator;
 
+use estimator::{PpmEstimator, PpmEstimatorConfig, PpmEstimatorError};
 use thiserror::Error;
+
+const CLOCK_ESTIMATOR_WINDOW_SECONDS: u64 = 10;
 
 /// Adaptive duplex drift-controller configuration.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -45,7 +48,7 @@ pub enum DriftControllerFault {
     /// Configuration or update values are invalid.
     #[error("invalid drift controller configuration")]
     InvalidConfiguration,
-    /// Required correction remained outside the supported adaptive range.
+    /// Required correction or measured clock mismatch exceeded the supported range.
     #[error("clock mismatch exceeds the supported adaptive range")]
     CorrectionOutOfRange,
 }
@@ -83,6 +86,7 @@ pub struct DriftController {
     maximum_ratio: f64,
     saturation_count: u64,
     consecutive_saturation: u64,
+    estimator: PpmEstimator,
 }
 
 /// Hardware-independent adaptive drift simulation result.
@@ -125,6 +129,16 @@ impl DriftController {
             return Err(DriftControllerFault::InvalidConfiguration);
         }
         let nominal_ratio = f64::from(config.output_rate) / f64::from(config.input_rate);
+        let estimator = PpmEstimator::new(PpmEstimatorConfig {
+            input_rate: config.input_rate,
+            output_rate: config.output_rate,
+            window_output_frames: u64::from(config.output_rate)
+                .checked_mul(CLOCK_ESTIMATOR_WINDOW_SECONDS)
+                .ok_or(DriftControllerFault::InvalidConfiguration)?,
+            trusted_windows: 3,
+            maximum_abs_ppm: 2_000.0,
+        })
+        .map_err(|_| DriftControllerFault::InvalidConfiguration)?;
         Ok(Self {
             config,
             nominal_ratio,
@@ -135,7 +149,46 @@ impl DriftController {
             maximum_ratio: nominal_ratio,
             saturation_count: 0,
             consecutive_saturation: 0,
+            estimator,
         })
+    }
+
+    /// Feeds independent clock-domain frame accounting into the fixed-storage estimator.
+    ///
+    /// The estimator emits one measurement every ten seconds of output time and requires three
+    /// consecutive clean windows before it may drive feed-forward. `discontinuity` must be set
+    /// for XRUNs, reconnects, format/epoch changes, callback gaps, or any event that makes the
+    /// two frame counters incomparable. Such an event drops the partial measurement and clears
+    /// feed-forward fail-closed.
+    pub fn observe_clock_frames(
+        &mut self,
+        input_frames: u64,
+        output_frames: u64,
+        discontinuity: bool,
+    ) -> Result<Option<f64>, DriftControllerFault> {
+        let estimate = self
+            .estimator
+            .observe(input_frames, output_frames, discontinuity);
+        match estimate {
+            Ok(Some(estimate)) if estimate.trusted => {
+                self.set_feedforward_clock_ppm(estimate.ppm)?;
+                Ok(Some(estimate.ppm))
+            }
+            Ok(_) => {
+                if discontinuity {
+                    self.clear_feedforward();
+                }
+                Ok(None)
+            }
+            Err(PpmEstimatorError::EstimateOutOfRange) => {
+                self.clear_feedforward();
+                Err(DriftControllerFault::CorrectionOutOfRange)
+            }
+            Err(PpmEstimatorError::InvalidConfiguration) => {
+                self.clear_feedforward();
+                Err(DriftControllerFault::InvalidConfiguration)
+            }
+        }
     }
 
     /// Installs a trusted estimate of the input clock error.
@@ -188,8 +241,7 @@ impl DriftController {
         let integral_candidate = self.integral_ppm
             + normalized_error * self.config.integral_gain_ppm_per_second * elapsed_seconds;
         let proportional = normalized_error * self.config.proportional_gain_ppm;
-        let unconstrained =
-            self.feedforward_correction_ppm - proportional - integral_candidate;
+        let unconstrained = self.feedforward_correction_ppm - proportional - integral_candidate;
         let constrained = unconstrained.clamp(
             -self.config.maximum_correction_ppm,
             self.config.maximum_correction_ppm,
@@ -237,7 +289,7 @@ impl DriftController {
         self.nominal_ratio
     }
 
-    /// Clears integral, feed-forward, and extrema state for a new clock epoch.
+    /// Clears estimator, integral, feed-forward, and extrema state for a new clock epoch.
     pub fn reset(&mut self) {
         self.current_correction_ppm = 0.0;
         self.feedforward_correction_ppm = 0.0;
@@ -246,6 +298,7 @@ impl DriftController {
         self.maximum_ratio = self.nominal_ratio;
         self.saturation_count = 0;
         self.consecutive_saturation = 0;
+        self.estimator.reset();
     }
 }
 
@@ -323,6 +376,25 @@ mod tests {
         assert!(high.correction_ppm >= -2.0);
         let low = controller.update(800, -10, 256).unwrap();
         assert!(low.correction_ppm > high.correction_ppm);
+    }
+
+    #[test]
+    fn estimator_trust_drives_feedforward_and_discontinuity_clears_it() {
+        let config = DriftControllerConfig::default();
+        let mut controller = DriftController::new(config).unwrap();
+        for clean_window in 0..3 {
+            let estimate = controller
+                .observe_clock_frames(480_120, 480_000, false)
+                .unwrap();
+            if clean_window < 2 {
+                assert!(estimate.is_none());
+            } else {
+                assert!((estimate.unwrap() - 250.0).abs() <= 5.0);
+            }
+        }
+        assert!((controller.feedforward_correction_ppm() + 250.0).abs() <= 5.0);
+        assert!(controller.observe_clock_frames(128, 128, true).unwrap().is_none());
+        assert_eq!(controller.feedforward_correction_ppm(), 0.0);
     }
 
     #[test]
