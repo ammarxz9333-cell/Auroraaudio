@@ -5,8 +5,15 @@ on:
   pull_request:
     paths:
       - "config/oar-evaluation-v1.json"
+      - "crates/aurora-core/**"
+      - "crates/aurora-renderer-api/**"
+      - "crates/aurora-renderer-vbap/**"
+      - "crates/aurora-simulation-assurance/src/bin/aurora-oar-differential-probe.rs"
+      - "validation/open-immersive/aurora_oar_differential_probe.c"
+      - "validation/open-immersive/oar_differential.py"
       - "validation/open-immersive/oar_reference_evidence.py"
       - "validation/open-immersive/test-oar-reference.sh"
+      - "docs/oar-reference.md"
       - ".github/workflows/oar-reference-ci.yml"
       - "AGENTS.md"
 
@@ -23,14 +30,17 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
 
       - name: Install build tooling
         run: sudo apt-get update && sudo apt-get install --yes cmake ninja-build
 
-      - name: Self-test OAR evidence analyzer
-        run: python3 validation/open-immersive/oar_reference_evidence.py self-test
+      - name: Self-test OAR evidence analyzers
+        run: |
+          python3 validation/open-immersive/oar_reference_evidence.py self-test
+          python3 validation/open-immersive/oar_differential.py self-test
 
-      - name: Build and test exact pinned OAR reference
+      - name: Build, test and compare exact pinned OAR reference
         shell: bash
         run: bash validation/open-immersive/test-oar-reference.sh "${{ runner.temp }}/oar-reference"
 
@@ -41,6 +51,9 @@ jobs:
           name: oar-reference-${{ github.sha }}
           path: |
             ${{ runner.temp }}/oar-reference/oar-reference-evidence.json
+            ${{ runner.temp }}/oar-reference/oar-differential-oar.json
+            ${{ runner.temp }}/oar-reference/oar-differential-aurora.json
+            ${{ runner.temp }}/oar-reference/oar-differential-evidence.json
             ${{ runner.temp }}/oar-reference/ctest.log
           if-no-files-found: warn
           retention-days: 14
