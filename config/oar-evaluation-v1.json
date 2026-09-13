@@ -43,5 +43,33 @@
     "gain_db_tolerance": 0.1,
     "cross_renderer_gain_db_tolerance": 0.02
   },
-  "truth_boundary": "Successful upstream build/tests plus the focused stereo semantic differential establish only object-position/gain, finite-output, frame-accounting, and FL/FR ordering evidence against the exact pinned OAR reference. They do not prove IAMF ingestion or decoding, 5.1/7.1.4 differential equivalence, raw PCM identity, physical output, proprietary-format equivalence, or certification."
+  "multichannel_differential": {
+    "slice": "five-one-object-position-gain-v1",
+    "layout": "5.1",
+    "sample_rate": 48000,
+    "frames_per_case": 256,
+    "channel_order": [
+      "FL",
+      "FR",
+      "FC",
+      "LFE",
+      "SL",
+      "SR"
+    ],
+    "cases": [
+      "front_left_unity",
+      "center_unity",
+      "front_right_unity",
+      "surround_left_unity",
+      "surround_right_unity",
+      "center_minus_6db"
+    ],
+    "target_channel_min_fraction": 0.95,
+    "normalized_channel_tolerance": 0.05,
+    "lfe_relative_max": 0.000001,
+    "expected_gain_db": -6.0,
+    "gain_db_tolerance": 0.05,
+    "cross_renderer_gain_db_tolerance": 0.02
+  },
+  "truth_boundary": "Successful upstream build/tests plus the focused stereo and 5.1 semantic differentials establish only the explicitly mapped object-position/gain, finite-output, frame-accounting, channel-order and 5.1 object-to-LFE exclusion evidence against the exact pinned OAR reference. They do not prove IAMF ingestion or decoding, 7.1.4 differential equivalence, arbitrary trajectories, raw PCM identity, physical output, proprietary-format equivalence, or certification."
 }
