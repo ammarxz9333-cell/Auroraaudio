@@ -245,9 +245,7 @@ mod rendered_pcm_reference {
 
     fn read_u32(bytes: &[u8], offset: usize) -> Option<u32> {
         let slice = bytes.get(offset..offset.checked_add(4)?)?;
-        Some(u32::from_le_bytes([
-            slice[0], slice[1], slice[2], slice[3],
-        ]))
+        Some(u32::from_le_bytes([slice[0], slice[1], slice[2], slice[3]]))
     }
 
     fn parse_pcm32_wave(bytes: &[u8], format: AudioFormat) -> Result<AudioBlock, DecoderError> {
@@ -297,10 +295,8 @@ mod rendered_pcm_reference {
             })?;
         }
 
-        let (encoding, channels, sample_rate, block_align, bits_per_sample) =
-            wave_format.ok_or_else(|| {
-                DecoderError::ExternalProcess("WAVE fmt chunk is missing".to_owned())
-            })?;
+        let (encoding, channels, sample_rate, block_align, bits_per_sample) = wave_format
+            .ok_or_else(|| DecoderError::ExternalProcess("WAVE fmt chunk is missing".to_owned()))?;
         if encoding != 1 {
             return Err(DecoderError::ExternalProcess(format!(
                 "unsupported iamfdec WAVE encoding {encoding}; expected integer PCM"

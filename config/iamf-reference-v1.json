@@ -3,6 +3,7 @@
   "libiamf": {
     "upstream": "https://github.com/AOMediaCodec/libiamf",
     "commit": "e55e1832a608affe602de2ee39929bd7759a75ab",
+    "oar_submodule_commit": "3d1d23b807543f993a1d0cf0a9839c7f0746d94b",
     "integration": "external-process-validation-reference",
     "tool": "iamfdec",
     "build_options": {
