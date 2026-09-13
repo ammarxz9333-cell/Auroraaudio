@@ -15,13 +15,14 @@ Implemented on this branch:
 - `LiveImmersiveRuntime` in `aurora-source-runtime`: bounded priming, mute/fail-closed states, explicit recovery, native-object enforcement, source PCM validation, fixed-bed routing, object gain rendering and final speaker-PCM mixing;
 - real pinned Harletty JOC validation through the Aurora runtime contract, with plain E-AC-3 as a negative control. Immersive JOC Stack run `34765726373` passed the baseline, Harletty -> Aurora live runtime gate, OpenJOC differential lane and temporal fail-closed controls;
 - fixed-storage clock-rate estimator with discontinuity trust reset, median-of-3 filtering and trusted feed-forward into the existing ASRC controller; ratio changes remain slew-limited;
-- 24-hour +/-250 ppm controller simulation coverage;
-- bounded reconnect attempts with exponential backoff and stable-run reset semantics; repeated reconnect failures cannot loop forever;
+- executable resilience evidence now drives the real Rust `DriftController` estimator/feed-forward plus `RubatoAsrc` ratio/sample path for both +250 ppm and -250 ppm over 24 simulated hours while keeping a fixed-capacity ring bounded;
+- bounded reconnect attempts with exponential 250/500/1000/2000/4000 ms backoff, late successful reappearance, stable-run reset semantics and explicit fail-closed exhaustion after five failed attempts are exercised through the real `DuplexStateMachine`;
+- `Aurora Resilience Simulation CI` was added; its first executable Rust evidence run `34768737794` passed. Final-head validation still must be green before merge;
 - Gate A-Live verdict is threshold-driven rather than unconditional PASS, retained diagnostics are bounded, and live ingress/stream tooling is exercised on Linux and Windows;
 - real wall-clock realtime-health soak added alongside accelerated media-time tests;
-- `config/simulation-coverage-v1.json` now records `live-joc-decoder-runtime` as software-reference covered. Adaptive clock correction and reconnect recovery remain `planned` in the virtual coverage registry until the complete runtime behavior is exported through AuroraSim profiles; implementation existence alone is not enough to promote them.
+- `config/simulation-coverage-v1.json` records `live-joc-decoder-runtime` as software-reference covered and now promotes `adaptive-clock-rate-correction` plus `device-reconnect-recovery` to virtual covered capabilities backed by executable profiles. `validate_simulation_coverage.py` aggregates the full-system simulator and the dedicated resilience capability catalogue so the Rust resilience proof is not falsely attributed to the older Python sink model.
 
-Truth boundary: this closes software/runtime contracts only. It does **not** prove physical eARC, any particular USB/TDM/DAC path, protected-service Atmos, acoustic performance or Dolby certification.
+Truth boundary: this closes software/runtime/virtual contracts only. It does **not** prove physical eARC, physical clock correction or hotplug behavior, any particular USB/TDM/DAC path, protected-service Atmos, acoustic performance or Dolby certification.
 
 ### Existing Simics / live-ingress evidence (2026-09-13)
 
@@ -120,6 +121,16 @@ AuroraSim validates the pinned JOC path through deterministic virtual transport/
 
 The existing transport/DAC fixtures are **examples used to exercise interfaces**, not selected product hardware. Simulated latency is not measured latency.
 
+### PR #156 — executable resilience evidence
+
+`crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs` exercises the real Rust timing/recovery components rather than duplicating their behavior in Python:
+- +250 ppm and -250 ppm virtual clock cases run for 86,400 simulated seconds using the real fixed-storage PPM estimator, `DriftController` feed-forward/slew and `RubatoAsrc` ratio/sample processing;
+- the fixed-capacity virtual ring must remain bounded and finite for both directions;
+- reconnect success follows exactly 250, 500, 1000, 2000 and 4000 ms backoffs, preserves attempt history until `StableRunObserved`, then resets it;
+- the exhaustion profile performs the same five attempts and remains `Faulted` with no sixth attempt.
+
+The dedicated resilience capability catalogue is `validation/virtual-hardware/aurora_resilience_sim.py`; the mandatory coverage validator aggregates it with `aurora_full_system_sim.py`. This proves hardware-independent software behavior only, not physical clocks, backend hotplug or device reopen behavior.
+
 ### PR #149 / #150 — physical-ingress tooling only
 
 `validation/physical/aurora_physical_ingress.py` validates canonical IEC61937 capture properties including E-AC-3 type `0x15`, burst grid, error flags, padding, payload reconstruction, timestamps and externally supplied reset/drop counters.
@@ -136,7 +147,7 @@ A prior experiment demonstrated `eARC -> IEC61937 type 0x15 -> raw E-AC-3 -> FFm
 
 - continuous physical `eARC -> E-AC-3 JOC -> Aurora live runtime -> synchronous physical 7.1.4`;
 - real capture reset/drop truth from future selected ingress hardware;
-- physical output clocking/electrical mapping or loopback latency;
+- physical clock correction, device reconnect/hotplug, output clocking/electrical mapping or loopback latency;
 - legitimate Netflix/other protected-service Atmos compatibility through Aurora;
 - final DAC/amplifier/speaker design;
 - acoustic parity with Samsung Q995-class systems;
@@ -181,6 +192,7 @@ Key locations:
 - immersive/JOC validation: `validation/immersive/`;
 - Harletty-through-Aurora live contract proof: `validation/immersive/test-joc-aurora-live-runtime.sh`;
 - full-system virtual hardware: `validation/virtual-hardware/`, `docs/aurora-full-system-sim.md`;
+- resilience evidence: `crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs`, `validation/virtual-hardware/aurora_resilience_sim.py`, `validation/virtual-hardware/test-aurora-resilience-sim.sh`;
 - mandatory simulation coverage: `config/simulation-coverage-v1.json`, `validation/virtual-hardware/validate_simulation_coverage.py`;
 - physical ingress tooling: `validation/physical/`;
 - external components/licenses: `config/external-components-v1.json`, `THIRD_PARTY_LICENSES.md`.
@@ -189,8 +201,8 @@ Key locations:
 
 PR #156 is the current software-hardening critical path. Continue in this order:
 1. Keep the real Harletty -> Aurora live runtime gate green, including plain E-AC-3 fail-closed negative control and complete object-id -> PCM-channel binding validation.
-2. Export the new clock estimator + feed-forward + adaptive ASRC behavior into AuroraSim with explicit +/- drift, jitter, clock-step, discontinuity and out-of-range profiles; only then promote `adaptive-clock-rate-correction` from `planned` to `covered`.
-3. Export bounded reconnect/backoff/exhaustion behavior into AuroraSim, including repeated loss, immediate re-fault after reopen, stable-run reset and terminal fail-closed behavior; only then promote `device-reconnect-recovery`.
+2. Keep `Aurora Resilience Simulation CI` and the mandatory coverage registry green. Preserve the executable +/-250 ppm 24-hour estimator/feed-forward/ASRC proof and bounded reconnect success/exhaustion proof.
+3. Extend resilience profiles beyond the covered baseline: clock jitter/step/discontinuity/out-of-range transitions and repeated device loss/immediate re-fault after reopen. Keep each new profile mapped in the simulation coverage contract.
 4. Extend long-soak evidence so realtime callback health, bounded memory, clock correction and recovery counters are evaluated together under faults. Do not equate accelerated media time with wall-clock endurance.
 5. Keep ingress classification/relock bounded and fail-closed. A hardware adapter must provide honest reset/drop counters; do not synthesize missing counters.
 6. Continue the Aurora-vs-pinned-OAR differential slice described in `docs/oar-reference.md`, then independent ADM/BS.2127 references where licensing/interfaces permit.
@@ -218,6 +230,7 @@ Additional gates:
 - Aurora moving path: Aurora Moving JOC CI;
 - simulation coverage contract: `python3 validation/virtual-hardware/validate_simulation_coverage.py self-test` and `check`;
 - full-system virtual hardware: Aurora Full-System Sim Linux/Windows;
+- executable clock/reconnect resilience: `Aurora Resilience Simulation CI`;
 - realtime resilience: Sustained Realtime Health Soak;
 - physical ingress/capture tooling: Aurora Physical Ingress Tooling CI Linux/Windows.
 
