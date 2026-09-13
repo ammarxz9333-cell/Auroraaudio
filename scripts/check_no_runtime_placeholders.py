@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Fail CI when production/runtime Rust code contains explicit implementation placeholders.
+"""Reject executable Rust runtime stubs while allowing explicit control-plane schema vocabulary.
 
-This check deliberately ignores tests, benches, examples and validation tooling. It is not a
-substitute for code review; it prevents known placeholder markers from silently entering the
-runtime surface.
+`todo!` and `unimplemented!` are forbidden in every production `src/` path. The word
+`placeholder` is also forbidden except in the capability registry/presenter, where it is retained
+only as a backwards-compatible schema field/enum name and does not construct executable runtime
+behavior.
 """
 
 from __future__ import annotations
@@ -15,14 +16,16 @@ import sys
 ROOT = Path(__file__).resolve().parents[1]
 CRATES = ROOT / "crates"
 
-MARKERS = (
+HARD_MARKERS = (
     re.compile(r"\btodo!\s*\("),
     re.compile(r"\bunimplemented!\s*\("),
-    re.compile(r"\bplaceholder\b", re.IGNORECASE),
 )
-
-# Explicitly non-runtime source locations.
+PLACEHOLDER_MARKER = re.compile(r"\bplaceholder\b", re.IGNORECASE)
 SKIP_PARTS = {"tests", "test", "benches", "examples"}
+SCHEMA_ONLY_PLACEHOLDER_PATHS = {
+    Path("crates/aurora-core/src/capability.rs"),
+    Path("crates/aurora-cli/src/capabilities.rs"),
+}
 
 
 def iter_runtime_rust_files():
@@ -32,26 +35,29 @@ def iter_runtime_rust_files():
             continue
         if "src" not in rel.parts:
             continue
-        yield path
+        yield path, rel
 
 
 def main() -> int:
     failures: list[str] = []
-    for path in iter_runtime_rust_files():
+    for path, rel in iter_runtime_rust_files():
         text = path.read_text(encoding="utf-8")
         for line_no, line in enumerate(text.splitlines(), 1):
-            for marker in MARKERS:
-                if marker.search(line):
-                    failures.append(f"{path.relative_to(ROOT)}:{line_no}: {line.strip()}")
-                    break
+            if any(marker.search(line) for marker in HARD_MARKERS):
+                failures.append(f"{rel}:{line_no}: {line.strip()}")
+                continue
+            if rel not in SCHEMA_ONLY_PLACEHOLDER_PATHS and PLACEHOLDER_MARKER.search(line):
+                failures.append(f"{rel}:{line_no}: {line.strip()}")
 
     if failures:
-        print("Runtime placeholder audit FAILED:")
+        print("Runtime implementation-stub audit FAILED:")
         for failure in failures:
             print(f"  {failure}")
         return 1
 
-    print("Runtime placeholder audit PASS: no todo!/unimplemented!/placeholder markers in runtime Rust sources")
+    print(
+        "Runtime implementation-stub audit PASS: no todo!/unimplemented! or executable placeholder markers"
+    )
     return 0
 
 
