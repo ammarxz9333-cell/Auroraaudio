@@ -97,7 +97,7 @@
         "channel-silence"
       ],
       "evidence": [
-        "validation/virtual-hardware/aurora_full-system-sim.py"
+        "validation/virtual-hardware/aurora_full_system_sim.py"
       ]
     },
     {
