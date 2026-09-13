@@ -291,6 +291,8 @@
       "profiles": [
         "clock-correction-plus-250ppm",
         "clock-correction-minus-250ppm",
+        "clock-jitter-median-filter",
+        "clock-step-bounded-slew",
         "clock-discontinuity-reacquire",
         "clock-out-of-range-fail-closed"
       ],
@@ -299,10 +301,11 @@
         "crates/aurora-realtime-engine/src/drift_controller.rs",
         "crates/aurora-realtime-engine/src/asrc.rs",
         "crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs",
+        "crates/aurora-realtime-audio-sim/examples/resilience_transition_evidence.rs",
         "validation/virtual-hardware/aurora_resilience_sim.py",
         "validation/virtual-hardware/test-aurora-resilience-sim.sh"
       ],
-      "truth_boundary": "Executable virtual evidence drives Aurora's real fixed-storage PPM estimator, slew-limited DriftController feed-forward and RubatoAsrc ratio/sample path for both +250 ppm and -250 ppm over a simulated 24 hours while keeping a fixed-capacity ring bounded. It also requires discontinuity to clear stale trust/feed-forward before reacquiring a reversed clock epoch and rejects an out-of-range 5000 ppm relationship fail-closed. This does not constitute physical clock measurement or prove a specific USB/TDM/audio device."
+      "truth_boundary": "Executable virtual evidence drives Aurora's real fixed-storage PPM estimator, slew-limited DriftController feed-forward and RubatoAsrc ratio/sample path for both +250 ppm and -250 ppm over a simulated 24 hours while keeping a fixed-capacity ring bounded. It also requires median filtering to reject bounded window-to-window clock jitter, continuous +250 to -250 ppm clock steps to converge through the configured <=2 ppm/update ASRC slew path, discontinuity to clear stale trust/feed-forward before reacquiring a reversed clock epoch, and an out-of-range 5000 ppm relationship to fail closed. This does not constitute physical clock measurement or prove a specific USB/TDM/audio device."
     },
     {
       "id": "device-reconnect-recovery",
