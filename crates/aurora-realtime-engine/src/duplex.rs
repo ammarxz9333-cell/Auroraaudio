@@ -1263,7 +1263,6 @@ mod tests {
             input_rate: 48_000,
             output_rate: 48_000,
             target_fill_frames: 8_192,
-            maximum_excursion_frames: 16_384,
             ..DriftControllerConfig::default()
         };
         let (producer, mut consumer, status) = create_adaptive_duplex_bridge(
@@ -1294,7 +1293,10 @@ mod tests {
         }
         let trusted = status.snapshot();
         assert!(trusted.clock_estimate_trusted, "{trusted:?}");
-        assert!((trusted.estimated_input_clock_ppm - 250.0).abs() <= 8.0, "{trusted:?}");
+        assert!(
+            (trusted.estimated_input_clock_ppm - 250.0).abs() <= 8.0,
+            "{trusted:?}"
+        );
         assert!(trusted.correction_ppm < 0.0, "{trusted:?}");
         assert_eq!(trusted.fault, AdaptiveDuplexFault::None);
 
@@ -1321,7 +1323,10 @@ mod tests {
         }
         let reacquired = status.snapshot();
         assert!(reacquired.clock_estimate_trusted, "{reacquired:?}");
-        assert!((reacquired.estimated_input_clock_ppm + 250.0).abs() <= 8.0, "{reacquired:?}");
+        assert!(
+            (reacquired.estimated_input_clock_ppm + 250.0).abs() <= 8.0,
+            "{reacquired:?}"
+        );
         assert!(reacquired.correction_ppm > 0.0, "{reacquired:?}");
         assert_eq!(reacquired.fault, AdaptiveDuplexFault::None);
         assert_eq!(reacquired.duplex.overflow_count, 0);
