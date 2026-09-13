@@ -8,17 +8,22 @@ fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 CONFIG="$ROOT_DIR/config/oar-evaluation-v1.json"
-ANALYZER="$ROOT_DIR/validation/open-immersive/oar_reference_evidence.py"
+REFERENCE_ANALYZER="$ROOT_DIR/validation/open-immersive/oar_reference_evidence.py"
+DIFFERENTIAL_ANALYZER="$ROOT_DIR/validation/open-immersive/oar_differential.py"
+OAR_PROBE_SOURCE="$ROOT_DIR/validation/open-immersive/aurora_oar_differential_probe.c"
 OUTPUT_DIR=${1:-"$(mktemp -d "${TMPDIR:-/tmp}/aurora-oar-reference.XXXXXX")"}
 SRC_DIR="$OUTPUT_DIR/oar"
 BUILD_DIR="$OUTPUT_DIR/build"
 CTEST_LOG="$OUTPUT_DIR/ctest.log"
-REPORT="$OUTPUT_DIR/oar-reference-evidence.json"
+REFERENCE_REPORT="$OUTPUT_DIR/oar-reference-evidence.json"
+OAR_DIFFERENTIAL_JSON="$OUTPUT_DIR/oar-differential-oar.json"
+AURORA_DIFFERENTIAL_JSON="$OUTPUT_DIR/oar-differential-aurora.json"
+DIFFERENTIAL_REPORT="$OUTPUT_DIR/oar-differential-evidence.json"
 
-for cmd in git python3 cmake ctest; do
+for cmd in git python3 cmake ctest cargo; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
-for path in "$CONFIG" "$ANALYZER"; do
+for path in "$CONFIG" "$REFERENCE_ANALYZER" "$DIFFERENTIAL_ANALYZER" "$OAR_PROBE_SOURCE"; do
   [[ -f "$path" ]] || { echo "missing required file: $path" >&2; exit 2; }
 done
 
@@ -53,6 +58,17 @@ ACTUAL_COMMIT="$(git -C "$SRC_DIR" rev-parse HEAD)"
 [[ -f "$SRC_DIR/LICENSE" ]] || { echo "OAR LICENSE missing" >&2; exit 1; }
 [[ -f "$SRC_DIR/PATENTS" ]] || { echo "OAR PATENTS missing" >&2; exit 1; }
 
+# Inject only a validation executable into the temporary checkout. It is not
+# registered with CTest, so the upstream 6/6 reference test set remains intact.
+cp "$OAR_PROBE_SOURCE" "$SRC_DIR/tests/examples/aurora_oar_differential_probe.c"
+cat >> "$SRC_DIR/tests/examples/CMakeLists.txt" <<'CMAKE'
+
+# Aurora external-reference differential probe (temporary CI injection only).
+add_executable(aurora_oar_differential_probe aurora_oar_differential_probe.c)
+target_link_libraries(aurora_oar_differential_probe PRIVATE oar_test_common)
+set_property(TARGET aurora_oar_differential_probe PROPERTY C_STANDARD 99)
+CMAKE
+
 echo "== Configure pinned OAR =="
 cmake -S "$SRC_DIR" -B "$BUILD_DIR" \
   -DCMAKE_BUILD_TYPE=Release \
@@ -66,12 +82,33 @@ cmake --build "$BUILD_DIR" --parallel 2
 echo "== Run upstream OAR tests =="
 ctest --test-dir "$BUILD_DIR" --output-on-failure --output-log "$CTEST_LOG"
 
-echo "== Produce Aurora evidence =="
-python3 "$ANALYZER" analyze \
+echo "== Run pinned OAR semantic probe =="
+OAR_PROBE="$(find "$BUILD_DIR" -type f -name 'aurora_oar_differential_probe' -perm -u+x -print -quit)"
+[[ -n "$OAR_PROBE" ]] || { echo "OAR differential probe executable not found" >&2; exit 1; }
+"$OAR_PROBE" "$OAR_DIFFERENTIAL_JSON"
+
+echo "== Run Aurora semantic probe =="
+(
+  cd "$ROOT_DIR"
+  cargo run --quiet --locked -p aurora-simulation-assurance \
+    --bin aurora-oar-differential-probe -- \
+    --output "$AURORA_DIFFERENTIAL_JSON"
+)
+
+echo "== Compare Aurora against pinned OAR semantics =="
+python3 "$DIFFERENTIAL_ANALYZER" analyze \
+  --config "$CONFIG" \
+  --aurora "$AURORA_DIFFERENTIAL_JSON" \
+  --oar "$OAR_DIFFERENTIAL_JSON" \
+  --output "$DIFFERENTIAL_REPORT"
+
+echo "== Produce pinned-reference evidence =="
+python3 "$REFERENCE_ANALYZER" analyze \
   --config "$CONFIG" \
   --repo "$SRC_DIR" \
   --ctest-log "$CTEST_LOG" \
-  --output "$REPORT"
+  --output "$REFERENCE_REPORT"
 
 echo "AURORA OAR REFERENCE PASS"
-echo "report=$REPORT"
+echo "reference_report=$REFERENCE_REPORT"
+echo "differential_report=$DIFFERENTIAL_REPORT"
