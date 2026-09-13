@@ -29,6 +29,16 @@ Last updated: **2026-09-13**
 - The first ARM64 attempt exposed one Omniphony PipeWire FFI portability bug (`*const i8` vs platform `c_char`). Aurora's pinned low-latency patch now uses `std::ffi::c_char`; ARM64 passes and x86_64 Immersive JOC Stack run `34758033040` also passes, proving no x86 regression.
 - **Platform conclusion:** Linux/AArch64 software compatibility for Aurora + Harletty + Omniphony 7.1.4 is proven. STM32MP257 remains **unproven** until the exact stack is benchmarked on its dual Cortex-A35/OpenSTLinux target with runtime memory, SAI/SPDIFRX DMA/IRQ, clocking, long-soak and physical I/O evidence.
 
+### PR #157 — focused Aurora-vs-OAR stereo differential (2026-09-13)
+
+- PR #157 adds the first executable Aurora-vs-pinned-OAR differential slice without changing Aurora's production renderer or hardware assumptions.
+- Scope is deliberately narrow: stereo, 48 kHz, 256 frames/case, explicit `[FL, FR]` order, semantic left/center/right object positions and centered `-6 dB` gain.
+- Aurora uses `-45/0/+45` degrees for left/center/right; pinned OAR uses `+45/0/-45`. The lane maps semantic position explicitly instead of pretending the two sign conventions are identical.
+- OAR Reference CI run `34785307888` passed the exact pinned OAR commit `5601d50c05a5e71cac7e80babeff7dd2a53b2060`, upstream 6/6 tests, the temporary OAR probe, the Aurora `VbapRenderer` probe and all differential invariants.
+- First evidence: normalized FL/FR delta was `0.0` in all four semantic cases; measured gain delta was `-6.000000728231523 dB` for Aurora and `-6.000000491731033 dB` for OAR, cross-renderer difference `2.3650049030266018e-7 dB`.
+- Acceptance tolerances were tightened after that evidence to normalized-channel `0.02`, center balance `0.02`, dominance margin `0.8`, gain `0.1 dB`, cross-renderer gain `0.02 dB`.
+- `oar-stereo-object-semantics` is declared `covered` as `software_reference`; `iamf-oar-open-rendering` remains `planned`. This does not prove IAMF ingestion/decoding, 5.1/7.1.4 differential equivalence, raw PCM identity, physical output or certification.
+
 ## 1. Repository state and branch policy
 
 - **Single long-lived source of truth:** `main-v2`.
@@ -48,7 +58,7 @@ Latest merged milestones:
 
 Additional merged milestones:
 - PR #152, `b3a3d831062c1528720e7a25c7f42b4e5c227efe`: mandatory simulation coverage, real Aurora output DSP, expanded virtual faults and Linux/Windows parity; all six final-head workflows succeeded.
-- PR #154, `eee052e66efbe2ca1312616d0567c9561cd74c3d`: pinned external AOMedia OAR reference; all six final-head workflows succeeded. Aurora-vs-OAR differential rendering is still unproven.
+- PR #154, `eee052e66efbe2ca1312616d0567c9561cd74c3d`: pinned external AOMedia OAR reference; all six final-head workflows succeeded. Focused stereo differential evidence is being added separately in PR #157; actual IAMF decode/render remains unproven.
 
 Completed trackers include #118, #119, #130, #132, #135, #141, #145, #147.
 
@@ -159,7 +169,7 @@ Verified final head `c4b5a6117b9c16d6dfec2a86a805dd33ad2808e5`: base CI 34720912
 
 OAR 1.0.0 is pinned to `5601d50c05a5e71cac7e80babeff7dd2a53b2060`; upstream reference evidence reports 6/6 tests passing. At final head `b6157af226fdd33e13a47518258bab4b4b27fa75`, OAR Reference CI 34721618582, base CI 34721618591, Linux simulation 34721618579, Windows simulation 34721618600, Immersive JOC Stack 34721618563 and Moving JOC 34721618569 all succeeded.
 
-See `docs/oar-reference.md` and `config/oar-evaluation-v1.json`. OAR stays external; `iamf-oar-open-rendering` remains planned until executable Aurora-vs-OAR differential evidence exists.
+See `docs/oar-reference.md` and `config/oar-evaluation-v1.json`. OAR stays external. PR #157 adds a focused stereo semantic differential, but `iamf-oar-open-rendering` remains planned because Aurora's actual IAMF ingress/decode/render path is still unproven.
 
 ### PR #149 — physical Gate A admission validator
 
@@ -219,6 +229,7 @@ This proves only DD+/E-AC-3 extraction/5.1 decoding in that tested setup. The lo
 - a real #143 Gate A capture under the merged validator;
 - authored object-position correctness;
 - IAMF/OAR decode/render integration;
+- multichannel Aurora-vs-OAR differential equivalence for 5.1/7.1.4;
 - ADM/BS.2127 differential rendering against EAR/libear;
 - binaural/head-tracked rendering validation;
 - adaptive runtime clock-rate correction/ASRC;
@@ -261,6 +272,7 @@ Key locations:
 - realtime engine: `crates/aurora-realtime-engine/`;
 - config/runtime: `crates/aurora-config/`, `aurora-runtime-assembly/`, `aurora-runtime-materialization/`, `aurora-runtime-inspection/`;
 - immersive/JOC validation: `validation/immersive/`;
+- external OAR differential: `config/oar-evaluation-v1.json`, `docs/oar-reference.md`, `validation/open-immersive/`;
 - full-system virtual hardware: `validation/virtual-hardware/`, `docs/aurora-full-system-sim.md`;
 - mandatory simulation coverage: `config/simulation-coverage-v1.json`, `validation/virtual-hardware/validate_simulation_coverage.py`;
 - physical Gate A: `validation/physical/aurora_physical_ingress.py`;
@@ -270,24 +282,23 @@ Key locations:
 
 ## 6. Current work / Next actions — issue #143 + requested world-class hardening
 
-The physical #143 chain remains the acceptance critical path. In parallel, the user explicitly requested continuous comparison against leading immersive-audio platforms/projects and a simulator that cannot silently omit new Aurora capabilities. PR #152 and the initial external OAR reference (#154) are merged and green. The next software item is a focused Aurora-vs-OAR differential lane; #143 still requires real hardware.
+The physical #143 chain remains the acceptance critical path. In parallel, PR #157 implements the first focused Aurora-vs-pinned-OAR stereo semantic differential while keeping OAR external and IAMF unproven. After PR #157 is merged and its final-head gates are green, the next software-hardening step is to extend only genuinely overlapping reference semantics rather than declaring broad format equivalence.
 
 Next actions, in order:
-1. Implement the first Aurora-vs-pinned-OAR differential slice described in `docs/oar-reference.md`: overlapping object-position/gain semantics, finite output, frame accounting and channel ordering. Use explicit tolerances/invariants, not raw PCM identity across different render algorithms.
-2. Preserve the green external OAR reference, Linux/Windows full-system, base CI and immersive/JOC gates. Keep IAMF/OAR integration marked planned until its own executable evidence exists; do not replace the stable JOC renderer by recency alone.
-3. Add independent ADM/BS.2127 differential-reference coverage with EBU EAR/libear/BEAR where licensing and interfaces permit; keep GPL/incompatible code external.
-4. Only promote IAMF/OAR, ADM, binaural/head-tracking, adaptive clock correction or reconnect recovery from `planned` when executable evidence exists and the simulator/coverage contract is updated in the same change.
-5. Resume physical #143: assemble/reuse the existing Lindy 38368 / SiI9437 -> Pi 5 I2S capture path.
-6. On the real Linux capture host run `arecord -l`; identify the actual capture PCM. Do not invent or hard-code a device name before this step.
-7. Play the exact pinned carrier and run `validation/physical/aurora_alsa_iec61937_capture.py capture` with the real PCM device. Preserve raw ALSA capture, `arecord` hw params/stderr, monotonic timestamps and canonical `.spdif` output.
-8. Obtain trustworthy reset/drop counters from the real capture driver/adapter. `arecord` xrun text alone is diagnostic and does not substitute for these counters.
-9. Run `validation/physical/aurora_physical_ingress.py analyze --require-capture-metadata`; require 2360 type-`0x15` bursts, exact 24576-byte grid, zero resets/drops/padding mutation and reconstructed pinned SHA.
-10. Feed the accepted physical capture into the unchanged Aurora moving-JOC path and require moving-JOC plus full-system Linux/Windows gates to remain green.
-11. Attach MCHStreamer Lite TDM16 @48 kHz; verify one synchronous 16-slot output clock domain.
-12. Attach two synchronized 8-channel DAC stages; verify electrical activity and exact mapping on 12 used outputs.
-13. Record ALSA identity/format, buffer/period settings, expected vs actual frames, xruns, CPU load, clock/drift and physical loopback latency where a return path exists.
-14. Close #143 only after one full-duration run proves `physical eARC capture -> raw JOC preservation -> Aurora moving-object render -> synchronous physical 12-channel output`.
-15. Only then test legitimate Netflix/other service Atmos separately, followed by final DAC/amplifier/speaker and wireless transport work.
+1. Preserve the green pinned OAR reference and focused stereo differential, then extend comparable object-position/gain semantics to a common multichannel layout (5.1 first, then 7.1.4 only where OAR and Aurora expose an explicit comparable speaker contract). Keep IAMF/OAR integration `planned` until Aurora's real IAMF boundary has executable evidence.
+2. Add independent ADM/BS.2127 differential-reference coverage with EBU EAR/libear/BEAR where licensing and interfaces permit; keep GPL/incompatible code external.
+3. Only promote IAMF/OAR, ADM, binaural/head-tracking, adaptive clock correction or reconnect recovery from `planned` when executable evidence exists and the simulator/coverage contract is updated in the same change.
+4. Resume physical #143: assemble/reuse the existing Lindy 38368 / SiI9437 -> Pi 5 I2S capture path.
+5. On the real Linux capture host run `arecord -l`; identify the actual capture PCM. Do not invent or hard-code a device name before this step.
+6. Play the exact pinned carrier and run `validation/physical/aurora_alsa_iec61937_capture.py capture` with the real PCM device. Preserve raw ALSA capture, `arecord` hw params/stderr, monotonic timestamps and canonical `.spdif` output.
+7. Obtain trustworthy reset/drop counters from the real capture driver/adapter. `arecord` xrun text alone is diagnostic and does not substitute for these counters.
+8. Run `validation/physical/aurora_physical_ingress.py analyze --require-capture-metadata`; require 2360 type-`0x15` bursts, exact 24576-byte grid, zero resets/drops/padding mutation and reconstructed pinned SHA.
+9. Feed the accepted physical capture into the unchanged Aurora moving-JOC path and require moving-JOC plus full-system Linux/Windows gates to remain green.
+10. Attach MCHStreamer Lite TDM16 @48 kHz; verify one synchronous 16-slot output clock domain.
+11. Attach two synchronized 8-channel DAC stages; verify electrical activity and exact mapping on 12 used outputs.
+12. Record ALSA identity/format, buffer/period settings, expected vs actual frames, xruns, CPU load, clock/drift and physical loopback latency where a return path exists.
+13. Close #143 only after one full-duration run proves `physical eARC capture -> raw JOC preservation -> Aurora moving-object render -> synchronous physical 12-channel output`.
+14. Only then test legitimate Netflix/other service Atmos separately, followed by final DAC/amplifier/speaker and wireless transport work.
 
 Other queued trackers:
 - #115: evaluate newer Omniphony behind a separate reference lane; do not upgrade stable pin by recency alone;
