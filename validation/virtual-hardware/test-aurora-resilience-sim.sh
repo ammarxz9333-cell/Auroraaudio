@@ -8,6 +8,7 @@ fi
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 REPORT=${1:-"${TMPDIR:-/tmp}/aurora-resilience-sim.json"}
+TRANSITION_REPORT="${REPORT}.transitions.json"
 
 for cmd in cargo python3; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
@@ -15,15 +16,21 @@ done
 
 printf '\n== Aurora resilience simulation: real Rust controller/ASRC/FSM evidence ==\n'
 cargo run --quiet --release -p aurora-realtime-audio-sim --example resilience_evidence -- "$REPORT"
+cargo run --quiet --release -p aurora-realtime-audio-sim --example resilience_transition_evidence -- "$TRANSITION_REPORT"
 
 test -s "$REPORT" || { echo "resilience report missing: $REPORT" >&2; exit 1; }
-python3 - "$REPORT" <<'PY'
+test -s "$TRANSITION_REPORT" || { echo "resilience transition report missing: $TRANSITION_REPORT" >&2; exit 1; }
+python3 - "$REPORT" "$TRANSITION_REPORT" <<'PY'
 import json, pathlib, sys
 
 path = pathlib.Path(sys.argv[1])
+transition_path = pathlib.Path(sys.argv[2])
 report = json.loads(path.read_text(encoding="utf-8"))
+transitions = json.loads(transition_path.read_text(encoding="utf-8"))
 if report.get("verdict") != "pass":
     raise SystemExit("resilience report verdict is not pass")
+if transitions.get("verdict") != "pass":
+    raise SystemExit("resilience transition report verdict is not pass")
 
 clock = report.get("adaptive_clock_rate_correction") or {}
 cases = clock.get("cases") or []
@@ -67,6 +74,29 @@ if out_of_range.get("rejected") is not True:
 if float(out_of_range.get("feedforward_after_rejection_ppm", 1.0)) != 0.0:
     raise SystemExit("out-of-range clock rejection left stale feed-forward active")
 
+jitter = transitions.get("clock_jitter_median_filter") or {}
+if jitter.get("passed") is not True:
+    raise SystemExit("clock jitter profile did not pass")
+if abs(float(jitter.get("trusted_filtered_ppm", 0.0)) - 250.0) > 5.0:
+    raise SystemExit("clock jitter median filter did not converge to the expected estimate")
+if abs(float(jitter.get("feedforward_correction_ppm", 0.0)) + 250.0) > 5.0:
+    raise SystemExit("clock jitter profile produced the wrong feed-forward correction")
+if abs(float(jitter.get("first_applied_correction_ppm", 999.0))) > 2.000001:
+    raise SystemExit("clock jitter feed-forward bypassed slew limiting")
+
+step = transitions.get("clock_step_bounded_slew") or {}
+if step.get("passed") is not True or step.get("asrc_ratio_path_exercised") is not True:
+    raise SystemExit("continuous clock-step profile did not exercise the ASRC ratio path")
+if abs(float(step.get("stepped_feedforward_correction_ppm", 0.0)) - 250.0) > 5.0:
+    raise SystemExit("clock step was not re-estimated with the expected sign")
+if abs(float(step.get("final_correction_ppm", 0.0)) - 250.0) > 5.0:
+    raise SystemExit("clock step correction did not converge to the new feed-forward target")
+if float(step.get("maximum_observed_step_ppm", 999.0)) > 2.000001:
+    raise SystemExit("clock step violated the configured correction slew limit")
+updates = int(step.get("updates_to_converge", 0))
+if not 1 <= updates <= 300:
+    raise SystemExit("clock step convergence escaped the bounded update horizon")
+
 recovery = report.get("device_reconnect_recovery") or {}
 success = recovery.get("successful_reconnect") or {}
 exhaustion = recovery.get("budget_exhaustion") or {}
@@ -95,9 +125,9 @@ if flapping.get("final_state") != "Faulted":
 
 print(
     "AURORA-RESILIENCE-EVIDENCE-PASS "
-    "clock=+/-250ppm@24h+discontinuity+out_of_range estimator+feedforward+RubatoAsrc "
+    "clock=+/-250ppm@24h+jitter+step+discontinuity+out_of_range estimator+feedforward+RubatoAsrc "
     "reconnect=bounded_success+exhaustion+flapping fail_closed=true"
 )
 PY
 
-printf 'report=%s\n' "$REPORT"
+printf 'report=%s\ntransition_report=%s\n' "$REPORT" "$TRANSITION_REPORT"
