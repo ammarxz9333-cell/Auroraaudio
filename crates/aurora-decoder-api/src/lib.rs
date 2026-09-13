@@ -1,6 +1,6 @@
 //! Aurora-owned decoder boundaries for external immersive-audio decoders.
 
-use aurora_core::{AudioBlock, AudioFormat, AudioObject};
+use aurora_core::{AudioBlock, AudioFormat, AudioObject, ChannelRole};
 use thiserror::Error;
 
 /// Decoded audio and object metadata for one decoder output frame.
@@ -94,11 +94,56 @@ pub struct DecoderPacket<'a> {
     pub discontinuity: bool,
 }
 
+/// Live decoder output configuration independent of final speaker count.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct StreamingDecoderConfig {
+    /// PCM sample rate Aurora expects after decode/resampling.
+    pub sample_rate: u32,
+    /// Preferred media processing block size.
+    pub block_size: usize,
+    /// Hard upper bound on decoded PCM channels.
+    pub maximum_pcm_channels: usize,
+}
+
+/// Semantic role of one decoded PCM channel.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum DecodedChannelKind {
+    /// Fixed bed channel with an explicit Aurora role.
+    Bed(ChannelRole),
+    /// Dynamic-object PCM. Object identity is supplied by [`ObjectChannelBinding`].
+    Object,
+    /// Decoder could not map the channel to a safe semantic role.
+    Unknown,
+}
+
+/// Complete object-to-PCM-channel binding for one active object.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ObjectChannelBinding {
+    /// Stable object identifier matching [`AudioObject::id`].
+    pub object_id: String,
+    /// Zero-based decoded PCM channel index carrying this object's audio.
+    pub channel_index: usize,
+}
+
+/// Streaming frame preserving source PCM semantics required for actual object mixing.
+#[derive(Debug, Clone, PartialEq)]
+pub struct StreamingDecodedFrame {
+    /// Decoded PCM and current object metadata.
+    pub decoded: DecodedFrame,
+    /// One semantic entry for every decoded PCM channel.
+    pub channel_kinds: Vec<DecodedChannelKind>,
+    /// Complete active object-to-channel table for this frame.
+    ///
+    /// Adapters whose upstream ABI sends sparse binding updates must cache them and expose the
+    /// complete active table here so Aurora never guesses stale object/channel associations.
+    pub object_channels: Vec<ObjectChannelBinding>,
+}
+
 /// Frames emitted after one streaming decoder packet.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodedBatch {
     /// Zero or more decoded frames. A decoder may buffer before emitting the first frame.
-    pub frames: Vec<DecodedFrame>,
+    pub frames: Vec<StreamingDecodedFrame>,
     /// Backend assertion that native source object metadata is present for this batch/stream.
     /// This must never be set for synthetic upmix metadata.
     pub native_objects_present: bool,
@@ -123,8 +168,8 @@ pub trait StreamingDecoder {
     /// Returns static adapter metadata including semantic strength.
     fn info(&self) -> DecoderInfo;
 
-    /// Configures output PCM expectations before packets are accepted.
-    fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError>;
+    /// Configures live output expectations before packets are accepted.
+    fn configure_stream(&mut self, config: StreamingDecoderConfig) -> Result<(), DecoderError>;
 
     /// Pushes one bounded packet and returns any decoded frames made available by it.
     fn push_packet(&mut self, packet: DecoderPacket<'_>) -> Result<DecodedBatch, DecoderError>;
