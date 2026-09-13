@@ -9,8 +9,11 @@ on:
       - "crates/aurora-renderer-api/**"
       - "crates/aurora-renderer-vbap/**"
       - "crates/aurora-simulation-assurance/src/bin/aurora-oar-differential-probe.rs"
+      - "crates/aurora-simulation-assurance/src/bin/aurora-oar-5-1-differential-probe.rs"
       - "validation/open-immersive/aurora_oar_differential_probe.c"
+      - "validation/open-immersive/aurora_oar_5_1_differential_probe.c"
       - "validation/open-immersive/oar_differential.py"
+      - "validation/open-immersive/oar_5_1_differential.py"
       - "validation/open-immersive/oar_reference_evidence.py"
       - "validation/open-immersive/test-oar-reference.sh"
       - "docs/oar-reference.md"
@@ -39,6 +42,7 @@ jobs:
         run: |
           python3 validation/open-immersive/oar_reference_evidence.py self-test
           python3 validation/open-immersive/oar_differential.py self-test
+          python3 validation/open-immersive/oar_5_1_differential.py self-test
 
       - name: Build, test and compare exact pinned OAR reference
         shell: bash
@@ -54,6 +58,9 @@ jobs:
             ${{ runner.temp }}/oar-reference/oar-differential-oar.json
             ${{ runner.temp }}/oar-reference/oar-differential-aurora.json
             ${{ runner.temp }}/oar-reference/oar-differential-evidence.json
+            ${{ runner.temp }}/oar-reference/oar-5-1-differential-oar.json
+            ${{ runner.temp }}/oar-reference/oar-5-1-differential-aurora.json
+            ${{ runner.temp }}/oar-reference/oar-5-1-differential-evidence.json
             ${{ runner.temp }}/oar-reference/ctest.log
           if-no-files-found: warn
           retention-days: 14
