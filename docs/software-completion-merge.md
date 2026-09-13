@@ -1,0 +1,1 @@
+Merge only after required GitHub Actions pass at the final head and no production runtime source contains explicit placeholders.
