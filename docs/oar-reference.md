@@ -16,9 +16,9 @@ Pinned reference:
 
 The runner never follows upstream `main` implicitly.
 
-## Current evidence
+## Current reference evidence
 
-`validation/open-immersive/test-oar-reference.sh` clones the exact commit, requires both `LICENSE` and `PATENTS`, builds the reference with CMake in Release mode, enables the upstream examples and binaural renderer, runs CTest, and then emits `oar-reference-evidence.json` through `oar_reference_evidence.py`.
+`validation/open-immersive/test-oar-reference.sh` clones the exact commit, requires both `LICENSE` and `PATENTS`, builds the reference with CMake in Release mode, enables the upstream examples and binaural renderer, runs CTest, and emits `oar-reference-evidence.json` through `oar_reference_evidence.py`.
 
 First CI evidence on 2026-09-12:
 
@@ -31,17 +31,38 @@ First CI evidence on 2026-09-12:
 
 This establishes that the pinned OAR tree is reproducibly usable as an external reference on the CI host. It does **not** establish Aurora IAMF rendering correctness.
 
+## Focused stereo differential slice
+
+The first Aurora-vs-OAR differential slice is `stereo-object-position-gain-v1`. It deliberately compares shared semantics instead of requiring unrelated render algorithms to emit identical PCM.
+
+Both renderers process the same four semantic cases at 48 kHz with 256 frames per case:
+
+1. left object at unity gain;
+2. centered object at unity gain;
+3. right object at unity gain;
+4. centered object at -6 dB.
+
+The channel contract is explicitly `[FL, FR]`. Coordinate-sign differences are normalized at the semantic boundary: Aurora's fixtures use negative azimuth for left and positive for right, while the pinned OAR stereo layout uses positive azimuth for left and negative for right. Therefore the differential probes use Aurora `-45/0/+45` degrees and OAR `+45/0/-45` degrees for left/center/right respectively.
+
+`validation/open-immersive/oar_differential.py` checks:
+
+- exact sample-rate and frame accounting;
+- finite output and non-silent semantic cases;
+- exact FL/FR channel ordering;
+- left and right channel dominance with a configured margin;
+- center balance within a configured tolerance;
+- normalized FL/FR spatial-distribution agreement within a configured tolerance;
+- -6 dB object-gain semantics independently in each renderer and across the two renderers.
+
+The numerical limits are machine-readable in `config/oar-evaluation-v1.json`. The OAR probe is injected only into the temporary pinned checkout and is linked against OAR's existing test helper/library targets; it is not registered as an upstream CTest, so the original upstream test count remains independently visible. The Aurora probe uses Aurora's actual `VbapRenderer` and renderer API.
+
+This slice is intentionally narrower than IAMF acceptance. It bypasses Aurora's IAMF adapter and does not prove IAMF bitstream ingestion, IAMF decoding, 5.1/7.1.4 differential equivalence, scene/HOA equivalence, binaural behavior, or raw-PCM identity.
+
 ## Promotion rule
 
-`iamf-oar-open-rendering` in `config/simulation-coverage-v1.json` must remain `planned` until Aurora has executable differential evidence against the pinned OAR reference.
+`iamf-oar-open-rendering` in `config/simulation-coverage-v1.json` remains `planned`. A stereo renderer-semantic comparison is useful independent evidence, but it is not sufficient to promote the IAMF capability. Promotion requires executable IAMF decode/render evidence through Aurora's own IAMF boundary plus the applicable layout and failure-mode coverage.
 
-The next reference milestone should compare deterministic semantics that overlap cleanly between Aurora and OAR, beginning with:
-
-1. object-position and gain trajectories;
-2. channel/layout conversion behavior for common layouts such as stereo, 5.1 and 7.1.4;
-3. frame accounting, finite output and channel ordering;
-4. scene/HOA behavior where Aurora gains a matching scene representation;
-5. binaural/head-rotation invariants only after Aurora has a real binaural path.
+Follow-on differential work should extend cleanly overlapping semantics to common multichannel layouts such as 5.1 and 7.1.4, then scene/HOA behavior where Aurora has a matching representation. Binaural/head-rotation invariants belong only after Aurora has a real matching path.
 
 Do not compare raw PCM hashes across unrelated render algorithms as a correctness requirement unless both paths are intentionally expected to be bit-identical. Prefer invariant- and tolerance-based differential metrics.
 
@@ -51,11 +72,11 @@ OAR's source license is BSD-3-Clause-Clear, and the repository also carries an A
 
 ## Truth boundary
 
-OAR reference PASS does not prove:
+OAR reference or focused differential PASS does not prove:
 
 - IAMF integration into Aurora;
 - equivalence to Dolby Atmos or any proprietary renderer;
-- authored-position equivalence across formats;
+- authored-position equivalence across formats beyond the explicitly mapped stereo semantic cases;
 - physical eARC/UAC2/TDM/DAC behavior;
 - acoustic performance;
 - protected streaming-service compatibility;

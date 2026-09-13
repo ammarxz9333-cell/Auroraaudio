@@ -231,6 +231,19 @@
       ]
     },
     {
+      "id": "oar-stereo-object-semantics",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "evidence": [
+        "config/oar-evaluation-v1.json",
+        "crates/aurora-simulation-assurance/src/bin/aurora-oar-differential-probe.rs",
+        "validation/open-immersive/aurora_oar_differential_probe.c",
+        "validation/open-immersive/oar_differential.py",
+        "validation/open-immersive/test-oar-reference.sh"
+      ],
+      "truth_boundary": "Focused 48 kHz stereo object-position/gain differential against exact pinned AOMedia OAR 1.0.0. Covers finite output, 256-frame accounting, FL/FR order, left/center/right semantics and -6 dB gain only; does not prove IAMF ingestion/decoding, multichannel differential equivalence, physical output or certification."
+    },
+    {
       "id": "iamf-oar-open-rendering",
       "status": "planned",
       "evidence_class": "software_reference",
