@@ -59,7 +59,7 @@ jobs:
           cargo run --locked --release -p aurora-realtime-acceptance --example sustained_soak -- \
             600 output/validation/realtime-health-soak-v1.json | tee output/validation/realtime-health-soak.log
           grep -F 'AURORA REALTIME HEALTH SOAK PASS' output/validation/realtime-health-soak.log
-      - name: Validate report shape
+      - name: Validate accelerated report shape
         run: |
           python3 - <<'PY'
           import json
@@ -76,6 +76,30 @@ jobs:
           assert report['violations'] == []
           print('AURORA REALTIME HEALTH REPORT PASS')
           PY
+      - name: Run paced 15-second wall-clock 7.1.4 smoke soak
+        run: |
+          cargo run --locked --release -p aurora-realtime-acceptance --example wall_clock_soak -- \
+            15 output/validation/realtime-wall-clock-soak-v1.json | tee output/validation/realtime-wall-clock-soak.log
+          grep -F 'AURORA WALL CLOCK SOAK PASS' output/validation/realtime-wall-clock-soak.log
+      - name: Validate wall-clock report
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('output/validation/realtime-wall-clock-soak-v1.json').read_text())
+          assert report['schema_version'] == 1
+          assert report['accepted'] is True
+          assert report['wall_seconds_observed'] >= 15.0
+          assert report['callbacks'] > 0
+          assert report['channels'] == 12
+          assert report['processing_deadline_misses'] == 0
+          assert report['engine_input_underruns'] == 0
+          assert report['engine_output_underruns'] == 0
+          assert report['engine_dropped_blocks'] == 0
+          assert report['engine_fault'] == 'None'
+          assert report['violations'] == []
+          print('AURORA WALL CLOCK HEALTH REPORT PASS')
+          PY
       - name: Upload sustained soak evidence
         uses: actions/upload-artifact@v4
         with:
@@ -83,4 +107,6 @@ jobs:
           path: |
             output/validation/realtime-health-soak-v1.json
             output/validation/realtime-health-soak.log
+            output/validation/realtime-wall-clock-soak-v1.json
+            output/validation/realtime-wall-clock-soak.log
           retention-days: 14
