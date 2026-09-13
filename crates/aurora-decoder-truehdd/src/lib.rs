@@ -264,7 +264,10 @@ mod channel_pcm {
                 samples,
                 file: PathBuf::from(file),
             };
-            if best.as_ref().is_none_or(|current| candidate.index > current.index) {
+            if best
+                .as_ref()
+                .map_or(true, |current| candidate.index > current.index)
+            {
                 best = Some(candidate);
             }
         }
@@ -397,8 +400,8 @@ mod channel_pcm {
         #[test]
         fn pcm24_parser_sign_extends_and_deinterleaves() {
             let bytes = [
-                0x00, 0x00, 0x00, 0xff, 0xff, 0x7f, // 0, +max
-                0x00, 0x00, 0x80, 0x00, 0x00, 0x40, // -min, +0.5
+                0x00, 0x00, 0x00, 0xff, 0xff, 0x7f,
+                0x00, 0x00, 0x80, 0x00, 0x00, 0x40,
             ];
             let audio = parse_pcm24le_interleaved(&bytes, format(2)).unwrap();
             assert_eq!(audio.frame_count, 2);
