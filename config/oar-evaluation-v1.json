@@ -37,11 +37,11 @@
       "center_minus_6db"
     ],
     "expected_gain_db": -6.0,
-    "normalized_channel_tolerance": 0.15,
-    "center_balance_tolerance": 0.08,
-    "dominance_margin": 0.2,
-    "gain_db_tolerance": 0.5,
-    "cross_renderer_gain_db_tolerance": 0.25
+    "normalized_channel_tolerance": 0.02,
+    "center_balance_tolerance": 0.02,
+    "dominance_margin": 0.8,
+    "gain_db_tolerance": 0.1,
+    "cross_renderer_gain_db_tolerance": 0.02
   },
   "truth_boundary": "Successful upstream build/tests plus the focused stereo semantic differential establish only object-position/gain, finite-output, frame-accounting, and FL/FR ordering evidence against the exact pinned OAR reference. They do not prove IAMF ingestion or decoding, 5.1/7.1.4 differential equivalence, raw PCM identity, physical output, proprietary-format equivalence, or certification."
 }
