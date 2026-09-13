@@ -1,0 +1,53 @@
+name: Aurora Resilience Simulation CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "crates/aurora-realtime-engine/**"
+      - "crates/aurora-realtime-audio-sim/**"
+      - "validation/virtual-hardware/test-aurora-resilience-sim.sh"
+      - ".github/workflows/aurora-resilience-sim-ci.yml"
+  push:
+    branches:
+      - main-v2
+    paths:
+      - "crates/aurora-realtime-engine/**"
+      - "crates/aurora-realtime-audio-sim/**"
+      - "validation/virtual-hardware/test-aurora-resilience-sim.sh"
+      - ".github/workflows/aurora-resilience-sim-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-resilience-sim-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  resilience-evidence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Cache Cargo dependencies
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            target
+          key: ${{ runner.os }}-resilience-${{ hashFiles('Cargo.lock', 'crates/aurora-realtime-engine/**', 'crates/aurora-realtime-audio-sim/**', 'validation/virtual-hardware/test-aurora-resilience-sim.sh') }}
+          restore-keys: |
+            ${{ runner.os }}-resilience-
+      - name: Run real clock correction and reconnect resilience evidence
+        run: bash validation/virtual-hardware/test-aurora-resilience-sim.sh "${{ runner.temp }}/aurora-resilience-sim.json"
+      - name: Upload resilience evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aurora-resilience-${{ github.sha }}
+          path: ${{ runner.temp }}/aurora-resilience-sim.json
+          if-no-files-found: warn
+          retention-days: 14
