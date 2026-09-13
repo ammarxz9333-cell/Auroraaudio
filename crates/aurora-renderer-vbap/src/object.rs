@@ -305,6 +305,47 @@ mod tests {
     }
 
     #[test]
+    fn warmed_up_object_render_allocates_zero_times() {
+        let mut renderer = ObjectVbapRenderer::new();
+        renderer.configure(five_one(), 48_000, 256, 1).unwrap();
+        let listener = listener();
+        let object = RenderObject {
+            position: vector_from_azimuth(-30.0),
+            gain: 1.0,
+        };
+        let mut output = vec![SpeakerGain::default(); 6];
+        let mut scratch = RendererScratch::new(renderer.required_scratch_size().unwrap());
+        renderer
+            .render_gains(
+                &listener,
+                std::slice::from_ref(&object),
+                &mut output,
+                &mut scratch,
+            )
+            .unwrap();
+
+        let output_capacity = output.capacity();
+        let scratch_capacity = scratch.float_capacity();
+        let allocations = crate::allocation_audit::count_allocations(|| {
+            for _ in 0..1_000 {
+                renderer
+                    .render_gains(
+                        &listener,
+                        std::slice::from_ref(&object),
+                        &mut output,
+                        &mut scratch,
+                    )
+                    .unwrap();
+            }
+        });
+
+        assert_eq!(allocations, 0);
+        assert_eq!(output.capacity(), output_capacity);
+        assert_eq!(scratch.float_capacity(), scratch_capacity);
+        assert_eq!(output[3].gain, 0.0);
+    }
+
+    #[test]
     fn rejects_lfe_only_layout() {
         let mut renderer = ObjectVbapRenderer::new();
         let error = renderer
