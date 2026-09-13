@@ -285,23 +285,39 @@
     },
     {
       "id": "adaptive-clock-rate-correction",
-      "status": "planned",
+      "status": "covered",
       "evidence_class": "virtual",
+      "simulator_capability": "adaptive-clock-rate-correction",
+      "profiles": [
+        "clock-correction-plus-250ppm",
+        "clock-correction-minus-250ppm"
+      ],
       "evidence": [
         "crates/aurora-realtime-engine/src/estimator.rs",
-        "crates/aurora-realtime-engine/src/drift_controller.rs"
+        "crates/aurora-realtime-engine/src/drift_controller.rs",
+        "crates/aurora-realtime-engine/src/asrc.rs",
+        "crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs",
+        "validation/virtual-hardware/aurora_resilience_sim.py",
+        "validation/virtual-hardware/test-aurora-resilience-sim.sh"
       ],
-      "truth_boundary": "Aurora now has a fixed-storage frame-count PPM estimator, discontinuity trust reset, slew-limited feed-forward and 24-hour +/-250 ppm controller simulation. Promotion to covered remains blocked on exporting the complete estimator/controller/runtime path as an AuroraSim capability with executable fault profiles."
+      "truth_boundary": "Executable virtual evidence drives Aurora's real fixed-storage PPM estimator, slew-limited DriftController feed-forward and RubatoAsrc ratio/sample path for both +250 ppm and -250 ppm over a simulated 24 hours while keeping a fixed-capacity ring bounded. This does not constitute physical clock measurement or prove a specific USB/TDM/audio device."
     },
     {
       "id": "device-reconnect-recovery",
-      "status": "planned",
+      "status": "covered",
       "evidence_class": "virtual",
+      "simulator_capability": "device-reconnect-recovery",
+      "profiles": [
+        "device-reconnect",
+        "device-reconnect-exhaustion"
+      ],
       "evidence": [
         "crates/aurora-realtime-engine/src/device_state.rs",
-        "crates/aurora-realtime-audio-sim/src/simulation.rs"
+        "crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs",
+        "validation/virtual-hardware/aurora_resilience_sim.py",
+        "validation/virtual-hardware/test-aurora-resilience-sim.sh"
       ],
-      "truth_boundary": "Aurora now has bounded reconnect attempts, exponential backoff and stable-run reset semantics, while existing virtual device-loss recovery is deterministic. Promotion to covered remains blocked on exporting the bounded recovery policy and exhaustion/fail-closed cases through AuroraSim coverage profiles."
+      "truth_boundary": "Executable virtual evidence drives Aurora's real DuplexStateMachine through 250/500/1000/2000/4000 ms bounded recovery backoff, successful late reappearance, stable-run history reset, and fail-closed exhaustion after five failed attempts. Backend reopen timing and physical device hotplug remain unproven."
     },
     {
       "id": "multi-speaker-room-field-control-simulation",
