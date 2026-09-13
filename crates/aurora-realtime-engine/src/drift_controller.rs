@@ -158,8 +158,9 @@ impl DriftController {
     /// The estimator emits one measurement every ten seconds of output time and requires three
     /// consecutive clean windows before it may drive feed-forward. `discontinuity` must be set
     /// for XRUNs, reconnects, format/epoch changes, callback gaps, or any event that makes the
-    /// two frame counters incomparable. Such an event drops the partial measurement and clears
-    /// feed-forward fail-closed.
+    /// two frame counters incomparable. Such an event starts a fresh adaptive clock epoch by
+    /// clearing estimator history, feed-forward, PI integral/current correction, saturation
+    /// history, and ratio extrema before new measurements are trusted.
     pub fn observe_clock_frames(
         &mut self,
         input_frames: u64,
@@ -176,7 +177,7 @@ impl DriftController {
             }
             Ok(_) => {
                 if discontinuity {
-                    self.clear_feedforward();
+                    self.reset();
                 }
                 Ok(None)
             }
@@ -398,6 +399,13 @@ mod tests {
             .unwrap()
             .is_none());
         assert_eq!(controller.feedforward_correction_ppm(), 0.0);
+        let reset = controller
+            .update(config.target_fill_frames, 0, config.output_rate as usize)
+            .unwrap();
+        assert_eq!(reset.correction_ppm, 0.0);
+        assert_eq!(reset.minimum_ratio, controller.nominal_ratio());
+        assert_eq!(reset.maximum_ratio, controller.nominal_ratio());
+        assert_eq!(reset.saturation_count, 0);
     }
 
     #[test]
