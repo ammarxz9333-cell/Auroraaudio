@@ -4,7 +4,9 @@
 //! offline-only, out-of-process, and reviewed for licensing and commercial risk.
 
 use aurora_core::AudioFormat;
-use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
+use aurora_decoder_api::{
+    DecodedFrame, Decoder, DecoderError, DecoderInfo, DecoderOutputSemantics,
+};
 
 /// Experimental offline-only truehdd adapter placeholder.
 #[derive(Debug, Default, Clone)]
@@ -25,6 +27,7 @@ impl Decoder for TruehddDecoderAdapter {
             name: "truehdd out-of-process adapter",
             production_ready: false,
             maturity: "experimental-offline-only",
+            output_semantics: DecoderOutputSemantics::ObjectScene,
         }
     }
 
@@ -55,6 +58,7 @@ mod tests {
         let info = adapter.info();
 
         assert_eq!(info.maturity, "experimental-offline-only");
+        assert_eq!(info.output_semantics, DecoderOutputSemantics::ObjectScene);
         assert!(!info.production_ready);
     }
 }

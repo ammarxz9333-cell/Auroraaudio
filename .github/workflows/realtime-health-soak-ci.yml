@@ -14,7 +14,12 @@ on:
       - 'crates/aurora-renderer-basic/**'
       - 'crates/aurora-dsp-basic/**'
       - 'crates/aurora-realtime-engine/**'
+      - 'crates/aurora-realtime-audio-sim/**'
       - 'crates/aurora-realtime-acceptance/**'
+      - 'config/simulation-coverage-v1.json'
+      - 'validation/virtual-hardware/aurora_resilience_sim.py'
+      - 'validation/virtual-hardware/validate_simulation_coverage.py'
+      - 'validation/virtual-hardware/test-aurora-resilience-sim.sh'
       - 'fixtures/scenes/7_1_4_reference.json'
   push:
     branches:
@@ -29,7 +34,12 @@ on:
       - 'crates/aurora-renderer-basic/**'
       - 'crates/aurora-dsp-basic/**'
       - 'crates/aurora-realtime-engine/**'
+      - 'crates/aurora-realtime-audio-sim/**'
       - 'crates/aurora-realtime-acceptance/**'
+      - 'config/simulation-coverage-v1.json'
+      - 'validation/virtual-hardware/aurora_resilience_sim.py'
+      - 'validation/virtual-hardware/validate_simulation_coverage.py'
+      - 'validation/virtual-hardware/test-aurora-resilience-sim.sh'
       - 'fixtures/scenes/7_1_4_reference.json'
   workflow_dispatch:
 
@@ -50,7 +60,7 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target/release
-          key: ${{ runner.os }}-realtime-health-soak-${{ hashFiles('Cargo.lock') }}
+          key: ${{ runner.os }}-realtime-health-soak-${{ hashFiles('Cargo.lock', 'crates/aurora-realtime-engine/**', 'crates/aurora-realtime-audio-sim/**', 'crates/aurora-realtime-acceptance/**', 'validation/virtual-hardware/test-aurora-resilience-sim.sh') }}
           restore-keys: |
             ${{ runner.os }}-realtime-health-soak-
       - name: Run accelerated 10-minute media-time 7.1.4 soak
@@ -59,7 +69,7 @@ jobs:
           cargo run --locked --release -p aurora-realtime-acceptance --example sustained_soak -- \
             600 output/validation/realtime-health-soak-v1.json | tee output/validation/realtime-health-soak.log
           grep -F 'AURORA REALTIME HEALTH SOAK PASS' output/validation/realtime-health-soak.log
-      - name: Validate report shape
+      - name: Validate accelerated report shape
         run: |
           python3 - <<'PY'
           import json
@@ -76,6 +86,70 @@ jobs:
           assert report['violations'] == []
           print('AURORA REALTIME HEALTH REPORT PASS')
           PY
+      - name: Enforce resilience coverage registry
+        run: |
+          python3 validation/virtual-hardware/validate_simulation_coverage.py self-test
+          python3 validation/virtual-hardware/validate_simulation_coverage.py check
+      - name: Run clock and reconnect fault resilience evidence
+        run: |
+          bash validation/virtual-hardware/test-aurora-resilience-sim.sh \
+            output/validation/realtime-resilience-sim-v1.json | tee output/validation/realtime-resilience-sim.log
+      - name: Run paced 15-second wall-clock 7.1.4 smoke soak
+        run: |
+          cargo run --locked --release -p aurora-realtime-acceptance --example wall_clock_soak -- \
+            15 output/validation/realtime-wall-clock-soak-v1.json | tee output/validation/realtime-wall-clock-soak.log
+          grep -F 'AURORA WALL CLOCK SOAK PASS' output/validation/realtime-wall-clock-soak.log
+      - name: Validate wall-clock report
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('output/validation/realtime-wall-clock-soak-v1.json').read_text())
+          assert report['schema_version'] == 1
+          assert report['accepted'] is True
+          assert report['wall_seconds_observed'] >= 15.0
+          assert report['callbacks'] > 0
+          assert report['channels'] == 12
+          assert report['processing_deadline_misses'] == 0
+          assert report['engine_input_underruns'] == 0
+          assert report['engine_output_underruns'] == 0
+          assert report['engine_dropped_blocks'] == 0
+          assert report['engine_fault'] == 'None'
+          assert report['violations'] == []
+          print('AURORA WALL CLOCK HEALTH REPORT PASS')
+          PY
+      - name: Run paced faulted wall-clock integration soak
+        run: |
+          cargo run --locked --release -p aurora-realtime-audio-sim --example faulted_wall_clock_soak -- \
+            15 output/validation/realtime-faulted-wall-clock-soak-v1.json | tee output/validation/realtime-faulted-wall-clock-soak.log
+          grep -F 'AURORA FAULTED WALL CLOCK SOAK PASS' output/validation/realtime-faulted-wall-clock-soak.log
+      - name: Validate faulted wall-clock integration report
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          report = json.loads(Path('output/validation/realtime-faulted-wall-clock-soak-v1.json').read_text())
+          assert report['schema_version'] == 1
+          assert report['accepted'] is True
+          assert report['wall_seconds_observed'] >= 15.0
+          assert report['callbacks'] > 0
+          assert report['processing_deadline_misses'] == 0
+          assert abs(float(report['clock_initial_trusted_ppm']) - 250.0) <= 5.0
+          assert report['clock_discontinuity_reset'] is True
+          assert abs(float(report['clock_reacquired_ppm']) + 250.0) <= 5.0
+          assert abs(float(report['clock_reacquired_feedforward_ppm']) - 250.0) <= 5.0
+          assert float(report['maximum_correction_step_ppm']) <= 2.000001
+          assert report['reconnect_backoff_ms'] == [250, 500, 1000]
+          assert report['reconnect_success_attempt'] == 3
+          assert report['reconnect_stable_reset_attempts'] == 0
+          assert report['reconnect_final_state'] == 'Running'
+          assert report['engine_input_underruns'] == 0
+          assert report['engine_output_underruns'] == 0
+          assert report['engine_dropped_blocks'] == 0
+          assert report['engine_fault'] == 'None'
+          assert report['violations'] == []
+          print('AURORA FAULTED WALL CLOCK HEALTH REPORT PASS')
+          PY
       - name: Upload sustained soak evidence
         uses: actions/upload-artifact@v4
         with:
@@ -83,4 +157,11 @@ jobs:
           path: |
             output/validation/realtime-health-soak-v1.json
             output/validation/realtime-health-soak.log
+            output/validation/realtime-resilience-sim-v1.json
+            output/validation/realtime-resilience-sim-v1.json.transitions.json
+            output/validation/realtime-resilience-sim.log
+            output/validation/realtime-wall-clock-soak-v1.json
+            output/validation/realtime-wall-clock-soak.log
+            output/validation/realtime-faulted-wall-clock-soak-v1.json
+            output/validation/realtime-faulted-wall-clock-soak.log
           retention-days: 14

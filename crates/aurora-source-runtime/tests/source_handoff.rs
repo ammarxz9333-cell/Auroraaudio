@@ -1,7 +1,9 @@
 use aurora_core::{
     AudioBlock, AudioFormat, AudioObject, ChannelRole, Listener, SampleType, Speaker, Vector3,
 };
-use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
+use aurora_decoder_api::{
+    DecodedFrame, Decoder, DecoderError, DecoderInfo, DecoderOutputSemantics,
+};
 use aurora_plugin_api::source_manager::{
     PlayableMediaRef, SourceAuthorization, SourceCapabilities, SourceKind, SourceManager,
     SourceMetadata, SourceRegistration, SOURCE_MANAGER_SCHEMA_VERSION,
@@ -44,6 +46,7 @@ impl Decoder for FixtureDecoder {
             name: "source-runtime-fixture",
             production_ready: false,
             maturity: "test",
+            output_semantics: DecoderOutputSemantics::ObjectScene,
         }
     }
 
@@ -317,6 +320,7 @@ fn channel_only_decode_skips_object_renderer_without_hidden_fallback() {
                 name: "channel-only",
                 production_ready: false,
                 maturity: "test",
+                output_semantics: DecoderOutputSemantics::ChannelPcm,
             }
         }
 
