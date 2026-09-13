@@ -6,6 +6,9 @@ on:
     paths:
       - "crates/aurora-realtime-engine/**"
       - "crates/aurora-realtime-audio-sim/**"
+      - "config/simulation-coverage-v1.json"
+      - "validation/virtual-hardware/aurora_resilience_sim.py"
+      - "validation/virtual-hardware/validate_simulation_coverage.py"
       - "validation/virtual-hardware/test-aurora-resilience-sim.sh"
       - ".github/workflows/aurora-resilience-sim-ci.yml"
   push:
@@ -14,6 +17,9 @@ on:
     paths:
       - "crates/aurora-realtime-engine/**"
       - "crates/aurora-realtime-audio-sim/**"
+      - "config/simulation-coverage-v1.json"
+      - "validation/virtual-hardware/aurora_resilience_sim.py"
+      - "validation/virtual-hardware/validate_simulation_coverage.py"
       - "validation/virtual-hardware/test-aurora-resilience-sim.sh"
       - ".github/workflows/aurora-resilience-sim-ci.yml"
 
@@ -38,9 +44,15 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             target
-          key: ${{ runner.os }}-resilience-${{ hashFiles('Cargo.lock', 'crates/aurora-realtime-engine/**', 'crates/aurora-realtime-audio-sim/**', 'validation/virtual-hardware/test-aurora-resilience-sim.sh') }}
+          key: ${{ runner.os }}-resilience-${{ hashFiles('Cargo.lock', 'crates/aurora-realtime-engine/**', 'crates/aurora-realtime-audio-sim/**', 'config/simulation-coverage-v1.json', 'validation/virtual-hardware/aurora_resilience_sim.py', 'validation/virtual-hardware/validate_simulation_coverage.py', 'validation/virtual-hardware/test-aurora-resilience-sim.sh') }}
           restore-keys: |
             ${{ runner.os }}-resilience-
+      - name: Self-test resilience capability contract
+        run: python3 validation/virtual-hardware/aurora_resilience_sim.py >/dev/null
+      - name: Validate mandatory simulation coverage registry
+        run: |
+          python3 validation/virtual-hardware/validate_simulation_coverage.py self-test
+          python3 validation/virtual-hardware/validate_simulation_coverage.py check
       - name: Run real clock correction and reconnect resilience evidence
         run: bash validation/virtual-hardware/test-aurora-resilience-sim.sh "${{ runner.temp }}/aurora-resilience-sim.json"
       - name: Upload resilience evidence
