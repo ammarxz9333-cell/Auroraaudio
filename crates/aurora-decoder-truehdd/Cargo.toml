@@ -11,8 +11,9 @@ bench = false
 
 [features]
 default = []
-truehdd-process = []
+truehdd-process = ["dep:serde_json"]
 
 [dependencies]
 aurora-core = { path = "../aurora-core" }
 aurora-decoder-api = { path = "../aurora-decoder-api" }
+serde_json = { workspace = true, optional = true }
