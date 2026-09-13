@@ -14,6 +14,7 @@ const TARGET_FILL: usize = 2_048;
 const CAPACITY_FRAMES: usize = 4_096;
 const ESTIMATOR_WINDOW_OUTPUT_FRAMES: u64 = 480_000;
 const LONG_RUN_SECONDS: u64 = 24 * 60 * 60;
+const EXPECTED_BACKOFF_MS: [u64; 5] = [250, 500, 1_000, 2_000, 4_000];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let report_path = env::args()
@@ -23,8 +24,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let positive = clock_case(250.0)?;
     let negative = clock_case(-250.0)?;
+    let discontinuity = clock_discontinuity_reacquire_case()?;
+    let out_of_range = clock_out_of_range_case()?;
     let reconnect = reconnect_case()?;
     let exhaustion = reconnect_exhaustion_case()?;
+    let flapping = reconnect_flapping_case()?;
 
     let report = json!({
         "schema_version": 1,
@@ -32,11 +36,14 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         "source": "aurora-realtime-audio-sim-real-rust-components",
         "adaptive_clock_rate_correction": {
             "cases": [positive, negative],
+            "discontinuity_reacquire": discontinuity,
+            "out_of_range_fail_closed": out_of_range,
             "truth_boundary": "hardware-independent virtual clocks using Aurora DriftController estimator/feed-forward/slew logic and RubatoAsrc ratio/sample processing; not physical clock measurement"
         },
         "device_reconnect_recovery": {
             "successful_reconnect": reconnect,
             "budget_exhaustion": exhaustion,
+            "flapping_device": flapping,
             "truth_boundary": "Aurora DuplexStateMachine bounded recovery policy; backend reopen timing is simulated and no physical device hotplug is claimed"
         }
     });
@@ -48,24 +55,30 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     fs::write(&report_path, serde_json::to_vec_pretty(&report)?)?;
     println!(
-        "AURORA-RESILIENCE-SIM-PASS report={} clock_cases=2 reconnect_backoffs=5 exhaustion_attempts=5",
+        "AURORA-RESILIENCE-SIM-PASS report={} clock_cases=4 reconnect_cases=3 bounded_attempts=5",
         report_path.display()
     );
     Ok(())
 }
 
-fn clock_case(input_clock_ppm: f64) -> Result<Value, Box<dyn std::error::Error>> {
-    let config = DriftControllerConfig {
+fn controller() -> Result<DriftController, Box<dyn std::error::Error>> {
+    Ok(DriftController::new(DriftControllerConfig {
         input_rate: SAMPLE_RATE,
         output_rate: SAMPLE_RATE,
         target_fill_frames: TARGET_FILL,
         ..DriftControllerConfig::default()
-    };
-    let mut controller = DriftController::new(config)?;
+    })?)
+}
 
-    let input_per_window = ((ESTIMATOR_WINDOW_OUTPUT_FRAMES as f64)
-        * (1.0 + input_clock_ppm / 1_000_000.0))
-        .round() as u64;
+fn input_frames_for_ppm(ppm: f64) -> u64 {
+    ((ESTIMATOR_WINDOW_OUTPUT_FRAMES as f64) * (1.0 + ppm / 1_000_000.0)).round() as u64
+}
+
+fn acquire_clock_estimate(
+    controller: &mut DriftController,
+    ppm: f64,
+) -> Result<f64, Box<dyn std::error::Error>> {
+    let input_per_window = input_frames_for_ppm(ppm);
     let mut trusted_estimate = None;
     for _ in 0..3 {
         trusted_estimate = controller.observe_clock_frames(
@@ -74,7 +87,12 @@ fn clock_case(input_clock_ppm: f64) -> Result<Value, Box<dyn std::error::Error>>
             false,
         )?;
     }
-    let trusted_estimate = trusted_estimate.ok_or("clock estimator did not become trusted")?;
+    trusted_estimate.ok_or_else(|| "clock estimator did not become trusted".into())
+}
+
+fn clock_case(input_clock_ppm: f64) -> Result<Value, Box<dyn std::error::Error>> {
+    let mut controller = controller()?;
+    let trusted_estimate = acquire_clock_estimate(&mut controller, input_clock_ppm)?;
     if (trusted_estimate - input_clock_ppm).abs() > 5.0 {
         return Err(format!(
             "clock estimate outside tolerance: requested={input_clock_ppm} estimated={trusted_estimate}"
@@ -159,6 +177,49 @@ fn clock_case(input_clock_ppm: f64) -> Result<Value, Box<dyn std::error::Error>>
     }))
 }
 
+fn clock_discontinuity_reacquire_case() -> Result<Value, Box<dyn std::error::Error>> {
+    let mut controller = controller()?;
+    let before = acquire_clock_estimate(&mut controller, 250.0)?;
+    if (before - 250.0).abs() > 5.0 || (controller.feedforward_correction_ppm() + 250.0).abs() > 5.0 {
+        return Err("failed to acquire initial +250 ppm clock epoch".into());
+    }
+
+    let reset = controller.observe_clock_frames(0, 0, true)?;
+    if reset.is_some() || controller.feedforward_correction_ppm() != 0.0 {
+        return Err("clock discontinuity did not clear estimator trust/feed-forward".into());
+    }
+
+    let after = acquire_clock_estimate(&mut controller, -250.0)?;
+    if (after + 250.0).abs() > 5.0 || (controller.feedforward_correction_ppm() - 250.0).abs() > 5.0 {
+        return Err("failed to reacquire -250 ppm clock epoch after discontinuity".into());
+    }
+
+    Ok(json!({
+        "initial_estimate_ppm": before,
+        "feedforward_cleared_on_discontinuity": true,
+        "reacquired_estimate_ppm": after,
+        "reacquired_feedforward_ppm": controller.feedforward_correction_ppm(),
+        "passed": true
+    }))
+}
+
+fn clock_out_of_range_case() -> Result<Value, Box<dyn std::error::Error>> {
+    let mut controller = controller()?;
+    let result = controller.observe_clock_frames(
+        input_frames_for_ppm(5_000.0),
+        ESTIMATOR_WINDOW_OUTPUT_FRAMES,
+        false,
+    );
+    if result.is_ok() || controller.feedforward_correction_ppm() != 0.0 {
+        return Err("out-of-range clock estimate did not fail closed with feed-forward cleared".into());
+    }
+    Ok(json!({
+        "input_clock_ppm": 5_000.0,
+        "rejected": true,
+        "feedforward_after_rejection_ppm": controller.feedforward_correction_ppm()
+    }))
+}
+
 fn start_machine(machine: &mut DuplexStateMachine) -> Result<(), Box<dyn std::error::Error>> {
     machine.transition(DuplexStateEvent::StartRequested)?;
     machine.transition(DuplexStateEvent::StreamsStarted)?;
@@ -190,7 +251,7 @@ fn reconnect_case() -> Result<Value, Box<dyn std::error::Error>> {
         machine.transition(DuplexStateEvent::RecoveryFailed)?;
     }
 
-    if backoffs != [250, 500, 1_000, 2_000, 4_000]
+    if backoffs != EXPECTED_BACKOFF_MS
         || succeeded_on_attempt != Some(5)
         || machine.state() != DuplexStreamState::Running
     {
@@ -233,7 +294,7 @@ fn reconnect_exhaustion_case() -> Result<Value, Box<dyn std::error::Error>> {
         machine.transition(DuplexStateEvent::RecoveryFailed)?;
     }
 
-    if backoffs != [250, 500, 1_000, 2_000, 4_000]
+    if backoffs != EXPECTED_BACKOFF_MS
         || machine.recovery_attempts() != 5
         || machine.can_attempt_recovery()
         || machine.next_recovery_backoff_ms().is_some()
@@ -247,6 +308,43 @@ fn reconnect_exhaustion_case() -> Result<Value, Box<dyn std::error::Error>> {
         "elapsed_ms": elapsed_ms,
         "attempts": machine.recovery_attempts(),
         "budget_exhausted": true,
+        "final_state": format!("{:?}", machine.state())
+    }))
+}
+
+fn reconnect_flapping_case() -> Result<Value, Box<dyn std::error::Error>> {
+    let mut machine = DuplexStateMachine::default();
+    start_machine(&mut machine)?;
+    let mut observed_backoffs = Vec::new();
+
+    for expected_attempt in 1_u32..=5 {
+        machine.transition(DuplexStateEvent::StreamFault(AudioStreamFault::DeviceLost))?;
+        let backoff = machine
+            .next_recovery_backoff_ms()
+            .ok_or("flapping device unexpectedly lost recovery budget early")?;
+        observed_backoffs.push(backoff);
+        machine.transition(DuplexStateEvent::RecoveryRequested)?;
+        machine.transition(DuplexStateEvent::RecoverySucceeded)?;
+        if machine.recovery_attempts() != expected_attempt || machine.state() != DuplexStreamState::Running {
+            return Err("successful reopen incorrectly reset flapping-device recovery history".into());
+        }
+    }
+
+    machine.transition(DuplexStateEvent::StreamFault(AudioStreamFault::DeviceLost))?;
+    if observed_backoffs != EXPECTED_BACKOFF_MS
+        || machine.recovery_attempts() != 5
+        || machine.can_attempt_recovery()
+        || machine.next_recovery_backoff_ms().is_some()
+        || machine.state() != DuplexStreamState::Faulted
+    {
+        return Err("flapping device did not exhaust bounded recovery history fail-closed".into());
+    }
+
+    Ok(json!({
+        "successful_reopens_without_stable_run": 5,
+        "backoff_ms": observed_backoffs,
+        "attempts_retained": machine.recovery_attempts(),
+        "sixth_fault_recovery_permitted": false,
         "final_state": format!("{:?}", machine.state())
     }))
 }
