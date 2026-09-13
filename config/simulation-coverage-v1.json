@@ -290,7 +290,9 @@
       "simulator_capability": "adaptive-clock-rate-correction",
       "profiles": [
         "clock-correction-plus-250ppm",
-        "clock-correction-minus-250ppm"
+        "clock-correction-minus-250ppm",
+        "clock-discontinuity-reacquire",
+        "clock-out-of-range-fail-closed"
       ],
       "evidence": [
         "crates/aurora-realtime-engine/src/estimator.rs",
@@ -300,7 +302,7 @@
         "validation/virtual-hardware/aurora_resilience_sim.py",
         "validation/virtual-hardware/test-aurora-resilience-sim.sh"
       ],
-      "truth_boundary": "Executable virtual evidence drives Aurora's real fixed-storage PPM estimator, slew-limited DriftController feed-forward and RubatoAsrc ratio/sample path for both +250 ppm and -250 ppm over a simulated 24 hours while keeping a fixed-capacity ring bounded. This does not constitute physical clock measurement or prove a specific USB/TDM/audio device."
+      "truth_boundary": "Executable virtual evidence drives Aurora's real fixed-storage PPM estimator, slew-limited DriftController feed-forward and RubatoAsrc ratio/sample path for both +250 ppm and -250 ppm over a simulated 24 hours while keeping a fixed-capacity ring bounded. It also requires discontinuity to clear stale trust/feed-forward before reacquiring a reversed clock epoch and rejects an out-of-range 5000 ppm relationship fail-closed. This does not constitute physical clock measurement or prove a specific USB/TDM/audio device."
     },
     {
       "id": "device-reconnect-recovery",
@@ -309,7 +311,8 @@
       "simulator_capability": "device-reconnect-recovery",
       "profiles": [
         "device-reconnect",
-        "device-reconnect-exhaustion"
+        "device-reconnect-exhaustion",
+        "device-reconnect-flapping"
       ],
       "evidence": [
         "crates/aurora-realtime-engine/src/device_state.rs",
@@ -317,7 +320,7 @@
         "validation/virtual-hardware/aurora_resilience_sim.py",
         "validation/virtual-hardware/test-aurora-resilience-sim.sh"
       ],
-      "truth_boundary": "Executable virtual evidence drives Aurora's real DuplexStateMachine through 250/500/1000/2000/4000 ms bounded recovery backoff, successful late reappearance, stable-run history reset, and fail-closed exhaustion after five failed attempts. Backend reopen timing and physical device hotplug remain unproven."
+      "truth_boundary": "Executable virtual evidence drives Aurora's real DuplexStateMachine through 250/500/1000/2000/4000 ms bounded recovery backoff, successful late reappearance, stable-run history reset, fail-closed exhaustion after five failed attempts, and repeated successful-but-unstable reopen cycles that retain history until the recovery budget is exhausted. Backend reopen timing and physical device hotplug remain unproven."
     },
     {
       "id": "multi-speaker-room-field-control-simulation",
