@@ -1,9 +1,9 @@
-//! Aurora-owned decoder boundary for external immersive-audio decoders.
+//! Aurora-owned decoder boundaries for external immersive-audio decoders.
 
 use aurora_core::{AudioBlock, AudioFormat, AudioObject};
 use thiserror::Error;
 
-/// Decoded audio and object metadata for one offline chunk.
+/// Decoded audio and object metadata for one decoder output frame.
 #[derive(Debug, Clone, PartialEq)]
 pub struct DecodedFrame {
     /// Decoded PCM samples.
@@ -54,7 +54,7 @@ pub enum DecoderError {
     ExternalProcess(String),
 }
 
-/// Aurora-owned decoder trait implemented by third-party adapter crates.
+/// Offline/chunk decoder boundary retained for file and preparation paths.
 pub trait Decoder {
     /// Returns static adapter metadata including the semantic strength of its output.
     fn info(&self) -> DecoderInfo;
@@ -67,4 +67,68 @@ pub trait Decoder {
 
     /// Clears decoder state.
     fn reset(&mut self);
+}
+
+/// Transport presented to a live decoder backend.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DecoderPacketTransport {
+    /// Raw codec elementary bytes.
+    RawElementary,
+    /// Payload originated from an IEC61937 burst and retains its data-type code.
+    Iec61937,
+}
+
+/// Borrowed packet supplied by a live ingress adapter.
+///
+/// Aurora deliberately keeps this contract independent of ALSA, USB, eARC, HDMI, a particular
+/// host processor, or a particular decoder implementation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct DecoderPacket<'a> {
+    /// Packet transport semantics.
+    pub transport: DecoderPacketTransport,
+    /// IEC61937 data-type code when known, for example `0x15` for E-AC-3.
+    pub data_type: Option<u8>,
+    /// Codec payload bytes. For IEC61937 this is the extracted payload, not padding.
+    pub payload: &'a [u8],
+    /// True when the packet starts a new stream epoch after a gap, seek, relock, or format change.
+    pub discontinuity: bool,
+}
+
+/// Frames emitted after one streaming decoder packet.
+#[derive(Debug, Clone, PartialEq)]
+pub struct DecodedBatch {
+    /// Zero or more decoded frames. A decoder may buffer before emitting the first frame.
+    pub frames: Vec<DecodedFrame>,
+    /// Backend assertion that native source object metadata is present for this batch/stream.
+    /// This must never be set for synthetic upmix metadata.
+    pub native_objects_present: bool,
+}
+
+impl DecodedBatch {
+    /// Creates an empty buffering result.
+    pub fn empty() -> Self {
+        Self {
+            frames: Vec::new(),
+            native_objects_present: false,
+        }
+    }
+}
+
+/// Stateful live-decoder boundary used by the encoded ingress runtime.
+///
+/// Implementations may wrap an in-process library, a reviewed ABI bridge, or an out-of-process
+/// decoder. They must not silently substitute channel PCM or synthetic upmix metadata for a
+/// requested native object scene.
+pub trait StreamingDecoder {
+    /// Returns static adapter metadata including semantic strength.
+    fn info(&self) -> DecoderInfo;
+
+    /// Configures output PCM expectations before packets are accepted.
+    fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError>;
+
+    /// Pushes one bounded packet and returns any decoded frames made available by it.
+    fn push_packet(&mut self, packet: DecoderPacket<'_>) -> Result<DecodedBatch, DecoderError>;
+
+    /// Clears stream history after a discontinuity or explicit recovery.
+    fn reset_stream(&mut self);
 }
