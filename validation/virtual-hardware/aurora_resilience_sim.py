@@ -20,8 +20,11 @@ SIMULATOR_CAPABILITIES = (
 FAULT_PROFILES = (
     "clock-correction-plus-250ppm",
     "clock-correction-minus-250ppm",
+    "clock-discontinuity-reacquire",
+    "clock-out-of-range-fail-closed",
     "device-reconnect",
     "device-reconnect-exhaustion",
+    "device-reconnect-flapping",
 )
 
 
