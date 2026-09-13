@@ -1,0 +1,135 @@
+name: One-shot Aurora runtime gap patch
+
+on:
+  push:
+    branches:
+      - gap-closure-software-p0
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: gap-closure-software-p0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Patch runtime contracts and hardware-agnostic handoff
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              if text.count(old) != 1:
+                  raise SystemExit(f"expected exactly one match in {path}, found {text.count(old)}")
+              p.write_text(text.replace(old, new, 1))
+
+          # Source runtime: carry decoder semantic strength into the activation gate.
+          replace_once(
+              "crates/aurora-source-runtime/src/lib.rs",
+              "use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError};",
+              "use aurora_decoder_api::{\\n    DecodedFrame, Decoder, DecoderError, DecoderOutputSemantics,\\n};",
+          )
+          replace_once(
+              "crates/aurora-source-runtime/src/lib.rs",
+              "        let input = self.loader.load_chunk(&prepared.media)?;\\n        self.decoder.reset();",
+              "        let decoder_info = self.decoder.info();\\n        let input = self.loader.load_chunk(&prepared.media)?;\\n        self.decoder.reset();",
+          )
+          replace_once(
+              "crates/aurora-source-runtime/src/lib.rs",
+              "        validate_decoded_frame(&decoded, output_format)?;\\n\\n        let speaker_gains = if decoded.objects.is_empty() {",
+              "        validate_decoded_frame(&decoded, output_format)?;\\n        validate_decoder_semantics(&decoded, decoder_info.output_semantics)?;\\n\\n        let speaker_gains = if decoded.objects.is_empty() {",
+          )
+          replace_once(
+              "crates/aurora-source-runtime/src/lib.rs",
+              "    /// Object rendering requires a nonempty speaker layout.\\n    #[error(\"object-bearing decoded material requires a nonempty speaker layout\")]\\n    EmptyRenderLayout,",
+              "    /// Decoder output did not match the semantic strength declared by its adapter.\\n    #[error(\"decoder output semantics mismatch: declared {declared:?}, objects={object_count}\")]\\n    DecoderSemanticsMismatch {\\n        /// Semantic strength declared by the adapter.\\n        declared: DecoderOutputSemantics,\\n        /// Number of real object records in the decoded frame.\\n        object_count: usize,\\n    },\\n    /// Object rendering requires a nonempty speaker layout.\\n    #[error(\"object-bearing decoded material requires a nonempty speaker layout\")]\\n    EmptyRenderLayout,",
+          )
+          replace_once(
+              "crates/aurora-source-runtime/src/lib.rs",
+              "fn db_to_linear(db: f32) -> f32 {\\n    10.0_f32.powf(db / 20.0)\\n}",
+              "fn validate_decoder_semantics(\\n    decoded: &DecodedFrame,\\n    declared: DecoderOutputSemantics,\\n) -> Result<(), SourceRuntimeError> {\\n    let mismatch = match declared {\\n        DecoderOutputSemantics::ObjectScene => decoded.objects.is_empty(),\\n        DecoderOutputSemantics::ChannelPcm | DecoderOutputSemantics::SyntheticUpmix => {\\n            !decoded.objects.is_empty()\\n        }\\n    };\\n    if mismatch {\\n        return Err(SourceRuntimeError::DecoderSemanticsMismatch {\\n            declared,\\n            object_count: decoded.objects.len(),\\n        });\\n    }\\n    Ok(())\\n}\\n\\nfn db_to_linear(db: f32) -> f32 {\\n    10.0_f32.powf(db / 20.0)\\n}\\n\\n#[cfg(test)]\\nmod semantic_tests {\\n    use super::*;\\n\\n    fn frame(objects: Vec<AudioObject>) -> DecodedFrame {\\n        DecodedFrame {\\n            audio: AudioBlock {\\n                channels: vec![vec![0.0; 4], vec![0.0; 4]],\\n                frame_count: 4,\\n                presentation_time_seconds: 0.0,\\n                discontinuity: false,\\n            },\\n            objects,\\n        }\\n    }\\n\\n    #[test]\\n    fn object_scene_cannot_silently_degrade_to_channel_pcm() {\\n        let error = validate_decoder_semantics(\\n            &frame(Vec::new()),\\n            DecoderOutputSemantics::ObjectScene,\\n        )\\n        .unwrap_err();\\n        assert!(matches!(\\n            error,\\n            SourceRuntimeError::DecoderSemanticsMismatch {\\n                declared: DecoderOutputSemantics::ObjectScene,\\n                object_count: 0\\n            }\\n        ));\\n    }\\n\\n    #[test]\\n    fn synthetic_upmix_cannot_claim_real_objects() {\\n        let object = AudioObject {\\n            id: \"fixture\".to_owned(),\\n            position: aurora_core::Vector3::ZERO,\\n            velocity: aurora_core::Vector3::ZERO,\\n            gain_db: 0.0,\\n            spread: 0.0,\\n            start_time_seconds: None,\\n            end_time_seconds: None,\\n        };\\n        let error = validate_decoder_semantics(\\n            &frame(vec![object]),\\n            DecoderOutputSemantics::SyntheticUpmix,\\n        )\\n        .unwrap_err();\\n        assert!(matches!(\\n            error,\\n            SourceRuntimeError::DecoderSemanticsMismatch {\\n                declared: DecoderOutputSemantics::SyntheticUpmix,\\n                object_count: 1\\n            }\\n        ));\\n    }\\n}",
+          )
+
+          # Existing source-runtime fixture is an object-scene decoder by construction.
+          replace_once(
+              "crates/aurora-source-runtime/tests/source_handoff.rs",
+              "use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};",
+              "use aurora_decoder_api::{\\n    DecodedFrame, Decoder, DecoderError, DecoderInfo, DecoderOutputSemantics,\\n};",
+          )
+          replace_once(
+              "crates/aurora-source-runtime/tests/source_handoff.rs",
+              "            maturity: \"test\",\\n        }",
+              "            maturity: \"test\",\\n            output_semantics: DecoderOutputSemantics::ObjectScene,\\n        }",
+          )
+
+          # Adaptive duplex: feed actual producer/consumer frame accounting into the estimator.
+          replace_once(
+              "crates/aurora-realtime-engine/src/duplex.rs",
+              "    /// Adaptive correction relative to nominal.\\n    pub correction_ppm: f64,\\n    /// Total controller saturation updates.",
+              "    /// Adaptive correction relative to nominal.\\n    pub correction_ppm: f64,\\n    /// Trusted frame-count feed-forward correction before PI fill feedback.\\n    pub feedforward_correction_ppm: f64,\\n    /// Total controller saturation updates.",
+          )
+          replace_once(
+              "crates/aurora-realtime-engine/src/duplex.rs",
+              "    correction_ppm_bits: AtomicU64,\\n    controller_saturation_count: AtomicU64,",
+              "    correction_ppm_bits: AtomicU64,\\n    feedforward_correction_ppm_bits: AtomicU64,\\n    controller_saturation_count: AtomicU64,",
+          )
+          replace_once(
+              "crates/aurora-realtime-engine/src/duplex.rs",
+              "            correction_ppm_bits: AtomicU64::new(0.0_f64.to_bits()),\\n            controller_saturation_count: AtomicU64::new(0),",
+              "            correction_ppm_bits: AtomicU64::new(0.0_f64.to_bits()),\\n            feedforward_correction_ppm_bits: AtomicU64::new(0.0_f64.to_bits()),\\n            controller_saturation_count: AtomicU64::new(0),",
+          )
+          replace_once(
+              "crates/aurora-realtime-engine/src/duplex.rs",
+              "            correction_ppm: f64::from_bits(self.correction_ppm_bits.load(Ordering::Relaxed)),\\n            controller_saturation_count:",
+              "            correction_ppm: f64::from_bits(self.correction_ppm_bits.load(Ordering::Relaxed)),\\n            feedforward_correction_ppm: f64::from_bits(\\n                self.feedforward_correction_ppm_bits.load(Ordering::Relaxed),\\n            ),\\n            controller_saturation_count:",
+          )
+          replace_once(
+              "crates/aurora-realtime-engine/src/duplex.rs",
+              "    output_cache: Vec<f32>,\\n    cache_cursor_samples: usize,\\n}",
+              "    output_cache: Vec<f32>,\\n    cache_cursor_samples: usize,\\n    last_input_frames_received: u64,\\n    last_output_frames_requested: u64,\\n    last_overflow_count: u64,\\n    last_underflow_count: u64,\\n}",
+          )
+          replace_once(
+              "crates/aurora-realtime-engine/src/duplex.rs",
+              "    fn refill_cache(&mut self) -> bool {\\n        let fill_frames = self.queue.len_samples() / self.config.channels;",
+              "    fn refill_cache(&mut self) -> bool {\\n        let clock = self.duplex_status.snapshot();\\n        let input_delta = clock\\n            .input_frames_received\\n            .saturating_sub(self.last_input_frames_received);\\n        let output_delta = clock\\n            .output_frames_requested\\n            .saturating_sub(self.last_output_frames_requested);\\n        let discontinuity = clock.overflow_count != self.last_overflow_count\\n            || clock.underflow_count != self.last_underflow_count\\n            || clock.fault != DuplexFault::None;\\n        self.last_input_frames_received = clock.input_frames_received;\\n        self.last_output_frames_requested = clock.output_frames_requested;\\n        self.last_overflow_count = clock.overflow_count;\\n        self.last_underflow_count = clock.underflow_count;\\n        if discontinuity || (input_delta > 0 && output_delta > 0) {\\n            match self\\n                .controller\\n                .observe_clock_frames(input_delta, output_delta, discontinuity)\\n            {\\n                Ok(_) => {}\\n                Err(DriftControllerFault::CorrectionOutOfRange) => {\\n                    self.adaptive_status\\n                        .fault\\n                        .store(AdaptiveDuplexFault::Controller as u32, Ordering::Release);\\n                    self.duplex_status.raise_health(DuplexHealth::Fatal);\\n                    return false;\\n                }\\n                Err(DriftControllerFault::InvalidConfiguration) => {\\n                    self.adaptive_status\\n                        .fault\\n                        .store(AdaptiveDuplexFault::Controller as u32, Ordering::Release);\\n                    return false;\\n                }\\n            }\\n        }\\n\\n        let fill_frames = self.queue.len_samples() / self.config.channels;",
+          )
+          replace_once(
+              "crates/aurora-realtime-engine/src/duplex.rs",
+              "        self.adaptive_status\\n            .correction_ppm_bits\\n            .store(report.correction_ppm.to_bits(), Ordering::Relaxed);\\n        self.adaptive_status\\n            .controller_saturation_count",
+              "        self.adaptive_status\\n            .correction_ppm_bits\\n            .store(report.correction_ppm.to_bits(), Ordering::Relaxed);\\n        self.adaptive_status\\n            .feedforward_correction_ppm_bits\\n            .store(report.feedforward_correction_ppm.to_bits(), Ordering::Relaxed);\\n        self.adaptive_status\\n            .controller_saturation_count",
+          )
+          replace_once(
+              "crates/aurora-realtime-engine/src/duplex.rs",
+              "            output_cache: vec![0.0; max_output_block_frames * config.channels],\\n            cache_cursor_samples: max_output_block_frames * config.channels,\\n        },",
+              "            output_cache: vec![0.0; max_output_block_frames * config.channels],\\n            cache_cursor_samples: max_output_block_frames * config.channels,\\n            last_input_frames_received: 0,\\n            last_output_frames_requested: 0,\\n            last_overflow_count: 0,\\n            last_underflow_count: 0,\\n        },",
+          )
+
+          # Canonical agent handoff: hardware remains intentionally unselected.
+          replace_once(
+              "AGENTS.md",
+              "> **Mandatory maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge. Keep it factual and compact.\\n\\nLast updated: **2026-09-13**",
+              "> **Mandatory maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge. Keep it factual and compact.\\n>\\n> **Current hardware-selection rule:** `main-v2` has **no canonical physical hardware target**. Any Pi, SBC, host, MCU, MCHStreamer, USB bridge, DAC, amplifier, or wireless-node chain mentioned later in this handoff is historical feasibility/validation evidence only, not a frozen product architecture. Close software/JOC/realtime/simulation gates first; choose physical hardware only after those gates are accepted and an exact measured compatibility/bring-up plan is approved.\\n\\nLast updated: **2026-09-13**\\n\\n### Active software gap closure (2026-09-13)\\n\\n- Branch `gap-closure-software-p0` / draft PR #204 is software-only and must not select a host, MCU, DAC, eARC bridge, transport chipset, or amplifier.\\n- Live IEC61937 ingress now uses threshold-driven verdicts and bounded diagnostic retention; Linux/Windows tooling CI passes.\\n- Realtime work adds a fixed-storage 10 s frame-count ppm estimator, median-of-3/3-window trust, discontinuity rejection, slew-limited feed-forward into the PI controller, bounded reconnect attempts/backoff, and paced wall-clock soak/RSS evidence.\\n- Decoder adapters now declare semantic output strength (`ChannelPcm`, `ObjectScene`, `SyntheticUpmix`); Source Media Runtime rejects a claimed object-scene decode that silently returns bed-only PCM and rejects synthetic/channel modes that claim real object metadata.\\n- JOC external backends remain validation/integration boundaries until a measured runtime adapter is accepted; no validation-only backend is promoted to production by this work."
+          )
+          PY
+
+          cargo fmt --all
+          rm .github/workflows/one-shot-gap-runtime-patch.yml
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add --all
+          git commit -m "realtime: wire clock estimator and decoder semantic gate"
+          git push origin HEAD:gap-closure-software-p0
