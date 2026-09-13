@@ -4,7 +4,9 @@
 //! an out-of-process libiamf-compatible decoder invoked by an Aurora adapter.
 
 use aurora_core::AudioFormat;
-use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
+use aurora_decoder_api::{
+    DecodedFrame, Decoder, DecoderError, DecoderInfo, DecoderOutputSemantics,
+};
 
 /// Preferred open immersive-audio decoder adapter placeholder.
 #[derive(Debug, Default, Clone)]
@@ -25,6 +27,7 @@ impl Decoder for IamfDecoderAdapter {
             name: "libiamf out-of-process adapter",
             production_ready: false,
             maturity: "preferred-open-planned",
+            output_semantics: DecoderOutputSemantics::ObjectScene,
         }
     }
 
@@ -55,6 +58,7 @@ mod tests {
         let info = adapter.info();
 
         assert_eq!(info.maturity, "preferred-open-planned");
+        assert_eq!(info.output_semantics, DecoderOutputSemantics::ObjectScene);
         assert!(!info.production_ready);
     }
 }
