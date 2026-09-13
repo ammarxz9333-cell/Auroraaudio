@@ -273,7 +273,10 @@ fn adaptive_bridge_hard_latch_case() -> Result<Value, Box<dyn std::error::Error>
         || still_faulted.duplex.underflow_count != 0
         || still_faulted.clock_epoch != faulted.clock_epoch
     {
-        return Err("latched adaptive fault recovered or mutated itself without control-plane rebuild".into());
+        return Err(
+            "latched adaptive fault recovered or mutated itself without control-plane rebuild"
+                .into(),
+        );
     }
 
     Ok(json!({
