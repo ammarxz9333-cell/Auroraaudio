@@ -1,4 +1,8 @@
-use std::{path::PathBuf, thread, time::{Duration, Instant}};
+use std::{
+    path::PathBuf,
+    thread,
+    time::{Duration, Instant},
+};
 
 use aurora_realtime_audio_api::AudioStreamFault;
 use aurora_realtime_engine::{
@@ -17,6 +21,7 @@ const DEFAULT_WALL_SECONDS: u64 = 15;
 const TARGET_FILL: usize = 2_048;
 const CLOCK_WINDOW_OUTPUT_FRAMES: u64 = 480_000;
 const MAX_RSS_GROWTH_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_CORRECTION_STEP_PPM: f64 = 2.000_001;
 
 #[derive(Debug, Serialize)]
 struct FaultedWallClockReport {
@@ -32,7 +37,9 @@ struct FaultedWallClockReport {
     rss_max_bytes: Option<u64>,
     rss_final_bytes: Option<u64>,
     clock_initial_trusted_ppm: Option<f64>,
-    clock_initial_feedforward_ppm: f64,
+    clock_initial_feedforward_ppm: Option<f64>,
+    clock_feedforward_after_discontinuity_ppm: Option<f64>,
+    clock_correction_after_discontinuity_ppm: Option<f64>,
     clock_discontinuity_reset: bool,
     clock_reacquired_ppm: Option<f64>,
     clock_reacquired_feedforward_ppm: f64,
@@ -112,11 +119,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let jitter_windows = [210.0_f64, 330.0, 250.0];
     let mut next_clock_window = 0_usize;
     let mut initial_trusted = None;
+    let mut initial_feedforward = None;
     let mut discontinuity_done = false;
+    let mut feedforward_after_discontinuity = None;
+    let mut correction_after_discontinuity = None;
     let mut reverse_windows = 0_u8;
     let mut reacquired = None;
     let mut previous_correction = 0.0_f64;
     let mut maximum_correction_step = 0.0_f64;
+    let mut epoch_reset_pending = false;
 
     let mut device_fault_injected = false;
     let mut recovery_due: Option<Instant> = None;
@@ -141,6 +152,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 CLOCK_WINDOW_OUTPUT_FRAMES,
                 false,
             )?;
+            if initial_trusted.is_some() {
+                initial_feedforward = Some(controller.feedforward_correction_ppm());
+            }
             next_clock_window += 1;
         }
 
@@ -174,7 +188,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if !discontinuity_done && elapsed >= Duration::from_secs(9) {
             controller.observe_clock_frames(1, 1, true)?;
+            feedforward_after_discontinuity = Some(controller.feedforward_correction_ppm());
             discontinuity_done = true;
+            epoch_reset_pending = true;
+            // A clock-epoch discontinuity deliberately resets the controller while the media path
+            // is expected to be muted/recovering. Do not interpret that reset boundary as an
+            // in-epoch ASRC slew step.
+            previous_correction = 0.0;
         }
         if discontinuity_done
             && reverse_windows < 3
@@ -189,6 +209,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
 
         let correction = controller.update(TARGET_FILL, 0, BLOCK_SIZE)?;
+        if epoch_reset_pending {
+            correction_after_discontinuity = Some(correction.correction_ppm);
+            epoch_reset_pending = false;
+        }
         let correction_step = (correction.correction_ppm - previous_correction).abs();
         maximum_correction_step = maximum_correction_step.max(correction_step);
         previous_correction = correction.correction_ppm;
@@ -224,8 +248,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rss_max = Some(rss_max.unwrap_or(rss).max(rss));
     }
     let metrics = engine.metrics();
-    let initial_feedforward = if initial_trusted.is_some() { -250.0 } else { controller.feedforward_correction_ppm() };
-    let discontinuity_reset = discontinuity_done && reacquired.is_some();
+    let discontinuity_reset = feedforward_after_discontinuity
+        .is_some_and(|ppm| ppm.abs() <= f64::EPSILON)
+        && correction_after_discontinuity
+            .is_some_and(|ppm| ppm.abs() <= f64::EPSILON);
     let mut violations = Vec::new();
 
     if initial_trusted.is_none() {
@@ -236,8 +262,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             violations.push(format!("initial filtered clock estimate outside tolerance: {ppm}"));
         }
     }
+    match initial_feedforward {
+        Some(ppm) if (ppm + 250.0).abs() <= 5.0 => {}
+        Some(ppm) => violations.push(format!(
+            "initial feed-forward outside tolerance or wrong sign: {ppm}"
+        )),
+        None => violations.push("initial feed-forward was never observed".to_owned()),
+    }
     if !discontinuity_done {
         violations.push("clock discontinuity was not injected".to_owned());
+    }
+    if !discontinuity_reset {
+        violations.push(format!(
+            "clock discontinuity did not reset feed-forward/correction: feedforward={feedforward_after_discontinuity:?} correction={correction_after_discontinuity:?}"
+        ));
     }
     if let Some(ppm) = reacquired {
         if (ppm + 250.0).abs() > 5.0 {
@@ -249,8 +287,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     if (controller.feedforward_correction_ppm() - 250.0).abs() > 5.0 {
         violations.push("reacquired feed-forward has wrong sign or magnitude".to_owned());
     }
-    if maximum_correction_step > 2.000_001 {
-        violations.push(format!("clock correction slew exceeded 2 ppm/update: {maximum_correction_step}"));
+    if maximum_correction_step > MAX_CORRECTION_STEP_PPM {
+        violations.push(format!(
+            "in-epoch clock correction slew exceeded 2 ppm/update: {maximum_correction_step}"
+        ));
     }
     if reconnect_backoff != [250, 500, 1_000]
         || reconnect_success_attempt != Some(3)
@@ -260,7 +300,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     {
         violations.push(format!(
             "bounded reconnect mismatch: backoff={reconnect_backoff:?} success={reconnect_success_attempt:?} state={:?} attempts={}",
-            device.state(), device.recovery_attempts()
+            device.state(),
+            device.recovery_attempts()
         ));
     }
     if callbacks == 0 || observed_peak <= f32::EPSILON {
@@ -295,6 +336,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         rss_final_bytes: rss_final,
         clock_initial_trusted_ppm: initial_trusted,
         clock_initial_feedforward_ppm: initial_feedforward,
+        clock_feedforward_after_discontinuity_ppm: feedforward_after_discontinuity,
+        clock_correction_after_discontinuity_ppm: correction_after_discontinuity,
         clock_discontinuity_reset: discontinuity_reset,
         clock_reacquired_ppm: reacquired,
         clock_reacquired_feedforward_ppm: controller.feedforward_correction_ppm(),
@@ -308,10 +351,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         engine_dropped_blocks: metrics.dropped_blocks,
         engine_fault: format!("{:?}", metrics.fault),
         violations,
-        truth_boundary: "One wall-clock-paced software process combines Aurora 7.1.4 callbacks and RSS/deadline observation with virtual clock observations, real DriftController/RubatoAsrc control, and simulated DuplexStateMachine device-loss recovery. Device loss and clock observations are injected software controls, not physical eARC/USB/TDM/hotplug evidence.",
+        truth_boundary: "One wall-clock-paced software process combines Aurora 7.1.4 callbacks and RSS/deadline observation with accelerated virtual clock-window observations, real DriftController/RubatoAsrc control, and simulated DuplexStateMachine device-loss recovery. The <=2 ppm/update slew assertion applies only within a continuous clock epoch; the explicit discontinuity boundary is reset/mute territory and is checked separately. Clock windows are intentionally compressed relative to wall time, and device loss is injected software control: neither is physical eARC/USB/TDM/hotplug evidence.",
     };
 
-    if let Some(parent) = report_path.parent().filter(|parent| !parent.as_os_str().is_empty()) {
+    if let Some(parent) = report_path
+        .parent()
+        .filter(|parent| !parent.as_os_str().is_empty())
+    {
         std::fs::create_dir_all(parent)?;
     }
     std::fs::write(&report_path, serde_json::to_string_pretty(&report)? + "\n")?;
