@@ -1,5 +1,7 @@
 //! Aurora-owned decoder boundaries for external immersive-audio decoders.
 
+use std::panic::{catch_unwind, AssertUnwindSafe};
+
 use aurora_core::{AudioBlock, AudioFormat, AudioObject, ChannelRole};
 use thiserror::Error;
 
@@ -52,6 +54,12 @@ pub enum DecoderError {
     /// External decoder process failed.
     #[error("external decoder process failed: {0}")]
     ExternalProcess(String),
+    /// An in-process decoder backend panicked and was isolated at the adapter boundary.
+    #[error("decoder backend panicked during {0}; explicit adapter recovery is required")]
+    BackendPanic(&'static str),
+    /// A panic-isolated decoder remains latched faulted until explicit adapter recovery.
+    #[error("decoder backend is latched faulted after a panic; explicit adapter recovery is required")]
+    BackendFaulted,
 }
 
 /// Offline/chunk decoder boundary retained for file and preparation paths.
@@ -176,4 +184,188 @@ pub trait StreamingDecoder {
 
     /// Clears stream history after a discontinuity or explicit recovery.
     fn reset_stream(&mut self);
+}
+
+/// Panic-isolating adapter for in-process streaming decoder backends.
+///
+/// This wrapper belongs on the media/control side, not inside Aurora's hard realtime callback.
+/// Once a backend panic is observed, packet/configuration calls fail closed until [`Self::recover`]
+/// successfully resets the backend. Ordinary `reset_stream` calls intentionally do not clear a
+/// panic latch, so a discontinuity cannot accidentally turn a crashed backend audible again.
+pub struct PanicIsolatedStreamingDecoder<D> {
+    inner: D,
+    info: DecoderInfo,
+    faulted: bool,
+}
+
+impl<D> PanicIsolatedStreamingDecoder<D>
+where
+    D: StreamingDecoder,
+{
+    /// Wraps a backend after safely caching its static metadata.
+    pub fn try_new(inner: D) -> Result<Self, DecoderError> {
+        let info = catch_unwind(AssertUnwindSafe(|| inner.info()))
+            .map_err(|_| DecoderError::BackendPanic("info"))?;
+        Ok(Self {
+            inner,
+            info,
+            faulted: false,
+        })
+    }
+
+    /// Returns whether a backend panic is currently latched.
+    pub fn is_faulted(&self) -> bool {
+        self.faulted
+    }
+
+    /// Explicitly attempts to reset and re-arm a backend after a panic.
+    pub fn recover(&mut self) -> Result<(), DecoderError> {
+        match catch_unwind(AssertUnwindSafe(|| self.inner.reset_stream())) {
+            Ok(()) => {
+                self.faulted = false;
+                Ok(())
+            }
+            Err(_) => {
+                self.faulted = true;
+                Err(DecoderError::BackendPanic("recovery reset"))
+            }
+        }
+    }
+
+    /// Borrows the wrapped backend for diagnostics on non-realtime control paths.
+    pub fn inner(&self) -> &D {
+        &self.inner
+    }
+}
+
+impl<D> StreamingDecoder for PanicIsolatedStreamingDecoder<D>
+where
+    D: StreamingDecoder,
+{
+    fn info(&self) -> DecoderInfo {
+        self.info.clone()
+    }
+
+    fn configure_stream(&mut self, config: StreamingDecoderConfig) -> Result<(), DecoderError> {
+        if self.faulted {
+            return Err(DecoderError::BackendFaulted);
+        }
+        match catch_unwind(AssertUnwindSafe(|| self.inner.configure_stream(config))) {
+            Ok(result) => result,
+            Err(_) => {
+                self.faulted = true;
+                Err(DecoderError::BackendPanic("configure_stream"))
+            }
+        }
+    }
+
+    fn push_packet(&mut self, packet: DecoderPacket<'_>) -> Result<DecodedBatch, DecoderError> {
+        if self.faulted {
+            return Err(DecoderError::BackendFaulted);
+        }
+        match catch_unwind(AssertUnwindSafe(|| self.inner.push_packet(packet))) {
+            Ok(result) => result,
+            Err(_) => {
+                self.faulted = true;
+                Err(DecoderError::BackendPanic("push_packet"))
+            }
+        }
+    }
+
+    fn reset_stream(&mut self) {
+        if self.faulted {
+            return;
+        }
+        if catch_unwind(AssertUnwindSafe(|| self.inner.reset_stream())).is_err() {
+            self.faulted = true;
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[derive(Debug)]
+    struct PanicDecoder {
+        panic_on_push: bool,
+        panic_on_reset: bool,
+    }
+
+    impl StreamingDecoder for PanicDecoder {
+        fn info(&self) -> DecoderInfo {
+            DecoderInfo {
+                name: "panic-decoder",
+                production_ready: false,
+                maturity: "test",
+                output_semantics: DecoderOutputSemantics::ObjectScene,
+            }
+        }
+
+        fn configure_stream(&mut self, _config: StreamingDecoderConfig) -> Result<(), DecoderError> {
+            Ok(())
+        }
+
+        fn push_packet(&mut self, _packet: DecoderPacket<'_>) -> Result<DecodedBatch, DecoderError> {
+            if self.panic_on_push {
+                panic!("intentional decoder panic");
+            }
+            Ok(DecodedBatch::empty())
+        }
+
+        fn reset_stream(&mut self) {
+            if self.panic_on_reset {
+                panic!("intentional reset panic");
+            }
+            self.panic_on_push = false;
+        }
+    }
+
+    fn packet() -> DecoderPacket<'static> {
+        DecoderPacket {
+            transport: DecoderPacketTransport::Iec61937,
+            data_type: Some(0x15),
+            payload: &[1, 2, 3],
+            discontinuity: false,
+        }
+    }
+
+    #[test]
+    fn panic_isolation_latches_until_explicit_recovery() {
+        let backend = PanicDecoder {
+            panic_on_push: true,
+            panic_on_reset: false,
+        };
+        let mut decoder = PanicIsolatedStreamingDecoder::try_new(backend).unwrap();
+        assert_eq!(
+            decoder.push_packet(packet()),
+            Err(DecoderError::BackendPanic("push_packet"))
+        );
+        assert!(decoder.is_faulted());
+        decoder.reset_stream();
+        assert!(decoder.is_faulted());
+        assert_eq!(decoder.push_packet(packet()), Err(DecoderError::BackendFaulted));
+        decoder.recover().unwrap();
+        assert!(!decoder.is_faulted());
+        assert_eq!(decoder.push_packet(packet()), Ok(DecodedBatch::empty()));
+    }
+
+    #[test]
+    fn failed_recovery_keeps_backend_latched() {
+        let backend = PanicDecoder {
+            panic_on_push: true,
+            panic_on_reset: true,
+        };
+        let mut decoder = PanicIsolatedStreamingDecoder::try_new(backend).unwrap();
+        assert_eq!(
+            decoder.push_packet(packet()),
+            Err(DecoderError::BackendPanic("push_packet"))
+        );
+        assert_eq!(
+            decoder.recover(),
+            Err(DecoderError::BackendPanic("recovery reset"))
+        );
+        assert!(decoder.is_faulted());
+        assert_eq!(decoder.push_packet(packet()), Err(DecoderError::BackendFaulted));
+    }
 }
