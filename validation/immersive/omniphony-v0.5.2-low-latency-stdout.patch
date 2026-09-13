@@ -37,3 +37,25 @@ diff --git a/omniphony-renderer/src/cli/decode/session_run.rs b/omniphony-render
                      handler.poll_runtime_state()?;
                  }
              }
+ 
+diff --git a/omniphony-renderer/audio_input/src/pipewire_client_node.rs b/omniphony-renderer/audio_input/src/pipewire_client_node.rs
+--- a/omniphony-renderer/audio_input/src/pipewire_client_node.rs
++++ b/omniphony-renderer/audio_input/src/pipewire_client_node.rs
+@@ -13,7 +13,7 @@
+ use pipewire as pw;
+ use pw::spa;
+ use std::cell::RefCell;
+-use std::ffi::{CStr, CString};
++use std::ffi::{CStr, CString, c_char};
+ use std::mem::MaybeUninit;
+ use std::os::fd::RawFd;
+ use std::os::raw::c_void;
+@@ -978,7 +978,7 @@ unsafe extern "C" fn pipewire_bridge_client_node_core_error(
+     id: u32,
+     seq: i32,
+     res: i32,
+-    message: *const i8,
++    message: *const c_char,
+ ) {
+     let state = unsafe { &*(data as *mut PipewireBridgeClientNodeState) };
+     let message = if message.is_null() {
