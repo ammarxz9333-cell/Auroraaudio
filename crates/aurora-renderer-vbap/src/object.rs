@@ -4,7 +4,7 @@
 //! This adapter renders only against enabled non-LFE speakers, then maps the
 //! results back into the configured enabled-speaker order while preserving an
 //! explicit zero-gain LFE slot. All storage is allocated during configuration;
-//! [`Renderer::render_gains`] performs no allocation.
+//! [`aurora_renderer_api::Renderer::render_gains`] performs no allocation.
 
 use aurora_core::{ChannelRole, Listener, Speaker};
 use aurora_renderer_api::{
