@@ -1,0 +1,1 @@
+Scope is software/runtime completion only. Hardware remains intentionally unselected until the software gates are closed.
