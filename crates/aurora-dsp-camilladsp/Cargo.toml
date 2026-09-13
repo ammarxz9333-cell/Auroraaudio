@@ -16,6 +16,7 @@ camilladsp-process = []
 [dependencies]
 aurora-core = { path = "../aurora-core" }
 aurora-audio-io = { path = "../aurora-audio-io" }
+aurora-dsp-api = { path = "../aurora-dsp-api" }
 serde.workspace = true
 serde_json.workspace = true
 thiserror.workspace = true
