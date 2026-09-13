@@ -51,9 +51,26 @@ for case in cases:
 if seen != {-250, 250}:
     raise SystemExit(f"unexpected ppm cases: {seen}")
 
+epoch = clock.get("discontinuity_reacquire") or {}
+if epoch.get("feedforward_cleared_on_discontinuity") is not True or epoch.get("passed") is not True:
+    raise SystemExit("clock discontinuity did not clear trust/feed-forward")
+if abs(float(epoch.get("initial_estimate_ppm", 0.0)) - 250.0) > 5.0:
+    raise SystemExit("initial clock epoch estimate is outside tolerance")
+if abs(float(epoch.get("reacquired_estimate_ppm", 0.0)) + 250.0) > 5.0:
+    raise SystemExit("clock estimator did not reacquire the new epoch")
+if abs(float(epoch.get("reacquired_feedforward_ppm", 0.0)) - 250.0) > 5.0:
+    raise SystemExit("reacquired feed-forward has wrong sign/magnitude")
+
+out_of_range = clock.get("out_of_range_fail_closed") or {}
+if out_of_range.get("rejected") is not True:
+    raise SystemExit("out-of-range clock relationship was not rejected")
+if float(out_of_range.get("feedforward_after_rejection_ppm", 1.0)) != 0.0:
+    raise SystemExit("out-of-range clock rejection left stale feed-forward active")
+
 recovery = report.get("device_reconnect_recovery") or {}
 success = recovery.get("successful_reconnect") or {}
 exhaustion = recovery.get("budget_exhaustion") or {}
+flapping = recovery.get("flapping_device") or {}
 expected_backoff = [250, 500, 1000, 2000, 4000]
 if success.get("backoff_ms") != expected_backoff:
     raise SystemExit("successful reconnect did not use bounded exponential backoff")
@@ -67,11 +84,19 @@ if exhaustion.get("attempts") != 5 or exhaustion.get("budget_exhausted") is not 
     raise SystemExit("reconnect exhaustion did not fail closed at five attempts")
 if exhaustion.get("final_state") != "Faulted":
     raise SystemExit("reconnect exhaustion did not remain faulted")
+if flapping.get("backoff_ms") != expected_backoff:
+    raise SystemExit("flapping reconnect did not preserve exponential backoff history")
+if flapping.get("successful_reopens_without_stable_run") != 5:
+    raise SystemExit("flapping profile did not exercise five successful unstable reopens")
+if flapping.get("attempts_retained") != 5 or flapping.get("sixth_fault_recovery_permitted") is not False:
+    raise SystemExit("flapping device incorrectly reset or exceeded recovery budget")
+if flapping.get("final_state") != "Faulted":
+    raise SystemExit("flapping device did not terminate fail-closed")
 
 print(
     "AURORA-RESILIENCE-EVIDENCE-PASS "
-    "clock=+/-250ppm@24h estimator+feedforward+RubatoAsrc "
-    "reconnect=250/500/1000/2000/4000ms attempts=5 fail_closed=true"
+    "clock=+/-250ppm@24h+discontinuity+out_of_range estimator+feedforward+RubatoAsrc "
+    "reconnect=bounded_success+exhaustion+flapping fail_closed=true"
 )
 PY
 
