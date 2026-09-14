@@ -39,7 +39,14 @@ def first_active_frame(values: array, channels: int, threshold: float) -> int:
     raise ValueError("PCM is silent")
 
 
-def channel_values(values: array, channels: int, channel: int, start_frame: int) -> list[float]:
+def first_active_sample(values: list[float], threshold: float) -> int | None:
+    for index, value in enumerate(values):
+        if abs(value) > threshold:
+            return index
+    return None
+
+
+def channel_values(values: array, channels: int, channel: int, start_frame: int = 0) -> list[float]:
     return list(values[start_frame * channels + channel :: channels])
 
 
@@ -109,7 +116,12 @@ def best_alignment(
         except ValueError as error:
             reasons.add(str(error))
             continue
-        candidate = {"available": True, "lag_frames": lag, "probe_correlation": corr, "probe_frames": count}
+        candidate = {
+            "available": True,
+            "lag_frames": lag,
+            "probe_correlation": corr,
+            "probe_frames": count,
+        }
         if best is None or corr > float(best["probe_correlation"]):
             best = candidate
     if best is not None:
@@ -214,10 +226,10 @@ def analyze(
     frames_a = len(a) // channels_a
     frames_b = len(b) // channels_b
     threshold = float(policy["leading_activity_threshold"])
-    start_a = first_active_frame(a, channels_a, threshold)
-    start_b = first_active_frame(b, channels_b, threshold)
-    active_frames_a = frames_a - start_a
-    active_frames_b = frames_b - start_b
+    global_start_a = first_active_frame(a, channels_a, threshold)
+    global_start_b = first_active_frame(b, channels_b, threshold)
+    active_frames_a = frames_a - global_start_a
+    active_frames_b = frames_b - global_start_b
     frame_delta = abs(active_frames_a - active_frames_b)
     if frame_delta > int(policy["maximum_post_trim_frame_count_delta"]):
         failures.append(f"post-trim frame-count delta {frame_delta} exceeds policy")
@@ -230,23 +242,38 @@ def analyze(
     min_corr = float(policy["minimum_active_channel_correlation"])
     min_ratio = float(policy["minimum_rms_ratio"])
     max_ratio = float(policy["maximum_rms_ratio"])
+    global_onset_offset = global_start_a - global_start_b
 
     compare_channels = min(channels_a, channels_b, expected_channels)
-    channel_data_a = [channel_values(a, channels_a, channel, start_a) for channel in range(compare_channels)]
-    channel_data_b = [channel_values(b, channels_b, channel, start_b) for channel in range(compare_channels)]
-    stats_a = [moments(values) for values in channel_data_a]
-    stats_b = [moments(values) for values in channel_data_b]
-    active_a = [float(stats["rms"]) > threshold for stats in stats_a]
-    active_b = [float(stats["rms"]) > threshold for stats in stats_b]
+    full_channels_a = [channel_values(a, channels_a, channel) for channel in range(compare_channels)]
+    full_channels_b = [channel_values(b, channels_b, channel) for channel in range(compare_channels)]
+    channel_starts_a = [first_active_sample(values, threshold) for values in full_channels_a]
+    channel_starts_b = [first_active_sample(values, threshold) for values in full_channels_b]
+    active_a = [start is not None for start in channel_starts_a]
+    active_b = [start is not None for start in channel_starts_b]
+
+    trimmed_channels_a: list[list[float]] = []
+    trimmed_channels_b: list[list[float]] = []
+    for channel in range(compare_channels):
+        start_a = channel_starts_a[channel]
+        start_b = channel_starts_b[channel]
+        trimmed_channels_a.append(full_channels_a[channel][start_a:] if start_a is not None else [])
+        trimmed_channels_b.append(full_channels_b[channel][start_b:] if start_b is not None else [])
 
     channel_reports: list[dict[str, Any]] = []
     for channel in range(compare_channels):
+        start_a = channel_starts_a[channel]
+        start_b = channel_starts_b[channel]
         base: dict[str, Any] = {
             "channel": channel,
             "active_a": active_a[channel],
             "active_b": active_b[channel],
-            "stats_a": stats_a[channel],
-            "stats_b": stats_b[channel],
+            "first_active_frame_a": start_a,
+            "first_active_frame_b": start_b,
+            "full_stats_a": moments(full_channels_a[channel]),
+            "full_stats_b": moments(full_channels_b[channel]),
+            "active_stats_a": moments(trimmed_channels_a[channel]),
+            "active_stats_b": moments(trimmed_channels_b[channel]),
         }
         if active_a[channel] != active_b[channel]:
             reason = f"channel {channel}: activity mismatch"
@@ -259,7 +286,28 @@ def analyze(
             channel_reports.append(base)
             continue
 
-        alignment = best_alignment(channel_data_a[channel], channel_data_b[channel], lag_search)
+        assert start_a is not None and start_b is not None
+        onset_offset = start_a - start_b
+        relative_onset_error = onset_offset - global_onset_offset
+        base["onset_offset_a_minus_b"] = onset_offset
+        base["global_onset_offset_a_minus_b"] = global_onset_offset
+        base["relative_onset_error_frames"] = relative_onset_error
+        if abs(relative_onset_error) > lag_search:
+            failures.append(
+                f"channel {channel}: relative onset error {relative_onset_error} frames "
+                f"exceeds +/-{lag_search}"
+            )
+
+        if min(len(trimmed_channels_a[channel]), len(trimmed_channels_b[channel])) < minimum_common:
+            failures.append(f"channel {channel}: not enough common active frames")
+            base["same_index_alignment"] = {
+                "available": False,
+                "reason": "not enough common active frames",
+            }
+            channel_reports.append(base)
+            continue
+
+        alignment = best_alignment(trimmed_channels_a[channel], trimmed_channels_b[channel], lag_search)
         base["same_index_alignment"] = alignment
         if not alignment["available"]:
             reason = f"channel {channel}: same-index alignment unavailable ({alignment['reason']})"
@@ -269,7 +317,9 @@ def analyze(
 
         try:
             metrics = aligned_metrics(
-                channel_data_a[channel], channel_data_b[channel], int(alignment["lag_frames"])
+                trimmed_channels_a[channel],
+                trimmed_channels_b[channel],
+                int(alignment["lag_frames"]),
             )
         except ValueError as error:
             reason = f"channel {channel}: full aligned metrics unavailable ({error})"
@@ -297,12 +347,12 @@ def analyze(
         failures.append("all compared channels are silent in at least one reference")
 
     cross_diagnostics = cross_channel_diagnostics(
-        channel_data_a, channel_data_b, active_a, active_b, lag_search
+        trimmed_channels_a, trimmed_channels_b, active_a, active_b, lag_search
     )
 
     fixture_sha256 = sha256(fixture_path) if fixture_path is not None else None
     report: dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "verdict": "fail" if failures else "pass",
         "failure_reasons": failures,
         "reference_a": "fraunhofer_mpeghdec",
@@ -313,8 +363,9 @@ def analyze(
         "channels_b": channels_b,
         "frames_a": frames_a,
         "frames_b": frames_b,
-        "first_active_frame_a": start_a,
-        "first_active_frame_b": start_b,
+        "first_active_frame_a": global_start_a,
+        "first_active_frame_b": global_start_b,
+        "global_onset_offset_a_minus_b": global_onset_offset,
         "active_frames_a": active_frames_a,
         "active_frames_b": active_frames_b,
         "post_trim_frame_count_delta": frame_delta,
@@ -331,6 +382,10 @@ def analyze(
             "minimum_active_channel_correlation": min_corr,
             "minimum_rms_ratio": min_ratio,
             "maximum_rms_ratio": max_ratio,
+            "per_channel_onset_consistency_rule": (
+                "abs((channel_start_a-channel_start_b)-"
+                "(global_start_a-global_start_b)) <= residual_lag_search_frames"
+            ),
         },
         "pins": {
             "fraunhofer_mpeghdec": config["oracles"]["fraunhofer_mpeghdec"]["commit"],
@@ -370,24 +425,32 @@ def self_test() -> None:
                         "minimum_rms_ratio": 0.5,
                         "maximum_rms_ratio": 2.0,
                         "require_equal_sample_rate": True,
-                        "require_equal_channel_count": True,
+                        "require_equal_channel_count": True
                     },
-                    "truth_boundary": "self-test",
+                    "truth_boundary": "self-test"
                 }
             ),
             encoding="utf-8",
         )
         frames = 6000
         a_samples: list[float] = []
+        b_samples: list[float] = []
         for n in range(frames):
             left = 0.25 * math.sin(2.0 * math.pi * 1000.0 * n / 48000.0)
-            right = 0.10 * math.sin(2.0 * math.pi * 2000.0 * n / 48000.0)
-            a_samples.extend((left, right))
-        b_samples = [0.0] * 6 + [value * 0.9 for value in a_samples]
+            delayed_right = (
+                0.0
+                if n < 1200
+                else 0.10 * math.sin(2.0 * math.pi * 2000.0 * (n - 1200) / 48000.0)
+            )
+            a_samples.extend((left, delayed_right))
+            b_samples.extend((left * 0.9, delayed_right * 0.9))
+        b_samples = [0.0] * 6 + b_samples
         write_f32(a_path, a_samples)
         write_f32(b_path, b_samples)
         report = analyze(a_path, b_path, config, 48000, 48000, 2, 2, fixture)
         assert report["verdict"] == "pass"
+        assert report["channel_metrics"][1]["first_active_frame_a"] >= 1200
+        assert report["channel_metrics"][1]["same_index_alignment"]["available"]
 
         inverted = b_samples.copy()
         for index in range(0, len(inverted), 2):
@@ -413,7 +476,7 @@ def self_test() -> None:
 
 def failure_report(error: Exception, config_path: Path | None = None) -> dict[str, Any]:
     report: dict[str, Any] = {
-        "schema_version": 2,
+        "schema_version": 3,
         "verdict": "fail",
         "failure_reasons": [f"fatal analysis error: {error}"],
     }
@@ -471,11 +534,14 @@ def main() -> int:
         for reason in report.get("failure_reasons", []):
             print(f"- {reason}", file=sys.stderr)
         for channel in report.get("channel_metrics", []):
+            active_stats_a = channel["active_stats_a"]
+            active_stats_b = channel["active_stats_b"]
             print(
                 "diagnostic "
                 f"channel={channel['channel']} active_a={channel['active_a']} active_b={channel['active_b']} "
-                f"rms_a={float(channel['stats_a']['rms']):.9g} rms_b={float(channel['stats_b']['rms']):.9g} "
-                f"var_a={float(channel['stats_a']['variance']):.9g} var_b={float(channel['stats_b']['variance']):.9g}",
+                f"start_a={channel['first_active_frame_a']} start_b={channel['first_active_frame_b']} "
+                f"rms_a={float(active_stats_a['rms']):.9g} rms_b={float(active_stats_b['rms']):.9g} "
+                f"var_a={float(active_stats_a['variance']):.9g} var_b={float(active_stats_b['variance']):.9g}",
                 file=sys.stderr,
             )
         return 1
