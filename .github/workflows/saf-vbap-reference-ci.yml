@@ -8,6 +8,7 @@ on:
       - "docs/saf-vbap-reference.md"
       - "validation/open-immersive/saf_*"
       - "fixtures/scenes/7_1_4_reference.json"
+      - "fixtures/scenes/11_1_4_research.json"
       - "crates/aurora-renderer-vbap/**"
       - "crates/aurora-simulation-assurance/**"
       - "config/external-components-v1.json"
@@ -24,7 +25,7 @@ concurrency:
 jobs:
   saf-reference:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 45
     env:
       SAF_COMMIT: 18fd5aba46e20787b51f28f7197a68506c965c07
     steps:
@@ -70,12 +71,9 @@ jobs:
           from pathlib import Path
           modules = Path('saf/framework/modules/CMakeLists.txt').read_text(encoding='utf-8')
           tests = Path('saf/test/CMakeLists.txt').read_text(encoding='utf-8')
-          # Tracker sources remain only in the conditional ENABLE_TRACKER block.
           assert modules.count('saf_tracker/saf_tracker.c') == 1
           assert modules.count('saf_tracker/saf_tracker_internal.c') == 1
           assert modules.count('saf_tracker/saf_tracker_internal.h') == 1
-          # GPL tracker/HADES unit-test translation units are not part of the
-          # permissive validation test target at all.
           assert 'test__tracker_module.c' not in tests
           assert 'test__hades_module.c' not in tests
           print('SAF-GPL-SOURCE-EXCLUSION-PASS')
@@ -150,9 +148,10 @@ jobs:
             --duration-seconds 1.0 \
             --sample-rate 48000
           test -s output/saf-vbap-reference/aurora/gain-trajectory.json
-          echo "AURORA-VBAP3D-TRAJECTORY-PASS"
+          test -s output/saf-vbap-reference/aurora/rendered-reference.wav
+          echo "AURORA-VBAP3D-7-1-4-TRAJECTORY-PASS"
 
-      - name: Prepare identical SAF geometry and source directions
+      - name: Prepare identical 7.1.4 SAF geometry and source directions
         shell: bash
         run: |
           set -euo pipefail
@@ -163,7 +162,7 @@ jobs:
             --source-out output/saf-vbap-reference/saf-sources.txt \
             --mapping-out output/saf-vbap-reference/mapping.json
 
-      - name: Build and run SAF VBAP gain probe
+      - name: Build and run SAF 7.1.4 VBAP gain probe
         shell: bash
         run: |
           set -euo pipefail
@@ -178,9 +177,9 @@ jobs:
             output/saf-vbap-reference/saf-sources.txt \
             output/saf-vbap-reference/saf-gains.txt
           test -s output/saf-vbap-reference/saf-gains.txt
-          echo "SAF-VBAP-PROBE-PASS"
+          echo "SAF-VBAP-7-1-4-PROBE-PASS"
 
-      - name: Compare Aurora and SAF 3D VBAP semantics
+      - name: Compare Aurora and SAF 7.1.4 semantics
         shell: bash
         run: |
           set -euo pipefail
@@ -189,7 +188,66 @@ jobs:
             --mapping output/saf-vbap-reference/mapping.json \
             --saf-gains output/saf-vbap-reference/saf-gains.txt \
             --output output/saf-vbap-reference/differential-summary.json
-          echo "AURORA-SAF-VBAP-DIFFERENTIAL-PASS"
+          echo "AURORA-SAF-VBAP-7-1-4-DIFFERENTIAL-PASS"
+
+      - name: Generate Aurora 11.1.4 research trajectory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/saf-vbap-reference/11_1_4/aurora
+          cargo run -p aurora-simulation-assurance --release --bin aurora-evaluate-vbap3d -- \
+            --scene fixtures/scenes/11_1_4_research.json \
+            --output-dir output/saf-vbap-reference/11_1_4/aurora \
+            --duration-seconds 1.0 \
+            --sample-rate 48000
+          test -s output/saf-vbap-reference/11_1_4/aurora/gain-trajectory.json
+          python3 - <<'PY'
+          import json
+          fixture = json.load(open('fixtures/scenes/11_1_4_research.json', encoding='utf-8'))
+          metadata = json.load(open('output/saf-vbap-reference/11_1_4/aurora/metadata.json', encoding='utf-8'))['payload']
+          summary = json.load(open('output/saf-vbap-reference/11_1_4/aurora/summary.json', encoding='utf-8'))['payload']
+          assert fixture['layout'] == 'custom'
+          assert fixture['research_layout'] == '11.1.4-research-custom'
+          assert len(fixture['speakers']) == 16
+          assert metadata['output_channels'] == 16
+          assert metadata['wav_exported'] is False
+          assert summary['wav_exported'] is False
+          assert 'rendered-reference.wav' not in summary['artifacts']
+          print('AURORA-VBAP3D-11-1-4-RESEARCH-JSON-ONLY-PASS')
+          PY
+
+      - name: Prepare identical 11.1.4 research SAF geometry and source directions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 validation/open-immersive/saf_vbap_reference_evidence.py prepare \
+            --scene fixtures/scenes/11_1_4_research.json \
+            --aurora-trajectory output/saf-vbap-reference/11_1_4/aurora/gain-trajectory.json \
+            --speaker-out output/saf-vbap-reference/11_1_4/saf-speakers.txt \
+            --source-out output/saf-vbap-reference/11_1_4/saf-sources.txt \
+            --mapping-out output/saf-vbap-reference/11_1_4/mapping.json
+
+      - name: Run SAF 11.1.4 research VBAP gain probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          output/saf-vbap-reference/saf-vbap-probe \
+            output/saf-vbap-reference/11_1_4/saf-speakers.txt \
+            output/saf-vbap-reference/11_1_4/saf-sources.txt \
+            output/saf-vbap-reference/11_1_4/saf-gains.txt
+          test -s output/saf-vbap-reference/11_1_4/saf-gains.txt
+          echo "SAF-VBAP-11-1-4-RESEARCH-PROBE-PASS"
+
+      - name: Compare Aurora and SAF 11.1.4 research semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 validation/open-immersive/saf_vbap_reference_evidence.py compare \
+            --aurora-trajectory output/saf-vbap-reference/11_1_4/aurora/gain-trajectory.json \
+            --mapping output/saf-vbap-reference/11_1_4/mapping.json \
+            --saf-gains output/saf-vbap-reference/11_1_4/saf-gains.txt \
+            --output output/saf-vbap-reference/11_1_4/differential-summary.json
+          echo "AURORA-SAF-VBAP-11-1-4-RESEARCH-DIFFERENTIAL-PASS"
 
       - name: Emit baseline evidence
         shell: bash
@@ -199,6 +257,7 @@ jobs:
           import hashlib, json, pathlib
           cfg = pathlib.Path('config/saf-reference-v1.json')
           patch = pathlib.Path('validation/open-immersive/saf-permissive-core.patch')
+          research = json.load(open('output/saf-vbap-reference/11_1_4/differential-summary.json', encoding='utf-8'))
           data = {
               'schema_version': 1,
               'saf_commit': '18fd5aba46e20787b51f28f7197a68506c965c07',
@@ -213,8 +272,10 @@ jobs:
               'gpl_tracker_test_source_compiled': False,
               'gpl_hades_test_source_compiled': False,
               'permissive_upstream_tests_passed': True,
+              'seven_one_four_reference_differential_passed': True,
+              'eleven_one_four_research_differential_passed': bool(research['passed']),
               'status': 'REFERENCE-BASELINE-PASS',
-              'truth_boundary': 'Pinned external SAF validation build with GPL tracker/HADES module and test translation units excluded from the compile graph, plus a separate software-only 7.1.4 gain differential. No runtime adoption, physical acoustics, 11.1.4, binaural, HOA, proprietary-renderer equivalence, or certification is claimed.'
+              'truth_boundary': 'Pinned external SAF validation build with GPL tracker/HADES module and test translation units excluded from the compile graph. 7.1.4 and an explicitly custom Aurora 11.1.4 research geometry are exercised as separate software-only gain differentials. The research geometry is not asserted as a standardized layout. No runtime adoption, physical acoustics, binaural, HOA, proprietary-renderer equivalence, or certification is claimed.'
           }
           pathlib.Path('output/saf-vbap-reference/baseline-summary.json').write_text(
               json.dumps(data, indent=2, sort_keys=True) + '\n', encoding='utf-8')
@@ -228,6 +289,7 @@ jobs:
           name: saf-vbap-reference-${{ github.sha }}
           path: |
             output/saf-vbap-reference/**/*.json
+            output/saf-vbap-reference/**/*.txt
             output/saf-vbap-reference/*.json
             output/saf-vbap-reference/*.txt
           if-no-files-found: error
