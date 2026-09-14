@@ -123,6 +123,24 @@
       ]
     },
     {
+      "id": "aomedia-iamf-tools",
+      "upstream": "https://github.com/AOMediaCodec/iamf-tools",
+      "decision": "evaluate-active",
+      "integration": "external-process-validation-reference",
+      "tested_version": "commit-c6b11b5ea47d7da00fbac9654acc96aa4ced2388",
+      "pinned_commit": "c6b11b5ea47d7da00fbac9654acc96aa4ced2388",
+      "license": "BSD-3-Clause-Clear with Alliance for Open Media Patent License terms",
+      "roles": ["iamf-encode-reference", "iamf-decode-reference", "iamf-probe-reference", "differential-validation"],
+      "object_metadata": "descriptor-and-temporal-obu-probe-reference",
+      "production_ready": false,
+      "evidence": [
+        "config/iamf-tools-reference-v1.json",
+        "docs/iamf-tools-reference.md",
+        ".github/workflows/iamf-tools-reference-ci.yml",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
       "id": "libmysofa",
       "upstream": "https://github.com/hoene/libmysofa",
       "decision": "defer-headphones",
