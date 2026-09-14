@@ -57,22 +57,28 @@ jobs:
           grep -q "GNU GPLv2" saf/README.md
           grep -q "@license GNU GPLv2" saf/framework/modules/saf_tracker/saf_tracker.c
           grep -q "@license GNU GPLv2" saf/framework/modules/saf_tracker/saf_tracker_internal.c
+          grep -q "@license GNU GPLv2" saf/test/src/test__tracker_module.c
+          grep -q "@license GNU GPLv2" saf/test/src/test__hades_module.c
           echo "SAF-UPSTREAM-LICENSE-BOUNDARY-DETECTED"
 
-      - name: Remove disabled GPL tracker sources from validation archive
+      - name: Remove disabled GPL sources from validation build graph
         shell: bash
         run: |
           set -euo pipefail
           git -C saf apply ../validation/open-immersive/saf-permissive-core.patch
           python3 - <<'PY'
           from pathlib import Path
-          text = Path('saf/framework/modules/CMakeLists.txt').read_text(encoding='utf-8')
-          # After the patch each tracker source appears only in the conditional
-          # SAF_ENABLE_TRACKER_MODULE block, never in the unconditional core list.
-          assert text.count('saf_tracker/saf_tracker.c') == 1
-          assert text.count('saf_tracker/saf_tracker_internal.c') == 1
-          assert text.count('saf_tracker/saf_tracker_internal.h') == 1
-          print('SAF-GPL-CORE-SOURCE-EXCLUSION-PASS')
+          modules = Path('saf/framework/modules/CMakeLists.txt').read_text(encoding='utf-8')
+          tests = Path('saf/test/CMakeLists.txt').read_text(encoding='utf-8')
+          # Tracker sources remain only in the conditional ENABLE_TRACKER block.
+          assert modules.count('saf_tracker/saf_tracker.c') == 1
+          assert modules.count('saf_tracker/saf_tracker_internal.c') == 1
+          assert modules.count('saf_tracker/saf_tracker_internal.h') == 1
+          # GPL tracker/HADES unit-test translation units are not part of the
+          # permissive validation test target at all.
+          assert 'test__tracker_module.c' not in tests
+          assert 'test__hades_module.c' not in tests
+          print('SAF-GPL-SOURCE-EXCLUSION-PASS')
           PY
 
       - name: Install SAF build dependencies
@@ -105,9 +111,15 @@ jobs:
           import json
           commands = json.load(open('saf-build/compile_commands.json', encoding='utf-8'))
           files = [entry['file'].replace('\\', '/') for entry in commands]
-          forbidden = [path for path in files if '/saf_tracker/' in path or '/saf_hades/' in path]
+          forbidden = [
+              path for path in files
+              if '/saf_tracker/' in path
+              or '/saf_hades/' in path
+              or path.endswith('/test__tracker_module.c')
+              or path.endswith('/test__hades_module.c')
+          ]
           if forbidden:
-              raise SystemExit(f'GPL module sources unexpectedly compiled: {forbidden}')
+              raise SystemExit(f'GPL translation units unexpectedly compiled: {forbidden}')
           print(f'SAF-PERMISSIVE-COMPILE-GRAPH-PASS files={len(files)}')
           PY
 
@@ -119,13 +131,13 @@ jobs:
           test -f saf-build/framework/libsaf.a -o -f saf-build/framework/libsaf.so
           echo "SAF-BUILD-PASS"
 
-      - name: Run upstream SAF tests with optional GPL modules disabled
+      - name: Run remaining upstream SAF tests with GPL test units excluded
         shell: bash
         run: |
           set -euo pipefail
           test -x saf-build/test/saf_test
           saf-build/test/saf_test
-          echo "SAF-UPSTREAM-TESTS-PASS"
+          echo "SAF-UPSTREAM-PERMISSIVE-TESTS-PASS"
 
       - name: Generate Aurora 7.1.4 VBAP trajectory
         shell: bash
@@ -198,9 +210,11 @@ jobs:
               'sofa_reader_enabled': False,
               'gpl_tracker_sources_compiled': False,
               'gpl_hades_sources_compiled': False,
-              'upstream_tests_passed': True,
+              'gpl_tracker_test_source_compiled': False,
+              'gpl_hades_test_source_compiled': False,
+              'permissive_upstream_tests_passed': True,
               'status': 'REFERENCE-BASELINE-PASS',
-              'truth_boundary': 'Pinned external SAF validation build with disabled GPL tracker/HADES sources excluded from the compiled archive, plus a separate software-only 7.1.4 gain differential. No runtime adoption, physical acoustics, 11.1.4, binaural, HOA, proprietary-renderer equivalence, or certification is claimed.'
+              'truth_boundary': 'Pinned external SAF validation build with GPL tracker/HADES module and test translation units excluded from the compile graph, plus a separate software-only 7.1.4 gain differential. No runtime adoption, physical acoustics, 11.1.4, binaural, HOA, proprietary-renderer equivalence, or certification is claimed.'
           }
           pathlib.Path('output/saf-vbap-reference/baseline-summary.json').write_text(
               json.dumps(data, indent=2, sort_keys=True) + '\n', encoding='utf-8')
