@@ -11,6 +11,7 @@ from pathlib import Path
 FULL_RENDER_REQUIRED = "full-render-required"
 INSPECT_CLASSIFICATION_REQUIRED = "inspect-classification-required"
 KNOWN_EXPECTATIONS = {FULL_RENDER_REQUIRED, INSPECT_CLASSIFICATION_REQUIRED}
+KNOWN_PARSE_STATES = {"pass", "partial", "fail"}
 
 
 def load_json(path: Path) -> dict:
@@ -85,6 +86,7 @@ def main() -> None:
             "deployed_compatibility_status": (
                 validation.get("deployed_compatibility") or {}
             ).get("status"),
+            "malformed_aus": int(validation.get("malformed_aus", 0)),
             "diagnostics_complete": diagnostics.get("complete"),
             "diagnostics_issue_count": int(diagnostics.get("issue_count", 0)),
             "common_checks": common_checks,
@@ -127,25 +129,21 @@ def main() -> None:
             # Minimal conformance probes are intentionally not judged by continuous-programme
             # render gates. Their OpenJOC parser/admission outcome is interoperability evidence.
             stream_parse = validation.get("stream_parse")
-            if stream_parse not in {"pass", "fail"}:
+            if stream_parse not in KNOWN_PARSE_STATES:
                 raise SystemExit(
-                    f"OpenJOC structural classification missing pass/fail stream_parse for {vector_id}: "
-                    f"{stream_parse!r}"
+                    "OpenJOC structural classification missing pass/partial/fail stream_parse "
+                    f"for {vector_id}: {stream_parse!r}"
                 )
-            classification = (
-                "inspect-parse-pass"
-                if stream_parse == "pass"
-                else "inspect-parse-fail"
-            )
+            classification = f"inspect-parse-{stream_parse}"
             structural_parse_counts[classification] += 1
             base_result.update(
                 {
                     "classification": classification,
                     "render_required": False,
                     "note": (
-                        "This vector is a minimal structural conformance probe. A parse failure is "
-                        "recorded as an interoperability finding, not promoted to decoder support and "
-                        "not hidden by an allow-failure CI path."
+                        "This vector is a minimal structural conformance probe. OpenJOC's exact "
+                        "pass/partial/fail state is preserved as an interoperability finding; it is "
+                        "not promoted to decoder support and is not hidden by an allow-failure CI path."
                     ),
                 }
             )
@@ -171,6 +169,7 @@ def main() -> None:
             "name": "OpenJOC",
             "expected_version": "0.17.0",
             "integration": "independent-external-reference",
+            "stream_parse_contract": ["pass", "partial", "fail"],
         },
         "generator": {
             "name": "JOCForge",
@@ -191,11 +190,11 @@ def main() -> None:
         "truth_boundary": (
             "This evidence proves full OpenJOC 0.17.0 inspection admission and 7.1.4 rendering "
             "only for vectors explicitly marked full-render-required. Minimal JOCForge structural "
-            "probes are classified by inspection; parse failures remain recorded interoperability "
-            "findings and are not decoder-support claims. This does not establish Aurora/Harletty "
-            "renderer equivalence, sample-identical rendering, exhaustive JOCForge coverage, "
-            "hardware interoperability, protected-service compatibility, proprietary equivalence, "
-            "or certification."
+            "probes are classified by OpenJOC's native pass/partial/fail inspection contract; "
+            "partial/fail states remain recorded interoperability findings and are not decoder-support "
+            "claims. This does not establish Aurora/Harletty renderer equivalence, sample-identical "
+            "rendering, exhaustive JOCForge coverage, hardware interoperability, protected-service "
+            "compatibility, proprietary equivalence, or certification."
         ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
