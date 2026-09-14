@@ -1,0 +1,38 @@
+{
+  "schema_version": 1,
+  "component": "spatial-audio-framework",
+  "upstream": "https://github.com/leomccormack/Spatial_Audio_Framework",
+  "pinned_commit": "18fd5aba46e20787b51f28f7197a68506c965c07",
+  "license": "ISC for selected core modules",
+  "excluded_optional_modules": [
+    "saf_tracker (GPLv2)",
+    "saf_hades (GPLv2)"
+  ],
+  "integration": "external-reference-only",
+  "purpose": [
+    "vbap-reference",
+    "3d-speaker-render-reference",
+    "ambisonics-reference",
+    "differential-validation"
+  ],
+  "baseline": {
+    "performance_library": "SAF_USE_OPEN_BLAS_AND_LAPACKE",
+    "tracker_enabled": false,
+    "hades_enabled": false,
+    "sofa_reader_enabled": false,
+    "upstream_tests_required": true
+  },
+  "differential_fixture": "fixtures/scenes/7_1_4_reference.json",
+  "planned_metrics": [
+    "finite_nonnegative_gains",
+    "unit_spatial_power",
+    "dominant_speaker",
+    "normalized_gain_vector_similarity",
+    "left_right_mirror_symmetry",
+    "height_energy_behavior",
+    "trajectory_continuity",
+    "lfe_exclusion"
+  ],
+  "acceptance_model": "semantic-and-geometric; sample-identical PCM or gain-identical triangulation is not required",
+  "truth_boundary": "SAF is a pinned external software validation oracle only. Passing this lane does not make SAF an Aurora runtime dependency, does not validate optional GPL modules, does not prove acoustic or physical-hardware behavior, and does not establish equivalence with proprietary immersive renderers or certification."
+}
