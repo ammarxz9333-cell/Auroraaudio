@@ -33,7 +33,9 @@ Both rendered WAV outputs are probed and normalized to interleaved `f32le`. The 
 - low same-index active-channel correlation after a small bounded residual-lag search;
 - large active-channel RMS-ratio divergence.
 
-Cross-vendor output is **not** required to be bit-identical. Decoder implementations can differ in sample representation, bounded priming, and rendering details. The lane records the observed frame counts, leading activity offsets, per-channel residual lag, correlation, RMS ratio, fixture hash, PCM hashes, exact upstream pins, dependency pins, and CI-built binary hashes.
+The analyzer detects the first active frame independently for each speaker channel before correlation. This is necessary because the shared fixture does not energize every active speaker at the same instant. Per-channel trimming is not allowed to hide timing errors: each channel's A-minus-B onset offset must remain consistent with the stream-wide A-minus-B onset offset within the same bounded residual-lag window. Same-index channel matching remains mandatory; cross-channel best matches are recorded only as failure diagnostics and never authorize an implicit speaker permutation.
+
+Cross-vendor output is **not** required to be bit-identical. Decoder implementations can differ in sample representation, bounded priming, and rendering details. The lane records the observed frame counts, stream-wide and per-channel leading activity offsets, per-channel residual lag, correlation, RMS ratio, fixture hash, PCM hashes, exact upstream pins, dependency pins, and CI-built binary hashes.
 
 The initial thresholds are defined in `config/mpegh-reference-v1.json`; changing them is an evidence-policy change and should be reviewed rather than silently relaxed after a failure.
 
