@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "id": "ebu-ear",
+    "upstream": "https://github.com/ebu/ebu_adm_renderer",
+    "version": "2.1.0",
+    "commit": "5bb17b4278e8e67f24f90efb7a81a8aea7aed4f3",
+    "license": "BSD-3-Clause-Clear; source license grants no patent rights",
+    "integration": "external-process-validation-reference"
+  },
+  "fixture": {
+    "input_wav_path": "ear/test/data/test.wav",
+    "input_wav_git_blob": "668f9e8254ad5832b0f4cb26efa2155609ded87c",
+    "metadata_path": "ear/test/data/test.yaml",
+    "metadata_git_blob": "eda7615ff44114411a0d5f6410cd0b337a5be1a6",
+    "upstream_bwf_path": "ear/test/data/test_bwf.wav",
+    "upstream_bwf_git_blob": "e67e02df5c5eceb2a904057929404e81d75a3981",
+    "upstream_test_reference": "ear/test/test_integrate.py::test_render",
+    "sample_rate": 48000,
+    "frames": 12000,
+    "input_channels": 4
+  },
+  "layouts": {
+    "4+5+0": {
+      "expected_channels": 10,
+      "semantic_mapping_check": true,
+      "max_abs_error": 0.00002
+    },
+    "4+7+0": {
+      "expected_channels": 12,
+      "semantic_mapping_check": false,
+      "minimum_active_channels": 5
+    }
+  },
+  "acceptance": {
+    "exact_commit_required": true,
+    "fixture_git_blobs_required": true,
+    "generated_bwf_must_match_upstream_fixture": true,
+    "rendered_frame_delta_max": 0,
+    "finite_pcm_required": true,
+    "plain_wav_without_adm_must_fail": true,
+    "json_evidence_required": true
+  },
+  "truth_boundary": "Passing this lane qualifies only the exact pinned EBU ADM Renderer as an external reference for the pinned public ADM/BW64 fixture, proves deterministic generation of that fixture, verifies the upstream 4+5+0 mapping semantics reproduced by Aurora's independent evidence analyzer, and verifies bounded finite rendering of the same fixture to 4+7+0. It does not prove Aurora ADM ingestion, Aurora equivalence for arbitrary ADM scenes, exhaustive ITU-R BS.2076 or BS.2127 conformance, all BS.2051 layouts, sample-identical output between independent renderers, runtime integration, physical output, protected-service interoperability, patent clearance, or certification."
+}
