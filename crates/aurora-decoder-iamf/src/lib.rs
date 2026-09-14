@@ -402,9 +402,8 @@ mod rendered_pcm {
 
         #[test]
         fn missing_process_fails_closed() {
-            let mut adapter = IamfRenderedPcmDecoder::new(
-                "__aurora_iamfdec_executable_that_does_not_exist__",
-            );
+            let mut adapter =
+                IamfRenderedPcmDecoder::new("__aurora_iamfdec_executable_that_does_not_exist__");
             adapter.configure(stereo_format()).expect("valid config");
             assert!(matches!(
                 adapter.decode_chunk(&[1, 2, 3]),

@@ -98,7 +98,9 @@ pub struct ProcessedWavInfo {
 
 #[derive(Debug, Error)]
 pub enum CamillaDspError {
-    #[error("CamillaDSP executable not found; set an explicit path, {ENV_CAMILLADSP_PATH}, or PATH")]
+    #[error(
+        "CamillaDSP executable not found; set an explicit path, {ENV_CAMILLADSP_PATH}, or PATH"
+    )]
     MissingExecutable,
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
@@ -183,7 +185,11 @@ pub fn discover_camilladsp(
         .map(|output| {
             let stdout = String::from_utf8_lossy(&output.stdout).trim().to_owned();
             let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-            if stdout.is_empty() { stderr } else { stdout }
+            if stdout.is_empty() {
+                stderr
+            } else {
+                stdout
+            }
         })
         .filter(|value| !value.is_empty());
 
@@ -332,22 +338,33 @@ pub fn inspect_processed_wav(path: &Path) -> Result<ProcessedWavInfo, CamillaDsp
     while offset + 8 <= bytes.len() {
         let id = &bytes[offset..offset + 4];
         let size = u32::from_le_bytes([
-            bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7],
+            bytes[offset + 4],
+            bytes[offset + 5],
+            bytes[offset + 6],
+            bytes[offset + 7],
         ]) as usize;
         let chunk_start = offset + 8;
         if id == b"fmt " {
             if chunk_start + 16 > bytes.len() {
-                return Err(CamillaDspError::InvalidOutputWav("truncated fmt chunk".to_owned()));
+                return Err(CamillaDspError::InvalidOutputWav(
+                    "truncated fmt chunk".to_owned(),
+                ));
             }
-            format_tag = Some(u16::from_le_bytes([bytes[chunk_start], bytes[chunk_start + 1]]));
-            channel_count = Some(u16::from_le_bytes([
-                bytes[chunk_start + 2], bytes[chunk_start + 3],
-            ]) as usize);
+            format_tag = Some(u16::from_le_bytes([
+                bytes[chunk_start],
+                bytes[chunk_start + 1],
+            ]));
+            channel_count =
+                Some(u16::from_le_bytes([bytes[chunk_start + 2], bytes[chunk_start + 3]]) as usize);
             sample_rate = Some(u32::from_le_bytes([
-                bytes[chunk_start + 4], bytes[chunk_start + 5], bytes[chunk_start + 6], bytes[chunk_start + 7],
+                bytes[chunk_start + 4],
+                bytes[chunk_start + 5],
+                bytes[chunk_start + 6],
+                bytes[chunk_start + 7],
             ]));
             bits_per_sample = Some(u16::from_le_bytes([
-                bytes[chunk_start + 14], bytes[chunk_start + 15],
+                bytes[chunk_start + 14],
+                bytes[chunk_start + 15],
             ]));
         } else if id == b"data" {
             data_start = Some(chunk_start);
@@ -400,7 +417,10 @@ pub fn finalize_streaming_wav(path: &Path) -> Result<ProcessedWavInfo, CamillaDs
     while offset + 8 <= bytes.len() {
         let id = &bytes[offset..offset + 4];
         let size = u32::from_le_bytes([
-            bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7],
+            bytes[offset + 4],
+            bytes[offset + 5],
+            bytes[offset + 6],
+            bytes[offset + 7],
         ]) as usize;
         let chunk_start = offset + 8;
         if id == b"data" {
@@ -415,9 +435,13 @@ pub fn finalize_streaming_wav(path: &Path) -> Result<ProcessedWavInfo, CamillaDs
         .ok_or_else(|| CamillaDspError::InvalidOutputWav("missing data chunk".to_owned()))?;
     let data_start = data_start
         .ok_or_else(|| CamillaDspError::InvalidOutputWav("missing data chunk".to_owned()))?;
-    let riff_size = bytes.len().checked_sub(8)
+    let riff_size = bytes
+        .len()
+        .checked_sub(8)
         .ok_or_else(|| CamillaDspError::InvalidOutputWav("invalid RIFF size".to_owned()))?;
-    let data_size = bytes.len().checked_sub(data_start)
+    let data_size = bytes
+        .len()
+        .checked_sub(data_start)
         .ok_or_else(|| CamillaDspError::InvalidOutputWav("invalid data size".to_owned()))?;
     if riff_size > u32::MAX as usize || data_size > u32::MAX as usize {
         return Err(CamillaDspError::InvalidOutputWav(
@@ -457,7 +481,12 @@ fn validate_config(config: &AuroraDspConfig) -> Result<(), CamillaDspError> {
             )));
         }
         for eq in &channel.parametric_eq {
-            if !eq.frequency_hz.is_finite() || eq.frequency_hz <= 0.0 || !eq.gain_db.is_finite() || !eq.q.is_finite() || eq.q <= 0.0 {
+            if !eq.frequency_hz.is_finite()
+                || eq.frequency_hz <= 0.0
+                || !eq.gain_db.is_finite()
+                || !eq.q.is_finite()
+                || eq.q <= 0.0
+            {
                 return Err(CamillaDspError::InvalidConfig(format!(
                     "channel {} has invalid parametric EQ values",
                     channel.channel
@@ -469,26 +498,53 @@ fn validate_config(config: &AuroraDspConfig) -> Result<(), CamillaDspError> {
 }
 
 fn append_channel_filters(yaml: &mut String, channel: &ChannelDspConfig, sample_rate: u32) {
-    yaml.push_str(&format!("  ch{}_gain:\n    type: Gain\n    parameters:\n", channel.channel));
+    yaml.push_str(&format!(
+        "  ch{}_gain:\n    type: Gain\n    parameters:\n",
+        channel.channel
+    ));
     yaml.push_str(&format!("      gain: {:.6}\n", effective_gain_db(channel)));
     yaml.push_str(&format!("      inverted: {}\n", channel.polarity_invert));
 
     if channel.delay_ms > 0.0 {
-        yaml.push_str(&format!("  ch{}_delay:\n    type: Delay\n    parameters:\n", channel.channel));
-        yaml.push_str(&format!("      delay: {:.6}\n", delay_ms_to_samples(channel.delay_ms, sample_rate)));
+        yaml.push_str(&format!(
+            "  ch{}_delay:\n    type: Delay\n    parameters:\n",
+            channel.channel
+        ));
+        yaml.push_str(&format!(
+            "      delay: {:.6}\n",
+            delay_ms_to_samples(channel.delay_ms, sample_rate)
+        ));
         yaml.push_str("      unit: samples\n      subsample: true\n");
     }
     if let Some(filter) = &channel.high_pass {
-        yaml.push_str(&format!("  ch{}_highpass:\n    type: Biquad\n    parameters:\n      type: Highpass\n", channel.channel));
-        yaml.push_str(&format!("      freq: {:.3}\n      q: 0.707000\n", filter.frequency_hz));
+        yaml.push_str(&format!(
+            "  ch{}_highpass:\n    type: Biquad\n    parameters:\n      type: Highpass\n",
+            channel.channel
+        ));
+        yaml.push_str(&format!(
+            "      freq: {:.3}\n      q: 0.707000\n",
+            filter.frequency_hz
+        ));
     }
     if let Some(filter) = &channel.low_pass {
-        yaml.push_str(&format!("  ch{}_lowpass:\n    type: Biquad\n    parameters:\n      type: Lowpass\n", channel.channel));
-        yaml.push_str(&format!("      freq: {:.3}\n      q: 0.707000\n", filter.frequency_hz));
+        yaml.push_str(&format!(
+            "  ch{}_lowpass:\n    type: Biquad\n    parameters:\n      type: Lowpass\n",
+            channel.channel
+        ));
+        yaml.push_str(&format!(
+            "      freq: {:.3}\n      q: 0.707000\n",
+            filter.frequency_hz
+        ));
     }
     for (index, eq) in channel.parametric_eq.iter().enumerate() {
-        yaml.push_str(&format!("  ch{}_peq{}:\n    type: Biquad\n    parameters:\n      type: Peaking\n", channel.channel, index));
-        yaml.push_str(&format!("      freq: {:.3}\n      gain: {:.6}\n      q: {:.6}\n", eq.frequency_hz, eq.gain_db, eq.q));
+        yaml.push_str(&format!(
+            "  ch{}_peq{}:\n    type: Biquad\n    parameters:\n      type: Peaking\n",
+            channel.channel, index
+        ));
+        yaml.push_str(&format!(
+            "      freq: {:.3}\n      gain: {:.6}\n      q: {:.6}\n",
+            eq.frequency_hz, eq.gain_db, eq.q
+        ));
     }
 }
 
@@ -497,9 +553,15 @@ fn append_channel_pipeline(yaml: &mut String, channel: &ChannelDspConfig) {
     yaml.push_str("  - type: Filter\n");
     yaml.push_str(&format!("    channels: [{channel_id}]\n"));
     yaml.push_str(&format!("    names: [ch{channel_id}_gain"));
-    if channel.delay_ms > 0.0 { yaml.push_str(&format!(", ch{channel_id}_delay")); }
-    if channel.high_pass.is_some() { yaml.push_str(&format!(", ch{channel_id}_highpass")); }
-    if channel.low_pass.is_some() { yaml.push_str(&format!(", ch{channel_id}_lowpass")); }
+    if channel.delay_ms > 0.0 {
+        yaml.push_str(&format!(", ch{channel_id}_delay"));
+    }
+    if channel.high_pass.is_some() {
+        yaml.push_str(&format!(", ch{channel_id}_highpass"));
+    }
+    if channel.low_pass.is_some() {
+        yaml.push_str(&format!(", ch{channel_id}_lowpass"));
+    }
     for index in 0..channel.parametric_eq.len() {
         yaml.push_str(&format!(", ch{channel_id}_peq{index}"));
     }
@@ -507,7 +569,11 @@ fn append_channel_pipeline(yaml: &mut String, channel: &ChannelDspConfig) {
 }
 
 pub fn effective_gain_db(channel: &ChannelDspConfig) -> f32 {
-    if channel.mute { -120.0 } else { channel.gain_db }
+    if channel.mute {
+        -120.0
+    } else {
+        channel.gain_db
+    }
 }
 
 pub fn delay_ms_to_samples(delay_ms: f32, sample_rate: u32) -> f32 {
@@ -524,7 +590,9 @@ fn find_on_path(name: &str) -> Option<PathBuf> {
     for dir in std::env::split_paths(&path_var) {
         for candidate in &candidates {
             let path = dir.join(candidate);
-            if path.is_file() { return Some(path); }
+            if path.is_file() {
+                return Some(path);
+            }
         }
     }
     None
@@ -538,8 +606,12 @@ fn executable_names(name: &str) -> Vec<String> {
     }
 }
 
-fn default_chunk_size() -> usize { 1024 }
-fn default_filter_order() -> u8 { 2 }
+fn default_chunk_size() -> usize {
+    1024
+}
+fn default_filter_order() -> u8 {
+    2
+}
 
 #[cfg(test)]
 mod tests {
@@ -575,7 +647,10 @@ mod tests {
                     mute: false,
                     polarity_invert: true,
                     delay_ms: 0.0,
-                    high_pass: Some(CutoffFilter { frequency_hz: 80.0, order: 2 }),
+                    high_pass: Some(CutoffFilter {
+                        frequency_hz: 80.0,
+                        order: 2,
+                    }),
                     low_pass: None,
                     parametric_eq: vec![],
                 },
@@ -585,7 +660,12 @@ mod tests {
 
     #[test]
     fn aurora_config_generates_yaml() {
-        let yaml = generate_camilladsp_yaml(&sample_config(), Path::new("input.wav"), Path::new("output.wav")).unwrap();
+        let yaml = generate_camilladsp_yaml(
+            &sample_config(),
+            Path::new("input.wav"),
+            Path::new("output.wav"),
+        )
+        .unwrap();
         assert!(yaml.contains("samplerate: 48000"));
         assert!(yaml.contains("filename: \"input.wav\""));
         assert!(yaml.contains("ch0_gain"));
@@ -594,7 +674,12 @@ mod tests {
 
     #[test]
     fn channel_mapping_uses_zero_based_channel_numbers() {
-        let yaml = generate_camilladsp_yaml(&sample_config(), Path::new("input.wav"), Path::new("output.wav")).unwrap();
+        let yaml = generate_camilladsp_yaml(
+            &sample_config(),
+            Path::new("input.wav"),
+            Path::new("output.wav"),
+        )
+        .unwrap();
         assert!(yaml.contains("channels: [0]"));
         assert!(yaml.contains("channels: [4]"));
     }
@@ -606,7 +691,12 @@ mod tests {
         channel.mute = true;
         assert_eq!(effective_gain_db(&channel), -120.0);
         assert_eq!(delay_ms_to_samples(2.5, 48_000), 120.0);
-        let yaml = generate_camilladsp_yaml(&sample_config(), Path::new("input.wav"), Path::new("output.wav")).unwrap();
+        let yaml = generate_camilladsp_yaml(
+            &sample_config(),
+            Path::new("input.wav"),
+            Path::new("output.wav"),
+        )
+        .unwrap();
         assert!(yaml.contains("type: Highpass"));
         assert!(yaml.contains("type: Peaking"));
     }
@@ -624,12 +714,16 @@ mod tests {
     #[test]
     fn missing_executable_returns_structured_error() {
         let missing = Path::new("Z:/definitely/not/camilladsp.exe");
-        assert!(matches!(discover_camilladsp(Some(missing)), Err(CamillaDspError::MissingExecutable)));
+        assert!(matches!(
+            discover_camilladsp(Some(missing)),
+            Err(CamillaDspError::MissingExecutable)
+        ));
     }
 
     #[test]
     fn command_construction_uses_executable_and_config_without_shell() {
-        let command = build_camilladsp_command(Path::new("camilladsp"), Path::new("C:/tmp/camilladsp.yml"));
+        let command =
+            build_camilladsp_command(Path::new("camilladsp"), Path::new("C:/tmp/camilladsp.yml"));
         assert_eq!(command.executable, PathBuf::from("camilladsp"));
         assert_eq!(command.args, vec![OsString::from("C:/tmp/camilladsp.yml")]);
     }
@@ -642,7 +736,8 @@ mod tests {
             48_000,
             &[vec![0.0, 0.25, -0.25], vec![0.5, -0.5, 0.0]],
             &[ChannelRole::FrontLeft, ChannelRole::FrontRight],
-        ).unwrap();
+        )
+        .unwrap();
         let mut bytes = fs::read(&path).unwrap();
         bytes[4..8].copy_from_slice(&u32::MAX.to_le_bytes());
         let data_size_offset = find_chunk_size_offset(&bytes, b"data").unwrap();
@@ -661,18 +756,27 @@ mod tests {
 
     #[test]
     fn integration_processes_wav_when_camilladsp_is_installed() {
-        let Ok(path) = std::env::var(ENV_CAMILLADSP_PATH) else { return; };
+        let Ok(path) = std::env::var(ENV_CAMILLADSP_PATH) else {
+            return;
+        };
         let adapter = CamillaDspOfflineAdapter::discover(Some(Path::new(&path))).unwrap();
-        let workspace = Path::new(env!("CARGO_MANIFEST_DIR")).parent().and_then(Path::parent).unwrap();
-        let config = AuroraDspConfig::from_json_file(&workspace.join("fixtures/dsp/basic_5_1.json")).unwrap();
+        let workspace = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .and_then(Path::parent)
+            .unwrap();
+        let config =
+            AuroraDspConfig::from_json_file(&workspace.join("fixtures/dsp/basic_5_1.json"))
+                .unwrap();
         let output = std::env::temp_dir().join("aurora_camilladsp_integration_processed.wav");
-        let report = adapter.process_wav(
-            &workspace.join("output/scene_5_1.wav"),
-            &output,
-            &config,
-            false,
-            Duration::from_secs(30),
-        ).unwrap();
+        let report = adapter
+            .process_wav(
+                &workspace.join("output/scene_5_1.wav"),
+                &output,
+                &config,
+                false,
+                Duration::from_secs(30),
+            )
+            .unwrap();
         let info = inspect_processed_wav(&output).unwrap();
         assert!(report.command.executable.is_file());
         assert_eq!(info.sample_rate, 48_000);
@@ -681,7 +785,10 @@ mod tests {
     }
 
     fn temp_wav_path(name: &str) -> PathBuf {
-        let nonce = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
         std::env::temp_dir().join(format!("aurora_camilladsp_{name}_{nonce}.wav"))
     }
 
@@ -690,9 +797,14 @@ mod tests {
         while offset + 8 <= bytes.len() {
             let id = &bytes[offset..offset + 4];
             let size = u32::from_le_bytes([
-                bytes[offset + 4], bytes[offset + 5], bytes[offset + 6], bytes[offset + 7],
+                bytes[offset + 4],
+                bytes[offset + 5],
+                bytes[offset + 6],
+                bytes[offset + 7],
             ]) as usize;
-            if id == chunk_id { return Some(offset + 4); }
+            if id == chunk_id {
+                return Some(offset + 4);
+            }
             offset += 8 + size + (size % 2);
         }
         None
