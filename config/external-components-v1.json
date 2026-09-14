@@ -166,6 +166,25 @@
       ]
     },
     {
+      "id": "ebu-ear",
+      "upstream": "https://github.com/ebu/ebu_adm_renderer",
+      "decision": "evaluate-active",
+      "integration": "external-process-validation-reference",
+      "tested_version": "2.1.0",
+      "pinned_commit": "5bb17b4278e8e67f24f90efb7a81a8aea7aed4f3",
+      "license": "BSD-3-Clause-Clear; no patent license granted",
+      "roles": ["adm-render-reference", "bs2127-reference", "bs2051-layout-reference", "differential-validation"],
+      "object_metadata": "rendered-by-upstream-reference-not-exposed-to-aurora-runtime",
+      "production_ready": false,
+      "evidence": [
+        "config/ear-renderer-reference-v1.json",
+        "validation/open-immersive/ear_renderer_reference_evidence.py",
+        ".github/workflows/ear-renderer-reference-ci.yml",
+        "docs/ear-renderer-reference.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
       "id": "fraunhofer-mpeghdec",
       "upstream": "https://github.com/Fraunhofer-IIS/mpeghdec",
       "decision": "evaluate-active",
