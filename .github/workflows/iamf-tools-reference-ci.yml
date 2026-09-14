@@ -1,0 +1,160 @@
+name: IAMF Tools Reference CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/external-components-v1.json"
+      - "config/iamf-tools-reference-v1.json"
+      - "docs/iamf-tools-reference.md"
+      - "THIRD_PARTY_LICENSES.md"
+      - ".github/workflows/iamf-tools-reference-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: iamf-tools-reference-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  iamf-tools-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      IAMF_TOOLS_COMMIT: c6b11b5ea47d7da00fbac9654acc96aa4ced2388
+      BAZELISK_VERSION: 1.27.0
+      FIXTURE_REL: iamf/cli/testdata/iamf/tones_256samp_5p1_pcm.iamf
+    steps:
+      - name: Checkout Aurora
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned iamf-tools
+        uses: actions/checkout@v4
+        with:
+          repository: AOMediaCodec/iamf-tools
+          ref: c6b11b5ea47d7da00fbac9654acc96aa4ced2388
+          path: iamf-tools
+          fetch-depth: 1
+
+      - name: Verify immutable pin and Aurora registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C iamf-tools rev-parse HEAD)" = "$IAMF_TOOLS_COMMIT"
+          python3 scripts/check_external_components.py
+          python3 - <<'PY'
+          import json
+          registry = json.load(open('config/external-components-v1.json', encoding='utf-8'))
+          ref = json.load(open('config/iamf-tools-reference-v1.json', encoding='utf-8'))
+          component = next(c for c in registry['components'] if c['id'] == 'aomedia-iamf-tools')
+          assert component['pinned_commit'] == ref['pinned_commit'] == 'c6b11b5ea47d7da00fbac9654acc96aa4ced2388'
+          assert ref['upstream_bazel_version'] == '8.5.1'
+          assert ref['bazelisk_version'] == '1.27.0'
+          print('IAMF-TOOLS-PIN-PASS')
+          PY
+
+      - name: Install reference build tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+          go install "github.com/bazelbuild/bazelisk@v${BAZELISK_VERSION}"
+          "$(go env GOPATH)/bin/bazelisk" version
+
+      - name: Build pinned encoder decoder and probe
+        working-directory: iamf-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          BAZELISK="$(go env GOPATH)/bin/bazelisk"
+          "$BAZELISK" build -c opt \
+            //iamf/cli:encoder_main \
+            //iamf/cli:decoder_main \
+            //iamf/cli:probe_main
+          test -x bazel-bin/iamf/cli/encoder_main
+          test -x bazel-bin/iamf/cli/decoder_main
+          test -x bazel-bin/iamf/cli/probe_main
+          echo "IAMF-TOOLS-BUILD-PASS"
+
+      - name: Probe and decode pinned IAMF fixture
+        working-directory: iamf-tools
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p ../output/iamf-tools-reference
+          test -s "$FIXTURE_REL"
+          bazel-bin/iamf/cli/probe_main \
+            --input_filename="$FIXTURE_REL" \
+            --format=json \
+            --scan=counts \
+            > ../output/iamf-tools-reference/probe.json
+          python3 -m json.tool ../output/iamf-tools-reference/probe.json >/dev/null
+          bazel-bin/iamf/cli/decoder_main \
+            --input_filename="$FIXTURE_REL" \
+            --output_filename=../output/iamf-tools-reference/decoded-stereo.wav
+          test -s ../output/iamf-tools-reference/decoded-stereo.wav
+          echo "IAMF-TOOLS-DECODE-PASS"
+
+      - name: Validate finite decoded PCM and emit evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=output/iamf-tools-reference
+          FIXTURE="iamf-tools/$FIXTURE_REL"
+          ffprobe -v error -select_streams a:0 \
+            -show_entries stream=sample_rate,channels,duration \
+            -of json "$OUT/decoded-stereo.wav" > "$OUT/decoded-ffprobe.json"
+          ffmpeg -v error -y -i "$OUT/decoded-stereo.wav" \
+            -f f32le -acodec pcm_f32le "$OUT/decoded.f32"
+          python3 - "$FIXTURE" "$OUT" "$IAMF_TOOLS_COMMIT" <<'PY'
+          import hashlib, json, math, pathlib, struct, sys
+          fixture = pathlib.Path(sys.argv[1])
+          out = pathlib.Path(sys.argv[2])
+          commit = sys.argv[3]
+          probe = json.loads((out / 'probe.json').read_text(encoding='utf-8'))
+          ffprobe = json.loads((out / 'decoded-ffprobe.json').read_text(encoding='utf-8'))
+          raw = (out / 'decoded.f32').read_bytes()
+          if not isinstance(probe, dict) or not probe:
+              raise SystemExit('probe JSON is empty or not an object')
+          if not raw or len(raw) % 4:
+              raise SystemExit('decoded float PCM is empty or misaligned')
+          samples = struct.unpack('<' + 'f' * (len(raw) // 4), raw)
+          if not all(math.isfinite(x) for x in samples):
+              raise SystemExit('decoded PCM contains non-finite samples')
+          if not any(abs(x) > 1e-8 for x in samples):
+              raise SystemExit('decoded PCM is silent')
+          streams = ffprobe.get('streams') or []
+          if not streams:
+              raise SystemExit('ffprobe reported no audio stream')
+          stream = streams[0]
+          if int(stream.get('sample_rate', 0)) <= 0 or int(stream.get('channels', 0)) <= 0:
+              raise SystemExit(f'invalid decoded stream metadata: {stream}')
+          evidence = {
+              'schema_version': 1,
+              'iamf_tools_commit': commit,
+              'fixture': str(fixture),
+              'fixture_sha256': hashlib.sha256(fixture.read_bytes()).hexdigest(),
+              'decoded_wav_sha256': hashlib.sha256((out / 'decoded-stereo.wav').read_bytes()).hexdigest(),
+              'sample_rate': int(stream['sample_rate']),
+              'channels': int(stream['channels']),
+              'float_sample_count': len(samples),
+              'finite_pcm': True,
+              'non_silent_pcm': True,
+              'probe_json_valid': True,
+              'truth_boundary': 'Exact-pin external iamf-tools baseline only: build, descriptor/temporal probe, and rendered stereo PCM decode. No Aurora runtime IAMF object-scene support, renderer equivalence, exhaustive conformance, patent clearance beyond upstream terms, or certification is claimed.'
+          }
+          (out / 'summary.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          PY
+          echo "IAMF-TOOLS-REFERENCE-PASS"
+
+      - name: Upload IAMF tools reference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iamf-tools-reference-${{ github.sha }}
+          path: output/iamf-tools-reference/*.json
+          if-no-files-found: error
+          retention-days: 14
