@@ -1,5 +1,5 @@
 use std::sync::{
-    atomic::{AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicI64, AtomicU32, AtomicU64, AtomicUsize, Ordering},
     Arc,
 };
 
@@ -43,6 +43,12 @@ pub struct AdaptiveDuplexSnapshot {
     pub maximum_ratio: f64,
     /// Adaptive correction relative to nominal.
     pub correction_ppm: f64,
+    /// Current trusted input-clock estimate relative to the output clock.
+    pub estimated_input_clock_ppm: f64,
+    /// Whether the estimator has three consecutive clean windows in the current clock epoch.
+    pub clock_estimate_trusted: bool,
+    /// Monotonic clock epoch bumped on gaps, XRUN-equivalent events, reconnects, or format faults.
+    pub clock_epoch: u64,
     /// Total controller saturation updates.
     pub controller_saturation_count: u64,
     /// ASRC algorithmic latency in output frames.
@@ -59,6 +65,8 @@ pub struct AdaptiveDuplexStatus {
     minimum_ratio_bits: AtomicU64,
     maximum_ratio_bits: AtomicU64,
     correction_ppm_bits: AtomicU64,
+    estimated_input_clock_ppm_bits: AtomicU64,
+    clock_estimate_trusted: AtomicBool,
     controller_saturation_count: AtomicU64,
     resampler_latency_frames: AtomicUsize,
     fault: AtomicU32,
@@ -72,13 +80,15 @@ impl AdaptiveDuplexStatus {
             minimum_ratio_bits: AtomicU64::new(nominal_ratio.to_bits()),
             maximum_ratio_bits: AtomicU64::new(nominal_ratio.to_bits()),
             correction_ppm_bits: AtomicU64::new(0.0_f64.to_bits()),
+            estimated_input_clock_ppm_bits: AtomicU64::new(0.0_f64.to_bits()),
+            clock_estimate_trusted: AtomicBool::new(false),
             controller_saturation_count: AtomicU64::new(0),
             resampler_latency_frames: AtomicUsize::new(latency_frames),
             fault: AtomicU32::new(AdaptiveDuplexFault::None as u32),
         }
     }
 
-    /// Returns numeric ring, ratio, and ASRC status.
+    /// Returns numeric ring, ratio, clock-estimator, and ASRC status.
     pub fn snapshot(&self) -> AdaptiveDuplexSnapshot {
         AdaptiveDuplexSnapshot {
             duplex: self.duplex.snapshot(),
@@ -86,10 +96,29 @@ impl AdaptiveDuplexStatus {
             minimum_ratio: f64::from_bits(self.minimum_ratio_bits.load(Ordering::Relaxed)),
             maximum_ratio: f64::from_bits(self.maximum_ratio_bits.load(Ordering::Relaxed)),
             correction_ppm: f64::from_bits(self.correction_ppm_bits.load(Ordering::Relaxed)),
+            estimated_input_clock_ppm: f64::from_bits(
+                self.estimated_input_clock_ppm_bits.load(Ordering::Relaxed),
+            ),
+            clock_estimate_trusted: self.clock_estimate_trusted.load(Ordering::Acquire),
+            clock_epoch: self.duplex.clock_epoch.load(Ordering::Acquire),
             controller_saturation_count: self.controller_saturation_count.load(Ordering::Relaxed),
             resampler_latency_frames: self.resampler_latency_frames.load(Ordering::Relaxed),
             fault: decode_adaptive_fault(self.fault.load(Ordering::Acquire)),
         }
+    }
+
+    /// Invalidates the current input/output clock relationship without blocking the callback.
+    ///
+    /// Call this from the control plane after a seek, reconnect, rate/format change, callback gap,
+    /// backend XRUN, or any other event that makes cumulative input/output frame counts belong to
+    /// different epochs. The output callback observes the epoch change, clears controller
+    /// feed-forward, and restarts the fixed-storage estimator before applying another trusted
+    /// measurement.
+    pub fn mark_clock_discontinuity(&self) {
+        self.estimated_input_clock_ppm_bits
+            .store(0.0_f64.to_bits(), Ordering::Relaxed);
+        self.clock_estimate_trusted.store(false, Ordering::Release);
+        self.duplex.mark_clock_discontinuity();
     }
 }
 
@@ -182,6 +211,7 @@ pub struct DuplexStatus {
     last_correction_output_frame: AtomicU64,
     minimum_correction_interval_frames: AtomicU64,
     maximum_excursion_frames: AtomicUsize,
+    clock_epoch: AtomicU64,
     health: AtomicU32,
     fault: AtomicU32,
 }
@@ -204,6 +234,7 @@ impl DuplexStatus {
             last_correction_output_frame: AtomicU64::new(0),
             minimum_correction_interval_frames: AtomicU64::new(u64::MAX),
             maximum_excursion_frames: AtomicUsize::new(0),
+            clock_epoch: AtomicU64::new(0),
             health: AtomicU32::new(DuplexHealth::Normal as u32),
             fault: AtomicU32::new(DuplexFault::None as u32),
         }
@@ -270,6 +301,10 @@ impl DuplexStatus {
         }
     }
 
+    fn mark_clock_discontinuity(&self) {
+        self.clock_epoch.fetch_add(1, Ordering::AcqRel);
+    }
+
     fn raise_health(&self, health: DuplexHealth) {
         self.health.fetch_max(health as u32, Ordering::Relaxed);
     }
@@ -290,6 +325,7 @@ impl DuplexProducer {
             self.status
                 .fault
                 .store(DuplexFault::InputFormat as u32, Ordering::Release);
+            self.status.mark_clock_discontinuity();
             return;
         }
         let frames = input.len() / channels;
@@ -310,6 +346,7 @@ impl DuplexProducer {
             self.status
                 .overflow_count
                 .fetch_add(rejected as u64, Ordering::Relaxed);
+            self.status.mark_clock_discontinuity();
             let consecutive = self
                 .status
                 .consecutive_overflows
@@ -352,6 +389,7 @@ impl DuplexConsumer {
             self.status
                 .fault
                 .store(DuplexFault::OutputFormat as u32, Ordering::Release);
+            self.status.mark_clock_discontinuity();
             return;
         }
         let frame_count = output.len() / channels;
@@ -562,6 +600,7 @@ impl DuplexConsumer {
 
     fn observe_underflow(&self) {
         self.status.underflow_count.fetch_add(1, Ordering::Relaxed);
+        self.status.mark_clock_discontinuity();
         let consecutive = self
             .status
             .consecutive_underflows
@@ -593,6 +632,12 @@ pub struct AdaptiveDuplexConsumer {
     input_scratch: Vec<f32>,
     output_cache: Vec<f32>,
     cache_cursor_samples: usize,
+    clock_baseline_initialized: bool,
+    observed_clock_epoch: u64,
+    last_clock_input_frames: u64,
+    last_clock_output_frames: u64,
+    /// Hard adaptive faults remain muted until the control plane rebuilds this bridge.
+    fault_latched: bool,
 }
 
 impl AdaptiveDuplexConsumer {
@@ -600,13 +645,21 @@ impl AdaptiveDuplexConsumer {
     ///
     /// Host callback sizes may differ from the configured processing block. The
     /// ASRC always produces a fixed block into preallocated cache, and this
-    /// method drains that cache across arbitrary borrowed output slices.
+    /// method drains that cache across arbitrary borrowed output slices. Cumulative
+    /// producer/consumer frame counters are simultaneously fed into the fixed-storage
+    /// PPM estimator; once three clean ten-second windows agree, trusted feed-forward
+    /// is applied to the same controller that sets the ASRC ratio.
     pub fn read_interleaved(&mut self, output: &mut [f32], channels: usize) {
         if channels != self.config.channels || channels == 0 || output.len() % channels != 0 {
             output.fill(0.0);
             self.duplex_status
                 .fault
                 .store(DuplexFault::OutputFormat as u32, Ordering::Release);
+            self.duplex_status.mark_clock_discontinuity();
+            return;
+        }
+        if self.fault_latched {
+            output.fill(0.0);
             return;
         }
         let requested_frames = output.len() / channels;
@@ -618,7 +671,9 @@ impl AdaptiveDuplexConsumer {
         while output_cursor < output.len() {
             if self.cache_cursor_samples >= self.output_cache.len() && !self.refill_cache() {
                 output[output_cursor..].fill(0.0);
-                underflow = true;
+                if !self.fault_latched {
+                    underflow = true;
+                }
                 break;
             }
             let available = self.output_cache.len() - self.cache_cursor_samples;
@@ -633,6 +688,7 @@ impl AdaptiveDuplexConsumer {
             self.duplex_status
                 .underflow_count
                 .fetch_add(1, Ordering::Relaxed);
+            self.duplex_status.mark_clock_discontinuity();
             let consecutive = self
                 .duplex_status
                 .consecutive_underflows
@@ -658,7 +714,84 @@ impl AdaptiveDuplexConsumer {
         self.queue.capacity() + self.input_scratch.capacity() + self.output_cache.capacity()
     }
 
+    fn observe_runtime_clock(&mut self) -> Result<(), DriftControllerFault> {
+        let epoch = self.duplex_status.clock_epoch.load(Ordering::Acquire);
+        let input_frames = self
+            .duplex_status
+            .input_frames_received
+            .load(Ordering::Relaxed);
+        let output_frames = self
+            .duplex_status
+            .output_frames_requested
+            .load(Ordering::Relaxed);
+
+        if !self.clock_baseline_initialized {
+            self.clock_baseline_initialized = true;
+            self.observed_clock_epoch = epoch;
+            self.last_clock_input_frames = input_frames;
+            self.last_clock_output_frames = output_frames;
+            return Ok(());
+        }
+
+        if epoch != self.observed_clock_epoch {
+            self.controller.observe_clock_frames(1, 1, true)?;
+            self.observed_clock_epoch = epoch;
+            self.last_clock_input_frames = input_frames;
+            self.last_clock_output_frames = output_frames;
+            self.adaptive_status
+                .estimated_input_clock_ppm_bits
+                .store(0.0_f64.to_bits(), Ordering::Relaxed);
+            self.adaptive_status
+                .clock_estimate_trusted
+                .store(false, Ordering::Release);
+            return Ok(());
+        }
+
+        let input_delta = input_frames.saturating_sub(self.last_clock_input_frames);
+        let output_delta = output_frames.saturating_sub(self.last_clock_output_frames);
+        if input_delta == 0 || output_delta == 0 {
+            return Ok(());
+        }
+        self.last_clock_input_frames = input_frames;
+        self.last_clock_output_frames = output_frames;
+
+        if let Some(ppm) = self
+            .controller
+            .observe_clock_frames(input_delta, output_delta, false)?
+        {
+            self.adaptive_status
+                .estimated_input_clock_ppm_bits
+                .store(ppm.to_bits(), Ordering::Relaxed);
+            self.adaptive_status
+                .clock_estimate_trusted
+                .store(true, Ordering::Release);
+        }
+        Ok(())
+    }
+
+    fn latch_adaptive_fault(&mut self, fault: AdaptiveDuplexFault) {
+        self.fault_latched = true;
+        self.adaptive_status
+            .clock_estimate_trusted
+            .store(false, Ordering::Release);
+        self.adaptive_status
+            .fault
+            .store(fault as u32, Ordering::Release);
+        self.duplex_status.raise_health(DuplexHealth::Fatal);
+    }
+
     fn refill_cache(&mut self) -> bool {
+        if self.fault_latched {
+            return false;
+        }
+        if self.observe_runtime_clock().is_err() {
+            self.adaptive_status
+                .estimated_input_clock_ppm_bits
+                .store(0.0_f64.to_bits(), Ordering::Relaxed);
+            self.latch_adaptive_fault(AdaptiveDuplexFault::Controller);
+            return false;
+        }
+
         let fill_frames = self.queue.len_samples() / self.config.channels;
         let fill_trend = fill_frames as i128 - self.config.target_fill_frames as i128;
         let controller = self.controller.update(
@@ -668,24 +801,14 @@ impl AdaptiveDuplexConsumer {
         );
         let report = match controller {
             Ok(report) => report,
-            Err(DriftControllerFault::CorrectionOutOfRange) => {
-                self.adaptive_status
-                    .fault
-                    .store(AdaptiveDuplexFault::Controller as u32, Ordering::Release);
-                self.duplex_status.raise_health(DuplexHealth::Fatal);
-                return false;
-            }
-            Err(DriftControllerFault::InvalidConfiguration) => {
-                self.adaptive_status
-                    .fault
-                    .store(AdaptiveDuplexFault::Controller as u32, Ordering::Release);
+            Err(DriftControllerFault::CorrectionOutOfRange)
+            | Err(DriftControllerFault::InvalidConfiguration) => {
+                self.latch_adaptive_fault(AdaptiveDuplexFault::Controller);
                 return false;
             }
         };
         if self.resampler.set_ratio(report.ratio).is_err() {
-            self.adaptive_status
-                .fault
-                .store(AdaptiveDuplexFault::Resampler as u32, Ordering::Release);
+            self.latch_adaptive_fault(AdaptiveDuplexFault::Resampler);
             return false;
         }
         self.adaptive_status
@@ -707,9 +830,7 @@ impl AdaptiveDuplexConsumer {
         let required_frames = self.resampler.required_input_frames();
         let required_samples = required_frames.saturating_mul(self.config.channels);
         if required_samples > self.input_scratch.len() {
-            self.adaptive_status
-                .fault
-                .store(AdaptiveDuplexFault::InputCapacity as u32, Ordering::Release);
+            self.latch_adaptive_fault(AdaptiveDuplexFault::InputCapacity);
             return false;
         }
         if self.queue.len_samples() < required_samples
@@ -727,9 +848,7 @@ impl AdaptiveDuplexConsumer {
             )
             .is_err()
         {
-            self.adaptive_status
-                .fault
-                .store(AdaptiveDuplexFault::Resampler as u32, Ordering::Release);
+            self.latch_adaptive_fault(AdaptiveDuplexFault::Resampler);
             return false;
         }
         self.cache_cursor_samples = 0;
@@ -801,6 +920,11 @@ pub fn create_adaptive_duplex_bridge(
             input_scratch: vec![0.0; sample_capacity],
             output_cache: vec![0.0; max_output_block_frames * config.channels],
             cache_cursor_samples: max_output_block_frames * config.channels,
+            clock_baseline_initialized: false,
+            observed_clock_epoch: 0,
+            last_clock_input_frames: 0,
+            last_clock_output_frames: 0,
+            fault_latched: false,
         },
         adaptive_status,
     ))
@@ -1121,7 +1245,137 @@ mod tests {
         assert_eq!(snapshot.duplex.sample_slips_inserted, 0);
         assert_eq!(snapshot.duplex.sample_slips_removed, 0);
         assert_eq!(snapshot.fault, AdaptiveDuplexFault::None);
+        assert!(!snapshot.clock_estimate_trusted);
         assert_eq!(consumer.fixed_capacity(), capacity);
+    }
+
+    #[test]
+    fn unsupported_adaptive_mismatch_latches_silence_until_bridge_rebuild() {
+        let adaptive_config = DuplexBridgeConfig {
+            channels: 1,
+            capacity_frames: 4_096,
+            target_fill_frames: 1_024,
+            correction_threshold_frames: 128,
+        };
+        let controller = DriftControllerConfig {
+            input_rate: 48_000,
+            output_rate: 48_000,
+            target_fill_frames: 1_024,
+            maximum_correction_ppm: 1.0,
+            fatal_saturation_updates: 1,
+            ..DriftControllerConfig::default()
+        };
+        let (producer, mut consumer, status) = create_adaptive_duplex_bridge(
+            adaptive_config,
+            DuplexFaultPolicy {
+                maximum_excursion_frames: 4_096,
+                ..DuplexFaultPolicy::default()
+            },
+            controller,
+            Box::new(crate::RubatoAsrc::default()),
+            256,
+        )
+        .unwrap();
+
+        producer.push_interleaved(&vec![0.25; 2_048], 1);
+        let mut first = vec![1.0; 256];
+        consumer.read_interleaved(&mut first, 1);
+        assert!(first.iter().all(|sample| *sample == 0.0));
+        let faulted = status.snapshot();
+        assert_eq!(faulted.fault, AdaptiveDuplexFault::Controller);
+        assert_eq!(faulted.duplex.health, DuplexHealth::Fatal);
+        assert_eq!(faulted.duplex.underflow_count, 0);
+
+        producer.push_interleaved(&vec![0.25; 256], 1);
+        let mut second = vec![1.0; 256];
+        consumer.read_interleaved(&mut second, 1);
+        assert!(second.iter().all(|sample| *sample == 0.0));
+        let still_faulted = status.snapshot();
+        assert_eq!(still_faulted.fault, AdaptiveDuplexFault::Controller);
+        assert_eq!(still_faulted.duplex.underflow_count, 0);
+        assert_eq!(still_faulted.clock_epoch, faulted.clock_epoch);
+    }
+
+    #[test]
+    fn adaptive_runtime_estimator_drives_feedforward_and_reacquires_after_epoch_reset() {
+        let adaptive_config = DuplexBridgeConfig {
+            channels: 1,
+            capacity_frames: 16_384,
+            target_fill_frames: 8_192,
+            correction_threshold_frames: 256,
+        };
+        let controller = DriftControllerConfig {
+            input_rate: 48_000,
+            output_rate: 48_000,
+            target_fill_frames: 8_192,
+            ..DriftControllerConfig::default()
+        };
+        let (producer, mut consumer, status) = create_adaptive_duplex_bridge(
+            adaptive_config,
+            DuplexFaultPolicy {
+                maximum_excursion_frames: 16_384,
+                ..DuplexFaultPolicy::default()
+            },
+            controller,
+            Box::new(crate::RubatoAsrc::default()),
+            480,
+        )
+        .unwrap();
+
+        producer.push_interleaved(&vec![0.0; 8_192], 1);
+        let mut output = vec![0.0; 480];
+        let mut positive_fraction = 0.0_f64;
+        for _ in 0..3_010 {
+            positive_fraction += 480.0 * 250.0 / 1_000_000.0;
+            let extra = if positive_fraction >= 1.0 {
+                positive_fraction -= 1.0;
+                1
+            } else {
+                0
+            };
+            producer.push_interleaved(&vec![0.1; 480 + extra], 1);
+            consumer.read_interleaved(&mut output, 1);
+        }
+        let trusted = status.snapshot();
+        assert!(trusted.clock_estimate_trusted, "{trusted:?}");
+        assert!(
+            (trusted.estimated_input_clock_ppm - 250.0).abs() <= 8.0,
+            "{trusted:?}"
+        );
+        assert!(trusted.correction_ppm < 0.0, "{trusted:?}");
+        assert_eq!(trusted.fault, AdaptiveDuplexFault::None);
+
+        let old_epoch = trusted.clock_epoch;
+        status.mark_clock_discontinuity();
+        producer.push_interleaved(&vec![0.1; 480], 1);
+        consumer.read_interleaved(&mut output, 1);
+        let reset = status.snapshot();
+        assert!(reset.clock_epoch > old_epoch);
+        assert!(!reset.clock_estimate_trusted);
+        assert_eq!(reset.estimated_input_clock_ppm, 0.0);
+
+        let mut negative_fraction = 0.0_f64;
+        for _ in 0..3_010 {
+            negative_fraction += 480.0 * 250.0 / 1_000_000.0;
+            let missing = if negative_fraction >= 1.0 {
+                negative_fraction -= 1.0;
+                1
+            } else {
+                0
+            };
+            producer.push_interleaved(&vec![0.1; 480 - missing], 1);
+            consumer.read_interleaved(&mut output, 1);
+        }
+        let reacquired = status.snapshot();
+        assert!(reacquired.clock_estimate_trusted, "{reacquired:?}");
+        assert!(
+            (reacquired.estimated_input_clock_ppm + 250.0).abs() <= 8.0,
+            "{reacquired:?}"
+        );
+        assert!(reacquired.correction_ppm > 0.0, "{reacquired:?}");
+        assert_eq!(reacquired.fault, AdaptiveDuplexFault::None);
+        assert_eq!(reacquired.duplex.overflow_count, 0);
+        assert_eq!(reacquired.duplex.underflow_count, 0);
     }
 
     fn corrected_sine(transition: CorrectionTransition) -> Vec<f32> {

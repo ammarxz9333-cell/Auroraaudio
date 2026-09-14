@@ -1,60 +1,51 @@
-//! Experimental truehdd decoder adapter boundary.
+//! TrueHD integration status boundary.
 //!
-//! This crate does not vendor or link truehdd. Any future integration must be
-//! offline-only, out-of-process, and reviewed for licensing and commercial risk.
+//! Aurora does not vendor or execute `truehdd` in the accepted runtime. The upstream project can
+//! decode channel presentations and export DAMF assets, but Aurora does not yet have a reviewed
+//! mapping from those DAMF audio/metadata files into complete object-to-PCM bindings. Exposing a
+//! decoder that silently drops that distinction would be misleading, so this crate is intentionally
+//! non-executable until that contract is implemented and validated.
 
-use aurora_core::AudioFormat;
-use aurora_decoder_api::{DecodedFrame, Decoder, DecoderError, DecoderInfo};
+/// Whether a TrueHD/Atmos runtime decoder is available in this source revision.
+pub const TRUEHDD_RUNTIME_AVAILABLE: bool = false;
 
-/// Experimental offline-only truehdd adapter placeholder.
-#[derive(Debug, Default, Clone)]
-pub struct TruehddDecoderAdapter {
-    configured_format: Option<AudioFormat>,
+/// Whether native TrueHD/Atmos object-scene decoding is available.
+pub const TRUEHDD_OBJECT_SCENE_AVAILABLE: bool = false;
+
+/// Stable reason the TrueHD runtime is not exposed.
+pub const fn truehdd_runtime_unavailable_reason() -> &'static str {
+    "TrueHD/DAMF integration is deferred until Aurora has reviewed object-to-PCM bindings"
 }
 
-impl TruehddDecoderAdapter {
-    /// Creates a truehdd adapter boundary.
-    pub fn new() -> Self {
-        Self::default()
-    }
+/// Non-executable status returned to control-plane discovery code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct TruehddIntegrationStatus {
+    /// Whether Aurora may instantiate a TrueHD decoder.
+    pub runtime_available: bool,
+    /// Whether Aurora may claim native object-scene decoding.
+    pub object_scene_available: bool,
+    /// Human-readable status reason.
+    pub reason: &'static str,
 }
 
-impl Decoder for TruehddDecoderAdapter {
-    fn info(&self) -> DecoderInfo {
-        DecoderInfo {
-            name: "truehdd out-of-process adapter",
-            production_ready: false,
-            maturity: "experimental-offline-only",
-        }
-    }
-
-    fn configure(&mut self, output_format: AudioFormat) -> Result<(), DecoderError> {
-        self.configured_format = Some(output_format);
-        Ok(())
-    }
-
-    fn decode_chunk(&mut self, _input: &[u8]) -> Result<Option<DecodedFrame>, DecoderError> {
-        Err(DecoderError::Unavailable(
-            "truehdd integration is experimental, offline-only, and disabled",
-        ))
-    }
-
-    fn reset(&mut self) {
-        self.configured_format = None;
+/// Returns the current TrueHD integration status without constructing a fake decoder.
+pub const fn integration_status() -> TruehddIntegrationStatus {
+    TruehddIntegrationStatus {
+        runtime_available: TRUEHDD_RUNTIME_AVAILABLE,
+        object_scene_available: TRUEHDD_OBJECT_SCENE_AVAILABLE,
+        reason: truehdd_runtime_unavailable_reason(),
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aurora_decoder_api::Decoder;
 
     #[test]
-    fn truehdd_adapter_is_experimental_offline_only() {
-        let adapter = TruehddDecoderAdapter::new();
-        let info = adapter.info();
-
-        assert_eq!(info.maturity, "experimental-offline-only");
-        assert!(!info.production_ready);
+    fn truehdd_is_explicitly_non_executable() {
+        let status = integration_status();
+        assert!(!status.runtime_available);
+        assert!(!status.object_scene_available);
+        assert!(status.reason.contains("object-to-PCM"));
     }
 }

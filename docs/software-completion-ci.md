@@ -1,0 +1,1 @@
+All software-completion claims are conditional on current PR CI. Branch documents do not override executable evidence.

@@ -1,73 +1,32 @@
-//! Cavern renderer adapter boundary.
+//! Cavern integration status boundary.
 //!
-//! Cavern is disabled by default pending license review. This crate contains no
-//! Cavern source and only implements the Aurora-owned renderer trait boundary.
+//! Aurora does not vendor, link, or execute Cavern in the accepted runtime. Cavern remains an
+//! inactive research candidate pending license/redistribution review. Keeping that fact as
+//! capability metadata is safer than exposing a `Renderer` implementation that can configure
+//! successfully and then fail every render call.
 
-use aurora_core::{Listener, Speaker};
-use aurora_renderer_api::{
-    RenderObject, Renderer, RendererError, RendererScratch, RendererScratchSize, SpeakerGain,
-};
+/// Whether a Cavern runtime renderer is available in this source revision.
+pub const CAVERN_RUNTIME_AVAILABLE: bool = false;
 
-/// Cavern renderer adapter placeholder.
-#[derive(Debug, Default, Clone)]
-pub struct CavernRendererAdapter {
-    configured: bool,
+/// Stable reason the Cavern runtime is not exposed.
+pub const fn cavern_runtime_unavailable_reason() -> &'static str {
+    "Cavern runtime integration is inactive pending license and redistribution review"
 }
 
-impl CavernRendererAdapter {
-    /// Creates a disabled-by-default Cavern adapter boundary.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Returns why this adapter is disabled by default.
-    pub fn disabled_reason(&self) -> &'static str {
-        "disabled by default pending Cavern license review"
-    }
+/// Non-executable status returned to control-plane discovery code.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct CavernIntegrationStatus {
+    /// Whether Aurora may instantiate Cavern as a renderer.
+    pub runtime_available: bool,
+    /// Human-readable status reason.
+    pub reason: &'static str,
 }
 
-impl Renderer for CavernRendererAdapter {
-    fn configure(
-        &mut self,
-        _layout: Vec<Speaker>,
-        _sample_rate: u32,
-        _block_size: usize,
-        _max_objects: usize,
-    ) -> Result<(), RendererError> {
-        self.configured = true;
-        Ok(())
-    }
-
-    fn required_scratch_size(&self) -> Result<RendererScratchSize, RendererError> {
-        if !self.configured {
-            return Err(RendererError::NotConfigured);
-        }
-        Ok(RendererScratchSize { float_count: 0 })
-    }
-
-    fn render_gains(
-        &mut self,
-        _listener: &Listener,
-        _objects: &[RenderObject],
-        _output_gains: &mut [SpeakerGain],
-        _scratch: &mut RendererScratch,
-    ) -> Result<(), RendererError> {
-        if !self.configured {
-            return Err(RendererError::NotConfigured);
-        }
-        Err(RendererError::Unavailable(
-            "Cavern adapter is disabled pending license review",
-        ))
-    }
-
-    fn reset(&mut self) {}
-
-    fn latency_frames(&self) -> usize {
-        0
-    }
-
-    fn output_channel_count(&self) -> usize {
-        0
+/// Returns the current Cavern integration status without constructing a fake renderer.
+pub const fn integration_status() -> CavernIntegrationStatus {
+    CavernIntegrationStatus {
+        runtime_available: CAVERN_RUNTIME_AVAILABLE,
+        reason: cavern_runtime_unavailable_reason(),
     }
 }
 
@@ -76,9 +35,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn cavern_adapter_is_disabled_by_default() {
-        let adapter = CavernRendererAdapter::new();
-
-        assert!(adapter.disabled_reason().contains("license review"));
+    fn cavern_is_explicitly_non_executable() {
+        let status = integration_status();
+        assert!(!status.runtime_available);
+        assert!(status.reason.contains("license"));
     }
 }

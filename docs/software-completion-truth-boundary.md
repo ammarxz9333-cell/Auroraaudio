@@ -1,0 +1,1 @@
+Software completion means the declared software/runtime capability surface is implemented and regression-tested. It does not mean the physical or external acceptance gates have passed.

@@ -1,0 +1,17 @@
+name: Software Completion Audit
+
+on:
+  pull_request:
+    paths:
+      - 'crates/**'
+      - 'scripts/check_no_runtime_placeholders.py'
+      - '.github/workflows/software-completion-audit.yml'
+  workflow_dispatch:
+
+jobs:
+  runtime-placeholder-audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Reject runtime implementation placeholders
+        run: python3 scripts/check_no_runtime_placeholders.py

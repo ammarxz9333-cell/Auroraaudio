@@ -90,12 +90,20 @@
     {
       "id": "libiamf",
       "upstream": "https://github.com/AOMediaCodec/libiamf",
-      "decision": "evaluate",
-      "integration": "external-process-or-ffi-adapter",
-      "roles": ["open-immersive-audio"],
-      "object_metadata": "candidate",
+      "decision": "evaluate-active",
+      "integration": "external-process-validation-reference",
+      "tested_version": "commit-e55e1832a608affe602de2ee39929bd7759a75ab",
+      "pinned_commit": "e55e1832a608affe602de2ee39929bd7759a75ab",
+      "roles": ["iamf-rendered-channel-pcm-reference"],
+      "object_metadata": "not-exposed-by-rendered-process-adapter",
       "production_ready": false,
-      "evidence": ["docs/adapters.md"]
+      "evidence": [
+        "config/iamf-reference-v1.json",
+        "crates/aurora-decoder-iamf/src/lib.rs",
+        "crates/aurora-decoder-iamf/examples/iamf_rendered_pcm_probe.rs",
+        "validation/open-immersive/iamf_reference_evidence.py",
+        ".github/workflows/iamf-reference-ci.yml"
+      ]
     },
     {
       "id": "libmysofa",

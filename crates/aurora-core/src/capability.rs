@@ -32,7 +32,7 @@ pub enum ImplementationStatus {
     Experimental,
     /// The declared scope is functional, while production readiness remains separate.
     Functional,
-    /// Only an adapter/interface placeholder exists; operational behavior is not accepted.
+    /// Only an interface boundary exists; operational behavior is not accepted.
     AdapterPlaceholder,
     /// Code or research scaffolding may exist, but it is not an active product path.
     InactiveResearch,
@@ -97,7 +97,7 @@ pub struct CapabilityEntry {
     pub tested_layouts: Vec<String>,
     /// Strongest accepted artifact verification level.
     pub artifact_verification: ArtifactVerification,
-    /// Explicit marker for adapter-only placeholder entries.
+    /// Explicit marker for legacy interface-only entries.
     pub adapter_placeholder: bool,
     /// Whether Aurora may describe this capability as production-ready.
     pub production_ready: bool,
@@ -140,11 +140,11 @@ impl CapabilityRegistry {
                 });
             }
 
-            let placeholder_status = matches!(
+            let interface_only_status = matches!(
                 capability.implementation_status,
                 ImplementationStatus::AdapterPlaceholder
             );
-            if capability.adapter_placeholder != placeholder_status {
+            if capability.adapter_placeholder != interface_only_status {
                 return Err(invariant(
                     capability,
                     CapabilityInvariant::AdapterPlaceholderMarkerMismatch,
@@ -242,7 +242,7 @@ pub enum CapabilityInvariant {
     NotImplementedHasSupport,
     /// A not-implemented entry claims accepted layouts or artifact verification.
     NotImplementedHasAcceptedEvidence,
-    /// An adapter placeholder claims functional execution support.
+    /// An interface-only entry claims functional execution support.
     PlaceholderClaimsFunctionalSupport,
     /// An inactive research entry claims functional execution support.
     InactiveResearchClaimsFunctionalSupport,
@@ -347,19 +347,24 @@ pub fn canonical_capability_registry() -> CapabilityRegistry {
             },
             CapabilityEntry {
                 id: "iamf".to_owned(),
-                name: "IAMF decoder adapter".to_owned(),
+                name: "IAMF rendered-PCM decoder".to_owned(),
                 kind: CapabilityKind::Decoder,
-                implementation_status: ImplementationStatus::AdapterPlaceholder,
-                offline_support: SupportStatus::Unsupported,
+                implementation_status: ImplementationStatus::Functional,
+                offline_support: SupportStatus::Functional,
                 realtime_support: SupportStatus::Unsupported,
-                tested_layouts: vec![],
-                artifact_verification: ArtifactVerification::None,
-                adapter_placeholder: true,
+                tested_layouts: vec!["stereo".to_owned()],
+                artifact_verification: ArtifactVerification::CiArtifact,
+                adapter_placeholder: false,
                 production_ready: false,
                 cue_limitations: vec![
-                    "No accepted legal sample has been decoded through the Aurora path".to_owned(),
+                    "Complete-file external-process decode only".to_owned(),
+                    "Current accepted output scope is 48 kHz rendered stereo ChannelPcm".to_owned(),
+                    "Native IAMF object/audio-element metadata and object-to-PCM bindings are not exposed".to_owned(),
                 ],
-                evidence: vec!["aurora-decoder-iamf adapter crate only".to_owned()],
+                evidence: vec![
+                    "IAMF Rendered PCM Reference CI".to_owned(),
+                    "pinned libiamf iamfdec reference lane".to_owned(),
+                ],
             },
             CapabilityEntry {
                 id: "camilladsp".to_owned(),
@@ -380,7 +385,7 @@ pub fn canonical_capability_registry() -> CapabilityRegistry {
             },
             CapabilityEntry {
                 id: "cavern".to_owned(),
-                name: "Cavern renderer adapter".to_owned(),
+                name: "Cavern renderer research candidate".to_owned(),
                 kind: CapabilityKind::Renderer,
                 implementation_status: ImplementationStatus::InactiveResearch,
                 offline_support: SupportStatus::Unsupported,
@@ -392,39 +397,47 @@ pub fn canonical_capability_registry() -> CapabilityRegistry {
                 cue_limitations: vec![
                     "Inactive pending license and redistribution review".to_owned()
                 ],
-                evidence: vec!["Disabled-by-default research adapter".to_owned()],
+                evidence: vec!["Non-executable integration status boundary".to_owned()],
             },
             CapabilityEntry {
                 id: "truehdd".to_owned(),
-                name: "truehdd decoder adapter".to_owned(),
+                name: "truehdd channel-PCM decoder".to_owned(),
                 kind: CapabilityKind::Decoder,
-                implementation_status: ImplementationStatus::InactiveResearch,
-                offline_support: SupportStatus::Unsupported,
+                implementation_status: ImplementationStatus::Experimental,
+                offline_support: SupportStatus::Experimental,
                 realtime_support: SupportStatus::Unsupported,
                 tested_layouts: vec![],
-                artifact_verification: ArtifactVerification::None,
+                artifact_verification: ArtifactVerification::SoftwareTested,
                 adapter_placeholder: false,
                 production_ready: false,
                 cue_limitations: vec![
-                    "Inactive research path; product use requires legal review".to_owned()
+                    "Complete-file external-process decode only".to_owned(),
+                    "DAMF/Atmos object presentation is not mapped into Aurora object bindings".to_owned(),
+                    "External truehdd deployment and licensing require separate review".to_owned(),
                 ],
-                evidence: vec!["Disabled-by-default research adapter".to_owned()],
+                evidence: vec![
+                    "aurora-decoder-truehdd PCM24 import and presentation-selection tests".to_owned()
+                ],
             },
             CapabilityEntry {
                 id: "loudspeaker-3d".to_owned(),
-                name: "3D loudspeaker renderer".to_owned(),
+                name: "3D VBAP loudspeaker renderer".to_owned(),
                 kind: CapabilityKind::Renderer,
-                implementation_status: ImplementationStatus::NotImplemented,
-                offline_support: SupportStatus::Unsupported,
-                realtime_support: SupportStatus::Unsupported,
-                tested_layouts: vec![],
-                artifact_verification: ArtifactVerification::None,
+                implementation_status: ImplementationStatus::Experimental,
+                offline_support: SupportStatus::Functional,
+                realtime_support: SupportStatus::Experimental,
+                tested_layouts: vec!["7.1.4".to_owned()],
+                artifact_verification: ArtifactVerification::SoftwareTested,
                 adapter_placeholder: false,
                 production_ready: false,
                 cue_limitations: vec![
-                    "Must not be claimed before issue #38 acceptance evidence".to_owned()
+                    "Experimental convex-hull 3D VBAP; not a Dolby renderer equivalence claim".to_owned(),
+                    "Physical loudspeaker and acoustic validation remain pending".to_owned(),
                 ],
-                evidence: vec![],
+                evidence: vec![
+                    "aurora-renderer-vbap Vbap3dRenderer tests/evaluator".to_owned(),
+                    "7.1.4 software simulation path".to_owned(),
+                ],
             },
         ],
     };
@@ -469,18 +482,20 @@ mod tests {
     }
 
     #[test]
-    fn placeholder_cannot_claim_functional_support() {
+    fn interface_only_status_cannot_claim_functional_support() {
         let mut registry = canonical_capability_registry();
         let entry = registry
             .capabilities
             .iter_mut()
-            .find(|entry| entry.id == "iamf")
+            .find(|entry| entry.id == "cavern")
             .unwrap();
+        entry.implementation_status = ImplementationStatus::AdapterPlaceholder;
+        entry.adapter_placeholder = true;
         entry.offline_support = SupportStatus::Functional;
         assert_eq!(
             registry.validate(),
             Err(CapabilityRegistryError::ContradictoryClaim {
-                id: "iamf".to_owned(),
+                id: "cavern".to_owned(),
                 invariant: CapabilityInvariant::PlaceholderClaimsFunctionalSupport,
             })
         );
@@ -492,13 +507,17 @@ mod tests {
         let entry = registry
             .capabilities
             .iter_mut()
-            .find(|entry| entry.id == "loudspeaker-3d")
+            .find(|entry| entry.id == "cavern")
             .unwrap();
+        entry.implementation_status = ImplementationStatus::NotImplemented;
+        entry.offline_support = SupportStatus::Unsupported;
+        entry.realtime_support = SupportStatus::Unsupported;
         entry.tested_layouts.push("7.1.4".to_owned());
+        entry.artifact_verification = ArtifactVerification::None;
         assert_eq!(
             registry.validate(),
             Err(CapabilityRegistryError::ContradictoryClaim {
-                id: "loudspeaker-3d".to_owned(),
+                id: "cavern".to_owned(),
                 invariant: CapabilityInvariant::NotImplementedHasAcceptedEvidence,
             })
         );

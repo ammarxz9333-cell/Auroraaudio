@@ -46,16 +46,25 @@
         "validation/physical/aurora_live_ingress.py",
         "validation/physical/aurora_alsa_iec61937_stream.py"
       ],
-      "truth_boundary": "Software Gate A-Live classifier and continuous ALSA slot-conversion self-tests pass, including mid-stream acquisition and relock. Physical live eARC capture, hardware reset/drop counters and electrical timing remain pending."
+      "truth_boundary": "Software Gate A-Live has bounded retained diagnostics, threshold-driven pass/fail verdicts and Linux/Windows self-tests for mid-stream acquisition and relock. Export into AuroraSim remains pending; physical live eARC capture, hardware reset/drop counters and electrical timing remain unproven."
+    },
+    {
+      "id": "live-joc-decoder-runtime",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "evidence": [
+        "crates/aurora-decoder-api/src/lib.rs",
+        "crates/aurora-source-runtime/src/live.rs",
+        "validation/immersive/test-joc-aurora-live-runtime.sh"
+      ],
+      "truth_boundary": "Pinned Harletty JOC software is exercised through Aurora's hardware-neutral StreamingDecoder contract with explicit object-to-PCM-channel bindings, bounded priming/fault policy, bed routing, object gain rendering and speaker PCM mixing. In-process decoder panics are isolated on the media/control side, latched fail-closed across ordinary discontinuities, and require explicit recovery before a fresh priming epoch. Plain E-AC-3 is a fail-closed negative control. This is software-reference evidence only; it does not prove physical eARC capture, protected-service compatibility, final renderer quality, or Dolby certification."
     },
     {
       "id": "output-dsp-chain",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "output-dsp-chain",
-      "profiles": [
-        "none"
-      ],
+      "profiles": ["none"],
       "evidence": [
         "crates/aurora-dsp-basic/examples/process_7_1_4_file.rs",
         "validation/virtual-hardware/test-aurora-full-system-sim.sh"
@@ -66,151 +75,96 @@
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "render-contract",
-      "profiles": [
-        "none"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "frame-accounting",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "frame-accounting",
-      "profiles": [
-        "none",
-        "dropout",
-        "disconnect"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "dropout", "disconnect"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "channel-activity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "channel-activity",
-      "profiles": [
-        "none",
-        "channel-silence"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "channel-silence"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "channel-order",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "channel-order",
-      "profiles": [
-        "none",
-        "channel-swap"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "channel-swap"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "pcm-identity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "pcm-identity",
-      "profiles": [
-        "none",
-        "channel-silence",
-        "channel-swap"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "channel-silence", "channel-swap"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "tdm16-slot-mapping",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "tdm16-slot-mapping",
-      "profiles": [
-        "none",
-        "tdm-padding-corruption"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "tdm-padding-corruption"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "xrun-dropout",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "xrun-dropout",
-      "profiles": [
-        "dropout"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["dropout"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "device-disconnect",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "device-disconnect",
-      "profiles": [
-        "disconnect"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["disconnect"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "clock-drift",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "clock-drift",
-      "profiles": [
-        "drift"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["drift"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "sample-rate-integrity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "sample-rate-integrity",
-      "profiles": [
-        "sample-rate-change"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["sample-rate-change"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "latency-budget",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "latency-budget",
-      "profiles": [
-        "latency-spike"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["latency-spike"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "non-finite-protection",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "non-finite-protection",
-      "profiles": [
-        "non-finite"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["non-finite"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "moving-joc-metadata",
@@ -258,16 +212,35 @@
       "truth_boundary": "Focused 48 kHz 5.1 point-object differential against exact pinned AOMedia OAR 1.0.0. Covers explicit FL/FR/FC/LFE/SL/SR order, finite output, 256-frame accounting, exact speaker-target cases, -6 dB gain and exclusion of point-object energy from LFE. It does not prove IAMF ingestion/decoding, arbitrary trajectories, height rendering, 7.1.4 equivalence, physical output or certification."
     },
     {
+      "id": "iamf-rendered-channel-pcm-reference",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "evidence": [
+        "config/iamf-reference-v1.json",
+        "crates/aurora-decoder-iamf/src/lib.rs",
+        "crates/aurora-decoder-iamf/examples/iamf_rendered_pcm_probe.rs",
+        "validation/open-immersive/iamf_reference_evidence.py",
+        ".github/workflows/iamf-reference-ci.yml"
+      ],
+      "truth_boundary": "Pinned libiamf iamfdec is built from commit e55e1832a608affe602de2ee39929bd7759a75ab and exercised on an official iamf-tools fixture. The reference lane proves real complete-file IAMF decoding to 48 kHz rendered ChannelPcm and bit-exact Aurora import after the declared PCM32-to-F32 normalization. It intentionally fabricates no objects. It does not expose or prove IAMF source-object metadata, object-to-PCM bindings, streaming IAMF, Aurora-side 7.1.4/elevation/HOA rendering, physical output, protected-service compatibility, or certification."
+    },
+    {
       "id": "iamf-oar-open-rendering",
       "status": "planned",
       "evidence_class": "software_reference",
-      "truth_boundary": "Aurora currently has only an IAMF adapter placeholder; no decode/render proof is claimed."
+      "evidence": [
+        "config/iamf-reference-v1.json",
+        "config/oar-evaluation-v1.json",
+        "validation/open-immersive/iamf_reference_evidence.py",
+        "validation/open-immersive/test-oar-reference.sh"
+      ],
+      "truth_boundary": "Aurora has executable complete-file IAMF decoding into rendered ChannelPcm and independent OAR-vs-Aurora stereo/5.1 object-renderer differentials. These remain separate reference lanes. IAMF bitstream-to-Aurora object-scene integration remains unproven until a reviewed backend exposes source object/audio-element metadata and complete object-to-PCM bindings."
     },
     {
       "id": "hoa-scene-based-rendering",
       "status": "planned",
       "evidence_class": "software_reference",
-      "truth_boundary": "Aurora has no proven Higher-Order Ambisonics scene-rendering lane; OAR supports scene-based elements up to fourth order and will be evaluated as an external reference."
+      "truth_boundary": "Aurora has no proven Higher-Order Ambisonics scene-rendering lane; OAR supports scene-based elements up to fourth order and remains the external reference candidate."
     },
     {
       "id": "adm-bs2127-differential-rendering",
@@ -301,15 +274,46 @@
     },
     {
       "id": "adaptive-clock-rate-correction",
-      "status": "planned",
+      "status": "covered",
       "evidence_class": "virtual",
-      "truth_boundary": "Clock offset/rate estimation exists, but runtime ASRC/feedback correction is not yet proven end-to-end."
+      "simulator_capability": "adaptive-clock-rate-correction",
+      "profiles": [
+        "clock-correction-plus-250ppm",
+        "clock-correction-minus-250ppm",
+        "clock-jitter-median-filter",
+        "clock-step-bounded-slew",
+        "clock-discontinuity-reacquire",
+        "clock-out-of-range-fail-closed"
+      ],
+      "evidence": [
+        "crates/aurora-realtime-engine/src/estimator.rs",
+        "crates/aurora-realtime-engine/src/drift_controller.rs",
+        "crates/aurora-realtime-engine/src/asrc.rs",
+        "crates/aurora-realtime-engine/src/duplex.rs",
+        "crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs",
+        "crates/aurora-realtime-audio-sim/examples/resilience_transition_evidence.rs",
+        "validation/virtual-hardware/aurora_resilience_sim.py",
+        "validation/virtual-hardware/test-aurora-resilience-sim.sh"
+      ],
+      "truth_boundary": "Executable virtual evidence drives Aurora's fixed-storage PPM estimator, slew-limited DriftController feed-forward and RubatoAsrc path for both +250 ppm and -250 ppm over a simulated 24 hours while keeping a fixed-capacity ring bounded. Jitter filtering, bounded correction slew, discontinuity/reacquisition and out-of-range fail-closed behavior are exercised. This does not constitute physical clock measurement or prove a specific USB/TDM/audio device."
     },
     {
       "id": "device-reconnect-recovery",
-      "status": "planned",
+      "status": "covered",
       "evidence_class": "virtual",
-      "truth_boundary": "Disconnect detection is covered; controlled reconnection/recovery is not yet implemented."
+      "simulator_capability": "device-reconnect-recovery",
+      "profiles": [
+        "device-reconnect",
+        "device-reconnect-exhaustion",
+        "device-reconnect-flapping"
+      ],
+      "evidence": [
+        "crates/aurora-realtime-engine/src/device_state.rs",
+        "crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs",
+        "validation/virtual-hardware/aurora_resilience_sim.py",
+        "validation/virtual-hardware/test-aurora-resilience-sim.sh"
+      ],
+      "truth_boundary": "Executable virtual evidence drives Aurora's DuplexStateMachine through bounded exponential recovery backoff, successful late reappearance, stable-run history reset, fail-closed exhaustion and flapping-device history retention. Backend reopen timing and physical device hotplug remain unproven."
     },
     {
       "id": "multi-speaker-room-field-control-simulation",
@@ -321,19 +325,19 @@
       "id": "physical-earc-ingress",
       "status": "physical-pending",
       "evidence_class": "physical",
-      "truth_boundary": "Requires real Lindy/SiI9437 to Linux capture evidence under issue #143."
+      "truth_boundary": "Requires real hardware capture evidence under issue #143; no host, MCU, eARC bridge or other hardware choice is fixed by the software architecture."
     },
     {
       "id": "physical-uac2-tdm-clock-domain",
       "status": "physical-pending",
       "evidence_class": "physical",
-      "truth_boundary": "Virtual TDM16 does not prove USB/TDM electrical timing or clock behavior."
+      "truth_boundary": "Virtual multichannel transport contracts do not prove any specific USB/TDM implementation, electrical timing or clock behavior. Hardware remains intentionally unselected."
     },
     {
       "id": "physical-dac-loopback-channel-map",
       "status": "physical-pending",
       "evidence_class": "physical",
-      "truth_boundary": "Requires two synchronized DAC stages and electrical/loopback measurement."
+      "truth_boundary": "Requires a future selected output implementation and electrical/loopback measurement; Aurora software does not currently select a DAC architecture."
     },
     {
       "id": "acoustic-room-field-control",
@@ -351,7 +355,7 @@
       "id": "dolby-certification",
       "status": "external-pending",
       "evidence_class": "external_integration",
-      "truth_boundary": "Software, simulation, and physical prototype evidence do not constitute Dolby certification or conformance."
+      "truth_boundary": "Software, simulation and physical prototype evidence do not constitute Dolby certification or conformance."
     }
   ]
 }
