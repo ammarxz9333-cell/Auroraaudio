@@ -1,0 +1,137 @@
+name: SAF VBAP Reference CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/saf-reference-v1.json"
+      - "docs/saf-vbap-reference.md"
+      - "validation/open-immersive/saf_*"
+      - "fixtures/scenes/7_1_4_reference.json"
+      - "crates/aurora-renderer-vbap/**"
+      - "crates/aurora-simulation-assurance/**"
+      - "config/external-components-v1.json"
+      - "THIRD_PARTY_LICENSES.md"
+      - ".github/workflows/saf-vbap-reference-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: saf-vbap-reference-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  saf-baseline:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    env:
+      SAF_COMMIT: 18fd5aba46e20787b51f28f7197a68506c965c07
+    steps:
+      - name: Checkout Aurora
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned SAF
+        uses: actions/checkout@v4
+        with:
+          repository: leomccormack/Spatial_Audio_Framework
+          ref: 18fd5aba46e20787b51f28f7197a68506c965c07
+          path: saf
+          fetch-depth: 1
+
+      - name: Verify immutable pin and license boundary
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C saf rev-parse HEAD)" = "$SAF_COMMIT"
+          python3 - <<'PY'
+          import json
+          ref = json.load(open('config/saf-reference-v1.json', encoding='utf-8'))
+          assert ref['pinned_commit'] == '18fd5aba46e20787b51f28f7197a68506c965c07'
+          assert ref['integration'] == 'external-reference-only'
+          assert ref['baseline']['tracker_enabled'] is False
+          assert ref['baseline']['hades_enabled'] is False
+          print('SAF-PIN-PASS')
+          PY
+          grep -q "ISC License" saf/LICENSE.md
+          grep -q "saf_tracker" saf/README.md
+          grep -q "GNU GPLv2" saf/README.md
+          grep -q "SAF_ENABLE_TRACKER_MODULE OR SAF_ENABLE_HADES_MODULE" saf/framework/CMakeLists.txt
+          echo "SAF-LICENSE-BOUNDARY-PASS"
+
+      - name: Install SAF build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes \
+            cmake \
+            build-essential \
+            libopenblas-dev \
+            liblapack-dev \
+            liblapacke-dev
+
+      - name: Configure permissive SAF core only
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S saf -B saf-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DSAF_PERFORMANCE_LIB=SAF_USE_OPEN_BLAS_AND_LAPACKE \
+            -DSAF_ENABLE_TRACKER_MODULE=OFF \
+            -DSAF_ENABLE_HADES_MODULE=OFF \
+            -DSAF_ENABLE_SOFA_READER_MODULE=OFF \
+            -DSAF_BUILD_TESTS=ON
+          grep -R "SAF_ENABLE_TRACKER_MODULE:BOOL=OFF" saf-build/CMakeCache.txt
+          grep -R "SAF_ENABLE_HADES_MODULE:BOOL=OFF" saf-build/CMakeCache.txt
+          echo "SAF-PERMISSIVE-CONFIG-PASS"
+
+      - name: Build pinned SAF
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake --build saf-build --config Release --parallel 2
+          test -f saf-build/framework/libsaf.a -o -f saf-build/framework/libsaf.so
+          echo "SAF-BUILD-PASS"
+
+      - name: Run upstream SAF tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -x saf-build/test/saf_test
+          saf-build/test/saf_test
+          echo "SAF-UPSTREAM-TESTS-PASS"
+
+      - name: Emit baseline evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/saf-vbap-reference
+          python3 - <<'PY'
+          import hashlib, json, pathlib
+          cfg = pathlib.Path('config/saf-reference-v1.json')
+          data = {
+              'schema_version': 1,
+              'saf_commit': '18fd5aba46e20787b51f28f7197a68506c965c07',
+              'config_sha256': hashlib.sha256(cfg.read_bytes()).hexdigest(),
+              'performance_library': 'SAF_USE_OPEN_BLAS_AND_LAPACKE',
+              'tracker_enabled': False,
+              'hades_enabled': False,
+              'sofa_reader_enabled': False,
+              'upstream_tests_passed': True,
+              'status': 'REFERENCE-BASELINE-PASS',
+              'truth_boundary': 'Pinned external permissive SAF core build/test only; no Aurora-vs-SAF VBAP differential, runtime adoption, physical acoustics, 11.1.4, binaural, HOA, or proprietary renderer equivalence is claimed by this baseline.'
+          }
+          pathlib.Path('output/saf-vbap-reference/baseline-summary.json').write_text(
+              json.dumps(data, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps(data, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload SAF baseline evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: saf-vbap-reference-${{ github.sha }}
+          path: output/saf-vbap-reference/*.json
+          if-no-files-found: error
+          retention-days: 14
