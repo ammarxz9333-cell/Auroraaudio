@@ -71,6 +71,23 @@
       "evidence": ["docs/openjoc-integration.md", "THIRD_PARTY_LICENSES.md"]
     },
     {
+      "id": "jocforge",
+      "upstream": "https://github.com/chyinan/JOCForge",
+      "decision": "evaluate-active",
+      "integration": "fixture-generator",
+      "tested_version": "commit-05a4108e0c6288130dec1203b301979a91475fca",
+      "pinned_commit": "05a4108e0c6288130dec1203b301979a91475fca",
+      "license": "Apache-2.0",
+      "roles": ["eac3-joc-fixture-generation", "structural-conformance-reference", "differential-validation-input"],
+      "object_metadata": "static-adm-input-to-joc-oamd-structural-reference",
+      "production_ready": false,
+      "evidence": [
+        "config/jocforge-reference-v1.json",
+        "docs/jocforge-reference.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
       "id": "aomedia-oar",
       "upstream": "https://github.com/AOMediaCodec/oar",
       "decision": "evaluate-active",
