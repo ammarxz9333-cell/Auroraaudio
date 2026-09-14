@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "component_id": "aomedia-iamf-tools",
+  "upstream": "https://github.com/AOMediaCodec/iamf-tools",
+  "pinned_commit": "c6b11b5ea47d7da00fbac9654acc96aa4ced2388",
+  "upstream_bazel_version": "8.5.1",
+  "bazelisk_version": "1.27.0",
+  "baseline_fixture": "iamf/cli/testdata/iamf/tones_256samp_5p1_pcm.iamf",
+  "build_targets": [
+    "//iamf/cli:encoder_main",
+    "//iamf/cli:decoder_main",
+    "//iamf/cli:probe_main"
+  ],
+  "baseline_checks": [
+    "exact-pin",
+    "build-three-clis",
+    "probe-json",
+    "temporal-count-scan",
+    "stereo-decode",
+    "finite-nonempty-pcm",
+    "deterministic-input-hash"
+  ],
+  "integration_class": "external-process-validation-reference",
+  "production_ready": false,
+  "truth_boundary": "This lane qualifies one exact iamf-tools revision as an independent IAMF encode/decode/probe reference. It does not make iamf-tools an Aurora runtime dependency, does not prove object-scene extraction into Aurora, does not establish renderer equivalence with libiamf or OAR, and does not imply patent, trademark, certification, or product-distribution clearance beyond the upstream published terms."
+}
