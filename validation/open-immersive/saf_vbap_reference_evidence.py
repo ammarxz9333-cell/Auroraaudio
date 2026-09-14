@@ -96,6 +96,8 @@ def prepare(args: argparse.Namespace) -> None:
 
     mapping = {
         "schema_version": 1,
+        "scene_path": args.scene.as_posix(),
+        "layout": str(scene.get("layout", "custom")),
         "coordinate_convention": "Aurora +Y front/-X left converted to SAF 0deg front/+azimuth left",
         "listener_center": list(center),
         "spatial_indices": spatial_indices,
@@ -106,7 +108,10 @@ def prepare(args: argparse.Namespace) -> None:
         "frame_count": len(frames),
     }
     args.mapping_out.write_text(json.dumps(mapping, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    print(f"SAF-PREPARE-PASS speakers={len(spatial_indices)} frames={len(frames)}")
+    print(
+        f"SAF-PREPARE-PASS layout={mapping['layout']} "
+        f"speakers={len(spatial_indices)} frames={len(frames)}"
+    )
 
 
 def read_saf_gains(path: Path) -> tuple[int, int, int, list[list[float]]]:
@@ -201,6 +206,8 @@ def compare(args: argparse.Namespace) -> None:
     speaker_ids = [str(value) for value in mapping["spatial_speaker_ids"]]
     units = mapping["speaker_unit_vectors_aurora_xyz"]
     center = tuple(float(value) for value in mapping["listener_center"])
+    layout = str(mapping.get("layout", "custom"))
+    scene_path = str(mapping.get("scene_path", "unknown"))
 
     if rows != len(frames) or saf_speaker_count != len(spatial_indices):
         raise SystemExit("Aurora/SAF differential dimensions do not match")
@@ -218,7 +225,7 @@ def compare(args: argparse.Namespace) -> None:
 
     top_indices = [index for index, role in enumerate(roles) if role.startswith(TOP_PREFIX)]
     if not top_indices:
-        raise SystemExit("7.1.4 mapping has no top speakers")
+        raise SystemExit("immersive 3D mapping has no top speakers")
 
     for frame_index, (frame, saf) in enumerate(zip(frames, saf_rows)):
         aurora_all = [float(value) for value in frame["gains"]]
@@ -330,7 +337,8 @@ def compare(args: argparse.Namespace) -> None:
         "schema_version": 1,
         "artifact": "aurora-saf-vbap-differential",
         "status": "REFERENCE-DIFFERENTIAL-PASS" if passed else "REFERENCE-DIFFERENTIAL-FAIL",
-        "scene": "fixtures/scenes/7_1_4_reference.json",
+        "scene": scene_path,
+        "layout": layout,
         "saf_commit": "18fd5aba46e20787b51f28f7197a68506c965c07",
         "coordinate_convention": mapping["coordinate_convention"],
         "spatial_speaker_ids": speaker_ids,
@@ -347,10 +355,11 @@ def compare(args: argparse.Namespace) -> None:
         ),
         "passed": passed,
         "truth_boundary": (
-            "Software-only 7.1.4 trajectory differential against pinned SAF 3D VBAP. "
+            f"Software-only {layout} fixture differential against pinned SAF 3D VBAP. "
             "The gate is topology-aware and does not require identical triangulation or PCM. "
-            "This does not establish 11.1.4, binaural/HOA, physical acoustic, proprietary-renderer, "
-            "or certification equivalence."
+            "Passing validates only the explicit fixture geometry and probes; it does not by itself "
+            "establish a standardized layout definition, arbitrary-layout correctness, binaural/HOA, "
+            "physical acoustic, proprietary-renderer, or certification equivalence."
         ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
