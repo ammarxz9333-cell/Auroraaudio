@@ -190,22 +190,11 @@ jobs:
           print('MPEGH-RENDER-METADATA-PASS', metadata)
           PY
 
-      - name: Cross-check rendered PCM and emit bounded evidence
+      - name: Capture exact decoder build provenance
         shell: bash
         run: |
           set -euo pipefail
           OUT="${GITHUB_WORKSPACE}/output/mpegh-reference"
-          python3 validation/open-immersive/mpegh_dual_oracle_evidence.py \
-            "$OUT/fraunhofer.f32" \
-            "$OUT/ittiam.f32" \
-            config/mpegh-reference-v1.json \
-            "$OUT/summary.json" \
-            --sample-rate-a "$FRAUNHOFER_RATE" \
-            --sample-rate-b "$ITTIAM_RATE" \
-            --channels-a "$FRAUNHOFER_CHANNELS" \
-            --channels-b "$ITTIAM_CHANNELS" \
-            --fixture "$MPEGH_FIXTURE"
-
           python3 - "$OUT" "$FRAUNHOFER_BIN" "$ITTIAM_BIN" <<'PY'
           import hashlib, json, pathlib, sys
           out = pathlib.Path(sys.argv[1])
@@ -228,6 +217,23 @@ jobs:
           }
           (out / 'build-pins.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8')
           PY
+          echo "MPEGH-BUILD-PROVENANCE-PASS"
+
+      - name: Cross-check rendered PCM and emit bounded evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/mpegh-reference"
+          python3 validation/open-immersive/mpegh_dual_oracle_evidence.py \
+            "$OUT/fraunhofer.f32" \
+            "$OUT/ittiam.f32" \
+            config/mpegh-reference-v1.json \
+            "$OUT/summary.json" \
+            --sample-rate-a "$FRAUNHOFER_RATE" \
+            --sample-rate-b "$ITTIAM_RATE" \
+            --channels-a "$FRAUNHOFER_CHANNELS" \
+            --channels-b "$ITTIAM_CHANNELS" \
+            --fixture "$MPEGH_FIXTURE"
           echo "MPEGH-DUAL-ORACLE-REFERENCE-PASS"
 
       - name: Upload MPEG-H reference evidence
