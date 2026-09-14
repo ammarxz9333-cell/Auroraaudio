@@ -120,7 +120,7 @@ jobs:
           OPENJOC_BIN="$(bash validation/immersive/install-openjoc-reference.sh "${{ runner.temp }}/openjoc-reference")"
           echo "bin=$OPENJOC_BIN" >> "$GITHUB_OUTPUT"
 
-      - name: Inspect and render all JOCForge vectors with OpenJOC
+      - name: Collect role-appropriate OpenJOC evidence
         shell: bash
         env:
           OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
@@ -130,18 +130,58 @@ jobs:
           ROOT="external/JOCForge/artifacts/aurora-smoke"
           RESULTS="output/evaluation/jocforge-openjoc"
           mkdir -p "$RESULTS"
+
+          VERSION_TEXT="$($OPENJOC_BIN --version 2>&1)"
+          printf '%s\n' "$VERSION_TEXT"
+          [[ "$VERSION_TEXT" == *"0.17.0"* ]]
+
           python3 - <<'PY' > "${{ runner.temp }}/jocforge-vectors.tsv"
           import json
           import pathlib
           manifest = json.loads(pathlib.Path('config/jocforge-smoke-vectors-v1.json').read_text())
           for vector in manifest['vectors']:
-              print(f"{vector['id']}\t{vector['output']}")
+              print(f"{vector['id']}\t{vector['output']}\t{vector['openjoc_expectation']}")
           PY
-          while IFS=$'\t' read -r vector_id output_name; do
-            bash validation/immersive/test-openjoc-reference.sh \
-              "$ROOT/$output_name" \
-              "$RESULTS/$vector_id"
+
+          while IFS=$'\t' read -r vector_id output_name expectation; do
+            input="$ROOT/$output_name"
+            result_dir="$RESULTS/$vector_id"
+            mkdir -p "$result_dir"
+            case "$expectation" in
+              full-render-required)
+                bash validation/immersive/test-openjoc-reference.sh "$input" "$result_dir"
+                ;;
+              inspect-classification-required)
+                "$OPENJOC_BIN" inspect "$input" --json --objects --emdf --aus > "$result_dir/openjoc-inspect.json"
+                python3 - "$result_dir/openjoc-inspect.json" "$vector_id" <<'PY'
+          import json
+          import pathlib
+          import sys
+          path = pathlib.Path(sys.argv[1])
+          vector_id = sys.argv[2]
+          payload = json.loads(path.read_text(encoding='utf-8'))
+          if not isinstance(payload, dict) or not payload:
+              raise SystemExit(f"empty OpenJOC classification for {vector_id}")
+          for field in ('joc', 'eac3', 'validation', 'diagnostics'):
+              if not isinstance(payload.get(field), dict):
+                  raise SystemExit(f"OpenJOC classification missing {field} for {vector_id}")
+          if payload['joc'].get('present') is not True:
+              raise SystemExit(f"OpenJOC did not identify JOC presence for {vector_id}")
+          if int(payload['eac3'].get('access_unit_count', 0)) <= 0:
+              raise SystemExit(f"OpenJOC found no access unit for {vector_id}")
+          state = payload['validation'].get('stream_parse')
+          if state not in {'pass', 'fail'}:
+              raise SystemExit(f"OpenJOC stream_parse was not classifiable for {vector_id}: {state!r}")
+          print(f"OPENJOC-STRUCTURAL-CLASSIFIED id={vector_id} stream_parse={state} decoder_admissible={payload['validation'].get('decoder_admissible')}")
+          PY
+                ;;
+              *)
+                echo "unknown OpenJOC expectation: $expectation" >&2
+                exit 1
+                ;;
+            esac
           done < "${{ runner.temp }}/jocforge-vectors.tsv"
+
           python3 validation/open-immersive/jocforge_openjoc_evidence.py \
             --vector-manifest config/jocforge-smoke-vectors-v1.json \
             --results-dir "$RESULTS" \
@@ -164,6 +204,7 @@ jobs:
           cat output/evaluation/jocforge-harletty/jocforge-harletty-summary.json
 
       - name: Upload JOCForge evidence
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: jocforge-reference-${{ github.sha }}
@@ -175,4 +216,5 @@ jobs:
             output/evaluation/jocforge-harletty/*.json
             config/jocforge-reference-v1.json
             config/jocforge-smoke-vectors-v1.json
+          if-no-files-found: warn
           retention-days: 14
