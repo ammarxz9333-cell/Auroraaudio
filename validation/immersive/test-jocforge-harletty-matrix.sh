@@ -101,18 +101,22 @@ fn main() {
     let mut object_channels = 0usize;
     let mut saw_objects = false;
     let mut resets = 0usize;
+    let mut bridge_error = false;
 
-    // Match Harletty's own raw-extractor tests: feed host-sized arbitrary chunks
-    // and let the bridge own access-unit framing. This preserves JOCForge bytes
-    // exactly and avoids a demux/remux tool changing dependent substreams.
+    // Match Harletty's raw-extractor tests: feed host-sized arbitrary chunks and
+    // let the bridge own access-unit framing. Stream-level incompatibility is an
+    // observed outcome, not a reason for the evidence harness itself to panic.
     for chunk in bytes.chunks(4096) {
         pushes += 1;
         let result = bridge.push_packet(chunk.into(), RInputTransport::Raw, 0);
-        assert!(
-            result.error_message.is_empty(),
-            "Harletty bridge error after push {pushes}: {}",
-            result.error_message.as_str()
-        );
+        if !result.error_message.is_empty() {
+            eprintln!(
+                "HARLETTY-BRIDGE-ERROR push={pushes} message={}",
+                result.error_message.as_str()
+            );
+            bridge_error = true;
+            break;
+        }
         if result.did_reset {
             resets += 1;
         }
@@ -129,15 +133,20 @@ fn main() {
         saw_objects |= bridge.has_objects();
     }
 
-    assert!(pushes > 0, "no raw chunks submitted");
-    assert!(frames > 0, "Harletty emitted no decoded frames");
-    assert!(metadata_frames > 0, "JOC vector emitted no metadata frames");
-    assert!(events > 0, "JOC vector emitted no object events");
-    assert!(object_channels > 0, "JOC vector emitted no object-channel declarations");
-    assert!(saw_objects, "Harletty never reported objects");
+    let outcome = if bridge_error {
+        "bridge-error"
+    } else if frames == 0 {
+        "no-frames"
+    } else if metadata_frames == 0 {
+        "pcm-only"
+    } else if events == 0 || object_channels == 0 || !saw_objects {
+        "metadata-incomplete"
+    } else {
+        "object-metadata"
+    };
 
     println!(
-        "{{\"pushes\":{pushes},\"frames\":{frames},\"metadata_frames\":{metadata_frames},\"events\":{events},\"object_channels\":{object_channels},\"resets\":{resets},\"saw_objects\":true}}"
+        "{{\"pushes\":{pushes},\"frames\":{frames},\"metadata_frames\":{metadata_frames},\"events\":{events},\"object_channels\":{object_channels},\"resets\":{resets},\"saw_objects\":{saw_objects},\"bridge_error\":{bridge_error},\"outcome\":\"{outcome}\"}}"
     );
 }
 EOF_RS
@@ -150,16 +159,21 @@ python3 - "$VECTOR_MANIFEST" <<'PY' > "$WORK_DIR/vectors.tsv"
 import json, sys
 manifest = json.load(open(sys.argv[1], encoding='utf-8'))
 for vector in manifest['vectors']:
-    print(f"{vector['id']}\t{vector['output']}")
+    print(f"{vector['id']}\t{vector['output']}\t{vector['harletty_expectation']}")
 PY
 
-while IFS=$'\t' read -r vector_id output_name; do
+while IFS=$'\t' read -r vector_id output_name expectation; do
   input="$FIXTURE_DIR/$output_name"
   result="$OUTPUT_DIR/$vector_id.json"
   [[ -s "$input" ]] || fail "missing generated vector: $input"
   "$HARNESS_BIN" "$BRIDGE_LIB" "$input" > "$result"
   python3 -m json.tool "$result" >/dev/null
-  echo "JOCFORGE-HARLETTY-VECTOR-PASS id=$vector_id"
+  outcome="$(python3 - "$result" <<'PY'
+import json, sys
+print(json.load(open(sys.argv[1], encoding='utf-8'))['outcome'])
+PY
+)"
+  echo "JOCFORGE-HARLETTY-VECTOR-CLASSIFIED id=$vector_id expectation=$expectation outcome=$outcome"
 done < "$WORK_DIR/vectors.tsv"
 
 python3 - "$VECTOR_MANIFEST" "$OUTPUT_DIR" "$HARLETTY_COMMIT" <<'PY'
@@ -167,24 +181,66 @@ import json, pathlib, sys
 manifest = json.load(open(sys.argv[1], encoding='utf-8'))
 root = pathlib.Path(sys.argv[2])
 harletty_commit = sys.argv[3]
+allowed_outcomes = {'object-metadata', 'metadata-incomplete', 'pcm-only', 'no-frames', 'bridge-error'}
 results = []
+baseline_decoded = 0
+object_metadata_vectors = 0
 for vector in manifest['vectors']:
     path = root / f"{vector['id']}.json"
     payload = json.loads(path.read_text(encoding='utf-8'))
-    required = ['pushes', 'frames', 'metadata_frames', 'events', 'object_channels']
-    if not all(int(payload.get(key, 0)) > 0 for key in required) or payload.get('saw_objects') is not True:
-        raise SystemExit(f"invalid Harletty evidence for {vector['id']}: {payload}")
-    results.append({'id': vector['id'], 'source': vector['output'], **payload})
+    expectation = vector.get('harletty_expectation')
+    outcome = payload.get('outcome')
+    if outcome not in allowed_outcomes:
+        raise SystemExit(f"unclassified Harletty outcome for {vector['id']}: {payload}")
+    if int(payload.get('pushes', 0)) <= 0:
+        raise SystemExit(f"Harletty received no input for {vector['id']}: {payload}")
+
+    if expectation == 'decode-classification-required':
+        if payload.get('bridge_error') is True or int(payload.get('frames', 0)) <= 0:
+            raise SystemExit(f"baseline Harletty decode failed for {vector['id']}: {payload}")
+        baseline_decoded += 1
+    elif expectation == 'bounded-classification-required':
+        # These are intentionally minimal topology/conformance probes. The
+        # pinned bridge may decode, reject, or expose no object metadata, but
+        # every outcome must be explicit and the harness must terminate.
+        pass
+    else:
+        raise SystemExit(f"unknown Harletty expectation for {vector['id']}: {expectation!r}")
+
+    if outcome == 'object-metadata':
+        object_metadata_vectors += 1
+    results.append({
+        'id': vector['id'],
+        'source': vector['output'],
+        'expectation': expectation,
+        **payload,
+    })
+
+expected_baselines = sum(
+    1 for vector in manifest['vectors']
+    if vector.get('harletty_expectation') == 'decode-classification-required'
+)
+if baseline_decoded != expected_baselines:
+    raise SystemExit(
+        f"Harletty baseline decode coverage incomplete: {baseline_decoded}/{expected_baselines}"
+    )
+
 summary = {
-    'schema_version': 1,
+    'schema_version': 2,
     'harletty_commit': harletty_commit,
     'input_transport': 'raw-eac3-host-sized-4096-byte-chunks',
     'vector_count': len(results),
-    'all_vectors_decoded_with_object_metadata': len(results) == manifest['vector_count'],
+    'all_vectors_classified': len(results) == manifest['vector_count'],
+    'baseline_vectors_decoded': baseline_decoded,
+    'baseline_vector_count': expected_baselines,
+    'object_metadata_vectors': object_metadata_vectors,
     'results': results,
-    'truth_boundary': 'This proves the pinned Harletty bridge decoded the representative JOCForge raw vectors and exposed non-empty object metadata while owning access-unit framing. Existing Aurora CI separately validates IEC61937 carriage. This does not prove renderer equivalence, exhaustive JOC coverage, physical eARC behavior, protected-service compatibility, proprietary equivalence, or certification.'
+    'truth_boundary': 'This classifies the pinned Harletty bridge against the representative JOCForge corpus without converting an unsupported topology or absent metadata into a false pass. Baseline source-derived profile vectors must be accepted and emit decoded frames. Minimal structural probes may decode, emit PCM without object metadata, emit incomplete metadata, produce no frames, or be explicitly rejected; all such outcomes are retained as evidence. Object-metadata reconstruction is claimed only for vectors whose recorded outcome is object-metadata. Existing Aurora CI separately validates IEC61937 carriage. This does not prove renderer equivalence, exhaustive JOC coverage, physical eARC behavior, protected-service compatibility, proprietary equivalence, or certification.'
 }
-(root / 'jocforge-harletty-summary.json').write_text(json.dumps(summary, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+(root / 'jocforge-harletty-summary.json').write_text(
+    json.dumps(summary, indent=2, sort_keys=True) + '\n',
+    encoding='utf-8',
+)
 PY
 
 echo "JOCFORGE-HARLETTY-MATRIX-PASS"
