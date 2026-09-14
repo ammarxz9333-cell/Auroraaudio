@@ -89,15 +89,22 @@ jobs:
           test -x ./ffmpeg
           ./ffmpeg -version | tee "${GITHUB_WORKSPACE}/ffmpeg-version.txt"
 
-      - name: Verify reported version
+      - name: Verify built binary identity
         shell: bash
         env:
           EXPECTED_VERSION: ${{ matrix.version }}
           EXPECTED_COMMIT: ${{ matrix.commit }}
         run: |
           set -euo pipefail
-          grep -Eq "^ffmpeg version (n)?${EXPECTED_VERSION}([[:space:]]|$)" ffmpeg-version.txt
           test "$(git -C ffmpeg-src rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          SHORT_SHA="$(git -C ffmpeg-src rev-parse --short=7 HEAD)"
+          # A shallow checkout by exact commit does not carry the release tag into
+          # FFmpeg's version script, so the binary normally reports the short SHA.
+          # Accept the reviewed release string as well in case upstream/version
+          # generation changes, while the full-commit equality above stays strict.
+          grep -Eq "^ffmpeg version (${SHORT_SHA}|n?${EXPECTED_VERSION})([[:space:]]|$)" ffmpeg-version.txt
+          printf 'FFMPEG-BINARY-IDENTITY-PASS version=%s commit=%s short=%s\n' \
+            "$EXPECTED_VERSION" "$EXPECTED_COMMIT" "$SHORT_SHA"
 
       - name: Run Aurora IEC61937 and surround compatibility gate
         shell: bash
@@ -133,7 +140,7 @@ jobs:
           evidence = {
               'schema_version': 1,
               'label': os.environ['LABEL'],
-              'reported_version': os.environ['VERSION'],
+              'reviewed_release': os.environ['VERSION'],
               'upstream_commit': os.environ['COMMIT'],
               'ffmpeg_binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
               'iec61937_eac3_ac3_surround_gate': 'PASS',
