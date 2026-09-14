@@ -16,7 +16,7 @@ diff --git a/test/CMakeLists.txt b/test/CMakeLists.txt
 index 16f7495..f4e3d5f 100644
 --- a/test/CMakeLists.txt
 +++ b/test/CMakeLists.txt
-@@ -9,7 +9,6 @@ PRIVATE
+@@ -11,12 +11,10 @@ PRIVATE
      ${CMAKE_CURRENT_SOURCE_DIR}/src/test__vbap_module.c
      ${CMAKE_CURRENT_SOURCE_DIR}/src/test__cdf4sap_module.c
      ${CMAKE_CURRENT_SOURCE_DIR}/src/test__examples.c
@@ -24,7 +24,6 @@ index 16f7495..f4e3d5f 100644
      ${CMAKE_CURRENT_SOURCE_DIR}/src/test__hoa_module.c
      ${CMAKE_CURRENT_SOURCE_DIR}/src/test__hrir_module.c
      ${CMAKE_CURRENT_SOURCE_DIR}/src/test__resources.c
-@@ -17,7 +16,6 @@ PRIVATE
      ${CMAKE_CURRENT_SOURCE_DIR}/src/test__reverb_module.c
      ${CMAKE_CURRENT_SOURCE_DIR}/src/test__sh_module.c
      ${CMAKE_CURRENT_SOURCE_DIR}/src/test__sofa_reader_module.c
