@@ -1,0 +1,249 @@
+name: MPEG-H Dual-Oracle Reference CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/external-components-v1.json"
+      - "config/mpegh-reference-v1.json"
+      - "docs/mpegh-reference.md"
+      - "validation/open-immersive/mpegh_dual_oracle_evidence.py"
+      - "THIRD_PARTY_LICENSES.md"
+      - ".github/workflows/mpegh-reference-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mpegh-reference-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  mpegh-dual-oracle:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      FRAUNHOFER_COMMIT: 4448b69738da2fa5f2f2f2b0ce29eea32509e046
+      ITTIAM_COMMIT: f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8
+      FRAUNHOFER_ILO_COMMIT: b8cb3ebf73789fc67278ccb15dde20632f1c2e05
+      FRAUNHOFER_MMTISOBMFF_COMMIT: e2969132bef16ac68d0fd974ee2324d8e209a5bd
+      TARGET_CICP: "6"
+      EXPECTED_CHANNELS: "6"
+
+    steps:
+      - name: Checkout Aurora
+        uses: actions/checkout@v4
+
+      - name: Checkout pinned Ittiam libmpegh
+        uses: actions/checkout@v4
+        with:
+          repository: ittiam-systems/libmpegh
+          ref: f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8
+          path: libmpegh
+          fetch-depth: 1
+
+      - name: Checkout pinned Fraunhofer mpeghdec
+        uses: actions/checkout@v4
+        with:
+          repository: Fraunhofer-IIS/mpeghdec
+          ref: 4448b69738da2fa5f2f2f2b0ce29eea32509e046
+          path: mpeghdec
+          fetch-depth: 1
+
+      - name: Verify immutable top-level pins and Aurora registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C libmpegh rev-parse HEAD)" = "$ITTIAM_COMMIT"
+          test "$(git -C mpeghdec rev-parse HEAD)" = "$FRAUNHOFER_COMMIT"
+          python3 scripts/check_external_components.py
+          python3 - <<'PY'
+          import json
+          cfg = json.load(open('config/mpegh-reference-v1.json', encoding='utf-8'))
+          registry = json.load(open('config/external-components-v1.json', encoding='utf-8'))
+          components = {item['id']: item for item in registry['components']}
+          fh = cfg['oracles']['fraunhofer_mpeghdec']
+          it = cfg['oracles']['ittiam_libmpegh']
+          assert fh['commit'] == '4448b69738da2fa5f2f2f2b0ce29eea32509e046'
+          assert it['commit'] == 'f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8'
+          assert fh['declared_fetch_dependencies']['ilo']['resolved_commit'] == 'b8cb3ebf73789fc67278ccb15dde20632f1c2e05'
+          assert fh['declared_fetch_dependencies']['mmtisobmff']['resolved_commit'] == 'e2969132bef16ac68d0fd974ee2324d8e209a5bd'
+          assert components['fraunhofer-mpeghdec']['pinned_commit'] == fh['commit']
+          assert components['ittiam-libmpegh']['pinned_commit'] == it['commit']
+          assert cfg['fixture']['target_cicp'] == 6
+          assert cfg['fixture']['expected_channels'] == 6
+          print('MPEGH-REFERENCE-PINS-PASS')
+          PY
+
+      - name: Install reference build tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes build-essential cmake ninja-build git ffmpeg
+
+      - name: Self-test differential evidence analyzer
+        run: python3 validation/open-immersive/mpegh_dual_oracle_evidence.py self-test
+
+      - name: Build exact pinned Ittiam decoder
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD="${RUNNER_TEMP}/libmpegh-build"
+          cmake -S libmpegh -B "$BUILD" -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$BUILD" --target ia_mpeghd_testbench --parallel 2
+          BIN="$(find "$BUILD" -type f -name ia_mpeghd_testbench -perm -111 -print -quit)"
+          test -n "$BIN"
+          printf '%s\n' "ITTIAM_BIN=$BIN" >> "$GITHUB_ENV"
+          echo "ITTIAM-MPEGH-BUILD-PASS"
+
+      - name: Configure and verify Fraunhofer dependency resolutions
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD="${RUNNER_TEMP}/mpeghdec-build"
+          cmake -S mpeghdec -B "$BUILD" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -Dmpeghdec_BUILD_DECODER=ON \
+            -Dmpeghdec_BUILD_UIMANAGER=OFF \
+            -Dmpeghdec_BUILD_BINARIES=ON \
+            -Dmpeghdec_BUILD_DOC=OFF
+          test "$(git -C "$BUILD/_deps/ilo-src" rev-parse HEAD)" = "$FRAUNHOFER_ILO_COMMIT"
+          test "$(git -C "$BUILD/_deps/mmtisobmff-src" rev-parse HEAD)" = "$FRAUNHOFER_MMTISOBMFF_COMMIT"
+          echo "FRAUNHOFER-DEPENDENCY-PINS-PASS"
+
+      - name: Build exact pinned Fraunhofer decoder
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD="${RUNNER_TEMP}/mpeghdec-build"
+          cmake --build "$BUILD" --target mpeghDecoder --parallel 2
+          BIN="$(find "$BUILD" -type f -name mpeghDecoder -perm -111 -print -quit)"
+          test -n "$BIN"
+          printf '%s\n' "FRAUNHOFER_BIN=$BIN" >> "$GITHUB_ENV"
+          echo "FRAUNHOFER-MPEGH-BUILD-PASS"
+
+      - name: Decode the same pinned public CICP-6 fixture through both references
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/mpegh-reference"
+          FIXTURE_REL="$(python3 -c 'import json; print(json.load(open("config/mpegh-reference-v1.json"))["fixture"]["path_within_checkout"])')"
+          FIXTURE="${GITHUB_WORKSPACE}/libmpegh/${FIXTURE_REL}"
+          mkdir -p "$OUT"
+          test -s "$FIXTURE"
+
+          "$ITTIAM_BIN" \
+            "-ifile:$FIXTURE" \
+            "-ofile:$OUT/ittiam.wav" \
+            "-cicp:$TARGET_CICP"
+          test -s "$OUT/ittiam.wav"
+
+          "$FRAUNHOFER_BIN" \
+            -if "$FIXTURE" \
+            -of "$OUT/fraunhofer.wav" \
+            -tl "$TARGET_CICP"
+          test -s "$OUT/fraunhofer.wav"
+
+          printf '%s\n' "MPEGH_FIXTURE=$FIXTURE" >> "$GITHUB_ENV"
+          echo "MPEGH-DUAL-DECODE-PASS"
+
+      - name: Probe and normalize both rendered PCM outputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/mpegh-reference"
+          for NAME in fraunhofer ittiam; do
+            ffprobe -v error -select_streams a:0 \
+              -show_entries stream=sample_rate,channels,duration \
+              -of json "$OUT/$NAME.wav" > "$OUT/$NAME-ffprobe.json"
+            ffmpeg -v error -y -i "$OUT/$NAME.wav" \
+              -f f32le -acodec pcm_f32le "$OUT/$NAME.f32"
+            test -s "$OUT/$NAME.f32"
+          done
+
+          python3 - "$OUT" "$GITHUB_ENV" "$EXPECTED_CHANNELS" <<'PY'
+          import json, pathlib, sys
+          out = pathlib.Path(sys.argv[1])
+          env_path = pathlib.Path(sys.argv[2])
+          expected_channels = int(sys.argv[3])
+          metadata = {}
+          for name in ('fraunhofer', 'ittiam'):
+              doc = json.loads((out / f'{name}-ffprobe.json').read_text(encoding='utf-8'))
+              streams = doc.get('streams') or []
+              if len(streams) != 1:
+                  raise SystemExit(f'{name}: expected one audio stream, got {len(streams)}')
+              stream = streams[0]
+              rate = int(stream.get('sample_rate', 0))
+              channels = int(stream.get('channels', 0))
+              duration = float(stream.get('duration', 0.0) or 0.0)
+              if rate <= 0 or channels != expected_channels or duration <= 0.0:
+                  raise SystemExit(f'{name}: invalid rendered stream metadata {stream}')
+              metadata[name] = (rate, channels)
+          if metadata['fraunhofer'][0] != metadata['ittiam'][0]:
+              raise SystemExit(f'sample-rate mismatch: {metadata}')
+          with env_path.open('a', encoding='utf-8') as handle:
+              handle.write(f'FRAUNHOFER_RATE={metadata["fraunhofer"][0]}\n')
+              handle.write(f'FRAUNHOFER_CHANNELS={metadata["fraunhofer"][1]}\n')
+              handle.write(f'ITTIAM_RATE={metadata["ittiam"][0]}\n')
+              handle.write(f'ITTIAM_CHANNELS={metadata["ittiam"][1]}\n')
+          print('MPEGH-RENDER-METADATA-PASS', metadata)
+          PY
+
+      - name: Capture exact decoder build provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/mpegh-reference"
+          python3 - "$OUT" "$FRAUNHOFER_BIN" "$ITTIAM_BIN" <<'PY'
+          import hashlib, json, pathlib, sys
+          out = pathlib.Path(sys.argv[1])
+          def sha256(path):
+              p = pathlib.Path(path)
+              h = hashlib.sha256()
+              with p.open('rb') as handle:
+                  for chunk in iter(lambda: handle.read(1024 * 1024), b''):
+                      h.update(chunk)
+              return h.hexdigest()
+          evidence = {
+              'schema_version': 1,
+              'fraunhofer_binary_sha256': sha256(sys.argv[2]),
+              'ittiam_binary_sha256': sha256(sys.argv[3]),
+              'fraunhofer_commit': '4448b69738da2fa5f2f2f2b0ce29eea32509e046',
+              'ittiam_commit': 'f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8',
+              'fraunhofer_ilo_commit': 'b8cb3ebf73789fc67278ccb15dde20632f1c2e05',
+              'fraunhofer_mmtisobmff_commit': 'e2969132bef16ac68d0fd974ee2324d8e209a5bd',
+              'note': 'Binary hashes identify this CI build only; decoder binaries are not redistributed as Aurora artifacts.'
+          }
+          (out / 'build-pins.json').write_text(json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          PY
+          echo "MPEGH-BUILD-PROVENANCE-PASS"
+
+      - name: Cross-check rendered PCM and emit bounded evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/mpegh-reference"
+          python3 validation/open-immersive/mpegh_dual_oracle_evidence.py \
+            "$OUT/fraunhofer.f32" \
+            "$OUT/ittiam.f32" \
+            config/mpegh-reference-v1.json \
+            "$OUT/summary.json" \
+            --sample-rate-a "$FRAUNHOFER_RATE" \
+            --sample-rate-b "$ITTIAM_RATE" \
+            --channels-a "$FRAUNHOFER_CHANNELS" \
+            --channels-b "$ITTIAM_CHANNELS" \
+            --fixture "$MPEGH_FIXTURE"
+          echo "MPEGH-DUAL-ORACLE-REFERENCE-PASS"
+
+      - name: Upload MPEG-H reference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: mpegh-reference-${{ github.sha }}
+          path: |
+            output/mpegh-reference/summary.json
+            output/mpegh-reference/build-pins.json
+            output/mpegh-reference/*-ffprobe.json
+          if-no-files-found: error
+          retention-days: 14

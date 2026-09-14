@@ -1,0 +1,60 @@
+{
+  "schema_version": 1,
+  "purpose": "Cross-check one public MPEG-H 3D Audio fixture through two independent exact-pin external decoders without adding a runtime codec dependency to Aurora.",
+  "oracles": {
+    "fraunhofer_mpeghdec": {
+      "upstream": "https://github.com/Fraunhofer-IIS/mpeghdec",
+      "commit": "4448b69738da2fa5f2f2f2b0ce29eea32509e046",
+      "reported_project_version": "4.0.0",
+      "integration": "external-process-validation-reference",
+      "declared_fetch_dependencies": {
+        "ilo": {
+          "tag": "r2.0.2",
+          "resolved_commit": "b8cb3ebf73789fc67278ccb15dde20632f1c2e05"
+        },
+        "mmtisobmff": {
+          "tag": "r1.0.4",
+          "resolved_commit": "e2969132bef16ac68d0fd974ee2324d8e209a5bd"
+        }
+      }
+    },
+    "ittiam_libmpegh": {
+      "upstream": "https://github.com/ittiam-systems/libmpegh",
+      "commit": "f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8",
+      "reported_project_version": "1.6",
+      "integration": "external-process-validation-reference"
+    }
+  },
+  "fixture": {
+    "source_oracle": "ittiam_libmpegh",
+    "path_within_checkout": "smoke_test_suite/inp/sine_1khz_cicp6.mp4",
+    "container": "isobmff-mp4",
+    "target_cicp": 6,
+    "expected_channels": 6,
+    "description": "Pinned upstream public 1 kHz MPEG-H smoke fixture; consumed in-place from the exact Ittiam checkout and not vendored into Aurora."
+  },
+  "comparison": {
+    "normalized_pcm_format": "f32le",
+    "minimum_common_frames": 4800,
+    "maximum_post_trim_frame_count_delta": 4096,
+    "leading_activity_threshold": 1e-7,
+    "residual_lag_search_frames": 8,
+    "minimum_active_channel_correlation": 0.98,
+    "minimum_rms_ratio": 0.5,
+    "maximum_rms_ratio": 2.0,
+    "require_equal_sample_rate": true,
+    "require_equal_channel_count": true,
+    "require_finite_pcm": true,
+    "require_non_silent_pcm": true
+  },
+  "claims": {
+    "runtime_mpegh_support": false,
+    "object_metadata_exposed_to_aurora": false,
+    "bit_exact_cross_vendor_pcm": false,
+    "full_mpegh_conformance": false,
+    "patent_clearance": false,
+    "certification": false,
+    "physical_output": false
+  },
+  "truth_boundary": "A pass establishes only that the two pinned external decoder builds can render the same pinned public CICP-6 MPEG-H fixture to structurally compatible, strongly correlated six-channel PCM under this CI setup. It does not establish Aurora runtime MPEG-H support, object/HOA metadata ingestion, 7.1.4 or 11.1.4 rendering, exhaustive conformance, patent or trademark clearance, protected-service compatibility, physical output, or certification."
+}

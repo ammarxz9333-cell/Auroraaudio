@@ -147,6 +147,42 @@
       ]
     },
     {
+      "id": "fraunhofer-mpeghdec",
+      "upstream": "https://github.com/Fraunhofer-IIS/mpeghdec",
+      "decision": "evaluate-active",
+      "integration": "external-process-validation-reference",
+      "tested_version": "commit-4448b69738da2fa5f2f2f2b0ce29eea32509e046",
+      "pinned_commit": "4448b69738da2fa5f2f2f2b0ce29eea32509e046",
+      "license": "Fraunhofer FDK MPEG-H Software License; no patent license granted",
+      "roles": ["mpegh-decode-reference", "speaker-render-reference", "differential-validation"],
+      "object_metadata": "rendered-by-upstream-reference-not-exposed-to-aurora-runtime",
+      "production_ready": false,
+      "evidence": [
+        "config/mpegh-reference-v1.json",
+        "docs/mpegh-reference.md",
+        ".github/workflows/mpegh-reference-ci.yml",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
+      "id": "ittiam-libmpegh",
+      "upstream": "https://github.com/ittiam-systems/libmpegh",
+      "decision": "evaluate-active",
+      "integration": "external-process-validation-reference",
+      "tested_version": "commit-f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8",
+      "pinned_commit": "f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8",
+      "license": "BSD-like source license plus LICENSE2 patent disclaimer; no patent license granted",
+      "roles": ["mpegh-decode-reference", "speaker-render-reference", "fixture-reference", "differential-validation"],
+      "object_metadata": "rendered-by-upstream-reference-not-exposed-to-aurora-runtime",
+      "production_ready": false,
+      "evidence": [
+        "config/mpegh-reference-v1.json",
+        "docs/mpegh-reference.md",
+        ".github/workflows/mpegh-reference-ci.yml",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
       "id": "libmysofa",
       "upstream": "https://github.com/hoene/libmysofa",
       "decision": "defer-headphones",
