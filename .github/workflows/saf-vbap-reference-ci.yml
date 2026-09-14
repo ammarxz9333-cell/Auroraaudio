@@ -195,11 +195,16 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p output/saf-vbap-reference/11_1_4/aurora
+          # The research hull has denser horizontal anchors than 7.1.4. Keep the
+          # same 0.15 gain-step gate, but sample the same complete trajectory at
+          # twice the block density so the gate tests continuity rather than a
+          # layout-dependent angular jump per block.
           cargo run -p aurora-simulation-assurance --release --bin aurora-evaluate-vbap3d -- \
             --scene fixtures/scenes/11_1_4_research.json \
             --output-dir output/saf-vbap-reference/11_1_4/aurora \
-            --duration-seconds 1.0 \
-            --sample-rate 48000
+            --duration-seconds 2.0 \
+            --sample-rate 48000 \
+            --max-gain-step 0.15
           test -s output/saf-vbap-reference/11_1_4/aurora/gain-trajectory.json
           python3 - <<'PY'
           import json
@@ -212,6 +217,8 @@ jobs:
           assert metadata['output_channels'] == 16
           assert metadata['wav_exported'] is False
           assert summary['wav_exported'] is False
+          assert summary['configured_max_gain_step'] == 0.15
+          assert summary['gain_step_violations'] == 0
           assert 'rendered-reference.wav' not in summary['artifacts']
           print('AURORA-VBAP3D-11-1-4-RESEARCH-JSON-ONLY-PASS')
           PY
