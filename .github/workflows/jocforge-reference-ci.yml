@@ -13,6 +13,7 @@ on:
       - "validation/open-immersive/jocforge_openjoc_evidence.py"
       - "validation/immersive/install-openjoc-reference.sh"
       - "validation/immersive/test-openjoc-reference.sh"
+      - "validation/immersive/test-jocforge-harletty-matrix.sh"
   workflow_dispatch:
 
 permissions:
@@ -21,7 +22,7 @@ permissions:
 jobs:
   jocforge-smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 40
+    timeout-minutes: 50
     steps:
       - name: Checkout Aurora
         uses: actions/checkout@v4
@@ -68,20 +69,17 @@ jobs:
 
           cargo run -p jocforge --locked -- fixture --seconds 1 "$OUT/synthetic-reference.bw64"
 
-          # Five public-profile source-derived encodes.
           cargo run -p jocforge --locked -- encode "$OUT/synthetic-reference.bw64" "$OUT/idx0.ec3" --profile idx0
           cargo run -p jocforge --locked -- encode "$OUT/synthetic-reference.bw64" "$OUT/idx1.ec3" --profile idx1
           cargo run -p jocforge --locked -- encode "$OUT/synthetic-reference.bw64" "$OUT/idx2.ec3" --profile idx2
           cargo run -p jocforge --locked -- encode "$OUT/synthetic-reference.bw64" "$OUT/idx3.ec3" --profile "5.X Phase"
           cargo run -p jocforge --locked -- encode "$OUT/synthetic-reference.bw64" "$OUT/idx4.ec3" --profile "5.X+2 Phase"
 
-          # Block-partition structural probes.
           cargo run -p jocforge --locked -- conformance-short idx0 6 "$OUT/partition-6.ec3"
           cargo run -p jocforge --locked -- conformance-short idx0 3+3 "$OUT/partition-3x3.ec3"
           cargo run -p jocforge --locked -- conformance-short idx0 2+2+2 "$OUT/partition-2x3.ec3"
           cargo run -p jocforge --locked -- conformance-short idx0 1+1+1+1+1+1 "$OUT/partition-1x6.ec3"
 
-          # Dependent-substream, EMDF, and LFE ownership probes.
           cargo run -p jocforge --locked -- conformance-multi-dependent idx1 2 "$OUT/multi-dependent-2.ec3"
           cargo run -p jocforge --locked -- conformance-short-multi-dependent idx0 1 3+3 "$OUT/short-multi-deployed.ec3" --emdf deployed --lfe absent
           cargo run -p jocforge --locked -- conformance-short-multi-dependent idx0 1 2+2+2 "$OUT/independent-lfe.ec3" --emdf etsi --lfe independent
@@ -102,7 +100,6 @@ jobs:
           import json
           import pathlib
           import subprocess
-
           manifest = json.loads(pathlib.Path('config/jocforge-smoke-vectors-v1.json').read_text())
           root = pathlib.Path('external/JOCForge/artifacts/aurora-smoke')
           for vector in manifest['vectors']:
@@ -150,10 +147,21 @@ jobs:
             --results-dir "$RESULTS" \
             --output output/evaluation/jocforge-openjoc-summary.json
 
+      - name: Decode all JOCForge vectors through pinned Harletty bridge
+        shell: bash
+        env:
+          AURORA_JOCFORGE_HARLETTY_WORKDIR: ${{ runner.temp }}/jocforge-harletty
+        run: |
+          bash validation/immersive/test-jocforge-harletty-matrix.sh \
+            config/jocforge-smoke-vectors-v1.json \
+            external/JOCForge/artifacts/aurora-smoke \
+            output/evaluation/jocforge-harletty
+
       - name: Show deterministic Aurora evidence summaries
         run: |
           cat output/evaluation/jocforge-reference-summary.json
           cat output/evaluation/jocforge-openjoc-summary.json
+          cat output/evaluation/jocforge-harletty/jocforge-harletty-summary.json
 
       - name: Upload JOCForge evidence
         uses: actions/upload-artifact@v4
@@ -164,6 +172,7 @@ jobs:
             output/evaluation/jocforge-openjoc-summary.json
             output/evaluation/jocforge-openjoc/*/openjoc-inspect.json
             output/evaluation/jocforge-openjoc/*/openjoc-7.1.4-ffprobe.json
+            output/evaluation/jocforge-harletty/*.json
             config/jocforge-reference-v1.json
             config/jocforge-smoke-vectors-v1.json
           retention-days: 14
