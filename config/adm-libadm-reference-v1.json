@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "reference": {
+    "id": "ebu-libadm",
+    "upstream": "https://github.com/ebu/libadm",
+    "tested_version": "0.14.0",
+    "commit": "aed1ac5aea2844da374712a2b51339a09485df6f",
+    "license": "Apache-2.0",
+    "integration": "external-build-validation-reference"
+  },
+  "validation": {
+    "build_unit_tests": true,
+    "build_examples": true,
+    "run_all_upstream_ctest": true,
+    "roundtrip": {
+      "generator": "create_from_scratch",
+      "parser_writer": "parse_xml",
+      "passes": 2,
+      "required_minimum_elements": {
+        "audioProgramme": 1,
+        "audioContent": 2,
+        "audioObject": 2
+      },
+      "stable_element_counts": [
+        "audioProgramme",
+        "audioContent",
+        "audioObject",
+        "audioPackFormat",
+        "audioChannelFormat",
+        "audioTrackUID"
+      ]
+    },
+    "malformed_input": {
+      "must_fail_closed": true,
+      "fixture_kind": "ci-local-truncated-xml"
+    }
+  },
+  "evidence": {
+    "artifact": "adm-libadm-reference-summary.json",
+    "record": [
+      "aurora_sha",
+      "libadm_commit",
+      "libadm_project_version",
+      "generated_xml_sha256",
+      "roundtrip_xml_sha256",
+      "second_roundtrip_xml_sha256",
+      "selected_element_counts",
+      "malformed_parse_exit_code",
+      "verdict",
+      "truth_boundary"
+    ]
+  },
+  "truth_boundary": "This lane validates only the exact pinned libadm build, its upstream unit tests, and bounded ADM XML create/parse/write behavior. It does not prove Aurora runtime ADM ingestion, BW64 audio integration, renderer semantics, S-ADM support, exhaustive ITU-R BS.2076 compliance, ITU-R BS.2127 rendering, protected-service interoperability, physical output, or certification."
+}
