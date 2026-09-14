@@ -22,9 +22,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  saf-baseline:
+  saf-reference:
     runs-on: ubuntu-24.04
-    timeout-minutes: 35
+    timeout-minutes: 40
     env:
       SAF_COMMIT: 18fd5aba46e20787b51f28f7197a68506c965c07
     steps:
@@ -102,11 +102,62 @@ jobs:
           saf-build/test/saf_test
           echo "SAF-UPSTREAM-TESTS-PASS"
 
+      - name: Generate Aurora 7.1.4 VBAP trajectory
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/saf-vbap-reference/aurora
+          cargo run -p aurora-simulation-assurance --release --bin aurora-evaluate-vbap3d -- \
+            --scene fixtures/scenes/7_1_4_reference.json \
+            --output-dir output/saf-vbap-reference/aurora \
+            --duration-seconds 1.0 \
+            --sample-rate 48000
+          test -s output/saf-vbap-reference/aurora/gain-trajectory.json
+          echo "AURORA-VBAP3D-TRAJECTORY-PASS"
+
+      - name: Prepare identical SAF geometry and source directions
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 validation/open-immersive/saf_vbap_reference_evidence.py prepare \
+            --scene fixtures/scenes/7_1_4_reference.json \
+            --aurora-trajectory output/saf-vbap-reference/aurora/gain-trajectory.json \
+            --speaker-out output/saf-vbap-reference/saf-speakers.txt \
+            --source-out output/saf-vbap-reference/saf-sources.txt \
+            --mapping-out output/saf-vbap-reference/mapping.json
+
+      - name: Build and run SAF VBAP gain probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          cc -std=c11 -O2 \
+            -I saf/framework/include \
+            validation/open-immersive/saf_vbap_reference_probe.c \
+            saf-build/framework/libsaf.a \
+            -lopenblas -llapacke -latomic -lm \
+            -o output/saf-vbap-reference/saf-vbap-probe
+          output/saf-vbap-reference/saf-vbap-probe \
+            output/saf-vbap-reference/saf-speakers.txt \
+            output/saf-vbap-reference/saf-sources.txt \
+            output/saf-vbap-reference/saf-gains.txt
+          test -s output/saf-vbap-reference/saf-gains.txt
+          echo "SAF-VBAP-PROBE-PASS"
+
+      - name: Compare Aurora and SAF 3D VBAP semantics
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 validation/open-immersive/saf_vbap_reference_evidence.py compare \
+            --aurora-trajectory output/saf-vbap-reference/aurora/gain-trajectory.json \
+            --mapping output/saf-vbap-reference/mapping.json \
+            --saf-gains output/saf-vbap-reference/saf-gains.txt \
+            --output output/saf-vbap-reference/differential-summary.json
+          echo "AURORA-SAF-VBAP-DIFFERENTIAL-PASS"
+
       - name: Emit baseline evidence
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p output/saf-vbap-reference
           python3 - <<'PY'
           import hashlib, json, pathlib
           cfg = pathlib.Path('config/saf-reference-v1.json')
@@ -120,18 +171,21 @@ jobs:
               'sofa_reader_enabled': False,
               'upstream_tests_passed': True,
               'status': 'REFERENCE-BASELINE-PASS',
-              'truth_boundary': 'Pinned external permissive SAF core build/test only; no Aurora-vs-SAF VBAP differential, runtime adoption, physical acoustics, 11.1.4, binaural, HOA, or proprietary renderer equivalence is claimed by this baseline.'
+              'truth_boundary': 'Pinned external permissive SAF core build/test plus a separate software-only 7.1.4 gain differential. No runtime adoption, physical acoustics, 11.1.4, binaural, HOA, proprietary-renderer equivalence, or certification is claimed.'
           }
           pathlib.Path('output/saf-vbap-reference/baseline-summary.json').write_text(
               json.dumps(data, indent=2, sort_keys=True) + '\n', encoding='utf-8')
           print(json.dumps(data, indent=2, sort_keys=True))
           PY
 
-      - name: Upload SAF baseline evidence
+      - name: Upload SAF reference evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: saf-vbap-reference-${{ github.sha }}
-          path: output/saf-vbap-reference/*.json
+          path: |
+            output/saf-vbap-reference/**/*.json
+            output/saf-vbap-reference/*.json
+            output/saf-vbap-reference/*.txt
           if-no-files-found: error
           retention-days: 14
