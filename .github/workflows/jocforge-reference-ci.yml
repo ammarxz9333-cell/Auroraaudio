@@ -10,6 +10,9 @@ on:
       - "docs/jocforge-reference.md"
       - "THIRD_PARTY_LICENSES.md"
       - "validation/open-immersive/jocforge_reference_evidence.py"
+      - "validation/open-immersive/jocforge_openjoc_evidence.py"
+      - "validation/immersive/install-openjoc-reference.sh"
+      - "validation/immersive/test-openjoc-reference.sh"
   workflow_dispatch:
 
 permissions:
@@ -18,7 +21,7 @@ permissions:
 jobs:
   jocforge-smoke:
     runs-on: ubuntu-24.04
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - name: Checkout Aurora
         uses: actions/checkout@v4
@@ -113,8 +116,44 @@ jobs:
               )
           PY
 
-      - name: Show deterministic Aurora evidence summary
-        run: cat output/evaluation/jocforge-reference-summary.json
+      - name: Install checksum-pinned OpenJOC reference
+        id: openjoc
+        shell: bash
+        run: |
+          OPENJOC_BIN="$(bash validation/immersive/install-openjoc-reference.sh "${{ runner.temp }}/openjoc-reference")"
+          echo "bin=$OPENJOC_BIN" >> "$GITHUB_OUTPUT"
+
+      - name: Inspect and render all JOCForge vectors with OpenJOC
+        shell: bash
+        env:
+          OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
+          AURORA_OPENJOC_EXPECTED_VERSION: "0.17.0"
+        run: |
+          set -euo pipefail
+          ROOT="external/JOCForge/artifacts/aurora-smoke"
+          RESULTS="output/evaluation/jocforge-openjoc"
+          mkdir -p "$RESULTS"
+          python3 - <<'PY' > "${{ runner.temp }}/jocforge-vectors.tsv"
+          import json
+          import pathlib
+          manifest = json.loads(pathlib.Path('config/jocforge-smoke-vectors-v1.json').read_text())
+          for vector in manifest['vectors']:
+              print(f"{vector['id']}\t{vector['output']}")
+          PY
+          while IFS=$'\t' read -r vector_id output_name; do
+            bash validation/immersive/test-openjoc-reference.sh \
+              "$ROOT/$output_name" \
+              "$RESULTS/$vector_id"
+          done < "${{ runner.temp }}/jocforge-vectors.tsv"
+          python3 validation/open-immersive/jocforge_openjoc_evidence.py \
+            --vector-manifest config/jocforge-smoke-vectors-v1.json \
+            --results-dir "$RESULTS" \
+            --output output/evaluation/jocforge-openjoc-summary.json
+
+      - name: Show deterministic Aurora evidence summaries
+        run: |
+          cat output/evaluation/jocforge-reference-summary.json
+          cat output/evaluation/jocforge-openjoc-summary.json
 
       - name: Upload JOCForge evidence
         uses: actions/upload-artifact@v4
@@ -122,6 +161,9 @@ jobs:
           name: jocforge-reference-${{ github.sha }}
           path: |
             output/evaluation/jocforge-reference-summary.json
+            output/evaluation/jocforge-openjoc-summary.json
+            output/evaluation/jocforge-openjoc/*/openjoc-inspect.json
+            output/evaluation/jocforge-openjoc/*/openjoc-7.1.4-ffprobe.json
             config/jocforge-reference-v1.json
             config/jocforge-smoke-vectors-v1.json
           retention-days: 14
