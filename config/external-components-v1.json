@@ -147,6 +147,25 @@
       ]
     },
     {
+      "id": "ebu-libadm",
+      "upstream": "https://github.com/ebu/libadm",
+      "decision": "evaluate-active",
+      "integration": "external-build-validation-reference",
+      "tested_version": "0.14.0",
+      "pinned_commit": "aed1ac5aea2844da374712a2b51339a09485df6f",
+      "license": "Apache-2.0",
+      "roles": ["adm-xml-parse-reference", "adm-xml-write-reference", "adm-roundtrip-validation", "malformed-adm-validation"],
+      "object_metadata": "adm-document-structure-reference-only",
+      "production_ready": false,
+      "evidence": [
+        "config/adm-libadm-reference-v1.json",
+        "validation/open-immersive/adm_libadm_reference_evidence.py",
+        ".github/workflows/adm-libadm-reference-ci.yml",
+        "docs/adm-libadm-reference.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
       "id": "fraunhofer-mpeghdec",
       "upstream": "https://github.com/Fraunhofer-IIS/mpeghdec",
       "decision": "evaluate-active",

@@ -1,0 +1,145 @@
+name: ADM libadm Reference CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/external-components-v1.json"
+      - "config/adm-libadm-reference-v1.json"
+      - "docs/adm-libadm-reference.md"
+      - "validation/open-immersive/adm_libadm_reference_evidence.py"
+      - "THIRD_PARTY_LICENSES.md"
+      - ".github/workflows/adm-libadm-reference-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: adm-libadm-reference-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  libadm-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      LIBADM_COMMIT: aed1ac5aea2844da374712a2b51339a09485df6f
+      LIBADM_VERSION: "0.14.0"
+      AURORA_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+
+    steps:
+      - name: Checkout Aurora
+        uses: actions/checkout@v4
+
+      - name: Checkout exact pinned EBU libadm
+        uses: actions/checkout@v4
+        with:
+          repository: ebu/libadm
+          ref: aed1ac5aea2844da374712a2b51339a09485df6f
+          path: libadm
+          fetch-depth: 1
+
+      - name: Verify immutable pin and Aurora registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C libadm rev-parse HEAD)" = "$LIBADM_COMMIT"
+          python3 scripts/check_external_components.py
+          python3 - <<'PY'
+          import json
+          cfg = json.load(open('config/adm-libadm-reference-v1.json', encoding='utf-8'))
+          registry = json.load(open('config/external-components-v1.json', encoding='utf-8'))
+          components = {item['id']: item for item in registry['components']}
+          ref = cfg['reference']
+          assert ref['commit'] == 'aed1ac5aea2844da374712a2b51339a09485df6f'
+          assert ref['tested_version'] == '0.14.0'
+          assert components['ebu-libadm']['pinned_commit'] == ref['commit']
+          assert components['ebu-libadm']['tested_version'] == ref['tested_version']
+          assert components['ebu-libadm']['production_ready'] is False
+          print('ADM-LIBADM-PINS-PASS')
+          PY
+
+      - name: Install reference build tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes build-essential cmake ninja-build libboost-all-dev
+
+      - name: Self-test ADM evidence analyzer
+        run: python3 validation/open-immersive/adm_libadm_reference_evidence.py self-test
+
+      - name: Build exact pinned libadm with tests and examples
+        shell: bash
+        run: |
+          set -euo pipefail
+          BUILD="${RUNNER_TEMP}/libadm-build"
+          cmake -S libadm -B "$BUILD" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DADM_UNIT_TESTS=ON \
+            -DADM_EXAMPLES=ON \
+            -DADM_PACKAGE_AND_INSTALL=OFF
+          cmake --build "$BUILD" --parallel 2
+          CREATE_BIN="$(find "$BUILD" -type f -name create_from_scratch -perm -111 -print -quit)"
+          PARSE_BIN="$(find "$BUILD" -type f -name parse_xml -perm -111 -print -quit)"
+          test -n "$CREATE_BIN"
+          test -n "$PARSE_BIN"
+          printf '%s\n' "LIBADM_BUILD=$BUILD" >> "$GITHUB_ENV"
+          printf '%s\n' "LIBADM_CREATE_BIN=$CREATE_BIN" >> "$GITHUB_ENV"
+          printf '%s\n' "LIBADM_PARSE_BIN=$PARSE_BIN" >> "$GITHUB_ENV"
+          echo "ADM-LIBADM-BUILD-PASS"
+
+      - name: Run all pinned upstream libadm tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir "$LIBADM_BUILD" --output-on-failure
+          echo "ADM-LIBADM-UPSTREAM-CTEST-PASS"
+
+      - name: Exercise bounded ADM create parse write round-trip
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/adm-libadm-reference"
+          mkdir -p "$OUT"
+
+          "$LIBADM_CREATE_BIN" > "$OUT/generated.xml"
+          test -s "$OUT/generated.xml"
+          "$LIBADM_PARSE_BIN" "$OUT/generated.xml" > "$OUT/roundtrip-1.xml"
+          test -s "$OUT/roundtrip-1.xml"
+          "$LIBADM_PARSE_BIN" "$OUT/roundtrip-1.xml" > "$OUT/roundtrip-2.xml"
+          test -s "$OUT/roundtrip-2.xml"
+
+          printf '%s\n' '<ebuCoreMain><coreMetadata><format><audioFormatExtended>' > "$OUT/malformed.xml"
+          set +e
+          "$LIBADM_PARSE_BIN" "$OUT/malformed.xml" > "$OUT/malformed-stdout.txt" 2> "$OUT/malformed-stderr.txt"
+          RC=$?
+          set -e
+          test "$RC" -ne 0
+          printf '%s\n' "MALFORMED_EXIT_CODE=$RC" >> "$GITHUB_ENV"
+          echo "ADM-LIBADM-ROUNDTRIP-PASS"
+
+      - name: Emit bounded ADM reference evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/adm-libadm-reference"
+          python3 validation/open-immersive/adm_libadm_reference_evidence.py \
+            "$OUT/generated.xml" \
+            "$OUT/roundtrip-1.xml" \
+            "$OUT/roundtrip-2.xml" \
+            config/adm-libadm-reference-v1.json \
+            "$OUT/adm-libadm-reference-summary.json" \
+            --malformed-exit-code "$MALFORMED_EXIT_CODE" \
+            --aurora-sha "$AURORA_HEAD_SHA"
+
+      - name: Upload ADM libadm reference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: adm-libadm-reference-${{ github.sha }}
+          path: |
+            output/adm-libadm-reference/adm-libadm-reference-summary.json
+            output/adm-libadm-reference/malformed-stderr.txt
+          if-no-files-found: error
+          retention-days: 14
