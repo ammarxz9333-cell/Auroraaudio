@@ -10,7 +10,8 @@ Last updated: **2026-09-14**
 
 - PR #161 remains gated by temporary staging PR #162. Run `34880014504` at `eec666c4` built all three CLIs but failed baseline decode: the old in-tree fixture yields zero codec samples per frame. No libiamf differential ran.
 - Staging now encodes stereo PCM and stereo Opus fixtures from hash-checked upstream templates/WAV at the same immutable iamf-tools pin. Probe descriptor/temporal validity, source-frame accounting and actual encoded-input provenance are required. This is stereo external-reference validation, not 5.1 downmix, Aurora object ingestion or hardware proof.
-- Keep changes on staging until its complete lane passes; then port to #161 and require final-head CI before merge.
+- Staging run `34888936980` passed the complete lane at `6e6bc803c2806f0c2082fe2af576a8937025eb5c`: PCM baseline and independent Opus decoding, 24,000 frames per path at stereo 48 kHz, zero frame delta, correlation `0.9999999987477769`. `iamf-independent-stereo-cross-reference` is covered as software-reference evidence only. The broader Phase 3 IAMF roadmap remains unfinished.
+- Port the validated staging changes to #161, close superseded #162, and require all final-head CI/tests/docs before merge.
 
 ### Local Simics / live-ingress continuation (2026-09-13)
 

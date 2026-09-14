@@ -46,7 +46,7 @@ That fixture is rendered independently through:
 - pinned `iamf-tools` `decoder_main`, explicitly selecting stereo (`2.0`);
 - pinned `libiamf` `iamfdec`, using Aurora's already reviewed complete-file rendered-PCM reference configuration.
 
-Both outputs are converted to interleaved F32 only for evidence analysis. The analyzer requires valid finite non-silent stereo 48 kHz output from both implementations, checks bounded frame-accounting disagreement, and records per-channel RMS, energy fractions, normalized correlation, hashes, and duration delta. It does **not** require sample-identical PCM across the independent decoders/renderers.
+Both outputs are converted to interleaved F32 only for evidence analysis. The analyzer requires valid finite non-silent stereo 48 kHz output from both implementations, requires exactly 24,000 frames from each path, and records per-channel RMS, energy fractions, normalized correlation, hashes, and duration delta. It does **not** require sample-identical PCM across the independent decoders/renderers.
 
 `libiamf`'s reviewed build contains its own pinned OAR submodule revision. That embedded renderer revision is recorded separately from Aurora's standalone OAR semantic-oracle pin. They must not be conflated.
 
@@ -56,9 +56,22 @@ Aurora's standalone AOMedia OAR lane remains an object/spatial-render semantic o
 
 ## What the differential establishes
 
-A green cross-reference shows that the exact pinned `iamf-tools` and `libiamf` paths can independently consume the same reviewed standalone IAMF fixture and produce structurally valid stereo PCM with bounded frame accounting. The evidence artifact exposes the actual differences rather than converting independent-renderer variation into a false exact-equivalence claim.
+A green cross-reference shows that the exact pinned `iamf-tools` and `libiamf` paths can independently consume the same reviewed generated standalone IAMF fixture and produce structurally valid stereo PCM with bounded frame accounting. The evidence artifact exposes the actual differences rather than converting independent-renderer variation into a false exact-equivalence claim.
 
 Future corpus expansion can add 5.1/7.1.4 layouts, IAMF parameter automation, HOA, malformed/truncated cases, and encoder-generated round trips. Stronger tolerances should be introduced only after measured evidence supports them.
+
+## Validated staging evidence
+
+[Run 34888936980](https://github.com/ammarxz9333-cell/Auroraaudio/actions/runs/34888936980) passed the complete lane at staging head `6e6bc803c2806f0c2082fe2af576a8937025eb5c`:
+
+- all three CLIs built; both generated fixtures encoded successfully;
+- PCM baseline: finite, non-silent stereo 48 kHz, 24,000 frames;
+- shared Opus fixture SHA-256: `50f69939eef466a7623f74419ba4f22fcaee3868b5452e44958d460e1ef82675`;
+- iamf-tools and libiamf: 24,000 frames each, zero frame/duration delta;
+- each channel: normalized correlation `0.9999999987477769`, RMS delta `7.814325884313868e-7 dB`, energy-fraction delta `0.0`;
+- PCM hashes differ, so this is not sample-identical decoding evidence.
+
+These measurements describe this one generated stereo fixture. Correlation and energy are reported observations, not acceptance thresholds for arbitrary content. The broader Phase 3 roadmap (parameter automation, malformed streams, containers, source-object semantics and recovery) remains unfinished. PR #161 still requires final-head CI before merge.
 
 ## Truth boundary
 

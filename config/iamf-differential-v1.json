@@ -30,5 +30,5 @@
     "record_normalized_correlation": true,
     "expected_frames": 24000
   },
-  "truth_boundary": "This differential qualifies one shared official IAMF fixture through two independent external decode/render paths: iamf-tools and libiamf. It records frame accounting and channel-energy/correlation metrics without requiring sample-identical PCM. The standalone OAR pin remains a separate spatial-render semantic oracle; it is not treated here as an IAMF ingestion decoder. Passing does not prove native Aurora IAMF object-scene decoding, arbitrary IAMF conformance, renderer equivalence, physical output behavior, patent clearance beyond upstream terms, or certification."
+  "truth_boundary": "This differential qualifies one shared IAMF fixture generated from pinned upstream stereo inputs through two independent external decode/render paths: iamf-tools and libiamf. It records frame accounting and channel-energy/correlation metrics without requiring sample-identical PCM. The standalone OAR pin remains a separate spatial-render semantic oracle; it is not treated here as an IAMF ingestion decoder. Passing does not prove native Aurora IAMF object-scene decoding, arbitrary IAMF conformance, renderer equivalence, physical output behavior, patent clearance beyond upstream terms, or certification."
 }
