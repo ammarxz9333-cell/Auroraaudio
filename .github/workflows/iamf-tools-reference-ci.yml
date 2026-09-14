@@ -95,27 +95,30 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          mkdir -p ../output/iamf-tools-reference
-          test -s "$FIXTURE_REL"
+          OUT_DIR="${GITHUB_WORKSPACE}/output/iamf-tools-reference"
+          FIXTURE="${GITHUB_WORKSPACE}/iamf-tools/${FIXTURE_REL}"
+          mkdir -p "${OUT_DIR}"
+          test -d "${OUT_DIR}"
+          test -s "${FIXTURE}"
           bazel-bin/iamf/cli/probe_main \
-            --input_filename="$FIXTURE_REL" \
+            --input_filename="${FIXTURE}" \
             --format=json \
             --scan=counts \
-            > ../output/iamf-tools-reference/probe.json
-          python3 -m json.tool ../output/iamf-tools-reference/probe.json >/dev/null
+            > "${OUT_DIR}/probe.json"
+          python3 -m json.tool "${OUT_DIR}/probe.json" >/dev/null
           bazel-bin/iamf/cli/decoder_main \
-            --input_filename="$FIXTURE_REL" \
-            --output_filename=../output/iamf-tools-reference/decoded-stereo.wav \
+            --input_filename="${FIXTURE}" \
+            --output_filename="${OUT_DIR}/decoded-stereo.wav" \
             --output_layout=2.0
-          test -s ../output/iamf-tools-reference/decoded-stereo.wav
+          test -s "${OUT_DIR}/decoded-stereo.wav"
           echo "IAMF-TOOLS-DECODE-PASS"
 
       - name: Validate finite decoded PCM and emit baseline evidence
         shell: bash
         run: |
           set -euo pipefail
-          OUT=output/iamf-tools-reference
-          FIXTURE="iamf-tools/$FIXTURE_REL"
+          OUT="${GITHUB_WORKSPACE}/output/iamf-tools-reference"
+          FIXTURE="${GITHUB_WORKSPACE}/iamf-tools/${FIXTURE_REL}"
           ffprobe -v error -select_streams a:0 \
             -show_entries stream=sample_rate,channels,duration \
             -of json "$OUT/decoded-stereo.wav" > "$OUT/decoded-ffprobe.json"
@@ -193,19 +196,20 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          OUT=output/iamf-tools-reference
+          OUT="${GITHUB_WORKSPACE}/output/iamf-tools-reference"
           DIFF_REL="$(python3 -c 'import json; print(json.load(open("config/iamf-differential-v1.json"))["fixture"]["path"])')"
-          DIFF_FIXTURE="iamf-tools/${DIFF_REL}"
+          DIFF_FIXTURE="${GITHUB_WORKSPACE}/iamf-tools/${DIFF_REL}"
+          mkdir -p "${OUT}"
           test -s "${DIFF_FIXTURE}"
 
-          iamf-tools/bazel-bin/iamf/cli/probe_main \
+          "${GITHUB_WORKSPACE}/iamf-tools/bazel-bin/iamf/cli/probe_main" \
             --input_filename="${DIFF_FIXTURE}" \
             --format=json \
             --scan=counts \
             > "${OUT}/differential-probe.json"
           python3 -m json.tool "${OUT}/differential-probe.json" >/dev/null
 
-          iamf-tools/bazel-bin/iamf/cli/decoder_main \
+          "${GITHUB_WORKSPACE}/iamf-tools/bazel-bin/iamf/cli/decoder_main" \
             --input_filename="${DIFF_FIXTURE}" \
             --output_filename="${OUT}/differential-iamf-tools.wav" \
             --output_layout=2.0
@@ -221,10 +225,9 @@ jobs:
               -f f32le -acodec pcm_f32le "${OUT}/differential-${NAME}.f32"
           done
 
-          python3 - <<'PY'
-          import json
-          from pathlib import Path
-          out = Path('output/iamf-tools-reference')
+          python3 - "${OUT}" <<'PY'
+          import json, pathlib, sys
+          out = pathlib.Path(sys.argv[1])
           for name in ('iamf-tools', 'libiamf'):
               data = json.loads((out / f'differential-{name}-ffprobe.json').read_text(encoding='utf-8'))
               streams = data.get('streams') or []
