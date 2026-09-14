@@ -27,7 +27,7 @@ def acoustic_listener_center(scene: dict[str, Any]) -> tuple[float, float, float
     )
 
 
-def direction(point: dict[str, Any], center: tuple[float, float, float]) -> tuple[float, float, float]:
+def direction(point: dict[str, Any], center: tuple[float, float, float]) -> tuple[float, float, tuple[float, float, float]]:
     dx = float(point["x"]) - center[0]
     dy = float(point["y"]) - center[1]
     dz = float(point["z"]) - center[2]
@@ -35,8 +35,8 @@ def direction(point: dict[str, Any], center: tuple[float, float, float]) -> tupl
     if not math.isfinite(radius) or radius <= 1.0e-9:
         raise SystemExit(f"invalid listener-relative point: {point}")
 
-    # SAF uses the common audio convention 0°=front and positive azimuth=left.
-    # Aurora's fixture uses +Y=front and -X=left, hence atan2(-X, +Y).
+    # SAF uses 0°=front and positive azimuth=left. Aurora's fixture uses
+    # +Y=front and -X=left, hence atan2(-X, +Y).
     azimuth = math.degrees(math.atan2(-dx, dy))
     elevation = math.degrees(math.atan2(dz, math.hypot(dx, dy)))
     unit = (dx / radius, dy / radius, dz / radius)
@@ -166,6 +166,27 @@ def angular_distance_degrees(a: tuple[float, float, float] | None, b: tuple[floa
     return math.degrees(math.acos(dot))
 
 
+def percentile(values: list[float], percent: float) -> float:
+    ordered = sorted(values)
+    if len(ordered) == 1:
+        return ordered[0]
+    position = (len(ordered) - 1) * percent / 100.0
+    lower = int(math.floor(position))
+    upper = int(math.ceil(position))
+    if lower == upper:
+        return ordered[lower]
+    fraction = position - lower
+    return ordered[lower] * (1.0 - fraction) + ordered[upper] * fraction
+
+
+def sparse_gains(values: list[float], speaker_ids: list[str]) -> dict[str, float]:
+    return {
+        speaker_id: round(value, 7)
+        for speaker_id, value in zip(speaker_ids, values)
+        if abs(value) > 1.0e-6
+    }
+
+
 def compare(args: argparse.Namespace) -> None:
     trajectory = load_json(args.aurora_trajectory)
     mapping = load_json(args.mapping)
@@ -177,7 +198,9 @@ def compare(args: argparse.Namespace) -> None:
     spatial_indices = [int(value) for value in mapping["spatial_indices"]]
     lfe_indices = [int(value) for value in mapping["lfe_indices"]]
     roles = [str(value) for value in mapping["spatial_roles"]]
+    speaker_ids = [str(value) for value in mapping["spatial_speaker_ids"]]
     units = mapping["speaker_unit_vectors_aurora_xyz"]
+    center = tuple(float(value) for value in mapping["listener_center"])
 
     if rows != len(frames) or saf_speaker_count != len(spatial_indices):
         raise SystemExit("Aurora/SAF differential dimensions do not match")
@@ -185,6 +208,7 @@ def compare(args: argparse.Namespace) -> None:
     cosine_values: list[float] = []
     centroid_errors: list[float] = []
     height_energy_deltas: list[float] = []
+    frame_evidence: list[dict[str, Any]] = []
     dominant_matches = 0
     aurora_power_errors: list[float] = []
     saf_power_errors: list[float] = []
@@ -196,7 +220,7 @@ def compare(args: argparse.Namespace) -> None:
     if not top_indices:
         raise SystemExit("7.1.4 mapping has no top speakers")
 
-    for frame, saf in zip(frames, saf_rows):
+    for frame_index, (frame, saf) in enumerate(zip(frames, saf_rows)):
         aurora_all = [float(value) for value in frame["gains"]]
         if max(spatial_indices + lfe_indices) >= len(aurora_all):
             raise SystemExit("Aurora gain vector is shorter than fixture mapping")
@@ -212,16 +236,46 @@ def compare(args: argparse.Namespace) -> None:
 
         aurora_power_errors.append(abs(power(aurora) - 1.0))
         saf_power_errors.append(abs(power(saf) - 1.0))
-        cosine_values.append(cosine_similarity(aurora, saf))
-        dominant_matches += int(dominant(aurora) == dominant(saf))
-        centroid_errors.append(
-            angular_distance_degrees(energy_centroid(aurora, units), energy_centroid(saf, units))
+        cosine = cosine_similarity(aurora, saf)
+        aurora_dominant = dominant(aurora)
+        saf_dominant = dominant(saf)
+        dominant_matches += int(aurora_dominant == saf_dominant)
+        centroid_error = angular_distance_degrees(
+            energy_centroid(aurora, units), energy_centroid(saf, units)
         )
         aurora_height = sum(aurora[index] ** 2 for index in top_indices)
         saf_height = sum(saf[index] ** 2 for index in top_indices)
-        height_energy_deltas.append(abs(aurora_height - saf_height))
+        height_delta = abs(aurora_height - saf_height)
+        source_azimuth, source_elevation, _ = direction(frame["source"], center)
+
+        cosine_values.append(cosine)
+        centroid_errors.append(centroid_error)
+        height_energy_deltas.append(height_delta)
+        frame_evidence.append(
+            {
+                "frame_index": frame_index,
+                "source_xyz": frame["source"],
+                "source_azimuth_deg": source_azimuth,
+                "source_elevation_deg": source_elevation,
+                "cosine_similarity": cosine,
+                "centroid_error_deg": centroid_error,
+                "height_energy_abs_delta": height_delta,
+                "aurora_dominant": speaker_ids[aurora_dominant],
+                "saf_dominant": speaker_ids[saf_dominant],
+                "aurora_gains": sparse_gains(aurora, speaker_ids),
+                "saf_gains": sparse_gains(saf, speaker_ids),
+            }
+        )
 
     frame_count = len(frames)
+    low_similarity_count = sum(
+        value < args.low_similarity_threshold for value in cosine_values
+    )
+    low_similarity_fraction = low_similarity_count / frame_count
+    worst_frames = sorted(frame_evidence, key=lambda item: item["cosine_similarity"])[
+        : args.worst_frame_count
+    ]
+
     metrics = {
         "frame_count": frame_count,
         "spatial_speaker_count": len(spatial_indices),
@@ -232,7 +286,12 @@ def compare(args: argparse.Namespace) -> None:
         "aurora_max_power_error": max(aurora_power_errors),
         "saf_max_power_error": max(saf_power_errors),
         "cosine_similarity_min": min(cosine_values),
+        "cosine_similarity_p05": percentile(cosine_values, 5.0),
+        "cosine_similarity_p10": percentile(cosine_values, 10.0),
         "cosine_similarity_mean": sum(cosine_values) / frame_count,
+        "low_similarity_threshold": args.low_similarity_threshold,
+        "low_similarity_frame_count": low_similarity_count,
+        "low_similarity_fraction": low_similarity_fraction,
         "dominant_speaker_agreement_fraction": dominant_matches / frame_count,
         "centroid_error_deg_mean": sum(centroid_errors) / frame_count,
         "centroid_error_deg_max": max(centroid_errors),
@@ -242,11 +301,14 @@ def compare(args: argparse.Namespace) -> None:
 
     thresholds = {
         "max_power_error": args.max_power_error,
-        "min_cosine_similarity": args.min_cosine_similarity,
+        "low_similarity_threshold": args.low_similarity_threshold,
+        "max_low_similarity_fraction": args.max_low_similarity_fraction,
         "min_mean_cosine_similarity": args.min_mean_cosine_similarity,
         "min_dominant_agreement": args.min_dominant_agreement,
         "max_mean_centroid_error_deg": args.max_mean_centroid_error_deg,
+        "max_centroid_error_deg": args.max_centroid_error_deg,
         "max_mean_height_energy_delta": args.max_mean_height_energy_delta,
+        "max_height_energy_delta": args.max_height_energy_delta,
     }
     checks = {
         "finite": nonfinite_values == 0,
@@ -254,11 +316,13 @@ def compare(args: argparse.Namespace) -> None:
         "lfe_excluded": lfe_nonzero_frames == 0,
         "aurora_unit_power": metrics["aurora_max_power_error"] <= args.max_power_error,
         "saf_unit_power": metrics["saf_max_power_error"] <= args.max_power_error,
-        "minimum_vector_similarity": metrics["cosine_similarity_min"] >= args.min_cosine_similarity,
+        "localized_low_similarity_budget": low_similarity_fraction <= args.max_low_similarity_fraction,
         "mean_vector_similarity": metrics["cosine_similarity_mean"] >= args.min_mean_cosine_similarity,
         "dominant_speaker_agreement": metrics["dominant_speaker_agreement_fraction"] >= args.min_dominant_agreement,
         "mean_spatial_centroid_error": metrics["centroid_error_deg_mean"] <= args.max_mean_centroid_error_deg,
+        "max_spatial_centroid_error": metrics["centroid_error_deg_max"] <= args.max_centroid_error_deg,
         "mean_height_energy_delta": metrics["height_energy_abs_delta_mean"] <= args.max_mean_height_energy_delta,
+        "max_height_energy_delta": metrics["height_energy_abs_delta_max"] <= args.max_height_energy_delta,
     }
     passed = all(checks.values())
 
@@ -269,13 +333,25 @@ def compare(args: argparse.Namespace) -> None:
         "scene": "fixtures/scenes/7_1_4_reference.json",
         "saf_commit": "18fd5aba46e20787b51f28f7197a68506c965c07",
         "coordinate_convention": mapping["coordinate_convention"],
-        "spatial_speaker_ids": mapping["spatial_speaker_ids"],
+        "spatial_speaker_ids": speaker_ids,
         "lfe_indices": lfe_indices,
         "metrics": metrics,
         "thresholds": thresholds,
         "checks": checks,
+        "worst_frames_by_gain_vector_similarity": worst_frames,
+        "topology_boundary_policy": (
+            "A symmetric loudspeaker hull may admit more than one valid triangle diagonal. "
+            "Therefore isolated gain-vector mismatches are permitted only within a bounded "
+            "frame fraction while aggregate gain similarity, dominant-speaker behavior, "
+            "spatial centroid, height energy, unit power, and LFE exclusion remain strict."
+        ),
         "passed": passed,
-        "truth_boundary": "Software-only 7.1.4 trajectory differential against pinned SAF 3D VBAP. Similarity thresholds compare normalized gain semantics; they do not require identical triangulation or PCM. This does not establish 11.1.4, binaural/HOA, physical acoustic, proprietary-renderer, or certification equivalence."
+        "truth_boundary": (
+            "Software-only 7.1.4 trajectory differential against pinned SAF 3D VBAP. "
+            "The gate is topology-aware and does not require identical triangulation or PCM. "
+            "This does not establish 11.1.4, binaural/HOA, physical acoustic, proprietary-renderer, "
+            "or certification equivalence."
+        ),
     }
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="utf-8")
@@ -301,12 +377,16 @@ def parser() -> argparse.ArgumentParser:
     cmp.add_argument("--mapping", type=Path, required=True)
     cmp.add_argument("--saf-gains", type=Path, required=True)
     cmp.add_argument("--output", type=Path, required=True)
-    cmp.add_argument("--max-power-error", type=float, default=0.02)
-    cmp.add_argument("--min-cosine-similarity", type=float, default=0.50)
-    cmp.add_argument("--min-mean-cosine-similarity", type=float, default=0.85)
-    cmp.add_argument("--min-dominant-agreement", type=float, default=0.50)
-    cmp.add_argument("--max-mean-centroid-error-deg", type=float, default=25.0)
-    cmp.add_argument("--max-mean-height-energy-delta", type=float, default=0.25)
+    cmp.add_argument("--max-power-error", type=float, default=0.001)
+    cmp.add_argument("--low-similarity-threshold", type=float, default=0.50)
+    cmp.add_argument("--max-low-similarity-fraction", type=float, default=0.10)
+    cmp.add_argument("--min-mean-cosine-similarity", type=float, default=0.90)
+    cmp.add_argument("--min-dominant-agreement", type=float, default=0.90)
+    cmp.add_argument("--max-mean-centroid-error-deg", type=float, default=5.0)
+    cmp.add_argument("--max-centroid-error-deg", type=float, default=30.0)
+    cmp.add_argument("--max-mean-height-energy-delta", type=float, default=0.05)
+    cmp.add_argument("--max-height-energy-delta", type=float, default=0.20)
+    cmp.add_argument("--worst-frame-count", type=int, default=8)
     cmp.set_defaults(func=compare)
     return root
 
