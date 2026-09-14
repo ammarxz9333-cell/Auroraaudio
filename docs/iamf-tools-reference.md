@@ -18,13 +18,13 @@ Aurora already has a pinned `libiamf` rendered-channel-PCM reference and a pinne
 
 ## Baseline gate
 
-The first gate intentionally proves only that the exact pin is usable as a reproducible external reference:
+The baseline proves only that the exact pin is usable as a reproducible external reference:
 
 1. checkout and verify the exact upstream commit;
 2. build `encoder_main`, `decoder_main`, and `probe_main` using the upstream Bazel graph;
 3. probe a pinned upstream IAMF fixture in machine-readable JSON form;
 4. scan temporal-unit counts/duration;
-5. decode the fixture to stereo WAV;
+5. decode the fixture explicitly to stereo WAV;
 6. require non-empty, finite decoded PCM and record deterministic hashes/provenance.
 
 The baseline fixture is:
@@ -33,19 +33,33 @@ The baseline fixture is:
 
 The baseline deliberately uses an upstream fixture before Aurora adds an encoder-generated corpus. This separates basic tool qualification from later differential semantics.
 
-## Next differential gate
+## Cross-reference gate
 
-After the baseline is green, a follow-up on this branch should compare the same reviewed IAMF vectors through the applicable lanes:
+The same CI lane also performs a role-appropriate cross-reference on the official upstream fixture:
 
-- AOMedia `iamf-tools` decoder/probe;
-- `libiamf` rendered-channel-PCM reference;
-- AOMedia OAR where rendering semantics are applicable;
-- Aurora-owned import/validation tooling.
+`iamf/cli/testdata/iamf/noise_1024samp_5p1_opus.iamf`
 
-Comparison should focus on descriptor semantics, selected mix/layout, sample rate, channel count/order where exposed, frame/sample duration, finite PCM, relative channel energy, gain automation/parameter behavior, and explicit malformed-input outcomes. Sample-identical PCM is not required across independent renderers unless a particular test defines that stronger contract.
+That fixture is rendered independently through:
+
+- pinned `iamf-tools` `decoder_main`, explicitly selecting stereo (`2.0`);
+- pinned `libiamf` `iamfdec`, using Aurora's already reviewed complete-file rendered-PCM reference configuration.
+
+Both outputs are converted to interleaved F32 only for evidence analysis. The analyzer requires valid finite non-silent stereo 48 kHz output from both implementations, checks bounded frame-accounting disagreement, and records per-channel RMS, energy fractions, normalized correlation, hashes, and duration delta. It does **not** require sample-identical PCM across the independent decoders/renderers.
+
+`libiamf`'s reviewed build contains its own pinned OAR submodule revision. That embedded renderer revision is recorded separately from Aurora's standalone OAR semantic-oracle pin. They must not be conflated.
+
+## OAR role boundary
+
+Aurora's standalone AOMedia OAR lane remains an object/spatial-render semantic oracle for focused position, gain, channel-order, and LFE-exclusion differentials. In this IAMF cross-reference, standalone OAR is deliberately **not** presented as a third IAMF ingestion decoder. This keeps bitstream parsing/decoding evidence separate from renderer-only semantic evidence.
+
+## What the differential establishes
+
+A green cross-reference shows that the exact pinned `iamf-tools` and `libiamf` paths can independently consume the same reviewed standalone IAMF fixture and produce structurally valid stereo PCM with bounded frame accounting. The evidence artifact exposes the actual differences rather than converting independent-renderer variation into a false exact-equivalence claim.
+
+Future corpus expansion can add 5.1/7.1.4 layouts, IAMF parameter automation, HOA, malformed/truncated cases, and encoder-generated round trips. Stronger tolerances should be introduced only after measured evidence supports them.
 
 ## Truth boundary
 
-Passing this lane does not prove that Aurora natively decodes IAMF object scenes. The existing Aurora `libiamf` process adapter remains rendered-channel PCM only. It also does not prove universal IAMF conformance, product interoperability, patent clearance beyond upstream published terms, or certification.
+Passing this lane does not prove that Aurora natively decodes IAMF object scenes. The existing Aurora `libiamf` process adapter remains rendered-channel PCM only. It also does not prove universal IAMF conformance, arbitrary renderer equivalence, physical output behavior, product interoperability, patent clearance beyond upstream published terms, or certification.
 
 A later decision to use `iamf-tools` in a product/runtime path requires a separate realtime, API-stability, performance, redistribution, and legal review.

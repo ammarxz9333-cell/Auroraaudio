@@ -6,7 +6,9 @@ on:
     paths:
       - "config/external-components-v1.json"
       - "config/iamf-tools-reference-v1.json"
+      - "config/iamf-differential-v1.json"
       - "docs/iamf-tools-reference.md"
+      - "validation/open-immersive/iamf_cross_reference_evidence.py"
       - "THIRD_PARTY_LICENSES.md"
       - ".github/workflows/iamf-tools-reference-ci.yml"
 
@@ -20,7 +22,7 @@ concurrency:
 jobs:
   iamf-tools-baseline:
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
       IAMF_TOOLS_COMMIT: c6b11b5ea47d7da00fbac9654acc96aa4ced2388
       BAZELISK_VERSION: 1.27.0
@@ -37,7 +39,7 @@ jobs:
           path: iamf-tools
           fetch-depth: 1
 
-      - name: Verify immutable pin and Aurora registry
+      - name: Verify immutable pins and Aurora registry
         shell: bash
         run: |
           set -euo pipefail
@@ -47,11 +49,18 @@ jobs:
           import json
           registry = json.load(open('config/external-components-v1.json', encoding='utf-8'))
           ref = json.load(open('config/iamf-tools-reference-v1.json', encoding='utf-8'))
+          diff = json.load(open('config/iamf-differential-v1.json', encoding='utf-8'))
+          libref = json.load(open('config/iamf-reference-v1.json', encoding='utf-8'))
+          oar = json.load(open('config/oar-evaluation-v1.json', encoding='utf-8'))
           component = next(c for c in registry['components'] if c['id'] == 'aomedia-iamf-tools')
           assert component['pinned_commit'] == ref['pinned_commit'] == 'c6b11b5ea47d7da00fbac9654acc96aa4ced2388'
+          assert diff['pins']['iamf_tools'] == ref['pinned_commit']
+          assert diff['pins']['libiamf'] == libref['libiamf']['commit']
+          assert diff['pins']['libiamf_embedded_oar'] == libref['libiamf']['oar_submodule_commit']
+          assert diff['pins']['standalone_oar_semantic_reference'] == oar['reference']['commit']
           assert ref['upstream_bazel_version'] == '8.5.1'
           assert ref['bazelisk_version'] == '1.27.0'
-          print('IAMF-TOOLS-PIN-PASS')
+          print('IAMF-REFERENCE-PINS-PASS')
           PY
 
       - name: Install reference build tooling
@@ -59,9 +68,12 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update
-          sudo apt-get install --yes ffmpeg
+          sudo apt-get install --yes ffmpeg cmake ninja-build git curl
           go install "github.com/bazelbuild/bazelisk@v${BAZELISK_VERSION}"
           "$(go env GOPATH)/bin/bazelisk" version
+
+      - name: Self-test cross-reference evidence analyzer
+        run: python3 validation/open-immersive/iamf_cross_reference_evidence.py self-test
 
       - name: Build pinned encoder decoder and probe
         working-directory: iamf-tools
@@ -78,7 +90,7 @@ jobs:
           test -x bazel-bin/iamf/cli/probe_main
           echo "IAMF-TOOLS-BUILD-PASS"
 
-      - name: Probe and decode pinned IAMF fixture
+      - name: Probe and decode pinned IAMF baseline fixture
         working-directory: iamf-tools
         shell: bash
         run: |
@@ -93,11 +105,12 @@ jobs:
           python3 -m json.tool ../output/iamf-tools-reference/probe.json >/dev/null
           bazel-bin/iamf/cli/decoder_main \
             --input_filename="$FIXTURE_REL" \
-            --output_filename=../output/iamf-tools-reference/decoded-stereo.wav
+            --output_filename=../output/iamf-tools-reference/decoded-stereo.wav \
+            --output_layout=2.0
           test -s ../output/iamf-tools-reference/decoded-stereo.wav
           echo "IAMF-TOOLS-DECODE-PASS"
 
-      - name: Validate finite decoded PCM and emit evidence
+      - name: Validate finite decoded PCM and emit baseline evidence
         shell: bash
         run: |
           set -euo pipefail
@@ -149,6 +162,87 @@ jobs:
           print(json.dumps(evidence, indent=2, sort_keys=True))
           PY
           echo "IAMF-TOOLS-REFERENCE-PASS"
+
+      - name: Fetch and build exact pinned libiamf reference
+        shell: bash
+        run: |
+          set -euo pipefail
+          LIBIAMF_COMMIT="$(python3 -c 'import json; print(json.load(open("config/iamf-differential-v1.json"))["pins"]["libiamf"])')"
+          OAR_COMMIT="$(python3 -c 'import json; print(json.load(open("config/iamf-differential-v1.json"))["pins"]["libiamf_embedded_oar"])')"
+          LIBIAMF="${RUNNER_TEMP}/libiamf"
+          mkdir -p "${LIBIAMF}"
+          git -C "${LIBIAMF}" init
+          git -C "${LIBIAMF}" remote add origin https://github.com/AOMediaCodec/libiamf.git
+          git -C "${LIBIAMF}" sparse-checkout init --cone
+          git -C "${LIBIAMF}" sparse-checkout set code .gitmodules LICENSE PATENTS
+          git -C "${LIBIAMF}" fetch --depth=1 --filter=blob:none origin "${LIBIAMF_COMMIT}"
+          git -C "${LIBIAMF}" checkout --detach FETCH_HEAD
+          test "$(git -C "${LIBIAMF}" rev-parse HEAD)" = "${LIBIAMF_COMMIT}"
+          git -C "${LIBIAMF}" submodule update --init --recursive --depth 1 code/dep_external/src/oar
+          test "$(git -C "${LIBIAMF}/code/dep_external/src/oar" rev-parse HEAD)" = "${OAR_COMMIT}"
+          cmake -S "${LIBIAMF}/code" -B "${RUNNER_TEMP}/libiamf-build" -G Ninja \
+            -DIAMF_TEST_TOOL=ON \
+            -DIAMF_ENABLE_BINAURALIZER=OFF
+          cmake --build "${RUNNER_TEMP}/libiamf-build" --target iamfdec --parallel 2
+          IAMFDEC="$(find "${RUNNER_TEMP}/libiamf-build" -type f -name iamfdec -perm -111 -print -quit)"
+          test -n "${IAMFDEC}"
+          printf '%s\n' "IAMFDEC=${IAMFDEC}" >> "${GITHUB_ENV}"
+          echo "LIBIAMF-REFERENCE-BUILD-PASS"
+
+      - name: Cross-check one shared IAMF fixture through iamf-tools and libiamf
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=output/iamf-tools-reference
+          DIFF_REL="$(python3 -c 'import json; print(json.load(open("config/iamf-differential-v1.json"))["fixture"]["path"])')"
+          DIFF_FIXTURE="iamf-tools/${DIFF_REL}"
+          test -s "${DIFF_FIXTURE}"
+
+          iamf-tools/bazel-bin/iamf/cli/probe_main \
+            --input_filename="${DIFF_FIXTURE}" \
+            --format=json \
+            --scan=counts \
+            > "${OUT}/differential-probe.json"
+          python3 -m json.tool "${OUT}/differential-probe.json" >/dev/null
+
+          iamf-tools/bazel-bin/iamf/cli/decoder_main \
+            --input_filename="${DIFF_FIXTURE}" \
+            --output_filename="${OUT}/differential-iamf-tools.wav" \
+            --output_layout=2.0
+          "${IAMFDEC}" -o3 "${OUT}/differential-libiamf.wav" -s0 -r 48000 -d 32 "${DIFF_FIXTURE}"
+          test -s "${OUT}/differential-iamf-tools.wav"
+          test -s "${OUT}/differential-libiamf.wav"
+
+          for NAME in iamf-tools libiamf; do
+            ffprobe -v error -select_streams a:0 \
+              -show_entries stream=sample_rate,channels,duration \
+              -of json "${OUT}/differential-${NAME}.wav" > "${OUT}/differential-${NAME}-ffprobe.json"
+            ffmpeg -v error -y -i "${OUT}/differential-${NAME}.wav" \
+              -f f32le -acodec pcm_f32le "${OUT}/differential-${NAME}.f32"
+          done
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          out = Path('output/iamf-tools-reference')
+          for name in ('iamf-tools', 'libiamf'):
+              data = json.loads((out / f'differential-{name}-ffprobe.json').read_text(encoding='utf-8'))
+              streams = data.get('streams') or []
+              if not streams:
+                  raise SystemExit(f'{name}: no decoded audio stream')
+              stream = streams[0]
+              if int(stream.get('sample_rate', 0)) != 48000 or int(stream.get('channels', 0)) != 2:
+                  raise SystemExit(f'{name}: expected stereo 48 kHz, got {stream}')
+          PY
+
+          python3 validation/open-immersive/iamf_cross_reference_evidence.py compare \
+            "${OUT}/differential-iamf-tools.f32" \
+            "${OUT}/differential-libiamf.f32" \
+            config/iamf-differential-v1.json \
+            "${OUT}/differential-summary.json" \
+            --sample-rate 48000 \
+            --channels 2
+          echo "IAMF-CROSS-REFERENCE-PASS"
 
       - name: Upload IAMF tools reference evidence
         if: always()
