@@ -1,0 +1,168 @@
+name: FFmpeg Compatibility CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/ffmpeg-compatibility-v1.json"
+      - "docs/ffmpeg-compatibility.md"
+      - "validation/surround-upmix/**"
+      - ".github/workflows/ffmpeg-compatibility-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ffmpeg-compatibility-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ffmpeg-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: baseline-6.1.1
+            version: 6.1.1
+            commit: e38092ef9395d7049f871ef4d5411eb410e283e0
+          - label: maintenance-6.1.6
+            version: 6.1.6
+            commit: f1e3a2bf7a2f2cde936d1ed97f09a26853d20125
+          - label: stable-9.0.1
+            version: 9.0.1
+            commit: bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa
+
+    steps:
+      - name: Checkout Aurora
+        uses: actions/checkout@v4
+
+      - name: Checkout exact FFmpeg commit
+        uses: actions/checkout@v4
+        with:
+          repository: FFmpeg/FFmpeg
+          ref: ${{ matrix.commit }}
+          path: ffmpeg-src
+          fetch-depth: 1
+
+      - name: Verify matrix pin against reviewed config
+        shell: bash
+        env:
+          EXPECTED_LABEL: ${{ matrix.label }}
+          EXPECTED_VERSION: ${{ matrix.version }}
+          EXPECTED_COMMIT: ${{ matrix.commit }}
+        run: |
+          set -euo pipefail
+          test "$(git -C ffmpeg-src rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          python3 - <<'PY'
+          import json, os
+          cfg = json.load(open('config/ffmpeg-compatibility-v1.json', encoding='utf-8'))
+          item = next(v for v in cfg['tested_variants'] if v['label'] == os.environ['EXPECTED_LABEL'])
+          assert item['version'] == os.environ['EXPECTED_VERSION']
+          assert item['commit'] == os.environ['EXPECTED_COMMIT']
+          assert cfg['acceptance']['all_variants_must_build_from_exact_commit'] is True
+          assert cfg['acceptance']['all_variants_must_pass_existing_surround_upmix_test'] is True
+          assert cfg['acceptance']['joc_object_recovery_claim'] is False
+          print('FFMPEG-MATRIX-PIN-PASS')
+          PY
+
+      - name: Install build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes build-essential nasm pkg-config
+
+      - name: Build exact FFmpeg release commit
+        working-directory: ffmpeg-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./configure \
+            --disable-doc \
+            --disable-debug \
+            --disable-ffplay \
+            --disable-network \
+            --disable-autodetect
+          make -j2 ffmpeg
+          test -x ./ffmpeg
+          ./ffmpeg -version | tee "${GITHUB_WORKSPACE}/ffmpeg-version.txt"
+
+      - name: Verify built binary identity
+        shell: bash
+        env:
+          EXPECTED_VERSION: ${{ matrix.version }}
+          EXPECTED_COMMIT: ${{ matrix.commit }}
+        run: |
+          set -euo pipefail
+          test "$(git -C ffmpeg-src rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          SHORT_SHA="$(git -C ffmpeg-src rev-parse --short=7 HEAD)"
+          # A shallow checkout by exact commit does not carry the release tag into
+          # FFmpeg's version script, so the binary normally reports the short SHA.
+          # Accept the reviewed release string as well in case upstream/version
+          # generation changes, while the full-commit equality above stays strict.
+          grep -Eq "^ffmpeg version (${SHORT_SHA}|n?${EXPECTED_VERSION})([[:space:]]|$)" ffmpeg-version.txt
+          printf 'FFMPEG-BINARY-IDENTITY-PASS version=%s commit=%s short=%s\n' \
+            "$EXPECTED_VERSION" "$EXPECTED_COMMIT" "$SHORT_SHA"
+
+      - name: Run Aurora IEC61937 and surround compatibility gate
+        shell: bash
+        env:
+          AURORA_FFMPEG_BIN: ${{ github.workspace }}/ffmpeg-src/ffmpeg
+        run: |
+          set -euo pipefail
+          python3 validation/surround-upmix/test_surround_upmix.py \
+            validation/surround-upmix/aurora-surround-upmix.sh \
+            | tee ffmpeg-surround-test.txt
+          grep -q "PASS: real E-AC-3 IEC61937 -> 7.1.4" ffmpeg-surround-test.txt
+          grep -q "no JOC or hardware proof" ffmpeg-surround-test.txt
+
+      - name: Capture bounded capability evidence
+        shell: bash
+        env:
+          LABEL: ${{ matrix.label }}
+          VERSION: ${{ matrix.version }}
+          COMMIT: ${{ matrix.commit }}
+        run: |
+          set -euo pipefail
+          mkdir -p output/ffmpeg-compatibility
+          FFMPEG="${GITHUB_WORKSPACE}/ffmpeg-src/ffmpeg"
+          "$FFMPEG" -hide_banner -buildconf > output/ffmpeg-compatibility/buildconf.txt 2>&1
+          "$FFMPEG" -hide_banner -demuxers > output/ffmpeg-compatibility/demuxers.txt 2>&1
+          "$FFMPEG" -hide_banner -muxers > output/ffmpeg-compatibility/muxers.txt 2>&1
+          "$FFMPEG" -hide_banner -decoders > output/ffmpeg-compatibility/decoders.txt 2>&1
+          "$FFMPEG" -hide_banner -filters > output/ffmpeg-compatibility/filters.txt 2>&1
+          cp ffmpeg-version.txt ffmpeg-surround-test.txt output/ffmpeg-compatibility/
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          binary = pathlib.Path('ffmpeg-src/ffmpeg')
+          evidence = {
+              'schema_version': 1,
+              'label': os.environ['LABEL'],
+              'reviewed_release': os.environ['VERSION'],
+              'upstream_commit': os.environ['COMMIT'],
+              'ffmpeg_binary_sha256': hashlib.sha256(binary.read_bytes()).hexdigest(),
+              'iec61937_eac3_ac3_surround_gate': 'PASS',
+              'verified_behaviors': [
+                  'AC-3/E-AC-3 encode and IEC61937/SPDIF carrier generation',
+                  'IEC61937/SPDIF ingest and channel-bed decode',
+                  '7.1 bed preservation in Aurora surround path',
+                  'synthetic-height isolation from center/LFE/mono',
+                  'PCM emitted before input EOF',
+                  'invalid input rejected without PCM output',
+                  '48 kHz float format conversion'
+              ],
+              'truth_boundary': 'Software-only FFmpeg CLI compatibility for Aurora channel-bed decode/resample/format-conversion path. No JOC/OAMD object recovery, protected-service compatibility, physical latency, hardware I/O, or universal FFmpeg compatibility is claimed.'
+          }
+          pathlib.Path('output/ffmpeg-compatibility/summary.json').write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload FFmpeg compatibility evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: ffmpeg-compatibility-${{ matrix.label }}
+          path: output/ffmpeg-compatibility/
+          if-no-files-found: error

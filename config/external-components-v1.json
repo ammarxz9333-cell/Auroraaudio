@@ -11,11 +11,17 @@
       "upstream": "https://github.com/FFmpeg/FFmpeg",
       "decision": "adopted",
       "integration": "external-process",
-      "tested_version": "6.1.1",
+      "tested_version": "6.1.6",
+      "pinned_commit": "f1e3a2bf7a2f2cde936d1ed97f09a26853d20125",
       "roles": ["channel-bed-decode", "resample", "format-conversion"],
       "object_metadata": "unsupported",
       "production_ready": false,
-      "evidence": ["docs/surround-upmix.md"]
+      "evidence": [
+        "docs/surround-upmix.md",
+        "config/ffmpeg-compatibility-v1.json",
+        "docs/ffmpeg-compatibility.md",
+        ".github/workflows/ffmpeg-compatibility-ci.yml"
+      ]
     },
     {
       "id": "camilladsp",

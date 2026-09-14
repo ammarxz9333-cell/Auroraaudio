@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "purpose": "Record the reviewed FFmpeg compatibility matrix that justified Aurora's maintenance-baseline update while retaining a separately reviewed current-stable candidate.",
+  "upstream": "https://github.com/FFmpeg/FFmpeg",
+  "tested_variants": [
+    {
+      "label": "baseline-6.1.1",
+      "version": "6.1.1",
+      "tag": "n6.1.1",
+      "commit": "e38092ef9395d7049f871ef4d5411eb410e283e0",
+      "role": "pre-matrix-aurora-baseline"
+    },
+    {
+      "label": "maintenance-6.1.6",
+      "version": "6.1.6",
+      "tag": "n6.1.6",
+      "commit": "f1e3a2bf7a2f2cde936d1ed97f09a26853d20125",
+      "role": "validated-maintenance-baseline"
+    },
+    {
+      "label": "stable-9.0.1",
+      "version": "9.0.1",
+      "tag": "n9.0.1",
+      "commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
+      "role": "validated-current-stable-candidate"
+    }
+  ],
+  "aurora_roles_under_test": [
+    "channel-bed-decode",
+    "iec61937-spdif-ingest",
+    "resample",
+    "format-conversion",
+    "channel-layout-and-order-preservation",
+    "invalid-input-rejection"
+  ],
+  "required_existing_test": "validation/surround-upmix/test_surround_upmix.py",
+  "required_script": "validation/surround-upmix/aurora-surround-upmix.sh",
+  "acceptance": {
+    "all_variants_must_build_from_exact_commit": true,
+    "all_variants_must_pass_existing_surround_upmix_test": true,
+    "object_metadata_claim": "unsupported",
+    "joc_object_recovery_claim": false,
+    "physical_latency_claim": false
+  },
+  "observed_result": {
+    "baseline-6.1.1": "PASS",
+    "maintenance-6.1.6": "PASS",
+    "stable-9.0.1": "PASS"
+  },
+  "decision_policy": "The green matrix promotes 6.1.6 as Aurora's pinned maintenance baseline. The green 9.0.1 lane establishes compatibility with this bounded software path but remains a major-version evaluation candidate; it does not establish universal FFmpeg compatibility or Atmos/JOC object support."
+}
