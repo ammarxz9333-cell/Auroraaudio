@@ -1,0 +1,70 @@
+{
+  "schema_version": 1,
+  "jocforge": {
+    "upstream": "https://github.com/chyinan/JOCForge",
+    "commit": "05a4108e0c6288130dec1203b301979a91475fca",
+    "license": "Apache-2.0",
+    "integration": "fixture-generator",
+    "runtime_dependency": false,
+    "production_encoder_claim": false,
+    "dolby_certification_claim": false
+  },
+  "upstream_scope": {
+    "profiles": ["idx0", "idx1", "idx2", "idx3", "idx4"],
+    "containers": ["raw-ec3", "bounded-cmaf"],
+    "block_partitions": ["6", "3+3", "2+2+2", "1+1+1+1+1+1"],
+    "dependent_substreams": "profile-bounded",
+    "lfe_ownership": ["independent", "dependent"],
+    "emdf_signaling": ["strict", "deployed"],
+    "input_boundary": "48 kHz integer PCM BW64/RF64/RIFF with supported static ADM",
+    "output_boundary": "standards-derived E-AC-3/JOC structural proof fixtures"
+  },
+  "aurora_use": {
+    "roles": [
+      "generate deterministic JOC fixtures for decoder validation",
+      "exercise profile/carriage/topology combinations absent from hand-authored fixtures",
+      "feed Harletty and OpenJOC differential validation",
+      "generate malformed and transition seeds only after the baseline smoke matrix is stable"
+    ],
+    "forbidden_roles": [
+      "production runtime encoder",
+      "certification oracle",
+      "proof of universal device interoperability",
+      "proof of perceptual encoder parity"
+    ]
+  },
+  "planned_pr_smoke_matrix": {
+    "target_vector_count": "12-20",
+    "must_cover": [
+      "idx0-through-idx4",
+      "raw-and-container-carriage",
+      "partition-6",
+      "partition-3+3",
+      "partition-2+2+2",
+      "partition-1x6",
+      "zero-one-and-multiple-dependent-substreams",
+      "independent-and-dependent-lfe-ownership",
+      "strict-and-deployed-emdf-signaling"
+    ]
+  },
+  "planned_differential": {
+    "aurora_harletty": true,
+    "aurora_openjoc": true,
+    "openjoc_standalone": true,
+    "compare": [
+      "frame-count",
+      "duration",
+      "finite-pcm",
+      "channel-activity",
+      "object-ids",
+      "topology",
+      "positions",
+      "gains",
+      "lfe-exclusion",
+      "recovery-semantics"
+    ],
+    "sample_identical_pcm_required": false
+  },
+  "status": "registered-not-yet-ci-validated",
+  "truth_boundary": "JOCForge is pinned as an external fixture/conformance generator. Its modeled structural coverage and upstream interoperability evidence do not establish Aurora runtime support, universal hardware compatibility, production mastering quality, lossless ADM recovery, Dolby equivalence, or certification. Aurora must promote individual generated vectors only after its own reproducible CI evidence exists."
+}
