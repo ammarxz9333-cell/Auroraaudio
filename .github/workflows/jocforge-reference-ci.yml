@@ -170,7 +170,7 @@ jobs:
           if int(payload['eac3'].get('access_unit_count', 0)) <= 0:
               raise SystemExit(f"OpenJOC found no access unit for {vector_id}")
           state = payload['validation'].get('stream_parse')
-          if state not in {'pass', 'fail'}:
+          if state not in {'pass', 'partial', 'fail'}:
               raise SystemExit(f"OpenJOC stream_parse was not classifiable for {vector_id}: {state!r}")
           print(f"OPENJOC-STRUCTURAL-CLASSIFIED id={vector_id} stream_parse={state} decoder_admissible={payload['validation'].get('decoder_admissible')}")
           PY
