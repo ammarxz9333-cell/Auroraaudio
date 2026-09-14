@@ -1,0 +1,220 @@
+name: JOCForge Reference CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/jocforge-reference-ci.yml"
+      - "config/external-components-v1.json"
+      - "config/jocforge-reference-v1.json"
+      - "config/jocforge-smoke-vectors-v1.json"
+      - "docs/jocforge-reference.md"
+      - "THIRD_PARTY_LICENSES.md"
+      - "validation/open-immersive/jocforge_reference_evidence.py"
+      - "validation/open-immersive/jocforge_openjoc_evidence.py"
+      - "validation/immersive/install-openjoc-reference.sh"
+      - "validation/immersive/test-openjoc-reference.sh"
+      - "validation/immersive/test-jocforge-harletty-matrix.sh"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  jocforge-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 50
+    steps:
+      - name: Checkout Aurora
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+
+      - name: Checkout pinned JOCForge
+        uses: actions/checkout@v4
+        with:
+          repository: chyinan/JOCForge
+          ref: 05a4108e0c6288130dec1203b301979a91475fca
+          path: external/JOCForge
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify immutable pin and Aurora registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C external/JOCForge rev-parse HEAD)" = "05a4108e0c6288130dec1203b301979a91475fca"
+          python3 scripts/check_external_components.py
+          python3 -m json.tool config/jocforge-reference-v1.json >/dev/null
+          python3 -m json.tool config/jocforge-smoke-vectors-v1.json >/dev/null
+
+      - name: Build and test pinned JOCForge
+        working-directory: external/JOCForge
+        run: |
+          cargo check --workspace --locked
+          cargo test --workspace --locked
+
+      - name: Generate representative fourteen-vector corpus
+        working-directory: external/JOCForge
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT=artifacts/aurora-smoke
+          mkdir -p "$OUT"
+
+          cargo run -p jocforge --locked -- fixture --seconds 1 "$OUT/synthetic-reference.bw64"
+
+          cargo run -p jocforge --locked -- encode "$OUT/synthetic-reference.bw64" "$OUT/idx0.ec3" --profile idx0
+          cargo run -p jocforge --locked -- encode "$OUT/synthetic-reference.bw64" "$OUT/idx1.ec3" --profile idx1
+          cargo run -p jocforge --locked -- encode "$OUT/synthetic-reference.bw64" "$OUT/idx2.ec3" --profile idx2
+          cargo run -p jocforge --locked -- encode "$OUT/synthetic-reference.bw64" "$OUT/idx3.ec3" --profile "5.X Phase"
+          cargo run -p jocforge --locked -- encode "$OUT/synthetic-reference.bw64" "$OUT/idx4.ec3" --profile "5.X+2 Phase"
+
+          cargo run -p jocforge --locked -- conformance-short idx0 6 "$OUT/partition-6.ec3"
+          cargo run -p jocforge --locked -- conformance-short idx0 3+3 "$OUT/partition-3x3.ec3"
+          cargo run -p jocforge --locked -- conformance-short idx0 2+2+2 "$OUT/partition-2x3.ec3"
+          cargo run -p jocforge --locked -- conformance-short idx0 1+1+1+1+1+1 "$OUT/partition-1x6.ec3"
+
+          cargo run -p jocforge --locked -- conformance-multi-dependent idx1 2 "$OUT/multi-dependent-2.ec3"
+          cargo run -p jocforge --locked -- conformance-short-multi-dependent idx0 1 3+3 "$OUT/short-multi-deployed.ec3" --emdf deployed --lfe absent
+          cargo run -p jocforge --locked -- conformance-short-multi-dependent idx0 1 2+2+2 "$OUT/independent-lfe.ec3" --emdf etsi --lfe independent
+          cargo run -p jocforge --locked -- conformance-dependent-lfe idx0 1 "$OUT/dependent-lfe-supplement.ec3"
+          cargo run -p jocforge --locked -- conformance-dependent-lfe idx0 1 "$OUT/dependent-lfe-replacement.ec3" --replacement
+
+          python3 ../../validation/open-immersive/jocforge_reference_evidence.py \
+            --fixture-dir "$OUT" \
+            --vector-manifest ../../config/jocforge-smoke-vectors-v1.json \
+            --output ../../output/evaluation/jocforge-reference-summary.json \
+            --generator-commit 05a4108e0c6288130dec1203b301979a91475fca
+
+      - name: Verify generated stream parseability
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          import pathlib
+          import subprocess
+          manifest = json.loads(pathlib.Path('config/jocforge-smoke-vectors-v1.json').read_text())
+          root = pathlib.Path('external/JOCForge/artifacts/aurora-smoke')
+          for vector in manifest['vectors']:
+              path = root / vector['output']
+              if not path.is_file() or path.stat().st_size <= 0:
+                  raise SystemExit(f"missing or empty vector: {path}")
+              subprocess.run(
+                  ['ffprobe', '-v', 'error', '-show_entries', 'stream=codec_name,sample_rate,channels', '-of', 'json', str(path)],
+                  check=True,
+                  stdout=subprocess.DEVNULL,
+              )
+          PY
+
+      - name: Install checksum-pinned OpenJOC reference
+        id: openjoc
+        shell: bash
+        run: |
+          OPENJOC_BIN="$(bash validation/immersive/install-openjoc-reference.sh "${{ runner.temp }}/openjoc-reference")"
+          echo "bin=$OPENJOC_BIN" >> "$GITHUB_OUTPUT"
+
+      - name: Collect role-appropriate OpenJOC evidence
+        shell: bash
+        env:
+          OPENJOC_BIN: ${{ steps.openjoc.outputs.bin }}
+          AURORA_OPENJOC_EXPECTED_VERSION: "0.17.0"
+        run: |
+          set -euo pipefail
+          ROOT="external/JOCForge/artifacts/aurora-smoke"
+          RESULTS="output/evaluation/jocforge-openjoc"
+          mkdir -p "$RESULTS"
+
+          VERSION_TEXT="$($OPENJOC_BIN --version 2>&1)"
+          printf '%s\n' "$VERSION_TEXT"
+          [[ "$VERSION_TEXT" == *"0.17.0"* ]]
+
+          python3 - <<'PY' > "${{ runner.temp }}/jocforge-vectors.tsv"
+          import json
+          import pathlib
+          manifest = json.loads(pathlib.Path('config/jocforge-smoke-vectors-v1.json').read_text())
+          for vector in manifest['vectors']:
+              print(f"{vector['id']}\t{vector['output']}\t{vector['openjoc_expectation']}")
+          PY
+
+          while IFS=$'\t' read -r vector_id output_name expectation; do
+            input="$ROOT/$output_name"
+            result_dir="$RESULTS/$vector_id"
+            mkdir -p "$result_dir"
+            case "$expectation" in
+              full-render-required)
+                bash validation/immersive/test-openjoc-reference.sh "$input" "$result_dir"
+                ;;
+              inspect-classification-required)
+                "$OPENJOC_BIN" inspect "$input" --json --objects --emdf --aus > "$result_dir/openjoc-inspect.json"
+                python3 - "$result_dir/openjoc-inspect.json" "$vector_id" <<'PY'
+          import json
+          import pathlib
+          import sys
+          path = pathlib.Path(sys.argv[1])
+          vector_id = sys.argv[2]
+          payload = json.loads(path.read_text(encoding='utf-8'))
+          if not isinstance(payload, dict) or not payload:
+              raise SystemExit(f"empty OpenJOC classification for {vector_id}")
+          for field in ('joc', 'eac3', 'validation', 'diagnostics'):
+              if not isinstance(payload.get(field), dict):
+                  raise SystemExit(f"OpenJOC classification missing {field} for {vector_id}")
+          if payload['joc'].get('present') is not True:
+              raise SystemExit(f"OpenJOC did not identify JOC presence for {vector_id}")
+          if int(payload['eac3'].get('access_unit_count', 0)) <= 0:
+              raise SystemExit(f"OpenJOC found no access unit for {vector_id}")
+          state = payload['validation'].get('stream_parse')
+          if state not in {'pass', 'partial', 'fail'}:
+              raise SystemExit(f"OpenJOC stream_parse was not classifiable for {vector_id}: {state!r}")
+          print(f"OPENJOC-STRUCTURAL-CLASSIFIED id={vector_id} stream_parse={state} decoder_admissible={payload['validation'].get('decoder_admissible')}")
+          PY
+                ;;
+              *)
+                echo "unknown OpenJOC expectation: $expectation" >&2
+                exit 1
+                ;;
+            esac
+          done < "${{ runner.temp }}/jocforge-vectors.tsv"
+
+          python3 validation/open-immersive/jocforge_openjoc_evidence.py \
+            --vector-manifest config/jocforge-smoke-vectors-v1.json \
+            --results-dir "$RESULTS" \
+            --output output/evaluation/jocforge-openjoc-summary.json
+
+      - name: Decode all JOCForge vectors through pinned Harletty bridge
+        shell: bash
+        env:
+          AURORA_JOCFORGE_HARLETTY_WORKDIR: ${{ runner.temp }}/jocforge-harletty
+        run: |
+          bash validation/immersive/test-jocforge-harletty-matrix.sh \
+            config/jocforge-smoke-vectors-v1.json \
+            external/JOCForge/artifacts/aurora-smoke \
+            output/evaluation/jocforge-harletty
+
+      - name: Show deterministic Aurora evidence summaries
+        run: |
+          cat output/evaluation/jocforge-reference-summary.json
+          cat output/evaluation/jocforge-openjoc-summary.json
+          cat output/evaluation/jocforge-harletty/jocforge-harletty-summary.json
+
+      - name: Upload JOCForge evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: jocforge-reference-${{ github.sha }}
+          path: |
+            output/evaluation/jocforge-reference-summary.json
+            output/evaluation/jocforge-openjoc-summary.json
+            output/evaluation/jocforge-openjoc/*/openjoc-inspect.json
+            output/evaluation/jocforge-openjoc/*/openjoc-7.1.4-ffprobe.json
+            output/evaluation/jocforge-harletty/*.json
+            config/jocforge-reference-v1.json
+            config/jocforge-smoke-vectors-v1.json
+          if-no-files-found: warn
+          retention-days: 14

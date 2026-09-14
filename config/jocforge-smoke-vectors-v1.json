@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "generator_commit": "05a4108e0c6288130dec1203b301979a91475fca",
+  "vector_count": 14,
+  "vectors": [
+    {"id":"profile-idx0","output":"idx0.ec3","coverage":["idx0","raw","baseline"],"openjoc_expectation":"full-render-required","harletty_expectation":"decode-classification-required"},
+    {"id":"profile-idx1","output":"idx1.ec3","coverage":["idx1","raw","baseline"],"openjoc_expectation":"full-render-required","harletty_expectation":"decode-classification-required"},
+    {"id":"profile-idx2","output":"idx2.ec3","coverage":["idx2","raw","baseline"],"openjoc_expectation":"full-render-required","harletty_expectation":"decode-classification-required"},
+    {"id":"profile-idx3","output":"idx3.ec3","coverage":["idx3","raw","baseline","phase-signaling"],"openjoc_expectation":"full-render-required","harletty_expectation":"decode-classification-required"},
+    {"id":"profile-idx4","output":"idx4.ec3","coverage":["idx4","raw","baseline","phase-signaling"],"openjoc_expectation":"full-render-required","harletty_expectation":"decode-classification-required"},
+    {"id":"partition-6","output":"partition-6.ec3","coverage":["idx0","partition-6","conformance"],"openjoc_expectation":"inspect-classification-required","harletty_expectation":"bounded-classification-required"},
+    {"id":"partition-3x3","output":"partition-3x3.ec3","coverage":["idx0","partition-3+3","conformance"],"openjoc_expectation":"inspect-classification-required","harletty_expectation":"bounded-classification-required"},
+    {"id":"partition-2x3","output":"partition-2x3.ec3","coverage":["idx0","partition-2+2+2","conformance"],"openjoc_expectation":"inspect-classification-required","harletty_expectation":"bounded-classification-required"},
+    {"id":"partition-1x6","output":"partition-1x6.ec3","coverage":["idx0","partition-1x6","conformance"],"openjoc_expectation":"inspect-classification-required","harletty_expectation":"bounded-classification-required"},
+    {"id":"multi-dependent-2","output":"multi-dependent-2.ec3","coverage":["idx1","multiple-dependent-substreams","strict-emdf"],"openjoc_expectation":"inspect-classification-required","harletty_expectation":"bounded-classification-required"},
+    {"id":"short-multi-deployed","output":"short-multi-deployed.ec3","coverage":["idx0","dependent-substream","partition-3+3","deployed-emdf"],"openjoc_expectation":"inspect-classification-required","harletty_expectation":"bounded-classification-required"},
+    {"id":"independent-lfe","output":"independent-lfe.ec3","coverage":["idx0","dependent-substream","partition-2+2+2","independent-lfe","strict-emdf"],"openjoc_expectation":"inspect-classification-required","harletty_expectation":"bounded-classification-required"},
+    {"id":"dependent-lfe-supplement","output":"dependent-lfe-supplement.ec3","coverage":["idx0","dependent-lfe","supplement"],"openjoc_expectation":"inspect-classification-required","harletty_expectation":"bounded-classification-required"},
+    {"id":"dependent-lfe-replacement","output":"dependent-lfe-replacement.ec3","coverage":["idx0","dependent-lfe","replacement"],"openjoc_expectation":"inspect-classification-required","harletty_expectation":"bounded-classification-required"}
+  ],
+  "truth_boundary": "This is a representative Aurora PR-smoke matrix, not an exhaustive traversal of JOCForge's modeled capability lattice. Full source-derived profile vectors must satisfy OpenJOC's complete programme inspection and 7.1.4 render contract. Harletty is independently classified: baseline vectors must be accepted and emit decoded frames, while minimal structural conformance probes must terminate without a harness panic and produce a bounded explicit outcome even when the pinned bridge rejects or does not expose object metadata for that topology. A vector is considered generated evidence only after the exact pinned CI job produces the named non-empty output and records its hash."
+}
