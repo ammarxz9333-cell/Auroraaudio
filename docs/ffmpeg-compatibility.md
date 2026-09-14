@@ -12,7 +12,7 @@ The compatibility lane compares three exact upstream release commits:
 | maintenance | 6.1.6 | `f1e3a2bf7a2f2cde936d1ed97f09a26853d20125` | latest 6.1 maintenance candidate |
 | stable | 9.0.1 | `bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa` | current stable candidate reviewed on 2026-09-14 |
 
-The release commits were resolved from FFmpeg's signed upstream release tags. CI checks out the exact commit rather than following a branch or `latest` alias.
+The release commits were resolved from FFmpeg's signed upstream release tags. CI checks out the exact commit rather than following a branch or `latest` alias. Because the CI checkout is shallow and by commit SHA, FFmpeg's generated version string can report the short commit SHA instead of the release label; CI therefore verifies the full Git commit exactly and accepts either that short SHA or the reviewed release label in `ffmpeg -version`.
 
 ## Gate
 
