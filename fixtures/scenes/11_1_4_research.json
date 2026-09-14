@@ -1,5 +1,6 @@
 {
-  "layout": "11.1.4-research-custom",
+  "layout": "custom",
+  "research_layout": "11.1.4-research-custom",
   "layout_semantics": "Aurora research geometry only; not asserted as a standardized Dolby, ITU, IAMF, MPEG-H, or HDMI channel layout",
   "listener": {
     "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
