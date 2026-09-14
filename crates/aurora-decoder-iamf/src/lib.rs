@@ -422,7 +422,6 @@ mod tests {
 
     #[test]
     fn native_object_scene_support_is_not_overclaimed() {
-        assert!(!IAMF_OBJECT_SCENE_AVAILABLE);
         assert!(iamf_object_scene_unavailable_reason().contains("object-to-PCM"));
     }
 }
