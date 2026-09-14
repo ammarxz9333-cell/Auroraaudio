@@ -1,0 +1,89 @@
+name: JOCForge Reference CI
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/jocforge-reference-ci.yml"
+      - "config/external-components-v1.json"
+      - "config/jocforge-reference-v1.json"
+      - "docs/jocforge-reference.md"
+      - "THIRD_PARTY_LICENSES.md"
+      - "validation/open-immersive/jocforge_reference_evidence.py"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  jocforge-smoke:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - name: Checkout Aurora
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Install FFmpeg
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+
+      - name: Checkout pinned JOCForge
+        uses: actions/checkout@v4
+        with:
+          repository: chyinan/JOCForge
+          ref: 05a4108e0c6288130dec1203b301979a91475fca
+          path: external/JOCForge
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Verify immutable pin and Aurora registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C external/JOCForge rev-parse HEAD)" = "05a4108e0c6288130dec1203b301979a91475fca"
+          python3 scripts/check_external_components.py
+          python3 -m json.tool config/jocforge-reference-v1.json >/dev/null
+
+      - name: Build and test pinned JOCForge
+        working-directory: external/JOCForge
+        run: |
+          cargo check --workspace --locked
+          cargo test --workspace --locked
+
+      - name: Generate representative five-profile smoke corpus
+        working-directory: external/JOCForge
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p artifacts/aurora-smoke
+          cargo run -p jocforge --locked -- fixture --seconds 1 artifacts/aurora-smoke/synthetic-reference.bw64
+          cargo run -p jocforge --locked -- encode artifacts/aurora-smoke/synthetic-reference.bw64 artifacts/aurora-smoke/idx0.ec3 --profile idx0
+          cargo run -p jocforge --locked -- encode artifacts/aurora-smoke/synthetic-reference.bw64 artifacts/aurora-smoke/idx1.ec3 --profile idx1
+          cargo run -p jocforge --locked -- encode artifacts/aurora-smoke/synthetic-reference.bw64 artifacts/aurora-smoke/idx2.ec3 --profile idx2
+          cargo run -p jocforge --locked -- encode artifacts/aurora-smoke/synthetic-reference.bw64 artifacts/aurora-smoke/idx3.ec3 --profile "5.X Phase"
+          cargo run -p jocforge --locked -- encode artifacts/aurora-smoke/synthetic-reference.bw64 artifacts/aurora-smoke/idx4.ec3 --profile "5.X+2 Phase"
+          for file in artifacts/aurora-smoke/idx{0,1,2,3,4}.ec3; do
+            test -s "$file"
+            ffprobe -v error -show_entries stream=codec_name,sample_rate,channels -of json "$file" >/dev/null
+          done
+
+      - name: Write deterministic Aurora evidence summary
+        run: |
+          mkdir -p output/evaluation
+          python3 validation/open-immersive/jocforge_reference_evidence.py \
+            --fixture-dir external/JOCForge/artifacts/aurora-smoke \
+            --output output/evaluation/jocforge-reference-summary.json \
+            --generator-commit 05a4108e0c6288130dec1203b301979a91475fca
+          cat output/evaluation/jocforge-reference-summary.json
+
+      - name: Upload JOCForge evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: jocforge-reference-${{ github.sha }}
+          path: |
+            output/evaluation/jocforge-reference-summary.json
+            config/jocforge-reference-v1.json
+          retention-days: 14
