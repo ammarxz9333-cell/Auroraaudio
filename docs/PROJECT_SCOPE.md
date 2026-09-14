@@ -25,3 +25,7 @@ Aurora is a hardware-agnostic immersive-audio software project.
 - claims of proprietary-format certification without the corresponding licensed implementation and evidence.
 
 A future hardware implementation can consume Aurora through adapters, but no named device is the canonical Aurora target.
+
+## Canonical pre-hardware roadmap
+
+The current planning document for work before hardware selection is [`pre-hardware-roadmap-v5.md`](pre-hardware-roadmap-v5.md). It defines the software/reference-validation gates, network research, hardware reference-design survey, legitimate protected-service/eARC path, physical acceptance plan, and hardware-freeze exit criteria without making any hardware candidate canonical before the evidence gates are complete.
