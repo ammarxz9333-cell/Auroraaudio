@@ -185,6 +185,27 @@
       ]
     },
     {
+      "id": "spatial-audio-framework",
+      "upstream": "https://github.com/leomccormack/Spatial_Audio_Framework",
+      "decision": "evaluate-active",
+      "integration": "external-reference-only",
+      "tested_version": "1.3.5",
+      "pinned_commit": "18fd5aba46e20787b51f28f7197a68506c965c07",
+      "license": "ISC core validation subset; GPLv2 tracker/HADES translation units excluded from Aurora validation build graph",
+      "roles": ["vbap-reference", "3d-speaker-render-reference", "ambisonics-reference", "differential-validation"],
+      "object_metadata": "not-applicable-gain-render-reference",
+      "production_ready": false,
+      "evidence": [
+        "config/saf-reference-v1.json",
+        "validation/open-immersive/saf-permissive-core.patch",
+        "validation/open-immersive/saf_vbap_reference_probe.c",
+        "validation/open-immersive/saf_vbap_reference_evidence.py",
+        ".github/workflows/saf-vbap-reference-ci.yml",
+        "docs/saf-vbap-reference.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
       "id": "fraunhofer-mpeghdec",
       "upstream": "https://github.com/Fraunhofer-IIS/mpeghdec",
       "decision": "evaluate-active",
