@@ -1,0 +1,207 @@
+name: EBU EAR Renderer Reference CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/external-components-v1.json"
+      - "config/ear-renderer-reference-v1.json"
+      - "docs/ear-renderer-reference.md"
+      - "validation/open-immersive/ear_renderer_reference_evidence.py"
+      - "THIRD_PARTY_LICENSES.md"
+      - ".github/workflows/ear-renderer-reference-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ear-renderer-reference-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ear-renderer-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    env:
+      EAR_COMMIT: 5bb17b4278e8e67f24f90efb7a81a8aea7aed4f3
+      INPUT_BLOB: 668f9e8254ad5832b0f4cb26efa2155609ded87c
+      META_BLOB: eda7615ff44114411a0d5f6410cd0b337a5be1a6
+      BWF_BLOB: e67e02df5c5eceb2a904057929404e81d75a3981
+
+    steps:
+      - name: Checkout Aurora
+        uses: actions/checkout@v4
+
+      - name: Checkout exact pinned EBU EAR
+        uses: actions/checkout@v4
+        with:
+          repository: ebu/ebu_adm_renderer
+          ref: 5bb17b4278e8e67f24f90efb7a81a8aea7aed4f3
+          path: ear-ref
+          fetch-depth: 1
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Verify immutable pin, fixture blobs, and Aurora registry
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C ear-ref rev-parse HEAD)" = "$EAR_COMMIT"
+          test "$(git -C ear-ref rev-parse HEAD:ear/test/data/test.wav)" = "$INPUT_BLOB"
+          test "$(git -C ear-ref rev-parse HEAD:ear/test/data/test.yaml)" = "$META_BLOB"
+          test "$(git -C ear-ref rev-parse HEAD:ear/test/data/test_bwf.wav)" = "$BWF_BLOB"
+          python3 scripts/check_external_components.py
+          python3 - <<'PY'
+          import json
+          cfg = json.load(open('config/ear-renderer-reference-v1.json', encoding='utf-8'))
+          registry = json.load(open('config/external-components-v1.json', encoding='utf-8'))
+          components = {item['id']: item for item in registry['components']}
+          assert cfg['reference']['commit'] == '5bb17b4278e8e67f24f90efb7a81a8aea7aed4f3'
+          assert cfg['reference']['version'] == '2.1.0'
+          assert cfg['fixture']['input_wav_git_blob'] == '668f9e8254ad5832b0f4cb26efa2155609ded87c'
+          assert cfg['fixture']['metadata_git_blob'] == 'eda7615ff44114411a0d5f6410cd0b337a5be1a6'
+          assert cfg['fixture']['upstream_bwf_git_blob'] == 'e67e02df5c5eceb2a904057929404e81d75a3981'
+          assert components['ebu-ear']['pinned_commit'] == cfg['reference']['commit']
+          assert components['ebu-ear']['production_ready'] is False
+          print('EAR-REFERENCE-PINS-PASS')
+          PY
+
+      - name: Install exact pinned EAR and host audio tooling
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg
+          python -m pip install --upgrade pip
+          python -m pip install ./ear-ref
+          ear-render --help >/dev/null
+          ear-utils --help >/dev/null
+          echo "EAR-REFERENCE-INSTALL-PASS"
+
+      - name: Self-test EAR evidence analyzer
+        run: python3 validation/open-immersive/ear_renderer_reference_evidence.py self-test
+
+      - name: Generate the pinned upstream ADM BWF deterministically
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/ear-renderer-reference"
+          INPUT="${GITHUB_WORKSPACE}/ear-ref/ear/test/data/test.wav"
+          META="${GITHUB_WORKSPACE}/ear-ref/ear/test/data/test.yaml"
+          UPSTREAM_BWF="${GITHUB_WORKSPACE}/ear-ref/ear/test/data/test_bwf.wav"
+          mkdir -p "$OUT"
+          ear-utils make_test_bwf -m "$META" -i "$INPUT" "$OUT/generated-test-bwf.wav"
+          cmp "$OUT/generated-test-bwf.wav" "$UPSTREAM_BWF"
+          printf '%s\n' "EAR_INPUT=$INPUT" >> "$GITHUB_ENV"
+          printf '%s\n' "EAR_META=$META" >> "$GITHUB_ENV"
+          printf '%s\n' "EAR_UPSTREAM_BWF=$UPSTREAM_BWF" >> "$GITHUB_ENV"
+          echo "EAR-BWF-DETERMINISM-PASS"
+
+      - name: Render pinned fixture to 4+5+0 and 4+7+0
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/ear-renderer-reference"
+          ear-render --strict --fail-on-overload -d -s '4+5+0' \
+            "$OUT/generated-test-bwf.wav" "$OUT/render-4-5-0.wav"
+          ear-render --strict --fail-on-overload -d -s '4+7+0' \
+            "$OUT/generated-test-bwf.wav" "$OUT/render-4-7-0.wav"
+          test -s "$OUT/render-4-5-0.wav"
+          test -s "$OUT/render-4-7-0.wav"
+          echo "EAR-BOUNDED-RENDER-PASS"
+
+      - name: Prove plain WAV without ADM fails closed
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/ear-renderer-reference"
+          set +e
+          ear-render -s '4+5+0' "$EAR_INPUT" "$OUT/plain-wav-should-fail.wav" \
+            >"$OUT/plain-wav.stdout.txt" 2>"$OUT/plain-wav.stderr.txt"
+          EXIT_CODE=$?
+          set -e
+          test "$EXIT_CODE" -ne 0
+          printf '%s\n' "PLAIN_WAV_EXIT=$EXIT_CODE" >> "$GITHUB_ENV"
+          echo "EAR-PLAIN-WAV-FAIL-CLOSED-PASS"
+
+      - name: Probe and normalize reference PCM
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/ear-renderer-reference"
+          ffprobe -v error -select_streams a:0 \
+            -show_entries stream=sample_rate,channels \
+            -of json "$EAR_INPUT" > "$OUT/input-ffprobe.json"
+          ffprobe -v error -select_streams a:0 \
+            -show_entries stream=sample_rate,channels \
+            -of json "$OUT/render-4-5-0.wav" > "$OUT/render-4-5-0-ffprobe.json"
+          ffprobe -v error -select_streams a:0 \
+            -show_entries stream=sample_rate,channels \
+            -of json "$OUT/render-4-7-0.wav" > "$OUT/render-4-7-0-ffprobe.json"
+
+          ffmpeg -v error -y -i "$EAR_INPUT" -f f32le -acodec pcm_f32le "$OUT/input.f32"
+          ffmpeg -v error -y -i "$OUT/render-4-5-0.wav" -f f32le -acodec pcm_f32le "$OUT/render-4-5-0.f32"
+          ffmpeg -v error -y -i "$OUT/render-4-7-0.wav" -f f32le -acodec pcm_f32le "$OUT/render-4-7-0.f32"
+
+          python3 - "$OUT" "$GITHUB_ENV" <<'PY'
+          import json, pathlib, sys
+          out = pathlib.Path(sys.argv[1])
+          env_path = pathlib.Path(sys.argv[2])
+          expected = {
+              'input': 4,
+              'render-4-5-0': 10,
+              'render-4-7-0': 12,
+          }
+          rates = {}
+          with env_path.open('a', encoding='utf-8') as env:
+              for name, channels_expected in expected.items():
+                  doc = json.loads((out / f'{name}-ffprobe.json').read_text(encoding='utf-8'))
+                  streams = doc.get('streams') or []
+                  if len(streams) != 1:
+                      raise SystemExit(f'{name}: expected one audio stream, got {len(streams)}')
+                  stream = streams[0]
+                  rate = int(stream.get('sample_rate', 0))
+                  channels = int(stream.get('channels', 0))
+                  if rate != 48000 or channels != channels_expected:
+                      raise SystemExit(f'{name}: unexpected stream metadata {stream}')
+                  rates[name] = rate
+              env.write(f'EAR_INPUT_RATE={rates["input"]}\n')
+              env.write(f'EAR_45_RATE={rates["render-4-5-0"]}\n')
+              env.write(f'EAR_47_RATE={rates["render-4-7-0"]}\n')
+          print('EAR-PCM-PROBE-PASS', rates)
+          PY
+
+      - name: Emit bounded EAR renderer evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/ear-renderer-reference"
+          python3 validation/open-immersive/ear_renderer_reference_evidence.py analyze \
+            "$OUT/input.f32" \
+            "$OUT/render-4-5-0.f32" \
+            "$OUT/render-4-7-0.f32" \
+            config/ear-renderer-reference-v1.json \
+            "$OUT/summary.json" \
+            --fixture "$EAR_INPUT" \
+            --metadata "$EAR_META" \
+            --generated-bwf "$OUT/generated-test-bwf.wav" \
+            --upstream-bwf "$EAR_UPSTREAM_BWF" \
+            --input-rate "$EAR_INPUT_RATE" \
+            --render-4-5-rate "$EAR_45_RATE" \
+            --render-4-7-rate "$EAR_47_RATE" \
+            --plain-wav-exit "$PLAIN_WAV_EXIT"
+
+      - name: Upload EAR renderer reference evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: ear-renderer-reference-${{ github.sha }}
+          path: |
+            output/ear-renderer-reference/summary.json
+            output/ear-renderer-reference/*-ffprobe.json
+            output/ear-renderer-reference/plain-wav.stderr.txt
+          if-no-files-found: error
+          retention-days: 14
