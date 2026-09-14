@@ -78,7 +78,8 @@ struct Metadata {
     commit_sha: String,
     scene_semantics: &'static str,
     trim_semantics: &'static str,
-    wav_semantics: &'static str,
+    wav_exported: bool,
+    wav_semantics: String,
     evidence_boundary: &'static str,
 }
 
@@ -92,6 +93,7 @@ struct Summary {
     gain_step_violations: usize,
     normalization_failures: usize,
     non_finite_failures: usize,
+    wav_exported: bool,
     artifacts: Vec<String>,
 }
 
@@ -107,10 +109,11 @@ fn main() -> Result<()> {
     validate_cli(&cli)?;
     let summary = evaluate(&cli, &reproducible_command())?;
     println!(
-        "renderer=aurora-vbap3d passed={} triplets={} closed_hull={} max_gain_step={:.6} gain_step_violations={} normalization_failures={} non_finite_failures={}",
+        "renderer=aurora-vbap3d passed={} triplets={} closed_hull={} wav_exported={} max_gain_step={:.6} gain_step_violations={} normalization_failures={} non_finite_failures={}",
         summary.passed,
         summary.validated_triplets,
         summary.listener_inside_hull,
+        summary.wav_exported,
         summary.observed_max_gain_step,
         summary.gain_step_violations,
         summary.normalization_failures,
@@ -163,9 +166,11 @@ fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
     for speaker in &mut speakers {
         speaker.gain_db = 0.0;
     }
-    // RIFF mask order differs from Aurora's canonical order for 7.1.4.
-    // Keep renderer/JSON in canonical order; reorder samples only at WAV export.
-    validate_wav_roles(&speakers)?;
+    // WAVE_FORMAT_EXTENSIBLE has no truthful mask bit for Aurora custom roles.
+    // Standard layouts still export WAV exactly as before. Custom layouts keep
+    // gain/delay JSON evidence and deliberately skip the WAV rather than invent
+    // misleading channel semantics.
+    let wav_exported = wav_roles_supported(&speakers)?;
 
     let roles = speakers
         .iter()
@@ -291,23 +296,27 @@ fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
             delay_samples: delays,
         });
 
-        for local_frame in 0..frames {
-            let frame = start_frame + local_frame;
-            let phase = TAU * 440.0 * frame as f32 / cli.sample_rate as f32;
-            let sample = 0.1 * phase.sin();
-            for (channel, gain) in pcm.iter_mut().zip(gains.iter()) {
-                channel.push(sample * *gain);
+        if wav_exported {
+            for local_frame in 0..frames {
+                let frame = start_frame + local_frame;
+                let phase = TAU * 440.0 * frame as f32 / cli.sample_rate as f32;
+                let sample = 0.1 * phase.sin();
+                for (channel, gain) in pcm.iter_mut().zip(gains.iter()) {
+                    channel.push(sample * *gain);
+                }
             }
         }
         previous_gains = Some(gains);
     }
 
-    aurora_audio_io::write_wav_f32_with_channel_roles(
-        cli.output_dir.join("rendered-reference.wav"),
-        cli.sample_rate,
-        &pcm,
-        &roles,
-    )?;
+    if wav_exported {
+        aurora_audio_io::write_wav_f32_with_channel_roles(
+            cli.output_dir.join("rendered-reference.wav"),
+            cli.sample_rate,
+            &pcm,
+            &roles,
+        )?;
+    }
     write_json_artifact(
         cli.output_dir.join("gain-trajectory.json"),
         "vbap3d-gain-trajectory",
@@ -319,6 +328,11 @@ fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
         &delay_frames,
     )?;
 
+    let wav_semantics = if wav_exported {
+        "IEEE-float WAVE_FORMAT_EXTENSIBLE; 440 Hz mono reference routed by block gains; propagation delays are not applied to PCM".to_owned()
+    } else {
+        "not exported: one or more fixture channel roles have no standard WAVE_FORMAT_EXTENSIBLE mask bit; JSON gain/delay evidence remains authoritative".to_owned()
+    };
     let metadata = Metadata {
         renderer: "aurora-vbap3d",
         sample_rate: cli.sample_rate,
@@ -332,8 +346,9 @@ fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
         commit_sha: std::env::var("GITHUB_SHA").unwrap_or_else(|_| "unknown".to_owned()),
         scene_semantics: "Aurora fixture; listener and speaker geometry loaded from JSON",
         trim_semantics: "speaker gain_db normalized to 0 dB for renderer-only unit-power evidence",
-        wav_semantics: "IEEE-float WAVE_FORMAT_EXTENSIBLE; 440 Hz mono reference routed by block gains; propagation delays are not applied to PCM",
-        evidence_boundary: "software-only; no Atmos/JOC, HRTF, physical hardware, acoustic, or product-readiness claim",
+        wav_exported,
+        wav_semantics,
+        evidence_boundary: "software-only; no Atmos/JOC, HRTF, physical hardware, acoustic, standard-layout, or product-readiness claim beyond the explicit fixture semantics",
     };
     write_json_artifact(
         cli.output_dir.join("metadata.json"),
@@ -347,6 +362,16 @@ fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
         && gain_step_violations == 0
         && normalization_failures == 0
         && non_finite_failures == 0;
+    let mut artifacts = vec![
+        "gain-trajectory.json".to_owned(),
+        "delay-trajectory.json".to_owned(),
+        "metadata.json".to_owned(),
+        "command.txt".to_owned(),
+        "summary.json".to_owned(),
+    ];
+    if wav_exported {
+        artifacts.insert(0, "rendered-reference.wav".to_owned());
+    }
     let summary = Summary {
         passed,
         validated_triplets,
@@ -356,14 +381,8 @@ fn evaluate(cli: &Cli, command: &str) -> Result<Summary> {
         gain_step_violations,
         normalization_failures,
         non_finite_failures,
-        artifacts: vec![
-            "rendered-reference.wav".to_owned(),
-            "gain-trajectory.json".to_owned(),
-            "delay-trajectory.json".to_owned(),
-            "metadata.json".to_owned(),
-            "command.txt".to_owned(),
-            "summary.json".to_owned(),
-        ],
+        wav_exported,
+        artifacts,
     };
     write_json_artifact(
         cli.output_dir.join("summary.json"),
@@ -383,19 +402,18 @@ fn source_position(progress: f32, listener: &Listener) -> Vector3 {
     )
 }
 
-fn validate_wav_roles(speakers: &[Speaker]) -> Result<()> {
+fn wav_roles_supported(speakers: &[Speaker]) -> Result<bool> {
     let mut seen = 0_u32;
     for speaker in speakers {
-        let bit = speaker
-            .channel_role
-            .wav_channel_mask_bit()
-            .with_context(|| format!("WAV requires a standard channel role: {}", speaker.id))?;
+        let Some(bit) = speaker.channel_role.wav_channel_mask_bit() else {
+            return Ok(false);
+        };
         if seen & bit != 0 {
             bail!("duplicate WAV channel role: {}", speaker.channel_role);
         }
         seen |= bit;
     }
-    Ok(())
+    Ok(true)
 }
 
 fn write_json_artifact<T: Serialize>(
@@ -434,6 +452,19 @@ fn reproducible_command() -> String {
 mod tests {
     use super::*;
 
+    fn speaker(id: &str, role: ChannelRole) -> Speaker {
+        Speaker {
+            id: id.to_owned(),
+            label: id.to_owned(),
+            channel_role: role,
+            position: Vector3::new(0.0, 1.0, 0.0),
+            orientation: Vector3::ZERO,
+            gain_db: 0.0,
+            delay_samples: 0.0,
+            enabled: true,
+        }
+    }
+
     #[test]
     fn trajectory_exercises_height_above_and_below_listener() {
         let listener = Listener {
@@ -464,5 +495,23 @@ mod tests {
             .map(|role| role.wav_channel_mask_bit().unwrap())
             .collect::<Vec<_>>();
         assert!(bits.windows(2).all(|pair| pair[0] < pair[1]));
+    }
+
+    #[test]
+    fn custom_roles_deliberately_disable_wav_export() {
+        let speakers = vec![
+            speaker("front-left", ChannelRole::FrontLeft),
+            speaker("front-wide-left", ChannelRole::Custom("front-wide-left".to_owned())),
+        ];
+        assert!(!wav_roles_supported(&speakers).unwrap());
+    }
+
+    #[test]
+    fn duplicate_standard_roles_remain_an_error() {
+        let speakers = vec![
+            speaker("front-left-a", ChannelRole::FrontLeft),
+            speaker("front-left-b", ChannelRole::FrontLeft),
+        ];
+        assert!(wav_roles_supported(&speakers).is_err());
     }
 }
