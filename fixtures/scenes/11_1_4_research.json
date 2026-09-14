@@ -1,0 +1,42 @@
+{
+  "layout": "11.1.4-research-custom",
+  "layout_semantics": "Aurora research geometry only; not asserted as a standardized Dolby, ITU, IAMF, MPEG-H, or HDMI channel layout",
+  "listener": {
+    "position": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "orientation": { "x": 0.0, "y": 1.0, "z": 0.0 },
+    "ear_height": 1.2
+  },
+  "speakers": [
+    { "id": "front-left", "label": "Front Left", "channel_role": "front-left", "position": { "x": -1.4, "y": 1.7, "z": 0.0 }, "orientation": { "x": 0.0, "y": -1.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "front-right", "label": "Front Right", "channel_role": "front-right", "position": { "x": 1.4, "y": 1.7, "z": 0.0 }, "orientation": { "x": 0.0, "y": -1.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "center", "label": "Center", "channel_role": "front-center", "position": { "x": 0.0, "y": 1.9, "z": 0.0 }, "orientation": { "x": 0.0, "y": -1.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "lfe", "label": "Subwoofer/LFE", "channel_role": "low-frequency-effects", "position": { "x": 0.0, "y": 0.8, "z": -0.8 }, "orientation": { "x": 0.0, "y": 1.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+
+    { "id": "front-wide-left", "label": "Front Wide Left", "channel_role": "front-wide-left", "position": { "x": -2.0, "y": 0.9, "z": 0.0 }, "orientation": { "x": 0.8, "y": -0.4, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "front-wide-right", "label": "Front Wide Right", "channel_role": "front-wide-right", "position": { "x": 2.0, "y": 0.9, "z": 0.0 }, "orientation": { "x": -0.8, "y": -0.4, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+
+    { "id": "surround-left", "label": "Surround Left", "channel_role": "surround-left", "position": { "x": -2.1, "y": -0.1, "z": 0.0 }, "orientation": { "x": 1.0, "y": 0.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "surround-right", "label": "Surround Right", "channel_role": "surround-right", "position": { "x": 2.1, "y": -0.1, "z": 0.0 }, "orientation": { "x": -1.0, "y": 0.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+
+    { "id": "rear-wide-left", "label": "Rear Wide Left", "channel_role": "rear-wide-left", "position": { "x": -1.9, "y": -1.0, "z": 0.0 }, "orientation": { "x": 0.8, "y": 0.4, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "rear-wide-right", "label": "Rear Wide Right", "channel_role": "rear-wide-right", "position": { "x": 1.9, "y": -1.0, "z": 0.0 }, "orientation": { "x": -0.8, "y": 0.4, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+
+    { "id": "surround-back-left", "label": "Surround Back Left", "channel_role": "surround-back-left", "position": { "x": -1.2, "y": -1.9, "z": 0.0 }, "orientation": { "x": 0.0, "y": 1.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "surround-back-right", "label": "Surround Back Right", "channel_role": "surround-back-right", "position": { "x": 1.2, "y": -1.9, "z": 0.0 }, "orientation": { "x": 0.0, "y": 1.0, "z": 0.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+
+    { "id": "top-front-left", "label": "Top Front Left", "channel_role": "top-front-left", "position": { "x": -1.0, "y": 1.1, "z": 1.9 }, "orientation": { "x": 0.0, "y": 0.0, "z": -1.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "top-front-right", "label": "Top Front Right", "channel_role": "top-front-right", "position": { "x": 1.0, "y": 1.1, "z": 1.9 }, "orientation": { "x": 0.0, "y": 0.0, "z": -1.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "top-rear-left", "label": "Top Rear Left", "channel_role": "top-rear-left", "position": { "x": -1.0, "y": -1.1, "z": 1.9 }, "orientation": { "x": 0.0, "y": 0.0, "z": -1.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true },
+    { "id": "top-rear-right", "label": "Top Rear Right", "channel_role": "top-rear-right", "position": { "x": 1.0, "y": -1.1, "z": 1.9 }, "orientation": { "x": 0.0, "y": 0.0, "z": -1.0 }, "gain_db": 0.0, "delay_samples": 0.0, "enabled": true }
+  ],
+  "object": { "id": "moving-source", "gain_db": -6.0, "spread": 0.0 },
+  "trajectory": {
+    "type": "circle",
+    "center": { "x": 0.0, "y": 0.0, "z": 0.0 },
+    "radius": 1.4,
+    "z": 0.8,
+    "start_degrees": 0.0,
+    "revolutions_per_second": 0.25
+  },
+  "block_size": 256
+}
