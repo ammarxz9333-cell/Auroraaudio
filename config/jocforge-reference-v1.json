@@ -33,19 +33,40 @@
       "proof of perceptual encoder parity"
     ]
   },
+  "proven_profile_smoke": {
+    "workflow": ".github/workflows/jocforge-reference-ci.yml",
+    "generator_commit": "05a4108e0c6288130dec1203b301979a91475fca",
+    "profiles": ["idx0", "idx1", "idx2", "idx3", "idx4"],
+    "assertions": [
+      "pinned upstream builds and tests",
+      "synthetic ADM fixture generation succeeds",
+      "five profile outputs are non-empty",
+      "five profile outputs are ffprobe-parseable",
+      "deterministic SHA-256 evidence artifact is emitted"
+    ],
+    "does_not_prove": [
+      "Aurora decoder correctness for generated streams",
+      "full JOCForge capability lattice",
+      "hardware interoperability",
+      "production encoder quality",
+      "Dolby equivalence or certification"
+    ]
+  },
   "planned_pr_smoke_matrix": {
-    "target_vector_count": "12-20",
+    "manifest": "config/jocforge-smoke-vectors-v1.json",
+    "target_vector_count": 14,
     "must_cover": [
       "idx0-through-idx4",
-      "raw-and-container-carriage",
+      "raw-carriage",
       "partition-6",
       "partition-3+3",
       "partition-2+2+2",
       "partition-1x6",
-      "zero-one-and-multiple-dependent-substreams",
+      "one-and-multiple-dependent-substreams",
       "independent-and-dependent-lfe-ownership",
       "strict-and-deployed-emdf-signaling"
-    ]
+    ],
+    "container-cmaf": "follow-up-after-raw-matrix-is-green"
   },
   "planned_differential": {
     "aurora_harletty": true,
@@ -65,6 +86,6 @@
     ],
     "sample_identical_pcm_required": false
   },
-  "status": "registered-not-yet-ci-validated",
-  "truth_boundary": "JOCForge is pinned as an external fixture/conformance generator. Its modeled structural coverage and upstream interoperability evidence do not establish Aurora runtime support, universal hardware compatibility, production mastering quality, lossless ADM recovery, Dolby equivalence, or certification. Aurora must promote individual generated vectors only after its own reproducible CI evidence exists."
+  "status": "profile-smoke-ci-validated-matrix-pending",
+  "truth_boundary": "JOCForge is pinned as an external fixture/conformance generator. Aurora CI has independently built the exact pin and generated non-empty ffprobe-parseable idx0-through-idx4 profile smoke outputs with SHA-256 evidence. This does not yet establish the planned 14-vector structural matrix, Aurora decoder/render correctness for those outputs, the full upstream modeled space, universal hardware compatibility, production mastering quality, lossless ADM recovery, Dolby equivalence, or certification."
 }
