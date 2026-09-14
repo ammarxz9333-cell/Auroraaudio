@@ -12,6 +12,7 @@ import sys
 import tempfile
 from array import array
 from pathlib import Path
+from typing import Any
 
 
 def read_f32le(path: Path) -> array:
@@ -27,6 +28,10 @@ def read_f32le(path: Path) -> array:
     return values
 
 
+def sha256(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
 def first_active_frame(values: array, channels: int, threshold: float) -> int:
     for sample_index, value in enumerate(values):
         if abs(value) > threshold:
@@ -36,6 +41,31 @@ def first_active_frame(values: array, channels: int, threshold: float) -> int:
 
 def channel_values(values: array, channels: int, channel: int, start_frame: int) -> list[float]:
     return list(values[start_frame * channels + channel :: channels])
+
+
+def moments(values: list[float], start: int = 0, count: int | None = None) -> dict[str, float | int]:
+    if count is None:
+        count = len(values) - start
+    count = max(0, min(count, len(values) - start))
+    if count == 0:
+        return {"count": 0, "mean": 0.0, "rms": 0.0, "variance": 0.0, "peak": 0.0}
+
+    total = total_sq = 0.0
+    peak = 0.0
+    for value in values[start : start + count]:
+        total += value
+        total_sq += value * value
+        peak = max(peak, abs(value))
+    mean = total / count
+    mean_sq = total_sq / count
+    variance = max(0.0, mean_sq - mean * mean)
+    return {
+        "count": count,
+        "mean": mean,
+        "rms": math.sqrt(max(0.0, mean_sq)),
+        "variance": variance,
+        "peak": peak,
+    }
 
 
 def correlation(a: list[float], b: list[float], lag: int, limit: int | None = None) -> tuple[float, int]:
@@ -64,32 +94,90 @@ def correlation(a: list[float], b: list[float], lag: int, limit: int | None = No
     var_a = sum_aa - sum_a * sum_a * inv
     var_b = sum_bb - sum_b * sum_b * inv
     if var_a <= 0.0 or var_b <= 0.0:
-        raise ValueError("zero-variance active channel")
+        raise ValueError("zero-variance signal")
     return cov / math.sqrt(var_a * var_b), count
 
 
-def rms(values: list[float], start: int, count: int) -> float:
-    if count <= 0:
-        return 0.0
-    return math.sqrt(sum(value * value for value in values[start : start + count]) / count)
-
-
-def best_channel_alignment(
+def best_alignment(
     a: list[float], b: list[float], lag_search: int, probe_frames: int = 48_000
-) -> tuple[int, float]:
-    best_lag = 0
-    best_corr = -2.0
+) -> dict[str, Any]:
+    best: dict[str, Any] | None = None
+    reasons: set[str] = set()
     for lag in range(-lag_search, lag_search + 1):
         try:
-            corr, _ = correlation(a, b, lag, probe_frames)
-        except ValueError:
+            corr, count = correlation(a, b, lag, probe_frames)
+        except ValueError as error:
+            reasons.add(str(error))
             continue
-        if corr > best_corr:
-            best_lag = lag
-            best_corr = corr
-    if best_corr < -1.0:
-        raise ValueError("unable to align active channel")
-    return best_lag, best_corr
+        candidate = {"available": True, "lag_frames": lag, "probe_correlation": corr, "probe_frames": count}
+        if best is None or corr > float(best["probe_correlation"]):
+            best = candidate
+    if best is not None:
+        return best
+    return {
+        "available": False,
+        "reason": ", ".join(sorted(reasons)) if reasons else "no valid lag candidate",
+    }
+
+
+def aligned_metrics(a: list[float], b: list[float], lag: int) -> dict[str, Any]:
+    if lag >= 0:
+        a_start, b_start = lag, 0
+    else:
+        a_start, b_start = 0, -lag
+    count = min(len(a) - a_start, len(b) - b_start)
+    corr, _ = correlation(a, b, lag, None)
+    stats_a = moments(a, a_start, count)
+    stats_b = moments(b, b_start, count)
+    rms_a = float(stats_a["rms"])
+    rms_b = float(stats_b["rms"])
+    return {
+        "full_correlation": corr,
+        "compared_frames": count,
+        "rms_a": rms_a,
+        "rms_b": rms_b,
+        "rms_ratio_b_over_a": (rms_b / rms_a) if rms_a > 0.0 else None,
+    }
+
+
+def cross_channel_diagnostics(
+    channels_a: list[list[float]],
+    channels_b: list[list[float]],
+    active_a: list[bool],
+    active_b: list[bool],
+    lag_search: int,
+) -> list[dict[str, Any]]:
+    diagnostics: list[dict[str, Any]] = []
+    for index_a, chan_a in enumerate(channels_a):
+        if not active_a[index_a]:
+            diagnostics.append({"channel_a": index_a, "active": False, "best_matches": []})
+            continue
+        matches: list[dict[str, Any]] = []
+        unavailable: list[dict[str, Any]] = []
+        for index_b, chan_b in enumerate(channels_b):
+            if not active_b[index_b]:
+                continue
+            alignment = best_alignment(chan_a, chan_b, lag_search)
+            if not alignment["available"]:
+                unavailable.append({"channel_b": index_b, "reason": alignment["reason"]})
+                continue
+            matches.append(
+                {
+                    "channel_b": index_b,
+                    "lag_frames": alignment["lag_frames"],
+                    "probe_correlation": alignment["probe_correlation"],
+                }
+            )
+        matches.sort(key=lambda item: float(item["probe_correlation"]), reverse=True)
+        diagnostics.append(
+            {
+                "channel_a": index_a,
+                "active": True,
+                "best_matches": matches[:3],
+                "unavailable_matches": unavailable,
+            }
+        )
+    return diagnostics
 
 
 def analyze(
@@ -101,19 +189,20 @@ def analyze(
     channels_a: int,
     channels_b: int,
     fixture_path: Path | None,
-) -> dict[str, object]:
+) -> dict[str, Any]:
     config = json.loads(config_path.read_text(encoding="utf-8"))
     policy = config["comparison"]
+    failures: list[str] = []
 
     if channels_a <= 0 or channels_b <= 0:
         raise ValueError("invalid channel count")
-    if policy["require_equal_channel_count"] and channels_a != channels_b:
-        raise ValueError(f"channel mismatch: {channels_a} != {channels_b}")
-    if policy["require_equal_sample_rate"] and sample_rate_a != sample_rate_b:
-        raise ValueError(f"sample-rate mismatch: {sample_rate_a} != {sample_rate_b}")
     expected_channels = int(config["fixture"]["expected_channels"])
+    if bool(policy["require_equal_channel_count"]) and channels_a != channels_b:
+        failures.append(f"channel mismatch: {channels_a} != {channels_b}")
+    if bool(policy["require_equal_sample_rate"]) and sample_rate_a != sample_rate_b:
+        failures.append(f"sample-rate mismatch: {sample_rate_a} != {sample_rate_b}")
     if channels_a != expected_channels or channels_b != expected_channels:
-        raise ValueError(
+        failures.append(
             f"expected CICP target to render {expected_channels} channels, got {channels_a}/{channels_b}"
         )
 
@@ -131,101 +220,125 @@ def analyze(
     active_frames_b = frames_b - start_b
     frame_delta = abs(active_frames_a - active_frames_b)
     if frame_delta > int(policy["maximum_post_trim_frame_count_delta"]):
-        raise ValueError(f"post-trim frame-count delta {frame_delta} exceeds policy")
+        failures.append(f"post-trim frame-count delta {frame_delta} exceeds policy")
 
     minimum_common = int(policy["minimum_common_frames"])
     if min(active_frames_a, active_frames_b) < minimum_common:
-        raise ValueError("not enough common rendered frames")
+        failures.append("not enough common rendered frames")
 
     lag_search = int(policy["residual_lag_search_frames"])
     min_corr = float(policy["minimum_active_channel_correlation"])
     min_ratio = float(policy["minimum_rms_ratio"])
     max_ratio = float(policy["maximum_rms_ratio"])
-    inactive_rms = threshold
 
-    channel_reports: list[dict[str, object]] = []
-    for channel in range(expected_channels):
-        chan_a = channel_values(a, channels_a, channel, start_a)
-        chan_b = channel_values(b, channels_b, channel, start_b)
-        base_count = min(len(chan_a), len(chan_b))
-        base_rms_a = rms(chan_a, 0, base_count)
-        base_rms_b = rms(chan_b, 0, base_count)
-        active_a = base_rms_a > inactive_rms
-        active_b = base_rms_b > inactive_rms
-        if active_a != active_b:
-            raise ValueError(f"channel {channel}: activity mismatch")
-        if not active_a:
-            channel_reports.append(
-                {
-                    "channel": channel,
-                    "active": False,
-                    "rms_a": base_rms_a,
-                    "rms_b": base_rms_b,
-                }
-            )
+    compare_channels = min(channels_a, channels_b, expected_channels)
+    channel_data_a = [channel_values(a, channels_a, channel, start_a) for channel in range(compare_channels)]
+    channel_data_b = [channel_values(b, channels_b, channel, start_b) for channel in range(compare_channels)]
+    stats_a = [moments(values) for values in channel_data_a]
+    stats_b = [moments(values) for values in channel_data_b]
+    active_a = [float(stats["rms"]) > threshold for stats in stats_a]
+    active_b = [float(stats["rms"]) > threshold for stats in stats_b]
+
+    channel_reports: list[dict[str, Any]] = []
+    for channel in range(compare_channels):
+        base: dict[str, Any] = {
+            "channel": channel,
+            "active_a": active_a[channel],
+            "active_b": active_b[channel],
+            "stats_a": stats_a[channel],
+            "stats_b": stats_b[channel],
+        }
+        if active_a[channel] != active_b[channel]:
+            reason = f"channel {channel}: activity mismatch"
+            failures.append(reason)
+            base["same_index_alignment"] = {"available": False, "reason": reason}
+            channel_reports.append(base)
+            continue
+        if not active_a[channel]:
+            base["same_index_alignment"] = {"available": False, "reason": "both channels inactive"}
+            channel_reports.append(base)
             continue
 
-        lag, probe_corr = best_channel_alignment(chan_a, chan_b, lag_search)
-        if lag >= 0:
-            a_start, b_start = lag, 0
-        else:
-            a_start, b_start = 0, -lag
-        count = min(len(chan_a) - a_start, len(chan_b) - b_start)
-        corr, _ = correlation(chan_a, chan_b, lag, None)
-        rms_a = rms(chan_a, a_start, count)
-        rms_b = rms(chan_b, b_start, count)
-        if rms_a <= 0.0 or rms_b <= 0.0:
-            raise ValueError(f"channel {channel}: unexpected zero RMS")
-        ratio = rms_b / rms_a
-        if corr < min_corr:
-            raise ValueError(f"channel {channel}: correlation {corr:.6f} < {min_corr:.6f}")
-        if not (min_ratio <= ratio <= max_ratio):
-            raise ValueError(
-                f"channel {channel}: RMS ratio {ratio:.6f} outside [{min_ratio}, {max_ratio}]"
+        alignment = best_alignment(channel_data_a[channel], channel_data_b[channel], lag_search)
+        base["same_index_alignment"] = alignment
+        if not alignment["available"]:
+            reason = f"channel {channel}: same-index alignment unavailable ({alignment['reason']})"
+            failures.append(reason)
+            channel_reports.append(base)
+            continue
+
+        try:
+            metrics = aligned_metrics(
+                channel_data_a[channel], channel_data_b[channel], int(alignment["lag_frames"])
             )
-        channel_reports.append(
-            {
-                "channel": channel,
-                "active": True,
-                "residual_lag_frames": lag,
-                "probe_correlation": probe_corr,
-                "full_correlation": corr,
-                "rms_a": rms_a,
-                "rms_b": rms_b,
-                "rms_ratio_b_over_a": ratio,
-                "compared_frames": count,
-            }
-        )
+        except ValueError as error:
+            reason = f"channel {channel}: full aligned metrics unavailable ({error})"
+            failures.append(reason)
+            base["same_index_metrics_error"] = str(error)
+            channel_reports.append(base)
+            continue
 
-    if not any(bool(report["active"]) for report in channel_reports):
-        raise ValueError("all channels are silent")
+        base["same_index_metrics"] = metrics
+        corr = float(metrics["full_correlation"])
+        ratio_value = metrics["rms_ratio_b_over_a"]
+        if corr < min_corr:
+            failures.append(f"channel {channel}: correlation {corr:.6f} < {min_corr:.6f}")
+        if ratio_value is None:
+            failures.append(f"channel {channel}: zero RMS prevents ratio")
+        else:
+            ratio = float(ratio_value)
+            if not (min_ratio <= ratio <= max_ratio):
+                failures.append(
+                    f"channel {channel}: RMS ratio {ratio:.6f} outside [{min_ratio}, {max_ratio}]"
+                )
+        channel_reports.append(base)
 
-    fixture_sha256 = None
-    if fixture_path is not None:
-        fixture_sha256 = hashlib.sha256(fixture_path.read_bytes()).hexdigest()
+    if not any(active_a) or not any(active_b):
+        failures.append("all compared channels are silent in at least one reference")
 
-    return {
-        "schema_version": 1,
-        "verdict": "pass",
+    cross_diagnostics = cross_channel_diagnostics(
+        channel_data_a, channel_data_b, active_a, active_b, lag_search
+    )
+
+    fixture_sha256 = sha256(fixture_path) if fixture_path is not None else None
+    report: dict[str, Any] = {
+        "schema_version": 2,
+        "verdict": "fail" if failures else "pass",
+        "failure_reasons": failures,
         "reference_a": "fraunhofer_mpeghdec",
         "reference_b": "ittiam_libmpegh",
-        "sample_rate": sample_rate_a,
-        "channels": channels_a,
+        "sample_rate_a": sample_rate_a,
+        "sample_rate_b": sample_rate_b,
+        "channels_a": channels_a,
+        "channels_b": channels_b,
         "frames_a": frames_a,
         "frames_b": frames_b,
         "first_active_frame_a": start_a,
         "first_active_frame_b": start_b,
+        "active_frames_a": active_frames_a,
+        "active_frames_b": active_frames_b,
         "post_trim_frame_count_delta": frame_delta,
         "fixture_sha256": fixture_sha256,
-        "pcm_a_sha256": hashlib.sha256(pcm_a_path.read_bytes()).hexdigest(),
-        "pcm_b_sha256": hashlib.sha256(pcm_b_path.read_bytes()).hexdigest(),
+        "pcm_a_sha256": sha256(pcm_a_path),
+        "pcm_b_sha256": sha256(pcm_b_path),
         "channel_metrics": channel_reports,
+        "cross_channel_diagnostics": cross_diagnostics,
+        "policy": {
+            "minimum_common_frames": minimum_common,
+            "maximum_post_trim_frame_count_delta": int(policy["maximum_post_trim_frame_count_delta"]),
+            "leading_activity_threshold": threshold,
+            "residual_lag_search_frames": lag_search,
+            "minimum_active_channel_correlation": min_corr,
+            "minimum_rms_ratio": min_ratio,
+            "maximum_rms_ratio": max_ratio,
+        },
         "pins": {
             "fraunhofer_mpeghdec": config["oracles"]["fraunhofer_mpeghdec"]["commit"],
             "ittiam_libmpegh": config["oracles"]["ittiam_libmpegh"]["commit"],
         },
         "truth_boundary": config["truth_boundary"],
     }
+    return report
 
 
 def write_f32(path: Path, samples: list[float]) -> None:
@@ -267,8 +380,9 @@ def self_test() -> None:
         frames = 6000
         a_samples: list[float] = []
         for n in range(frames):
-            sample = 0.25 * math.sin(2.0 * math.pi * 1000.0 * n / 48000.0)
-            a_samples.extend((sample, sample * 0.5))
+            left = 0.25 * math.sin(2.0 * math.pi * 1000.0 * n / 48000.0)
+            right = 0.10 * math.sin(2.0 * math.pi * 2000.0 * n / 48000.0)
+            a_samples.extend((left, right))
         b_samples = [0.0] * 6 + [value * 0.9 for value in a_samples]
         write_f32(a_path, a_samples)
         write_f32(b_path, b_samples)
@@ -279,13 +393,43 @@ def self_test() -> None:
         for index in range(0, len(inverted), 2):
             inverted[index] = -inverted[index]
         write_f32(b_path, inverted)
-        try:
-            analyze(a_path, b_path, config, 48000, 48000, 2, 2, fixture)
-        except ValueError:
-            pass
-        else:
-            raise AssertionError("phase-inverted active channel must fail")
+        report = analyze(a_path, b_path, config, 48000, 48000, 2, 2, fixture)
+        assert report["verdict"] == "fail"
+        assert any("channel 0: correlation" in reason for reason in report["failure_reasons"])
+
+        swapped: list[float] = []
+        for n in range(frames):
+            left = 0.25 * math.sin(2.0 * math.pi * 1000.0 * n / 48000.0)
+            right = 0.10 * math.sin(2.0 * math.pi * 2000.0 * n / 48000.0)
+            swapped.extend((right, left))
+        write_f32(b_path, swapped)
+        report = analyze(a_path, b_path, config, 48000, 48000, 2, 2, fixture)
+        assert report["verdict"] == "fail"
+        best = report["cross_channel_diagnostics"][0]["best_matches"][0]
+        assert best["channel_b"] == 1
+        assert float(best["probe_correlation"]) > 0.99
     print("MPEGH-DUAL-ORACLE-EVIDENCE-SELF-TEST-PASS")
+
+
+def failure_report(error: Exception, config_path: Path | None = None) -> dict[str, Any]:
+    report: dict[str, Any] = {
+        "schema_version": 2,
+        "verdict": "fail",
+        "failure_reasons": [f"fatal analysis error: {error}"],
+    }
+    if config_path is not None:
+        try:
+            config = json.loads(config_path.read_text(encoding="utf-8"))
+            report["truth_boundary"] = config.get("truth_boundary")
+            report["pins"] = {
+                "fraunhofer_mpeghdec": config.get("oracles", {})
+                .get("fraunhofer_mpeghdec", {})
+                .get("commit"),
+                "ittiam_libmpegh": config.get("oracles", {}).get("ittiam_libmpegh", {}).get("commit"),
+            }
+        except Exception:
+            pass
+    return report
 
 
 def main() -> int:
@@ -317,16 +461,34 @@ def main() -> int:
             args.fixture,
         )
     except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
-        print(f"MPEGH-DUAL-ORACLE-EVIDENCE-FAIL: {error}", file=sys.stderr)
-        return 1
+        report = failure_report(error, args.config)
 
     args.output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(json.dumps(report, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    active = [entry for entry in report["channel_metrics"] if entry["active"]]
-    minimum_corr = min(float(entry["full_correlation"]) for entry in active)
+
+    if report["verdict"] != "pass":
+        print("MPEGH-DUAL-ORACLE-EVIDENCE-FAIL", file=sys.stderr)
+        for reason in report.get("failure_reasons", []):
+            print(f"- {reason}", file=sys.stderr)
+        for channel in report.get("channel_metrics", []):
+            print(
+                "diagnostic "
+                f"channel={channel['channel']} active_a={channel['active_a']} active_b={channel['active_b']} "
+                f"rms_a={float(channel['stats_a']['rms']):.9g} rms_b={float(channel['stats_b']['rms']):.9g} "
+                f"var_a={float(channel['stats_a']['variance']):.9g} var_b={float(channel['stats_b']['variance']):.9g}",
+                file=sys.stderr,
+            )
+        return 1
+
+    active_metrics = [
+        entry["same_index_metrics"]
+        for entry in report["channel_metrics"]
+        if "same_index_metrics" in entry
+    ]
+    minimum_corr = min(float(entry["full_correlation"]) for entry in active_metrics)
     print(
         "MPEGH-DUAL-ORACLE-EVIDENCE-PASS "
-        f"channels={report['channels']} frames={min(report['frames_a'], report['frames_b'])} "
+        f"channels={report['channels_a']} frames={min(report['frames_a'], report['frames_b'])} "
         f"min_corr={minimum_corr:.6f} frame_delta={report['post_trim_frame_count_delta']}"
     )
     return 0
