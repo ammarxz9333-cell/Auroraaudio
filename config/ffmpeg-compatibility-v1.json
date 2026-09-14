@@ -1,6 +1,6 @@
 {
   "schema_version": 1,
-  "purpose": "Compare Aurora's current FFmpeg baseline with the latest maintenance release on the same branch and a current stable candidate without changing the production baseline.",
+  "purpose": "Record the reviewed FFmpeg compatibility matrix that justified Aurora's maintenance-baseline update while retaining a separately reviewed current-stable candidate.",
   "upstream": "https://github.com/FFmpeg/FFmpeg",
   "tested_variants": [
     {
@@ -8,21 +8,21 @@
       "version": "6.1.1",
       "tag": "n6.1.1",
       "commit": "e38092ef9395d7049f871ef4d5411eb410e283e0",
-      "role": "current-aurora-baseline"
+      "role": "pre-matrix-aurora-baseline"
     },
     {
       "label": "maintenance-6.1.6",
       "version": "6.1.6",
       "tag": "n6.1.6",
       "commit": "f1e3a2bf7a2f2cde936d1ed97f09a26853d20125",
-      "role": "same-branch-maintenance-candidate"
+      "role": "validated-maintenance-baseline"
     },
     {
       "label": "stable-9.0.1",
       "version": "9.0.1",
       "tag": "n9.0.1",
       "commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
-      "role": "current-stable-candidate"
+      "role": "validated-current-stable-candidate"
     }
   ],
   "aurora_roles_under_test": [
@@ -42,5 +42,10 @@
     "joc_object_recovery_claim": false,
     "physical_latency_claim": false
   },
-  "decision_policy": "Do not change config/external-components-v1.json tested_version until the matrix is green and the observed evidence is reviewed. A green 9.0.1 lane establishes compatibility with this bounded software path, not universal FFmpeg compatibility or Atmos/JOC object support."
+  "observed_result": {
+    "baseline-6.1.1": "PASS",
+    "maintenance-6.1.6": "PASS",
+    "stable-9.0.1": "PASS"
+  },
+  "decision_policy": "The green matrix promotes 6.1.6 as Aurora's pinned maintenance baseline. The green 9.0.1 lane establishes compatibility with this bounded software path but remains a major-version evaluation candidate; it does not establish universal FFmpeg compatibility or Atmos/JOC object support."
 }
