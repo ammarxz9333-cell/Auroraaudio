@@ -4,7 +4,13 @@
 >
 > **Mandatory maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge. Keep it factual and compact.
 
-Last updated: **2026-09-13**
+Last updated: **2026-09-14**
+
+### IAMF reference staging repair (2026-09-14)
+
+- PR #161 remains gated by temporary staging PR #162. Run `34880014504` at `eec666c4` built all three CLIs but failed baseline decode: the old in-tree fixture yields zero codec samples per frame. No libiamf differential ran.
+- Staging now encodes stereo PCM and stereo Opus fixtures from hash-checked upstream templates/WAV at the same immutable iamf-tools pin. Probe descriptor/temporal validity, source-frame accounting and actual encoded-input provenance are required. This is stereo external-reference validation, not 5.1 downmix, Aurora object ingestion or hardware proof.
+- Keep changes on staging until its complete lane passes; then port to #161 and require final-head CI before merge.
 
 ### Local Simics / live-ingress continuation (2026-09-13)
 

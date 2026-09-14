@@ -50,6 +50,10 @@ def compare(args):
     if args.channels != int(acceptance["channels"]): fail("channel count mismatch")
     left=load_f32(args.iamf_tools_pcm,args.channels); right=load_f32(args.libiamf_pcm,args.channels)
     ls=stats(left,args.channels); rs=stats(right,args.channels)
+    if 'expected_frames' in acceptance:
+        for name, result in (('iamf-tools', ls), ('libiamf', rs)):
+            if result['frames'] != int(acceptance['expected_frames']):
+                fail(f"{name}: expected {acceptance['expected_frames']} frames, got {result['frames']}")
     frame_delta=abs(ls["frames"]-rs["frames"])
     if frame_delta > int(acceptance["max_frame_delta"]): fail(f"frame delta {frame_delta} too large")
     metrics=[]
@@ -58,6 +62,8 @@ def compare(args):
         rms_delta_db=20*math.log10(l["rms"]/r["rms"]) if l["rms"]>0 and r["rms"]>0 else None
         metrics.append({"channel":i,"rms_delta_db":rms_delta_db,"energy_fraction_delta":l["energy_fraction"]-r["energy_fraction"],"normalized_correlation":normalized_correlation(left,right,args.channels,i)})
     report={"schema_version":1,"status":"pass","fixture":config["fixture"],"pins":config["pins"],"sample_rate":args.sample_rate,"channels":args.channels,"sample_identity_required":False,"iamf_tools":{"pcm_sha256":hashlib.sha256(args.iamf_tools_pcm.read_bytes()).hexdigest(),**ls},"libiamf":{"pcm_sha256":hashlib.sha256(args.libiamf_pcm.read_bytes()).hexdigest(),**rs},"differential":{"frame_delta":frame_delta,"duration_delta_ms":1000*frame_delta/args.sample_rate,"channel_metrics":metrics},"truth_boundary":config["truth_boundary"]}
+    if getattr(args, 'fixture', None) is not None:
+        report['fixture'] = {**config['fixture'], 'sha256': hashlib.sha256(args.fixture.read_bytes()).hexdigest()}
     args.output.parent.mkdir(parents=True,exist_ok=True)
     args.output.write_text(json.dumps(report,indent=2,sort_keys=True)+"\n")
     return report
@@ -73,11 +79,31 @@ def self_test():
         cfg.write_text(json.dumps({"fixture":{"path":"synthetic"},"pins":{"iamf_tools":"x","libiamf":"y"},"acceptance":{"sample_rate":48000,"channels":2,"max_frame_delta":0},"truth_boundary":"self-test"}))
         args=argparse.Namespace(iamf_tools_pcm=left,libiamf_pcm=right,config=cfg,output=out,sample_rate=48000,channels=2)
         report=compare(args); assert report["status"]=="pass"; assert report["differential"]["frame_delta"]==0
+        config=json.loads(cfg.read_text()); config['acceptance']['expected_frames']=64
+        cfg.write_text(json.dumps(config))
+        compare(args)
+        valid=right.read_bytes()
+        for bad in (b'', valid[:-1], struct.pack('<ff', float('nan'), .1), bytes(len(valid)), valid[:-8]):
+            right.write_bytes(bad)
+            try:
+                compare(args)
+            except SystemExit:
+                pass
+            else:
+                raise AssertionError('invalid PCM accepted')
+        right.write_bytes(valid[:-8]); left.write_bytes(valid[:-8])
+        try:
+            compare(args)
+        except SystemExit:
+            pass
+        else:
+            raise AssertionError('equal truncation accepted')
     print("IAMF-CROSS-REFERENCE-SELF-TEST-PASS")
 
 def main():
     parser=argparse.ArgumentParser(); subs=parser.add_subparsers(dest="command",required=True); subs.add_parser("self-test")
     cp=subs.add_parser("compare"); cp.add_argument("iamf_tools_pcm",type=pathlib.Path); cp.add_argument("libiamf_pcm",type=pathlib.Path); cp.add_argument("config",type=pathlib.Path); cp.add_argument("output",type=pathlib.Path); cp.add_argument("--sample-rate",type=int,default=48000); cp.add_argument("--channels",type=int,default=2)
+    cp.add_argument('--fixture', type=pathlib.Path, required=True)
     args=parser.parse_args()
     if args.command=="self-test": self_test()
     else: print(json.dumps(compare(args),indent=2,sort_keys=True))

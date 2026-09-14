@@ -3,8 +3,8 @@
   "fixture": {
     "upstream": "https://github.com/AOMediaCodec/iamf-tools",
     "commit": "c6b11b5ea47d7da00fbac9654acc96aa4ced2388",
-    "path": "iamf/cli/testdata/iamf/noise_1024samp_5p1_opus.iamf",
-    "provenance": "upstream in-tree IAMF testdata"
+    "path": "output/iamf-tools-reference/differential.iamf",
+    "provenance": "Encoded by pinned encoder_main from hash-checked upstream stereo Opus template and 24000-frame stereo 48 kHz WAV; see encoder-inputs.json"
   },
   "pins": {
     "iamf_tools": "c6b11b5ea47d7da00fbac9654acc96aa4ced2388",
@@ -27,7 +27,8 @@
     "sample_identity_required": false,
     "record_channel_rms": true,
     "record_energy_fractions": true,
-    "record_normalized_correlation": true
+    "record_normalized_correlation": true,
+    "expected_frames": 24000
   },
   "truth_boundary": "This differential qualifies one shared official IAMF fixture through two independent external decode/render paths: iamf-tools and libiamf. It records frame accounting and channel-energy/correlation metrics without requiring sample-identical PCM. The standalone OAR pin remains a separate spatial-render semantic oracle; it is not treated here as an IAMF ingestion decoder. Passing does not prove native Aurora IAMF object-scene decoding, arbitrary IAMF conformance, renderer equivalence, physical output behavior, patent clearance beyond upstream terms, or certification."
 }

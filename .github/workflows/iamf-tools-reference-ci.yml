@@ -9,6 +9,7 @@ on:
       - "config/iamf-differential-v1.json"
       - "docs/iamf-tools-reference.md"
       - "validation/open-immersive/iamf_cross_reference_evidence.py"
+      - "validation/open-immersive/prepare_iamf_reference.py"
       - "THIRD_PARTY_LICENSES.md"
       - ".github/workflows/iamf-tools-reference-ci.yml"
 
@@ -26,7 +27,7 @@ jobs:
     env:
       IAMF_TOOLS_COMMIT: c6b11b5ea47d7da00fbac9654acc96aa4ced2388
       BAZELISK_VERSION: 1.27.0
-      FIXTURE_REL: iamf/cli/testdata/iamf/tones_256samp_5p1_pcm.iamf
+      FIXTURE_REL: output/iamf-tools-reference/baseline.iamf
     steps:
       - name: Checkout Aurora
         uses: actions/checkout@v4
@@ -90,13 +91,27 @@ jobs:
           test -x bazel-bin/iamf/cli/probe_main
           echo "IAMF-TOOLS-BUILD-PASS"
 
+      - name: Encode fixtures from hash-checked pinned upstream inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          OUT="${GITHUB_WORKSPACE}/output/iamf-tools-reference"
+          python3 validation/open-immersive/prepare_iamf_reference.py iamf-tools "$OUT" config/iamf-tools-reference-v1.json
+          for NAME in baseline differential; do
+            "${GITHUB_WORKSPACE}/iamf-tools/bazel-bin/iamf/cli/encoder_main" \
+              --user_metadata_filename="$OUT/$NAME.textproto" \
+              --input_wav_directory="${GITHUB_WORKSPACE}/iamf-tools/iamf/cli/testdata" \
+              --output_iamf_directory="$OUT"
+            test -s "$OUT/$NAME.iamf"
+          done
+
       - name: Probe and decode pinned IAMF baseline fixture
         working-directory: iamf-tools
         shell: bash
         run: |
           set -euo pipefail
           OUT_DIR="${GITHUB_WORKSPACE}/output/iamf-tools-reference"
-          FIXTURE="${GITHUB_WORKSPACE}/iamf-tools/${FIXTURE_REL}"
+          FIXTURE="${GITHUB_WORKSPACE}/${FIXTURE_REL}"
           mkdir -p "${OUT_DIR}"
           test -d "${OUT_DIR}"
           test -s "${FIXTURE}"
@@ -118,7 +133,7 @@ jobs:
         run: |
           set -euo pipefail
           OUT="${GITHUB_WORKSPACE}/output/iamf-tools-reference"
-          FIXTURE="${GITHUB_WORKSPACE}/iamf-tools/${FIXTURE_REL}"
+          FIXTURE="${GITHUB_WORKSPACE}/${FIXTURE_REL}"
           ffprobe -v error -select_streams a:0 \
             -show_entries stream=sample_rate,channels,duration \
             -of json "$OUT/decoded-stereo.wav" > "$OUT/decoded-ffprobe.json"
@@ -132,8 +147,14 @@ jobs:
           probe = json.loads((out / 'probe.json').read_text(encoding='utf-8'))
           ffprobe = json.loads((out / 'decoded-ffprobe.json').read_text(encoding='utf-8'))
           raw = (out / 'decoded.f32').read_bytes()
-          if not isinstance(probe, dict) or not probe:
-              raise SystemExit('probe JSON is empty or not an object')
+          for key in ('codec_configs', 'audio_elements', 'mix_presentations'):
+              if not probe.get(key):
+                  raise SystemExit(f'probe has no {key}')
+          scan = probe['temporal_unit_scan']
+          if scan['audio_frame_count'] <= 0 or scan['audio_frame_parse_errors'] or scan['parameter_block_parse_errors']:
+              raise SystemExit('probe temporal scan failed')
+          if scan['stopped_reason'] != 'eof':
+              raise SystemExit(f'incomplete temporal scan: {scan}')
           if not raw or len(raw) % 4:
               raise SystemExit('decoded float PCM is empty or misaligned')
           samples = struct.unpack('<' + 'f' * (len(raw) // 4), raw)
@@ -145,7 +166,7 @@ jobs:
           if not streams:
               raise SystemExit('ffprobe reported no audio stream')
           stream = streams[0]
-          if int(stream.get('sample_rate', 0)) <= 0 or int(stream.get('channels', 0)) <= 0:
+          if int(stream.get('sample_rate', 0)) != 48000 or int(stream.get('channels', 0)) != 2 or len(samples) != 48000:
               raise SystemExit(f'invalid decoded stream metadata: {stream}')
           evidence = {
               'schema_version': 1,
@@ -198,7 +219,7 @@ jobs:
           set -euo pipefail
           OUT="${GITHUB_WORKSPACE}/output/iamf-tools-reference"
           DIFF_REL="$(python3 -c 'import json; print(json.load(open("config/iamf-differential-v1.json"))["fixture"]["path"])')"
-          DIFF_FIXTURE="${GITHUB_WORKSPACE}/iamf-tools/${DIFF_REL}"
+          DIFF_FIXTURE="${GITHUB_WORKSPACE}/${DIFF_REL}"
           mkdir -p "${OUT}"
           test -s "${DIFF_FIXTURE}"
 
@@ -244,7 +265,8 @@ jobs:
             config/iamf-differential-v1.json \
             "${OUT}/differential-summary.json" \
             --sample-rate 48000 \
-            --channels 2
+            --channels 2 \
+            --fixture "${DIFF_FIXTURE}"
           echo "IAMF-CROSS-REFERENCE-PASS"
 
       - name: Upload IAMF tools reference evidence
@@ -252,6 +274,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: iamf-tools-reference-${{ github.sha }}
-          path: output/iamf-tools-reference/*.json
+          path: |
+            output/iamf-tools-reference/*.json
+            output/iamf-tools-reference/*.iamf
+            output/iamf-tools-reference/*.textproto
           if-no-files-found: error
           retention-days: 14

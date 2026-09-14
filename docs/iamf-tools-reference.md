@@ -29,15 +29,17 @@ The baseline proves only that the exact pin is usable as a reproducible external
 
 The baseline fixture is:
 
-`iamf/cli/testdata/iamf/tones_256samp_5p1_pcm.iamf`
+`output/iamf-tools-reference/baseline.iamf` (stereo PCM)
 
-The baseline deliberately uses an upstream fixture before Aurora adds an encoder-generated corpus. This separates basic tool qualification from later differential semantics.
+The pinned encoder generates this file from the upstream stereo PCM template and `sawtooth_10000_stereo_48khz_s24le.wav` (24,000 frames at 48 kHz). The template and WAV hashes are verified before encoding; populated metadata and encoded files are retained with their provenance. No bitstream bytes are patched.
+
+Run `34880014504` failed because the older checked-in `tones_256samp_5p1_pcm.iamf` has a codec config that the pinned decoder reads as zero samples per frame. Its probe emitted JSON with missing descriptors, so JSON syntax alone was insufficient. The gate now requires nonempty codec/audio-element/mix descriptors and an error-free complete temporal scan. This replacement is explicitly stereo; it does not establish the originally proposed 5.1 downmix coverage.
 
 ## Cross-reference gate
 
-The same CI lane also performs a role-appropriate cross-reference on the official upstream fixture:
+The same CI lane encodes the same pinned source WAV using the upstream stereo Opus template, then performs a cross-reference on that generated file:
 
-`iamf/cli/testdata/iamf/noise_1024samp_5p1_opus.iamf`
+`output/iamf-tools-reference/differential.iamf` (stereo Opus)
 
 That fixture is rendered independently through:
 
