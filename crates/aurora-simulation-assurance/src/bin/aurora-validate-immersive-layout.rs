@@ -13,7 +13,9 @@ const SCHEMA_VERSION: u32 = 1;
 
 #[derive(Debug, Parser)]
 #[command(name = "aurora-validate-immersive-layout")]
-#[command(about = "Generate deterministic geometry-only 3D VBAP evidence for standard or custom immersive layouts")]
+#[command(
+    about = "Generate deterministic geometry-only 3D VBAP evidence for standard or custom immersive layouts"
+)]
 struct Cli {
     #[arg(long)]
     scene: PathBuf,
@@ -132,8 +134,8 @@ fn validate_cli(cli: &Cli) -> Result<()> {
 }
 
 fn evaluate(cli: &Cli) -> Result<Summary> {
-    let bytes = fs::read(&cli.scene)
-        .with_context(|| format!("read scene {}", cli.scene.display()))?;
+    let bytes =
+        fs::read(&cli.scene).with_context(|| format!("read scene {}", cli.scene.display()))?;
     let fixture: Fixture = serde_json::from_slice(&bytes)
         .with_context(|| format!("parse scene {}", cli.scene.display()))?;
     if fixture.speakers.is_empty() {
@@ -155,7 +157,9 @@ fn evaluate(cli: &Cli) -> Result<Summary> {
     let output_channels = speakers.iter().filter(|speaker| speaker.enabled).count();
     let lfe_channels = speakers
         .iter()
-        .filter(|speaker| speaker.enabled && matches!(speaker.channel_role, ChannelRole::LowFrequencyEffects))
+        .filter(|speaker| {
+            speaker.enabled && matches!(speaker.channel_role, ChannelRole::LowFrequencyEffects)
+        })
         .count();
     let top_channels = speakers
         .iter()
@@ -269,9 +273,7 @@ fn evaluate(cli: &Cli) -> Result<Summary> {
             })
             .map(|(_, gain)| gain * gain)
             .sum::<f32>();
-        if !spatial_power.is_finite()
-            || (spatial_power - 1.0).abs() > cli.normalization_tolerance
-        {
+        if !spatial_power.is_finite() || (spatial_power - 1.0).abs() > cli.normalization_tolerance {
             normalization_failures += 1;
         }
 
@@ -359,6 +361,7 @@ fn write_json_artifact<T: Serialize>(
         artifact,
         payload,
     };
-    let bytes = serde_json::to_vec_pretty(&envelope).context("serialize immersive layout artifact")?;
+    let bytes =
+        serde_json::to_vec_pretty(&envelope).context("serialize immersive layout artifact")?;
     fs::write(&path, bytes).with_context(|| format!("write {}", path.display()))
 }
