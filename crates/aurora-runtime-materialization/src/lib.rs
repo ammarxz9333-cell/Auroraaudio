@@ -7,7 +7,7 @@
 
 use aurora_dsp_basic::DelayProcessor;
 use aurora_realtime_engine::{RealTimeEngine, RealTimeEngineConfig, RealTimeEngineError};
-use aurora_renderer_api::Renderer;
+use aurora_renderer_api::{ObjectPcmRenderer, Renderer, RendererCapabilities};
 use aurora_renderer_basic::BasicRenderer;
 pub use aurora_renderer_basic::BasicRendererMode;
 use aurora_renderer_vbap::VbapRenderer;
@@ -18,7 +18,7 @@ pub use aurora_runtime_assembly::{
 };
 use aurora_scene::RenderScene;
 
-/// Concrete renderer choices owned by control-thread materialization.
+/// Concrete gain-renderer choices owned by control-thread materialization.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RealtimeRendererSelection {
     /// Current basic geometric renderer with an explicit behavior mode.
@@ -43,7 +43,7 @@ pub fn materialize_default_realtime_engine(
     )
 }
 
-/// Materializes a realtime engine with an explicitly selected renderer implementation.
+/// Materializes a realtime engine with an explicitly selected gain renderer.
 pub fn materialize_realtime_engine(
     scene: RenderScene,
     config: RealTimeEngineConfig,
@@ -73,10 +73,40 @@ pub fn materialize_realtime_engine(
     )
 }
 
+/// Materializes a realtime engine around one object-PCM renderer.
+///
+/// The renderer is configured on the control thread and then activated through
+/// the mutually exclusive PCM path in [`RealTimeEngine`]. The existing default
+/// Basic/VBAP selection is unchanged.
+pub fn materialize_realtime_engine_with_pcm_renderer(
+    scene: RenderScene,
+    config: RealTimeEngineConfig,
+    mut renderer: Box<dyn ObjectPcmRenderer>,
+    estimated_device_latency_frames: usize,
+) -> Result<RealTimeEngine, RealTimeEngineError> {
+    let speakers = scene.ordered_speakers()?;
+    renderer.configure(speakers, config.sample_rate, config.block_size, 1)?;
+    let requirements =
+        RealTimeEngine::delay_requirements(&scene, &config, RendererCapabilities::default())?;
+    let delay = DelayProcessor::new(
+        requirements.channel_count(),
+        requirements.max_delay_samples(),
+    );
+    RealTimeEngine::new_with_prepared_pcm_components(
+        scene,
+        config,
+        estimated_device_latency_frames,
+        renderer,
+        Box::new(delay),
+    )
+}
+
 #[cfg(test)]
 mod tests {
+    use aurora_core::{Listener, Speaker};
     use aurora_dsp_api::{RealtimeDelayProcessor, RealtimeDspFault};
     use aurora_realtime_engine::{ProcessStatus, RealTimeEngineConfig, TestSignal};
+    use aurora_renderer_api::{ObjectPcmBlock, PcmRendererError};
 
     use super::*;
 
@@ -134,6 +164,74 @@ mod tests {
         }
     }
 
+    #[derive(Debug, Default)]
+    struct TestPcmRenderer {
+        channels: usize,
+        block_size: usize,
+    }
+
+    impl ObjectPcmRenderer for TestPcmRenderer {
+        fn configure(
+            &mut self,
+            layout: Vec<Speaker>,
+            _sample_rate: u32,
+            block_size: usize,
+            _max_objects: usize,
+        ) -> Result<(), PcmRendererError> {
+            self.channels = layout.iter().filter(|speaker| speaker.enabled).count();
+            self.block_size = block_size;
+            Ok(())
+        }
+
+        fn render_pcm(
+            &mut self,
+            _listener: &Listener,
+            objects: &[ObjectPcmBlock<'_>],
+            output: &mut [Vec<f32>],
+        ) -> Result<(), PcmRendererError> {
+            if output.len() != self.channels {
+                return Err(PcmRendererError::OutputChannelCount {
+                    required: self.channels,
+                    actual: output.len(),
+                });
+            }
+            let Some(object) = objects.first() else {
+                return Ok(());
+            };
+            if object.samples.len() != self.block_size {
+                return Err(PcmRendererError::InputBlockSize {
+                    object_index: 0,
+                    required: self.block_size,
+                    actual: object.samples.len(),
+                });
+            }
+            for (index, channel) in output.iter_mut().enumerate() {
+                if channel.len() != self.block_size {
+                    return Err(PcmRendererError::OutputBlockSize {
+                        channel: index,
+                        required: self.block_size,
+                        actual: channel.len(),
+                    });
+                }
+                channel.fill(0.0);
+            }
+            if let Some(first) = output.first_mut() {
+                first.copy_from_slice(object.samples);
+            }
+            Ok(())
+        }
+
+        fn reset(&mut self) {}
+
+        fn latency_frames(&self) -> usize {
+            23
+        }
+
+        fn output_channel_count(&self) -> usize {
+            self.channels
+        }
+    }
+
     fn scene() -> RenderScene {
         serde_json::from_str(include_str!("../../../fixtures/scenes/stereo_circle.json"))
             .expect("fixture scene")
@@ -174,6 +272,24 @@ mod tests {
             );
             assert_eq!(default_output, explicit_output);
         }
+    }
+
+    #[test]
+    fn pcm_renderer_materializes_through_alternative_engine_path() {
+        let mut engine = materialize_realtime_engine_with_pcm_renderer(
+            scene(),
+            config(),
+            Box::new(TestPcmRenderer::default()),
+            256,
+        )
+        .unwrap();
+        assert_eq!(engine.metrics().renderer_latency_frames, 23);
+        let mut output = vec![0.0_f32; 512];
+        assert_eq!(
+            engine.process_interleaved(None, &mut output),
+            ProcessStatus::Ok
+        );
+        assert!(output.iter().any(|sample| sample.abs() > f32::EPSILON));
     }
 
     #[test]
