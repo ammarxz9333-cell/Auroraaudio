@@ -9,30 +9,45 @@
       "source_layout": "5.1",
       "source_channels": 6,
       "target_layout": "7.1.4",
+      "cli_target": "7.1.4",
       "target_channels": 12,
       "target_order": ["FL", "FR", "FC", "LFE", "BL", "BR", "SL", "SR", "TFL", "TFR", "TBL", "TBR"],
       "preserved_bed_map": [[0,0],[1,1],[2,2],[3,3],[4,6],[5,7]],
-      "synthetic_channels": [4,5,8,9,10,11]
+      "synthetic_channels": [4,5,8,9,10,11],
+      "spectral_probes": [
+        { "channel": 8, "frequencies_hz": [431,557] },
+        { "channel": 10, "frequencies_hz": [673,787] }
+      ]
     },
     {
       "id": "5.1->11.1.4",
       "source_layout": "5.1",
       "source_channels": 6,
       "target_layout": "11.1.4-custom-reference",
+      "cli_target": "11.1.4",
       "target_channels": 16,
       "target_order": ["FL", "FR", "FC", "FWL", "FWR", "SL", "SR", "RWL", "RWR", "BL", "BR", "LFE", "TFL", "TFR", "TBL", "TBR"],
       "preserved_bed_map": [[0,0],[1,1],[2,2],[3,11],[4,5],[5,6]],
-      "synthetic_channels": [3,4,7,8,9,10,12,13,14,15]
+      "synthetic_channels": [3,4,7,8,9,10,12,13,14,15],
+      "spectral_probes": [
+        { "channel": 3, "frequencies_hz": [431,557] },
+        { "channel": 7, "frequencies_hz": [673,787] }
+      ]
     },
     {
       "id": "7.1->11.1.4",
       "source_layout": "7.1",
       "source_channels": 8,
       "target_layout": "11.1.4-custom-reference",
+      "cli_target": "11.1.4",
       "target_channels": 16,
       "target_order": ["FL", "FR", "FC", "FWL", "FWR", "SL", "SR", "RWL", "RWR", "BL", "BR", "LFE", "TFL", "TFR", "TBL", "TBR"],
       "preserved_bed_map": [[0,0],[1,1],[2,2],[3,11],[4,9],[5,10],[6,5],[7,6]],
-      "synthetic_channels": [3,4,7,8,12,13,14,15]
+      "synthetic_channels": [3,4,7,8,12,13,14,15],
+      "spectral_probes": [
+        { "channel": 3, "frequencies_hz": [431,557] },
+        { "channel": 7, "frequencies_hz": [673,787,887,997] }
+      ]
     }
   ],
   "acceptance": {
