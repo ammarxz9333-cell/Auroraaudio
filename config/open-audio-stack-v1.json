@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "aurora_contract": {
+    "canonical_media_rate_hz": 48000,
+    "canonical_pcm": "f32-interleaved-at-network-worker-boundary",
+    "clock_owner": "aurora-media-timeline",
+    "network_io_in_realtime_callback": false,
+    "double_resampling_allowed": false,
+    "wired_and_wireless_fanout_stage": "post-render-post-system-dsp"
+  },
+  "components": {
+    "aoo": {
+      "upstream": "https://github.com/Spacechild1/aoo",
+      "pinned_commit": "dc2a5be2962ba02d6cebe297f31f2774f34e7bc7",
+      "license": "Standard Improved BSD License",
+      "role": "wireless-peer-udp-transport-candidate",
+      "integration_boundary": "worker-thread-c-api-adapter",
+      "runtime_status": "contract-ready-adapter-not-yet-selected",
+      "required_capabilities": [
+        "pcm",
+        "sample-accurate-timestamps",
+        "jitter-buffer",
+        "packet-retransmission",
+        "dynamic-resampling",
+        "clock-drift-compensation"
+      ]
+    },
+    "genavb_tsn": {
+      "upstream": "https://github.com/NXP/GenAVB_TSN",
+      "pinned_commit": "6b962d6c34b0c3f142295a213dfa70bda193b23d",
+      "tested_release": "7.3.2",
+      "role": "wired-avb-tsn-milan-candidate",
+      "integration_boundary": "imx8mp-platform-worker-adapter",
+      "runtime_status": "platform-gated-no-generic-host-claim",
+      "required_capabilities": [
+        "gptp-8021as",
+        "avtp-1722",
+        "avdecc-1722-1",
+        "milan-1.2",
+        "hardware-media-clock-recovery"
+      ]
+    },
+    "sound_open_firmware": {
+      "upstream": "https://github.com/thesofproject/sof",
+      "pinned_commit": "11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c",
+      "license": "BSD-3-Clause",
+      "role": "imx8mp-hifi4-system-dsp-candidate",
+      "integration_boundary": "platform-dsp-target-not-host-renderer",
+      "runtime_status": "hardware-gated",
+      "required_capabilities": [
+        "fir",
+        "iir",
+        "drc",
+        "src",
+        "multichannel-pipeline"
+      ]
+    },
+    "libspatialaudio": {
+      "upstream": "https://github.com/videolan/libspatialaudio",
+      "pinned_commit": "d149ed9744fd399b835c6f2920511f8cbcfce5ea",
+      "license": "LGPL-2.1-or-later",
+      "role": "runtime-spatial-renderer-candidate",
+      "integration_boundary": "separate-dynamic-library-or-adapter",
+      "runtime_status": "differential-validation-required-before-selection",
+      "required_capabilities": [
+        "objects",
+        "direct-speakers",
+        "hoa",
+        "7.1.4",
+        "binaural"
+      ]
+    }
+  },
+  "existing_boundaries": {
+    "roomeq": "external-optimizer-reference-only-gpl-boundary-unchanged",
+    "ebu_ear_libear": "correctness-oracle-only-not-runtime-series-renderer",
+    "saf": "independent-render-reference-only",
+    "oar": "iamf-open-render-reference-only",
+    "camilladsp": "external-dsp-executor-reference-existing-boundary"
+  },
+  "selection_rules": [
+    "Only one steady-state speaker renderer may process a block in the production path.",
+    "Only one component owns adaptive sample-rate correction for any clock-domain crossing.",
+    "RoomEQ generates correction intent; it does not run in Aurora's realtime callback.",
+    "SOF may execute system DSP on supported i.MX8MP hardware but must preserve Aurora-owned coefficients and routing semantics.",
+    "GenAVB/TSN and AOO are alternate post-DSP transports and never process the same endpoint concurrently.",
+    "No external project type crosses Aurora's public runtime contracts directly."
+  ]
+}
