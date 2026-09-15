@@ -6,6 +6,7 @@ on:
       - "config/room-correction-camilladsp-differential-v1.json"
       - "validation/room-correction/camilladsp_differential_evidence.py"
       - "docs/room-correction-camilladsp-differential.md"
+      - "docs/camilladsp-channel-order.md"
       - "crates/aurora-dsp-camilladsp/**"
       - ".github/workflows/room-correction-camilladsp-differential-ci.yml"
       - "AGENTS.md"
@@ -69,6 +70,14 @@ jobs:
           target/release/camilladsp --version
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
           cp Cargo.lock "$GITHUB_WORKSPACE/artifacts/camilladsp-generated-Cargo.lock"
+
+      - name: Validate real Aurora 7.1.4 channel sentinel through CamillaDSP
+        env:
+          AURORA_CAMILLADSP_PATH: ${{ runner.temp }}/camilladsp/target/release/camilladsp
+        run: |
+          cargo test --locked -p aurora-dsp-camilladsp \
+            role_aware_real_camilladsp_preserves_center_and_surround_mapping \
+            -- --nocapture
 
       - name: Preflight generated CamillaDSP config with the real binary
         working-directory: ${{ runner.temp }}/autoeq
