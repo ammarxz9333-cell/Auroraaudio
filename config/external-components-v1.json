@@ -277,6 +277,64 @@
       ]
     },
     {
+      "id": "google-obr",
+      "upstream": "https://github.com/google/obr",
+      "decision": "evaluate-active",
+      "integration": "external-process-validation-oracle",
+      "tested_version": "commit-478dc7c752d5eccae534635139ff0253eee3a14a",
+      "pinned_commit": "478dc7c752d5eccae534635139ff0253eee3a14a",
+      "license": "BSD-3-Clause-Clear plus Open Binaural Renderer Patent License 1.0",
+      "roles": ["binaural-render-reference", "ambisonics-binaural-reference", "channel-based-binaural-reference", "object-binaural-reference", "head-rotation-reference"],
+      "object_metadata": "supported-by-upstream-reference-api",
+      "production_ready": false,
+      "evidence": [
+        "config/binaural-reference-v1.json",
+        "validation/binaural/binaural_reference_evidence.py",
+        ".github/workflows/binaural-reference-ci.yml",
+        "docs/binaural-reference.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
+      "id": "ebu-bear",
+      "upstream": "https://github.com/ebu/bear",
+      "decision": "evaluate-active",
+      "integration": "external-process-validation-oracle",
+      "tested_version": "commit-6127e897b941211051c2ad135ee09b00be2e6ae0",
+      "pinned_commit": "6127e897b941211051c2ad135ee09b00be2e6ae0",
+      "license": "Apache-2.0",
+      "maturity": "upstream-pre-release",
+      "roles": ["adm-binaural-render-reference", "independent-binaural-reference", "sh-rotation-reference", "dynamic-binaural-render-reference"],
+      "object_metadata": "adm-rendered-by-upstream-reference",
+      "production_ready": false,
+      "evidence": [
+        "config/binaural-reference-v1.json",
+        "validation/binaural/binaural_reference_evidence.py",
+        ".github/workflows/binaural-reference-ci.yml",
+        "docs/binaural-reference.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
+      "id": "sofar",
+      "upstream": "https://github.com/andreiltd/sofar",
+      "decision": "evaluate-active",
+      "integration": "validation-candidate-only",
+      "tested_version": "0.3.0",
+      "pinned_commit": "06a629292689e99841e5dacaa25c4c6298616ca6",
+      "license": "MIT OR Apache-2.0",
+      "roles": ["sofa-reader-candidate", "hrtf-renderer-candidate", "partitioned-convolution-reference"],
+      "object_metadata": "not-applicable",
+      "production_ready": false,
+      "evidence": [
+        "config/binaural-reference-v1.json",
+        "validation/binaural/binaural_reference_evidence.py",
+        ".github/workflows/binaural-reference-ci.yml",
+        "docs/binaural-reference.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
       "id": "libmysofa",
       "upstream": "https://github.com/hoene/libmysofa",
       "decision": "defer-headphones",
