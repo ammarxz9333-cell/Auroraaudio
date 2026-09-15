@@ -318,6 +318,8 @@ version = "0.1.0"
 dependencies = [
  "aurora-core",
  "aurora-renderer-api",
+ "aurora-test-alloc",
+ "serde_json",
 ]
 
 [[package]]

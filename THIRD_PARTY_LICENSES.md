@@ -43,3 +43,8 @@ External adapters, validation tools, and candidates:
 | Cavern | Not vendored, not linked, disabled by default | Disabled pending license review; high commercial risk until cleared. |
 
 No Dolby, DTS, HDMI, HDCP, Cavern, `truehdd`, RoomEQ, CamillaDSP, libiamf, Harletty, Omniphony, OpenJOC, JOCForge, AOMedia OAR, Google OBR, EBU BEAR, `sofar`, EBU `libadm`, EBU EAR, Spatial Audio Framework, Fraunhofer `mpeghdec`, Ittiam `libmpegh`, FFmpeg, or wireless-speaker dependency is required to build or test Aurora core. Optional validation lanes may require explicitly pinned external tools. The CPAL backend is isolated in `aurora-realtime-audio-cpal` and is not exposed through Aurora core APIs.
+
+
+### MIT KEMAR prepared binaural validation data
+
+The external validation exporter reads `share/MIT_KEMAR_normal_pinna.sofa` from exact libmysofa gitlink `da9e4adc619ee3d1ae5e68da3ed14aa5e60b3ec1` (SHA-256 `2768ac841213a7ae11d1ea7fd0f25a69b39216102dc5dd913ea6ba0f0dc57e28`). The data are Copyright 1994 MIT Media Laboratory, by **Bill Gardner and Keith Martin, MIT Media Lab Machine Listening Group**. Upstream `tests/LICENSE.MIT_KEMAR_pinnae` permits use provided the authors are cited for research or commercial use. The dataset remains external; generated CI responses retain this attribution through these notes. This dataset is an external HRTF fixture, not a measurement of Aurora or its users.

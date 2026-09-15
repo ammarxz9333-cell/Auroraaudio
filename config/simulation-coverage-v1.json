@@ -426,6 +426,29 @@
         ".github/workflows/binaural-7-1-4-differential-ci.yml"
       ],
       "truth_boundary": "Deterministic Aurora geometric gain/delay probe versus pinned external OBR PCM left/right/center semantics, frame integrity and mirror checks. LFE integrity only. Pin, channel-order and unsupported invocation contracts fail closed. Does not prove HRTF parity, front/back or elevation perception, objects, HOA, head tracking, physical eARC/DAC/acoustics, protected services or certification."
+    },
+    {
+      "id": "prepared-binaural-pcm",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "profiles": [
+        "impulse-tail",
+        "hoa-channel-isolation",
+        "sample-crossfade",
+        "invalid-contract",
+        "stale-generation",
+        "transition-busy",
+        "no-allocation-fault-recovery"
+      ],
+      "evidence": [
+        "crates/aurora-renderer-basic/src/binaural.rs",
+        "crates/aurora-renderer-basic/tests/prepared_binaural.rs",
+        "crates/aurora-renderer-basic/examples/prepared_binaural_probe.rs",
+        "validation/binaural/sofar_prepared_export.rs",
+        "validation/binaural/prepared_binaural_evidence.py",
+        ".github/workflows/prepared-binaural-ci.yml"
+      ],
+      "truth_boundary": "Prepared object and ACN/SN3D HOA FIR software PCM, contract and allocation tests. SOFA convolution local reference passes; final external OBR CI pending. Does not establish general runtime assembly integration, universal realtime deadlines, perceptual quality, physical eARC/DAC/acoustics/tracking, protected services or certification."
     }
   ]
 }

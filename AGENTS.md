@@ -141,7 +141,15 @@ Active PR #177 has implemented the first Aurora-vs-reference execution different
 - renderer/API/core/scene and Cargo dependency changes trigger the differential workflow;
 - `config/binaural-7-1-4-differential-v1.json`, `validation/binaural/binaural_7_1_4_differential.py` and `.github/workflows/binaural-7-1-4-differential-ci.yml` are registered as `binaural-7-1-4-semantic-differential` in simulation coverage.
 
-Remaining Phase 11 implementation is objects, Ambisonics/HOA, head rotation, moving-source/HRTF-transition continuity and bounded discrimination metrics.
+Prepared Phase 11 implementation on `phase11-prepared-binaural` (not yet merged):
+- `aurora-renderer-basic::binaural` adds actual stereo PCM FIR processing for 1..16 object channels or explicit ACN/SN3D HOA orders 1..3; filter parsing/lookup remains on the control thread.
+- Validated immutable banks, monotonic generations, fixed storage, rejected-candidate transactionality, sample-wise crossfades preserving tails, explicit discontinuity and zero-allocation processing tests.
+- External pinned sofar exports MIT KEMAR SOFA responses (Gardner/Martin attribution in license notes), including prepared yaw/pitch/roll object poses and quadrature HOA filters. Modern Rust is isolated outside the Rust 1.78 workspace.
+- Local real PCM comparison: 19 cases, maximum absolute sofar differential about 1.5e-8. OBR directional CI remains pending. Native front/back and elevation response discrimination is transfer-function evidence only.
+- Workflow `prepared-binaural-ci.yml` and `validation/binaural/prepared_binaural_evidence.py` cover external PCM, missing/silent/swapped output controls.
+- This is an explicit prepared-filter processing API; general runtime assembly selection, arbitrary live tracker integration, sustained deadline evidence and measured moving-source transition metrics remain unfinished. Direct FIR work is bounded but no universal realtime deadline is claimed.
+
+Remaining Phase 11 work: final reference gates, moving-source/transition metrics and application integration; Phase 12 runtime/fault/latency acceptance remains next.
 
 The #177 differential compares bounded semantics rather than raw PCM because Aurora's geometric model and OBR implement different transfer functions. A green lane does not prove HRTF parity, front/back or elevation discrimination, personalized HRTF quality, head tracking, perceptual quality, physical latency, or certification.
 
