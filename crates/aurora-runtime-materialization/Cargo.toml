@@ -16,6 +16,5 @@ aurora-runtime-assembly = { path = "../aurora-runtime-assembly" }
 aurora-scene = { path = "../aurora-scene" }
 
 [dev-dependencies]
-aurora-core = { path = "../aurora-core" }
 aurora-dsp-api = { path = "../aurora-dsp-api" }
 serde_json.workspace = true
