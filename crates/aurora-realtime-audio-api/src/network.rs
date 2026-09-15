@@ -66,7 +66,10 @@ pub struct NetworkAudioFormat {
 
 impl NetworkAudioFormat {
     /// Validates the bounded format before a backend is prepared.
-    pub fn validate(self, capabilities: NetworkTransportCapabilities) -> Result<(), NetworkTransportError> {
+    pub fn validate(
+        self,
+        capabilities: NetworkTransportCapabilities,
+    ) -> Result<(), NetworkTransportError> {
         if self.sample_rate == 0 || self.channels == 0 || self.block_frames == 0 {
             return Err(NetworkTransportError::InvalidFormat);
         }
@@ -103,9 +106,7 @@ impl NetworkTimingPolicy {
         {
             return Err(NetworkTransportError::InvalidTimingPolicy);
         }
-        if !self.maximum_rate_correction_ppm.is_finite()
-            || self.maximum_rate_correction_ppm < 0.0
-        {
+        if !self.maximum_rate_correction_ppm.is_finite() || self.maximum_rate_correction_ppm < 0.0 {
             return Err(NetworkTransportError::InvalidTimingPolicy);
         }
         Ok(())
