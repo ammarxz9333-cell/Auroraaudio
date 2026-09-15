@@ -1,0 +1,132 @@
+name: Room Correction CamillaDSP Differential CI
+
+on:
+  pull_request:
+    paths:
+      - "config/room-correction-camilladsp-differential-v1.json"
+      - "validation/room-correction/camilladsp_differential_evidence.py"
+      - "docs/room-correction-camilladsp-differential.md"
+      - ".github/workflows/room-correction-camilladsp-differential-ci.yml"
+      - "AGENTS.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: room-correction-camilladsp-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AUTOEQ_SHA: 579dd7486024fc18ff219e31eb7337362814f602
+  CAMILLADSP_SHA: 05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74
+  CARGO_TERM_COLOR: never
+
+jobs:
+  pcm-differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libasound2-dev libssl-dev
+
+      - name: Fetch exact RoomEQ reference
+        run: |
+          git init "$RUNNER_TEMP/autoeq"
+          git -C "$RUNNER_TEMP/autoeq" remote add origin https://github.com/pierreaubert/autoeq.git
+          git -C "$RUNNER_TEMP/autoeq" fetch --depth 1 origin "$AUTOEQ_SHA"
+          git -C "$RUNNER_TEMP/autoeq" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/autoeq" rev-parse HEAD)" = "$AUTOEQ_SHA"
+
+      - name: Fetch exact CamillaDSP executor
+        run: |
+          git init "$RUNNER_TEMP/camilladsp"
+          git -C "$RUNNER_TEMP/camilladsp" remote add origin https://github.com/HEnquist/camilladsp.git
+          git -C "$RUNNER_TEMP/camilladsp" fetch --depth 1 origin "$CAMILLADSP_SHA"
+          git -C "$RUNNER_TEMP/camilladsp" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/camilladsp" rev-parse HEAD)" = "$CAMILLADSP_SHA"
+
+      - name: Build exact CamillaDSP binary
+        working-directory: ${{ runner.temp }}/camilladsp
+        run: |
+          cargo build --locked --release --no-default-features --bin camilladsp
+          test -x target/release/camilladsp
+          target/release/camilladsp --version
+
+      - name: Run required RoomEQ-to-CamillaDSP PCM contracts
+        working-directory: ${{ runner.temp }}/autoeq
+        env:
+          ROOMEQ_CAMILLADSP_BIN: ${{ runner.temp }}/camilladsp/target/release/camilladsp
+        run: |
+          python3 scripts/run_camilladsp_backend_contracts.py
+          git diff --exit-code -- Cargo.lock
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp target/qa/camilladsp-backend-contracts.json \
+            "$GITHUB_WORKSPACE/artifacts/camilladsp-backend-contracts.json"
+          cp target/qa/camilladsp-backend-contracts.log \
+            "$GITHUB_WORKSPACE/artifacts/camilladsp-backend-contracts.log"
+
+      - name: Prove unsupported CamillaDSP graph features fail closed
+        working-directory: ${{ runner.temp }}/autoeq
+        run: |
+          set -o pipefail
+          cargo test --locked -p roomeq-export --lib \
+            camilladsp_rejects_unsupported_plugins_instead_of_dropping_them \
+            -- --nocapture 2>&1 \
+            | tee "$GITHUB_WORKSPACE/artifacts/camilladsp-unsupported.log"
+
+      - name: Emit Aurora differential evidence
+        run: |
+          python3 validation/room-correction/camilladsp_differential_evidence.py \
+            --config config/room-correction-camilladsp-differential-v1.json \
+            --backend-json artifacts/camilladsp-backend-contracts.json \
+            --unsupported-log artifacts/camilladsp-unsupported.log \
+            --roomeq-head "$(git -C "$RUNNER_TEMP/autoeq" rev-parse HEAD)" \
+            --camilladsp-head "$(git -C "$RUNNER_TEMP/camilladsp" rev-parse HEAD)" \
+            --output artifacts/room-correction-camilladsp-differential-evidence.json
+
+      - name: Require corrupted backend evidence to fail closed
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source = Path("artifacts/camilladsp-backend-contracts.json")
+          data = json.loads(source.read_text())
+          data["status"] = "passed"
+          required = list(data.get("required_tests", []))
+          if not required:
+              raise SystemExit("required_tests missing before negative mutation")
+          data["missing_tests"] = [required[0]]
+          Path("artifacts/camilladsp-backend-contracts-corrupt.json").write_text(
+              json.dumps(data, indent=2) + "\n"
+          )
+          PY
+          if python3 validation/room-correction/camilladsp_differential_evidence.py \
+            --config config/room-correction-camilladsp-differential-v1.json \
+            --backend-json artifacts/camilladsp-backend-contracts-corrupt.json \
+            --unsupported-log artifacts/camilladsp-unsupported.log \
+            --roomeq-head "$(git -C "$RUNNER_TEMP/autoeq" rev-parse HEAD)" \
+            --camilladsp-head "$(git -C "$RUNNER_TEMP/camilladsp" rev-parse HEAD)" \
+            --output artifacts/room-correction-camilladsp-differential-corrupt-evidence.json; then
+            echo "ERROR: corrupted CamillaDSP backend evidence unexpectedly passed"
+            exit 1
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-correction-camilladsp-differential-evidence
+          path: |
+            artifacts/camilladsp-backend-contracts.json
+            artifacts/camilladsp-backend-contracts.log
+            artifacts/camilladsp-unsupported.log
+            artifacts/room-correction-camilladsp-differential*.json
