@@ -11,6 +11,11 @@ use thiserror::Error;
 
 use crate::RenderObject;
 
+/// Listener type used by the object-PCM renderer boundary.
+pub type PcmListener = Listener;
+/// Speaker type used by the object-PCM renderer boundary.
+pub type PcmSpeaker = Speaker;
+
 /// Borrowed PCM and spatial state for one object in a processing block.
 #[derive(Debug, Clone, Copy)]
 pub struct ObjectPcmBlock<'a> {
@@ -90,7 +95,7 @@ pub trait ObjectPcmRenderer: Send {
     /// Configures layout and fixed processing limits before rendering starts.
     fn configure(
         &mut self,
-        layout: Vec<Speaker>,
+        layout: Vec<PcmSpeaker>,
         sample_rate: u32,
         block_size: usize,
         max_objects: usize,
@@ -102,7 +107,7 @@ pub trait ObjectPcmRenderer: Send {
     /// channel vector during steady-state rendering.
     fn render_pcm(
         &mut self,
-        listener: &Listener,
+        listener: &PcmListener,
         objects: &[ObjectPcmBlock<'_>],
         output: &mut [Vec<f32>],
     ) -> Result<(), PcmRendererError>;
