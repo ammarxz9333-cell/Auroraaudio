@@ -69,8 +69,18 @@
       "pinned_commit": "d149ed9744fd399b835c6f2920511f8cbcfce5ea",
       "license": "LGPL-2.1-or-later",
       "role": "runtime-spatial-renderer-candidate",
-      "integration_boundary": "separate-dynamic-library-or-adapter",
-      "runtime_status": "differential-validation-required-before-selection",
+      "integration_boundary": "object-pcm-renderer-dynamic-shim-adapter",
+      "runtime_status": "software-proven-pcm-adapter-production-not-selected",
+      "software_evidence": [
+        "exact-pin-upstream-build-and-tests",
+        "canonical-7.1.4-channel-order-guard",
+        "direct-adm-gain-oracle-fl-fr-fc",
+        "object-pcm-runtime-semantic-differential-vs-aurora-vbap",
+        "listener-relative-yaw-transform-invariance",
+        "255-frame-direct-path-latency-contract",
+        "rust-steady-state-zero-allocation",
+        "native-512-render-zero-allocation-audit"
+      ],
       "required_capabilities": [
         "objects",
         "direct-speakers",
