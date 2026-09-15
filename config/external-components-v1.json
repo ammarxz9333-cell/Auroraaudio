@@ -24,15 +24,50 @@
       ]
     },
     {
+      "id": "roomeq",
+      "upstream": "https://github.com/pierreaubert/autoeq",
+      "decision": "evaluate-active",
+      "integration": "external-process-validation-reference",
+      "tested_version": "0.5.73",
+      "pinned_commit": "579dd7486024fc18ff219e31eb7337362814f602",
+      "license": "GPL-3.0-or-later",
+      "roles": [
+        "room-correction-optimizer-reference",
+        "multichannel-correction-reference",
+        "multi-sub-reference",
+        "crossover-bass-management-reference",
+        "fir-iir-hybrid-reference",
+        "timing-phase-alignment-reference",
+        "camilladsp-export-reference"
+      ],
+      "object_metadata": "not-applicable",
+      "production_ready": false,
+      "evidence": [
+        "config/room-correction-reference-v1.json",
+        "validation/room-correction/room_correction_reference_evidence.py",
+        ".github/workflows/room-correction-reference-ci.yml",
+        "docs/room-correction-reference.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
       "id": "camilladsp",
       "upstream": "https://github.com/HEnquist/camilladsp",
       "decision": "adopted-offline",
       "integration": "external-process",
       "tested_version": "4.1.3",
+      "pinned_commit": "05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74",
+      "license": "GPL-3.0-only OR MPL-2.0",
       "roles": ["fir", "iir", "crossover", "delay", "limiter", "room-correction"],
       "object_metadata": "not-applicable",
       "production_ready": false,
-      "evidence": ["docs/adapters.md"]
+      "evidence": [
+        "config/room-correction-reference-v1.json",
+        ".github/workflows/room-correction-reference-ci.yml",
+        "docs/room-correction-reference.md",
+        "docs/adapters.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
     },
     {
       "id": "omniphony",
