@@ -9,6 +9,7 @@ use std::ffi::{CStr, CString};
 use std::fmt;
 use std::os::raw::{c_char, c_int, c_void};
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use aurora_realtime_audio_api::{
     MediaTimestamp, NetworkAudioBlock, NetworkAudioFormat, NetworkAudioTransport,
@@ -20,6 +21,7 @@ use aurora_realtime_audio_api::{
 const SHIM_ABI_VERSION: u32 = 1;
 const MAX_AOO_CHANNELS: usize = 32;
 const EVENT_CAPACITY: usize = 8;
+static AOO_LIBRARY_ACTIVE: AtomicBool = AtomicBool::new(false);
 
 /// Static sink endpoint configured for one AOO source.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -68,6 +70,9 @@ pub enum AooAdapterLoadError {
     MissingSymbol(String),
     /// Loaded shim ABI does not match this adapter.
     AbiMismatch { expected: u32, actual: u32 },
+    /// The pinned AOO runtime has process-global initialization semantics, so
+    /// adapter v1 permits only one loaded instance at a time.
+    InstanceAlreadyActive,
     /// Native shim could not allocate/initialize a handle.
     CreateFailed,
     /// Configured host contains an embedded NUL byte.
@@ -85,6 +90,9 @@ impl fmt::Display for AooAdapterLoadError {
                     f,
                     "AOO shim ABI mismatch: expected {expected}, got {actual}"
                 )
+            }
+            Self::InstanceAlreadyActive => {
+                write!(f, "an AOO runtime adapter is already active in this process")
             }
             Self::CreateFailed => write!(f, "AOO shim failed to create a native handle"),
             Self::InvalidSinkHost => write!(f, "AOO sink host contains an embedded NUL byte"),
@@ -393,7 +401,19 @@ unsafe impl Send for SharedLibrary {}
 
 impl SharedLibrary {
     fn open(path: &Path) -> Result<Self, AooAdapterLoadError> {
-        platform::open(path).map(|handle| Self { handle })
+        if AOO_LIBRARY_ACTIVE
+            .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+            .is_err()
+        {
+            return Err(AooAdapterLoadError::InstanceAlreadyActive);
+        }
+        match platform::open(path) {
+            Ok(handle) => Ok(Self { handle }),
+            Err(error) => {
+                AOO_LIBRARY_ACTIVE.store(false, Ordering::Release);
+                Err(error)
+            }
+        }
     }
 
     unsafe fn symbol<T: Copy>(&self, name: &'static [u8]) -> Result<T, AooAdapterLoadError> {
@@ -414,6 +434,7 @@ impl Drop for SharedLibrary {
         if !self.handle.is_null() {
             unsafe { platform::close(self.handle) };
         }
+        AOO_LIBRARY_ACTIVE.store(false, Ordering::Release);
     }
 }
 
@@ -447,7 +468,6 @@ mod platform {
         handle: *mut c_void,
         name: &CStr,
     ) -> Result<*mut c_void, AooAdapterLoadError> {
-        // Clear any prior loader error before dlsym.
         let _ = dlerror();
         let ptr = dlsym(handle, name.as_ptr());
         let err = dlerror();
@@ -555,8 +575,6 @@ mod tests {
 
     #[test]
     fn event_ring_is_bounded_and_preserves_latest_events() {
-        // This test exercises the fixed event-ring behavior without requiring a
-        // native library by reproducing its tiny indexing contract.
         let mut slots = [None; EVENT_CAPACITY];
         let mut read = 0usize;
         let mut write = 0usize;
