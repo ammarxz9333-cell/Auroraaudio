@@ -25,6 +25,21 @@ def one(pattern: str, text: str, label: str) -> re.Match[str]:
     return match
 
 
+def parse_chain(text: str) -> dict[str, Any]:
+    summary = one(
+        r"test result:\s+ok\.\s+(\d+) passed;\s+0 failed;",
+        text,
+        "chain-constraint test summary",
+    )
+    passed = int(summary.group(1))
+    checks = {
+        "nonempty": passed > 0,
+        "constraint_module_exercised": "chain_constraints_tests::" in text,
+        "no_failed_test": "FAILED" not in text,
+    }
+    return {"passed": passed, "checks": checks, "pass": all(checks.values())}
+
+
 def parse_multichannel(text: str, expected_cases: int) -> dict[str, Any]:
     results = one(
         r"Results:\s+(\d+) passed,\s+(\d+) failed,\s+(\d+) total",
@@ -101,8 +116,7 @@ def parse_stage3(text: str) -> dict[str, Any]:
     checks = {
         "nonempty": total > 0,
         "all_expectations_hold": passed == total,
-        "headroom_chain_gate_present": "clean chain passes" not in text
-        or "stage3 demo FAIL: clean chain passes" not in text,
+        "no_demo_failure": "stage3 demo FAIL:" not in text,
     }
     return {
         "passed": passed,
@@ -115,6 +129,7 @@ def parse_stage3(text: str) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--chain-log", type=Path, required=True)
     parser.add_argument("--multichannel-log", type=Path, required=True)
     parser.add_argument("--multiseat-log", type=Path, required=True)
     parser.add_argument("--stage3-log", type=Path, required=True)
@@ -128,23 +143,32 @@ def main() -> int:
         expected_cases = int(
             contract["cases"]["multichannel_7_1_4"]["expected_multichannel_cases"]
         )
+        chain_text = args.chain_log.read_text(encoding="utf-8")
         multichannel_text = args.multichannel_log.read_text(encoding="utf-8")
         multiseat_text = args.multiseat_log.read_text(encoding="utf-8")
         stage3_text = args.stage3_log.read_text(encoding="utf-8")
+        chain = parse_chain(chain_text)
         multichannel = parse_multichannel(multichannel_text, expected_cases)
         multiseat = parse_multiseat(multiseat_text)
         stage3 = parse_stage3(stage3_text)
-        verdict = multichannel["pass"] and multiseat["pass"] and stage3["pass"]
+        verdict = (
+            chain["pass"]
+            and multichannel["pass"]
+            and multiseat["pass"]
+            and stage3["pass"]
+        )
         evidence = {
             "schema_version": 1,
             "roadmap_phase": 10,
             "roomeq_pinned_commit": contract["roomeq"]["pinned_commit"],
             "contract_sha256": sha256(args.config),
             "logs_sha256": {
+                "chain": sha256(args.chain_log),
                 "multichannel": sha256(args.multichannel_log),
                 "multiseat": sha256(args.multiseat_log),
                 "stage3": sha256(args.stage3_log),
             },
+            "chain_constraints": chain,
             "multichannel": multichannel,
             "multiseat": multiseat,
             "stage3": stage3,
