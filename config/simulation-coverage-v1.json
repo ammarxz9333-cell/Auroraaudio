@@ -63,6 +63,7 @@
       "id": "network-audio-transport-contract",
       "status": "covered",
       "evidence_class": "virtual",
+      "simulator_capability": "network-audio-transport-contract",
       "profiles": [
         "healthy",
         "overflow",
