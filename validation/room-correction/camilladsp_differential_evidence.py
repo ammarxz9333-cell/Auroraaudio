@@ -38,11 +38,33 @@ def parse_unsupported_log(path: Path, required_name: str) -> dict[str, Any]:
     }
 
 
+def parse_channel_sentinel(path: Path) -> dict[str, Any]:
+    text = path.read_text(encoding="utf-8")
+    required_name = "role_aware_real_camilladsp_preserves_center_and_surround_mapping"
+    summary = re.search(
+        r"test result:\s+ok\.\s+(\d+) passed;\s+0 failed;",
+        text,
+        flags=re.MULTILINE,
+    )
+    checks = {
+        "required_test_named": required_name in text,
+        "test_summary_present": summary is not None,
+        "at_least_one_test_passed": summary is not None and int(summary.group(1)) >= 1,
+        "no_failed_marker": "FAILED" not in text,
+    }
+    return {
+        "required_test": required_name,
+        "checks": checks,
+        "pass": all(checks.values()),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--backend-json", type=Path, required=True)
     parser.add_argument("--unsupported-log", type=Path, required=True)
+    parser.add_argument("--sentinel-log", type=Path, required=True)
     parser.add_argument("--camilladsp-lock", type=Path, required=True)
     parser.add_argument("--roomeq-head", required=True)
     parser.add_argument("--camilladsp-head", required=True)
@@ -68,6 +90,7 @@ def main() -> int:
         unsupported = parse_unsupported_log(
             args.unsupported_log, required_fail_closed[0]
         )
+        sentinel = parse_channel_sentinel(args.sentinel_log)
         checks = {
             "roomeq_head": args.roomeq_head == contract["roomeq"]["pinned_commit"],
             "camilladsp_head": args.camilladsp_head
@@ -75,6 +98,7 @@ def main() -> int:
             "camilladsp_version": contract["camilladsp"]["expected_version_fragment"]
             in version,
             "generated_camilladsp_dependency_lock_present": args.camilladsp_lock.stat().st_size > 0,
+            "aurora_7_1_4_channel_sentinel": sentinel["pass"],
             "backend_status": backend.get("status") == "passed",
             "backend_returncode": backend.get("returncode") == 0,
             "required_contract_set_exact": reported_required == required,
@@ -96,6 +120,7 @@ def main() -> int:
                 "sha256": sha256(args.camilladsp_lock),
                 "bytes": args.camilladsp_lock.stat().st_size,
             },
+            "aurora_channel_sentinel": sentinel,
             "backend": {
                 "status": backend.get("status"),
                 "returncode": backend.get("returncode"),
@@ -110,6 +135,7 @@ def main() -> int:
                 "contract": sha256(args.config),
                 "backend_json": sha256(args.backend_json),
                 "unsupported_log": sha256(args.unsupported_log),
+                "sentinel_log": sha256(args.sentinel_log),
                 "camilladsp_generated_lock": sha256(args.camilladsp_lock),
             },
             "truth_boundary": contract["truth_boundary"],
