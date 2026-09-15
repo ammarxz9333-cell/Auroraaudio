@@ -6,6 +6,7 @@ mod drift;
 mod drift_controller;
 mod duplex;
 mod latency;
+mod network_bridge;
 mod transport;
 
 pub use asrc::{AsrcError, AsrcProcessReport, AsynchronousResampler, RubatoAsrc};
@@ -30,6 +31,10 @@ pub use duplex::{
 pub use latency::{
     estimate_repeated_latency, generate_measurement_sequence, LatencyEstimateError,
     LatencyMeasurementReport,
+};
+pub use network_bridge::{
+    create_network_transport_bridge, NetworkBlockConsumer, NetworkBlockMetadata,
+    NetworkBlockProducer, NetworkBridgePopError, NetworkBridgePushError,
 };
 pub use transport::{TransportKind, TransportPrototype};
 
