@@ -36,7 +36,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential pkg-config libasound2-dev libssl-dev
+            build-essential pkg-config libasound2-dev libssl-dev libpulse-dev libjack-jackd2-dev
 
       - name: Fetch exact RoomEQ reference
         run: |
@@ -60,11 +60,20 @@ jobs:
           test ! -e Cargo.lock
           cargo generate-lockfile
           test -s Cargo.lock
-          cargo build --locked --release --no-default-features --bin camilladsp
+          cargo build --locked --release --bin camilladsp
           test -x target/release/camilladsp
           target/release/camilladsp --version
           mkdir -p "$GITHUB_WORKSPACE/artifacts"
           cp Cargo.lock "$GITHUB_WORKSPACE/artifacts/camilladsp-generated-Cargo.lock"
+
+      - name: Preflight generated CamillaDSP config with the real binary
+        working-directory: ${{ runner.temp }}/autoeq
+        env:
+          ROOMEQ_CAMILLADSP_VALIDATE_CMD: ${{ runner.temp }}/camilladsp/target/release/camilladsp --check {config}
+        run: |
+          cargo test --locked -p roomeq-export --lib \
+            tool_contract_camilladsp_routed_export_can_be_validated_locally \
+            -- --nocapture
 
       - name: Run required RoomEQ-to-CamillaDSP PCM contracts
         working-directory: ${{ runner.temp }}/autoeq
