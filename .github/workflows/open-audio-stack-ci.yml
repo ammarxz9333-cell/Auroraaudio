@@ -1,0 +1,137 @@
+name: Open Audio Stack CI
+
+on:
+  pull_request:
+    paths:
+      - "crates/aurora-realtime-audio-api/**"
+      - "config/open-audio-stack-v1.json"
+      - "validation/open-audio-stack/**"
+      - "docs/adr/0021-open-pro-audio-stack-integration.md"
+      - "THIRD_PARTY_LICENSES.md"
+      - "AGENTS.md"
+      - ".github/workflows/open-audio-stack-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: open-audio-stack-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AOO_SHA: dc2a5be2962ba02d6cebe297f31f2774f34e7bc7
+  GENAVB_SHA: 6b962d6c34b0c3f142295a213dfa70bda193b23d
+  SOF_SHA: 11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c
+  LIBSPATIALAUDIO_SHA: d149ed9744fd399b835c6f2920511f8cbcfce5ea
+
+jobs:
+  pinned-open-audio-stack:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config
+
+      - name: Fetch exact AOO candidate
+        run: |
+          git init "$RUNNER_TEMP/aoo"
+          git -C "$RUNNER_TEMP/aoo" remote add origin https://github.com/Spacechild1/aoo.git
+          git -C "$RUNNER_TEMP/aoo" fetch --depth 1 origin "$AOO_SHA"
+          git -C "$RUNNER_TEMP/aoo" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/aoo" rev-parse HEAD)" = "$AOO_SHA"
+          git -C "$RUNNER_TEMP/aoo" submodule update --init --recursive
+
+      - name: Build exact AOO C API
+        run: |
+          cmake -S "$RUNNER_TEMP/aoo" -B "$RUNNER_TEMP/aoo-build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DAOO_USE_OPUS=OFF \
+            -DAOO_BUILD_SHARED_LIBRARY=ON \
+            -DAOO_BUILD_TESTS=ON \
+            -DAOO_BUILD_EXAMPLES=OFF \
+            -DAOO_BUILD_SERVER=OFF
+          cmake --build "$RUNNER_TEMP/aoo-build" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/aoo-build" --output-on-failure
+          test -f "$RUNNER_TEMP/aoo/include/aoo.h"
+
+      - name: Fetch exact libspatialaudio candidate
+        run: |
+          git init "$RUNNER_TEMP/libspatialaudio"
+          git -C "$RUNNER_TEMP/libspatialaudio" remote add origin https://github.com/videolan/libspatialaudio.git
+          git -C "$RUNNER_TEMP/libspatialaudio" fetch --depth 1 origin "$LIBSPATIALAUDIO_SHA"
+          git -C "$RUNNER_TEMP/libspatialaudio" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/libspatialaudio" rev-parse HEAD)" = "$LIBSPATIALAUDIO_SHA"
+
+      - name: Build and test exact libspatialaudio
+        run: |
+          cmake -S "$RUNNER_TEMP/libspatialaudio" -B "$RUNNER_TEMP/libspatialaudio-build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_TESTING=ON
+          cmake --build "$RUNNER_TEMP/libspatialaudio-build" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/libspatialaudio-build" --output-on-failure
+
+      - name: Fetch exact NXP GenAVB TSN candidate
+        run: |
+          git init "$RUNNER_TEMP/genavb"
+          git -C "$RUNNER_TEMP/genavb" remote add origin https://github.com/NXP/GenAVB_TSN.git
+          git -C "$RUNNER_TEMP/genavb" fetch --depth 1 origin "$GENAVB_SHA"
+          git -C "$RUNNER_TEMP/genavb" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/genavb" rev-parse HEAD)" = "$GENAVB_SHA"
+          test -d "$RUNNER_TEMP/genavb/api"
+          test -d "$RUNNER_TEMP/genavb/gptp"
+          test -d "$RUNNER_TEMP/genavb/avtp"
+          grep -q 'i.MX 8MP' "$RUNNER_TEMP/genavb/README.md"
+
+      - name: Fetch exact Sound Open Firmware candidate
+        run: |
+          git init "$RUNNER_TEMP/sof"
+          git -C "$RUNNER_TEMP/sof" remote add origin https://github.com/thesofproject/sof.git
+          git -C "$RUNNER_TEMP/sof" fetch --depth 1 origin "$SOF_SHA"
+          git -C "$RUNNER_TEMP/sof" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/sof" rev-parse HEAD)" = "$SOF_SHA"
+          test -d "$RUNNER_TEMP/sof/src"
+
+      - name: Emit Aurora integration evidence
+        run: |
+          python3 validation/open-audio-stack/open_audio_stack_evidence.py \
+            --config config/open-audio-stack-v1.json \
+            --aoo "$RUNNER_TEMP/aoo" \
+            --genavb "$RUNNER_TEMP/genavb" \
+            --sof "$RUNNER_TEMP/sof" \
+            --libspatialaudio "$RUNNER_TEMP/libspatialaudio" \
+            --output artifacts/open-audio-stack-evidence.json
+
+      - name: Require pin drift to fail closed
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source = Path('config/open-audio-stack-v1.json')
+          data = json.loads(source.read_text())
+          data['components']['aoo']['pinned_commit'] = '0' * 40
+          Path('artifacts/bad-open-audio-stack-v1.json').write_text(json.dumps(data, indent=2) + '\n')
+          PY
+          if python3 validation/open-audio-stack/open_audio_stack_evidence.py \
+            --config artifacts/bad-open-audio-stack-v1.json \
+            --aoo "$RUNNER_TEMP/aoo" \
+            --genavb "$RUNNER_TEMP/genavb" \
+            --sof "$RUNNER_TEMP/sof" \
+            --libspatialaudio "$RUNNER_TEMP/libspatialaudio" \
+            --output artifacts/bad-open-audio-stack-evidence.json; then
+            echo "ERROR: mismatched AOO pin unexpectedly passed"
+            exit 1
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: open-audio-stack-evidence
+          path: artifacts/open-audio-stack*.json
