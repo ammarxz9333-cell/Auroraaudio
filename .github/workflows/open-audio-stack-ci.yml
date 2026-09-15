@@ -35,6 +35,22 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Validate touched Rust boundaries
+        run: |
+          cargo fmt --all --check
+          cargo check --locked --all-targets --all-features \
+            -p aurora-realtime-audio-api \
+            -p aurora-realtime-audio-sim \
+            -p aurora-realtime-engine
+          cargo clippy --locked --all-targets --all-features \
+            -p aurora-realtime-audio-api \
+            -p aurora-realtime-audio-sim \
+            -p aurora-realtime-engine -- -D warnings
+          cargo test --locked --all-features \
+            -p aurora-realtime-audio-api \
+            -p aurora-realtime-audio-sim \
+            -p aurora-realtime-engine
+
       - name: Install build dependencies
         run: |
           sudo apt-get update
