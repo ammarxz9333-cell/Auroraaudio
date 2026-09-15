@@ -6,6 +6,7 @@ on:
       - "config/room-correction-camilladsp-differential-v1.json"
       - "validation/room-correction/camilladsp_differential_evidence.py"
       - "docs/room-correction-camilladsp-differential.md"
+      - "crates/aurora-dsp-camilladsp/**"
       - ".github/workflows/room-correction-camilladsp-differential-ci.yml"
       - "AGENTS.md"
   workflow_dispatch:
@@ -31,6 +32,9 @@ jobs:
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable
+
+      - name: Validate Aurora role-aware CamillaDSP adapter
+        run: cargo test --locked -p aurora-dsp-camilladsp
 
       - name: Install Linux build dependencies
         run: |
