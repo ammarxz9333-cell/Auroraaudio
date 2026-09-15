@@ -27,6 +27,7 @@ pub struct LibspatialaudioRuntimeConfig {
 }
 
 impl LibspatialaudioRuntimeConfig {
+    /// Creates a runtime configuration for one exact shim library.
     pub fn new(shim_path: impl Into<PathBuf>) -> Self {
         Self {
             shim_path: shim_path.into(),
@@ -37,10 +38,15 @@ impl LibspatialaudioRuntimeConfig {
 /// Fail-closed adapter load errors before renderer configuration.
 #[derive(Debug)]
 pub enum LibspatialaudioLoadError {
+    /// Shared-library path cannot be represented for the platform loader.
     InvalidLibraryPath,
+    /// Platform dynamic loader returned an error.
     DynamicLibrary(String),
+    /// Required Aurora shim symbol is missing.
     MissingSymbol(String),
+    /// Loaded shim ABI does not match this adapter.
     AbiMismatch { expected: u32, actual: u32 },
+    /// Shim could not construct a native renderer handle.
     CreateFailed,
 }
 
@@ -107,6 +113,7 @@ pub struct LibspatialaudioRenderer {
 unsafe impl Send for LibspatialaudioRenderer {}
 
 impl LibspatialaudioRenderer {
+    /// Loads the Aurora-owned shim and creates one native renderer instance.
     pub fn load(
         config: LibspatialaudioRuntimeConfig,
     ) -> Result<Self, LibspatialaudioLoadError> {
@@ -155,13 +162,13 @@ impl LibspatialaudioRenderer {
     }
 
     fn validate_layout(layout: &[Speaker]) -> Result<(), PcmRendererError> {
-        let enabled: Vec<&Speaker> = layout.iter().filter(|speaker| speaker.enabled).collect();
-        if enabled.len() != OUTPUT_CHANNELS {
+        let enabled_count = layout.iter().filter(|speaker| speaker.enabled).count();
+        if enabled_count != OUTPUT_CHANNELS {
             return Err(PcmRendererError::InvalidConfiguration(format!(
                 "libspatialaudio v1 requires exactly {OUTPUT_CHANNELS} enabled speakers"
             )));
         }
-        for (index, speaker) in enabled.into_iter().enumerate() {
+        for (index, speaker) in layout.iter().filter(|speaker| speaker.enabled).enumerate() {
             if !canonical_role_matches(index, &speaker.channel_role) {
                 return Err(PcmRendererError::InvalidConfiguration(format!(
                     "libspatialaudio v1 requires canonical 7.1.4 role order; index {index} is {}",
@@ -184,22 +191,20 @@ impl LibspatialaudioRenderer {
             return Err(PcmRendererError::NonFiniteMetadata);
         }
         if listener.orientation.z.abs() > ORIENTATION_EPSILON {
-            return Err(PcmRendererError::InvalidConfiguration(
-                "libspatialaudio speaker adapter v1 supports yaw-only listener orientation"
-                    .to_owned(),
-            ));
+            return Err(PcmRendererError::UnsupportedListenerOrientation);
         }
         let forward_length = listener
             .orientation
             .x
             .hypot(listener.orientation.y);
         if forward_length <= ORIENTATION_EPSILON {
-            return Err(PcmRendererError::InvalidConfiguration(
-                "listener horizontal orientation must be non-zero".to_owned(),
-            ));
+            return Err(PcmRendererError::UnsupportedListenerOrientation);
         }
         let forward_x = listener.orientation.x / forward_length;
         let forward_y = listener.orientation.y / forward_length;
+        // Aurora and libspatialaudio both use +X right, +Y front, +Z up. Rotate
+        // room/world coordinates so the listener's horizontal forward vector
+        // becomes libspatialaudio-local +Y without moving speaker output order.
         let right_x = forward_y;
         let right_y = -forward_x;
 
@@ -314,6 +319,7 @@ impl ObjectPcmRenderer for LibspatialaudioRenderer {
 
         self.fill_listener_relative_metadata(listener, objects)?;
         for (slot, channel) in self.output_ptrs.iter_mut().zip(output.iter_mut()) {
+            channel.fill(0.0);
             *slot = channel.as_mut_ptr();
         }
         Self::native_ok(unsafe {
@@ -353,6 +359,7 @@ impl Drop for LibspatialaudioRenderer {
             unsafe { (self.api.destroy)(self.handle) };
             self.handle = std::ptr::null_mut();
         }
+        // Keep the shared object loaded until after native destruction.
         let _ = &self.library;
     }
 }
