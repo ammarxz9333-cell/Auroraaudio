@@ -16,6 +16,8 @@ Last updated: **2026-09-15**
 Current canonical base:
 - Phase 9 decoded-PCM upmix matrix is complete for the declared software subset: 5.1 -> 7.1.4, 5.1 -> custom 11.1.4, and 7.1 -> custom 11.1.4.
 - PR #173 merged the Phase 10 pinned RoomEQ/CamillaDSP reference baseline into `main-v2`.
+- PR #174 merged the deterministic synthetic 7.1.4 RoomEQ lane, review remediation and simulation-coverage registration into `main-v2` at `ff3fe185bdd32538929edbe8148a80034efd18c7`.
+- PR #175 contains the implemented RoomEQ -> CamillaDSP PCM execution differential and role-aware 7.1/7.1.4 WAV channel mapping. Its branch now contains the merged #174 base and must prove a fresh final head before merge.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -55,10 +57,11 @@ Rules:
 - #170 — Aurora 7.1.4 plus explicit custom 11.1.4 geometry/continuity validation against pinned SAF semantics.
 - #172 — decoded-PCM upmix validation matrix through custom 11.1.4.
 - #173 — exact-pinned RoomEQ + CamillaDSP Phase 10 external-reference baseline with fail-closed provenance evidence.
+- #174 — deterministic RoomEQ 7.1.4 synthetic optimization, four PR-eligible LFE/sub topologies, phase/policy guards and repository-resident simulation coverage evidence.
 
 These are software/reference milestones only. They do not establish physical eARC/DAC/acoustic behavior, protected-service compatibility, or certification.
 
-## 4. Phase 10 — active room-correction/system-DSP work
+## 4. Phase 10 — room correction and system DSP
 
 Pinned external references remain external to Aurora core:
 
@@ -83,7 +86,7 @@ Merged baseline files from #173:
 - `config/external-components-v1.json`;
 - `THIRD_PARTY_LICENSES.md`.
 
-Synthetic lane implemented in PR #174 / `phase10-room-correction-synthetic`:
+Merged synthetic lane from #174:
 - `config/room-correction-synthetic-v1.json`;
 - `validation/room-correction/room_correction_synthetic_evidence.py`;
 - `.github/workflows/room-correction-synthetic-ci.yml`;
@@ -92,19 +95,28 @@ Synthetic lane implemented in PR #174 / `phase10-room-correction-synthetic`:
 
 The synthetic lane exercises deterministic 7.1.4 RoomEQ optimization, the four PR-eligible LFE/sub topologies, multi-seat phase guards, final-chain headroom/peak constraints and Stage 3 policy plumbing. Its evidence analyzer binds the contract pin to the exact tested RoomEQ checkout and requires both corrupted-log and corrupted-pin negative controls to fail closed.
 
-PR #175 / `phase10-camilladsp-differential` is the next stacked lane. It adds RoomEQ -> real CamillaDSP PCM execution contracts plus Aurora role-aware 7.1/7.1.4 WAV channel mapping. It must be retargeted to `main-v2` after #174 merges and re-prove final-head green before merge.
+RoomEQ -> CamillaDSP execution differential implemented in PR #175 / `phase10-camilladsp-differential`:
+- `config/room-correction-camilladsp-differential-v1.json`;
+- `validation/room-correction/camilladsp_differential_evidence.py`;
+- `.github/workflows/room-correction-camilladsp-differential-ci.yml`;
+- `docs/room-correction-camilladsp-differential.md`;
+- `docs/camilladsp-channel-order.md`;
+- `crates/aurora-dsp-camilladsp/src/lib_entry.rs`.
 
-Passing these software lanes does **not** prove microphone/acoustic correction, physical DAC/speaker routing, measured physical latency, protected-service compatibility, or certification.
+The differential lane builds exact-pinned CamillaDSP 4.1.3 with a generated-and-recorded dependency lock, validates RoomEQ-generated CamillaDSP configuration, executes the required real-PCM contracts for fractional group delay, polarity/delay, convolution FIR, LR crossover gain, peaking EQ, routed channel matrices and multi-sub coherent peak behavior, and requires unsupported graph semantics to fail closed. Aurora additionally proves a real 12-channel 7.1.4 sentinel through CamillaDSP.
+
+Aurora's canonical 7.1/7.1.4 logical order places side surrounds before back surrounds, while WAVE_FORMAT_EXTENSIBLE serializes those roles in speaker-mask order. The role-aware CamillaDSP adapter therefore maps Aurora 7.1.4 logical indices to WAV physical indices as `[0,1,2,3,6,7,4,5,8,9,10,11]`; front center remains index 2. Custom/mismatched/duplicate role mappings fail closed. Legacy numeric adapter APIs retain file-order semantics.
+
+A green Phase 10 software lane does **not** prove microphone/acoustic correction, physical DAC/speaker routing, measured physical latency, protected-service compatibility, Dolby/DTS/HDMI certification, or arbitrary unrepresented DSP graphs.
 
 ## 5. Current work / Next actions
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Finish PR #174 review remediation and require the new final head to pass Room Correction Reference CI and Room Correction Synthetic CI; merge only when green and review threads are resolved.
-2. Retarget PR #175 to `main-v2` after #174 merges. Require the role-aware Aurora CamillaDSP tests, real 12-channel 7.1.4 sentinel, exact-pinned CamillaDSP build/preflight, all required RoomEQ-to-CamillaDSP PCM contracts, unsupported-feature fail-closed test, negative evidence mutation, and final-head reference CI to pass.
-3. Update this handoff in #175 so Phase 10 is marked complete only after that PR is merged.
-4. Then continue with Phase 11 binaural reference validation, followed by Phase 12 runtime-contract/realtime-safety hardening unless a higher-priority regression appears.
-5. Keep physical tracker #143 visible in parallel; resume physical eARC/JOC validation when authorized hardware is available, but do not block truthful software-only progress on absent hardware.
+1. Finish PR #175 on its synchronized `main-v2` base and retarget the PR to `main-v2`.
+2. Require fresh final-head green evidence for Aurora role-aware adapter tests, the real 12-channel 7.1.4 sentinel, exact CamillaDSP build/preflight, all required RoomEQ-to-CamillaDSP PCM contracts, unsupported-feature rejection, negative evidence mutation, Software Completion Audit, Room Correction Reference CI and any repository-wide gates triggered by the coverage/handoff edits; merge only when green and review threads remain resolved.
+3. Once #175 is merged, Phase 10 is complete for its declared software/reference scope. Continue with Phase 11 binaural reference validation, then Phase 12 runtime-contract/realtime-safety hardening unless a higher-priority regression appears.
+4. Keep physical tracker #143 visible in parallel; resume physical eARC/JOC validation when authorized hardware is available, but do not block truthful software-only progress on absent hardware.
 
 ## 6. Physical acceptance critical path — tracker #143
 
@@ -148,4 +160,4 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-Also run every domain-specific gate touched by the change. For Phase 10 this includes `Room Correction Reference CI` and the active Phase 10 synthetic/differential gate. Tooling/simulation/reference gates must never be reported as physical proof.
+Also run every domain-specific gate touched by the change. For Phase 10 this includes `Room Correction Reference CI`, `Room Correction Synthetic CI`, and `Room Correction CamillaDSP Differential CI` as applicable. Tooling/simulation/reference gates must never be reported as physical proof.
