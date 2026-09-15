@@ -1,0 +1,107 @@
+name: AOO Runtime Adapter CI
+
+on:
+  pull_request:
+    paths:
+      - "adapters/aurora-network-aoo/**"
+      - "crates/aurora-realtime-audio-api/**"
+      - "config/open-audio-stack-v1.json"
+      - ".github/workflows/aoo-runtime-adapter-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aoo-runtime-adapter-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AOO_SHA: dc2a5be2962ba02d6cebe297f31f2774f34e7bc7
+
+jobs:
+  exact-aoo-runtime-adapter:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: stable
+          components: rustfmt,clippy
+
+      - name: Validate adapter Rust package
+        run: |
+          cargo fmt --manifest-path adapters/aurora-network-aoo/Cargo.toml -- --check
+          cargo check --manifest-path adapters/aurora-network-aoo/Cargo.toml --all-targets
+          cargo clippy --manifest-path adapters/aurora-network-aoo/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path adapters/aurora-network-aoo/Cargo.toml
+
+      - name: Verify AOO pin matches integration contract
+        run: |
+          python3 - <<'PY'
+          import json, os
+          with open('config/open-audio-stack-v1.json', encoding='utf-8') as handle:
+              cfg = json.load(handle)
+          actual = cfg['components']['aoo']['pinned_commit']
+          expected = os.environ['AOO_SHA']
+          if actual != expected:
+              raise SystemExit(f'AOO pin mismatch: config={actual} workflow={expected}')
+          print(f'AURORA-AOO-PIN-PASS {actual}')
+          PY
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config
+
+      - name: Fetch and build exact AOO shared library
+        run: |
+          git init "$RUNNER_TEMP/aoo"
+          git -C "$RUNNER_TEMP/aoo" remote add origin https://github.com/Spacechild1/aoo.git
+          git -C "$RUNNER_TEMP/aoo" fetch --depth 1 origin "$AOO_SHA"
+          git -C "$RUNNER_TEMP/aoo" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/aoo" rev-parse HEAD)" = "$AOO_SHA"
+          git -C "$RUNNER_TEMP/aoo" submodule update --init --recursive
+          cmake -S "$RUNNER_TEMP/aoo" -B "$RUNNER_TEMP/aoo-build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/aoo-install" \
+            -DAOO_USE_OPUS=OFF \
+            -DAOO_BUILD_SHARED_LIBRARY=ON \
+            -DAOO_BUILD_TESTS=ON \
+            -DAOO_BUILD_EXAMPLES=OFF \
+            -DAOO_BUILD_SERVER=OFF
+          cmake --build "$RUNNER_TEMP/aoo-build" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/aoo-build" --output-on-failure
+          cmake --install "$RUNNER_TEMP/aoo-build"
+
+      - name: Build Aurora-owned AOO shim against exact pin
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/aoo-install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          cc -std=c11 -Wall -Wextra -Werror -fPIC -shared \
+            adapters/aurora-network-aoo/native/aurora_aoo_shim.c \
+            -o "$RUNNER_TEMP/libaurora_aoo_shim.so" \
+            $(pkg-config --cflags --libs aoo) \
+            -pthread \
+            -Wl,-rpath,"$RUNNER_TEMP/aoo-install/lib"
+          test -s "$RUNNER_TEMP/libaurora_aoo_shim.so"
+
+      - name: Exercise real Rust adapter through native AOO lifecycle
+        run: |
+          mkdir -p artifacts
+          export AURORA_AOO_SHIM="$RUNNER_TEMP/libaurora_aoo_shim.so"
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/aoo-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          cargo run --quiet --release \
+            --manifest-path adapters/aurora-network-aoo/Cargo.toml \
+            --example runtime_probe | tee artifacts/aoo-runtime-adapter.txt
+          grep -q 'aurora-aoo-runtime-adapter: PASS channels=12 rate=48000 block=48 epochs=2 blocks_per_epoch=2048 dynamic-src=disabled timeline=fail-closed' \
+            artifacts/aoo-runtime-adapter.txt
+
+      - name: Upload adapter evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: aoo-runtime-adapter-evidence
+          path: artifacts/aoo-runtime-adapter.txt
