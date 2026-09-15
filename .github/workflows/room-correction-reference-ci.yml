@@ -63,9 +63,13 @@ jobs:
           git -C "$RUNNER_TEMP/camilladsp" checkout --detach FETCH_HEAD
           test "$(git -C "$RUNNER_TEMP/camilladsp" rev-parse HEAD)" = "$CAMILLADSP_SHA"
 
-      - name: Run CamillaDSP library contracts
+      - name: Generate CamillaDSP dependency lock and run library contracts
         working-directory: ${{ runner.temp }}/camilladsp
-        run: cargo test --locked --lib --no-default-features
+        run: |
+          test ! -e Cargo.lock
+          cargo generate-lockfile
+          test -s Cargo.lock
+          cargo test --locked --lib --no-default-features
 
       - name: Emit Aurora room-correction reference evidence
         run: |
