@@ -114,12 +114,9 @@ unsafe impl Send for LibspatialaudioRenderer {}
 
 impl LibspatialaudioRenderer {
     /// Loads the Aurora-owned shim and creates one native renderer instance.
-    pub fn load(
-        config: LibspatialaudioRuntimeConfig,
-    ) -> Result<Self, LibspatialaudioLoadError> {
+    pub fn load(config: LibspatialaudioRuntimeConfig) -> Result<Self, LibspatialaudioLoadError> {
         let library = SharedLibrary::open(&config.shim_path)?;
-        let abi_version: AbiVersionFn =
-            unsafe { library.symbol(b"aurora_spaudio_abi_version\0")? };
+        let abi_version: AbiVersionFn = unsafe { library.symbol(b"aurora_spaudio_abi_version\0")? };
         let actual = unsafe { abi_version() };
         if actual != SHIM_ABI_VERSION {
             return Err(LibspatialaudioLoadError::AbiMismatch {
@@ -193,10 +190,7 @@ impl LibspatialaudioRenderer {
         if listener.orientation.z.abs() > ORIENTATION_EPSILON {
             return Err(PcmRendererError::UnsupportedListenerOrientation);
         }
-        let forward_length = listener
-            .orientation
-            .x
-            .hypot(listener.orientation.y);
+        let forward_length = listener.orientation.x.hypot(listener.orientation.y);
         if forward_length <= ORIENTATION_EPSILON {
             return Err(PcmRendererError::UnsupportedListenerOrientation);
         }
@@ -397,10 +391,7 @@ impl SharedLibrary {
         platform::open(path).map(|handle| Self { handle })
     }
 
-    unsafe fn symbol<T: Copy>(
-        &self,
-        name: &'static [u8],
-    ) -> Result<T, LibspatialaudioLoadError> {
+    unsafe fn symbol<T: Copy>(&self, name: &'static [u8]) -> Result<T, LibspatialaudioLoadError> {
         let c_name = CStr::from_bytes_with_nul(name)
             .map_err(|_| LibspatialaudioLoadError::MissingSymbol("invalid-symbol-name".into()))?;
         let ptr = platform::symbol(self.handle, c_name)?;
