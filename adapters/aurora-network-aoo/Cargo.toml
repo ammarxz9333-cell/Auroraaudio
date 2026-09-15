@@ -1,0 +1,12 @@
+[package]
+name = "aurora-network-aoo"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/ammarxz9333-cell/Auroraaudio"
+rust-version = "1.78"
+
+[workspace]
+
+[dependencies]
+aurora-realtime-audio-api = { path = "../../crates/aurora-realtime-audio-api" }
