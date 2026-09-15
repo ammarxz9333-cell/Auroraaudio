@@ -6,6 +6,7 @@ on:
       - "adapters/aurora-renderer-libspatialaudio/**"
       - "crates/aurora-renderer-api/**"
       - "validation/open-audio-stack/libspatialaudio_runtime_shim.cpp"
+      - "validation/open-audio-stack/libspatialaudio_gain_oracle_probe.cpp"
       - "validation/open-audio-stack/libspatialaudio_native_allocation_probe.cpp"
       - "config/open-audio-stack-v1.json"
       - "AGENTS.md"
@@ -90,6 +91,20 @@ jobs:
           ctest --test-dir "$RUNNER_TEMP/libspatialaudio-build" --output-on-failure
           cmake --install "$RUNNER_TEMP/libspatialaudio-build"
 
+      - name: Verify direct ADM gain oracle at nominal FL FR FC
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/libspatialaudio-install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          mkdir -p artifacts
+          c++ -std=c++17 -O2 -Wall -Wextra -Werror \
+            validation/open-audio-stack/libspatialaudio_gain_oracle_probe.cpp \
+            $(pkg-config --cflags --libs spatialaudio) \
+            -Wl,-rpath,"$RUNNER_TEMP/libspatialaudio-install/lib" \
+            -o "$RUNNER_TEMP/libspatialaudio-gain-oracle-probe"
+          LD_LIBRARY_PATH="$RUNNER_TEMP/libspatialaudio-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            "$RUNNER_TEMP/libspatialaudio-gain-oracle-probe" | \
+            tee artifacts/libspatialaudio-gain-oracle.txt
+          grep -q 'PASS nominal=FL,FR,FC' artifacts/libspatialaudio-gain-oracle.txt
+
       - name: Build Aurora-owned C++ shim
         run: |
           export PKG_CONFIG_PATH="$RUNNER_TEMP/libspatialaudio-install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
@@ -107,7 +122,9 @@ jobs:
             cargo run --release \
               --manifest-path adapters/aurora-renderer-libspatialaudio/Cargo.toml \
               --example runtime_probe | tee artifacts/libspatialaudio-runtime-adapter.txt
-          grep -q 'PASS outputs=12 rate=48000 block=256 latency=255 rust_allocations=0' \
+          grep -q 'PASS outputs=12 rate=48000 block=256 latency=255' \
+            artifacts/libspatialaudio-runtime-adapter.txt
+          grep -q 'rust_allocations=0 semantic_differential=fl-fr-fc' \
             artifacts/libspatialaudio-runtime-adapter.txt
 
       - name: Require native steady-state render to allocate zero times
