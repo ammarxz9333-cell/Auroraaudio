@@ -22,7 +22,7 @@ env:
 jobs:
   exact-aoo-runtime-adapter:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -55,7 +55,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            build-essential cmake ninja-build pkg-config
+            build-essential cmake ninja-build pkg-config iproute2
 
       - name: Fetch and build exact AOO shared library
         run: |
@@ -77,7 +77,7 @@ jobs:
           ctest --test-dir "$RUNNER_TEMP/aoo-build" --output-on-failure
           cmake --install "$RUNNER_TEMP/aoo-build"
 
-      - name: Build Aurora-owned AOO shim against exact pin
+      - name: Build Aurora-owned AOO shim and loopback sink
         run: |
           export PKG_CONFIG_PATH="$RUNNER_TEMP/aoo-install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
           cc -std=c11 -Wall -Wextra -Werror -fPIC -shared \
@@ -86,7 +86,14 @@ jobs:
             $(pkg-config --cflags --libs aoo) \
             -pthread \
             -Wl,-rpath,"$RUNNER_TEMP/aoo-install/lib"
+          cc -std=c11 -Wall -Wextra -Werror \
+            adapters/aurora-network-aoo/native/aoo_loopback_sink.c \
+            -o "$RUNNER_TEMP/aoo-loopback-sink" \
+            $(pkg-config --cflags --libs aoo) \
+            -pthread -lm \
+            -Wl,-rpath,"$RUNNER_TEMP/aoo-install/lib"
           test -s "$RUNNER_TEMP/libaurora_aoo_shim.so"
+          test -x "$RUNNER_TEMP/aoo-loopback-sink"
 
       - name: Exercise real Rust adapter through native AOO lifecycle
         run: |
@@ -99,9 +106,95 @@ jobs:
           grep -q 'aurora-aoo-runtime-adapter: PASS channels=12 rate=48000 block=48 epochs=2 blocks_per_epoch=2048 dynamic-src=disabled timeline=fail-closed' \
             artifacts/aoo-runtime-adapter.txt
 
+      - name: Healthy UDP loopback soak
+        run: |
+          export AURORA_AOO_SHIM="$RUNNER_TEMP/libaurora_aoo_shim.so"
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/aoo-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          "$RUNNER_TEMP/aoo-loopback-sink" 9999 5000 0 > artifacts/aoo-loopback-healthy-sink.txt 2>&1 &
+          sink_pid=$!
+          sleep 0.2
+          AURORA_AOO_LOCAL_PORT=9998 \
+          AURORA_AOO_SINK_PORT=9999 \
+          AURORA_AOO_BLOCKS_PER_EPOCH=4000 \
+            cargo run --quiet --release \
+              --manifest-path adapters/aurora-network-aoo/Cargo.toml \
+              --example network_soak | tee artifacts/aoo-loopback-healthy-sender.txt
+          wait "$sink_pid"
+          grep -q 'aurora-aoo-network-soak: PASS epochs=1 blocks_per_epoch=4000 sink_port=9999' artifacts/aoo-loopback-healthy-sender.txt
+          grep -q 'aurora-aoo-loopback-sink: PASS' artifacts/aoo-loopback-healthy-sink.txt
+
+      - name: Packet loss reorder and jitter soak
+        run: |
+          export AURORA_AOO_SHIM="$RUNNER_TEMP/libaurora_aoo_shim.so"
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/aoo-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          cleanup() { sudo tc qdisc del dev lo root 2>/dev/null || true; }
+          trap cleanup EXIT
+          sudo tc qdisc add dev lo root netem delay 2ms 1ms loss 2% reorder 20% 50%
+          "$RUNNER_TEMP/aoo-loopback-sink" 10001 6000 0 > artifacts/aoo-loopback-fault-sink.txt 2>&1 &
+          sink_pid=$!
+          sleep 0.2
+          AURORA_AOO_LOCAL_PORT=10000 \
+          AURORA_AOO_SINK_PORT=10001 \
+          AURORA_AOO_BLOCKS_PER_EPOCH=5000 \
+            cargo run --quiet --release \
+              --manifest-path adapters/aurora-network-aoo/Cargo.toml \
+              --example network_soak | tee artifacts/aoo-loopback-fault-sender.txt
+          wait "$sink_pid"
+          grep -q 'aurora-aoo-network-soak: PASS epochs=1 blocks_per_epoch=5000 sink_port=10001' artifacts/aoo-loopback-fault-sender.txt
+          grep -q 'aurora-aoo-loopback-sink: PASS' artifacts/aoo-loopback-fault-sink.txt
+
+      - name: Plus and minus 250 ppm peer clock soak
+        run: |
+          export AURORA_AOO_SHIM="$RUNNER_TEMP/libaurora_aoo_shim.so"
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/aoo-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          for spec in '250 10003 10002 plus' '-250 10005 10004 minus'; do
+            set -- $spec
+            ppm=$1
+            sink_port=$2
+            local_port=$3
+            label=$4
+            "$RUNNER_TEMP/aoo-loopback-sink" "$sink_port" 5000 "$ppm" > "artifacts/aoo-loopback-drift-${label}-sink.txt" 2>&1 &
+            sink_pid=$!
+            sleep 0.2
+            AURORA_AOO_LOCAL_PORT="$local_port" \
+            AURORA_AOO_SINK_PORT="$sink_port" \
+            AURORA_AOO_BLOCKS_PER_EPOCH=4000 \
+              cargo run --quiet --release \
+                --manifest-path adapters/aurora-network-aoo/Cargo.toml \
+                --example network_soak > "artifacts/aoo-loopback-drift-${label}-sender.txt"
+            wait "$sink_pid"
+            grep -q 'aurora-aoo-network-soak: PASS' "artifacts/aoo-loopback-drift-${label}-sender.txt"
+            grep -q 'aurora-aoo-loopback-sink: PASS' "artifacts/aoo-loopback-drift-${label}-sink.txt"
+          done
+
+      - name: Receiver restart across stream epochs
+        run: |
+          export AURORA_AOO_SHIM="$RUNNER_TEMP/libaurora_aoo_shim.so"
+          export LD_LIBRARY_PATH="$RUNNER_TEMP/aoo-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+          "$RUNNER_TEMP/aoo-loopback-sink" 10009 1800 0 > artifacts/aoo-reconnect-sink-1.txt 2>&1 &
+          sink1_pid=$!
+          sleep 0.2
+          AURORA_AOO_LOCAL_PORT=10008 \
+          AURORA_AOO_SINK_PORT=10009 \
+          AURORA_AOO_EPOCHS=2 \
+          AURORA_AOO_BLOCKS_PER_EPOCH=1500 \
+          AURORA_AOO_GAP_MS=1200 \
+            cargo run --quiet --release \
+              --manifest-path adapters/aurora-network-aoo/Cargo.toml \
+              --example network_soak > artifacts/aoo-reconnect-sender.txt 2>&1 &
+          sender_pid=$!
+          wait "$sink1_pid"
+          "$RUNNER_TEMP/aoo-loopback-sink" 10009 2500 0 > artifacts/aoo-reconnect-sink-2.txt 2>&1 &
+          sink2_pid=$!
+          wait "$sender_pid"
+          wait "$sink2_pid"
+          grep -q 'aurora-aoo-network-soak: PASS epochs=2 blocks_per_epoch=1500 sink_port=10009' artifacts/aoo-reconnect-sender.txt
+          grep -q 'aurora-aoo-loopback-sink: PASS' artifacts/aoo-reconnect-sink-1.txt
+          grep -q 'aurora-aoo-loopback-sink: PASS' artifacts/aoo-reconnect-sink-2.txt
+
       - name: Upload adapter evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: aoo-runtime-adapter-evidence
-          path: artifacts/aoo-runtime-adapter.txt
+          path: artifacts/aoo-*.txt
