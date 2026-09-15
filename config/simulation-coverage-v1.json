@@ -407,6 +407,25 @@
       "status": "external-pending",
       "evidence_class": "external_integration",
       "truth_boundary": "Software, simulation and physical prototype evidence do not constitute Dolby certification or conformance."
+    },
+    {
+      "id": "binaural-7-1-4-semantic-differential",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "profiles": [
+        "healthy",
+        "pinned-commit-mismatch",
+        "channel-order-mismatch",
+        "unsupported-obr-contract"
+      ],
+      "evidence": [
+        "config/binaural-7-1-4-differential-v1.json",
+        "validation/binaural/binaural_7_1_4_differential.py",
+        "validation/binaural/test_binaural_contract.py",
+        "crates/aurora-renderer-basic/examples/binaural_7_1_4_probe.rs",
+        ".github/workflows/binaural-7-1-4-differential-ci.yml"
+      ],
+      "truth_boundary": "Deterministic Aurora geometric gain/delay probe versus pinned external OBR PCM left/right/center semantics, frame integrity and mirror checks. LFE integrity only. Pin, channel-order and unsupported invocation contracts fail closed. Does not prove HRTF parity, front/back or elevation perception, objects, HOA, head tracking, physical eARC/DAC/acoustics, protected services or certification."
     }
   ]
 }
