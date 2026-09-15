@@ -54,12 +54,17 @@ jobs:
           git -C "$RUNNER_TEMP/camilladsp" checkout --detach FETCH_HEAD
           test "$(git -C "$RUNNER_TEMP/camilladsp" rev-parse HEAD)" = "$CAMILLADSP_SHA"
 
-      - name: Build exact CamillaDSP binary
+      - name: Generate dependency lock and build exact CamillaDSP binary
         working-directory: ${{ runner.temp }}/camilladsp
         run: |
+          test ! -e Cargo.lock
+          cargo generate-lockfile
+          test -s Cargo.lock
           cargo build --locked --release --no-default-features --bin camilladsp
           test -x target/release/camilladsp
           target/release/camilladsp --version
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp Cargo.lock "$GITHUB_WORKSPACE/artifacts/camilladsp-generated-Cargo.lock"
 
       - name: Run required RoomEQ-to-CamillaDSP PCM contracts
         working-directory: ${{ runner.temp }}/autoeq
@@ -68,7 +73,6 @@ jobs:
         run: |
           python3 scripts/run_camilladsp_backend_contracts.py
           git diff --exit-code -- Cargo.lock
-          mkdir -p "$GITHUB_WORKSPACE/artifacts"
           cp target/qa/camilladsp-backend-contracts.json \
             "$GITHUB_WORKSPACE/artifacts/camilladsp-backend-contracts.json"
           cp target/qa/camilladsp-backend-contracts.log \
@@ -89,6 +93,7 @@ jobs:
             --config config/room-correction-camilladsp-differential-v1.json \
             --backend-json artifacts/camilladsp-backend-contracts.json \
             --unsupported-log artifacts/camilladsp-unsupported.log \
+            --camilladsp-lock artifacts/camilladsp-generated-Cargo.lock \
             --roomeq-head "$(git -C "$RUNNER_TEMP/autoeq" rev-parse HEAD)" \
             --camilladsp-head "$(git -C "$RUNNER_TEMP/camilladsp" rev-parse HEAD)" \
             --output artifacts/room-correction-camilladsp-differential-evidence.json
@@ -113,6 +118,7 @@ jobs:
             --config config/room-correction-camilladsp-differential-v1.json \
             --backend-json artifacts/camilladsp-backend-contracts-corrupt.json \
             --unsupported-log artifacts/camilladsp-unsupported.log \
+            --camilladsp-lock artifacts/camilladsp-generated-Cargo.lock \
             --roomeq-head "$(git -C "$RUNNER_TEMP/autoeq" rev-parse HEAD)" \
             --camilladsp-head "$(git -C "$RUNNER_TEMP/camilladsp" rev-parse HEAD)" \
             --output artifacts/room-correction-camilladsp-differential-corrupt-evidence.json; then
@@ -126,6 +132,7 @@ jobs:
         with:
           name: room-correction-camilladsp-differential-evidence
           path: |
+            artifacts/camilladsp-generated-Cargo.lock
             artifacts/camilladsp-backend-contracts.json
             artifacts/camilladsp-backend-contracts.log
             artifacts/camilladsp-unsupported.log
