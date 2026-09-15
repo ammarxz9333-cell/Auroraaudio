@@ -65,6 +65,7 @@ jobs:
 
       - name: Exercise AOO with Aurora 7.1.4 transport contract
         run: |
+          mkdir -p artifacts
           export PKG_CONFIG_PATH="$RUNNER_TEMP/aoo-install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
           cc -std=c11 -Wall -Wextra -Werror \
             validation/open-audio-stack/aoo_aurora_contract_probe.c \
