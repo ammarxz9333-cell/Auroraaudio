@@ -52,7 +52,10 @@ jobs:
         working-directory: ${{ runner.temp }}/autoeq
         run: |
           cargo test --locked --release -p roomeq-engine per_driver_fir --lib
-          cargo test --locked --release -p roomeq-workflow dsp_realization --lib
+          CARGO_TERM_COLOR=never cargo test --locked --release -p roomeq-engine --lib \
+            dsp_realization::tests::mixed_fir_iir_replay_matches_independent_complex_branch_sum \
+            -- --exact 2>&1 | tee "$RUNNER_TEMP/roomeq-dsp-realization.log"
+          grep -Eq 'test result: ok\. 1 passed; 0 failed;' "$RUNNER_TEMP/roomeq-dsp-realization.log"
           cargo test --locked --release -p roomeq-qa stage_contracts --lib
 
       - name: Fetch exact CamillaDSP executor reference
