@@ -5,8 +5,7 @@ on:
     paths:
       - "config/binaural-7-1-4-differential-v1.json"
       - "validation/binaural/binaural_7_1_4_differential.py"
-      - "crates/aurora-simulation-assurance/Cargo.toml"
-      - "crates/aurora-simulation-assurance/src/bin/aurora-binaural-7-1-4-probe.rs"
+      - "crates/aurora-renderer-basic/examples/binaural_7_1_4_probe.rs"
       - "docs/binaural-7-1-4-differential.md"
       - "AGENTS.md"
       - ".github/workflows/binaural-7-1-4-differential-ci.yml"
@@ -57,9 +56,9 @@ jobs:
       - name: Emit Aurora geometric binaural probe
         run: |
           mkdir -p artifacts
-          cargo run --locked -p aurora-simulation-assurance \
-            --bin aurora-binaural-7-1-4-probe -- \
-            --output artifacts/aurora-binaural-7-1-4.json
+          cargo run --locked -p aurora-renderer-basic \
+            --example binaural_7_1_4_probe -- \
+            artifacts/aurora-binaural-7-1-4.json
 
       - name: Run Aurora vs OBR 7.1.4 semantic differential
         run: |
