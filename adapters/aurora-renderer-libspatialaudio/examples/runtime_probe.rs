@@ -1,8 +1,11 @@
 use std::env;
 
 use aurora_core::{ChannelRole, Listener, Speaker, Vector3};
-use aurora_renderer_api::{ObjectPcmBlock, ObjectPcmRenderer, RenderObject};
+use aurora_renderer_api::{
+    ObjectPcmBlock, ObjectPcmRenderer, RenderObject, Renderer, RendererScratch, SpeakerGain,
+};
 use aurora_renderer_libspatialaudio::{LibspatialaudioRenderer, LibspatialaudioRuntimeConfig};
+use aurora_renderer_vbap::VbapRenderer;
 use aurora_test_alloc::{count_allocations, CountingAllocator};
 
 #[global_allocator]
@@ -14,11 +17,18 @@ const CHANNELS: usize = 12;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shim = env::var("AURORA_LIBSPATIALAUDIO_SHIM")?;
+    let layout = canonical_layout();
+
     let mut renderer =
         LibspatialaudioRenderer::load(LibspatialaudioRuntimeConfig::new(shim))?;
-    renderer.configure(canonical_layout(), SAMPLE_RATE, BLOCK_FRAMES, 1)?;
+    renderer.configure(layout.clone(), SAMPLE_RATE, BLOCK_FRAMES, 1)?;
     assert_eq!(renderer.output_channel_count(), CHANNELS);
     assert_eq!(renderer.latency_frames(), 255);
+
+    let mut vbap = VbapRenderer::new();
+    vbap.configure(layout, SAMPLE_RATE, BLOCK_FRAMES, 1)?;
+    let mut vbap_scratch = RendererScratch::new(vbap.required_scratch_size()?);
+    let mut vbap_gains = vec![SpeakerGain::default(); CHANNELS];
 
     let input = tone_block();
     let mut output_storage = vec![vec![0.0_f32; BLOCK_FRAMES]; CHANNELS];
@@ -27,9 +37,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(Vec::as_mut_slice)
         .collect();
 
-    // Exact nominal directions must agree with Aurora's canonical channel
-    // ordering. Two calls cover libspatialaudio's 255-frame direct-path delay
-    // and gain interpolation before evaluating the steady-state block.
+    // Exact nominal directions must agree between the native PCM renderer and
+    // Aurora's independent VBAP implementation. Two native calls cover the
+    // 255-frame direct-path delay and one-block metadata interpolation before
+    // the steady-state channel-energy comparison.
     for (position, expected_channel) in [
         (Vector3::new(-0.5, 0.866_025_4, 0.0), 0_usize),
         (Vector3::new(0.5, 0.866_025_4, 0.0), 1_usize),
@@ -43,19 +54,39 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &mut output_refs,
         )?;
         let energies = channel_energies(&output_refs);
-        let dominant = dominant_channel(&energies);
-        if dominant != expected_channel || !(energies[dominant] > 1.0e-8) {
+        let native_dominant = dominant_channel(&energies);
+
+        vbap.render_gains(
+            &listener_origin(),
+            &[RenderObject {
+                position,
+                gain: 1.0,
+            }],
+            &mut vbap_gains,
+            &mut vbap_scratch,
+        )?;
+        let vbap_dominant = vbap_gains
+            .iter()
+            .enumerate()
+            .max_by(|(_, left), (_, right)| left.gain.total_cmp(&right.gain))
+            .map(|(index, _)| index)
+            .unwrap_or(0);
+
+        if native_dominant != expected_channel
+            || vbap_dominant != expected_channel
+            || !(energies[native_dominant] > 1.0e-8)
+        {
             return Err(format!(
-                "semantic channel mismatch: position={position:?} expected={expected_channel} dominant={dominant} energies={energies:?}"
+                "semantic differential mismatch: position={position:?} expected={expected_channel} native={native_dominant} vbap={vbap_dominant} energies={energies:?} gains={vbap_gains:?}"
             )
             .into());
         }
     }
 
     // A translated listener facing +X with an object one metre along +X must
-    // map to the same local front position as origin/+Y. Since the previous
-    // steady-state metadata is already local front, this also exercises the
-    // no-change metadata path in upstream Renderer::AddObject.
+    // map to the same local front position as origin/+Y. The final differential
+    // case above already leaves the native renderer at local front, so this also
+    // exercises unchanged native metadata across a world-pose change.
     let baseline = flatten(&output_refs);
     let moved_listener = Listener {
         position: Vector3::new(10.0, 20.0, 2.0),
@@ -81,7 +112,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     // The Rust half of the steady-state adapter must allocate nothing after
     // configure. Native C++ allocations are checked separately by the exact-pin
-    // native allocation probe in CI.
+    // operator-new audit in CI.
     let block = [ObjectPcmBlock {
         object: RenderObject {
             position: Vector3::new(11.0, 20.0, 2.0),
@@ -99,7 +130,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!(
-        "aurora-libspatialaudio-runtime: PASS outputs={CHANNELS} rate={SAMPLE_RATE} block={BLOCK_FRAMES} latency=255 rust_allocations=0 transform_max_delta={max_delta}"
+        "aurora-libspatialaudio-runtime: PASS outputs={CHANNELS} rate={SAMPLE_RATE} block={BLOCK_FRAMES} latency=255 rust_allocations=0 semantic_differential=fl-fr-fc transform_max_delta={max_delta}"
     );
     Ok(())
 }
