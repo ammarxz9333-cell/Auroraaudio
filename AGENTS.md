@@ -122,9 +122,11 @@ The integration preserves Aurora-owned decoder/scene/renderer/DSP/realtime/runti
 - `aurora-realtime-engine` contains a preallocated callback -> network-worker bridge using bounded fixed-block PCM storage plus bounded metadata; sequence and media timestamp continuity fail closed.
 - Allocation tests require steady-state callback-side bridge push/pop to allocate zero times after preparation.
 - `aurora-realtime-audio-sim` contains a deterministic bounded `SimNetworkTransport` for common lifecycle/timestamp/overflow/format-drift semantics.
+- `network-audio-transport-contract` is registered in `config/simulation-coverage-v1.json`; the Rust simulator exports its capability/fault catalogue through `validation/open-audio-stack/network_transport_sim_contract.py`, while executable evidence remains the Rust tests run by Open Audio Stack CI.
 - `config/open-audio-stack-v1.json` pins exact upstream source candidates and defines the single-clock/single-rate-controller/single-production-renderer rules.
-- `validation/open-audio-stack/aoo_aurora_contract_probe.c` exercises the real pinned AOO C API at 12 channels, 48 kHz, 48-frame PCM-f32 when the Open Audio Stack CI runs.
-- The dedicated CI builds pinned AOO and VideoLAN `libspatialaudio`, verifies NXP GenAVB/TSN and SOF source/platform contracts, and requires source-pin drift to fail closed.
+- The exact AOO probe now exercises client setup, source registration, stream start/stop, 12-channel 48 kHz/48-frame PCM-f32 processing, and Aurora media-frame -> AOO NTP timestamp mapping.
+- The exact libspatialaudio probe configures 7.1.4, verifies 12 outputs and finite/non-silent object rendering. Its direct object path has a documented `(512-1)/2 = 255` sample compensation delay, so the probe renders two 256-frame blocks before evaluating steady-state output.
+- The dedicated CI builds pinned AOO and VideoLAN `libspatialaudio`, verifies NXP GenAVB/TSN and SOF source/platform contracts, runs Aurora fmt/check/clippy/tests for touched realtime/network crates, and requires source-pin drift to fail closed.
 
 ### Exact candidates and boundaries
 
@@ -151,6 +153,7 @@ The integration preserves Aurora-owned decoder/scene/renderer/DSP/realtime/runti
 - pin: `d149ed9744fd399b835c6f2920511f8cbcfce5ea`;
 - license: LGPL-2.1-or-later;
 - role: production spatial-renderer candidate behind a replaceable adapter/library boundary;
+- exact upstream software accepts Aurora's 7.1.4/48 kHz object-render contract after its documented direct-path compensation latency;
 - it cannot become the selected renderer until it passes Aurora realtime/allocation contracts and semantic differentials against Aurora plus independent EAR/SAF/OAR evidence where applicable.
 
 ### Clock/DSP ownership rules
@@ -162,19 +165,18 @@ The integration preserves Aurora-owned decoder/scene/renderer/DSP/realtime/runti
 - Only one production speaker renderer processes a block; EAR/SAF/OAR remain independent reference/oracle lanes.
 
 ### Truth boundary for PR #179
-A green software CI can prove source pins, portable builds, Aurora contract behavior, deterministic simulation and the AOO software-format probe. It **cannot** prove i.MX8MP native eARC capture, GenAVB hardware timestamps/gPTP/Milan, SOF-on-HiFi4 execution, Wi-Fi/RF resilience, multi-speaker physical synchronization, or acoustic performance.
+A green software CI can prove source pins, portable builds, Aurora contract behavior, deterministic simulation, AOO worker lifecycle/timestamp-format compatibility and bounded libspatialaudio 7.1.4 software output. It **cannot** prove i.MX8MP native eARC capture, GenAVB hardware timestamps/gPTP/Milan, SOF-on-HiFi4 execution, Wi-Fi/RF resilience, peer packet-loss recovery, multi-speaker physical synchronization, measured physical latency, or acoustic performance.
 
 ## 7. Current work / Next actions
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Make PR #179 green at its final head: fix any `cargo fmt`, MSRV/check, clippy, workspace tests or Open Audio Stack CI failures without weakening contracts.
-2. Keep exact license/provenance and external-registry records synchronized with `config/open-audio-stack-v1.json`; register any simulator capability truthfully before marking it covered.
-3. Complete a real AOO adapter only behind the callback -> worker bridge, then add deterministic loss/reorder/reconnect/drift-soak evidence. Do not call the setup-format probe a production network path.
-4. Add a `libspatialaudio` Aurora adapter and deterministic 7.1.4 semantic/realtime differential before considering renderer selection. EAR/SAF/OAR remain independent comparison lanes.
-5. Add NXP GenAVB/TSN and SOF platform adapters only with explicit i.MX8MP gating; generic CI may validate configuration/provenance but not claim physical platform behavior.
-6. Resume Phase 11 binaural semantic differential/head-rotation/HRTF-transition work after the higher-priority open-audio integration PR is stabilized, unless the user changes priority again.
-7. Keep physical tracker #143 visible; resume physical eARC/JOC and multichannel output validation when authorized hardware exists.
+1. Make PR #179 green at its final head across repository-wide CI, Open Audio Stack CI, simulation/governance and sustained realtime checks; fix failures without weakening contracts.
+2. After #179 is stable, implement a real AOO peer/network adapter only behind the callback -> worker bridge and add deterministic packet loss/reorder/reconnect/drift-soak evidence. The current lifecycle/process probe is not a production network path.
+3. Add a `libspatialaudio` Aurora adapter and deterministic 7.1.4 semantic/realtime differential, including its 255-sample direct-path compensation behavior, before considering renderer selection. EAR/SAF/OAR remain independent comparison lanes.
+4. Add NXP GenAVB/TSN and SOF platform adapters only with explicit i.MX8MP gating; generic CI may validate configuration/provenance but not claim physical platform behavior.
+5. Resume Phase 11 binaural semantic differential/head-rotation/HRTF-transition work after the higher-priority open-audio integration is stabilized, unless the user changes priority again.
+6. Keep physical tracker #143 visible; resume physical eARC/JOC and multichannel output validation when authorized hardware exists.
 
 ## 8. Physical acceptance critical path — tracker #143
 
