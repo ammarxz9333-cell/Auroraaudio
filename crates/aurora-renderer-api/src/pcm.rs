@@ -82,7 +82,8 @@ pub enum PcmRendererError {
 ///
 /// This contract is additive to [`crate::Renderer`]. Implementations allocate
 /// and validate all fixed storage during [`configure`](Self::configure).
-/// [`render_pcm`](Self::render_pcm) must not allocate, resize containers,
+/// [`render_pcm`](Self::render_pcm) receives the caller's already allocated
+/// planar `Vec` storage directly and must not allocate, resize containers,
 /// format strings, acquire blocking locks, perform filesystem/network I/O, or
 /// spawn processes/threads.
 pub trait ObjectPcmRenderer: Send {
@@ -95,12 +96,15 @@ pub trait ObjectPcmRenderer: Send {
         max_objects: usize,
     ) -> Result<(), PcmRendererError>;
 
-    /// Renders one block into caller-owned planar speaker buffers.
+    /// Renders one block into caller-owned, preallocated planar speaker buffers.
+    ///
+    /// Implementations may mutate samples but must not resize `output` or any
+    /// channel vector during steady-state rendering.
     fn render_pcm(
         &mut self,
         listener: &Listener,
         objects: &[ObjectPcmBlock<'_>],
-        output: &mut [&mut [f32]],
+        output: &mut [Vec<f32>],
     ) -> Result<(), PcmRendererError>;
 
     /// Clears renderer history without changing configured capacities.
