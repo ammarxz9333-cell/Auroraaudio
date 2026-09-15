@@ -1,4 +1,5 @@
 #include <spatialaudio/Renderer.h>
+#include <spatialaudio/Tools.h>
 
 #include <cstdint>
 #include <memory>
@@ -67,10 +68,15 @@ int aurora_spaudio_configure(
             auto& item = metadata[index];
             item.trackInd = index;
             item.blockLength = block_frames;
-            item.cartesian = true;
+            // Aurora passes ordinary geometric +X-right/+Y-front/+Z-up local
+            // coordinates. ADM `cartesian=true` is *not* that coordinate system:
+            // BS.2127 defines a warped metadata mapping. Keep the upstream
+            // renderer on polar metadata and explicitly perform the normal
+            // geometric Cartesian->polar conversion below.
+            item.cartesian = false;
             item.gain = 1.0;
             item.diffuse = 0.0;
-            item.position = spaudio::CartesianPosition<double>{0.0, 1.0, 0.0};
+            item.position = spaudio::PolarPosition<double>{0.0, 0.0, 1.0};
         }
 
         handle->renderer = std::move(renderer);
@@ -109,11 +115,12 @@ int aurora_spaudio_render(
                 return -4;
             }
             auto& item = handle->metadata[index];
-            auto& position = item.position.cartesianPosition();
             const std::uint32_t base = index * 3;
-            position.x = positions_xyz[base];
-            position.y = positions_xyz[base + 1];
-            position.z = positions_xyz[base + 2];
+            const spaudio::CartesianPosition<double> local_position{
+                static_cast<double>(positions_xyz[base]),
+                static_cast<double>(positions_xyz[base + 1]),
+                static_cast<double>(positions_xyz[base + 2])};
+            item.position = spaudio::CartesianToPolar(local_position);
             item.gain = gains[index];
             item.blockLength = kBlockFrames;
             handle->renderer->AddObject(
