@@ -19,7 +19,7 @@ concurrency:
 
 env:
   AUTOEQ_SHA: 579dd7486024fc18ff219e31eb7337362814f602
-  CARGO_TERM_COLOR: always
+  CARGO_TERM_COLOR: never
 
 jobs:
   synthetic-reference:
@@ -48,7 +48,10 @@ jobs:
 
       - name: Exercise final-chain safety constraints
         working-directory: ${{ runner.temp }}/autoeq
-        run: cargo test --locked --release -p roomeq-quality chain_constraints_tests --lib
+        run: |
+          set -o pipefail
+          cargo test --locked --release -p roomeq-quality chain_constraints_tests --lib \
+            | tee "$GITHUB_WORKSPACE/artifacts/roomeq-chain-constraints.log"
 
       - name: Run deterministic 7.1.4 RoomEQ PR subset
         working-directory: ${{ runner.temp }}/autoeq
@@ -78,6 +81,7 @@ jobs:
         run: |
           python3 validation/room-correction/room_correction_synthetic_evidence.py \
             --config config/room-correction-synthetic-v1.json \
+            --chain-log artifacts/roomeq-chain-constraints.log \
             --multichannel-log artifacts/roomeq-7_1_4.log \
             --multiseat-log artifacts/roomeq-multiseat.log \
             --stage3-log artifacts/roomeq-stage3.log \
@@ -98,6 +102,7 @@ jobs:
           PY
           if python3 validation/room-correction/room_correction_synthetic_evidence.py \
             --config config/room-correction-synthetic-v1.json \
+            --chain-log artifacts/roomeq-chain-constraints.log \
             --multichannel-log artifacts/roomeq-7_1_4-corrupt.log \
             --multiseat-log artifacts/roomeq-multiseat.log \
             --stage3-log artifacts/roomeq-stage3.log \
