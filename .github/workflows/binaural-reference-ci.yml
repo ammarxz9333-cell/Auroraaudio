@@ -1,0 +1,137 @@
+name: Binaural Reference CI
+
+on:
+  pull_request:
+    paths:
+      - "config/binaural-reference-v1.json"
+      - "config/external-components-v1.json"
+      - "validation/binaural/**"
+      - "docs/binaural-reference.md"
+      - "THIRD_PARTY_LICENSES.md"
+      - "AGENTS.md"
+      - ".github/workflows/binaural-reference-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: binaural-reference-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OBR_SHA: 478dc7c752d5eccae534635139ff0253eee3a14a
+  BEAR_SHA: 6127e897b941211051c2ad135ee09b00be2e6ae0
+  SOFAR_SHA: 06a629292689e99841e5dacaa25c4c6298616ca6
+  LIBMYSOFA_SHA: da9e4adc619ee3d1ae5e68da3ed14aa5e60b3ec1
+  CARGO_TERM_COLOR: always
+
+jobs:
+  pinned-binaural-references:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake ninja-build libasound2-dev
+
+      - name: Install Nix for BEAR
+        uses: cachix/install-nix-action@v31
+
+      - name: Fetch exact Google OBR reference
+        run: |
+          git init "$RUNNER_TEMP/obr"
+          git -C "$RUNNER_TEMP/obr" remote add origin https://github.com/google/obr.git
+          git -C "$RUNNER_TEMP/obr" fetch --depth 1 origin "$OBR_SHA"
+          git -C "$RUNNER_TEMP/obr" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/obr" rev-parse HEAD)" = "$OBR_SHA"
+
+      - name: Run selected Google OBR binaural contracts
+        working-directory: ${{ runner.temp }}/obr
+        run: |
+          command -v bazelisk
+          bazelisk test -c opt --test_output=errors //obr/renderer/tests:obr_impl_test
+          bazelisk test -c opt --test_output=errors //obr/ambisonic_rotator/tests:ambisonic_rotator_test
+          bazelisk test -c opt --test_output=errors //obr/cli/tests:obr_cli_lib_test
+
+      - name: Fetch exact EBU BEAR reference
+        run: |
+          git init "$RUNNER_TEMP/bear"
+          git -C "$RUNNER_TEMP/bear" remote add origin https://github.com/ebu/bear.git
+          git -C "$RUNNER_TEMP/bear" fetch --depth 1 origin "$BEAR_SHA"
+          git -C "$RUNNER_TEMP/bear" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/bear" rev-parse HEAD)" = "$BEAR_SHA"
+          git -C "$RUNNER_TEMP/bear" submodule update --init --recursive
+
+      - name: Build and test exact EBU BEAR flake
+        working-directory: ${{ runner.temp }}/bear
+        run: |
+          nix build .#bear --no-link
+          git diff --exit-code -- flake.lock
+
+      - name: Fetch exact sofar candidate
+        run: |
+          git init "$RUNNER_TEMP/sofar"
+          git -C "$RUNNER_TEMP/sofar" remote add origin https://github.com/andreiltd/sofar.git
+          git -C "$RUNNER_TEMP/sofar" fetch --depth 1 origin "$SOFAR_SHA"
+          git -C "$RUNNER_TEMP/sofar" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/sofar" rev-parse HEAD)" = "$SOFAR_SHA"
+          git -C "$RUNNER_TEMP/sofar" submodule update --init --recursive
+          test "$(git -C "$RUNNER_TEMP/sofar" rev-parse HEAD:libmysofa-sys/libmysofa)" = "$LIBMYSOFA_SHA"
+
+      - name: Generate sofar dependency lock and run workspace tests
+        working-directory: ${{ runner.temp }}/sofar
+        run: |
+          test ! -e Cargo.lock
+          cargo generate-lockfile
+          test -s Cargo.lock
+          cargo test --locked --workspace --all-features
+          mkdir -p "$GITHUB_WORKSPACE/artifacts"
+          cp Cargo.lock "$GITHUB_WORKSPACE/artifacts/sofar-Cargo.lock"
+
+      - name: Emit Aurora binaural reference evidence
+        run: |
+          python3 validation/binaural/binaural_reference_evidence.py \
+            --config config/binaural-reference-v1.json \
+            --obr "$RUNNER_TEMP/obr" \
+            --bear "$RUNNER_TEMP/bear" \
+            --sofar "$RUNNER_TEMP/sofar" \
+            --output artifacts/binaural-reference-evidence.json
+
+      - name: Require pin mismatch to fail closed
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source = Path("config/binaural-reference-v1.json")
+          data = json.loads(source.read_text())
+          data["references"]["google_obr"]["pinned_commit"] = "0" * 40
+          Path("artifacts/bad-binaural-reference.json").write_text(
+              json.dumps(data, indent=2) + "\n"
+          )
+          PY
+          if python3 validation/binaural/binaural_reference_evidence.py \
+            --config artifacts/bad-binaural-reference.json \
+            --obr "$RUNNER_TEMP/obr" \
+            --bear "$RUNNER_TEMP/bear" \
+            --sofar "$RUNNER_TEMP/sofar" \
+            --output artifacts/bad-binaural-reference-evidence.json; then
+            echo "ERROR: mismatched OBR pin unexpectedly passed"
+            exit 1
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaural-reference-evidence
+          path: |
+            artifacts/binaural-*.json
+            artifacts/sofar-Cargo.lock
