@@ -3,9 +3,9 @@
 use std::collections::VecDeque;
 
 use aurora_realtime_audio_api::{
-    MediaTimestamp, NetworkAudioBlock, NetworkAudioFormat, NetworkAudioTransport,
-    NetworkClockDiscipline, NetworkStreamConfig, NetworkTimingPolicy, NetworkTransportCapabilities,
-    NetworkTransportError, NetworkTransportEvent, NetworkTransportFamily,
+    MediaTimestamp, NetworkAudioBlock, NetworkAudioTransport, NetworkStreamConfig,
+    NetworkTransportCapabilities, NetworkTransportError, NetworkTransportEvent,
+    NetworkTransportFamily,
 };
 
 /// Metadata retained for one accepted simulated network block.
@@ -153,7 +153,10 @@ fn payload_checksum(samples: &[f32]) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aurora_realtime_audio_api::{NetworkAudioTransport, AURORA_NETWORK_MEDIA_RATE};
+    use aurora_realtime_audio_api::{
+        NetworkAudioFormat, NetworkAudioTransport, NetworkClockDiscipline, NetworkTimingPolicy,
+        AURORA_NETWORK_MEDIA_RATE,
+    };
 
     fn stream_config() -> NetworkStreamConfig {
         NetworkStreamConfig {
