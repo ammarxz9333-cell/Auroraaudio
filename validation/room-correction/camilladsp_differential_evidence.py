@@ -43,6 +43,7 @@ def main() -> int:
     parser.add_argument("--config", type=Path, required=True)
     parser.add_argument("--backend-json", type=Path, required=True)
     parser.add_argument("--unsupported-log", type=Path, required=True)
+    parser.add_argument("--camilladsp-lock", type=Path, required=True)
     parser.add_argument("--roomeq-head", required=True)
     parser.add_argument("--camilladsp-head", required=True)
     parser.add_argument("--output", type=Path, required=True)
@@ -53,6 +54,8 @@ def main() -> int:
         backend = json.loads(args.backend_json.read_text(encoding="utf-8"))
         if contract.get("schema_version") != 1 or contract.get("roadmap_phase") != 10:
             raise ValueError("unsupported CamillaDSP differential contract")
+        if not args.camilladsp_lock.is_file() or args.camilladsp_lock.stat().st_size <= 0:
+            raise ValueError("generated CamillaDSP dependency lock missing or empty")
 
         required = set(contract["required_pcm_contracts"])
         reported_required = set(backend.get("required_tests", []))
@@ -71,6 +74,7 @@ def main() -> int:
             == contract["camilladsp"]["pinned_commit"],
             "camilladsp_version": contract["camilladsp"]["expected_version_fragment"]
             in version,
+            "generated_camilladsp_dependency_lock_present": args.camilladsp_lock.stat().st_size > 0,
             "backend_status": backend.get("status") == "passed",
             "backend_returncode": backend.get("returncode") == 0,
             "required_contract_set_exact": reported_required == required,
@@ -87,6 +91,11 @@ def main() -> int:
                 "camilladsp": args.camilladsp_head,
             },
             "camilladsp_version": version,
+            "camilladsp_dependency_lock": {
+                "policy": contract["camilladsp"]["dependency_lock_policy"],
+                "sha256": sha256(args.camilladsp_lock),
+                "bytes": args.camilladsp_lock.stat().st_size,
+            },
             "backend": {
                 "status": backend.get("status"),
                 "returncode": backend.get("returncode"),
@@ -101,6 +110,7 @@ def main() -> int:
                 "contract": sha256(args.config),
                 "backend_json": sha256(args.backend_json),
                 "unsupported_log": sha256(args.unsupported_log),
+                "camilladsp_generated_lock": sha256(args.camilladsp_lock),
             },
             "truth_boundary": contract["truth_boundary"],
             "verdict": "pass" if verdict else "fail",
