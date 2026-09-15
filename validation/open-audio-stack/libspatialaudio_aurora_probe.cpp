@@ -1,4 +1,4 @@
-#include "Renderer.h"
+#include <spatialaudio/Renderer.h>
 
 #include <cmath>
 #include <cstdlib>
