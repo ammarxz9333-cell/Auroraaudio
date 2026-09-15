@@ -1,5 +1,8 @@
 //! Stable, allocation-free renderer boundary for Aurora implementations.
 
+pub mod pcm;
+pub use pcm::*;
+
 use aurora_core::{Listener, Speaker, Vector3};
 use thiserror::Error;
 
