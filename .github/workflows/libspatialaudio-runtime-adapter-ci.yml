@@ -1,0 +1,136 @@
+name: libspatialaudio Runtime Adapter CI
+
+on:
+  pull_request:
+    paths:
+      - "adapters/aurora-renderer-libspatialaudio/**"
+      - "crates/aurora-renderer-api/**"
+      - "validation/open-audio-stack/libspatialaudio_runtime_shim.cpp"
+      - "validation/open-audio-stack/libspatialaudio_native_allocation_probe.cpp"
+      - "config/open-audio-stack-v1.json"
+      - "AGENTS.md"
+      - ".github/workflows/libspatialaudio-runtime-adapter-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: libspatialaudio-runtime-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LIBSPATIALAUDIO_SHA: d149ed9744fd399b835c6f2920511f8cbcfce5ea
+
+jobs:
+  exact-libspatialaudio-runtime-adapter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+
+      - name: Validate Aurora PCM renderer API and adapter
+        run: |
+          cargo fmt --all --check
+          cargo check --locked -p aurora-renderer-api --all-targets
+          cargo clippy --locked -p aurora-renderer-api --all-targets -- -D warnings
+          cargo test --locked -p aurora-renderer-api
+          cargo fmt --manifest-path adapters/aurora-renderer-libspatialaudio/Cargo.toml -- --check
+          cargo check --manifest-path adapters/aurora-renderer-libspatialaudio/Cargo.toml --all-targets
+          cargo clippy --manifest-path adapters/aurora-renderer-libspatialaudio/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path adapters/aurora-renderer-libspatialaudio/Cargo.toml
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config
+
+      - name: Fetch exact libspatialaudio
+        run: |
+          git init "$RUNNER_TEMP/libspatialaudio"
+          git -C "$RUNNER_TEMP/libspatialaudio" remote add origin https://github.com/videolan/libspatialaudio.git
+          git -C "$RUNNER_TEMP/libspatialaudio" fetch --depth 1 origin "$LIBSPATIALAUDIO_SHA"
+          git -C "$RUNNER_TEMP/libspatialaudio" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/libspatialaudio" rev-parse HEAD)" = "$LIBSPATIALAUDIO_SHA"
+
+      - name: Verify pinned 7.1.4 channel and latency assumptions
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          root = Path("${{ runner.temp }}") / "libspatialaudio"
+          layout = (root / "source" / "LoudspeakerLayouts.cpp").read_text()
+          compact = "".join(layout.split())
+          expected = (
+              'Layout{"4+7+0",std::vector<Channel>{'
+              'Channel("M+030"),Channel("M-030"),Channel("M+000"),Channel("LFE1"),'
+              'Channel("M+090"),Channel("M-090"),Channel("M+135"),Channel("M-135"),'
+              'Channel("U+045"),Channel("U-045"),Channel("U+135"),Channel("U-135")'
+          )
+          if expected not in compact:
+              raise SystemExit("pinned libspatialaudio 4+7+0 channel order drifted")
+          decorrelator = (root / "include" / "Decorrelator.h").read_text()
+          if "m_nDecorrelationFilterSamples = 512" not in decorrelator:
+              raise SystemExit("pinned libspatialaudio decorrelator length drifted")
+          print("aurora-libspatialaudio-source-contract: PASS order=4+7+0 latency=(512-1)/2=255")
+          PY
+
+      - name: Build exact libspatialaudio shared library
+        run: |
+          cmake -S "$RUNNER_TEMP/libspatialaudio" -B "$RUNNER_TEMP/libspatialaudio-build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/libspatialaudio-install" \
+            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_TESTING=ON
+          cmake --build "$RUNNER_TEMP/libspatialaudio-build" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/libspatialaudio-build" --output-on-failure
+          cmake --install "$RUNNER_TEMP/libspatialaudio-build"
+
+      - name: Build Aurora-owned C++ shim
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/libspatialaudio-install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          c++ -std=c++17 -O2 -fPIC -shared -Wall -Wextra -Werror \
+            validation/open-audio-stack/libspatialaudio_runtime_shim.cpp \
+            -o "$RUNNER_TEMP/libaurora_spaudio_shim.so" \
+            $(pkg-config --cflags --libs spatialaudio)
+          test -s "$RUNNER_TEMP/libaurora_spaudio_shim.so"
+
+      - name: Exercise real Rust adapter and semantic contract
+        run: |
+          mkdir -p artifacts
+          AURORA_LIBSPATIALAUDIO_SHIM="$RUNNER_TEMP/libaurora_spaudio_shim.so" \
+          LD_LIBRARY_PATH="$RUNNER_TEMP/libspatialaudio-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            cargo run --release \
+              --manifest-path adapters/aurora-renderer-libspatialaudio/Cargo.toml \
+              --example runtime_probe | tee artifacts/libspatialaudio-runtime-adapter.txt
+          grep -q 'PASS outputs=12 rate=48000 block=256 latency=255 rust_allocations=0' \
+            artifacts/libspatialaudio-runtime-adapter.txt
+
+      - name: Require native steady-state render to allocate zero times
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/libspatialaudio-install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          c++ -std=c++17 -O2 -Wall -Wextra -Werror \
+            validation/open-audio-stack/libspatialaudio_native_allocation_probe.cpp \
+            -L"$RUNNER_TEMP" -laurora_spaudio_shim \
+            $(pkg-config --libs spatialaudio) \
+            -Wl,--export-dynamic \
+            -Wl,-rpath,"$RUNNER_TEMP" \
+            -Wl,-rpath-link,"$RUNNER_TEMP/libspatialaudio-install/lib" \
+            -o "$RUNNER_TEMP/libspatialaudio-native-allocation-probe"
+          LD_LIBRARY_PATH="$RUNNER_TEMP:$RUNNER_TEMP/libspatialaudio-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            "$RUNNER_TEMP/libspatialaudio-native-allocation-probe" | \
+            tee artifacts/libspatialaudio-native-allocation.txt
+          grep -q 'PASS iterations=512 allocations=0' \
+            artifacts/libspatialaudio-native-allocation.txt
+
+      - name: Upload adapter evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libspatialaudio-runtime-adapter-evidence
+          path: artifacts/libspatialaudio-*.txt
+          if-no-files-found: warn
