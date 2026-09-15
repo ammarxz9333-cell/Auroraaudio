@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "layout_id": "11.1.4-soundbar-reference",
+  "fixture": "fixtures/scenes/11_1_4_soundbar_reference.json",
+  "classification": "custom-research-layout",
+  "not_a_standard_claim": true,
+  "channel_model": {
+    "horizontal_channels": 11,
+    "lfe_channels": 1,
+    "top_channels": 4,
+    "total_outputs": 16,
+    "spatial_outputs_excluding_lfe": 15,
+    "custom_roles": [
+      "front-wide-left",
+      "front-wide-right",
+      "rear-side-left",
+      "rear-side-right"
+    ]
+  },
+  "aurora_layout_gate": {
+    "require_listener_inside_hull": true,
+    "require_zero_lfe_object_panning": true,
+    "require_finite_gains": true,
+    "normalization_tolerance": 0.001,
+    "max_gain_step": 0.15,
+    "expected_total_outputs": 16,
+    "expected_spatial_outputs": 15,
+    "expected_lfe_outputs": 1,
+    "expected_top_outputs": 4,
+    "expected_custom_role_outputs": 4
+  },
+  "saf_reference": {
+    "pinned_commit": "18fd5aba46e20787b51f28f7197a68506c965c07",
+    "integration": "external-reference-only",
+    "permissive_core_patch": "validation/open-immersive/saf-permissive-core.patch",
+    "max_power_error": 0.001,
+    "low_similarity_threshold": 0.5,
+    "max_low_similarity_fraction": 0.15,
+    "min_mean_cosine_similarity": 0.85,
+    "min_dominant_speaker_agreement": 0.85,
+    "max_mean_centroid_error_deg": 7.5,
+    "max_centroid_error_deg": 35.0,
+    "max_mean_height_energy_delta": 0.08,
+    "max_height_energy_delta": 0.25
+  },
+  "evidence_status": "SIMULATED-UNTIL-CI-PASSES",
+  "truth_boundary": "This is an Aurora custom 11.1.4 soundbar-oriented research geometry, not a claim that the channel-role mapping is a Dolby, DTS, Samsung, ITU, or other proprietary standard layout. Passing software validation proves only the tested geometry/render behavior and pinned SAF differential; it does not prove physical soundbar acoustics, reflected up-firing behavior, wireless rear synchronization, codec equivalence, or certification."
+}
