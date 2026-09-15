@@ -33,6 +33,8 @@
     "camilladsp_version_matches": true,
     "upstream_default_feature_set": true,
     "generated_camilladsp_dependency_lock_recorded": true,
+    "aurora_role_aware_adapter_tests_pass": true,
+    "real_7_1_4_channel_sentinel_passes": true,
     "camilladsp_preflight_config_check": true,
     "backend_status": "passed",
     "backend_returncode": 0,
@@ -44,6 +46,9 @@
     "negative_evidence_mutation_must_fail": true
   },
   "covered_semantics": [
+    "aurora_logical_to_wave_physical_7_1_4_channel_mapping",
+    "front_center_dialogue_channel_preservation",
+    "side_vs_back_surround_mapping",
     "fractional_group_delay_against_exported_response",
     "polarity_and_delay",
     "convolution_fir_sidecar",
@@ -53,5 +58,5 @@
     "multisub_coherent_peak_across_tested_sample_rates",
     "unsupported_plugin_rejection"
   ],
-  "truth_boundary": "A green lane proves only the selected deterministic RoomEQ-export-to-real-CamillaDSP software PCM contracts at the two exact pinned source revisions. CamillaDSP is built with the upstream default feature set used by RoomEQ's own required-backend CI. CamillaDSP's pinned source does not publish Cargo.lock, so the generated lock and its SHA-256 are run evidence rather than an upstream dependency pin. This lane does not prove arbitrary DSP graphs, unsupported FIR crossover export, physical DAC output, amplifier or loudspeaker headroom, room acoustics, listening preference, measured end-to-end latency, protected-service interoperability, or any Dolby/DTS/HDMI certification claim. Unsupported graph semantics must be rejected rather than silently dropped."
+  "truth_boundary": "A green lane proves only the selected deterministic RoomEQ-export-to-real-CamillaDSP software PCM contracts and Aurora role-aware 7.1.4 WAV channel sentinel at the exact pinned source revisions. CamillaDSP is built with the upstream default feature set used by RoomEQ's own required-backend CI. CamillaDSP's pinned source does not publish Cargo.lock, so the generated lock and its SHA-256 are run evidence rather than an upstream dependency pin. This lane does not prove arbitrary DSP graphs, unsupported FIR crossover export, physical DAC or speaker wiring, amplifier or loudspeaker headroom, room acoustics, listening preference, measured end-to-end latency, protected-service interoperability, or any Dolby/DTS/HDMI certification claim. Unsupported graph semantics must be rejected rather than silently dropped."
 }
