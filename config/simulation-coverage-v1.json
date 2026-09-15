@@ -387,10 +387,29 @@
       "truth_boundary": "Executable virtual evidence drives Aurora's DuplexStateMachine through bounded exponential recovery backoff, successful late reappearance, stable-run history reset, fail-closed exhaustion and flapping-device history retention. Backend reopen timing and physical device hotplug remain unproven."
     },
     {
+      "id": "synthetic-multichannel-room-correction-reference",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "profiles": [
+        "healthy",
+        "corrupted-multichannel-summary",
+        "pinned-commit-mismatch"
+      ],
+      "evidence": [
+        "config/room-correction-synthetic-v1.json",
+        "validation/room-correction/room_correction_synthetic_evidence.py",
+        ".github/workflows/room-correction-synthetic-ci.yml",
+        "artifacts/room-correction-synthetic-evidence.json",
+        "artifacts/room-correction-synthetic-corrupt-evidence.json",
+        "artifacts/room-correction-synthetic-pin-corrupt-evidence.json"
+      ],
+      "truth_boundary": "Deterministic software-reference coverage for RoomEQ 7.1.4 synthetic optimization, PR-eligible LFE/sub topologies, multi-seat phase guards and Stage 3 safety-policy plumbing. Healthy evidence is bound to the exact tested RoomEQ checkout; corrupted multichannel evidence and contract-pin drift are fail-closed controls. This is not microphone/acoustic evidence, listening evidence, measured physical headroom/latency, RoomEQ-to-CamillaDSP execution fidelity, or proof of MIMO/SIMO room-field control."
+    },
+    {
       "id": "multi-speaker-room-field-control-simulation",
       "status": "planned",
       "evidence_class": "virtual",
-      "truth_boundary": "No MIMO/SIMO multi-speaker low-frequency field-control optimizer has been implemented; synthetic-room validation would precede any acoustic claim."
+      "truth_boundary": "No MIMO/SIMO multi-speaker low-frequency field-control optimizer has been implemented; the covered synthetic RoomEQ reference lane is narrower and does not establish this capability."
     },
     {
       "id": "physical-earc-ingress",
