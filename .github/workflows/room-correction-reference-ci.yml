@@ -1,0 +1,108 @@
+name: Room Correction Reference CI
+
+on:
+  pull_request:
+    paths:
+      - "config/room-correction-reference-v1.json"
+      - "config/external-components-v1.json"
+      - "validation/room-correction/**"
+      - "docs/room-correction-reference.md"
+      - "THIRD_PARTY_LICENSES.md"
+      - "AGENTS.md"
+      - ".github/workflows/room-correction-reference-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: room-correction-reference-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  AUTOEQ_SHA: 579dd7486024fc18ff219e31eb7337362814f602
+  CAMILLADSP_SHA: 05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74
+  CARGO_TERM_COLOR: always
+
+jobs:
+  pinned-reference:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config libasound2-dev libssl-dev
+
+      - name: Fetch exact RoomEQ reference
+        run: |
+          git init "$RUNNER_TEMP/autoeq"
+          git -C "$RUNNER_TEMP/autoeq" remote add origin https://github.com/pierreaubert/autoeq.git
+          git -C "$RUNNER_TEMP/autoeq" fetch --depth 1 origin "$AUTOEQ_SHA"
+          git -C "$RUNNER_TEMP/autoeq" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/autoeq" rev-parse HEAD)" = "$AUTOEQ_SHA"
+
+      - name: Run selected RoomEQ upstream contracts
+        working-directory: ${{ runner.temp }}/autoeq
+        run: |
+          cargo test --locked --release -p roomeq-engine per_driver_fir --lib
+          cargo test --locked --release -p roomeq-workflow dsp_realization --lib
+          cargo test --locked --release -p roomeq-qa stage_contracts --lib
+
+      - name: Fetch exact CamillaDSP executor reference
+        run: |
+          git init "$RUNNER_TEMP/camilladsp"
+          git -C "$RUNNER_TEMP/camilladsp" remote add origin https://github.com/HEnquist/camilladsp.git
+          git -C "$RUNNER_TEMP/camilladsp" fetch --depth 1 origin "$CAMILLADSP_SHA"
+          git -C "$RUNNER_TEMP/camilladsp" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/camilladsp" rev-parse HEAD)" = "$CAMILLADSP_SHA"
+
+      - name: Generate CamillaDSP dependency lock and run library contracts
+        working-directory: ${{ runner.temp }}/camilladsp
+        run: |
+          test ! -e Cargo.lock
+          cargo generate-lockfile
+          test -s Cargo.lock
+          cargo test --locked --lib --no-default-features
+
+      - name: Emit Aurora room-correction reference evidence
+        run: |
+          python3 validation/room-correction/room_correction_reference_evidence.py \
+            --config config/room-correction-reference-v1.json \
+            --autoeq "$RUNNER_TEMP/autoeq" \
+            --camilladsp "$RUNNER_TEMP/camilladsp" \
+            --output artifacts/room-correction-reference-evidence.json
+
+      - name: Require pin mismatch to fail closed
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source = Path("config/room-correction-reference-v1.json")
+          data = json.loads(source.read_text())
+          data["references"]["roomeq"]["pinned_commit"] = "0" * 40
+          Path("artifacts/bad-room-correction-reference.json").write_text(
+              json.dumps(data, indent=2) + "\n"
+          )
+          PY
+          if python3 validation/room-correction/room_correction_reference_evidence.py \
+            --config artifacts/bad-room-correction-reference.json \
+            --autoeq "$RUNNER_TEMP/autoeq" \
+            --camilladsp "$RUNNER_TEMP/camilladsp" \
+            --output artifacts/bad-room-correction-evidence.json; then
+            echo "ERROR: mismatched RoomEQ pin unexpectedly passed"
+            exit 1
+          fi
+
+      - name: Upload evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: room-correction-reference-evidence
+          path: artifacts/room-correction-*.json
