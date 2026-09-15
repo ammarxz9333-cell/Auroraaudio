@@ -1,5 +1,6 @@
 #include <aoo.h>
 #include <aoo_source.h>
+#include <codec/aoo_pcm.h>
 
 #include <stdio.h>
 #include <stdlib.h>
