@@ -31,8 +31,12 @@ This lane therefore does not claim arbitrary graph compatibility. For example, u
 
 ## Reproducibility controls
 
-CI fetches both repositories at exact commits, builds the CamillaDSP binary with its locked dependency graph, verifies the exact Git heads, runs the real external PCM contracts, and requires RoomEQ's `Cargo.lock` to remain unchanged during the backend run. Aurora then mutates the backend evidence to report one required contract as missing and requires its analyzer to fail closed.
+CI fetches both repositories at exact commits and verifies both Git heads. The pinned CamillaDSP source revision does not publish `Cargo.lock`, so CI first generates a dependency lock from that exact pinned manifest, retains the generated lock as a workflow artifact, records its SHA-256 in Aurora evidence, and only then builds CamillaDSP with `--locked`.
+
+RoomEQ already carries its own lockfile. The backend run must leave that `Cargo.lock` unchanged. Aurora then mutates the backend evidence to report one required PCM contract as missing and requires its analyzer to fail closed.
+
+The generated CamillaDSP lock is an auditable closure for the CI run. It is not represented as an upstream-published dependency pin.
 
 ## Truth boundary
 
-A green result proves only the selected deterministic software PCM/export execution semantics at the exact two pinned source revisions. It is stronger than syntax-only `camilladsp --check`, but it is still software evidence. It does not prove physical DAC output, amplifier/speaker headroom, room correction measured by a microphone, listening preference, measured end-to-end latency, protected-service compatibility, or Dolby/DTS/HDMI certification.
+A green result proves only the selected deterministic software PCM/export execution semantics at the exact two pinned source revisions and recorded dependency closure. It is stronger than syntax-only `camilladsp --check`, but it is still software evidence. It does not prove physical DAC output, amplifier/speaker headroom, room correction measured by a microphone, listening preference, measured end-to-end latency, protected-service compatibility, or Dolby/DTS/HDMI certification.
