@@ -137,6 +137,14 @@ def directional_pass(
 
 
 def require_contract_shape(config: dict[str, Any]) -> None:
+    obr = config.get("google_obr", {})
+    for field, supported in {
+        "input_type": "7.1.4",
+        "filter_type": "Direct",
+        "cli_target": "//obr/cli:obr_cli",
+    }.items():
+        if obr.get(field) != supported:
+            raise SystemExit(f"unsupported google_obr.{field}: expected {supported}")
     if config.get("schema_version") != 1 or config.get("roadmap_phase") != 11:
         raise SystemExit("unsupported binaural 7.1.4 differential contract")
     fixture = config.get("fixture", {})

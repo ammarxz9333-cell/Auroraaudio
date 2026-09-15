@@ -5,7 +5,14 @@ on:
     paths:
       - "config/binaural-7-1-4-differential-v1.json"
       - "validation/binaural/binaural_7_1_4_differential.py"
-      - "crates/aurora-renderer-basic/examples/binaural_7_1_4_probe.rs"
+      - "crates/aurora-renderer-basic/**"
+      - "crates/aurora-renderer-api/**"
+      - "crates/aurora-core/**"
+      - "crates/aurora-scene/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "config/simulation-coverage-v1.json"
+      - "validation/binaural/test_binaural_contract.py"
       - "docs/binaural-7-1-4-differential.md"
       - "AGENTS.md"
       - ".github/workflows/binaural-7-1-4-differential-ci.yml"
@@ -28,6 +35,9 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+
+      - name: Validate OBR contract rejection controls
+        run: python3 -m unittest discover -s validation/binaural -p 'test_*.py' -v
 
       - name: Install Rust
         uses: dtolnay/rust-toolchain@stable

@@ -130,14 +130,18 @@ Merged Phase 11 baseline files from #176:
 - `config/external-components-v1.json` registrations;
 - `THIRD_PARTY_LICENSES.md` boundaries.
 
-Active PR #177 adds the first Aurora-vs-reference execution differential:
+Active PR #177 has implemented the first Aurora-vs-reference execution differential; final-head gates and review resolution remain pending:
 - exact-pinned OBR CLI built from `//obr/cli:obr_cli` and kept external;
 - dependency-neutral Aurora `GeometricBinaural` probe from `aurora-renderer-basic`;
 - deterministic 16-bit/48 kHz channel-isolated 7.1.4 impulse fixtures;
 - canonical sequential OBR/Aurora order `FL, FR, FC, LFE, SL, SR, SBL, SBR, TFL, TFR, TRL, TRR` with no WAVE speaker-mask remap at this boundary;
 - directional left/right/center semantic checks, finite/non-zero output, exact frame accounting and mirror-pair checks;
 - LFE execution integrity only, with no spatial-direction claim;
-- OBR-pin drift and channel-order drift negative controls.
+- OBR-pin drift, channel-order drift and unsupported input/filter/CLI-target negative controls;
+- renderer/API/core/scene and Cargo dependency changes trigger the differential workflow;
+- `config/binaural-7-1-4-differential-v1.json`, `validation/binaural/binaural_7_1_4_differential.py` and `.github/workflows/binaural-7-1-4-differential-ci.yml` are registered as `binaural-7-1-4-semantic-differential` in simulation coverage.
+
+Remaining Phase 11 implementation is objects, Ambisonics/HOA, head rotation, moving-source/HRTF-transition continuity and bounded discrimination metrics.
 
 The #177 differential compares bounded semantics rather than raw PCM because Aurora's geometric model and OBR implement different transfer functions. A green lane does not prove HRTF parity, front/back or elevation discrimination, personalized HRTF quality, head tracking, perceptual quality, physical latency, or certification.
 
