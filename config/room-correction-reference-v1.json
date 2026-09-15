@@ -31,7 +31,7 @@
       ],
       "selected_upstream_tests": [
         "cargo test --locked --release -p roomeq-engine per_driver_fir --lib",
-        "cargo test --locked --release -p roomeq-workflow dsp_realization --lib",
+        "cargo test --locked --release -p roomeq-engine --lib dsp_realization::tests::mixed_fir_iir_replay_matches_independent_complex_branch_sum -- --exact",
         "cargo test --locked --release -p roomeq-qa stage_contracts --lib"
       ]
     },
@@ -67,6 +67,7 @@
     "declared_license_identity": true,
     "required_source_surfaces_present": true,
     "selected_upstream_tests_green": true,
+    "selected_upstream_tests_non_vacuous": true,
     "generated_camilladsp_dependency_lock_recorded": true,
     "negative_pin_mismatch_must_fail": true,
     "aurora_runtime_dependency_added": false
@@ -78,5 +79,5 @@
     "crossover and LFE/bass-management routing gate",
     "multi-sub timing/phase synthetic reference gate"
   ],
-  "truth_boundary": "This baseline validates exact external source identities, licensing boundaries, required optimizer/executor surfaces and selected upstream tests only. The pinned CamillaDSP source does not publish Cargo.lock, so CI records the generated dependency-lock SHA-256 for each run before executing with --locked; this is an auditable run closure, not an upstream-published dependency pin. It is not a room measurement, not an Aurora acoustic correction result, not physical loudspeaker evidence, not measured latency, and not proof that RoomEQ-generated DSP is preserved by CamillaDSP until a separate export/execution differential passes."
+  "truth_boundary": "This baseline validates exact external source identities, licensing boundaries, required optimizer/executor surfaces and selected upstream tests only. The selected DSP-realization regression is required to execute exactly one named upstream test rather than accepting a zero-test filter. The pinned CamillaDSP source does not publish Cargo.lock, so CI records the generated dependency-lock SHA-256 for each run before executing with --locked; this is an auditable run closure, not an upstream-published dependency pin. It is not a room measurement, not an Aurora acoustic correction result, not physical loudspeaker evidence, not measured latency, and not proof that RoomEQ-generated DSP is preserved by CamillaDSP until a separate export/execution differential passes."
 }
