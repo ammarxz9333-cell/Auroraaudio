@@ -2,6 +2,18 @@
   "schema_version": 1,
   "renderer": "aurora-vbap3d",
   "saf_reference_commit": "18fd5aba46e20787b51f28f7197a68506c965c07",
+  "trajectory": {
+    "type": "circle-height",
+    "duration_seconds": 2.0,
+    "sample_rate": 48000,
+    "block_size": 256,
+    "azimuth_revolutions": 1.0,
+    "height_cycles": 2.0,
+    "nominal_azimuth_rate_deg_per_second": 180.0,
+    "max_gain_step_per_block": 0.15,
+    "normalization_tolerance": 0.001,
+    "rationale": "The first diagnostic used a 1.0 s full revolution (360 deg/s) and produced 23 gain-step violations only on the denser 11.1.4 geometry while the hull, normalization, finiteness, and LFE gates all passed. The matrix fixes the test motion at a still-aggressive 180 deg/s and keeps the original 0.15 gain-step gate unchanged for both layouts."
+  },
   "layouts": [
     {
       "id": "7.1.4",
