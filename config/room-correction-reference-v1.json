@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "roadmap_phase": 10,
+  "status": "external-reference-baseline",
+  "purpose": "Pin and validate external room-correction optimization and DSP-execution references without making either project an Aurora runtime dependency.",
+  "references": {
+    "roomeq": {
+      "upstream": "https://github.com/pierreaubert/autoeq",
+      "pinned_commit": "579dd7486024fc18ff219e31eb7337362814f602",
+      "observed_version": "0.5.73",
+      "license": "GPL-3.0-or-later",
+      "integration": "external-process-validation-reference",
+      "production_ready": false,
+      "roles": [
+        "room-correction-optimizer-reference",
+        "multichannel-correction-reference",
+        "multi-sub-reference",
+        "crossover-bass-management-reference",
+        "fir-iir-hybrid-reference",
+        "timing-phase-alignment-reference",
+        "camilladsp-export-reference"
+      ],
+      "required_surfaces": [
+        "Cargo.toml",
+        "crates/roomeq-engine",
+        "crates/roomeq-workflow",
+        "crates/roomeq-quality",
+        "crates/roomeq-export",
+        "src/bin/roomeq/input_schema.json",
+        "src/bin/roomeq/output_schema.json"
+      ],
+      "selected_upstream_tests": [
+        "cargo test --locked --release -p roomeq-engine per_driver_fir --lib",
+        "cargo test --locked --release -p roomeq-workflow dsp_realization --lib",
+        "cargo test --locked --release -p roomeq-qa stage_contracts --lib"
+      ]
+    },
+    "camilladsp": {
+      "upstream": "https://github.com/HEnquist/camilladsp",
+      "pinned_commit": "05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74",
+      "observed_version": "4.1.3",
+      "license": "GPL-3.0-only OR MPL-2.0",
+      "integration": "external-process-dsp-executor-reference",
+      "production_ready": false,
+      "roles": [
+        "fir-executor-reference",
+        "iir-executor-reference",
+        "crossover-reference",
+        "delay-reference",
+        "limiter-reference",
+        "room-correction-executor-reference"
+      ],
+      "required_surfaces": [
+        "Cargo.toml",
+        "src/lib.rs",
+        "README.md"
+      ],
+      "selected_upstream_tests": [
+        "cargo test --locked --lib --no-default-features"
+      ]
+    }
+  },
+  "acceptance": {
+    "exact_commit_identity": true,
+    "declared_license_identity": true,
+    "required_source_surfaces_present": true,
+    "selected_upstream_tests_green": true,
+    "negative_pin_mismatch_must_fail": true,
+    "aurora_runtime_dependency_added": false
+  },
+  "next_evidence": [
+    "deterministic synthetic multichannel RoomEQ optimization scenario",
+    "RoomEQ-to-CamillaDSP export preservation and execution differential",
+    "headroom and clipping safety gate",
+    "crossover and LFE/bass-management routing gate",
+    "multi-sub timing/phase synthetic reference gate"
+  ],
+  "truth_boundary": "This baseline validates exact external source identities, licensing boundaries, required optimizer/executor surfaces and selected upstream tests only. It is not a room measurement, not an Aurora acoustic correction result, not physical loudspeaker evidence, not measured latency, and not proof that RoomEQ-generated DSP is preserved by CamillaDSP until a separate export/execution differential passes."
+}
