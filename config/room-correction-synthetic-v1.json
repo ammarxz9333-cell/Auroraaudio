@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "roadmap_phase": 10,
+  "status": "synthetic-reference-validation",
+  "roomeq": {
+    "upstream": "https://github.com/pierreaubert/autoeq",
+    "pinned_commit": "579dd7486024fc18ff219e31eb7337362814f602",
+    "integration": "external-process-validation-reference"
+  },
+  "cases": {
+    "multichannel_7_1_4": {
+      "args": [
+        "--pr",
+        "--difficulty",
+        "easy",
+        "--mode",
+        "Hybrid",
+        "--layout",
+        "7.1.4",
+        "--fail-fast"
+      ],
+      "expected_multichannel_cases": 4,
+      "expected_pr_sub_topologies": [
+        "single_sub",
+        "mso_2sub",
+        "cardioid",
+        "dba"
+      ],
+      "claims": [
+        "logical_7_1_4_topology_preserved",
+        "lfe_routed_sub_topologies_exercised",
+        "multichannel_optimizer_regressions_fail_or_safely_revert",
+        "hybrid_processing_path_exercised"
+      ]
+    },
+    "multiseat_guards": {
+      "args": ["--multiseat-guards-only"],
+      "claims": [
+        "missing_phase_rejected",
+        "objective_metrics_checked",
+        "polarity_and_allpass_controls_bounded"
+      ]
+    },
+    "stage3_policies": {
+      "args": ["--stage3-policies"],
+      "claims": [
+        "bounded_inversion_policy_exercised",
+        "chain_headroom_and_peak_gain_constraints_exercised",
+        "trusted_timing_gate_exercised",
+        "untrusted_timing_is_advisory",
+        "candidate_vs_identity_validation_exercised"
+      ]
+    }
+  },
+  "acceptance": {
+    "exact_roomeq_commit": true,
+    "multichannel_failed_count": 0,
+    "multichannel_expected_cases_all_pass": true,
+    "overall_fail_outcomes": 0,
+    "multiseat_failed_count": 0,
+    "stage3_all_expectations_hold": true,
+    "negative_log_mutation_must_fail": true
+  },
+  "truth_boundary": "This lane uses RoomEQ's deterministic in-memory synthetic acoustic fixtures and software policy checks. It is not microphone evidence, not a physical room response, not a listening test, not measured speaker/sub headroom, not measured latency, and not proof of RoomEQ-to-CamillaDSP execution fidelity. Safe runtime reversion is an accepted safety outcome and must not be relabeled as acoustic improvement."
+}
