@@ -11,7 +11,8 @@
     "upstream": "https://github.com/HEnquist/camilladsp",
     "pinned_commit": "05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74",
     "expected_version_fragment": "4.1.3",
-    "build": "cargo build --locked --release --no-default-features --bin camilladsp"
+    "dependency_lock_policy": "upstream pin has no Cargo.lock; CI generates one from the exact pinned Cargo.toml, records its SHA-256 and retains it as evidence, then builds with --locked",
+    "build": "cargo generate-lockfile && cargo build --locked --release --no-default-features --bin camilladsp"
   },
   "required_pcm_contracts": [
     "room_optimization::gd::tests::tool_contract_camilladsp_fractional_gd_matches_exported_response",
@@ -29,6 +30,7 @@
     "exact_roomeq_commit": true,
     "exact_camilladsp_commit": true,
     "camilladsp_version_matches": true,
+    "generated_camilladsp_dependency_lock_recorded": true,
     "backend_status": "passed",
     "backend_returncode": 0,
     "missing_required_pcm_contracts": 0,
@@ -48,5 +50,5 @@
     "multisub_coherent_peak_across_tested_sample_rates",
     "unsupported_plugin_rejection"
   ],
-  "truth_boundary": "A green lane proves only the selected deterministic RoomEQ-export-to-real-CamillaDSP software PCM contracts at the two exact pinned source revisions. It does not prove arbitrary DSP graphs, unsupported FIR crossover export, physical DAC output, amplifier or loudspeaker headroom, room acoustics, listening preference, measured end-to-end latency, protected-service interoperability, or any Dolby/DTS/HDMI certification claim. Unsupported graph semantics must be rejected rather than silently dropped."
+  "truth_boundary": "A green lane proves only the selected deterministic RoomEQ-export-to-real-CamillaDSP software PCM contracts at the two exact pinned source revisions. CamillaDSP's pinned source does not publish Cargo.lock, so the generated lock and its SHA-256 are run evidence rather than an upstream dependency pin. This lane does not prove arbitrary DSP graphs, unsupported FIR crossover export, physical DAC output, amplifier or loudspeaker headroom, room acoustics, listening preference, measured end-to-end latency, protected-service interoperability, or any Dolby/DTS/HDMI certification claim. Unsupported graph semantics must be rejected rather than silently dropped."
 }
