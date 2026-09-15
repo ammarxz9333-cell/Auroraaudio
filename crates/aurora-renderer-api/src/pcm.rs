@@ -29,6 +29,11 @@ pub enum PcmRendererError {
     /// A setup-time renderer configuration is invalid or unsupported.
     #[error("invalid PCM renderer configuration: {0}")]
     InvalidConfiguration(String),
+    /// Runtime listener orientation is finite but unsupported by the backend.
+    /// This fixed variant exists so callback-side rejection does not format or
+    /// allocate an error string.
+    #[error("PCM renderer listener orientation is unsupported")]
+    UnsupportedListenerOrientation,
     /// More objects were supplied than the configured steady-state maximum.
     #[error("PCM renderer supports at most {maximum} objects, got {actual}")]
     TooManyObjects {
