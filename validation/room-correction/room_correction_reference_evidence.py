@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Validate Aurora's pinned Phase 10 room-correction references.
 
-This script deliberately validates only source identity, license/version metadata,
+This script deliberately validates source identity, license/version metadata,
 required source surfaces and evidence provenance. Upstream executable tests are
 run separately by CI before this analyzer is invoked.
 """
@@ -69,6 +69,7 @@ def validate_roomeq(root: Path, contract: dict[str, Any]) -> dict[str, Any]:
 
 def validate_camilladsp(root: Path, contract: dict[str, Any]) -> dict[str, Any]:
     cargo = load_toml(root / "Cargo.toml")
+    lock = root / "Cargo.lock"
     actual_commit = git_head(root)
     actual_license = cargo["package"].get("license")
     actual_version = cargo["package"].get("version")
@@ -78,6 +79,7 @@ def validate_camilladsp(root: Path, contract: dict[str, Any]) -> dict[str, Any]:
         "license": actual_license == contract["license"],
         "version": actual_version == contract["observed_version"],
         "required_surfaces": surfaces_ok,
+        "generated_dependency_lock_present": lock.is_file(),
     }
     return {
         "expected_commit": contract["pinned_commit"],
@@ -86,6 +88,8 @@ def validate_camilladsp(root: Path, contract: dict[str, Any]) -> dict[str, Any]:
         "actual_license": actual_license,
         "expected_version": contract["observed_version"],
         "actual_version": actual_version,
+        "dependency_lock_policy": contract["dependency_lock_policy"],
+        "generated_dependency_lock_sha256": sha256(lock) if lock.is_file() else None,
         "missing_surfaces": missing,
         "checks": checks,
         "pass": all(checks.values()),
