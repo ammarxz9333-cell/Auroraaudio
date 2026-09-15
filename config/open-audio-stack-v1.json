@@ -14,8 +14,17 @@
       "pinned_commit": "dc2a5be2962ba02d6cebe297f31f2774f34e7bc7",
       "license": "Standard Improved BSD License",
       "role": "wireless-peer-udp-transport-candidate",
-      "integration_boundary": "worker-thread-c-api-adapter",
-      "runtime_status": "contract-ready-adapter-not-yet-selected",
+      "integration_boundary": "worker-thread-dynamic-shim-adapter",
+      "runtime_status": "software-proven-adapter-production-not-selected",
+      "software_evidence": [
+        "exact-pin-native-lifecycle",
+        "aurora-media-frame-to-ntp-mapping",
+        "healthy-udp-loopback",
+        "packet-loss-reorder-jitter-loopback",
+        "plus-minus-250ppm-peer-clock-loopback",
+        "receiver-restart-across-stream-epochs",
+        "single-active-runtime-fail-closed-and-reload"
+      ],
       "required_capabilities": [
         "pcm",
         "sample-accurate-timestamps",
