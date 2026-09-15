@@ -65,7 +65,7 @@ pub enum AooAdapterLoadError {
     /// A dynamic-library operation failed.
     DynamicLibrary(String),
     /// Required shim symbol is missing.
-    MissingSymbol(&'static str),
+    MissingSymbol(String),
     /// Loaded shim ABI does not match this adapter.
     AbiMismatch { expected: u32, actual: u32 },
     /// Native shim could not allocate/initialize a handle.
@@ -81,7 +81,10 @@ impl fmt::Display for AooAdapterLoadError {
             Self::DynamicLibrary(message) => write!(f, "AOO shim load error: {message}"),
             Self::MissingSymbol(name) => write!(f, "AOO shim missing symbol {name}"),
             Self::AbiMismatch { expected, actual } => {
-                write!(f, "AOO shim ABI mismatch: expected {expected}, got {actual}")
+                write!(
+                    f,
+                    "AOO shim ABI mismatch: expected {expected}, got {actual}"
+                )
             }
             Self::CreateFailed => write!(f, "AOO shim failed to create a native handle"),
             Self::InvalidSinkHost => write!(f, "AOO sink host contains an embedded NUL byte"),
@@ -334,7 +337,11 @@ impl NetworkAudioTransport for AooNetworkTransport {
             .ok_or(NetworkTransportError::WorkerFault)?;
         let next_timestamp = block.timestamp.checked_advance(block.format.block_frames)?;
         Self::native_ok(unsafe {
-            (self.api.submit)(self.handle, block.samples.as_ptr(), block.timestamp.frame_index)
+            (self.api.submit)(
+                self.handle,
+                block.samples.as_ptr(),
+                block.timestamp.frame_index,
+            )
         })?;
         self.expected_sequence = Some(next_sequence);
         self.expected_timestamp = Some(next_timestamp);
@@ -391,7 +398,7 @@ impl SharedLibrary {
 
     unsafe fn symbol<T: Copy>(&self, name: &'static [u8]) -> Result<T, AooAdapterLoadError> {
         let c_name = CStr::from_bytes_with_nul(name)
-            .map_err(|_| AooAdapterLoadError::MissingSymbol("invalid-symbol-name"))?;
+            .map_err(|_| AooAdapterLoadError::MissingSymbol("invalid-symbol-name".into()))?;
         let ptr = platform::symbol(self.handle, c_name)?;
         if std::mem::size_of::<T>() != std::mem::size_of::<*mut c_void>() {
             return Err(AooAdapterLoadError::DynamicLibrary(
@@ -425,7 +432,9 @@ mod platform {
     }
 
     pub fn open(path: &Path) -> Result<*mut c_void, AooAdapterLoadError> {
-        let text = path.to_str().ok_or(AooAdapterLoadError::InvalidLibraryPath)?;
+        let text = path
+            .to_str()
+            .ok_or(AooAdapterLoadError::InvalidLibraryPath)?;
         let path = CString::new(text).map_err(|_| AooAdapterLoadError::InvalidLibraryPath)?;
         let handle = unsafe { dlopen(path.as_ptr(), RTLD_NOW) };
         if handle.is_null() {
@@ -443,10 +452,9 @@ mod platform {
         let ptr = dlsym(handle, name.as_ptr());
         let err = dlerror();
         if !err.is_null() {
-            let symbol = name.to_string_lossy().into_owned();
-            return Err(AooAdapterLoadError::MissingSymbol(Box::leak(
-                symbol.into_boxed_str(),
-            )));
+            return Err(AooAdapterLoadError::MissingSymbol(
+                name.to_string_lossy().into_owned(),
+            ));
         }
         Ok(ptr)
     }
@@ -460,7 +468,9 @@ mod platform {
         if err.is_null() {
             return "unknown dynamic-loader error".into();
         }
-        unsafe { CStr::from_ptr(err) }.to_string_lossy().into_owned()
+        unsafe { CStr::from_ptr(err) }
+            .to_string_lossy()
+            .into_owned()
     }
 }
 
@@ -478,7 +488,9 @@ mod platform {
     }
 
     pub fn open(path: &Path) -> Result<*mut c_void, AooAdapterLoadError> {
-        let text = path.to_str().ok_or(AooAdapterLoadError::InvalidLibraryPath)?;
+        let text = path
+            .to_str()
+            .ok_or(AooAdapterLoadError::InvalidLibraryPath)?;
         let path = CString::new(text).map_err(|_| AooAdapterLoadError::InvalidLibraryPath)?;
         let handle = unsafe { LoadLibraryA(path.as_ptr()) };
         if handle.is_null() {
@@ -495,10 +507,9 @@ mod platform {
     ) -> Result<*mut c_void, AooAdapterLoadError> {
         let ptr = GetProcAddress(handle, name.as_ptr());
         if ptr.is_null() {
-            let symbol = name.to_string_lossy().into_owned();
-            return Err(AooAdapterLoadError::MissingSymbol(Box::leak(
-                symbol.into_boxed_str(),
-            )));
+            return Err(AooAdapterLoadError::MissingSymbol(
+                name.to_string_lossy().into_owned(),
+            ));
         }
         Ok(ptr)
     }
