@@ -126,6 +126,13 @@ def parse_stage3(text: str) -> dict[str, Any]:
     }
 
 
+def normalized_commit(value: object, label: str) -> str:
+    commit = str(value).strip().lower()
+    if re.fullmatch(r"[0-9a-f]{40}", commit) is None:
+        raise ValueError(f"{label} must be a full 40-character lowercase-compatible git SHA")
+    return commit
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
@@ -133,6 +140,7 @@ def main() -> int:
     parser.add_argument("--multichannel-log", type=Path, required=True)
     parser.add_argument("--multiseat-log", type=Path, required=True)
     parser.add_argument("--stage3-log", type=Path, required=True)
+    parser.add_argument("--roomeq-head", required=True)
     parser.add_argument("--output", type=Path, required=True)
     args = parser.parse_args()
 
@@ -140,6 +148,12 @@ def main() -> int:
         contract = json.loads(args.config.read_text(encoding="utf-8"))
         if contract.get("schema_version") != 1 or contract.get("roadmap_phase") != 10:
             raise ValueError("unsupported synthetic room-correction contract")
+        contract_pin = normalized_commit(contract["roomeq"]["pinned_commit"], "contract RoomEQ pin")
+        tested_head = normalized_commit(args.roomeq_head, "tested RoomEQ checkout")
+        if contract_pin != tested_head:
+            raise ValueError(
+                f"RoomEQ contract pin {contract_pin} does not match tested checkout {tested_head}"
+            )
         expected_cases = int(
             contract["cases"]["multichannel_7_1_4"]["expected_multichannel_cases"]
         )
@@ -160,7 +174,8 @@ def main() -> int:
         evidence = {
             "schema_version": 1,
             "roadmap_phase": 10,
-            "roomeq_pinned_commit": contract["roomeq"]["pinned_commit"],
+            "roomeq_pinned_commit": contract_pin,
+            "roomeq_tested_commit": tested_head,
             "contract_sha256": sha256(args.config),
             "logs_sha256": {
                 "chain": sha256(args.chain_log),
