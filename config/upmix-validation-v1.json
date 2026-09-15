@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "mode": "decoded-pcm-channel-upmix-validation",
+  "sample_rate": 48000,
+  "objects_decoded": false,
+  "lanes": [
+    {
+      "id": "5.1->7.1.4",
+      "source_layout": "5.1",
+      "source_channels": 6,
+      "target_layout": "7.1.4",
+      "target_channels": 12,
+      "target_order": ["FL", "FR", "FC", "LFE", "BL", "BR", "SL", "SR", "TFL", "TFR", "TBL", "TBR"],
+      "preserved_bed_map": [[0,0],[1,1],[2,2],[3,3],[4,6],[5,7]],
+      "synthetic_channels": [4,5,8,9,10,11]
+    },
+    {
+      "id": "5.1->11.1.4",
+      "source_layout": "5.1",
+      "source_channels": 6,
+      "target_layout": "11.1.4-custom-reference",
+      "target_channels": 16,
+      "target_order": ["FL", "FR", "FC", "FWL", "FWR", "SL", "SR", "RWL", "RWR", "BL", "BR", "LFE", "TFL", "TFR", "TBL", "TBR"],
+      "preserved_bed_map": [[0,0],[1,1],[2,2],[3,11],[4,5],[5,6]],
+      "synthetic_channels": [3,4,7,8,9,10,12,13,14,15]
+    },
+    {
+      "id": "7.1->11.1.4",
+      "source_layout": "7.1",
+      "source_channels": 8,
+      "target_layout": "11.1.4-custom-reference",
+      "target_channels": 16,
+      "target_order": ["FL", "FR", "FC", "FWL", "FWR", "SL", "SR", "RWL", "RWR", "BL", "BR", "LFE", "TFL", "TFR", "TBL", "TBR"],
+      "preserved_bed_map": [[0,0],[1,1],[2,2],[3,11],[4,9],[5,10],[6,5],[7,6]],
+      "synthetic_channels": [3,4,7,8,12,13,14,15]
+    }
+  ],
+  "acceptance": {
+    "bed_max_abs_error": 1e-7,
+    "max_synthetic_to_bed_rms_ratio": 0.30,
+    "max_abs_synthetic_source_correlation": 0.72,
+    "min_spectral_pair_balance_ratio": 0.99,
+    "max_center_to_synthetic_peak": 1e-7,
+    "max_lfe_to_synthetic_peak": 1e-7,
+    "max_dual_mono_synthetic_peak": 1e-7,
+    "linear_gain_ratio_4x_input_min": 3.999,
+    "linear_gain_ratio_4x_input_max": 4.001,
+    "max_stress_peak_abs": 0.95
+  },
+  "truth_boundary": "Decoded-PCM channel upmix validation only. Synthetic wide/back/height ambience is not JOC, OAMD, IAMF, MPEG-H, Dolby Atmos, or authored-object recovery. Codec ingress, room acoustics, room correction, hardware output, and certification remain separate gates."
+}
