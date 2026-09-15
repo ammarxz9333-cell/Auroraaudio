@@ -51,12 +51,14 @@ pub fn wav_file_channel_index_for_layout(
         )));
     }
 
-    let target_bit = roles[logical_channel].wav_channel_mask_bit().ok_or_else(|| {
-        CamillaDspError::InvalidConfig(format!(
-            "layout {:?} contains a channel role without a standard WAVE speaker-mask bit",
-            layout
-        ))
-    })?;
+    let target_bit = roles[logical_channel]
+        .wav_channel_mask_bit()
+        .ok_or_else(|| {
+            CamillaDspError::InvalidConfig(format!(
+                "layout {:?} contains a channel role without a standard WAVE speaker-mask bit",
+                layout
+            ))
+        })?;
 
     let mut file_index = 0usize;
     for role in roles {
@@ -230,10 +232,7 @@ mod role_aware_tests {
             remap_config_for_wav_layout(&seven_one_four_config(), StandardLayout::SevenOneFour)
                 .unwrap();
         let physical_indices: Vec<_> = mapped.channels.iter().map(|ch| ch.channel).collect();
-        assert_eq!(
-            physical_indices,
-            vec![0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11]
-        );
+        assert_eq!(physical_indices, vec![0, 1, 2, 3, 6, 7, 4, 5, 8, 9, 10, 11]);
 
         // Front center/dialogue remains physical channel 2.
         assert_eq!(mapped.channels[2].channel, 2);
@@ -346,12 +345,9 @@ mod role_aware_tests {
         assert_eq!(processed.format.sample_rate, 48_000);
 
         for (logical, gain_db) in [(2usize, -6.0f32), (4, -12.0), (6, -18.0)] {
-            let physical = wav_file_channel_index_for_layout(
-                StandardLayout::SevenOneFour,
-                12,
-                logical,
-            )
-            .unwrap();
+            let physical =
+                wav_file_channel_index_for_layout(StandardLayout::SevenOneFour, 12, logical)
+                    .unwrap();
             let input_level = 0.01 * (logical as f32 + 1.0);
             let expected = input_level * 10.0f32.powf(gain_db / 20.0);
             let actual = peak_abs(&processed.channels[physical]);
@@ -367,7 +363,10 @@ mod role_aware_tests {
             wav_file_channel_index_for_layout(StandardLayout::SevenOneFour, 12, 5).unwrap();
         assert_eq!(sr_physical, 7);
         let sr_peak = peak_abs(&processed.channels[sr_physical]);
-        assert!((sr_peak - 0.06).abs() < 0.002, "SR peak drifted to {sr_peak}");
+        assert!(
+            (sr_peak - 0.06).abs() < 0.002,
+            "SR peak drifted to {sr_peak}"
+        );
 
         let _ = fs::remove_file(input);
         let _ = fs::remove_file(output);
