@@ -90,7 +90,11 @@ pub fn create_network_transport_bridge(
         return None;
     }
     let block_samples = format.samples_per_block()?;
-    let pcm = TransportPrototype::new(TransportKind::FixedBlockPool, block_samples, capacity_blocks)?;
+    let pcm = TransportPrototype::new(
+        TransportKind::FixedBlockPool,
+        block_samples,
+        capacity_blocks,
+    )?;
     let metadata = Arc::new(ArrayQueue::new(capacity_blocks));
     Some((
         NetworkBlockProducer {
@@ -378,9 +382,7 @@ mod tests {
             .unwrap();
         backend.start().unwrap();
         let mut scratch = vec![0.0; 12 * 48];
-        assert!(consumer
-            .try_submit_one(&mut backend, &mut scratch)
-            .unwrap());
+        assert!(consumer.try_submit_one(&mut backend, &mut scratch).unwrap());
         assert_eq!(
             backend.last,
             Some(NetworkBlockMetadata {
