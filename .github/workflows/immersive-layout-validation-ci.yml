@@ -1,0 +1,293 @@
+name: Immersive Layout Validation CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/immersive-layout-validation-v1.json"
+      - "fixtures/scenes/7_1_4_reference.json"
+      - "fixtures/scenes/11_1_4_reference.json"
+      - "crates/aurora-simulation-assurance/**"
+      - "crates/aurora-renderer-vbap/**"
+      - "validation/open-immersive/saf_*"
+      - ".github/workflows/immersive-layout-validation-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: immersive-layout-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  layout-reference:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      SAF_COMMIT: 18fd5aba46e20787b51f28f7197a68506c965c07
+    steps:
+      - name: Checkout Aurora
+        uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Checkout pinned SAF
+        uses: actions/checkout@v4
+        with:
+          repository: leomccormack/Spatial_Audio_Framework
+          ref: 18fd5aba46e20787b51f28f7197a68506c965c07
+          path: saf
+          fetch-depth: 1
+
+      - name: Verify validation matrix and immutable SAF pin
+        shell: bash
+        run: |
+          set -euo pipefail
+          test "$(git -C saf rev-parse HEAD)" = "$SAF_COMMIT"
+          python3 - <<'PY'
+          import json
+          cfg = json.load(open('config/immersive-layout-validation-v1.json', encoding='utf-8'))
+          assert cfg['saf_reference_commit'] == '18fd5aba46e20787b51f28f7197a68506c965c07'
+          assert [entry['id'] for entry in cfg['layouts']] == ['7.1.4', '11.1.4-custom-reference']
+          assert cfg['layouts'][1]['custom_role_channels'] == 4
+          trajectory = cfg['trajectory']
+          assert trajectory['duration_seconds'] == 2.0
+          assert trajectory['sample_rate'] == 48000
+          assert trajectory['block_size'] == 256
+          assert trajectory['nominal_azimuth_rate_deg_per_second'] == 180.0
+          assert trajectory['max_gain_step_per_block'] == 0.15
+          assert trajectory['normalization_tolerance'] == 0.001
+          print('IMMERSIVE-LAYOUT-MATRIX-PASS')
+          PY
+
+      - name: Exclude disabled GPL SAF translation units
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C saf apply ../validation/open-immersive/saf-permissive-core.patch
+          echo "SAF-PERMISSIVE-PATCH-PASS"
+
+      - name: Install SAF build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes \
+            cmake \
+            build-essential \
+            libopenblas-dev \
+            liblapack-dev \
+            liblapacke-dev
+
+      - name: Build pinned permissive SAF core
+        shell: bash
+        run: |
+          set -euo pipefail
+          cmake -S saf -B saf-build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DSAF_PERFORMANCE_LIB=SAF_USE_OPEN_BLAS_AND_LAPACKE \
+            -DSAF_ENABLE_TRACKER_MODULE=OFF \
+            -DSAF_ENABLE_HADES_MODULE=OFF \
+            -DSAF_ENABLE_SOFA_READER_MODULE=OFF \
+            -DSAF_BUILD_TESTS=OFF
+          python3 - <<'PY'
+          import json
+          commands = json.load(open('saf-build/compile_commands.json', encoding='utf-8'))
+          files = [entry['file'].replace('\\', '/') for entry in commands]
+          forbidden = [path for path in files if '/saf_tracker/' in path or '/saf_hades/' in path]
+          if forbidden:
+              raise SystemExit(f'GPL translation units unexpectedly compiled: {forbidden}')
+          print(f'SAF-PERMISSIVE-COMPILE-GRAPH-PASS files={len(files)}')
+          PY
+          cmake --build saf-build --config Release --parallel 2
+          test -f saf-build/framework/libsaf.a -o -f saf-build/framework/libsaf.so
+
+      - name: Build reusable SAF VBAP gain probe
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/immersive-layout-validation
+          cc -std=c11 -O2 \
+            -I saf/framework/include \
+            validation/open-immersive/saf_vbap_reference_probe.c \
+            saf-build/framework/libsaf.a \
+            -lopenblas -llapacke -latomic -lm \
+            -o output/immersive-layout-validation/saf-vbap-probe
+
+      - name: Generate Aurora 7.1.4 geometry evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run -p aurora-simulation-assurance --release --bin aurora-validate-immersive-layout -- \
+            --scene fixtures/scenes/7_1_4_reference.json \
+            --output-dir output/immersive-layout-validation/7_1_4/aurora \
+            --duration-seconds 2.0 \
+            --sample-rate 48000 \
+            --block-size 256 \
+            --max-gain-step 0.15 \
+            --normalization-tolerance 0.001
+
+      - name: Generate Aurora 11.1.4 custom-reference geometry evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo run -p aurora-simulation-assurance --release --bin aurora-validate-immersive-layout -- \
+            --scene fixtures/scenes/11_1_4_reference.json \
+            --output-dir output/immersive-layout-validation/11_1_4/aurora \
+            --duration-seconds 2.0 \
+            --sample-rate 48000 \
+            --block-size 256 \
+            --max-gain-step 0.15 \
+            --normalization-tolerance 0.001
+
+      - name: Validate Aurora layout summaries against matrix
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          cfg = json.load(open('config/immersive-layout-validation-v1.json', encoding='utf-8'))
+          paths = {
+              '7.1.4': Path('output/immersive-layout-validation/7_1_4/aurora/summary.json'),
+              '11.1.4-custom-reference': Path('output/immersive-layout-validation/11_1_4/aurora/summary.json'),
+          }
+          for layout in cfg['layouts']:
+              summary = json.loads(paths[layout['id']].read_text(encoding='utf-8'))['payload']
+              assert summary['passed'] is True
+              for key in ['output_channels', 'spatial_channels', 'lfe_channels', 'top_channels', 'custom_role_channels']:
+                  assert summary[key] == layout[key], (layout['id'], key, summary[key], layout[key])
+              for key, expected in cfg['common_gates'].items():
+                  assert summary[key] == expected, (layout['id'], key, summary[key], expected)
+              assert summary['configured_max_gain_step'] == cfg['trajectory']['max_gain_step_per_block']
+              assert summary['validated_triplets'] > 0
+              assert summary['frame_count'] >= 300
+              if layout['id'] == '11.1.4-custom-reference':
+                  roles = set(summary['output_roles'])
+                  assert set(layout['custom_roles']).issubset(roles)
+              print(
+                  f"AURORA-LAYOUT-PASS {layout['id']} "
+                  f"triplets={summary['validated_triplets']} "
+                  f"max_gain_step={summary['observed_max_gain_step']:.6f}"
+              )
+          PY
+
+      - name: Prepare and compare 7.1.4 against SAF
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=output/immersive-layout-validation/7_1_4
+          python3 validation/open-immersive/saf_vbap_reference_evidence.py prepare \
+            --scene fixtures/scenes/7_1_4_reference.json \
+            --aurora-trajectory "$base/aurora/gain-trajectory.json" \
+            --speaker-out "$base/saf-speakers.txt" \
+            --source-out "$base/saf-sources.txt" \
+            --mapping-out "$base/mapping.json"
+          output/immersive-layout-validation/saf-vbap-probe \
+            "$base/saf-speakers.txt" \
+            "$base/saf-sources.txt" \
+            "$base/saf-gains.txt"
+          python3 validation/open-immersive/saf_vbap_reference_evidence.py compare \
+            --aurora-trajectory "$base/aurora/gain-trajectory.json" \
+            --mapping "$base/mapping.json" \
+            --saf-gains "$base/saf-gains.txt" \
+            --output "$base/differential-summary.json"
+
+      - name: Prepare and compare 11.1.4 custom-reference against SAF
+        shell: bash
+        run: |
+          set -euo pipefail
+          base=output/immersive-layout-validation/11_1_4
+          python3 validation/open-immersive/saf_vbap_reference_evidence.py prepare \
+            --scene fixtures/scenes/11_1_4_reference.json \
+            --aurora-trajectory "$base/aurora/gain-trajectory.json" \
+            --speaker-out "$base/saf-speakers.txt" \
+            --source-out "$base/saf-sources.txt" \
+            --mapping-out "$base/mapping.json"
+          output/immersive-layout-validation/saf-vbap-probe \
+            "$base/saf-speakers.txt" \
+            "$base/saf-sources.txt" \
+            "$base/saf-gains.txt"
+          python3 validation/open-immersive/saf_vbap_reference_evidence.py compare \
+            --aurora-trajectory "$base/aurora/gain-trajectory.json" \
+            --mapping "$base/mapping.json" \
+            --saf-gains "$base/saf-gains.txt" \
+            --output /tmp/aurora-11-1-4-saf-raw.json
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          raw = json.load(open('/tmp/aurora-11-1-4-saf-raw.json', encoding='utf-8'))
+          cfg = json.load(open('config/immersive-layout-validation-v1.json', encoding='utf-8'))
+          layout = next(item for item in cfg['layouts'] if item['id'] == '11.1.4-custom-reference')
+          assert raw['passed'] is True
+          assert raw['metrics']['spatial_speaker_count'] == layout['spatial_channels']
+          assert raw['metrics']['lfe_nonzero_frames'] == 0
+          raw['scene'] = layout['scene']
+          raw['layout'] = layout['id']
+          raw['custom_roles'] = layout['custom_roles']
+          raw['custom_role_boundary'] = layout['semantics']
+          raw['truth_boundary'] = cfg['truth_boundary']
+          output = Path('output/immersive-layout-validation/11_1_4/differential-summary.json')
+          output.write_text(json.dumps(raw, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print('AURORA-SAF-11.1.4-DIFFERENTIAL-PASS')
+          PY
+
+      - name: Emit matrix evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib
+          import json
+          from pathlib import Path
+
+          cfg_path = Path('config/immersive-layout-validation-v1.json')
+          cfg = json.loads(cfg_path.read_text(encoding='utf-8'))
+          layouts = {}
+          for key, directory in [('7.1.4', '7_1_4'), ('11.1.4-custom-reference', '11_1_4')]:
+              summary = json.loads(Path(f'output/immersive-layout-validation/{directory}/aurora/summary.json').read_text(encoding='utf-8'))['payload']
+              differential = json.loads(Path(f'output/immersive-layout-validation/{directory}/differential-summary.json').read_text(encoding='utf-8'))
+              layouts[key] = {
+                  'aurora_passed': summary['passed'],
+                  'saf_differential_passed': differential['passed'],
+                  'output_channels': summary['output_channels'],
+                  'spatial_channels': summary['spatial_channels'],
+                  'validated_triplets': summary['validated_triplets'],
+                  'observed_max_gain_step': summary['observed_max_gain_step'],
+                  'mean_cosine_similarity': differential['metrics']['cosine_similarity_mean'],
+                  'dominant_speaker_agreement_fraction': differential['metrics']['dominant_speaker_agreement_fraction'],
+                  'centroid_error_deg_mean': differential['metrics']['centroid_error_deg_mean'],
+                  'lfe_nonzero_frames': differential['metrics']['lfe_nonzero_frames'],
+              }
+          evidence = {
+              'schema_version': 1,
+              'artifact': 'immersive-layout-validation-matrix',
+              'aurora_sha': '${{ github.sha }}',
+              'saf_commit': '${{ env.SAF_COMMIT }}',
+              'config_sha256': hashlib.sha256(cfg_path.read_bytes()).hexdigest(),
+              'trajectory': cfg['trajectory'],
+              'layouts': layouts,
+              'passed': all(item['aurora_passed'] and item['saf_differential_passed'] for item in layouts.values()),
+              'truth_boundary': cfg['truth_boundary'],
+          }
+          Path('output/immersive-layout-validation/matrix-summary.json').write_text(
+              json.dumps(evidence, indent=2, sort_keys=True) + '\n', encoding='utf-8'
+          )
+          assert evidence['passed'] is True
+          print(json.dumps(evidence, indent=2, sort_keys=True))
+          PY
+
+      - name: Upload immersive layout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: immersive-layout-validation-${{ github.sha }}
+          path: |
+            output/immersive-layout-validation/**/*.json
+            output/immersive-layout-validation/**/*.txt
+          if-no-files-found: error
+          retention-days: 14
