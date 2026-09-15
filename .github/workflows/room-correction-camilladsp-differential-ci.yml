@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "config/room-correction-camilladsp-differential-v1.json"
+      - "config/simulation-coverage-v1.json"
       - "validation/room-correction/camilladsp_differential_evidence.py"
       - "docs/room-correction-camilladsp-differential.md"
       - "docs/camilladsp-channel-order.md"
@@ -75,9 +76,11 @@ jobs:
         env:
           AURORA_CAMILLADSP_PATH: ${{ runner.temp }}/camilladsp/target/release/camilladsp
         run: |
+          set -o pipefail
           cargo test --locked -p aurora-dsp-camilladsp \
             role_aware_real_camilladsp_preserves_center_and_surround_mapping \
-            -- --nocapture
+            -- --nocapture 2>&1 \
+            | tee artifacts/aurora-7_1_4-channel-sentinel.log
 
       - name: Preflight generated CamillaDSP config with the real binary
         working-directory: ${{ runner.temp }}/autoeq
@@ -115,6 +118,7 @@ jobs:
             --config config/room-correction-camilladsp-differential-v1.json \
             --backend-json artifacts/camilladsp-backend-contracts.json \
             --unsupported-log artifacts/camilladsp-unsupported.log \
+            --sentinel-log artifacts/aurora-7_1_4-channel-sentinel.log \
             --camilladsp-lock artifacts/camilladsp-generated-Cargo.lock \
             --roomeq-head "$(git -C "$RUNNER_TEMP/autoeq" rev-parse HEAD)" \
             --camilladsp-head "$(git -C "$RUNNER_TEMP/camilladsp" rev-parse HEAD)" \
@@ -140,6 +144,7 @@ jobs:
             --config config/room-correction-camilladsp-differential-v1.json \
             --backend-json artifacts/camilladsp-backend-contracts-corrupt.json \
             --unsupported-log artifacts/camilladsp-unsupported.log \
+            --sentinel-log artifacts/aurora-7_1_4-channel-sentinel.log \
             --camilladsp-lock artifacts/camilladsp-generated-Cargo.lock \
             --roomeq-head "$(git -C "$RUNNER_TEMP/autoeq" rev-parse HEAD)" \
             --camilladsp-head "$(git -C "$RUNNER_TEMP/camilladsp" rev-parse HEAD)" \
@@ -155,6 +160,7 @@ jobs:
           name: room-correction-camilladsp-differential-evidence
           path: |
             artifacts/camilladsp-generated-Cargo.lock
+            artifacts/aurora-7_1_4-channel-sentinel.log
             artifacts/camilladsp-backend-contracts.json
             artifacts/camilladsp-backend-contracts.log
             artifacts/camilladsp-unsupported.log
