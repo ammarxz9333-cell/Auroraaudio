@@ -1,6 +1,6 @@
 use std::env;
 
-use aurora_network_aoo::{AooNetworkTransport, AooRuntimeConfig};
+use aurora_network_aoo::{AooAdapterLoadError, AooNetworkTransport, AooRuntimeConfig};
 use aurora_realtime_audio_api::{
     MediaTimestamp, NetworkAudioBlock, NetworkAudioFormat, NetworkAudioTransport,
     NetworkClockDiscipline, NetworkStreamConfig, NetworkTimingPolicy, NetworkTransportError,
@@ -14,12 +14,56 @@ const BLOCKS_PER_EPOCH: u64 = 2_048;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shim = env::var("AURORA_AOO_SHIM")?;
-    let mut transport = AooNetworkTransport::load(AooRuntimeConfig::local_only(shim, 1))?;
-    let format = NetworkAudioFormat {
+    let mut transport = AooNetworkTransport::load(AooRuntimeConfig::local_only(&shim, 1))?;
+    assert!(matches!(
+        AooNetworkTransport::load(AooRuntimeConfig::local_only(&shim, 2)),
+        Err(AooAdapterLoadError::InstanceAlreadyActive)
+    ));
+
+    let format = format();
+    prepare(&mut transport, format)?;
+    assert_eq!(
+        transport.poll_event(),
+        Some(NetworkTransportEvent::Prepared)
+    );
+
+    let mut samples = vec![0.0_f32; CHANNELS * BLOCK_FRAMES];
+    run_epoch(&mut transport, format, &mut samples)?;
+    run_epoch(&mut transport, format, &mut samples)?;
+    drop(transport);
+
+    // Dropping the first adapter must destroy its native handle, unload the
+    // shim/AOO library, and only then release the process singleton. A fresh
+    // adapter must therefore be able to initialize and process a block again.
+    let mut reloaded = AooNetworkTransport::load(AooRuntimeConfig::local_only(&shim, 3))?;
+    prepare(&mut reloaded, format)?;
+    reloaded.start()?;
+    reloaded.submit(NetworkAudioBlock {
+        sequence: 0,
+        timestamp: MediaTimestamp::new(0, SAMPLE_RATE)?,
+        format,
+        samples: &samples,
+    })?;
+    reloaded.stop()?;
+
+    println!(
+        "aurora-aoo-runtime-adapter: PASS channels={CHANNELS} rate={SAMPLE_RATE} block={BLOCK_FRAMES} epochs=2 blocks_per_epoch={BLOCKS_PER_EPOCH} dynamic-src=disabled timeline=fail-closed singleton=fail-closed reload=pass"
+    );
+    Ok(())
+}
+
+fn format() -> NetworkAudioFormat {
+    NetworkAudioFormat {
         sample_rate: SAMPLE_RATE,
         channels: CHANNELS,
         block_frames: BLOCK_FRAMES,
-    };
+    }
+}
+
+fn prepare(
+    transport: &mut AooNetworkTransport,
+    format: NetworkAudioFormat,
+) -> Result<(), NetworkTransportError> {
     transport.prepare(NetworkStreamConfig {
         format,
         clock_discipline: NetworkClockDiscipline::AuroraMediaMaster,
@@ -29,20 +73,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             maximum_latency_frames: 960,
             maximum_rate_correction_ppm: 0.0,
         },
-    })?;
-    assert_eq!(
-        transport.poll_event(),
-        Some(NetworkTransportEvent::Prepared)
-    );
-
-    let mut samples = vec![0.0_f32; CHANNELS * BLOCK_FRAMES];
-    run_epoch(&mut transport, format, &mut samples)?;
-    run_epoch(&mut transport, format, &mut samples)?;
-
-    println!(
-        "aurora-aoo-runtime-adapter: PASS channels={CHANNELS} rate={SAMPLE_RATE} block={BLOCK_FRAMES} epochs=2 blocks_per_epoch={BLOCKS_PER_EPOCH} dynamic-src=disabled timeline=fail-closed"
-    );
-    Ok(())
+    })
 }
 
 fn run_epoch(
