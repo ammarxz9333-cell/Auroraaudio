@@ -1,0 +1,118 @@
+{
+  "schema_version": 1,
+  "roadmap_phase": 11,
+  "status": "external-reference-baseline",
+  "purpose": "Pin and validate independent binaural rendering references plus a Rust-native SOFA/HRTF candidate without making any of them an Aurora runtime dependency.",
+  "references": {
+    "google_obr": {
+      "upstream": "https://github.com/google/obr",
+      "pinned_commit": "478dc7c752d5eccae534635139ff0253eee3a14a",
+      "license": "BSD-3-Clause-Clear plus Open Binaural Renderer Patent License 1.0",
+      "integration": "external-process-validation-oracle",
+      "production_ready": false,
+      "roles": [
+        "binaural-render-reference",
+        "ambisonics-binaural-reference",
+        "channel-based-binaural-reference",
+        "object-binaural-reference",
+        "head-rotation-reference"
+      ],
+      "required_surfaces": [
+        "LICENSE",
+        "PATENTS",
+        "README.md",
+        "MODULE.bazel",
+        "obr/renderer/tests/obr_impl_test.cc",
+        "obr/ambisonic_rotator/tests/ambisonic_rotator_test.cc",
+        "obr/cli/tests/obr_cli_lib_test.cc"
+      ],
+      "selected_upstream_tests": [
+        "bazelisk test -c opt --test_output=errors //obr/renderer/tests:obr_impl_test",
+        "bazelisk test -c opt --test_output=errors //obr/ambisonic_rotator/tests:ambisonic_rotator_test",
+        "bazelisk test -c opt --test_output=errors //obr/cli/tests:obr_cli_lib_test"
+      ]
+    },
+    "ebu_bear": {
+      "upstream": "https://github.com/ebu/bear",
+      "pinned_commit": "6127e897b941211051c2ad135ee09b00be2e6ae0",
+      "license": "Apache-2.0",
+      "maturity": "upstream-pre-release",
+      "integration": "external-process-validation-oracle",
+      "production_ready": false,
+      "roles": [
+        "adm-binaural-render-reference",
+        "independent-binaural-reference",
+        "sh-rotation-reference",
+        "dynamic-binaural-render-reference"
+      ],
+      "required_surfaces": [
+        "LICENSE",
+        "README.md",
+        "flake.nix",
+        "flake.lock",
+        "nix/visr_bear.nix",
+        "nix/bear.nix",
+        "visr_bear/test/CMakeLists.txt"
+      ],
+      "locked_flake_revisions": {
+        "ear_src": "a04e287f247809653a031b7c99306066ec3d94c1",
+        "libear_src": "2db69f8fcea0bc5db8a78e14a9c2ae6ed4283c15",
+        "visr_src": "6907b24a250c9dadf1028fb5e8764eaa078a184f",
+        "nixpkgs": "e402c3eb6d88384ca6c52ef1c53e61bdc9b84ddd",
+        "flake-utils": "b1d9ab70662946ef0850d488da1c9019f3a9752a"
+      },
+      "selected_upstream_tests": [
+        "nix build .#bear --no-link"
+      ]
+    },
+    "sofar": {
+      "upstream": "https://github.com/andreiltd/sofar",
+      "pinned_commit": "06a629292689e99841e5dacaa25c4c6298616ca6",
+      "observed_version": "0.3.0",
+      "license": "MIT OR Apache-2.0",
+      "integration": "validation-candidate-only",
+      "production_ready": false,
+      "runtime_adopted": false,
+      "roles": [
+        "sofa-reader-candidate",
+        "hrtf-renderer-candidate",
+        "partitioned-convolution-reference"
+      ],
+      "required_surfaces": [
+        "Cargo.toml",
+        "README.md",
+        "NOTICE",
+        ".gitmodules",
+        "src/lib.rs",
+        "src/reader.rs",
+        "src/render.rs",
+        "tests/integration.rs"
+      ],
+      "libmysofa_submodule_commit": "da9e4adc619ee3d1ae5e68da3ed14aa5e60b3ec1",
+      "dependency_lock_policy": "upstream pin has no Cargo.lock; CI generates one from the exact pinned manifests and records its SHA-256 before testing with --locked",
+      "selected_upstream_tests": [
+        "cargo generate-lockfile",
+        "cargo test --locked --workspace --all-features"
+      ]
+    }
+  },
+  "acceptance": {
+    "exact_commit_identity": true,
+    "license_identity": true,
+    "required_source_surfaces_present": true,
+    "selected_upstream_execution_gates_green": true,
+    "bear_flake_dependency_revisions_match": true,
+    "sofar_libmysofa_submodule_identity_matches": true,
+    "generated_sofar_dependency_lock_recorded": true,
+    "negative_pin_mismatch_must_fail": true,
+    "aurora_runtime_dependency_added": false
+  },
+  "next_evidence": [
+    "deterministic channel-based 7.1.4 to binaural differential",
+    "object and Ambisonics binaural differential",
+    "head-rotation semantic differential",
+    "HRTF transition continuity and finite-output gates",
+    "front-back and elevation discrimination metrics"
+  ],
+  "truth_boundary": "This baseline establishes exact external source identities, license and dependency-lock boundaries, required source surfaces, and selected upstream build/test execution only. It does not make OBR, BEAR, or sofar an Aurora runtime dependency; it does not prove Aurora binaural rendering, personalized HRTF quality, perceptual front/back or elevation performance, head-tracker hardware behavior, measured latency, or certification. BEAR remains an upstream pre-release oracle, and sofar remains an evaluation candidate rather than an adopted runtime implementation."
+}
