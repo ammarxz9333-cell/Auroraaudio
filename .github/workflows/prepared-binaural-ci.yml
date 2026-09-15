@@ -1,0 +1,102 @@
+name: Prepared Binaural PCM CI
+
+on:
+  pull_request:
+    paths:
+      - "crates/aurora-renderer-basic/**"
+      - "crates/aurora-renderer-api/**"
+      - "crates/aurora-core/**"
+      - "crates/aurora-test-alloc/**"
+      - "validation/binaural/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "AGENTS.md"
+      - "config/simulation-coverage-v1.json"
+      - ".github/workflows/prepared-binaural-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prepared-binaural-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepared-pcm:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Native contract and allocation tests
+        run: cargo test --locked -p aurora-renderer-basic --test prepared_binaural
+      - name: Fetch pinned independent references
+        run: |
+          git clone https://github.com/google/obr.git "$RUNNER_TEMP/obr"
+          git -C "$RUNNER_TEMP/obr" checkout --detach 478dc7c752d5eccae534635139ff0253eee3a14a
+          git clone https://github.com/andreiltd/sofar.git "$RUNNER_TEMP/sofar"
+          git -C "$RUNNER_TEMP/sofar" checkout --detach 06a629292689e99841e5dacaa25c4c6298616ca6
+          git -C "$RUNNER_TEMP/sofar" submodule update --init --recursive
+          test "$(git -C "$RUNNER_TEMP/sofar/libmysofa-sys/libmysofa" rev-parse HEAD)" = da9e4adc619ee3d1ae5e68da3ed14aa5e60b3ec1
+      - name: Build external OBR
+        working-directory: ${{ runner.temp }}/obr
+        run: bazelisk build -c opt //obr/cli:obr_cli
+      - name: Build isolated modern-Rust SOFA exporter
+        run: |
+          mkdir -p "$RUNNER_TEMP/exporter/src" artifacts
+          cp validation/binaural/sofar_prepared_export.rs "$RUNNER_TEMP/exporter/src/main.rs"
+          cat > "$RUNNER_TEMP/exporter/Cargo.toml" <<'EOF'
+          [package]
+          name = "aurora-sofar-reference-export"
+          version = "0.1.0"
+          edition = "2024"
+          [workspace]
+          [dependencies]
+          sofar = { path = "../sofar" }
+          EOF
+          cargo generate-lockfile --manifest-path "$RUNNER_TEMP/exporter/Cargo.toml"
+          cp "$RUNNER_TEMP/exporter/Cargo.lock" artifacts/exporter-Cargo.lock
+          cargo run --release --locked --manifest-path "$RUNNER_TEMP/exporter/Cargo.toml" -- \
+            "$RUNNER_TEMP/sofar/libmysofa-sys/libmysofa/share/MIT_KEMAR_normal_pinna.sofa" \
+            "$GITHUB_WORKSPACE/artifacts/sofar-prepared.json"
+      - name: Execute native PCM and sofar convolution comparison
+        run: |
+          cargo run --release --locked -p aurora-renderer-basic --example prepared_binaural_probe -- \
+            artifacts/sofar-prepared.json artifacts/aurora-prepared.json
+      - name: Compare native PCM direction against OBR
+        run: |
+          python3 validation/binaural/prepared_binaural_evidence.py \
+            --native artifacts/aurora-prepared.json --obr-root "$RUNNER_TEMP/obr" \
+            --sofar-root "$RUNNER_TEMP/sofar" \
+            --sofa "$RUNNER_TEMP/sofar/libmysofa-sys/libmysofa/share/MIT_KEMAR_normal_pinna.sofa" \
+            --work-dir artifacts/obr-prepared --output artifacts/prepared-evidence.json
+      - name: Reject corrupted and silent native output
+        run: |
+          python3 - <<'PY'
+          import copy, json, sys
+          sys.path.insert(0, "validation/binaural")
+          from prepared_binaural_evidence import validate_native
+          source=json.load(open("artifacts/aurora-prepared.json"))
+          for fault in ("silent", "swapped-ears", "missing-case"):
+              data=copy.deepcopy(source)
+              if fault=="missing-case":
+                  data["cases"].pop()
+              else:
+                  for c in data["cases"]:
+                      pcm=c["pcm"]
+                      if fault=="silent":
+                          c["pcm"]=[0.0]*len(pcm)
+                      else:
+                          c["pcm"]=[v for i in range(0,len(pcm),2) for v in (pcm[i+1],pcm[i])]
+              try:
+                  validate_native(data)
+              except ValueError:
+                  continue
+              raise SystemExit(f"fault unexpectedly accepted: {fault}")
+          PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prepared-binaural-evidence
+          path: artifacts/

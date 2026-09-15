@@ -1,0 +1,138 @@
+name: Binaural 7.1.4 Differential CI
+
+on:
+  pull_request:
+    paths:
+      - "config/binaural-7-1-4-differential-v1.json"
+      - "validation/binaural/binaural_7_1_4_differential.py"
+      - "crates/aurora-renderer-basic/**"
+      - "crates/aurora-renderer-api/**"
+      - "crates/aurora-core/**"
+      - "crates/aurora-scene/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "config/simulation-coverage-v1.json"
+      - "validation/binaural/test_binaural_contract.py"
+      - "docs/binaural-7-1-4-differential.md"
+      - "AGENTS.md"
+      - ".github/workflows/binaural-7-1-4-differential-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: binaural-7-1-4-differential-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  OBR_SHA: 478dc7c752d5eccae534635139ff0253eee3a14a
+  CARGO_TERM_COLOR: always
+
+jobs:
+  semantic-differential:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate OBR contract rejection controls
+        run: python3 -m unittest discover -s validation/binaural -p 'test_*.py' -v
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install Linux build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential pkg-config cmake ninja-build libasound2-dev
+
+      - name: Fetch exact Google OBR reference
+        run: |
+          git init "$RUNNER_TEMP/obr"
+          git -C "$RUNNER_TEMP/obr" remote add origin https://github.com/google/obr.git
+          git -C "$RUNNER_TEMP/obr" fetch --depth 1 origin "$OBR_SHA"
+          git -C "$RUNNER_TEMP/obr" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/obr" rev-parse HEAD)" = "$OBR_SHA"
+
+      - name: Build exact OBR CLI
+        working-directory: ${{ runner.temp }}/obr
+        run: |
+          command -v bazelisk
+          bazelisk build -c opt //obr/cli:obr_cli
+          test -x bazel-bin/obr/cli/obr_cli
+
+      - name: Emit Aurora geometric binaural probe
+        run: |
+          mkdir -p artifacts
+          cargo run --locked -p aurora-renderer-basic \
+            --example binaural_7_1_4_probe -- \
+            artifacts/aurora-binaural-7-1-4.json
+
+      - name: Run Aurora vs OBR 7.1.4 semantic differential
+        run: |
+          python3 validation/binaural/binaural_7_1_4_differential.py \
+            --config config/binaural-7-1-4-differential-v1.json \
+            --obr-root "$RUNNER_TEMP/obr" \
+            --obr-cli "$RUNNER_TEMP/obr/bazel-bin/obr/cli/obr_cli" \
+            --aurora-json artifacts/aurora-binaural-7-1-4.json \
+            --work-dir artifacts/binaural-7-1-4-work \
+            --output artifacts/binaural-7-1-4-differential.json
+
+      - name: Require OBR pin drift to fail closed
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source = Path("config/binaural-7-1-4-differential-v1.json")
+          data = json.loads(source.read_text())
+          data["google_obr"]["pinned_commit"] = "0" * 40
+          Path("artifacts/bad-binaural-7-1-4-pin.json").write_text(
+              json.dumps(data, indent=2) + "\n"
+          )
+          PY
+          if python3 validation/binaural/binaural_7_1_4_differential.py \
+            --config artifacts/bad-binaural-7-1-4-pin.json \
+            --obr-root "$RUNNER_TEMP/obr" \
+            --obr-cli "$RUNNER_TEMP/obr/bazel-bin/obr/cli/obr_cli" \
+            --aurora-json artifacts/aurora-binaural-7-1-4.json \
+            --work-dir artifacts/bad-pin-work \
+            --output artifacts/bad-binaural-7-1-4-pin-evidence.json; then
+            echo "ERROR: mismatched OBR pin unexpectedly passed"
+            exit 1
+          fi
+
+      - name: Require 7.1.4 channel-order drift to fail closed
+        run: |
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+          source = Path("config/binaural-7-1-4-differential-v1.json")
+          data = json.loads(source.read_text())
+          order = data["fixture"]["channel_order"]
+          order[4], order[6] = order[6], order[4]
+          Path("artifacts/bad-binaural-7-1-4-order.json").write_text(
+              json.dumps(data, indent=2) + "\n"
+          )
+          PY
+          if python3 validation/binaural/binaural_7_1_4_differential.py \
+            --config artifacts/bad-binaural-7-1-4-order.json \
+            --obr-root "$RUNNER_TEMP/obr" \
+            --obr-cli "$RUNNER_TEMP/obr/bazel-bin/obr/cli/obr_cli" \
+            --aurora-json artifacts/aurora-binaural-7-1-4.json \
+            --work-dir artifacts/bad-order-work \
+            --output artifacts/bad-binaural-7-1-4-order-evidence.json; then
+            echo "ERROR: drifted 7.1.4 channel order unexpectedly passed"
+            exit 1
+          fi
+
+      - name: Upload differential evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: binaural-7-1-4-differential-evidence
+          path: |
+            artifacts/aurora-binaural-7-1-4.json
+            artifacts/binaural-7-1-4-differential.json
+            artifacts/bad-binaural-7-1-4-*.json
