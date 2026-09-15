@@ -92,7 +92,10 @@ impl fmt::Display for AooAdapterLoadError {
                 )
             }
             Self::InstanceAlreadyActive => {
-                write!(f, "an AOO runtime adapter is already active in this process")
+                write!(
+                    f,
+                    "an AOO runtime adapter is already active in this process"
+                )
             }
             Self::CreateFailed => write!(f, "AOO shim failed to create a native handle"),
             Self::InvalidSinkHost => write!(f, "AOO sink host contains an embedded NUL byte"),
