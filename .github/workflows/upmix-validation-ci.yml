@@ -1,0 +1,167 @@
+name: Decoded PCM Upmix Validation CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/upmix-validation-v1.json"
+      - "docs/surround-upmix.md"
+      - "validation/surround-upmix/aurora-pcm-upmix.sh"
+      - "validation/surround-upmix/test_pcm_upmix_matrix.py"
+      - ".github/workflows/upmix-validation-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: upmix-validation-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  pcm-upmix-matrix:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - label: baseline-6.1.1
+            version: 6.1.1
+            commit: e38092ef9395d7049f871ef4d5411eb410e283e0
+          - label: maintenance-6.1.6
+            version: 6.1.6
+            commit: f1e3a2bf7a2f2cde936d1ed97f09a26853d20125
+          - label: stable-9.0.1
+            version: 9.0.1
+            commit: bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa
+
+    steps:
+      - name: Checkout Aurora
+        uses: actions/checkout@v4
+
+      - name: Checkout exact FFmpeg commit
+        uses: actions/checkout@v4
+        with:
+          repository: FFmpeg/FFmpeg
+          ref: ${{ matrix.commit }}
+          path: ffmpeg-src
+          fetch-depth: 1
+
+      - name: Verify reviewed pins and upmix contract
+        shell: bash
+        env:
+          EXPECTED_LABEL: ${{ matrix.label }}
+          EXPECTED_VERSION: ${{ matrix.version }}
+          EXPECTED_COMMIT: ${{ matrix.commit }}
+        run: |
+          set -euo pipefail
+          test "$(git -C ffmpeg-src rev-parse HEAD)" = "$EXPECTED_COMMIT"
+          python3 - <<'PY'
+          import json, os
+          ffmpeg = json.load(open('config/ffmpeg-compatibility-v1.json', encoding='utf-8'))
+          variant = next(item for item in ffmpeg['tested_variants'] if item['label'] == os.environ['EXPECTED_LABEL'])
+          assert variant['version'] == os.environ['EXPECTED_VERSION']
+          assert variant['commit'] == os.environ['EXPECTED_COMMIT']
+          cfg = json.load(open('config/upmix-validation-v1.json', encoding='utf-8'))
+          assert cfg['mode'] == 'decoded-pcm-channel-upmix-validation'
+          assert cfg['objects_decoded'] is False
+          assert [lane['id'] for lane in cfg['lanes']] == [
+              '5.1->7.1.4', '5.1->11.1.4', '7.1->11.1.4'
+          ]
+          assert [lane['target_channels'] for lane in cfg['lanes']] == [12, 16, 16]
+          print('UPMIX-CONTRACT-PIN-PASS')
+          PY
+
+      - name: Verify 11.1.4 target order against Aurora reference fixture
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json
+          cfg = json.load(open('config/upmix-validation-v1.json', encoding='utf-8'))
+          scene = json.load(open('fixtures/scenes/11_1_4_reference.json', encoding='utf-8'))
+          role_to_short = {
+              'front-left': 'FL', 'front-right': 'FR', 'front-center': 'FC',
+              'front-wide-left': 'FWL', 'front-wide-right': 'FWR',
+              'surround-left': 'SL', 'surround-right': 'SR',
+              'rear-wide-left': 'RWL', 'rear-wide-right': 'RWR',
+              'surround-back-left': 'BL', 'surround-back-right': 'BR',
+              'low-frequency-effects': 'LFE',
+              'top-front-left': 'TFL', 'top-front-right': 'TFR',
+              'top-rear-left': 'TBL', 'top-rear-right': 'TBR',
+          }
+          fixture_order = [role_to_short[speaker['channel_role']] for speaker in scene['speakers'] if speaker['enabled']]
+          assert len(fixture_order) == 16
+          for lane in cfg['lanes']:
+              if lane['target_layout'] == '11.1.4-custom-reference':
+                  assert lane['target_order'] == fixture_order, (lane['id'], lane['target_order'], fixture_order)
+          print('UPMIX-11-1-4-TARGET-ORDER-PASS')
+          PY
+
+      - name: Install FFmpeg build dependencies
+        shell: bash
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes build-essential nasm pkg-config
+
+      - name: Build exact FFmpeg release commit
+        working-directory: ffmpeg-src
+        shell: bash
+        run: |
+          set -euo pipefail
+          ./configure \
+            --disable-doc \
+            --disable-debug \
+            --disable-ffplay \
+            --disable-network \
+            --disable-autodetect
+          make -j2 ffmpeg
+          test -x ./ffmpeg
+          ./ffmpeg -version | tee "${GITHUB_WORKSPACE}/upmix-ffmpeg-version.txt"
+
+      - name: Run decoded PCM upmix matrix
+        shell: bash
+        env:
+          AURORA_FFMPEG_BIN: ${{ github.workspace }}/ffmpeg-src/ffmpeg
+          AURORA_UPMIX_EVIDENCE: ${{ github.workspace }}/output/upmix-validation/summary.json
+        run: |
+          set -euo pipefail
+          mkdir -p output/upmix-validation
+          python3 validation/surround-upmix/test_pcm_upmix_matrix.py \
+            validation/surround-upmix/aurora-pcm-upmix.sh \
+            config/upmix-validation-v1.json \
+            | tee output/upmix-validation/test-log.txt
+          test -s output/upmix-validation/summary.json
+
+      - name: Attach reproducibility metadata
+        shell: bash
+        env:
+          LABEL: ${{ matrix.label }}
+          VERSION: ${{ matrix.version }}
+          COMMIT: ${{ matrix.commit }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import hashlib, json, os, pathlib
+          path = pathlib.Path('output/upmix-validation/summary.json')
+          data = json.loads(path.read_text(encoding='utf-8'))
+          data['ffmpeg'] = {
+              'label': os.environ['LABEL'],
+              'reviewed_release': os.environ['VERSION'],
+              'upstream_commit': os.environ['COMMIT'],
+              'binary_sha256': hashlib.sha256(pathlib.Path('ffmpeg-src/ffmpeg').read_bytes()).hexdigest(),
+          }
+          data['aurora_sha'] = os.environ.get('GITHUB_SHA', '')
+          path.write_text(json.dumps(data, indent=2, sort_keys=True) + '\n', encoding='utf-8')
+          print(json.dumps(data, indent=2, sort_keys=True))
+          PY
+          cp upmix-ffmpeg-version.txt output/upmix-validation/
+
+      - name: Upload decoded PCM upmix evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: upmix-validation-${{ matrix.label }}-${{ github.sha }}
+          path: output/upmix-validation/
+          if-no-files-found: error
+          retention-days: 14
