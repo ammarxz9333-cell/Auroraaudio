@@ -19,8 +19,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shim = env::var("AURORA_LIBSPATIALAUDIO_SHIM")?;
     let layout = canonical_layout();
 
-    let mut renderer =
-        LibspatialaudioRenderer::load(LibspatialaudioRuntimeConfig::new(shim))?;
+    let mut renderer = LibspatialaudioRenderer::load(LibspatialaudioRuntimeConfig::new(shim))?;
     renderer.configure(layout.clone(), SAMPLE_RATE, BLOCK_FRAMES, 1)?;
     assert_eq!(renderer.output_channel_count(), CHANNELS);
     assert_eq!(renderer.latency_frames(), 255);
@@ -32,10 +31,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let input = tone_block();
     let mut output_storage = vec![vec![0.0_f32; BLOCK_FRAMES]; CHANNELS];
-    let mut output_refs: Vec<&mut [f32]> = output_storage
-        .iter_mut()
-        .map(Vec::as_mut_slice)
-        .collect();
+    let mut output_refs: Vec<&mut [f32]> =
+        output_storage.iter_mut().map(Vec::as_mut_slice).collect();
 
     // Exact nominal directions must agree between the native PCM renderer and
     // Aurora's independent VBAP implementation. Two native calls cover the
@@ -74,7 +71,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
         if native_dominant != expected_channel
             || vbap_dominant != expected_channel
-            || !(energies[native_dominant] > 1.0e-8)
+            || energies[native_dominant] <= 1.0e-8
         {
             return Err(format!(
                 "semantic differential mismatch: position={position:?} expected={expected_channel} native={native_dominant} vbap={vbap_dominant} energies={energies:?} gains={vbap_gains:?}"
@@ -197,6 +194,7 @@ fn flatten(output: &[&mut [f32]]) -> Vec<f32> {
 }
 
 fn canonical_layout() -> Vec<Speaker> {
+    let diagonal = std::f32::consts::FRAC_1_SQRT_2;
     vec![
         speaker("FL", ChannelRole::FrontLeft, -0.5, 0.866_025_4, 0.0),
         speaker("FR", ChannelRole::FrontRight, 0.5, 0.866_025_4, 0.0),
@@ -207,15 +205,15 @@ fn canonical_layout() -> Vec<Speaker> {
         speaker(
             "SBL",
             ChannelRole::SurroundBackLeft,
-            -0.707_106_77,
-            -0.707_106_77,
+            -diagonal,
+            -diagonal,
             0.0,
         ),
         speaker(
             "SBR",
             ChannelRole::SurroundBackRight,
-            0.707_106_77,
-            -0.707_106_77,
+            diagonal,
+            -diagonal,
             0.0,
         ),
         speaker(
@@ -235,15 +233,15 @@ fn canonical_layout() -> Vec<Speaker> {
         speaker(
             "TRL",
             ChannelRole::TopRearLeft,
-            -0.707_106_77,
-            -0.707_106_77,
+            -diagonal,
+            -diagonal,
             0.577_350_26,
         ),
         speaker(
             "TRR",
             ChannelRole::TopRearRight,
-            0.707_106_77,
-            -0.707_106_77,
+            diagonal,
+            -diagonal,
             0.577_350_26,
         ),
     ]
