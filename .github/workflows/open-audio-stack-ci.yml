@@ -5,7 +5,9 @@ on:
     paths:
       - "crates/aurora-realtime-audio-api/**"
       - "crates/aurora-realtime-audio-sim/**"
+      - "crates/aurora-realtime-engine/**"
       - "config/open-audio-stack-v1.json"
+      - "config/external-components-v1.json"
       - "validation/open-audio-stack/**"
       - "docs/adr/0021-open-pro-audio-stack-integration.md"
       - "THIRD_PARTY_LICENSES.md"
@@ -87,10 +89,23 @@ jobs:
         run: |
           cmake -S "$RUNNER_TEMP/libspatialaudio" -B "$RUNNER_TEMP/libspatialaudio-build" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/libspatialaudio-install" \
             -DBUILD_SHARED_LIBS=ON \
             -DBUILD_TESTING=ON
           cmake --build "$RUNNER_TEMP/libspatialaudio-build" --parallel 2
           ctest --test-dir "$RUNNER_TEMP/libspatialaudio-build" --output-on-failure
+          cmake --install "$RUNNER_TEMP/libspatialaudio-build"
+
+      - name: Exercise libspatialaudio with Aurora 7.1.4 render contract
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/libspatialaudio-install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          c++ -std=c++17 -Wall -Wextra -Werror \
+            validation/open-audio-stack/libspatialaudio_aurora_probe.cpp \
+            -o "$RUNNER_TEMP/libspatialaudio-aurora-probe" \
+            $(pkg-config --cflags --libs spatialaudio)
+          LD_LIBRARY_PATH="$RUNNER_TEMP/libspatialaudio-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            "$RUNNER_TEMP/libspatialaudio-aurora-probe" | tee artifacts/libspatialaudio-aurora-contract.txt
+          grep -q 'PASS outputs=12 rate=48000 block=256' artifacts/libspatialaudio-aurora-contract.txt
 
       - name: Fetch exact NXP GenAVB TSN candidate
         run: |
@@ -152,3 +167,4 @@ jobs:
           path: |
             artifacts/open-audio-stack*.json
             artifacts/aoo-aurora-contract.txt
+            artifacts/libspatialaudio-aurora-contract.txt
