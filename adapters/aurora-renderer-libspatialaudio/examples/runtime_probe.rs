@@ -32,8 +32,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let input = tone_block();
     let mut output_storage = vec![vec![0.0_f32; BLOCK_FRAMES]; CHANNELS];
-    let mut output_refs: Vec<&mut [f32]> =
-        output_storage.iter_mut().map(Vec::as_mut_slice).collect();
 
     // Exact nominal directions must agree between the native PCM renderer and
     // Aurora's independent VBAP implementation. A metadata change is linearly
@@ -50,9 +48,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             &listener_origin(),
             position,
             &input,
-            &mut output_refs,
+            &mut output_storage,
         )?;
-        let energies = channel_energies(&output_refs);
+        let energies = channel_energies(&output_storage);
         let native_dominant = dominant_channel(&energies);
 
         vbap.render_gains(
@@ -86,7 +84,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     // map to the same local front position as origin/+Y. The final differential
     // case above already leaves the native renderer at local front, so this also
     // exercises unchanged native metadata across a world-pose change.
-    let baseline = flatten(&output_refs);
+    let baseline = flatten(&output_storage);
     let moved_listener = Listener {
         position: Vector3::new(10.0, 20.0, 2.0),
         orientation: Vector3::new(1.0, 0.0, 0.0),
@@ -97,9 +95,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         &moved_listener,
         Vector3::new(11.0, 20.0, 2.0),
         &input,
-        &mut output_refs,
+        &mut output_storage,
     )?;
-    let moved = flatten(&output_refs);
+    let moved = flatten(&output_storage);
     let max_delta = baseline
         .iter()
         .zip(moved.iter())
@@ -121,7 +119,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }];
     let mut result = Ok(());
     let rust_allocations = count_allocations(|| {
-        result = renderer.render_pcm(&moved_listener, &block, &mut output_refs);
+        result = renderer.render_pcm(&moved_listener, &block, &mut output_storage);
     });
     result?;
     if rust_allocations != 0 {
@@ -139,7 +137,7 @@ fn render_settled(
     listener: &Listener,
     position: Vector3,
     input: &[f32],
-    output: &mut [&mut [f32]],
+    output: &mut [Vec<f32>],
 ) -> Result<(), aurora_renderer_api::PcmRendererError> {
     let block = [ObjectPcmBlock {
         object: RenderObject {
@@ -171,7 +169,7 @@ fn tone_block() -> Vec<f32> {
         .collect()
 }
 
-fn channel_energies(output: &[&mut [f32]]) -> [f64; CHANNELS] {
+fn channel_energies(output: &[Vec<f32>]) -> [f64; CHANNELS] {
     std::array::from_fn(|channel| {
         output[channel]
             .iter()
@@ -189,7 +187,7 @@ fn dominant_channel(energies: &[f64; CHANNELS]) -> usize {
         .unwrap_or(0)
 }
 
-fn flatten(output: &[&mut [f32]]) -> Vec<f32> {
+fn flatten(output: &[Vec<f32>]) -> Vec<f32> {
     output
         .iter()
         .flat_map(|channel| channel.iter().copied())
