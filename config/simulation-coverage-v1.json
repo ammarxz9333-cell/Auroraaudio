@@ -12,360 +12,100 @@
       "id": "simics-tv-audio-ingress",
       "status": "planned",
       "evidence_class": "virtual",
-      "evidence": [
-        "validation/simics/tv_ingress.py",
-        "validation/simics/run_tv_to_speakers.py"
-      ],
+      "evidence": ["validation/simics/tv_ingress.py", "validation/simics/run_tv_to_speakers.py"],
       "truth_boundary": "Standalone Simics fixture TV-audio passthrough and receiver DMA suite; exported AuroraSim integration pending. Does not implement a TV OS, Netflix application, DRM or physical eARC discovery/signalling."
     },
     {
       "id": "simics-dac-speaker-loads",
       "status": "planned",
       "evidence_class": "virtual",
-      "evidence": [
-        "validation/simics/speaker_load.py",
-        "validation/simics/run_in_simics.py"
-      ],
+      "evidence": ["validation/simics/speaker_load.py", "validation/simics/run_in_simics.py"],
       "truth_boundary": "Standalone ideal 24-bit DAC and resistive-load model fed by actual Simics DMA output; exported AuroraSim integration pending. No vendor DAC, amplifier, acoustic model or physical speaker measurement."
     },
     {
       "id": "simics-audio-dma-register-timing",
       "status": "planned",
       "evidence_class": "virtual",
-      "evidence": [
-        "validation/simics/run_in_simics.py",
-        "validation/simics/README.md"
-      ],
+      "evidence": ["validation/simics/run_in_simics.py", "validation/simics/README.md"],
       "truth_boundary": "Standalone Simics 7.84.0 vacuum harness passes 21 profiles including MMIO/DMA timing, full DSP PCM replay and MCHStreamer/UAC2 transport-contract checks. Export into AuroraSim capability mapping is still pending; no guest driver, vendor register accuracy or physical electrical timing is proven."
     },
     {
       "id": "live-iec61937-stream-relock",
       "status": "planned",
       "evidence_class": "virtual",
-      "evidence": [
-        "validation/physical/aurora_live_ingress.py",
-        "validation/physical/aurora_alsa_iec61937_stream.py"
-      ],
+      "evidence": ["validation/physical/aurora_live_ingress.py", "validation/physical/aurora_alsa_iec61937_stream.py"],
       "truth_boundary": "Software Gate A-Live has bounded retained diagnostics, threshold-driven pass/fail verdicts and Linux/Windows self-tests for mid-stream acquisition and relock. Export into AuroraSim remains pending; physical live eARC capture, hardware reset/drop counters and electrical timing remain unproven."
     },
     {
       "id": "live-joc-decoder-runtime",
       "status": "covered",
       "evidence_class": "software_reference",
-      "evidence": [
-        "crates/aurora-decoder-api/src/lib.rs",
-        "crates/aurora-source-runtime/src/live.rs",
-        "validation/immersive/test-joc-aurora-live-runtime.sh"
-      ],
+      "evidence": ["crates/aurora-decoder-api/src/lib.rs", "crates/aurora-source-runtime/src/live.rs", "validation/immersive/test-joc-aurora-live-runtime.sh"],
       "truth_boundary": "Pinned Harletty JOC software is exercised through Aurora's hardware-neutral StreamingDecoder contract with explicit object-to-PCM-channel bindings, bounded priming/fault policy, bed routing, object gain rendering and speaker PCM mixing. In-process decoder panics are isolated on the media/control side, latched fail-closed across ordinary discontinuities, and require explicit recovery before a fresh priming epoch. Plain E-AC-3 is a fail-closed negative control. This is software-reference evidence only; it does not prove physical eARC capture, protected-service compatibility, final renderer quality, or Dolby certification."
     },
-    {
-      "id": "output-dsp-chain",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "output-dsp-chain",
-      "profiles": [
-        "none"
-      ],
-      "evidence": [
-        "crates/aurora-dsp-basic/examples/process_7_1_4_file.rs",
-        "validation/virtual-hardware/test-aurora-full-system-sim.sh"
-      ]
-    },
-    {
-      "id": "render-contract",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "render-contract",
-      "profiles": [
-        "none"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "frame-accounting",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "frame-accounting",
-      "profiles": [
-        "none",
-        "dropout",
-        "disconnect"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "channel-activity",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "channel-activity",
-      "profiles": [
-        "none",
-        "channel-silence"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "channel-order",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "channel-order",
-      "profiles": [
-        "none",
-        "channel-swap"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "pcm-identity",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "pcm-identity",
-      "profiles": [
-        "none",
-        "channel-silence",
-        "channel-swap"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "tdm16-slot-mapping",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "tdm16-slot-mapping",
-      "profiles": [
-        "none",
-        "tdm-padding-corruption"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "xrun-dropout",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "xrun-dropout",
-      "profiles": [
-        "dropout"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "device-disconnect",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "device-disconnect",
-      "profiles": [
-        "disconnect"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "clock-drift",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "clock-drift",
-      "profiles": [
-        "drift"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "sample-rate-integrity",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "sample-rate-integrity",
-      "profiles": [
-        "sample-rate-change"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "latency-budget",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "latency-budget",
-      "profiles": [
-        "latency-spike"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "non-finite-protection",
-      "status": "covered",
-      "evidence_class": "virtual",
-      "simulator_capability": "non-finite-protection",
-      "profiles": [
-        "non-finite"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
-    },
-    {
-      "id": "moving-joc-metadata",
-      "status": "covered",
-      "evidence_class": "software_reference",
-      "evidence": [
-        "validation/immersive/test-joc-aurora-moving.sh",
-        "validation/immersive/aurora_joc_moving_evidence.py"
-      ]
-    },
-    {
-      "id": "pinned-joc-carrier-integrity",
-      "status": "covered",
-      "evidence_class": "software_reference",
-      "evidence": [
-        "validation/immersive/test-dolby-official-joc-temporal.sh",
-        "validation/physical/aurora_physical_ingress.py"
-      ]
-    },
+    {"id":"output-dsp-chain","status":"covered","evidence_class":"virtual","simulator_capability":"output-dsp-chain","profiles":["none"],"evidence":["crates/aurora-dsp-basic/examples/process_7_1_4_file.rs","validation/virtual-hardware/test-aurora-full-system-sim.sh"]},
+    {"id":"render-contract","status":"covered","evidence_class":"virtual","simulator_capability":"render-contract","profiles":["none"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"frame-accounting","status":"covered","evidence_class":"virtual","simulator_capability":"frame-accounting","profiles":["none","dropout","disconnect"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"channel-activity","status":"covered","evidence_class":"virtual","simulator_capability":"channel-activity","profiles":["none","channel-silence"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"channel-order","status":"covered","evidence_class":"virtual","simulator_capability":"channel-order","profiles":["none","channel-swap"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"pcm-identity","status":"covered","evidence_class":"virtual","simulator_capability":"pcm-identity","profiles":["none","channel-silence","channel-swap"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"tdm16-slot-mapping","status":"covered","evidence_class":"virtual","simulator_capability":"tdm16-slot-mapping","profiles":["none","tdm-padding-corruption"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"xrun-dropout","status":"covered","evidence_class":"virtual","simulator_capability":"xrun-dropout","profiles":["dropout"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"device-disconnect","status":"covered","evidence_class":"virtual","simulator_capability":"device-disconnect","profiles":["disconnect"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"clock-drift","status":"covered","evidence_class":"virtual","simulator_capability":"clock-drift","profiles":["drift"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"sample-rate-integrity","status":"covered","evidence_class":"virtual","simulator_capability":"sample-rate-integrity","profiles":["sample-rate-change"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"latency-budget","status":"covered","evidence_class":"virtual","simulator_capability":"latency-budget","profiles":["latency-spike"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"non-finite-protection","status":"covered","evidence_class":"virtual","simulator_capability":"non-finite-protection","profiles":["non-finite"],"evidence":["validation/virtual-hardware/aurora_full_system_sim.py"]},
+    {"id":"moving-joc-metadata","status":"covered","evidence_class":"software_reference","evidence":["validation/immersive/test-joc-aurora-moving.sh","validation/immersive/aurora_joc_moving_evidence.py"]},
+    {"id":"pinned-joc-carrier-integrity","status":"covered","evidence_class":"software_reference","evidence":["validation/immersive/test-dolby-official-joc-temporal.sh","validation/physical/aurora_physical_ingress.py"]},
     {
       "id": "oar-stereo-object-semantics",
       "status": "covered",
       "evidence_class": "software_reference",
-      "evidence": [
-        "config/oar-evaluation-v1.json",
-        "crates/aurora-simulation-assurance/src/bin/aurora-oar-differential-probe.rs",
-        "validation/open-immersive/aurora_oar_differential_probe.c",
-        "validation/open-immersive/oar_differential.py",
-        "validation/open-immersive/test-oar-reference.sh"
-      ],
+      "evidence": ["config/oar-evaluation-v1.json", "crates/aurora-simulation-assurance/src/bin/aurora-oar-differential-probe.rs", "validation/open-immersive/aurora_oar_differential_probe.c", "validation/open-immersive/oar_differential.py", "validation/open-immersive/test-oar-reference.sh"],
       "truth_boundary": "Focused 48 kHz stereo object-position/gain differential against exact pinned AOMedia OAR 1.0.0. Covers finite output, 256-frame accounting, FL/FR order, left/center/right semantics and -6 dB gain only; does not prove IAMF ingestion/decoding, multichannel differential equivalence, physical output or certification."
     },
     {
       "id": "oar-five-one-object-semantics",
       "status": "covered",
       "evidence_class": "software_reference",
-      "evidence": [
-        "config/oar-evaluation-v1.json",
-        "crates/aurora-renderer-vbap/src/object.rs",
-        "crates/aurora-simulation-assurance/src/bin/aurora-oar-5-1-differential-probe.rs",
-        "validation/open-immersive/aurora_oar_5_1_differential_probe.c",
-        "validation/open-immersive/oar_5_1_differential.py",
-        "validation/open-immersive/test-oar-reference.sh"
-      ],
+      "evidence": ["config/oar-evaluation-v1.json", "crates/aurora-renderer-vbap/src/object.rs", "crates/aurora-simulation-assurance/src/bin/aurora-oar-5-1-differential-probe.rs", "validation/open-immersive/aurora_oar_5_1_differential_probe.c", "validation/open-immersive/oar_5_1_differential.py", "validation/open-immersive/test-oar-reference.sh"],
       "truth_boundary": "Focused 48 kHz 5.1 point-object differential against exact pinned AOMedia OAR 1.0.0. Covers explicit FL/FR/FC/LFE/SL/SR order, finite output, 256-frame accounting, exact speaker-target cases, -6 dB gain and exclusion of point-object energy from LFE. It does not prove IAMF ingestion/decoding, arbitrary trajectories, height rendering, 7.1.4 equivalence, physical output or certification."
     },
     {
       "id": "iamf-rendered-channel-pcm-reference",
       "status": "covered",
       "evidence_class": "software_reference",
-      "evidence": [
-        "config/iamf-reference-v1.json",
-        "crates/aurora-decoder-iamf/src/lib.rs",
-        "crates/aurora-decoder-iamf/examples/iamf_rendered_pcm_probe.rs",
-        "validation/open-immersive/iamf_reference_evidence.py",
-        ".github/workflows/iamf-reference-ci.yml"
-      ],
+      "evidence": ["config/iamf-reference-v1.json", "crates/aurora-decoder-iamf/src/lib.rs", "crates/aurora-decoder-iamf/examples/iamf_rendered_pcm_probe.rs", "validation/open-immersive/iamf_reference_evidence.py", ".github/workflows/iamf-reference-ci.yml"],
       "truth_boundary": "Pinned libiamf iamfdec is built from commit e55e1832a608affe602de2ee39929bd7759a75ab and exercised on an official iamf-tools fixture. The reference lane proves real complete-file IAMF decoding to 48 kHz rendered ChannelPcm and bit-exact Aurora import after the declared PCM32-to-F32 normalization. It intentionally fabricates no objects. It does not expose or prove IAMF source-object metadata, object-to-PCM bindings, streaming IAMF, Aurora-side 7.1.4/elevation/HOA rendering, physical output, protected-service compatibility, or certification."
     },
     {
       "id": "iamf-independent-stereo-cross-reference",
       "status": "covered",
       "evidence_class": "software_reference",
-      "evidence": [
-        "config/iamf-tools-reference-v1.json",
-        "config/iamf-differential-v1.json",
-        "validation/open-immersive/prepare_iamf_reference.py",
-        "validation/open-immersive/iamf_cross_reference_evidence.py",
-        ".github/workflows/iamf-tools-reference-ci.yml",
-        "docs/iamf-tools-reference.md"
-      ],
+      "evidence": ["config/iamf-tools-reference-v1.json", "config/iamf-differential-v1.json", "validation/open-immersive/prepare_iamf_reference.py", "validation/open-immersive/iamf_cross_reference_evidence.py", ".github/workflows/iamf-tools-reference-ci.yml", "docs/iamf-tools-reference.md"],
       "truth_boundary": "Pinned iamf-tools encodes hash-checked upstream stereo inputs and decodes a PCM baseline. The same generated Opus IAMF file is decoded by iamf-tools and libiamf to finite non-silent stereo 48 kHz PCM with exactly 24000 frames each. Energy and correlation are recorded, not general renderer-equivalence gates. No 5.1 downmix, object-scene ingestion, streaming, hardware or certification claim."
     },
     {
       "id": "iamf-oar-open-rendering",
       "status": "planned",
       "evidence_class": "software_reference",
-      "evidence": [
-        "config/iamf-reference-v1.json",
-        "config/oar-evaluation-v1.json",
-        "validation/open-immersive/iamf_reference_evidence.py",
-        "validation/open-immersive/test-oar-reference.sh"
-      ],
+      "evidence": ["config/iamf-reference-v1.json", "config/oar-evaluation-v1.json", "validation/open-immersive/iamf_reference_evidence.py", "validation/open-immersive/test-oar-reference.sh"],
       "truth_boundary": "Aurora has executable complete-file IAMF decoding into rendered ChannelPcm and independent OAR-vs-Aurora stereo/5.1 object-renderer differentials. These remain separate reference lanes. IAMF bitstream-to-Aurora object-scene integration remains unproven until a reviewed backend exposes source object/audio-element metadata and complete object-to-PCM bindings."
     },
-    {
-      "id": "hoa-scene-based-rendering",
-      "status": "planned",
-      "evidence_class": "software_reference",
-      "truth_boundary": "Aurora has no proven Higher-Order Ambisonics scene-rendering lane; OAR supports scene-based elements up to fourth order and remains the external reference candidate."
-    },
-    {
-      "id": "adm-bs2127-differential-rendering",
-      "status": "planned",
-      "evidence_class": "software_reference",
-      "truth_boundary": "EAR/libear differential reference lane is not yet implemented."
-    },
-    {
-      "id": "binaural-head-tracking",
-      "status": "planned",
-      "evidence_class": "software_reference",
-      "truth_boundary": "Binaural/head-tracking reference validation is not yet implemented; OAR/OBR/BEAR are candidate external oracles."
-    },
-    {
-      "id": "personalized-audio-element-timeline",
-      "status": "planned",
-      "evidence_class": "virtual",
-      "truth_boundary": "Aurora does not yet provide a codec-neutral authored audio-element/group timeline with bounded user personalization, deterministic mix presentations, and gain/position interpolation."
-    },
-    {
-      "id": "flexible-speaker-layout-adaptation",
-      "status": "planned",
-      "evidence_class": "virtual",
-      "truth_boundary": "Aurora represents custom speaker geometry but has no proven end-to-end layout-negotiation, speaker-loss/degraded-layout, or automatic placement-adaptation policy comparable in product goal to flexible-layout systems."
-    },
-    {
-      "id": "standards-loudness-normalization",
-      "status": "planned",
-      "evidence_class": "virtual",
-      "truth_boundary": "Aurora output DSP has explicit headroom and a linked limiter, but no proven BS.1770/EBU-style loudness measurement/normalization layer."
-    },
+    {"id":"hoa-scene-based-rendering","status":"planned","evidence_class":"software_reference","truth_boundary":"Aurora has no proven Higher-Order Ambisonics scene-rendering lane; OAR supports scene-based elements up to fourth order and remains the external reference candidate."},
+    {"id":"adm-bs2127-differential-rendering","status":"planned","evidence_class":"software_reference","truth_boundary":"EAR/libear differential reference lane is not yet implemented."},
+    {"id":"binaural-head-tracking","status":"planned","evidence_class":"software_reference","truth_boundary":"Binaural/head-tracking reference validation is not yet implemented; OAR/OBR/BEAR are candidate external oracles."},
+    {"id":"personalized-audio-element-timeline","status":"planned","evidence_class":"virtual","truth_boundary":"Aurora does not yet provide a codec-neutral authored audio-element/group timeline with bounded user personalization, deterministic mix presentations, and gain/position interpolation."},
+    {"id":"flexible-speaker-layout-adaptation","status":"planned","evidence_class":"virtual","truth_boundary":"Aurora represents custom speaker geometry but has no proven end-to-end layout-negotiation, speaker-loss/degraded-layout, or automatic placement-adaptation policy comparable in product goal to flexible-layout systems."},
+    {"id":"standards-loudness-normalization","status":"planned","evidence_class":"virtual","truth_boundary":"Aurora output DSP has explicit headroom and a linked limiter, but no proven BS.1770/EBU-style loudness measurement/normalization layer."},
     {
       "id": "adaptive-clock-rate-correction",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "adaptive-clock-rate-correction",
-      "profiles": [
-        "clock-correction-plus-250ppm",
-        "clock-correction-minus-250ppm",
-        "clock-jitter-median-filter",
-        "clock-step-bounded-slew",
-        "clock-discontinuity-reacquire",
-        "clock-out-of-range-fail-closed"
-      ],
-      "evidence": [
-        "crates/aurora-realtime-engine/src/estimator.rs",
-        "crates/aurora-realtime-engine/src/drift_controller.rs",
-        "crates/aurora-realtime-engine/src/asrc.rs",
-        "crates/aurora-realtime-engine/src/duplex.rs",
-        "crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs",
-        "crates/aurora-realtime-audio-sim/examples/resilience_transition_evidence.rs",
-        "validation/virtual-hardware/aurora_resilience_sim.py",
-        "validation/virtual-hardware/test-aurora-resilience-sim.sh"
-      ],
+      "profiles": ["clock-correction-plus-250ppm", "clock-correction-minus-250ppm", "clock-jitter-median-filter", "clock-step-bounded-slew", "clock-discontinuity-reacquire", "clock-out-of-range-fail-closed"],
+      "evidence": ["crates/aurora-realtime-engine/src/estimator.rs", "crates/aurora-realtime-engine/src/drift_controller.rs", "crates/aurora-realtime-engine/src/asrc.rs", "crates/aurora-realtime-engine/src/duplex.rs", "crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs", "crates/aurora-realtime-audio-sim/examples/resilience_transition_evidence.rs", "validation/virtual-hardware/aurora_resilience_sim.py", "validation/virtual-hardware/test-aurora-resilience-sim.sh"],
       "truth_boundary": "Executable virtual evidence drives Aurora's fixed-storage PPM estimator, slew-limited DriftController feed-forward and RubatoAsrc path for both +250 ppm and -250 ppm over a simulated 24 hours while keeping a fixed-capacity ring bounded. Jitter filtering, bounded correction slew, discontinuity/reacquisition and out-of-range fail-closed behavior are exercised. This does not constitute physical clock measurement or prove a specific USB/TDM/audio device."
     },
     {
@@ -373,60 +113,32 @@
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "device-reconnect-recovery",
-      "profiles": [
-        "device-reconnect",
-        "device-reconnect-exhaustion",
-        "device-reconnect-flapping"
-      ],
-      "evidence": [
-        "crates/aurora-realtime-engine/src/device_state.rs",
-        "crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs",
-        "validation/virtual-hardware/aurora_resilience_sim.py",
-        "validation/virtual-hardware/test-aurora-resilience-sim.sh"
-      ],
+      "profiles": ["device-reconnect", "device-reconnect-exhaustion", "device-reconnect-flapping"],
+      "evidence": ["crates/aurora-realtime-engine/src/device_state.rs", "crates/aurora-realtime-audio-sim/examples/resilience_evidence.rs", "validation/virtual-hardware/aurora_resilience_sim.py", "validation/virtual-hardware/test-aurora-resilience-sim.sh"],
       "truth_boundary": "Executable virtual evidence drives Aurora's DuplexStateMachine through bounded exponential recovery backoff, successful late reappearance, stable-run history reset, fail-closed exhaustion and flapping-device history retention. Backend reopen timing and physical device hotplug remain unproven."
     },
     {
-      "id": "multi-speaker-room-field-control-simulation",
-      "status": "planned",
-      "evidence_class": "virtual",
-      "truth_boundary": "No MIMO/SIMO multi-speaker low-frequency field-control optimizer has been implemented; synthetic-room validation would precede any acoustic claim."
+      "id": "synthetic-multichannel-room-correction-reference",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "profiles": ["healthy", "corrupted-multichannel-summary", "pinned-commit-mismatch"],
+      "evidence": ["config/room-correction-synthetic-v1.json", "validation/room-correction/room_correction_synthetic_evidence.py", ".github/workflows/room-correction-synthetic-ci.yml", "docs/room-correction-synthetic.md"],
+      "truth_boundary": "Deterministic software-reference coverage for RoomEQ 7.1.4 synthetic optimization, PR-eligible LFE/sub topologies, multi-seat phase guards and Stage 3 safety-policy plumbing. The workflow emits healthy evidence plus corrupted-multichannel and contract-pin-mismatch fail-closed controls. This is not microphone/acoustic evidence, listening evidence, measured physical headroom/latency, RoomEQ-to-CamillaDSP execution fidelity, or proof of MIMO/SIMO room-field control."
     },
     {
-      "id": "physical-earc-ingress",
-      "status": "physical-pending",
-      "evidence_class": "physical",
-      "truth_boundary": "Requires real hardware capture evidence under issue #143; no host, MCU, eARC bridge or other hardware choice is fixed by the software architecture."
+      "id": "room-correction-camilladsp-pcm-differential",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "profiles": ["healthy", "corrupted-backend-evidence", "unsupported-plugin-rejection", "real-7-1-4-channel-sentinel"],
+      "evidence": ["config/room-correction-camilladsp-differential-v1.json", "validation/room-correction/camilladsp_differential_evidence.py", ".github/workflows/room-correction-camilladsp-differential-ci.yml", "docs/room-correction-camilladsp-differential.md", "docs/camilladsp-channel-order.md", "crates/aurora-dsp-camilladsp/src/lib_entry.rs"],
+      "truth_boundary": "Deterministic external software execution coverage for the declared RoomEQ-to-exact-pinned-CamillaDSP PCM contract subset plus Aurora's role-aware real 7.1.4 WAV channel sentinel. Includes fail-closed unsupported-plugin and corrupted-backend controls. It does not prove arbitrary DSP graphs, physical DAC/speaker wiring, acoustic room correction, measured latency or certification."
     },
-    {
-      "id": "physical-uac2-tdm-clock-domain",
-      "status": "physical-pending",
-      "evidence_class": "physical",
-      "truth_boundary": "Virtual multichannel transport contracts do not prove any specific USB/TDM implementation, electrical timing or clock behavior. Hardware remains intentionally unselected."
-    },
-    {
-      "id": "physical-dac-loopback-channel-map",
-      "status": "physical-pending",
-      "evidence_class": "physical",
-      "truth_boundary": "Requires a future selected output implementation and electrical/loopback measurement; Aurora software does not currently select a DAC architecture."
-    },
-    {
-      "id": "acoustic-room-field-control",
-      "status": "physical-pending",
-      "evidence_class": "physical",
-      "truth_boundary": "Synthetic measurement/calibration does not prove room response, bass field control, or multi-seat performance."
-    },
-    {
-      "id": "protected-streaming-atmos",
-      "status": "external-pending",
-      "evidence_class": "external_integration",
-      "truth_boundary": "Legitimate protected-service compatibility must be tested separately without DRM circumvention."
-    },
-    {
-      "id": "dolby-certification",
-      "status": "external-pending",
-      "evidence_class": "external_integration",
-      "truth_boundary": "Software, simulation and physical prototype evidence do not constitute Dolby certification or conformance."
-    }
+    {"id":"multi-speaker-room-field-control-simulation","status":"planned","evidence_class":"virtual","truth_boundary":"No MIMO/SIMO multi-speaker low-frequency field-control optimizer has been implemented; the covered synthetic RoomEQ reference lane is narrower and does not establish this capability."},
+    {"id":"physical-earc-ingress","status":"physical-pending","evidence_class":"physical","truth_boundary":"Requires real hardware capture evidence under issue #143; no host, MCU, eARC bridge or other hardware choice is fixed by the software architecture."},
+    {"id":"physical-uac2-tdm-clock-domain","status":"physical-pending","evidence_class":"physical","truth_boundary":"Virtual multichannel transport contracts do not prove any specific USB/TDM implementation, electrical timing or clock behavior. Hardware remains intentionally unselected."},
+    {"id":"physical-dac-loopback-channel-map","status":"physical-pending","evidence_class":"physical","truth_boundary":"Requires a future selected output implementation and electrical/loopback measurement; Aurora software does not currently select a DAC architecture."},
+    {"id":"acoustic-room-field-control","status":"physical-pending","evidence_class":"physical","truth_boundary":"Synthetic measurement/calibration does not prove room response, bass field control, or multi-seat performance."},
+    {"id":"protected-streaming-atmos","status":"external-pending","evidence_class":"external_integration","truth_boundary":"Legitimate protected-service compatibility must be tested separately without DRM circumvention."},
+    {"id":"dolby-certification","status":"external-pending","evidence_class":"external_integration","truth_boundary":"Software, simulation and physical prototype evidence do not constitute Dolby certification or conformance."}
   ]
 }
