@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "crates/aurora-realtime-audio-api/**"
+      - "crates/aurora-realtime-audio-sim/**"
       - "config/open-audio-stack-v1.json"
       - "validation/open-audio-stack/**"
       - "docs/adr/0021-open-pro-audio-stack-integration.md"
@@ -51,6 +52,7 @@ jobs:
         run: |
           cmake -S "$RUNNER_TEMP/aoo" -B "$RUNNER_TEMP/aoo-build" -G Ninja \
             -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/aoo-install" \
             -DAOO_USE_OPUS=OFF \
             -DAOO_BUILD_SHARED_LIBRARY=ON \
             -DAOO_BUILD_TESTS=ON \
@@ -58,7 +60,19 @@ jobs:
             -DAOO_BUILD_SERVER=OFF
           cmake --build "$RUNNER_TEMP/aoo-build" --parallel 2
           ctest --test-dir "$RUNNER_TEMP/aoo-build" --output-on-failure
+          cmake --install "$RUNNER_TEMP/aoo-build"
           test -f "$RUNNER_TEMP/aoo/include/aoo.h"
+
+      - name: Exercise AOO with Aurora 7.1.4 transport contract
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/aoo-install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          cc -std=c11 -Wall -Wextra -Werror \
+            validation/open-audio-stack/aoo_aurora_contract_probe.c \
+            -o "$RUNNER_TEMP/aoo-aurora-contract-probe" \
+            $(pkg-config --cflags --libs aoo)
+          LD_LIBRARY_PATH="$RUNNER_TEMP/aoo-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            "$RUNNER_TEMP/aoo-aurora-contract-probe" | tee artifacts/aoo-aurora-contract.txt
+          grep -q 'PASS channels=12 rate=48000 block=48 codec=pcm-f32' artifacts/aoo-aurora-contract.txt
 
       - name: Fetch exact libspatialaudio candidate
         run: |
@@ -134,4 +148,6 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: open-audio-stack-evidence
-          path: artifacts/open-audio-stack*.json
+          path: |
+            artifacts/open-audio-stack*.json
+            artifacts/aoo-aurora-contract.txt
