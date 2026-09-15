@@ -17,7 +17,7 @@ Current canonical base:
 - Phase 9 decoded-PCM upmix matrix is complete for the declared software subset: 5.1 -> 7.1.4, 5.1 -> custom 11.1.4, and 7.1 -> custom 11.1.4.
 - PR #173 merged the Phase 10 pinned RoomEQ/CamillaDSP reference baseline into `main-v2`.
 - PR #174 merged the deterministic synthetic 7.1.4 RoomEQ lane, review remediation and simulation-coverage registration into `main-v2` at `ff3fe185bdd32538929edbe8148a80034efd18c7`.
-- PR #175 contains the implemented RoomEQ -> CamillaDSP PCM execution differential and role-aware 7.1/7.1.4 WAV channel mapping. Its branch now contains the merged #174 base and must prove a fresh final head before merge.
+- PR #175 contains the implemented RoomEQ -> CamillaDSP PCM execution differential and role-aware 7.1/7.1.4 WAV channel mapping. Its branch is synchronized with `main-v2`; only fresh final-head verification remains before merge.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -101,7 +101,8 @@ RoomEQ -> CamillaDSP execution differential implemented in PR #175 / `phase10-ca
 - `.github/workflows/room-correction-camilladsp-differential-ci.yml`;
 - `docs/room-correction-camilladsp-differential.md`;
 - `docs/camilladsp-channel-order.md`;
-- `crates/aurora-dsp-camilladsp/src/lib_entry.rs`.
+- `crates/aurora-dsp-camilladsp/src/lib_entry.rs`;
+- `config/simulation-coverage-v1.json` declaration for the healthy, corrupted-backend, unsupported-plugin and real-7.1.4-sentinel profiles.
 
 The differential lane builds exact-pinned CamillaDSP 4.1.3 with a generated-and-recorded dependency lock, validates RoomEQ-generated CamillaDSP configuration, executes the required real-PCM contracts for fractional group delay, polarity/delay, convolution FIR, LR crossover gain, peaking EQ, routed channel matrices and multi-sub coherent peak behavior, and requires unsupported graph semantics to fail closed. Aurora additionally proves a real 12-channel 7.1.4 sentinel through CamillaDSP.
 
@@ -113,8 +114,8 @@ A green Phase 10 software lane does **not** prove microphone/acoustic correction
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Finish PR #175 on its synchronized `main-v2` base and retarget the PR to `main-v2`.
-2. Require fresh final-head green evidence for Aurora role-aware adapter tests, the real 12-channel 7.1.4 sentinel, exact CamillaDSP build/preflight, all required RoomEQ-to-CamillaDSP PCM contracts, unsupported-feature rejection, negative evidence mutation, Software Completion Audit, Room Correction Reference CI and any repository-wide gates triggered by the coverage/handoff edits; merge only when green and review threads remain resolved.
+1. Retarget PR #175 to `main-v2` and require fresh final-head green evidence for Aurora role-aware adapter tests, the real 12-channel 7.1.4 sentinel, exact CamillaDSP build/preflight, all required RoomEQ-to-CamillaDSP PCM contracts, unsupported-feature rejection, negative evidence mutation, Software Completion Audit, Room Correction Reference CI and any repository-wide gates triggered by the coverage/handoff edits.
+2. Merge #175 only when all final-head checks are green and review threads remain resolved.
 3. Once #175 is merged, Phase 10 is complete for its declared software/reference scope. Continue with Phase 11 binaural reference validation, then Phase 12 runtime-contract/realtime-safety hardening unless a higher-priority regression appears.
 4. Keep physical tracker #143 visible in parallel; resume physical eARC/JOC validation when authorized hardware is available, but do not block truthful software-only progress on absent hardware.
 
