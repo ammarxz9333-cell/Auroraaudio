@@ -10,9 +10,12 @@ The Open Audio Stack CI executes the Rust tests that back these declarations.
 SIMULATOR_CAPABILITIES = ("network-audio-transport-contract",)
 
 # `none` is already exported by Aurora's full-system simulator as the shared
-# healthy profile. Keep these names unique across simulator contract sources.
+# healthy baseline. These network-specific profile names remain unique across
+# simulator contract sources; `healthy` names the explicit network lifecycle
+# case exercised by the Rust simulator tests.
 FAULT_PROFILES = (
-    "network-overflow",
-    "network-format-drift",
-    "network-timestamp-discontinuity",
+    "healthy",
+    "overflow",
+    "format-drift",
+    "timestamp-discontinuity",
 )
