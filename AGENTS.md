@@ -19,7 +19,7 @@ Current canonical base:
 - PR #174 merged the deterministic synthetic 7.1.4 RoomEQ lane and simulation-coverage registration.
 - PR #175 merged the RoomEQ -> CamillaDSP PCM execution differential, role-aware 7.1/7.1.4 WAV mapping, real 12-channel CamillaDSP sentinel, fail-closed unsupported semantics, and non-vacuous RoomEQ reference regression into `main-v2` at merge commit `ed46a671cae70fa14c14658f6df89ca6eb6378ca`.
 - Phase 10 is complete for its declared **software/reference** scope. Physical room/DAC/speaker evidence remains separate and unproven.
-- Active work moved to Phase 11 on `phase11-binaural-reference`.
+- Active Phase 11 work is PR #176 on `phase11-binaural-reference`.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -94,7 +94,7 @@ A green Phase 10 lane does **not** prove microphone/acoustic correction, physica
 
 ## 5. Phase 11 — binaural — active
 
-Active branch: `phase11-binaural-reference`.
+Active PR: #176 on branch `phase11-binaural-reference`.
 
 Initial exact references:
 
@@ -120,11 +120,13 @@ Initial exact references:
 - boundary: Rust-native SOFA/HRTF/convolution **candidate only**, not selected runtime implementation;
 - pinned source publishes no root `Cargo.lock`; CI generates one, records SHA-256 and tests with `--locked`.
 
-Phase 11 baseline files introduced on the active branch:
+Phase 11 baseline files in PR #176:
 - `config/binaural-reference-v1.json`;
 - `validation/binaural/binaural_reference_evidence.py`;
 - `.github/workflows/binaural-reference-ci.yml`;
-- `docs/binaural-reference.md`.
+- `docs/binaural-reference.md`;
+- `config/external-components-v1.json` registrations;
+- `THIRD_PARTY_LICENSES.md` boundaries.
 
 The first baseline proves provenance and selected upstream build/test execution only. It does not yet prove Aurora binaural output, agreement between independent renderers, personalized HRTF quality, perceptual front/back/elevation performance, head-tracker hardware behavior, or measured latency.
 
@@ -132,8 +134,8 @@ The first baseline proves provenance and selected upstream build/test execution 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Finish Phase 11 pinned-reference governance on `phase11-binaural-reference`: register OBR/BEAR/sofar in `config/external-components-v1.json`, document license boundaries in `THIRD_PARTY_LICENSES.md`, open the PR, and require fresh final-head CI.
-2. Fix any OBR/BEAR/sofar build/test or provenance failures without weakening the declared contract. Merge only when final-head checks are green and review threads are resolved.
+1. Require fresh final-head CI for PR #176, especially `Binaural Reference CI`, plus all repository-wide checks triggered by governance/handoff edits.
+2. Fix any OBR/BEAR/sofar build/test or provenance failures without weakening the declared contract. Merge #176 only when final-head checks are green and review threads are resolved.
 3. Add a deterministic Phase 11 semantic differential for channel-based 7.1.4, objects and Ambisonics. Compare bounded binaural semantics rather than requiring byte-identical PCM.
 4. Add head-rotation, HRTF-transition continuity, finite-output, front/back and elevation evidence. Treat perceptual claims separately from deterministic software metrics.
 5. After the declared Phase 11 software/reference scope is complete, continue Phase 12 runtime-contract/realtime-safety hardening unless a higher-priority regression appears.
