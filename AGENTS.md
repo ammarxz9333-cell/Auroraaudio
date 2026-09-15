@@ -86,6 +86,8 @@ Merged baseline files from #173:
 - `config/external-components-v1.json`;
 - `THIRD_PARTY_LICENSES.md`.
 
+PR #175 hardens that baseline by replacing the previously vacuous RoomEQ `dsp_realization` filter with the exact pinned upstream regression `dsp_realization::tests::mixed_fir_iir_replay_matches_independent_complex_branch_sum` and requiring the test harness summary to report exactly `1 passed; 0 failed`.
+
 Merged synthetic lane from #174:
 - `config/room-correction-synthetic-v1.json`;
 - `validation/room-correction/room_correction_synthetic_evidence.py`;
@@ -114,7 +116,7 @@ A green Phase 10 software lane does **not** prove microphone/acoustic correction
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Retarget PR #175 to `main-v2` and require fresh final-head green evidence for Aurora role-aware adapter tests, the real 12-channel 7.1.4 sentinel, exact CamillaDSP build/preflight, all required RoomEQ-to-CamillaDSP PCM contracts, unsupported-feature rejection, negative evidence mutation, Software Completion Audit, Room Correction Reference CI and any repository-wide gates triggered by the coverage/handoff edits.
+1. Require fresh final-head green evidence for the non-vacuous RoomEQ reference regression, Aurora role-aware adapter tests, the real 12-channel 7.1.4 sentinel, exact CamillaDSP build/preflight, all required RoomEQ-to-CamillaDSP PCM contracts, unsupported-feature rejection, negative evidence mutation, Software Completion Audit, Room Correction Reference CI and any repository-wide gates triggered by the coverage/handoff edits.
 2. Merge #175 only when all final-head checks are green and review threads remain resolved.
 3. Once #175 is merged, Phase 10 is complete for its declared software/reference scope. Continue with Phase 11 binaural reference validation, then Phase 12 runtime-contract/realtime-safety hardening unless a higher-priority regression appears.
 4. Keep physical tracker #143 visible in parallel; resume physical eARC/JOC validation when authorized hardware is available, but do not block truthful software-only progress on absent hardware.
