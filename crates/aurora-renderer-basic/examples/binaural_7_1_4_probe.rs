@@ -53,18 +53,78 @@ fn source_position(azimuth_degrees: f32, elevation_degrees: f32) -> Vector3 {
 
 fn specs() -> [CaseSpec; 12] {
     [
-        CaseSpec { role: "FL", expected_side: "left", azimuth_degrees: -30.0, elevation_degrees: 0.0 },
-        CaseSpec { role: "FR", expected_side: "right", azimuth_degrees: 30.0, elevation_degrees: 0.0 },
-        CaseSpec { role: "FC", expected_side: "center", azimuth_degrees: 0.0, elevation_degrees: 0.0 },
-        CaseSpec { role: "LFE", expected_side: "lfe", azimuth_degrees: 0.0, elevation_degrees: 0.0 },
-        CaseSpec { role: "SL", expected_side: "left", azimuth_degrees: -90.0, elevation_degrees: 0.0 },
-        CaseSpec { role: "SR", expected_side: "right", azimuth_degrees: 90.0, elevation_degrees: 0.0 },
-        CaseSpec { role: "SBL", expected_side: "left", azimuth_degrees: -135.0, elevation_degrees: 0.0 },
-        CaseSpec { role: "SBR", expected_side: "right", azimuth_degrees: 135.0, elevation_degrees: 0.0 },
-        CaseSpec { role: "TFL", expected_side: "left", azimuth_degrees: -45.0, elevation_degrees: 45.0 },
-        CaseSpec { role: "TFR", expected_side: "right", azimuth_degrees: 45.0, elevation_degrees: 45.0 },
-        CaseSpec { role: "TRL", expected_side: "left", azimuth_degrees: -135.0, elevation_degrees: 45.0 },
-        CaseSpec { role: "TRR", expected_side: "right", azimuth_degrees: 135.0, elevation_degrees: 45.0 },
+        CaseSpec {
+            role: "FL",
+            expected_side: "left",
+            azimuth_degrees: -30.0,
+            elevation_degrees: 0.0,
+        },
+        CaseSpec {
+            role: "FR",
+            expected_side: "right",
+            azimuth_degrees: 30.0,
+            elevation_degrees: 0.0,
+        },
+        CaseSpec {
+            role: "FC",
+            expected_side: "center",
+            azimuth_degrees: 0.0,
+            elevation_degrees: 0.0,
+        },
+        CaseSpec {
+            role: "LFE",
+            expected_side: "lfe",
+            azimuth_degrees: 0.0,
+            elevation_degrees: 0.0,
+        },
+        CaseSpec {
+            role: "SL",
+            expected_side: "left",
+            azimuth_degrees: -90.0,
+            elevation_degrees: 0.0,
+        },
+        CaseSpec {
+            role: "SR",
+            expected_side: "right",
+            azimuth_degrees: 90.0,
+            elevation_degrees: 0.0,
+        },
+        CaseSpec {
+            role: "SBL",
+            expected_side: "left",
+            azimuth_degrees: -135.0,
+            elevation_degrees: 0.0,
+        },
+        CaseSpec {
+            role: "SBR",
+            expected_side: "right",
+            azimuth_degrees: 135.0,
+            elevation_degrees: 0.0,
+        },
+        CaseSpec {
+            role: "TFL",
+            expected_side: "left",
+            azimuth_degrees: -45.0,
+            elevation_degrees: 45.0,
+        },
+        CaseSpec {
+            role: "TFR",
+            expected_side: "right",
+            azimuth_degrees: 45.0,
+            elevation_degrees: 45.0,
+        },
+        CaseSpec {
+            role: "TRL",
+            expected_side: "left",
+            azimuth_degrees: -135.0,
+            elevation_degrees: 45.0,
+        },
+        CaseSpec {
+            role: "TRR",
+            expected_side: "right",
+            azimuth_degrees: 135.0,
+            elevation_degrees: 45.0,
+        },
     ]
 }
 
@@ -94,7 +154,10 @@ fn main() -> Result<(), Box<dyn Error>> {
         let position = source_position(spec.azimuth_degrees, spec.elevation_degrees);
         renderer.render_gains(
             &listener(),
-            &[RenderObject { position, gain: 1.0 }],
+            &[RenderObject {
+                position,
+                gain: 1.0,
+            }],
             &mut gains,
             &mut scratch,
         )?;
@@ -108,7 +171,11 @@ fn main() -> Result<(), Box<dyn Error>> {
                 && gain.delay_samples.is_finite()
         }) && bias_db.is_finite();
 
-        let comma = if channel_index + 1 == specs().len() { "" } else { "," };
+        let comma = if channel_index + 1 == specs().len() {
+            ""
+        } else {
+            ","
+        };
         text.push_str(&format!(
             "    {{\"channel_index\": {channel_index}, \"role\": \"{}\", \"expected_side\": \"{}\", \"azimuth_degrees\": {}, \"elevation_degrees\": {}, \"source_position\": [{}, {}, {}], \"left_gain\": {}, \"right_gain\": {}, \"left_delay_samples\": {}, \"right_delay_samples\": {}, \"left_right_power_bias_db\": {}, \"finite\": {finite}}}{comma}\n",
             spec.role,
