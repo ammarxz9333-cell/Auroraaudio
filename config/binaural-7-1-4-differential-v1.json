@@ -1,0 +1,87 @@
+{
+  "schema_version": 1,
+  "roadmap_phase": 11,
+  "status": "software-reference-differential",
+  "purpose": "Compare Aurora geometric-binaural directional semantics with exact-pinned Google OBR for deterministic channel-isolated 7.1.4 PCM without requiring raw-PCM equality.",
+  "google_obr": {
+    "upstream": "https://github.com/google/obr",
+    "pinned_commit": "478dc7c752d5eccae534635139ff0253eee3a14a",
+    "cli_target": "//obr/cli:obr_cli",
+    "input_type": "7.1.4",
+    "filter_type": "Direct",
+    "integration": "external-process-validation-oracle"
+  },
+  "aurora": {
+    "probe_binary": "aurora-binaural-7-1-4-probe",
+    "renderer": "aurora-renderer-basic/geometric-binaural",
+    "semantics": "geometric ITD/ILD plus relative per-ear distance weighting only"
+  },
+  "fixture": {
+    "sample_rate_hz": 48000,
+    "sample_width_bits": 16,
+    "frames": 8192,
+    "impulse_frame": 1024,
+    "impulse_amplitude": 16000,
+    "processing_buffer_frames": 256,
+    "channel_order": [
+      "FL",
+      "FR",
+      "FC",
+      "LFE",
+      "SL",
+      "SR",
+      "SBL",
+      "SBR",
+      "TFL",
+      "TFR",
+      "TRL",
+      "TRR"
+    ],
+    "channel_order_semantics": "Sequential PCM channel indices consumed by OBR. Do not apply WAVE_FORMAT_EXTENSIBLE speaker-mask reordering at this boundary."
+  },
+  "directional_cases": {
+    "FL": "left",
+    "FR": "right",
+    "FC": "center",
+    "LFE": "lfe",
+    "SL": "left",
+    "SR": "right",
+    "SBL": "left",
+    "SBR": "right",
+    "TFL": "left",
+    "TFR": "right",
+    "TRL": "left",
+    "TRR": "right"
+  },
+  "mirror_pairs": [
+    ["FL", "FR"],
+    ["SL", "SR"],
+    ["SBL", "SBR"],
+    ["TFL", "TFR"],
+    ["TRL", "TRR"]
+  ],
+  "thresholds": {
+    "obr_min_spatial_bias_db": 0.05,
+    "obr_center_max_abs_bias_db": 1.0,
+    "obr_mirror_max_sum_abs_db": 1.5,
+    "aurora_min_spatial_bias_db": 0.05,
+    "aurora_center_max_abs_bias_db": 0.05
+  },
+  "acceptance": {
+    "exact_obr_commit": true,
+    "exact_channel_order": true,
+    "obr_output_stereo": true,
+    "obr_output_frame_count_matches_input": true,
+    "all_spatial_outputs_nonzero": true,
+    "all_metrics_finite": true,
+    "aurora_and_obr_directional_class_match": true,
+    "mirror_pair_semantics_hold": true,
+    "lfe_directional_claim": false,
+    "raw_pcm_equality_required": false
+  },
+  "negative_controls": [
+    "OBR commit pin drift must fail closed",
+    "7.1.4 channel-order drift must fail closed"
+  ],
+  "truth_boundary": "This lane proves only deterministic software/reference directional semantics for channel-isolated 7.1.4 PCM between Aurora's geometric binaural model and exact-pinned Google OBR. It does not establish raw-PCM equivalence, personalized HRTF quality, front/back discrimination, elevation discrimination, head-tracking behavior, perceptual quality, physical latency, speaker behavior, or certification. LFE is exercised for execution integrity only and carries no spatial-direction claim."
+}
