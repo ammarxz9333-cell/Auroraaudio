@@ -76,6 +76,9 @@ impl NetworkAudioFormat {
         if self.channels > capabilities.max_channels {
             return Err(NetworkTransportError::UnsupportedChannelCount);
         }
+        if self.samples_per_block().is_none() {
+            return Err(NetworkTransportError::InvalidFormat);
+        }
         Ok(())
     }
 
@@ -312,6 +315,21 @@ mod tests {
             }
             .validate(),
             Err(NetworkTransportError::InvalidTimingPolicy)
+        );
+    }
+
+    #[test]
+    fn format_rejects_overflowing_block_dimensions_during_prepare_validation() {
+        let mut capabilities = caps();
+        capabilities.max_channels = usize::MAX;
+        let format = NetworkAudioFormat {
+            sample_rate: AURORA_NETWORK_MEDIA_RATE,
+            channels: usize::MAX,
+            block_frames: 2,
+        };
+        assert_eq!(
+            format.validate(capabilities),
+            Err(NetworkTransportError::InvalidFormat)
         );
     }
 
