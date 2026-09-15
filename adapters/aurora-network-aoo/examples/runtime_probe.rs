@@ -30,7 +30,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             maximum_rate_correction_ppm: 0.0,
         },
     })?;
-    assert_eq!(transport.poll_event(), Some(NetworkTransportEvent::Prepared));
+    assert_eq!(
+        transport.poll_event(),
+        Some(NetworkTransportEvent::Prepared)
+    );
 
     let mut samples = vec![0.0_f32; CHANNELS * BLOCK_FRAMES];
     run_epoch(&mut transport, format, &mut samples)?;
