@@ -1,6 +1,6 @@
 # Room-correction reference baseline
 
-Aurora Pre-Hardware Roadmap Phase 10 starts with two exact-pinned external references. Neither project is linked into Aurora core.
+Aurora Pre-Hardware Roadmap Phase 10 uses two exact-pinned external references. Neither project is linked into Aurora core.
 
 ## Roles
 
@@ -10,28 +10,29 @@ The selected reference surface covers multichannel room correction, FIR/IIR and 
 
 `HEnquist/camilladsp` is the DSP-execution reference. Aurora pins commit `05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74`, version `4.1.3`. Upstream declares `GPL-3.0-only OR MPL-2.0`. Aurora continues to use it only behind an external-process boundary.
 
-## Current executable gate
+## Current executable baseline gate
 
 `Room Correction Reference CI` does all of the following from clean checkouts:
 
 1. fetches the exact RoomEQ commit and rejects any identity mismatch;
-2. runs selected upstream `roomeq-engine`, `roomeq-workflow`, and `roomeq-qa` contracts;
-3. fetches the exact CamillaDSP commit and rejects any identity mismatch;
-4. runs CamillaDSP library tests without default optional features;
-5. validates source version, source license, and required source surfaces against `config/room-correction-reference-v1.json`;
-6. emits machine-readable Aurora evidence;
-7. mutates the expected RoomEQ pin and requires the analyzer to fail closed.
+2. runs the selected `roomeq-engine` and `roomeq-qa` contracts;
+3. runs the exact pinned RoomEQ DSP-realization regression `dsp_realization::tests::mixed_fir_iir_replay_matches_independent_complex_branch_sum` and requires the Rust test summary to report exactly `1 passed; 0 failed`, so a zero-test filter cannot pass silently;
+4. fetches the exact CamillaDSP commit and rejects any identity mismatch;
+5. generates a dependency lock for the pinned CamillaDSP source revision, records its SHA-256, then runs CamillaDSP library tests with `--locked` and without default optional features;
+6. validates source version, source license, required source surfaces and generated dependency-lock evidence against `config/room-correction-reference-v1.json`;
+7. emits machine-readable Aurora evidence;
+8. mutates the expected RoomEQ pin and requires the analyzer to fail closed.
 
-This establishes a reproducible external-reference baseline. It does **not** yet prove that an Aurora measurement is optimized correctly, that a RoomEQ export is reproduced exactly by CamillaDSP, or that any physical room/speaker response improves.
+This establishes the reproducible external-reference baseline. It does not by itself prove an Aurora room-correction result, physical speaker/sub alignment, acoustic improvement or measured latency.
 
-## Next Phase 10 evidence
+## Additional Phase 10 evidence
 
-The next bounded lane should use deterministic synthetic multichannel responses to exercise correction behavior without pretending synthetic data is a microphone measurement. It must cover at least dialogue/main-channel preservation, LFE/bass-management routing, crossover behavior, correction headroom, clipping prevention, and timing/phase semantics.
+PR #174 adds the deterministic synthetic multichannel RoomEQ lane. It exercises 7.1.4 optimization, all four PR-eligible LFE/sub topologies, multi-seat phase guards, final-chain headroom/peak constraints, Stage 3 policy plumbing, and corrupted-log/pin negative controls. The lane remains synthetic software-reference evidence, not microphone evidence.
 
-After that, a separate export/execution differential should generate a representable RoomEQ DSP graph, export it for CamillaDSP, process the same deterministic multichannel PCM through the reference graph and executor, and compare transfer-function/output semantics within declared tolerances. Unsupported graph features must fail closed rather than being silently simplified.
+PR #175 adds the separate RoomEQ -> CamillaDSP export/execution differential. It builds exact-pinned CamillaDSP, validates generated configuration, executes the required real-PCM contracts, proves unsupported graph semantics fail closed, and runs Aurora's real 12-channel 7.1.4 channel-order sentinel through CamillaDSP. The declared 7.1.4 logical-to-WAVE mapping is `[0,1,2,3,6,7,4,5,8,9,10,11]`, with front center preserved at index 2.
 
-Physical microphone sweeps, room impulse responses, speaker/sub timing, listening-area optimization, acoustic before/after metrics, and physical latency remain separate hardware/acoustic acceptance evidence.
+Together these lanes close Phase 10 only for the explicitly declared software/reference scope after their final-head CI is green. They do not establish arbitrary DSP-graph support, physical DAC/speaker routing, microphone-measured room correction, protected-service interoperability or certification.
 
 ## Truth boundary
 
-A green Phase 10 baseline means only that Aurora can reproduce the exact external source versions, their declared licensing boundary, required source/API surfaces, selected upstream tests, and fail-closed pinning. Room correction itself remains `REFERENCE-VALIDATION-IN-PROGRESS` until the deterministic optimizer and export/execution differential lanes are green.
+A green Phase 10 software/reference set means Aurora can reproduce the exact external source identities and licensing boundaries, exercise the declared non-vacuous upstream baseline tests, execute the selected deterministic synthetic optimizer semantics, and verify the declared RoomEQ-to-CamillaDSP PCM contract subset plus role-aware 7.1.4 channel mapping. Physical/acoustic acceptance remains separate evidence under the hardware critical path.
