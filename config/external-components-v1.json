@@ -335,6 +335,81 @@
       ]
     },
     {
+      "id": "aoo",
+      "upstream": "https://github.com/Spacechild1/aoo",
+      "decision": "evaluate-active",
+      "integration": "worker-thread-network-transport-candidate",
+      "tested_version": "2.0.0",
+      "pinned_commit": "dc2a5be2962ba02d6cebe297f31f2774f34e7bc7",
+      "license": "Standard Improved BSD License",
+      "roles": ["peer-udp-network-audio", "timestamped-pcm", "jitter-loss-handling", "packet-retransmission", "adaptive-clock-rate-correction"],
+      "object_metadata": "not-applicable-post-dsp-pcm-transport",
+      "production_ready": false,
+      "evidence": [
+        "config/open-audio-stack-v1.json",
+        "crates/aurora-realtime-audio-api/src/network.rs",
+        "crates/aurora-realtime-engine/src/network_bridge.rs",
+        "validation/open-audio-stack/aoo_aurora_contract_probe.c",
+        ".github/workflows/open-audio-stack-ci.yml",
+        "docs/adr/0021-open-pro-audio-stack-integration.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
+      "id": "nxp-genavb-tsn",
+      "upstream": "https://github.com/NXP/GenAVB_TSN",
+      "decision": "evaluate-active",
+      "integration": "platform-gated-network-transport-candidate",
+      "tested_version": "7.3.2",
+      "pinned_commit": "6b962d6c34b0c3f142295a213dfa70bda193b23d",
+      "license": "Mixed: main user-space stack BSD-3-Clause/CC0 surfaces; Linux modules include GPL-2.0-or-later and Linux-syscall-note surfaces",
+      "roles": ["avb-tsn", "gptp-8021as", "avtp-1722", "avdecc-1722-1", "milan", "hardware-media-clock-recovery"],
+      "object_metadata": "not-applicable-post-dsp-pcm-transport",
+      "production_ready": false,
+      "evidence": [
+        "config/open-audio-stack-v1.json",
+        ".github/workflows/open-audio-stack-ci.yml",
+        "docs/adr/0021-open-pro-audio-stack-integration.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
+      "id": "sound-open-firmware",
+      "upstream": "https://github.com/thesofproject/sof",
+      "decision": "evaluate-active",
+      "integration": "platform-gated-dsp-execution-candidate",
+      "tested_version": "commit-11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c",
+      "pinned_commit": "11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c",
+      "license": "BSD-3-Clause primary with additional permissive bundled-component notices",
+      "roles": ["imx8mp-hifi4-dsp", "fir", "iir", "drc", "src", "multichannel-pipeline"],
+      "object_metadata": "not-applicable-post-render-system-dsp",
+      "production_ready": false,
+      "evidence": [
+        "config/open-audio-stack-v1.json",
+        ".github/workflows/open-audio-stack-ci.yml",
+        "docs/adr/0021-open-pro-audio-stack-integration.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
+      "id": "videolan-libspatialaudio",
+      "upstream": "https://github.com/videolan/libspatialaudio",
+      "decision": "evaluate-active",
+      "integration": "replaceable-library-renderer-candidate",
+      "tested_version": "commit-d149ed9744fd399b835c6f2920511f8cbcfce5ea",
+      "pinned_commit": "d149ed9744fd399b835c6f2920511f8cbcfce5ea",
+      "license": "LGPL-2.1-or-later",
+      "roles": ["spatial-renderer-candidate", "object-rendering", "direct-speakers", "hoa", "binaural", "differential-validation"],
+      "object_metadata": "candidate-must-map-through-aurora-scene-contract",
+      "production_ready": false,
+      "evidence": [
+        "config/open-audio-stack-v1.json",
+        ".github/workflows/open-audio-stack-ci.yml",
+        "docs/adr/0021-open-pro-audio-stack-integration.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
       "id": "libmysofa",
       "upstream": "https://github.com/hoene/libmysofa",
       "decision": "defer-headphones",

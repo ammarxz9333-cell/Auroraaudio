@@ -60,6 +60,25 @@
       "truth_boundary": "Pinned Harletty JOC software is exercised through Aurora's hardware-neutral StreamingDecoder contract with explicit object-to-PCM-channel bindings, bounded priming/fault policy, bed routing, object gain rendering and speaker PCM mixing. In-process decoder panics are isolated on the media/control side, latched fail-closed across ordinary discontinuities, and require explicit recovery before a fresh priming epoch. Plain E-AC-3 is a fail-closed negative control. This is software-reference evidence only; it does not prove physical eARC capture, protected-service compatibility, final renderer quality, or Dolby certification."
     },
     {
+      "id": "network-audio-transport-contract",
+      "status": "covered",
+      "evidence_class": "virtual",
+      "simulator_capability": "network-audio-transport-contract",
+      "profiles": [
+        "healthy",
+        "overflow",
+        "format-drift",
+        "timestamp-discontinuity"
+      ],
+      "evidence": [
+        "crates/aurora-realtime-audio-api/src/network.rs",
+        "crates/aurora-realtime-audio-sim/src/network.rs",
+        "crates/aurora-realtime-engine/src/network_bridge.rs",
+        ".github/workflows/open-audio-stack-ci.yml"
+      ],
+      "truth_boundary": "Deterministic software-only coverage for Aurora-owned network transport lifecycle, exact PCM/timestamp identity, bounded overflow behavior, format-drift rejection and callback-to-worker timestamp continuity. It does not prove packets on a real network, RF loss behavior, peer clock quality, AVB/PTP hardware timestamps, AOO/GenAVB interoperability, multi-speaker physical sync or measured latency."
+    },
+    {
       "id": "output-dsp-chain",
       "status": "covered",
       "evidence_class": "virtual",

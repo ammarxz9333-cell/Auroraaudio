@@ -6,12 +6,14 @@
 mod backend;
 mod clock;
 mod loopback;
+mod network;
 mod profile;
 mod simulation;
 
 pub use backend::SimAudioBackend;
 pub use clock::{CallbackEvent, DeterministicRng, VirtualClock, VirtualScheduler};
 pub use loopback::{simulate_latency, LatencySimulationConfig, SimulatedLatencyReport};
+pub use network::{SimNetworkTransport, SimulatedNetworkBlock};
 pub use profile::{
     builtin_profile, load_fault_timeline, CallbackSizePolicy, FaultAction, FaultEvent,
     SimulationProfile, VirtualDevice, VirtualSampleFormat,

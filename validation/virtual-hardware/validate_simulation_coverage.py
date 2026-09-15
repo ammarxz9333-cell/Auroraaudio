@@ -16,6 +16,7 @@ DEFAULT_CONTRACT = ROOT / "config/simulation-coverage-v1.json"
 SIMULATORS = (
     Path(__file__).resolve().with_name("aurora_full_system_sim.py"),
     Path(__file__).resolve().with_name("aurora_resilience_sim.py"),
+    ROOT / "validation/open-audio-stack/network_transport_sim_contract.py",
 )
 VALID_STATUSES = {"covered", "planned", "physical-pending", "external-pending"}
 VALID_CLASSES = {"virtual", "software_reference", "physical", "external_integration"}
