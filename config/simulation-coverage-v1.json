@@ -64,9 +64,7 @@
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "output-dsp-chain",
-      "profiles": [
-        "none"
-      ],
+      "profiles": ["none"],
       "evidence": [
         "crates/aurora-dsp-basic/examples/process_7_1_4_file.rs",
         "validation/virtual-hardware/test-aurora-full-system-sim.sh"
@@ -77,151 +75,96 @@
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "render-contract",
-      "profiles": [
-        "none"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "frame-accounting",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "frame-accounting",
-      "profiles": [
-        "none",
-        "dropout",
-        "disconnect"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "dropout", "disconnect"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "channel-activity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "channel-activity",
-      "profiles": [
-        "none",
-        "channel-silence"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "channel-silence"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "channel-order",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "channel-order",
-      "profiles": [
-        "none",
-        "channel-swap"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "channel-swap"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "pcm-identity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "pcm-identity",
-      "profiles": [
-        "none",
-        "channel-silence",
-        "channel-swap"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "channel-silence", "channel-swap"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "tdm16-slot-mapping",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "tdm16-slot-mapping",
-      "profiles": [
-        "none",
-        "tdm-padding-corruption"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["none", "tdm-padding-corruption"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "xrun-dropout",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "xrun-dropout",
-      "profiles": [
-        "dropout"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["dropout"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "device-disconnect",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "device-disconnect",
-      "profiles": [
-        "disconnect"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["disconnect"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "clock-drift",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "clock-drift",
-      "profiles": [
-        "drift"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["drift"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "sample-rate-integrity",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "sample-rate-integrity",
-      "profiles": [
-        "sample-rate-change"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["sample-rate-change"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "latency-budget",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "latency-budget",
-      "profiles": [
-        "latency-spike"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["latency-spike"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "non-finite-protection",
       "status": "covered",
       "evidence_class": "virtual",
       "simulator_capability": "non-finite-protection",
-      "profiles": [
-        "non-finite"
-      ],
-      "evidence": [
-        "validation/virtual-hardware/aurora_full_system_sim.py"
-      ]
+      "profiles": ["non-finite"],
+      "evidence": ["validation/virtual-hardware/aurora_full_system_sim.py"]
     },
     {
       "id": "moving-joc-metadata",
@@ -387,10 +330,27 @@
       "truth_boundary": "Executable virtual evidence drives Aurora's DuplexStateMachine through bounded exponential recovery backoff, successful late reappearance, stable-run history reset, fail-closed exhaustion and flapping-device history retention. Backend reopen timing and physical device hotplug remain unproven."
     },
     {
+      "id": "synthetic-multichannel-room-correction-reference",
+      "status": "covered",
+      "evidence_class": "software_reference",
+      "profiles": [
+        "healthy",
+        "corrupted-multichannel-summary",
+        "pinned-commit-mismatch"
+      ],
+      "evidence": [
+        "config/room-correction-synthetic-v1.json",
+        "validation/room-correction/room_correction_synthetic_evidence.py",
+        ".github/workflows/room-correction-synthetic-ci.yml",
+        "docs/room-correction-synthetic.md"
+      ],
+      "truth_boundary": "Deterministic software-reference coverage for RoomEQ 7.1.4 synthetic optimization, PR-eligible LFE/sub topologies, multi-seat phase guards and Stage 3 safety-policy plumbing. The workflow emits healthy evidence plus corrupted-multichannel and contract-pin-mismatch fail-closed controls. This is not microphone/acoustic evidence, listening evidence, measured physical headroom/latency, RoomEQ-to-CamillaDSP execution fidelity, or proof of MIMO/SIMO room-field control."
+    },
+    {
       "id": "multi-speaker-room-field-control-simulation",
       "status": "planned",
       "evidence_class": "virtual",
-      "truth_boundary": "No MIMO/SIMO multi-speaker low-frequency field-control optimizer has been implemented; synthetic-room validation would precede any acoustic claim."
+      "truth_boundary": "No MIMO/SIMO multi-speaker low-frequency field-control optimizer has been implemented; the covered synthetic RoomEQ reference lane is narrower and does not establish this capability."
     },
     {
       "id": "physical-earc-ingress",
