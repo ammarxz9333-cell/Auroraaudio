@@ -14,6 +14,7 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 const SAMPLE_RATE: u32 = 48_000;
 const BLOCK_FRAMES: usize = 256;
 const CHANNELS: usize = 12;
+const SETTLE_BLOCKS_AFTER_METADATA_CHANGE: usize = 3;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
     let shim = env::var("AURORA_LIBSPATIALAUDIO_SHIM")?;
@@ -35,15 +36,16 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         output_storage.iter_mut().map(Vec::as_mut_slice).collect();
 
     // Exact nominal directions must agree between the native PCM renderer and
-    // Aurora's independent VBAP implementation. Two native calls cover the
-    // 255-frame direct-path delay and one-block metadata interpolation before
-    // the steady-state channel-energy comparison.
+    // Aurora's independent VBAP implementation. A metadata change is linearly
+    // interpolated across one 256-frame block by upstream libspatialaudio, and
+    // the direct path is then delayed by 255 frames. Three calls therefore
+    // expose the first complete steady-state block after each position change.
     for (position, expected_channel) in [
         (Vector3::new(-0.5, 0.866_025_4, 0.0), 0_usize),
         (Vector3::new(0.5, 0.866_025_4, 0.0), 1_usize),
         (Vector3::new(0.0, 1.0, 0.0), 2_usize),
     ] {
-        render_twice(
+        render_settled(
             &mut renderer,
             &listener_origin(),
             position,
@@ -90,7 +92,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         orientation: Vector3::new(1.0, 0.0, 0.0),
         ear_height: 1.2,
     };
-    render_twice(
+    render_settled(
         &mut renderer,
         &moved_listener,
         Vector3::new(11.0, 20.0, 2.0),
@@ -127,12 +129,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!(
-        "aurora-libspatialaudio-runtime: PASS outputs={CHANNELS} rate={SAMPLE_RATE} block={BLOCK_FRAMES} latency=255 rust_allocations=0 semantic_differential=fl-fr-fc transform_max_delta={max_delta}"
+        "aurora-libspatialaudio-runtime: PASS outputs={CHANNELS} rate={SAMPLE_RATE} block={BLOCK_FRAMES} latency=255 settle_blocks={SETTLE_BLOCKS_AFTER_METADATA_CHANGE} rust_allocations=0 semantic_differential=fl-fr-fc transform_max_delta={max_delta}"
     );
     Ok(())
 }
 
-fn render_twice(
+fn render_settled(
     renderer: &mut LibspatialaudioRenderer,
     listener: &Listener,
     position: Vector3,
@@ -146,8 +148,9 @@ fn render_twice(
         },
         samples: input,
     }];
-    renderer.render_pcm(listener, &block, output)?;
-    renderer.render_pcm(listener, &block, output)?;
+    for _ in 0..SETTLE_BLOCKS_AFTER_METADATA_CHANGE {
+        renderer.render_pcm(listener, &block, output)?;
+    }
     Ok(())
 }
 
