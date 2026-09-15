@@ -103,10 +103,11 @@ pub fn materialize_realtime_engine_with_pcm_renderer(
 
 #[cfg(test)]
 mod tests {
-    use aurora_core::{Listener, Speaker};
     use aurora_dsp_api::{RealtimeDelayProcessor, RealtimeDspFault};
     use aurora_realtime_engine::{ProcessStatus, RealTimeEngineConfig, TestSignal};
-    use aurora_renderer_api::{ObjectPcmBlock, PcmRendererError};
+    use aurora_renderer_api::{
+        ObjectPcmBlock, PcmListener as Listener, PcmRendererError, PcmSpeaker as Speaker,
+    };
 
     use super::*;
 
