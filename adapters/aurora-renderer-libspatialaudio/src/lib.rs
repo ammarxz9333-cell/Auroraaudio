@@ -275,7 +275,7 @@ impl ObjectPcmRenderer for LibspatialaudioRenderer {
         &mut self,
         listener: &Listener,
         objects: &[ObjectPcmBlock<'_>],
-        output: &mut [&mut [f32]],
+        output: &mut [Vec<f32>],
     ) -> Result<(), PcmRendererError> {
         if !self.configured {
             return Err(PcmRendererError::NotConfigured);

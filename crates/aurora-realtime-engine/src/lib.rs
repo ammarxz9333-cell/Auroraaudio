@@ -43,7 +43,8 @@ use std::time::{Duration, Instant};
 use aurora_core::{ChannelRole, Speaker, StandardLayout, Vector3};
 use aurora_dsp_api::{RealtimeDelayProcessor, RealtimeDspFault};
 use aurora_renderer_api::{
-    RenderObject, Renderer, RendererCapabilities, RendererError, RendererScratch, SpeakerGain,
+    ObjectPcmBlock, ObjectPcmRenderer, PcmRendererError, RenderObject, Renderer,
+    RendererCapabilities, RendererError, RendererScratch, RendererScratchSize, SpeakerGain,
 };
 use aurora_scene::RenderScene;
 use thiserror::Error;
@@ -191,7 +192,7 @@ impl Default for RealTimeMetrics {
     }
 }
 
-/// Setup-time validation errors for a caller-supplied renderer.
+/// Setup-time validation errors for a caller-supplied gain renderer.
 #[derive(Debug, Error, PartialEq)]
 pub enum PreparedRendererError {
     /// Prepared renderer output channel count does not match the scene topology.
@@ -200,6 +201,14 @@ pub enum PreparedRendererError {
     /// Prepared renderer did not expose a valid configured scratch requirement.
     #[error("prepared renderer contract error: {0}")]
     Contract(#[source] RendererError),
+}
+
+/// Setup-time validation errors for a caller-supplied object-PCM renderer.
+#[derive(Debug, Error, PartialEq)]
+pub enum PreparedPcmRendererError {
+    /// Prepared renderer output channel count does not match the scene topology.
+    #[error("prepared PCM renderer has {actual} output channels, expected {expected}")]
+    ChannelCount { expected: usize, actual: usize },
 }
 
 /// Setup-time validation errors for a caller-supplied realtime delay processor.
@@ -235,15 +244,21 @@ impl PreparedDspError {
 /// Setup-time real-time engine errors.
 #[derive(Debug, Error)]
 pub enum RealTimeEngineError {
-    /// Renderer setup failed.
+    /// Gain-renderer setup failed.
     #[error("renderer error: {0}")]
     Renderer(#[from] RendererError),
+    /// Object-PCM renderer setup failed.
+    #[error("PCM renderer error: {0}")]
+    PcmRenderer(#[from] PcmRendererError),
     /// DSP setup failed on the compatibility/default implementation path.
     #[error("realtime DSP setup fault: {0}")]
     Dsp(#[from] RealtimeDspFault),
-    /// Caller-supplied renderer failed setup validation.
+    /// Caller-supplied gain renderer failed setup validation.
     #[error("prepared renderer setup error: {0}")]
     PreparedRenderer(#[from] PreparedRendererError),
+    /// Caller-supplied object-PCM renderer failed setup validation.
+    #[error("prepared PCM renderer setup error: {0}")]
+    PreparedPcmRenderer(#[from] PreparedPcmRendererError),
     /// Caller-supplied realtime DSP failed setup validation.
     #[error("prepared realtime DSP setup error: {0}")]
     PreparedDsp(#[from] PreparedDspError),
@@ -352,9 +367,14 @@ impl<T: Copy + Default> RingBuffer<T> {
 }
 
 /// Preallocated real-time block processor.
+///
+/// Exactly one render backend is active for the lifetime of an engine: either
+/// the legacy gain renderer or an object-PCM renderer. Both feed the same
+/// post-render DSP, delay, interleave, and transport-facing output boundary.
 pub struct RealTimeEngine {
     config: RealTimeEngineConfig,
-    renderer: Box<dyn Renderer>,
+    renderer: Option<Box<dyn Renderer>>,
+    pcm_renderer: Option<Box<dyn ObjectPcmRenderer>>,
     renderer_dynamic_delay_values: bool,
     listener: aurora_core::Listener,
     trajectory: aurora_scene::Trajectory,
@@ -412,10 +432,7 @@ impl RealTimeEngine {
         })
     }
 
-    /// Creates a real-time engine from caller-supplied prepared renderer and DSP components.
-    ///
-    /// Both components are validated on the setup thread before activation. No active engine
-    /// is mutated if renderer or DSP validation fails.
+    /// Creates a real-time engine from caller-supplied prepared gain renderer and DSP components.
     pub fn new_with_prepared_components(
         scene: RenderScene,
         config: RealTimeEngineConfig,
@@ -423,7 +440,7 @@ impl RealTimeEngine {
         renderer: Box<dyn Renderer>,
         delay_processor: Box<dyn RealtimeDelayProcessor>,
     ) -> Result<Self, RealTimeEngineError> {
-        Self::build(
+        Self::build_gain(
             scene,
             config,
             estimated_device_latency_frames,
@@ -432,7 +449,28 @@ impl RealTimeEngine {
         )
     }
 
-    fn build(
+    /// Creates a real-time engine from a prepared object-PCM renderer and DSP.
+    ///
+    /// This is mutually exclusive with the gain-renderer path. The PCM renderer
+    /// writes the engine's preallocated planar buffers directly; the same DSP,
+    /// delay and interleave stages then process those buffers.
+    pub fn new_with_prepared_pcm_components(
+        scene: RenderScene,
+        config: RealTimeEngineConfig,
+        estimated_device_latency_frames: usize,
+        renderer: Box<dyn ObjectPcmRenderer>,
+        delay_processor: Box<dyn RealtimeDelayProcessor>,
+    ) -> Result<Self, RealTimeEngineError> {
+        Self::build_pcm(
+            scene,
+            config,
+            estimated_device_latency_frames,
+            renderer,
+            delay_processor,
+        )
+    }
+
+    fn build_gain(
         scene: RenderScene,
         config: RealTimeEngineConfig,
         estimated_device_latency_frames: usize,
@@ -490,39 +528,15 @@ impl RealTimeEngine {
         if config.apply_geometric_delay || renderer_capabilities.dynamic_delay_values() {
             max_delay = max_delay.max(CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES);
         }
-        let actual_channels = delay_processor.channel_count();
-        if actual_channels != channel_count {
-            return Err(PreparedDspError::ChannelCount {
-                expected: channel_count,
-                actual: actual_channels,
-            }
-            .into());
-        }
-        let actual_capacity = delay_processor.max_delay_samples();
-        if !actual_capacity.is_finite() || actual_capacity < max_delay {
-            return Err(PreparedDspError::DelayCapacity {
-                required: max_delay,
-                actual: actual_capacity,
-            }
-            .into());
-        }
-        delay_processor
-            .set_delays(&delays)
-            .map_err(PreparedDspError::from_initial_fault)?;
+        validate_delay_processor(&mut *delay_processor, channel_count, max_delay, &delays)?;
         let dsp_latency_frames = delay_processor.latency_frames();
         let renderer_latency_frames = renderer.latency_frames();
-        let block_duration_budget =
-            Duration::from_secs_f64(config.block_size as f64 / f64::from(config.sample_rate));
-        let metrics = RealTimeMetrics {
+        let metrics = make_metrics(
+            &config,
             renderer_latency_frames,
             dsp_latency_frames,
             estimated_device_latency_frames,
-            estimated_end_to_end_latency_frames: renderer_latency_frames
-                + dsp_latency_frames
-                + estimated_device_latency_frames,
-            block_duration_budget,
-            ..RealTimeMetrics::default()
-        };
+        );
         Ok(Self {
             mono: vec![0.0; config.block_size],
             planar: vec![vec![0.0; config.block_size]; channel_count],
@@ -532,8 +546,96 @@ impl RealTimeEngine {
             renderer_scratch,
             delay_processor,
             output_roles,
-            renderer,
+            renderer: Some(renderer),
+            pcm_renderer: None,
             renderer_dynamic_delay_values: renderer_capabilities.dynamic_delay_values(),
+            listener: scene.listener,
+            trajectory: scene.trajectory,
+            object_gain: db_to_gain(scene.object.gain_db),
+            config,
+            metrics,
+            frame_cursor: 0,
+            phase: 0.0,
+            noise_state: 0x1234_ABCD,
+            noise_filter_state: 0.0,
+            impulse_emitted: false,
+            delay_reports,
+        })
+    }
+
+    fn build_pcm(
+        scene: RenderScene,
+        config: RealTimeEngineConfig,
+        estimated_device_latency_frames: usize,
+        renderer: Box<dyn ObjectPcmRenderer>,
+        mut delay_processor: Box<dyn RealtimeDelayProcessor>,
+    ) -> Result<Self, RealTimeEngineError> {
+        validate_scene_config(&scene, &config)?;
+        let ordered_speakers = scene.ordered_speakers()?;
+        let channel_count = ordered_speakers.len();
+        let output_roles = ordered_speakers
+            .iter()
+            .map(|speaker| speaker.channel_role.clone())
+            .collect::<Vec<_>>();
+        let actual_renderer_channels = renderer.output_channel_count();
+        if actual_renderer_channels != channel_count {
+            return Err(PreparedPcmRendererError::ChannelCount {
+                expected: channel_count,
+                actual: actual_renderer_channels,
+            }
+            .into());
+        }
+
+        let geometric = calculate_geometric_delays(
+            &ordered_speakers,
+            scene.listener,
+            config.sample_rate,
+            config.speed_of_sound,
+        );
+        let delay_reports = geometric
+            .iter()
+            .enumerate()
+            .map(|(output_index, delay)| RealTimeDelayReport {
+                output_index,
+                channel_role: delay.channel_role.clone(),
+                distance_meters: delay.distance_meters,
+                delay_milliseconds: delay.delay_milliseconds,
+                delay_samples: delay.delay_samples,
+            })
+            .collect::<Vec<_>>();
+        let delays = if config.apply_geometric_delay {
+            geometric
+                .iter()
+                .map(|delay| delay.delay_samples)
+                .collect::<Vec<_>>()
+        } else {
+            vec![0.0; channel_count]
+        };
+        let mut max_delay = delays.iter().copied().fold(0.0_f32, f32::max).ceil() + 2.0;
+        if config.apply_geometric_delay {
+            max_delay = max_delay.max(CURRENT_DYNAMIC_DELAY_CAPACITY_SAMPLES);
+        }
+        validate_delay_processor(&mut *delay_processor, channel_count, max_delay, &delays)?;
+        let dsp_latency_frames = delay_processor.latency_frames();
+        let renderer_latency_frames = renderer.latency_frames();
+        let metrics = make_metrics(
+            &config,
+            renderer_latency_frames,
+            dsp_latency_frames,
+            estimated_device_latency_frames,
+        );
+        Ok(Self {
+            mono: vec![0.0; config.block_size],
+            planar: vec![vec![0.0; config.block_size]; channel_count],
+            delayed: vec![vec![0.0; config.block_size]; channel_count],
+            gains: vec![SpeakerGain::default(); channel_count],
+            delays_scratch: vec![0.0; channel_count],
+            renderer_scratch: RendererScratch::new(RendererScratchSize { float_count: 0 }),
+            delay_processor,
+            output_roles,
+            renderer: None,
+            pcm_renderer: Some(renderer),
+            renderer_dynamic_delay_values: false,
             listener: scene.listener,
             trajectory: scene.trajectory,
             object_gain: db_to_gain(scene.object.gain_db),
@@ -584,10 +686,12 @@ impl RealTimeEngine {
         self.metrics.callback_count = self.metrics.callback_count.saturating_add(1);
         let output_channels = self.output_roles.len();
         let chunk_samples = self.config.block_size.saturating_mul(output_channels);
+        let full_block_only = self.pcm_renderer.is_some();
         let shape_valid = output_channels > 0
             && chunk_samples > 0
             && output.len() % output_channels == 0
-            && !output.is_empty();
+            && !output.is_empty()
+            && (!full_block_only || output.len() % chunk_samples == 0);
         let result = if shape_valid {
             let mut result = Ok(());
             for chunk in output.chunks_mut(chunk_samples) {
@@ -630,6 +734,9 @@ impl RealTimeEngine {
         }
         let frame_count = output.len() / output_channels;
         if frame_count == 0 || frame_count > self.config.block_size {
+            return Err(RealTimeFault::OutputBuffer);
+        }
+        if self.pcm_renderer.is_some() && frame_count != self.config.block_size {
             return Err(RealTimeFault::OutputBuffer);
         }
         self.fill_mono(input, frame_count)?;
@@ -724,7 +831,27 @@ impl RealTimeEngine {
             position,
             gain: self.object_gain,
         };
-        self.renderer
+
+        for channel in &mut self.planar {
+            channel
+                .iter_mut()
+                .take(frame_count)
+                .for_each(|sample| *sample = 0.0);
+        }
+
+        if let Some(renderer) = self.pcm_renderer.as_mut() {
+            let block = [ObjectPcmBlock {
+                object,
+                samples: &self.mono[..frame_count],
+            }];
+            renderer
+                .render_pcm(&self.listener, &block, &mut self.planar)
+                .map_err(|_| RealTimeFault::Renderer)?;
+            return Ok(());
+        }
+
+        let renderer = self.renderer.as_mut().ok_or(RealTimeFault::Renderer)?;
+        renderer
             .render_gains(
                 &self.listener,
                 std::slice::from_ref(&object),
@@ -742,12 +869,6 @@ impl RealTimeEngine {
                 .map_err(|_| RealTimeFault::Dsp)?;
         }
 
-        for channel in &mut self.planar {
-            channel
-                .iter_mut()
-                .take(frame_count)
-                .for_each(|sample| *sample = 0.0);
-        }
         for (channel, gain) in self.planar.iter_mut().zip(self.gains.iter()) {
             for (target, mono) in channel.iter_mut().zip(self.mono.iter()).take(frame_count) {
                 *target = *mono * gain.gain;
@@ -796,6 +917,54 @@ impl RealTimeEngine {
             self.metrics.max_callback_duration,
             self.metrics.block_duration_budget,
         );
+    }
+}
+
+fn validate_delay_processor(
+    delay_processor: &mut dyn RealtimeDelayProcessor,
+    channel_count: usize,
+    max_delay: f32,
+    delays: &[f32],
+) -> Result<(), RealTimeEngineError> {
+    let actual_channels = delay_processor.channel_count();
+    if actual_channels != channel_count {
+        return Err(PreparedDspError::ChannelCount {
+            expected: channel_count,
+            actual: actual_channels,
+        }
+        .into());
+    }
+    let actual_capacity = delay_processor.max_delay_samples();
+    if !actual_capacity.is_finite() || actual_capacity < max_delay {
+        return Err(PreparedDspError::DelayCapacity {
+            required: max_delay,
+            actual: actual_capacity,
+        }
+        .into());
+    }
+    delay_processor
+        .set_delays(delays)
+        .map_err(PreparedDspError::from_initial_fault)?;
+    Ok(())
+}
+
+fn make_metrics(
+    config: &RealTimeEngineConfig,
+    renderer_latency_frames: usize,
+    dsp_latency_frames: usize,
+    estimated_device_latency_frames: usize,
+) -> RealTimeMetrics {
+    let block_duration_budget =
+        Duration::from_secs_f64(config.block_size as f64 / f64::from(config.sample_rate));
+    RealTimeMetrics {
+        renderer_latency_frames,
+        dsp_latency_frames,
+        estimated_device_latency_frames,
+        estimated_end_to_end_latency_frames: renderer_latency_frames
+            + dsp_latency_frames
+            + estimated_device_latency_frames,
+        block_duration_budget,
+        ..RealTimeMetrics::default()
     }
 }
 
@@ -933,6 +1102,75 @@ mod tests {
     #[global_allocator]
     static TEST_ALLOCATOR: CountingAllocator = CountingAllocator;
 
+    #[derive(Debug)]
+    struct PassThroughPcmRenderer {
+        channels: usize,
+        block_size: usize,
+        latency_frames: usize,
+    }
+
+    impl ObjectPcmRenderer for PassThroughPcmRenderer {
+        fn configure(
+            &mut self,
+            layout: Vec<Speaker>,
+            _sample_rate: u32,
+            block_size: usize,
+            _max_objects: usize,
+        ) -> Result<(), PcmRendererError> {
+            self.channels = layout.iter().filter(|speaker| speaker.enabled).count();
+            self.block_size = block_size;
+            Ok(())
+        }
+
+        fn render_pcm(
+            &mut self,
+            _listener: &Listener,
+            objects: &[ObjectPcmBlock<'_>],
+            output: &mut [Vec<f32>],
+        ) -> Result<(), PcmRendererError> {
+            if output.len() != self.channels {
+                return Err(PcmRendererError::OutputChannelCount {
+                    required: self.channels,
+                    actual: output.len(),
+                });
+            }
+            let Some(object) = objects.first() else {
+                return Ok(());
+            };
+            if object.samples.len() != self.block_size {
+                return Err(PcmRendererError::InputBlockSize {
+                    object_index: 0,
+                    required: self.block_size,
+                    actual: object.samples.len(),
+                });
+            }
+            for (index, channel) in output.iter_mut().enumerate() {
+                if channel.len() != self.block_size {
+                    return Err(PcmRendererError::OutputBlockSize {
+                        channel: index,
+                        required: self.block_size,
+                        actual: channel.len(),
+                    });
+                }
+                channel.fill(0.0);
+            }
+            if let Some(first) = output.first_mut() {
+                first.copy_from_slice(object.samples);
+            }
+            Ok(())
+        }
+
+        fn reset(&mut self) {}
+
+        fn latency_frames(&self) -> usize {
+            self.latency_frames
+        }
+
+        fn output_channel_count(&self) -> usize {
+            self.channels
+        }
+    }
+
     fn record_process_status(all_blocks_processed: &mut bool, status: ProcessStatus) {
         *all_blocks_processed &= status == ProcessStatus::Ok;
     }
@@ -992,6 +1230,48 @@ mod tests {
         let mut output = vec![0.0; 128];
         for _ in 0..16 {
             let _ = engine.process_interleaved(None, &mut output);
+        }
+        let allocations = measured_allocations(|| {
+            for _ in 0..1_000 {
+                let _ = engine.process_interleaved(None, &mut output);
+            }
+        });
+        assert_eq!(allocations, 0);
+    }
+
+    #[test]
+    fn pcm_renderer_uses_same_post_render_pipeline_and_reports_latency() {
+        let mut engine = pcm_engine(TestSignal::Sine, false, 64);
+        let mut output = vec![0.0; 128];
+        assert_eq!(engine.metrics().renderer_latency_frames, 17);
+        assert_eq!(
+            engine.process_interleaved(None, &mut output),
+            ProcessStatus::Ok
+        );
+        assert!(output.iter().any(|sample| sample.abs() > f32::EPSILON));
+        assert!(output.iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
+    fn pcm_renderer_rejects_partial_host_tail_fail_closed() {
+        let mut engine = pcm_engine(TestSignal::Sine, false, 64);
+        let mut output = vec![1.0; 64 * 2 + 16 * 2];
+        assert_eq!(
+            engine.process_interleaved(None, &mut output),
+            ProcessStatus::Fault(RealTimeFault::OutputBuffer)
+        );
+        assert!(output.iter().all(|sample| *sample == 0.0));
+    }
+
+    #[test]
+    fn pcm_renderer_accepts_multi_block_host_callback_without_allocating() {
+        let mut engine = pcm_engine(TestSignal::RotatingSine, false, 64);
+        let mut output = vec![0.0; 64 * 2 * 3];
+        for _ in 0..8 {
+            assert_eq!(
+                engine.process_interleaved(None, &mut output),
+                ProcessStatus::Ok
+            );
         }
         let allocations = measured_allocations(|| {
             for _ in 0..1_000 {
@@ -1250,6 +1530,7 @@ mod tests {
     #[test]
     fn shutdown_by_drop_has_no_deadlock() {
         drop(engine(TestSignal::Silence, false));
+        drop(pcm_engine(TestSignal::Silence, false, 64));
     }
 
     fn config(test_signal: TestSignal, apply_delay: bool) -> RealTimeEngineConfig {
@@ -1299,6 +1580,38 @@ mod tests {
             Box::new(renderer),
             Box::new(delay),
         )
+    }
+
+    fn pcm_engine(test_signal: TestSignal, apply_delay: bool, block_size: usize) -> RealTimeEngine {
+        let scene = scene();
+        let config = RealTimeEngineConfig {
+            sample_rate: 48_000,
+            block_size,
+            input_channels: 0,
+            apply_geometric_delay: apply_delay,
+            speed_of_sound: 343.0,
+            test_signal,
+        };
+        let renderer = PassThroughPcmRenderer {
+            channels: 2,
+            block_size,
+            latency_frames: 17,
+        };
+        let requirements =
+            RealTimeEngine::delay_requirements(&scene, &config, RendererCapabilities::default())
+                .unwrap();
+        let delay = aurora_dsp_basic::DelayProcessor::new(
+            requirements.channel_count(),
+            requirements.max_delay_samples(),
+        );
+        RealTimeEngine::new_with_prepared_pcm_components(
+            scene,
+            config,
+            64,
+            Box::new(renderer),
+            Box::new(delay),
+        )
+        .unwrap()
     }
 
     fn engine(test_signal: TestSignal, apply_delay: bool) -> RealTimeEngine {

@@ -6,6 +6,7 @@ on:
       - "crates/aurora-realtime-audio-api/**"
       - "crates/aurora-realtime-audio-sim/**"
       - "crates/aurora-realtime-engine/**"
+      - "crates/aurora-runtime-materialization/**"
       - "config/open-audio-stack-v1.json"
       - "config/external-components-v1.json"
       - "validation/open-audio-stack/**"
@@ -41,15 +42,18 @@ jobs:
           cargo check --locked --all-targets --all-features \
             -p aurora-realtime-audio-api \
             -p aurora-realtime-audio-sim \
-            -p aurora-realtime-engine
+            -p aurora-realtime-engine \
+            -p aurora-runtime-materialization
           cargo clippy --locked --all-targets --all-features \
             -p aurora-realtime-audio-api \
             -p aurora-realtime-audio-sim \
-            -p aurora-realtime-engine -- -D warnings
+            -p aurora-realtime-engine \
+            -p aurora-runtime-materialization -- -D warnings
           cargo test --locked --all-features \
             -p aurora-realtime-audio-api \
             -p aurora-realtime-audio-sim \
-            -p aurora-realtime-engine
+            -p aurora-realtime-engine \
+            -p aurora-runtime-materialization
 
       - name: Install build dependencies
         run: |
