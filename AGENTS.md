@@ -19,7 +19,8 @@ Current canonical base:
 - PR #174 merged the deterministic synthetic 7.1.4 RoomEQ lane and simulation-coverage registration.
 - PR #175 merged the RoomEQ -> CamillaDSP PCM execution differential, role-aware 7.1/7.1.4 WAV mapping, real 12-channel CamillaDSP sentinel, fail-closed unsupported semantics, and non-vacuous RoomEQ reference regression into `main-v2` at merge commit `ed46a671cae70fa14c14658f6df89ca6eb6378ca`.
 - Phase 10 is complete for its declared **software/reference** scope. Physical room/DAC/speaker evidence remains separate and unproven.
-- Active Phase 11 work is PR #176 on `phase11-binaural-reference`.
+- PR #176 merged the Phase 11 pinned binaural-reference baseline into `main-v2` at merge commit `0b2b1d722f473db4caee43510c04914b2d217104`.
+- Active Phase 11 work is PR #177 on `phase11-binaural-differential`.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -61,6 +62,7 @@ Rules:
 - #173 — exact-pinned RoomEQ + CamillaDSP Phase 10 external-reference baseline.
 - #174 — deterministic RoomEQ 7.1.4 synthetic optimization, four PR-eligible LFE/sub topologies, phase/policy guards and simulation-coverage evidence.
 - #175 — exact RoomEQ -> CamillaDSP real-PCM execution differential, 7.1/7.1.4 semantic channel mapping, real 12-channel CamillaDSP sentinel, unsupported-graph fail-closed behavior, and hardened non-vacuous RoomEQ reference test.
+- #176 — exact-pinned Phase 11 binaural baseline with Google OBR, EBU BEAR, and `sofar`/`libmysofa` provenance, licensing/maturity boundaries, and executable upstream gates.
 
 These are software/reference milestones only. They do not establish physical eARC/DAC/acoustic behavior, protected-service compatibility, perceptual parity, or certification.
 
@@ -94,7 +96,7 @@ A green Phase 10 lane does **not** prove microphone/acoustic correction, physica
 
 ## 5. Phase 11 — binaural — active
 
-Active PR: #176 on branch `phase11-binaural-reference`.
+Merged baseline: PR #176 at `0b2b1d722f473db4caee43510c04914b2d217104`.
 
 Initial exact references:
 
@@ -120,7 +122,7 @@ Initial exact references:
 - boundary: Rust-native SOFA/HRTF/convolution **candidate only**, not selected runtime implementation;
 - pinned source publishes no root `Cargo.lock`; CI generates one, records SHA-256 and tests with `--locked`.
 
-Phase 11 baseline files in PR #176:
+Merged Phase 11 baseline files from #176:
 - `config/binaural-reference-v1.json`;
 - `validation/binaural/binaural_reference_evidence.py`;
 - `.github/workflows/binaural-reference-ci.yml`;
@@ -128,18 +130,28 @@ Phase 11 baseline files in PR #176:
 - `config/external-components-v1.json` registrations;
 - `THIRD_PARTY_LICENSES.md` boundaries.
 
-The first baseline proves provenance and selected upstream build/test execution only. It does not yet prove Aurora binaural output, agreement between independent renderers, personalized HRTF quality, perceptual front/back/elevation performance, head-tracker hardware behavior, or measured latency.
+Active PR #177 adds the first Aurora-vs-reference execution differential:
+- exact-pinned OBR CLI built from `//obr/cli:obr_cli` and kept external;
+- dependency-neutral Aurora `GeometricBinaural` probe from `aurora-renderer-basic`;
+- deterministic 16-bit/48 kHz channel-isolated 7.1.4 impulse fixtures;
+- canonical sequential OBR/Aurora order `FL, FR, FC, LFE, SL, SR, SBL, SBR, TFL, TFR, TRL, TRR` with no WAVE speaker-mask remap at this boundary;
+- directional left/right/center semantic checks, finite/non-zero output, exact frame accounting and mirror-pair checks;
+- LFE execution integrity only, with no spatial-direction claim;
+- OBR-pin drift and channel-order drift negative controls.
+
+The #177 differential compares bounded semantics rather than raw PCM because Aurora's geometric model and OBR implement different transfer functions. A green lane does not prove HRTF parity, front/back or elevation discrimination, personalized HRTF quality, head tracking, perceptual quality, physical latency, or certification.
 
 ## 6. Current work / Next actions
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Require fresh final-head CI for PR #176, especially `Binaural Reference CI`, plus all repository-wide checks triggered by governance/handoff edits.
-2. Fix any OBR/BEAR/sofar build/test or provenance failures without weakening the declared contract. Merge #176 only when final-head checks are green and review threads are resolved.
-3. Add a deterministic Phase 11 semantic differential for channel-based 7.1.4, objects and Ambisonics. Compare bounded binaural semantics rather than requiring byte-identical PCM.
+1. Require fresh final-head CI for PR #177, especially `Binaural 7.1.4 Differential CI`, plus all repository-wide checks triggered by `AGENTS.md` and the new Rust example.
+2. Fix any compile, OBR execution, threshold, frame-accounting, or review failures without weakening the semantic truth boundary. Merge #177 only when final-head checks are green and review threads are resolved.
+3. Add deterministic object and Ambisonics binaural differentials against independent references; keep object/channel/HOA evidence distinct.
 4. Add head-rotation, HRTF-transition continuity, finite-output, front/back and elevation evidence. Treat perceptual claims separately from deterministic software metrics.
-5. After the declared Phase 11 software/reference scope is complete, continue Phase 12 runtime-contract/realtime-safety hardening unless a higher-priority regression appears.
-6. Keep physical tracker #143 visible in parallel; resume physical eARC/JOC validation when authorized hardware is available, but do not block truthful software-only progress on absent hardware.
+5. Register each new simulator-testable Phase 11 capability in `config/simulation-coverage-v1.json` before marking it covered.
+6. After the declared Phase 11 software/reference scope is complete, continue Phase 12 runtime-contract/realtime-safety hardening unless a higher-priority regression appears.
+7. Keep physical tracker #143 visible in parallel; resume physical eARC/JOC validation when authorized hardware is available, but do not block truthful software-only progress on absent hardware.
 
 ## 7. Physical acceptance critical path — tracker #143
 
@@ -185,4 +197,4 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-Also run every domain-specific gate touched by the change. Phase 11 pinned-reference work must run `Binaural Reference CI`. Tooling/simulation/reference gates must never be reported as physical or perceptual proof.
+Also run every domain-specific gate touched by the change. Phase 11 pinned-reference work must run `Binaural Reference CI`; the channel-based differential must run `Binaural 7.1.4 Differential CI`. Tooling/simulation/reference gates must never be reported as physical or perceptual proof.
