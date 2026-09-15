@@ -43,6 +43,50 @@ def load_toml(path: Path) -> dict[str, Any]:
         return tomllib.load(handle)
 
 
+def validate_registry(
+    registry: dict[str, Any], references: dict[str, Any]
+) -> dict[str, Any]:
+    reference_to_component = {
+        "google_obr": "google-obr",
+        "ebu_bear": "ebu-bear",
+        "sofar": "sofar",
+    }
+    components = registry.get("components", [])
+    ids = [component.get("id") for component in components]
+    duplicate_ids = sorted({component_id for component_id in ids if ids.count(component_id) > 1})
+    entries = {component.get("id"): component for component in components}
+    pin_checks: dict[str, bool] = {}
+    actual_pins: dict[str, str | None] = {}
+    expected_pins: dict[str, str] = {}
+    missing_components: list[str] = []
+
+    for reference_name, component_id in reference_to_component.items():
+        expected = references[reference_name]["pinned_commit"]
+        entry = entries.get(component_id)
+        actual = entry.get("pinned_commit") if entry else None
+        expected_pins[component_id] = expected
+        actual_pins[component_id] = actual
+        pin_checks[component_id] = actual == expected
+        if entry is None:
+            missing_components.append(component_id)
+
+    checks = {
+        "schema_version": registry.get("schema_version") == 1,
+        "unique_component_ids": not duplicate_ids,
+        "required_components_present": not missing_components,
+        "pinned_commits_match_contract": all(pin_checks.values()),
+    }
+    return {
+        "expected_pins": expected_pins,
+        "actual_pins": actual_pins,
+        "pin_checks": pin_checks,
+        "missing_components": missing_components,
+        "duplicate_component_ids": duplicate_ids,
+        "checks": checks,
+        "pass": all(checks.values()),
+    }
+
+
 def validate_obr(root: Path, contract: dict[str, Any]) -> dict[str, Any]:
     actual_commit = git_head(root)
     surfaces_ok, missing = require_surfaces(root, contract["required_surfaces"])
@@ -134,6 +178,7 @@ def validate_sofar(root: Path, contract: dict[str, Any]) -> dict[str, Any]:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=Path, required=True)
+    parser.add_argument("--registry", type=Path, required=True)
     parser.add_argument("--obr", type=Path, required=True)
     parser.add_argument("--bear", type=Path, required=True)
     parser.add_argument("--sofar", type=Path, required=True)
@@ -141,18 +186,22 @@ def main() -> int:
     args = parser.parse_args()
 
     contract = json.loads(args.config.read_text(encoding="utf-8"))
+    registry_data = json.loads(args.registry.read_text(encoding="utf-8"))
     if contract.get("schema_version") != 1 or contract.get("roadmap_phase") != 11:
         raise SystemExit("unsupported binaural reference contract")
 
     references = contract["references"]
+    registry = validate_registry(registry_data, references)
     obr = validate_obr(args.obr, references["google_obr"])
     bear = validate_bear(args.bear, references["ebu_bear"])
     sofar = validate_sofar(args.sofar, references["sofar"])
-    verdict = obr["pass"] and bear["pass"] and sofar["pass"]
+    verdict = registry["pass"] and obr["pass"] and bear["pass"] and sofar["pass"]
     evidence = {
         "schema_version": 1,
         "roadmap_phase": 11,
         "contract_sha256": sha256(args.config),
+        "external_registry_sha256": sha256(args.registry),
+        "registry_consistency": registry,
         "obr": obr,
         "bear": bear,
         "sofar": sofar,
