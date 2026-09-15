@@ -143,11 +143,13 @@ impl NetworkAudioTransport for SimNetworkTransport {
 }
 
 fn payload_checksum(samples: &[f32]) -> u64 {
-    samples.iter().fold(0xcbf29ce484222325_u64, |state, sample| {
-        state
-            .wrapping_mul(0x100000001b3)
-            .wrapping_add(u64::from(sample.to_bits()))
-    })
+    samples
+        .iter()
+        .fold(0xcbf29ce484222325_u64, |state, sample| {
+            state
+                .wrapping_mul(0x100000001b3)
+                .wrapping_add(u64::from(sample.to_bits()))
+        })
 }
 
 #[cfg(test)]
@@ -225,9 +227,15 @@ mod tests {
             Err(NetworkTransportError::WorkerFault)
         );
         assert_eq!(transport.queued_blocks(), 1);
-        assert_eq!(transport.poll_event(), Some(NetworkTransportEvent::Prepared));
+        assert_eq!(
+            transport.poll_event(),
+            Some(NetworkTransportEvent::Prepared)
+        );
         assert_eq!(transport.poll_event(), Some(NetworkTransportEvent::Started));
-        assert_eq!(transport.poll_event(), Some(NetworkTransportEvent::Overflow));
+        assert_eq!(
+            transport.poll_event(),
+            Some(NetworkTransportEvent::Overflow)
+        );
     }
 
     #[test]
