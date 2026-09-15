@@ -51,6 +51,13 @@ jobs:
           assert cfg['saf_reference_commit'] == '18fd5aba46e20787b51f28f7197a68506c965c07'
           assert [entry['id'] for entry in cfg['layouts']] == ['7.1.4', '11.1.4-custom-reference']
           assert cfg['layouts'][1]['custom_role_channels'] == 4
+          trajectory = cfg['trajectory']
+          assert trajectory['duration_seconds'] == 2.0
+          assert trajectory['sample_rate'] == 48000
+          assert trajectory['block_size'] == 256
+          assert trajectory['nominal_azimuth_rate_deg_per_second'] == 180.0
+          assert trajectory['max_gain_step_per_block'] == 0.15
+          assert trajectory['normalization_tolerance'] == 0.001
           print('IMMERSIVE-LAYOUT-MATRIX-PASS')
           PY
 
@@ -116,8 +123,11 @@ jobs:
           cargo run -p aurora-simulation-assurance --release --bin aurora-validate-immersive-layout -- \
             --scene fixtures/scenes/7_1_4_reference.json \
             --output-dir output/immersive-layout-validation/7_1_4/aurora \
-            --duration-seconds 1.0 \
-            --sample-rate 48000
+            --duration-seconds 2.0 \
+            --sample-rate 48000 \
+            --block-size 256 \
+            --max-gain-step 0.15 \
+            --normalization-tolerance 0.001
 
       - name: Generate Aurora 11.1.4 custom-reference geometry evidence
         shell: bash
@@ -126,8 +136,11 @@ jobs:
           cargo run -p aurora-simulation-assurance --release --bin aurora-validate-immersive-layout -- \
             --scene fixtures/scenes/11_1_4_reference.json \
             --output-dir output/immersive-layout-validation/11_1_4/aurora \
-            --duration-seconds 1.0 \
-            --sample-rate 48000
+            --duration-seconds 2.0 \
+            --sample-rate 48000 \
+            --block-size 256 \
+            --max-gain-step 0.15 \
+            --normalization-tolerance 0.001
 
       - name: Validate Aurora layout summaries against matrix
         shell: bash
@@ -149,12 +162,17 @@ jobs:
                   assert summary[key] == layout[key], (layout['id'], key, summary[key], layout[key])
               for key, expected in cfg['common_gates'].items():
                   assert summary[key] == expected, (layout['id'], key, summary[key], expected)
+              assert summary['configured_max_gain_step'] == cfg['trajectory']['max_gain_step_per_block']
               assert summary['validated_triplets'] > 0
-              assert summary['frame_count'] >= 100
+              assert summary['frame_count'] >= 300
               if layout['id'] == '11.1.4-custom-reference':
                   roles = set(summary['output_roles'])
                   assert set(layout['custom_roles']).issubset(roles)
-              print(f"AURORA-LAYOUT-PASS {layout['id']} triplets={summary['validated_triplets']}")
+              print(
+                  f"AURORA-LAYOUT-PASS {layout['id']} "
+                  f"triplets={summary['validated_triplets']} "
+                  f"max_gain_step={summary['observed_max_gain_step']:.6f}"
+              )
           PY
 
       - name: Prepare and compare 7.1.4 against SAF
@@ -239,6 +257,7 @@ jobs:
                   'output_channels': summary['output_channels'],
                   'spatial_channels': summary['spatial_channels'],
                   'validated_triplets': summary['validated_triplets'],
+                  'observed_max_gain_step': summary['observed_max_gain_step'],
                   'mean_cosine_similarity': differential['metrics']['cosine_similarity_mean'],
                   'dominant_speaker_agreement_fraction': differential['metrics']['dominant_speaker_agreement_fraction'],
                   'centroid_error_deg_mean': differential['metrics']['centroid_error_deg_mean'],
@@ -250,6 +269,7 @@ jobs:
               'aurora_sha': '${{ github.sha }}',
               'saf_commit': '${{ env.SAF_COMMIT }}',
               'config_sha256': hashlib.sha256(cfg_path.read_bytes()).hexdigest(),
+              'trajectory': cfg['trajectory'],
               'layouts': layouts,
               'passed': all(item['aurora_passed'] and item['saf_differential_passed'] for item in layouts.values()),
               'truth_boundary': cfg['truth_boundary'],
