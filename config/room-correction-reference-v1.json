@@ -42,6 +42,7 @@
       "license": "GPL-3.0-only OR MPL-2.0",
       "integration": "external-process-dsp-executor-reference",
       "production_ready": false,
+      "dependency_lock_policy": "upstream pin has no Cargo.lock; CI generates one from the exact pinned Cargo.toml, records its SHA-256, then executes with --locked",
       "roles": [
         "fir-executor-reference",
         "iir-executor-reference",
@@ -56,6 +57,7 @@
         "README.md"
       ],
       "selected_upstream_tests": [
+        "cargo generate-lockfile",
         "cargo test --locked --lib --no-default-features"
       ]
     }
@@ -65,6 +67,7 @@
     "declared_license_identity": true,
     "required_source_surfaces_present": true,
     "selected_upstream_tests_green": true,
+    "generated_camilladsp_dependency_lock_recorded": true,
     "negative_pin_mismatch_must_fail": true,
     "aurora_runtime_dependency_added": false
   },
@@ -75,5 +78,5 @@
     "crossover and LFE/bass-management routing gate",
     "multi-sub timing/phase synthetic reference gate"
   ],
-  "truth_boundary": "This baseline validates exact external source identities, licensing boundaries, required optimizer/executor surfaces and selected upstream tests only. It is not a room measurement, not an Aurora acoustic correction result, not physical loudspeaker evidence, not measured latency, and not proof that RoomEQ-generated DSP is preserved by CamillaDSP until a separate export/execution differential passes."
+  "truth_boundary": "This baseline validates exact external source identities, licensing boundaries, required optimizer/executor surfaces and selected upstream tests only. The pinned CamillaDSP source does not publish Cargo.lock, so CI records the generated dependency-lock SHA-256 for each run before executing with --locked; this is an auditable run closure, not an upstream-published dependency pin. It is not a room measurement, not an Aurora acoustic correction result, not physical loudspeaker evidence, not measured latency, and not proof that RoomEQ-generated DSP is preserved by CamillaDSP until a separate export/execution differential passes."
 }
