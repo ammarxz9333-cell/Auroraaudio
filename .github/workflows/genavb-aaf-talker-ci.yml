@@ -64,15 +64,31 @@ jobs:
             -I"$RUNNER_TEMP/genavb/include/linux" \
             adapters/aurora-network-genavb/native/aurora_genavb_shim.c \
             adapters/aurora-network-genavb/native/genavb_shim_contract_probe.c \
+            adapters/aurora-network-genavb/native/genavb_control_stubs.c \
             -pthread -o "$RUNNER_TEMP/genavb-shim-contract-probe"
           "$RUNNER_TEMP/genavb-shim-contract-probe" | tee artifacts/genavb-aaf-talker.txt
           grep -q 'PASS talkers=6 init_calls=1 rate=48000 channels=2 block=48 shared_ptp_anchor=1 delta_ns=1000000' \
             artifacts/genavb-aaf-talker.txt
+
+      - name: Exercise AVDECC media-stack control contract
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -Wno-error=empty-body \
+            -Iadapters/aurora-network-genavb/native \
+            -I"$RUNNER_TEMP/genavb/include" \
+            -I"$RUNNER_TEMP/genavb/include/linux" \
+            adapters/aurora-network-genavb/native/aurora_genavb_shim.c \
+            adapters/aurora-network-genavb/native/genavb_avdecc_contract_probe.c \
+            -pthread -o "$RUNNER_TEMP/genavb-avdecc-contract-probe"
+          "$RUNNER_TEMP/genavb-avdecc-contract-probe" | tee artifacts/genavb-avdecc-control.txt
+          grep -q 'PASS channel=media-stack connect=aaf24-48k-stereo invalid-format=fail-closed disconnect=propagated bind=ignored runtime-init=1' \
+            artifacts/genavb-avdecc-control.txt
 
       - name: Upload GenAVB talker evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: genavb-aaf-talker-evidence
-          path: artifacts/genavb-aaf-talker.txt
+          path: |
+            artifacts/genavb-aaf-talker.txt
+            artifacts/genavb-avdecc-control.txt
           if-no-files-found: warn
