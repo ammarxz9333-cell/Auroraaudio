@@ -1,0 +1,110 @@
+name: ESP-AVB P4 Firmware Build CI
+
+on:
+  pull_request:
+    paths:
+      - "validation/physical/aurora_patch_esp_avb_listener_evidence.py"
+      - "validation/physical/esp_avb_aurora_snapshot.c"
+      - "config/esp-avb-p4-build-reference-v1.json"
+      - ".github/workflows/esp-avb-p4-firmware-build-ci.yml"
+      - "AGENTS.md"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: esp-avb-p4-firmware-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-pinned-p4-validation-firmware:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Load exact build reference
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          from pathlib import Path
+
+          cfg = json.loads(Path("config/esp-avb-p4-build-reference-v1.json").read_text())
+          print(f"ESP_IDF_IMAGE={cfg['esp_idf']['docker_image']}")
+          print(f"ENDPOINT_SHA={cfg['endpoint_app']['pinned_commit']}")
+          for component in cfg["local_component_overrides"]:
+              key = component["name"].upper()
+              print(f"{key}_SHA={component['pinned_commit']}")
+          PY
+
+      - name: Materialize exact upstream endpoint and component pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/aurora-esp-p4-build"
+          rm -rf "$root"
+          mkdir -p "$root"
+
+          clone_pin() {
+            local repo="$1"
+            local sha="$2"
+            local dest="$3"
+            git clone --filter=blob:none --no-checkout "$repo" "$dest"
+            git -C "$dest" fetch --depth 1 origin "$sha"
+            git -C "$dest" checkout --detach FETCH_HEAD
+            test "$(git -C "$dest" rev-parse HEAD)" = "$sha"
+          }
+
+          clone_pin https://github.com/scrambletools/ESP-AVB-Endpoint.git "$ENDPOINT_SHA" "$root/endpoint"
+          mkdir -p "$root/endpoint/components"
+          clone_pin https://github.com/scrambletools/esp_avb.git "$ESP_AVB_SHA" "$root/endpoint/components/esp_avb"
+          clone_pin https://github.com/scrambletools/esp_ptp.git "$ESP_PTP_SHA" "$root/endpoint/components/esp_ptp"
+          clone_pin https://github.com/scrambletools/esp_ptp_rpc.git "$ESP_PTP_RPC_SHA" "$root/endpoint/components/esp_ptp_rpc"
+
+          echo "AURORA_ESP_P4_ROOT=$root" >> "$GITHUB_ENV"
+
+      - name: Apply Aurora exact-pin listener instrumentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python validation/physical/aurora_patch_esp_avb_listener_evidence.py apply-check \
+            --root "$AURORA_ESP_P4_ROOT/endpoint/components/esp_avb"
+          cp validation/physical/esp_avb_aurora_snapshot.c \
+            "$AURORA_ESP_P4_ROOT/endpoint/main/esp_avb_aurora_snapshot.c"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+
+          path = Path(os.environ["AURORA_ESP_P4_ROOT"]) / "endpoint" / "main" / "CMakeLists.txt"
+          text = path.read_text(encoding="utf-8")
+          old = 'set(srcs "avb_endpoint.c")'
+          new = 'set(srcs "avb_endpoint.c" "esp_avb_aurora_snapshot.c")'
+          if text.count(old) != 1:
+              raise SystemExit("exact endpoint CMake source anchor not found once")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Build wired ESP32-P4 validation firmware with ESP-IDF 6.0.2
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm \
+            -v "$AURORA_ESP_P4_ROOT/endpoint:/project" \
+            -w /project \
+            "$ESP_IDF_IMAGE" \
+            bash -lc 'idf.py set-target esp32p4 && idf.py build'
+
+      - name: Verify Aurora snapshot translation unit was compiled
+        shell: bash
+        run: |
+          set -euo pipefail
+          find "$AURORA_ESP_P4_ROOT/endpoint/build" -type f \
+            \( -name '*esp_avb_aurora_snapshot*.o' -o -name '*esp_avb_aurora_snapshot*.obj' \) \
+            -print | tee "$RUNNER_TEMP/aurora-esp-p4-object.txt"
+          test -s "$RUNNER_TEMP/aurora-esp-p4-object.txt"
