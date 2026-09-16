@@ -20,6 +20,12 @@ Pinned references:
 
 The pinned NXP API supplies `genavb_stream_params` to a media application through `GENAVB_MSG_MEDIA_STACK_CONNECT` on `GENAVB_CTRL_AVDECC_MEDIA_STACK`. Aurora therefore uses the ACMP/AVDECC-owned stream identity and does not invent a stream ID, destination MAC, port or stream class.
 
+## Test epoch
+
+Every physical evidence source in one run must use the same operator/controller-supplied `epoch_id`. The allowed form is 1–64 ASCII alphanumeric characters plus `-`, `_` or `.`. A recommended value is a UTC timestamp plus a short run suffix, for example `20260916T193000Z-run01`.
+
+The host probe prints an `ARMED` line containing the epoch before it waits for AVDECC CONNECT. Use that exact epoch in the NXP gPTP snapshot and the ESP listener before/after evidence. Evidence with a missing or different epoch must fail closed even when individual counters look healthy.
+
 ## Host probe
 
 The Linux-only example is:
@@ -36,6 +42,7 @@ cargo run --release \
   --example physical_single_listener_probe -- \
   /path/to/libaurora-genavb-shim.so \
   <stream-output-index> \
+  <epoch-id> \
   [duration-ms=5000] \
   [target-latency-frames=480] \
   [connect-timeout-ms=30000]
@@ -45,29 +52,30 @@ The native shim must be built for the target NXP Linux system against the same p
 
 The probe:
 
-1. opens `GENAVB_CTRL_AVDECC_MEDIA_STACK` through Aurora's shared native shim;
-2. polls the real GenAVB control file descriptor;
-3. waits for a supported AVDECC CONNECT for the selected Stream Output descriptor index;
-4. records the AVDECC-owned stream ID, destination MAC, port and stream class;
-5. prepares the talker from the exact cached CONNECT parameters;
-6. starts a 48 kHz / stereo / 24-bit AAF stream with 48-frame blocks;
-7. sends a deterministic 997 Hz antiphase stereo signal at 0.10 full-scale amplitude for the requested duration;
-8. continuously checks the control channel and fails if the selected stream disconnects while sending;
-9. stops the talker and emits machine-readable host evidence.
+1. validates and records the explicit `epoch_id`;
+2. opens `GENAVB_CTRL_AVDECC_MEDIA_STACK` through Aurora's shared native shim and prints `ARMED`;
+3. polls the real GenAVB control file descriptor;
+4. waits for a supported AVDECC CONNECT for the selected Stream Output descriptor index;
+5. records the AVDECC-owned stream ID, destination MAC, port and stream class;
+6. prepares the talker from the exact cached CONNECT parameters;
+7. starts a 48 kHz / stereo / 24-bit AAF stream with 48-frame blocks;
+8. sends a deterministic 997 Hz antiphase stereo signal at 0.10 full-scale amplitude for the requested duration;
+9. continuously checks the control channel and fails if the selected stream disconnects while sending;
+10. stops the talker and emits machine-readable host evidence.
 
-A successful host run ends with a JSON record whose schema is:
+The host JSON schema is:
 
 ```text
 aurora.genavb.single-listener-host-evidence.v1
 ```
 
-and a stable summary line:
+It contains the epoch plus host/connect/send Unix-millisecond timestamps, AVDECC stream identity and media/send parameters. A successful summary line is:
 
 ```text
-aurora-genavb-single-listener-host: PASS connect=avdecc prepare=from-acmp send=aaf24-48k-stereo listener-rx=required gptp-lock=required
+aurora-genavb-single-listener-host: PASS epoch_id=<epoch> connect=avdecc prepare=from-acmp send=aaf24-48k-stereo listener-rx=required gptp-lock=required
 ```
 
-`HOST_PASS` is intentionally **not** a complete physical verdict.
+`HOST_PASS` is intentionally **not** a complete physical verdict and the JSON remains `physical_complete:false`.
 
 ## Existing ESP listener telemetry
 
@@ -84,9 +92,10 @@ Do not accept audible output, an LED, a stale lifetime counter or raw Ethernet p
 
 ## Required evidence for a complete one-listener physical gate
 
-A complete one-listener evidence bundle must contain all of the following from the same test epoch:
+A complete one-listener evidence bundle must contain all of the following from the same `epoch_id`:
 
 1. **NXP host / AVDECC evidence**
+   - `HOST_PASS` for the common epoch;
    - real CONNECT received for the selected Stream Output index;
    - stream ID, destination MAC, port and class recorded from the CONNECT;
    - talker prepared from those parameters;
@@ -94,20 +103,24 @@ A complete one-listener evidence bundle must contain all of the following from t
    - no target DISCONNECT during the send interval.
 
 2. **NXP gPTP evidence**
+   - the same `epoch_id`;
    - the relevant NXP network port is link-up and gPTP-capable;
    - the GenAVB clock used by the stream is synchronized for the test epoch;
    - the raw NXP gPTP status/log excerpt is retained in the evidence bundle.
 
 3. **ESP listener evidence**
+   - the same `epoch_id`;
    - the real ESP32-P4 ATDECC entity is discovered;
    - ACMP reports the intended listener connection;
-   - the listener receives the same stream identity advertised in the host CONNECT;
-   - STREAM_INPUT/AAF receive activity increases between before/after samples taken around the host test interval;
+   - the listener reports the same stream identity advertised in the host CONNECT;
+   - STREAM_INPUT/AAF receive activity increases between before/after samples bracketing the host send interval;
    - listener-side gPTP/clock state is retained for the same epoch.
 
-4. **Identity correlation**
-   - Stream ID and connection identity must match across host AVDECC evidence and listener evidence;
-   - timestamps/logs must identify one test epoch so unrelated prior connections cannot satisfy the gate.
+4. **Identity and time correlation**
+   - all evidence objects carry the identical `epoch_id`;
+   - Stream ID and connection identity match across host AVDECC evidence and listener evidence;
+   - listener before/after samples bracket or overlap the host `send_started_unix_ms`–`send_ended_unix_ms` interval;
+   - unrelated prior connections/counters cannot satisfy the gate.
 
 Only when all four evidence groups pass may this gate be labelled `PHYSICAL-PASS: one-listener AVDECC/ACMP + AAF + gPTP`.
 
@@ -118,7 +131,7 @@ The same hardware setup must later prove:
 - listener unplug/disconnect is observed and host sending fails closed;
 - reconnect does not reuse stale prepared state;
 - a fresh CONNECT and prepare/start epoch is required before audio resumes;
-- an unexpected stream identity cannot satisfy the evidence correlator;
+- a mismatched `epoch_id` or unexpected stream identity cannot satisfy the evidence correlator;
 - loss of acceptable gPTP state invalidates the physical gate even if packets still move.
 
 ## Scope boundary
