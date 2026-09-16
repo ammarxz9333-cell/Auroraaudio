@@ -77,6 +77,13 @@ jobs:
               '''        PreparedRendererKind::HorizontalSpreadVbap => RendererKindProjection::HorizontalSpreadVbap,\n        PreparedRendererKind::ExternalObjectPcm => RendererKindProjection::ExternalObjectPcm,\n    }\n}\n''',
           )
 
+          text_formatter = "crates/aurora-runtime-inspection/src/formatter/text.rs"
+          replace_once(
+              text_formatter,
+              '''        RendererKindProjection::HorizontalSpreadVbap => "horizontal_spread_vbap",\n    }\n}\n''',
+              '''        RendererKindProjection::HorizontalSpreadVbap => "horizontal_spread_vbap",\n        RendererKindProjection::ExternalObjectPcm => "external_object_pcm",\n    }\n}\n''',
+          )
+
           tests = "crates/aurora-runtime-inspection/src/model/tests.rs"
           p = Path(tests)
           text = p.read_text()
@@ -113,4 +120,3 @@ jobs:
           git add -A
           git commit -m "Add passive external Object-PCM renderer plan"
           git push origin HEAD:prepared-external-object-pcm-renderer
-# trigger after workflow exists
