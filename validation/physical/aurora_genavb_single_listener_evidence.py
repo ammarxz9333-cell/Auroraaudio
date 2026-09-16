@@ -192,10 +192,10 @@ def correlate(
 
     if send_started is not None and send_ended is not None:
         if nxp_before is not None and nxp_after is not None:
-            if not nxp_before <= send_started and nxp_after >= send_ended:
+            if not (nxp_before <= send_started and nxp_after >= send_ended):
                 failures.append("NXP gPTP before/after samples do not bracket the host send interval")
         if esp_before is not None and esp_after is not None:
-            if not esp_before <= send_started and esp_after >= send_ended:
+            if not (esp_before <= send_started and esp_after >= send_ended):
                 failures.append("ESP listener before/after samples do not bracket the host send interval")
 
     if nxp_before is not None and nxp_after is not None and nxp_after <= nxp_before:
