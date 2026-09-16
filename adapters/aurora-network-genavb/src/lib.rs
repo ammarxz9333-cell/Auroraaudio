@@ -83,8 +83,7 @@ struct ShimConfig {
 type AbiVersionFn = unsafe extern "C" fn() -> u32;
 type CreateFn = unsafe extern "C" fn() -> *mut c_void;
 type PrepareFn = unsafe extern "C" fn(*mut c_void, *const ShimConfig) -> i32;
-type PrepareAvdeccFn =
-    unsafe extern "C" fn(*mut c_void, *mut c_void, u16, u32, u32) -> i32;
+type PrepareAvdeccFn = unsafe extern "C" fn(*mut c_void, *mut c_void, u16, u32, u32) -> i32;
 type StartFn = unsafe extern "C" fn(*mut c_void) -> i32;
 type SubmitFn = unsafe extern "C" fn(*mut c_void, *const u8, u32, u64) -> i32;
 type StopFn = unsafe extern "C" fn(*mut c_void) -> i32;
