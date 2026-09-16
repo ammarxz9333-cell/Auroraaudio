@@ -40,6 +40,43 @@
         "hardware-media-clock-recovery"
       ]
     },
+    "esp_avb": {
+      "upstream": "https://github.com/scrambletools/esp_avb",
+      "pinned_commit": "5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9",
+      "observed_component_version": "2.18.0",
+      "license": "MIT",
+      "role": "esp32-p4-c6-avb-speaker-endpoint-candidate",
+      "integration_boundary": "esp-idf-endpoint-behind-aurora-network-worker",
+      "runtime_status": "source-pinned-hardware-and-scale-validation-required",
+      "required_capabilities": [
+        "aaf-pcm-24bit-48khz",
+        "gptp-8021as-via-esp-ptp",
+        "wifi-sta-endpoint",
+        "ethernet-endpoint",
+        "ethernet-wifi-l2-bridge",
+        "i2s-codec-output"
+      ],
+      "upstream_limits_at_pin": [
+        "one-talker-and-one-listener-per-endpoint",
+        "maximum-two-channels-per-stream"
+      ]
+    },
+    "esp_ptp": {
+      "upstream": "https://github.com/scrambletools/esp_ptp",
+      "pinned_commit": "5b7eec233a93733ae954beefb6df3bb9c12dc901",
+      "observed_component_version": "1.2.3",
+      "license": "Apache-2.0",
+      "role": "esp32-gptp-ptp-timebase-candidate",
+      "integration_boundary": "esp-idf-time-sync-subcomponent-for-embedded-endpoints",
+      "runtime_status": "source-pinned-physical-sync-validation-required",
+      "required_capabilities": [
+        "ieee-1588-ptp",
+        "ieee-8021as-gptp",
+        "esp32-p4-emac-hardware-timestamps",
+        "esp32-c6-software-disciplined-clock",
+        "wifi-follow-up-information-transport"
+      ]
+    },
     "sound_open_firmware": {
       "upstream": "https://github.com/thesofproject/sof",
       "pinned_commit": "11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c",
@@ -83,7 +120,9 @@
     "Only one component owns adaptive sample-rate correction for any clock-domain crossing.",
     "RoomEQ generates correction intent; it does not run in Aurora's realtime callback.",
     "SOF may execute system DSP on supported i.MX8MP hardware but must preserve Aurora-owned coefficients and routing semantics.",
-    "GenAVB/TSN and AOO are alternate post-DSP transports and never process the same endpoint concurrently.",
+    "GenAVB/TSN, AOO, and ESP-AVB are alternate post-DSP transports for a given endpoint and never process that endpoint concurrently.",
+    "ESP-AVB plus ESP-PTP may be selected only behind Aurora's network-worker boundary; their PTP/gPTP mapping must not redefine Aurora's logical media timeline.",
+    "The pinned ESP-AVB source is only a stereo-per-stream embedded endpoint candidate; 7.1.4 requires explicit multi-endpoint channel mapping, synchronization, loss/reconnect, and physical RF evidence before selection.",
     "No external project type crosses Aurora's public runtime contracts directly."
   ]
 }
