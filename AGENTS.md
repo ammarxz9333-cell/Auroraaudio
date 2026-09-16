@@ -28,7 +28,8 @@ Current canonical base:
 - #195 merged the Rust AVDECC worker/control wrapper at merge commit `674553b3c21be3782f5c01552ddd84bf165ea6b3`.
 - #196 merged the fixed-size fail-closed six-stream AVDECC session gate at merge commit `e675f400fd471c6b4c0a45e38df0c40e7639e624`.
 - #198 merged the Rust talker-side AVDECC prepare bridge and cross-language FFI probe at merge commit `e030cd9ee152352e156ebd597492b8e2721466f2`.
-- Active draft #200 (`genavb-avdecc-runtime`) orchestrates AVDECC control, six accepted stream roles, six GenAVB talkers and the canonical 7.1.4 -> six-stereo fanout as one fail-closed worker epoch.
+- #200 merged the six-stream AVDECC-owned GenAVB runtime at merge commit `7979bdbd0f1c0923166baa6e0ed87ffa59983404`.
+- Active draft #201 (`genavb-runtime-negative-probes`) adds deterministic whole-set failure, stale-state and reconnect recovery probes for that runtime.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -71,6 +72,7 @@ Rules:
 - #195 — Rust AVDECC worker/control wrapper with pollable control fd and sanitized CONNECT/DISCONNECT events.
 - #196 — fixed-size six-stream AVDECC session gate requiring all six canonical stereo endpoint roles before immersive start eligibility.
 - #198 — Rust AVDECC-driven GenAVB talker preparation with same-shim validation and cross-language FFI proof.
+- #200 — worker-side six-talker AVDECC-owned GenAVB runtime with canonical 7.1.4 fanout and whole-set fail-closed positive lifecycle proof.
 
 These are software/reference milestones unless a specific item explicitly states physical evidence.
 
@@ -123,7 +125,7 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 - exact-pin CI proved six talkers, one `genavb_init()`, equal first timestamps and exactly +1,000,000 ns per 48 frames;
 - the static `aurora_genavb_prepare(...)` path remains a software/validation fallback and is not the preferred native ESP plug-and-play path.
 
-### AVDECC-owned GenAVB lifecycle — merged #194/#195/#196/#198; active #200
+### AVDECC-owned GenAVB lifecycle — merged #194/#195/#196/#198/#200; active #201
 - #194 opens `GENAVB_CTRL_AVDECC_MEDIA_STACK` on the shared runtime, exposes the control RX fd, accepts only supported AAF/48 kHz/stereo/24-bit talker CONNECTs, caches exact stack-supplied `genavb_stream_params`, and invalidates them on matching DISCONNECT;
 - `aurora_genavb_prepare_avdecc(...)` creates a talker from the cached stack-owned parameters, so stream ID, destination MAC, port, class and format are not invented by Aurora;
 - #195 wraps that control channel in Rust and exposes only sanitized CONNECT/DISCONNECT events plus a worker-only opaque native handle while the channel is open;
@@ -132,6 +134,7 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 - #198 adds the Rust talker-side AVDECC prepare bridge, an AVDECC-only constructor with no placeholder network identities, same-shim validation before native pointer crossing, and a cross-language FFI probe;
 - #200 adds `adapters/aurora-network-genavb-runtime`: one worker-owned AVDECC control channel + six-stream session gate + six AVDECC-prepared GenAVB talkers + canonical 12-channel-to-six-stereo fanout;
 - #200 software probe passes the positive lifecycle `6 CONNECT -> 6 prepare -> 6 start -> 6 same-timeline submits -> DISCONNECT -> abort all`, while exact NXP 7.3.2 compile/shared-clock/control probes remain green;
+- #201 deterministic fault probes pass prepare/start/submit whole-set rollback, duplicate CONNECT fail-closed behavior, reordered unique CONNECT acceptance, active DISCONNECT invalidation, stale-start rejection, and fresh six-talker prepare/start recovery after reconnect;
 - exact-pin/native/Rust CI is software/API evidence only; no real NXP service or ESP endpoint has yet completed the physical ADP/ACMP/gPTP path.
 
 ### Sound Open Firmware / libspatialaudio
@@ -149,12 +152,11 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Finish #200: keep Rust 1.78 fmt/check/clippy/tests, the six-stream runtime FFI lifecycle probe, exact NXP 7.3.2 compile/probes, and general Linux/Windows/MSRV CI green before merge.
-2. Add deterministic runtime negative probes for one prepare failure, one start failure, one submit failure, duplicate/reordered CONNECTs, DISCONNECT while active, stale prepared state, and reconnect recovery.
-3. Keep reconnect fail closed: a disconnected/reconnected role must be accepted by the six-stream session again and all talkers must enter a fresh prepare/start epoch before PCM resumes.
-4. On supported physical NXP GenAVB hardware/service, establish gPTP lock and prove ADP/ACMP connection to one real ESP-AVB listener first.
-5. Extend physical proof from one ESP listener to all six and measure reconnect, drift, multi-endpoint synchronization, RF resilience and physical loopback latency before production-selection claims.
-6. Continue native-v4/libspatialaudio work (#193) independently; resume binaural and physical tracker #143 by user priority.
+1. Finish #201: keep the six deterministic fault/reconnect scenarios, Rust 1.78 GenAVB gate and general Linux/Windows/MSRV CI green before merge.
+2. On supported physical NXP GenAVB hardware/service, establish gPTP lock and prove ADP/ACMP connection to one real ESP-AVB listener first.
+3. Extend physical proof from one ESP listener to all six; verify stream identity, reconnect behavior and common presentation timing on hardware.
+4. Measure drift, multi-endpoint synchronization, RF resilience and physical loopback latency before any production-selection claim.
+5. Continue native-v4/libspatialaudio work (#193) independently; resume binaural and physical tracker #143 by user priority.
 
 ## 7. Physical acceptance critical path — tracker #143
 
