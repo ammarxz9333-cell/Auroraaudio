@@ -51,8 +51,7 @@ pub fn selection_from_configuration_v4(
         return Err(V4SelectionError::ContractKindMismatch);
     }
     if renderer.contract_major != OBJECT_PCM_RENDERER_CONTRACT_MAJOR
-        || renderer.compatible_minor.minimum > OBJECT_PCM_RENDERER_CONTRACT_MINOR
-        || renderer.compatible_minor.maximum < OBJECT_PCM_RENDERER_CONTRACT_MINOR
+        || renderer.compatible_minor.minimum != OBJECT_PCM_RENDERER_CONTRACT_MINOR
     {
         return Err(V4SelectionError::RendererContractMismatch);
     }
