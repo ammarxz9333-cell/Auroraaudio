@@ -30,6 +30,11 @@ struct aurora_genavb_handle {
     int started;
 };
 
+struct aurora_genavb_avdecc_handle {
+    struct genavb_control_handle *control;
+    int runtime_acquired;
+};
+
 static pthread_mutex_t runtime_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct genavb_handle *runtime_genavb;
 static unsigned int runtime_users;
@@ -374,5 +379,152 @@ void aurora_genavb_destroy(void *opaque)
         return;
 
     stream_cleanup(handle);
+    free(handle);
+}
+
+static int avdecc_connect_is_supported(const struct genavb_msg_media_stack_connect *connect)
+{
+    const struct genavb_stream_params *params = &connect->stream_params;
+
+    if (params->direction != AVTP_DIRECTION_TALKER || params->subtype != AVTP_SUBTYPE_AAF)
+        return 0;
+    if (!avdecc_format_is_aaf_pcm(&params->format))
+        return 0;
+    if (params->format.u.s.subtype_u.aaf.nsr != AAF_NSR_48000 ||
+        params->format.u.s.subtype_u.aaf.format != AAF_FORMAT_INT_32BIT ||
+        params->format.u.s.subtype_u.aaf.format_u.pcm.bit_depth != 24)
+        return 0;
+    if (AVDECC_FMT_AAF_PCM_CHANNELS_PER_FRAME(&params->format) != AURORA_GENAVB_CHANNELS)
+        return 0;
+
+    return 1;
+}
+
+void *aurora_genavb_avdecc_create(void)
+{
+    return calloc(1, sizeof(struct aurora_genavb_avdecc_handle));
+}
+
+int aurora_genavb_avdecc_open(void *opaque)
+{
+    struct aurora_genavb_avdecc_handle *handle = opaque;
+    struct genavb_handle *genavb = NULL;
+    int rc;
+
+    if (!handle || handle->control || handle->runtime_acquired)
+        return -1;
+
+    rc = runtime_acquire(&genavb);
+    if (rc)
+        return rc;
+    handle->runtime_acquired = 1;
+
+    rc = genavb_control_open(genavb, &handle->control, GENAVB_CTRL_AVDECC_MEDIA_STACK);
+    if (rc != GENAVB_SUCCESS) {
+        runtime_release();
+        handle->runtime_acquired = 0;
+        handle->control = NULL;
+        return rc;
+    }
+
+    return 0;
+}
+
+int aurora_genavb_avdecc_rx_fd(void *opaque)
+{
+    struct aurora_genavb_avdecc_handle *handle = opaque;
+
+    if (!handle || !handle->control)
+        return -1;
+
+    return genavb_control_rx_fd(handle->control);
+}
+
+int aurora_genavb_avdecc_receive(void *opaque, struct aurora_genavb_avdecc_event *event)
+{
+    struct aurora_genavb_avdecc_handle *handle = opaque;
+    union genavb_media_stack_msg message;
+    genavb_msg_type_t message_type;
+    unsigned int message_len = sizeof(message);
+    int rc;
+
+    if (!handle || !handle->control || !event)
+        return -1;
+
+    memset(event, 0, sizeof(*event));
+    memset(&message, 0, sizeof(message));
+
+    rc = genavb_control_receive(handle->control, &message_type, &message, &message_len);
+    if (rc != GENAVB_SUCCESS)
+        return rc;
+
+    switch (message_type) {
+    case GENAVB_MSG_MEDIA_STACK_CONNECT: {
+        const struct genavb_msg_media_stack_connect *connect = &message.media_stack_connect;
+        const struct genavb_stream_params *params = &connect->stream_params;
+
+        if (!avdecc_connect_is_supported(connect))
+            return -2;
+
+        event->kind = AURORA_GENAVB_AVDECC_EVENT_CONNECT;
+        event->stream_index = connect->stream_index;
+        event->port = params->port;
+        event->direction = (uint16_t)params->direction;
+        event->stream_class = (uint16_t)params->stream_class;
+        memcpy(event->stream_id, params->stream_id, sizeof(event->stream_id));
+        memcpy(event->destination_mac, params->dst_mac, sizeof(event->destination_mac));
+        event->sample_rate_hz = AURORA_GENAVB_RATE_HZ;
+        event->channels = AURORA_GENAVB_CHANNELS;
+        event->bit_depth = 24;
+        return 1;
+    }
+    case GENAVB_MSG_MEDIA_STACK_DISCONNECT:
+        if (message.media_stack_disconnect.direction != AVTP_DIRECTION_TALKER)
+            return -3;
+        event->kind = AURORA_GENAVB_AVDECC_EVENT_DISCONNECT;
+        event->stream_index = message.media_stack_disconnect.stream_index;
+        event->port = message.media_stack_disconnect.port;
+        event->direction = (uint16_t)message.media_stack_disconnect.direction;
+        event->stream_class = (uint16_t)message.media_stack_disconnect.stream_class;
+        memcpy(event->stream_id, message.media_stack_disconnect.stream_id, sizeof(event->stream_id));
+        return 1;
+    case GENAVB_MSG_MEDIA_STACK_BIND:
+    case GENAVB_MSG_MEDIA_STACK_UNBIND:
+    case GENAVB_MSG_MEDIA_SET_CLOCK_SOURCE:
+    case GENAVB_MSG_MEDIA_STACK_PERSISTENT_PARAM:
+        return 0;
+    default:
+        return -4;
+    }
+}
+
+int aurora_genavb_avdecc_close(void *opaque)
+{
+    struct aurora_genavb_avdecc_handle *handle = opaque;
+    int rc = 0;
+
+    if (!handle)
+        return -1;
+
+    if (handle->control) {
+        rc = genavb_control_close(handle->control);
+        handle->control = NULL;
+    }
+    if (handle->runtime_acquired) {
+        runtime_release();
+        handle->runtime_acquired = 0;
+    }
+
+    return rc;
+}
+
+void aurora_genavb_avdecc_destroy(void *opaque)
+{
+    struct aurora_genavb_avdecc_handle *handle = opaque;
+
+    if (!handle)
+        return;
+
+    aurora_genavb_avdecc_close(handle);
     free(handle);
 }
