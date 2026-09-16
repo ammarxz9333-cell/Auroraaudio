@@ -39,8 +39,16 @@
       "pinned_commit": "6b962d6c34b0c3f142295a213dfa70bda193b23d",
       "tested_release": "7.3.2",
       "role": "wired-avb-tsn-milan-candidate",
-      "integration_boundary": "imx8mp-platform-worker-adapter",
-      "runtime_status": "platform-gated-no-generic-host-claim",
+      "integration_boundary": "platform-gated-worker-dynamic-shim-adapter",
+      "runtime_status": "software-proven-aaf-talker-adapter-physical-platform-validation-required",
+      "software_evidence": [
+        "exact-pin-public-api-compile",
+        "aurora-f32-to-aaf-int32-24bit-big-endian-conversion",
+        "six-stereo-talker-single-runtime-contract",
+        "shared-avtp-clock-and-media-frame-to-ptp-anchor",
+        "one-millisecond-48-frame-presentation-step",
+        "presentation-offset-fail-closed-guard"
+      ],
       "required_capabilities": [
         "gptp-8021as",
         "avtp-1722",
@@ -142,6 +150,7 @@
     "GenAVB/TSN, AOO, and ESP-AVB are alternate post-DSP transports for a given endpoint and never process that endpoint concurrently.",
     "ESP-AVB plus ESP-PTP may be selected only behind Aurora's network-worker boundary; their PTP/gPTP mapping must not redefine Aurora's logical media timeline.",
     "The pinned ESP-AVB source is only a stereo-per-stream embedded endpoint candidate; 7.1.4 requires explicit multi-endpoint channel mapping, synchronization, loss/reconnect, and physical RF evidence before selection.",
+    "GenAVB AAF talker software/API evidence does not establish hardware timestamp quality, gPTP lock, Milan interoperability, ESP listener synchronization, or measured physical latency.",
     "No external project type crosses Aurora's public runtime contracts directly."
   ]
 }
