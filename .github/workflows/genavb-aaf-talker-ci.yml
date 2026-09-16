@@ -5,6 +5,7 @@ on:
     paths:
       - "adapters/aurora-network-genavb/**"
       - "adapters/aurora-network-genavb-avdecc/**"
+      - "adapters/aurora-network-genavb-session/**"
       - ".github/workflows/genavb-aaf-talker-ci.yml"
   workflow_dispatch:
 
@@ -39,6 +40,10 @@ jobs:
           cargo check --manifest-path adapters/aurora-network-genavb-avdecc/Cargo.toml --all-targets
           cargo clippy --manifest-path adapters/aurora-network-genavb-avdecc/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path adapters/aurora-network-genavb-avdecc/Cargo.toml
+          cargo fmt --manifest-path adapters/aurora-network-genavb-session/Cargo.toml -- --check
+          cargo check --manifest-path adapters/aurora-network-genavb-session/Cargo.toml --all-targets
+          cargo clippy --manifest-path adapters/aurora-network-genavb-session/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path adapters/aurora-network-genavb-session/Cargo.toml
 
       - name: Fetch exact NXP GenAVB TSN source
         run: |
