@@ -3,8 +3,9 @@
 //!
 //! Portable Aurora configuration selects a renderer component and its contract;
 //! machine-specific deployment data such as the absolute shim path remains an
-//! explicit runtime input. This crate performs control-plane validation only and
-//! does not load native code.
+//! explicit runtime input. Native materialization can be driven directly by a
+//! validated [`PreparedRuntimePlan`] so portable intent remains the source of
+//! truth while deployment paths stay local to the machine.
 
 use std::error::Error;
 use std::fmt;
@@ -13,22 +14,28 @@ use std::path::PathBuf;
 use aurora_config::{
     ComponentContractKind, LayoutKindV4, SampleFormatIntent, ValidatedConfigurationV4,
 };
+use aurora_core::StandardLayout;
+use aurora_realtime_engine::{RealTimeEngine, RealTimeEngineConfig};
 use aurora_runtime_assembly::{
-    BackendComponentRegistry, PreparedRuntimePlan, RendererComponentIssue,
-    RendererComponentRegistration, RendererComponentRegistry, RuntimePreparationError,
+    BackendComponentRegistry, PreparedLayoutKind, PreparedRendererKind, PreparedRuntimePlan,
+    RendererComponentIssue, RendererComponentRegistration, RendererComponentRegistry,
+    RuntimePreparationError,
 };
 use aurora_runtime_libspatialaudio_selector::{
-    LibspatialaudioSelectionIntent, LIBSPATIALAUDIO_BLOCK_FRAMES, LIBSPATIALAUDIO_MEDIA_RATE_HZ,
+    materialize_selected_libspatialaudio_engine, LibspatialaudioSelectionIntent, SelectionError,
+    LIBSPATIALAUDIO_BLOCK_FRAMES, LIBSPATIALAUDIO_MEDIA_RATE_HZ,
     LIBSPATIALAUDIO_RENDERER_COMPONENT_ID, LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION,
     OBJECT_PCM_RENDERER_CONTRACT_MAJOR, OBJECT_PCM_RENDERER_CONTRACT_MINOR,
 };
+use aurora_scene::RenderScene;
 
 /// Derives the already-proven libspatialaudio v1 selector from native Aurora
 /// Configuration v4 plus a machine-local absolute shim path.
 ///
-/// The configuration must explicitly select the exact libspatialaudio adapter
-/// implementation and the exact media contract already proven by Aurora. The
-/// deployment path is intentionally not persisted into portable configuration.
+/// This compatibility bridge remains available for callers that still own a
+/// Configuration v4 value at deployment time. New runtime deployment should
+/// prefer [`materialize_libspatialaudio_engine_from_prepared_plan`] so the
+/// prepared runtime plan is the sole portable source of renderer intent.
 pub fn selection_from_configuration_v4(
     configuration: &ValidatedConfigurationV4,
     shim_path: impl Into<PathBuf>,
@@ -73,6 +80,78 @@ pub fn prepare_runtime_plan_from_configuration_v4(
         &backend_registry,
     )
     .map_err(V4RuntimePlanError::Runtime)
+}
+
+/// Materializes the exact libspatialaudio realtime path from prepared Aurora
+/// intent plus a machine-local shim path.
+///
+/// The prepared plan is validated before the selector or dynamic loader is
+/// touched. Renderer execution kind, exact component identity, media contract,
+/// and canonical enabled 7.1.4 topology must all match the proven v1 path.
+/// The shim path is intentionally supplied separately and is never persisted in
+/// portable configuration or the prepared plan.
+pub fn materialize_libspatialaudio_engine_from_prepared_plan(
+    plan: &PreparedRuntimePlan,
+    shim_path: impl Into<PathBuf>,
+    scene: RenderScene,
+    engine_config: RealTimeEngineConfig,
+    estimated_device_latency_frames: usize,
+) -> Result<RealTimeEngine, PreparedPlanMaterializationError> {
+    validate_prepared_plan(plan)?;
+    let selection = LibspatialaudioSelectionIntent::v1(shim_path);
+    materialize_selected_libspatialaudio_engine(
+        &selection,
+        scene,
+        engine_config,
+        estimated_device_latency_frames,
+    )
+    .map_err(PreparedPlanMaterializationError::Selection)
+}
+
+fn validate_prepared_plan(
+    plan: &PreparedRuntimePlan,
+) -> Result<(), PreparedPlanMaterializationError> {
+    let renderer = plan.execution().renderer();
+    if renderer.kind() != PreparedRendererKind::ExternalObjectPcm {
+        return Err(PreparedPlanMaterializationError::RendererExecutionMismatch);
+    }
+
+    let identity = renderer.component_identity();
+    if identity.implementation_id() != LIBSPATIALAUDIO_RENDERER_COMPONENT_ID
+        || identity.implementation_version() != LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION
+        || identity.contract_major() != OBJECT_PCM_RENDERER_CONTRACT_MAJOR
+        || identity.contract_minor() != OBJECT_PCM_RENDERER_CONTRACT_MINOR
+    {
+        return Err(PreparedPlanMaterializationError::ComponentIdentityMismatch);
+    }
+
+    let format = plan.execution().audio_format();
+    if format.sample_rate() != LIBSPATIALAUDIO_MEDIA_RATE_HZ
+        || format.callback_frames() as usize != LIBSPATIALAUDIO_BLOCK_FRAMES
+        || format.output_channel_count() != 12
+        || format.sample_format() != SampleFormatIntent::Float32
+    {
+        return Err(PreparedPlanMaterializationError::MediaContractMismatch);
+    }
+
+    let layout = plan.topology().layout();
+    if layout.kind() != PreparedLayoutKind::Standard(StandardLayout::SevenOneFour) {
+        return Err(PreparedPlanMaterializationError::LayoutMismatch);
+    }
+    let speakers = layout.speakers();
+    let expected_roles = StandardLayout::SevenOneFour.canonical_roles();
+    if speakers.len() != expected_roles.len()
+        || speakers
+            .iter()
+            .zip(expected_roles.iter())
+            .any(|(speaker, role)| {
+                !speaker.is_active() || speaker.channel_role().as_str() != role.as_str()
+            })
+    {
+        return Err(PreparedPlanMaterializationError::LayoutMismatch);
+    }
+
+    Ok(())
 }
 
 fn validate_configuration_v4(
@@ -151,7 +230,7 @@ pub enum V4SelectionError {
     ImplementationVersionPinRequired,
     /// Component schema/payload is outside the proven empty v1 configuration.
     InvalidComponentConfiguration,
-    /// Machine-local shim path is empty or non-absolute.
+    /// Machine-local shim path is empty or not absolute.
     InvalidDeploymentPath,
 }
 
@@ -205,11 +284,59 @@ impl Error for V4RuntimePlanError {
     }
 }
 
+/// Failure to deploy libspatialaudio from a prepared runtime plan.
+#[derive(Debug)]
+pub enum PreparedPlanMaterializationError {
+    /// The prepared renderer is not explicitly an external object-to-PCM renderer.
+    RendererExecutionMismatch,
+    /// The prepared component identity/version/contract is not the exact proven adapter.
+    ComponentIdentityMismatch,
+    /// Prepared rate, block size, sample representation, or output width is unsupported.
+    MediaContractMismatch,
+    /// Prepared topology is not canonical enabled Aurora 7.1.4.
+    LayoutMismatch,
+    /// Deployment selection or native/realtime materialization failed after plan validation.
+    Selection(SelectionError),
+}
+
+impl fmt::Display for PreparedPlanMaterializationError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::RendererExecutionMismatch => {
+                formatter.write_str("prepared renderer is not an external object-to-PCM renderer")
+            }
+            Self::ComponentIdentityMismatch => formatter
+                .write_str("prepared renderer identity does not match exact libspatialaudio v1"),
+            Self::MediaContractMismatch => {
+                formatter.write_str("prepared media contract does not match libspatialaudio v1")
+            }
+            Self::LayoutMismatch => {
+                formatter.write_str("prepared topology is not canonical enabled Aurora 7.1.4")
+            }
+            Self::Selection(error) => {
+                write!(
+                    formatter,
+                    "libspatialaudio deployment materialization failed: {error}"
+                )
+            }
+        }
+    }
+}
+
+impl Error for PreparedPlanMaterializationError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Selection(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use aurora_config::{AuroraConfigurationV4, CompatibleMinorRange, ComponentReference};
-    use aurora_runtime_assembly::PreparedRendererKind;
+    use aurora_realtime_engine::TestSignal;
 
     const SURROUND_714: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-4-v4.json");
 
@@ -230,6 +357,24 @@ mod tests {
             configuration: serde_json::json!({}),
         };
         ValidatedConfigurationV4::new(config).unwrap()
+    }
+
+    fn scene() -> RenderScene {
+        serde_json::from_str(include_str!(
+            "../../../fixtures/scenes/7_1_4_reference.json"
+        ))
+        .unwrap()
+    }
+
+    fn engine_config() -> RealTimeEngineConfig {
+        RealTimeEngineConfig {
+            sample_rate: LIBSPATIALAUDIO_MEDIA_RATE_HZ,
+            block_size: LIBSPATIALAUDIO_BLOCK_FRAMES,
+            input_channels: 0,
+            apply_geometric_delay: false,
+            speed_of_sound: 343.0,
+            test_signal: TestSignal::Sine,
+        }
     }
 
     #[test]
@@ -277,6 +422,7 @@ mod tests {
         assert_eq!(plan.execution().audio_format().output_channel_count(), 12);
         assert_eq!(plan.execution().audio_format().sample_rate(), 48_000);
         assert_eq!(plan.execution().audio_format().callback_frames(), 256);
+        validate_prepared_plan(&plan).unwrap();
     }
 
     #[test]
@@ -291,6 +437,24 @@ mod tests {
             Err(V4RuntimePlanError::Selection(
                 V4SelectionError::ComponentIdentityMismatch
             ))
+        ));
+    }
+
+    #[test]
+    fn prepared_basic_renderer_fails_before_native_load() {
+        let config = ValidatedConfigurationV4::from_json(SURROUND_714).unwrap();
+        let plan = PreparedRuntimePlan::from_configuration_v4(&config).unwrap();
+        let error = materialize_libspatialaudio_engine_from_prepared_plan(
+            &plan,
+            "/definitely/not/a/real/shim.so",
+            scene(),
+            engine_config(),
+            0,
+        )
+        .unwrap_err();
+        assert!(matches!(
+            error,
+            PreparedPlanMaterializationError::RendererExecutionMismatch
         ));
     }
 
