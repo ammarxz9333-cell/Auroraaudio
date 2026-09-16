@@ -172,6 +172,7 @@ jobs:
         run: |
           python3 validation/open-audio-stack/open_audio_stack_evidence.py \
             --config config/open-audio-stack-v1.json \
+            --registry config/external-components-v1.json \
             --aoo "$RUNNER_TEMP/aoo" \
             --genavb "$RUNNER_TEMP/genavb" \
             --esp-avb "$RUNNER_TEMP/esp-avb" \
@@ -192,6 +193,7 @@ jobs:
           PY
           if python3 validation/open-audio-stack/open_audio_stack_evidence.py \
             --config artifacts/bad-open-audio-stack-v1.json \
+            --registry config/external-components-v1.json \
             --aoo "$RUNNER_TEMP/aoo" \
             --genavb "$RUNNER_TEMP/genavb" \
             --esp-avb "$RUNNER_TEMP/esp-avb" \
