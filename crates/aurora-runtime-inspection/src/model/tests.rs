@@ -155,7 +155,7 @@ fn explicit_local_projection_retains_identifiers() {
 #[test]
 fn prepared_component_identities_are_reported_as_control_plane_intent() {
     let report = report(InspectionOptions::default());
-    assert_eq!(report.inspection_schema_version(), 3);
+    assert_eq!(report.inspection_schema_version(), 4);
     assert_eq!(
         report
             .runtime()

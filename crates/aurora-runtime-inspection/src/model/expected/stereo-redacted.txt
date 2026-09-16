@@ -1,5 +1,5 @@
 Aurora Runtime Plan Inspection
-inspection_schema_version: 3
+inspection_schema_version: 4
 source_plan_schema_version: 1
 redaction_state: redacted
 represented_semantics: requested, prepared, deferred

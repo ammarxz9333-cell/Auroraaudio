@@ -9,7 +9,7 @@ use serde::Serialize;
 use crate::{InspectionError, InspectionLimit, InspectionOptions, PlanRelationship};
 
 /// Current inspection projection schema version.
-pub const INSPECTION_SCHEMA_VERSION: u16 = 3;
+pub const INSPECTION_SCHEMA_VERSION: u16 = 4;
 /// Maximum retained deterministic findings.
 pub const MAX_FINDINGS: usize = 32;
 /// Maximum bytes in one source string.
@@ -239,6 +239,8 @@ pub enum RendererKindProjection {
     PointSourceHorizontalVbap,
     /// Horizontal spread VBAP intent.
     HorizontalSpreadVbap,
+    /// External object-to-PCM renderer intent.
+    ExternalObjectPcm,
 }
 
 /// One prepared component implementation identity.
@@ -486,6 +488,8 @@ fn is_standard_channel_role(role: &str) -> bool {
             | "surround-back-right"
             | "top-front-left"
             | "top-front-right"
+            | "top-rear-left"
+            | "top-rear-right"
     )
 }
 
@@ -835,6 +839,7 @@ fn renderer_kind(value: PreparedRendererKind) -> RendererKindProjection {
             RendererKindProjection::PointSourceHorizontalVbap
         }
         PreparedRendererKind::HorizontalSpreadVbap => RendererKindProjection::HorizontalSpreadVbap,
+        PreparedRendererKind::ExternalObjectPcm => RendererKindProjection::ExternalObjectPcm,
     }
 }
 fn dsp(value: PreparedDspPlan) -> DspProjection {

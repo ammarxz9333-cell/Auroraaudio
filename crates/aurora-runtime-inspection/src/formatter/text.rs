@@ -401,6 +401,7 @@ fn renderer(value: RendererKindProjection) -> &'static str {
         RendererKindProjection::BasicInverseDistance => "basic_inverse_distance",
         RendererKindProjection::PointSourceHorizontalVbap => "point_source_horizontal_vbap",
         RendererKindProjection::HorizontalSpreadVbap => "horizontal_spread_vbap",
+        RendererKindProjection::ExternalObjectPcm => "external_object_pcm",
     }
 }
 fn dsp(value: DspProjection) -> &'static str {
