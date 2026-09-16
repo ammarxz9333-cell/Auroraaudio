@@ -71,6 +71,20 @@ jobs:
           grep -q 'PASS connects=6 prepare=6 start=6 submit=6 disconnect=abort-all' \
             artifacts/genavb-runtime.txt
 
+      - name: Exercise six-stream runtime fault and reconnect contracts
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -shared -fPIC \
+            adapters/aurora-network-genavb/native/rust_avdecc_runtime_fault_mock.c \
+            -o "$RUNNER_TEMP/libaurora-genavb-runtime-fault-mock.so"
+          : > artifacts/genavb-runtime-negative.txt
+          for scenario in prepare-fail start-fail submit-fail duplicate-connect reordered reconnect; do
+            cargo run --quiet --manifest-path adapters/aurora-network-genavb-runtime/Cargo.toml \
+              --example runtime_negative_probe -- \
+              "$scenario" "$RUNNER_TEMP/libaurora-genavb-runtime-fault-mock.so" \
+              | tee -a artifacts/genavb-runtime-negative.txt
+            grep -q "PASS scenario=$scenario" artifacts/genavb-runtime-negative.txt
+          done
+
       - name: Fetch exact NXP GenAVB TSN source
         run: |
           git init "$RUNNER_TEMP/genavb"
@@ -126,4 +140,5 @@ jobs:
             artifacts/genavb-avdecc-control.txt
             artifacts/genavb-rust-avdecc.txt
             artifacts/genavb-runtime.txt
+            artifacts/genavb-runtime-negative.txt
           if-no-files-found: warn
