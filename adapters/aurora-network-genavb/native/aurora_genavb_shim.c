@@ -18,6 +18,7 @@
 #define AURORA_GENAVB_PAYLOAD_BYTES \
     (AURORA_GENAVB_BLOCK_FRAMES * AURORA_GENAVB_CHANNELS * AURORA_GENAVB_BYTES_PER_SAMPLE)
 #define AURORA_GENAVB_BATCH_NS 1000000u
+#define AURORA_GENAVB_MAX_AVDECC_STREAMS 8u
 
 struct aurora_genavb_handle {
     struct genavb_stream_handle *stream;
@@ -32,6 +33,8 @@ struct aurora_genavb_handle {
 
 struct aurora_genavb_avdecc_handle {
     struct genavb_control_handle *control;
+    struct genavb_stream_params cached_params[AURORA_GENAVB_MAX_AVDECC_STREAMS];
+    uint8_t cached_valid[AURORA_GENAVB_MAX_AVDECC_STREAMS];
     int runtime_acquired;
 };
 
@@ -222,66 +225,50 @@ static int frames_to_ns(uint32_t frames, uint64_t *ns)
     return 0;
 }
 
-uint32_t aurora_genavb_abi_version(void)
+static int stream_params_supported(const struct genavb_stream_params *params)
 {
-    return AURORA_GENAVB_SHIM_ABI_VERSION;
+    if (!params || params->direction != AVTP_DIRECTION_TALKER ||
+        params->subtype != AVTP_SUBTYPE_AAF)
+        return 0;
+    if (!avdecc_format_is_aaf_pcm(&params->format))
+        return 0;
+    if (params->format.u.s.subtype_u.aaf.nsr != AAF_NSR_48000 ||
+        params->format.u.s.subtype_u.aaf.format != AAF_FORMAT_INT_32BIT ||
+        params->format.u.s.subtype_u.aaf.format_u.pcm.bit_depth != 24)
+        return 0;
+    if (AVDECC_FMT_AAF_PCM_CHANNELS_PER_FRAME(&params->format) != AURORA_GENAVB_CHANNELS)
+        return 0;
+    return 1;
 }
 
-void *aurora_genavb_create(void)
+static int prepare_from_params(struct aurora_genavb_handle *handle,
+                               const struct genavb_stream_params *params,
+                               uint32_t target_latency_frames, uint32_t block_frames)
 {
-    return calloc(1, sizeof(struct aurora_genavb_handle));
-}
-
-int aurora_genavb_prepare(void *opaque, const struct aurora_genavb_config *config)
-{
-    struct aurora_genavb_handle *handle = opaque;
     struct genavb_handle *genavb = NULL;
-    struct genavb_stream_params params;
     unsigned int batch_size = AURORA_GENAVB_PAYLOAD_BYTES;
     uint64_t target_latency_ns;
     int rc;
 
-    if (!handle || !config || config->block_frames != AURORA_GENAVB_BLOCK_FRAMES)
+    if (!handle || !stream_params_supported(params) || block_frames != AURORA_GENAVB_BLOCK_FRAMES)
         return -1;
-    if (frames_to_ns(config->target_latency_frames, &target_latency_ns) < 0)
+    if (frames_to_ns(target_latency_frames, &target_latency_ns) < 0)
         return -2;
 
     stream_cleanup(handle);
-
     rc = runtime_acquire(&genavb);
     if (rc)
         return rc;
     handle->runtime_acquired = 1;
 
-    memset(&params, 0, sizeof(params));
-    params.direction = AVTP_DIRECTION_TALKER;
-    params.subtype = AVTP_SUBTYPE_AAF;
-    params.port = config->port;
-    params.stream_class = SR_CLASS_B;
-    memcpy(params.stream_id, config->stream_id, sizeof(params.stream_id));
-    memcpy(params.dst_mac, config->destination_mac, sizeof(params.dst_mac));
-    params.clock_domain = AVB_CLOCK_DOMAIN_0;
-    params.flags = 0;
-    params.talker.latency = AURORA_GENAVB_BATCH_NS;
-
-    params.format.u.s.v = 0;
-    params.format.u.s.subtype = AVTP_SUBTYPE_AAF;
-    params.format.u.s.subtype_u.aaf.nsr = AAF_NSR_48000;
-    params.format.u.s.subtype_u.aaf.ut = 0;
-    params.format.u.s.subtype_u.aaf.rsvd = 0;
-    params.format.u.s.subtype_u.aaf.format = AAF_FORMAT_INT_32BIT;
-    params.format.u.s.subtype_u.aaf.format_u.pcm.bit_depth = 24;
-    AVDECC_FMT_AAF_PCM_CHANNELS_PER_FRAME_SET(&params.format, AURORA_GENAVB_CHANNELS);
-    AVDECC_FMT_AAF_PCM_SAMPLES_PER_FRAME_SET(&params.format, 24);
-
-    rc = genavb_stream_create(genavb, &handle->stream, &params, &batch_size, AVTP_NONBLOCK);
+    rc = genavb_stream_create(genavb, &handle->stream, params, &batch_size, AVTP_NONBLOCK);
     if (rc != GENAVB_SUCCESS)
         goto fail;
 
     handle->presentation_offset_ns = genavb_stream_presentation_offset(handle->stream);
     handle->avtp_clock = genavb_stream_avtp_clock(handle->stream);
     handle->target_latency_ns = target_latency_ns;
-    handle->block_frames = config->block_frames;
+    handle->block_frames = block_frames;
 
     if (runtime_register_clock(handle->avtp_clock) < 0) {
         rc = -3;
@@ -298,6 +285,61 @@ int aurora_genavb_prepare(void *opaque, const struct aurora_genavb_config *confi
 fail:
     stream_cleanup(handle);
     return rc;
+}
+
+uint32_t aurora_genavb_abi_version(void)
+{
+    return AURORA_GENAVB_SHIM_ABI_VERSION;
+}
+
+void *aurora_genavb_create(void)
+{
+    return calloc(1, sizeof(struct aurora_genavb_handle));
+}
+
+int aurora_genavb_prepare(void *opaque, const struct aurora_genavb_config *config)
+{
+    struct genavb_stream_params params;
+
+    if (!config)
+        return -1;
+
+    memset(&params, 0, sizeof(params));
+    params.direction = AVTP_DIRECTION_TALKER;
+    params.subtype = AVTP_SUBTYPE_AAF;
+    params.port = config->port;
+    params.stream_class = SR_CLASS_B;
+    memcpy(params.stream_id, config->stream_id, sizeof(params.stream_id));
+    memcpy(params.dst_mac, config->destination_mac, sizeof(params.dst_mac));
+    params.clock_domain = AVB_CLOCK_DOMAIN_0;
+    params.flags = 0;
+    params.talker.latency = AURORA_GENAVB_BATCH_NS;
+    params.format.u.s.v = 0;
+    params.format.u.s.subtype = AVTP_SUBTYPE_AAF;
+    params.format.u.s.subtype_u.aaf.nsr = AAF_NSR_48000;
+    params.format.u.s.subtype_u.aaf.ut = 0;
+    params.format.u.s.subtype_u.aaf.rsvd = 0;
+    params.format.u.s.subtype_u.aaf.format = AAF_FORMAT_INT_32BIT;
+    params.format.u.s.subtype_u.aaf.format_u.pcm.bit_depth = 24;
+    AVDECC_FMT_AAF_PCM_CHANNELS_PER_FRAME_SET(&params.format, AURORA_GENAVB_CHANNELS);
+    AVDECC_FMT_AAF_PCM_SAMPLES_PER_FRAME_SET(&params.format, 24);
+
+    return prepare_from_params(opaque, &params, config->target_latency_frames, config->block_frames);
+}
+
+int aurora_genavb_prepare_avdecc(void *opaque, void *control_opaque, uint16_t stream_index,
+                                 uint32_t target_latency_frames, uint32_t block_frames)
+{
+    struct aurora_genavb_avdecc_handle *control = control_opaque;
+    struct genavb_stream_params params;
+
+    if (!opaque || !control || !control->control || stream_index >= AURORA_GENAVB_MAX_AVDECC_STREAMS)
+        return -1;
+    if (!control->cached_valid[stream_index])
+        return -2;
+
+    memcpy(&params, &control->cached_params[stream_index], sizeof(params));
+    return prepare_from_params(opaque, &params, target_latency_frames, block_frames);
 }
 
 int aurora_genavb_start(void *opaque)
@@ -382,24 +424,6 @@ void aurora_genavb_destroy(void *opaque)
     free(handle);
 }
 
-static int avdecc_connect_is_supported(const struct genavb_msg_media_stack_connect *connect)
-{
-    const struct genavb_stream_params *params = &connect->stream_params;
-
-    if (params->direction != AVTP_DIRECTION_TALKER || params->subtype != AVTP_SUBTYPE_AAF)
-        return 0;
-    if (!avdecc_format_is_aaf_pcm(&params->format))
-        return 0;
-    if (params->format.u.s.subtype_u.aaf.nsr != AAF_NSR_48000 ||
-        params->format.u.s.subtype_u.aaf.format != AAF_FORMAT_INT_32BIT ||
-        params->format.u.s.subtype_u.aaf.format_u.pcm.bit_depth != 24)
-        return 0;
-    if (AVDECC_FMT_AAF_PCM_CHANNELS_PER_FRAME(&params->format) != AURORA_GENAVB_CHANNELS)
-        return 0;
-
-    return 1;
-}
-
 void *aurora_genavb_avdecc_create(void)
 {
     return calloc(1, sizeof(struct aurora_genavb_avdecc_handle));
@@ -463,8 +487,13 @@ int aurora_genavb_avdecc_receive(void *opaque, struct aurora_genavb_avdecc_event
         const struct genavb_msg_media_stack_connect *connect = &message.media_stack_connect;
         const struct genavb_stream_params *params = &connect->stream_params;
 
-        if (!avdecc_connect_is_supported(connect))
+        if (connect->stream_index >= AURORA_GENAVB_MAX_AVDECC_STREAMS)
             return -2;
+        if (!stream_params_supported(params))
+            return -3;
+
+        memcpy(&handle->cached_params[connect->stream_index], params, sizeof(*params));
+        handle->cached_valid[connect->stream_index] = 1;
 
         event->kind = AURORA_GENAVB_AVDECC_EVENT_CONNECT;
         event->stream_index = connect->stream_index;
@@ -478,23 +507,38 @@ int aurora_genavb_avdecc_receive(void *opaque, struct aurora_genavb_avdecc_event
         event->bit_depth = 24;
         return 1;
     }
-    case GENAVB_MSG_MEDIA_STACK_DISCONNECT:
-        if (message.media_stack_disconnect.direction != AVTP_DIRECTION_TALKER)
-            return -3;
+    case GENAVB_MSG_MEDIA_STACK_DISCONNECT: {
+        const struct genavb_msg_media_stack_disconnect *disconnect =
+            &message.media_stack_disconnect;
+
+        if (disconnect->direction != AVTP_DIRECTION_TALKER)
+            return -4;
+        if (disconnect->stream_index >= AURORA_GENAVB_MAX_AVDECC_STREAMS ||
+            !handle->cached_valid[disconnect->stream_index])
+            return -5;
+        if (memcmp(handle->cached_params[disconnect->stream_index].stream_id,
+                   disconnect->stream_id, sizeof(disconnect->stream_id)) != 0)
+            return -6;
+
+        memset(&handle->cached_params[disconnect->stream_index], 0,
+               sizeof(handle->cached_params[disconnect->stream_index]));
+        handle->cached_valid[disconnect->stream_index] = 0;
+
         event->kind = AURORA_GENAVB_AVDECC_EVENT_DISCONNECT;
-        event->stream_index = message.media_stack_disconnect.stream_index;
-        event->port = message.media_stack_disconnect.port;
-        event->direction = (uint16_t)message.media_stack_disconnect.direction;
-        event->stream_class = (uint16_t)message.media_stack_disconnect.stream_class;
-        memcpy(event->stream_id, message.media_stack_disconnect.stream_id, sizeof(event->stream_id));
+        event->stream_index = disconnect->stream_index;
+        event->port = disconnect->port;
+        event->direction = (uint16_t)disconnect->direction;
+        event->stream_class = (uint16_t)disconnect->stream_class;
+        memcpy(event->stream_id, disconnect->stream_id, sizeof(event->stream_id));
         return 1;
+    }
     case GENAVB_MSG_MEDIA_STACK_BIND:
     case GENAVB_MSG_MEDIA_STACK_UNBIND:
     case GENAVB_MSG_MEDIA_SET_CLOCK_SOURCE:
     case GENAVB_MSG_MEDIA_STACK_PERSISTENT_PARAM:
         return 0;
     default:
-        return -4;
+        return -7;
     }
 }
 
@@ -505,6 +549,9 @@ int aurora_genavb_avdecc_close(void *opaque)
 
     if (!handle)
         return -1;
+
+    memset(handle->cached_params, 0, sizeof(handle->cached_params));
+    memset(handle->cached_valid, 0, sizeof(handle->cached_valid));
 
     if (handle->control) {
         rc = genavb_control_close(handle->control);
