@@ -12,6 +12,15 @@ use crate::{
 pub type RendererConfigurationResolver =
     fn(&Value, usize) -> Result<PreparedRendererPlan, RendererComponentIssue>;
 
+pub type RendererConfigurationValidator =
+    fn(&Value, usize) -> Result<(), RendererComponentIssue>;
+
+#[derive(Clone, Copy)]
+enum RendererRegistrationBehavior {
+    Gain(RendererConfigurationResolver),
+    ExternalObjectPcm(RendererConfigurationValidator),
+}
+
 #[derive(Clone, Copy)]
 pub struct RendererComponentRegistration {
     component_id: &'static str,
@@ -19,7 +28,7 @@ pub struct RendererComponentRegistration {
     contract_major: u16,
     contract_minor: u16,
     configuration_schema: u16,
-    resolver: RendererConfigurationResolver,
+    behavior: RendererRegistrationBehavior,
 }
 
 impl RendererComponentRegistration {
@@ -37,7 +46,25 @@ impl RendererComponentRegistration {
             contract_major,
             contract_minor,
             configuration_schema,
-            resolver,
+            behavior: RendererRegistrationBehavior::Gain(resolver),
+        }
+    }
+
+    pub const fn external_object_pcm(
+        component_id: &'static str,
+        implementation_version: &'static str,
+        contract_major: u16,
+        contract_minor: u16,
+        configuration_schema: u16,
+        validator: RendererConfigurationValidator,
+    ) -> Self {
+        Self {
+            component_id,
+            implementation_version,
+            contract_major,
+            contract_minor,
+            configuration_schema,
+            behavior: RendererRegistrationBehavior::ExternalObjectPcm(validator),
         }
     }
 
@@ -152,14 +179,25 @@ impl RendererComponentRegistry {
                 RendererComponentIssue::UnsupportedConfigurationSchema,
             ));
         }
-        let plan = (registration.resolver)(&reference.configuration, active_speakers)
-            .map_err(|issue| component_error(&reference.component_id, issue))?;
-        Ok(plan.with_component_identity(PreparedComponentIdentity::new(
+
+        let identity = PreparedComponentIdentity::new(
             registration.component_id,
             registration.implementation_version,
             registration.contract_major,
             registration.contract_minor,
-        )))
+        );
+        match registration.behavior {
+            RendererRegistrationBehavior::Gain(resolver) => {
+                let plan = resolver(&reference.configuration, active_speakers)
+                    .map_err(|issue| component_error(&reference.component_id, issue))?;
+                Ok(plan.with_component_identity(identity))
+            }
+            RendererRegistrationBehavior::ExternalObjectPcm(validator) => {
+                validator(&reference.configuration, active_speakers)
+                    .map_err(|issue| component_error(&reference.component_id, issue))?;
+                Ok(PreparedRendererPlan::external_object_pcm(identity))
+            }
+        }
     }
 }
 
