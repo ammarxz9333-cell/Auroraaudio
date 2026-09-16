@@ -39,6 +39,7 @@ jobs:
           python -m py_compile validation/physical/aurora_alsa_iec61937_stream.py
           python -m py_compile validation/physical/aurora_genavb_single_listener_evidence.py
           python -m py_compile validation/physical/aurora_genavb_nxp_gptp_evidence.py
+          python -m py_compile validation/physical/aurora_esp_avb_listener_evidence.py
 
       - name: Run fixed-capture ingress positive and fail-closed self-tests
         run: python validation/physical/aurora_physical_ingress.py self-test
@@ -57,3 +58,6 @@ jobs:
 
       - name: Run NXP gPTP evidence bundler self-tests
         run: python validation/physical/aurora_genavb_nxp_gptp_evidence.py self-test
+
+      - name: Run ESP listener evidence bundler self-tests
+        run: python validation/physical/aurora_esp_avb_listener_evidence.py self-test
