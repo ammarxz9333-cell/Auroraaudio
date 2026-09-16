@@ -23,7 +23,8 @@ Current canonical base:
 - PR #182 merged mutually exclusive object-PCM realtime materialization.
 - PR #183 merged explicit libspatialaudio control-plane selection.
 - Draft PR #184 is separately adding Configuration v4 native 7.1.4 elevation intent; do not couple this ESP endpoint evaluation to that schema change.
-- Active user-requested transport work is `esp-avb-ptp-integration`: exact-pin Scramble Tools `esp_avb` + `esp_ptp` as an embedded ESP32-P4/C6 speaker-endpoint/time-sync candidate.
+- PR #186 (`esp-avb-ptp-integration`) is the active exact-pin/governance gate for Scramble Tools `esp_avb` + `esp_ptp`.
+- Stacked PR #187 (`esp-avb-endpoint-contract`) adds Aurora's first deterministic 7.1.4 -> six stereo ESP-AVB endpoint fanout contract without claiming physical transport.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -114,7 +115,8 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network I/O 
 - role: ESP32-P4/C6 embedded AVB speaker-endpoint candidate behind Aurora's network-worker boundary;
 - pinned upstream profile: AAF PCM 24-bit/48 kHz, one talker plus one listener, maximum two channels per stream;
 - upstream includes wired endpoint, Wi-Fi endpoint and experimental Ethernet/Wi-Fi bridge modes;
-- source/provenance only in Aurora for now: no 7.1.4, RF, physical synchronization or latency claim.
+- PR #187 models immersive fanout honestly as six coordinated stereo streams, not one 12-channel ESP-AVB stream;
+- no physical RF/synchronization/latency claim exists yet.
 
 ### Scramble Tools `esp_ptp`
 - pin: `5b7eec233a93733ae954beefb6df3bb9c12dc901` (component 1.2.3);
@@ -122,6 +124,17 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network I/O 
 - role: embedded IEEE 1588 PTP / IEEE 802.1AS gPTP time-mapping candidate for ESP endpoints;
 - upstream documents ESP32-P4 EMAC hardware timestamps, ESP32-C6 software-disciplined clock operation and Wi-Fi FollowUpInformation transport;
 - it may map Aurora media time to endpoint/network time but never becomes Aurora's logical media-clock owner.
+
+### Aurora ESP-AVB fanout adapter — stacked PR #187
+- standalone package: `adapters/aurora-network-esp-avb`;
+- canonical mapping: `FL/FR`, `FC/LFE`, `SL/SR`, `SBL/SBR`, `TFL/TFR`, `TRL/TRR`;
+- every endpoint stream is exactly stereo at Aurora's canonical 48 kHz network media rate;
+- all endpoint blocks preserve the same source sequence and `MediaTimestamp`;
+- sequence/timestamp discontinuity fails closed; `reset()` explicitly starts a new epoch while retaining prepared storage;
+- prepared endpoint buffers are allocated before streaming; `split()` performs bounded PCM copies only and no network I/O;
+- capability truth separates wired P4 hardware-timestamp support from wireless C6 software-clock operation;
+- required clock discipline is `PtpFollower`; no adaptive-rate or packet-repair capability is claimed;
+- dedicated CI builds/tests the standalone crate and requires the six-node contract probe to pass.
 
 ### Sound Open Firmware
 - pin: `11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c`;
@@ -146,11 +159,12 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network I/O 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Finish the `esp-avb-ptp-integration` source/provenance gate and merge only after Open Audio Stack CI is green; do not weaken the stereo-per-stream or physical-evidence truth boundaries.
-2. Build the first real ESP-AVB/ESP-PTP endpoint prototype behind Aurora's existing network-worker/timeline contracts; define explicit channel-to-node mapping before any multi-speaker claim.
-3. Prove multi-endpoint synchronization, loss/reconnect, drift, RF resilience and measured physical latency on selected ESP32-P4/C6 hardware before considering it an immersive speaker transport.
-4. Keep draft Configuration v4 work (#184) independent and reconcile only through public Aurora contracts after it merges.
-5. Resume Phase 11 binaural semantic/HRTF/head-rotation work and physical tracker #143 according to user priority.
+1. Make PR #186 (`esp-avb-ptp-integration`) green and merge its exact-pin/governance gate without weakening the stereo-per-stream or physical-evidence truth boundaries.
+2. Make stacked PR #187 (`esp-avb-endpoint-contract`) green; preserve exact six-stream channel coverage, shared timestamp/sequence semantics and PTP-follower ownership.
+3. After #186/#187 are stable, bind each prepared stereo node stream to an actual host AVB sender plus ESP-AVB listener firmware without moving network I/O into Aurora's realtime callback.
+4. Prove multi-endpoint synchronization, loss/reconnect, drift, RF resilience and measured physical latency on selected ESP32-P4/C6 hardware before considering it an immersive speaker transport.
+5. Keep draft Configuration v4 work (#184) independent and reconcile only through public Aurora contracts after it merges.
+6. Resume Phase 11 binaural semantic/HRTF/head-rotation work and physical tracker #143 according to user priority.
 
 ## 8. Physical acceptance critical path — tracker #143
 
@@ -179,6 +193,7 @@ Do not invent ALSA device names, reset/drop counters, hardware timings, supporte
 - audio I/O/network: `crates/aurora-audio-io/`, `crates/aurora-realtime-audio-*`, network adapters under `adapters/`;
 - realtime engine: `crates/aurora-realtime-engine/`;
 - open pro-audio integration: `config/open-audio-stack-v1.json`, `validation/open-audio-stack/`, `docs/adr/0021-open-pro-audio-stack-integration.md`;
+- ESP-AVB fanout adapter: `adapters/aurora-network-esp-avb/`;
 - config/runtime: `crates/aurora-config/`, `aurora-runtime-assembly/`, `aurora-runtime-materialization/`, `aurora-runtime-inspection/`;
 - immersive/JOC: `validation/immersive/`;
 - open immersive references: `validation/open-immersive/`;
@@ -199,4 +214,4 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-Also run every domain-specific gate touched by the change. The ESP endpoint integration must run `Open Audio Stack CI` plus repository-wide realtime/simulation/governance checks. Tooling/simulation/reference gates must never be reported as physical or perceptual proof.
+Also run every domain-specific gate touched by the change. The ESP endpoint integration must run `Open Audio Stack CI`; the fanout adapter must run `ESP-AVB Endpoint Contract CI`. Tooling/simulation/reference gates must never be reported as physical or perceptual proof.
