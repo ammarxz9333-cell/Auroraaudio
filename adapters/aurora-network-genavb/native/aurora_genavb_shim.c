@@ -24,18 +24,24 @@ struct aurora_genavb_handle {
     genavb_clock_id_t avtp_clock;
     uint32_t presentation_offset_ns;
     uint64_t target_latency_ns;
-    uint64_t anchor_media_frame;
-    uint64_t anchor_avtp_ns;
     uint32_t block_frames;
     int runtime_acquired;
     int prepared;
     int started;
-    int anchored;
 };
 
 static pthread_mutex_t runtime_mutex = PTHREAD_MUTEX_INITIALIZER;
 static struct genavb_handle *runtime_genavb;
 static unsigned int runtime_users;
+static int runtime_clock_valid;
+static genavb_clock_id_t runtime_avtp_clock;
+
+static pthread_mutex_t anchor_mutex = PTHREAD_MUTEX_INITIALIZER;
+static unsigned int started_users;
+static int anchor_valid;
+static uint64_t anchor_media_frame;
+static uint64_t anchor_avtp_ns;
+static uint64_t started_target_latency_ns;
 
 static int runtime_acquire(struct genavb_handle **genavb)
 {
@@ -59,6 +65,24 @@ static int runtime_acquire(struct genavb_handle **genavb)
     return 0;
 }
 
+static int runtime_register_clock(genavb_clock_id_t clock_id)
+{
+    int rc = 0;
+
+    if (pthread_mutex_lock(&runtime_mutex) != 0)
+        return -1;
+
+    if (!runtime_clock_valid) {
+        runtime_avtp_clock = clock_id;
+        runtime_clock_valid = 1;
+    } else if (runtime_avtp_clock != clock_id) {
+        rc = -1;
+    }
+
+    pthread_mutex_unlock(&runtime_mutex);
+    return rc;
+}
+
 static void runtime_release(void)
 {
     if (pthread_mutex_lock(&runtime_mutex) != 0)
@@ -70,14 +94,106 @@ static void runtime_release(void)
     if ((runtime_users == 0) && runtime_genavb) {
         struct genavb_handle *genavb = runtime_genavb;
         runtime_genavb = NULL;
+        runtime_clock_valid = 0;
         genavb_exit(genavb);
     }
 
     pthread_mutex_unlock(&runtime_mutex);
 }
 
+static int anchor_start(struct aurora_genavb_handle *handle)
+{
+    int rc = 0;
+
+    if (pthread_mutex_lock(&anchor_mutex) != 0)
+        return -1;
+
+    if (started_users == 0) {
+        anchor_valid = 0;
+        started_target_latency_ns = handle->target_latency_ns;
+    } else if (started_target_latency_ns != handle->target_latency_ns) {
+        rc = -1;
+        goto out;
+    }
+
+    started_users++;
+out:
+    pthread_mutex_unlock(&anchor_mutex);
+    return rc;
+}
+
+static void anchor_stop(struct aurora_genavb_handle *handle)
+{
+    if (!handle->started)
+        return;
+
+    if (pthread_mutex_lock(&anchor_mutex) != 0)
+        return;
+
+    if (started_users > 0)
+        started_users--;
+    if (started_users == 0) {
+        anchor_valid = 0;
+        started_target_latency_ns = 0;
+    }
+
+    pthread_mutex_unlock(&anchor_mutex);
+    handle->started = 0;
+}
+
+static int anchor_presentation_time(struct aurora_genavb_handle *handle,
+                                    uint64_t media_frame_index,
+                                    uint64_t *presentation_ns)
+{
+    uint64_t now_ns;
+    uint64_t delta_frames;
+    uint64_t delta_ns;
+    int rc = 0;
+
+    if (pthread_mutex_lock(&anchor_mutex) != 0)
+        return -1;
+
+    if (!anchor_valid) {
+        rc = genavb_clock_gettime64(handle->avtp_clock, &now_ns);
+        if (rc != GENAVB_SUCCESS)
+            goto out;
+        if (UINT64_MAX - now_ns < handle->target_latency_ns) {
+            rc = -2;
+            goto out;
+        }
+        anchor_media_frame = media_frame_index;
+        anchor_avtp_ns = now_ns + handle->target_latency_ns;
+        anchor_valid = 1;
+    }
+
+    if (media_frame_index < anchor_media_frame) {
+        rc = -3;
+        goto out;
+    }
+    delta_frames = media_frame_index - anchor_media_frame;
+    if ((delta_frames % handle->block_frames) != 0) {
+        rc = -4;
+        goto out;
+    }
+    if (delta_frames > (UINT64_MAX / 1000000000ULL)) {
+        rc = -5;
+        goto out;
+    }
+    delta_ns = (delta_frames * 1000000000ULL) / AURORA_GENAVB_RATE_HZ;
+    if (UINT64_MAX - anchor_avtp_ns < delta_ns) {
+        rc = -6;
+        goto out;
+    }
+    *presentation_ns = anchor_avtp_ns + delta_ns;
+
+out:
+    pthread_mutex_unlock(&anchor_mutex);
+    return rc;
+}
+
 static void stream_cleanup(struct aurora_genavb_handle *handle)
 {
+    anchor_stop(handle);
     if (handle->stream) {
         genavb_stream_destroy(handle->stream);
         handle->stream = NULL;
@@ -88,7 +204,6 @@ static void stream_cleanup(struct aurora_genavb_handle *handle)
     }
     handle->prepared = 0;
     handle->started = 0;
-    handle->anchored = 0;
 }
 
 static int frames_to_ns(uint32_t frames, uint64_t *ns)
@@ -162,10 +277,13 @@ int aurora_genavb_prepare(void *opaque, const struct aurora_genavb_config *confi
     handle->avtp_clock = genavb_stream_avtp_clock(handle->stream);
     handle->target_latency_ns = target_latency_ns;
     handle->block_frames = config->block_frames;
-    handle->anchored = 0;
 
-    if (handle->target_latency_ns < handle->presentation_offset_ns) {
+    if (runtime_register_clock(handle->avtp_clock) < 0) {
         rc = -3;
+        goto fail;
+    }
+    if (handle->target_latency_ns < handle->presentation_offset_ns) {
+        rc = -4;
         goto fail;
     }
 
@@ -183,8 +301,9 @@ int aurora_genavb_start(void *opaque)
 
     if (!handle || !handle->prepared || handle->started)
         return -1;
+    if (anchor_start(handle) < 0)
+        return -2;
 
-    handle->anchored = 0;
     handle->started = 1;
     return 0;
 }
@@ -196,8 +315,6 @@ int aurora_genavb_submit(void *opaque, const uint8_t *aaf_payload, uint32_t payl
     struct genavb_event event;
     uint64_t now_ns;
     uint64_t presentation_ns;
-    uint64_t delta_frames;
-    uint64_t delta_ns;
     int rc;
 
     if (!handle || !handle->started || !handle->stream || !aaf_payload)
@@ -205,30 +322,13 @@ int aurora_genavb_submit(void *opaque, const uint8_t *aaf_payload, uint32_t payl
     if (payload_bytes != AURORA_GENAVB_PAYLOAD_BYTES)
         return -2;
 
+    rc = anchor_presentation_time(handle, media_frame_index, &presentation_ns);
+    if (rc)
+        return rc;
+
     rc = genavb_clock_gettime64(handle->avtp_clock, &now_ns);
     if (rc != GENAVB_SUCCESS)
         return rc;
-
-    if (!handle->anchored) {
-        if (UINT64_MAX - now_ns < handle->target_latency_ns)
-            return -3;
-        handle->anchor_media_frame = media_frame_index;
-        handle->anchor_avtp_ns = now_ns + handle->target_latency_ns;
-        handle->anchored = 1;
-    }
-
-    if (media_frame_index < handle->anchor_media_frame)
-        return -4;
-    delta_frames = media_frame_index - handle->anchor_media_frame;
-    if ((delta_frames % handle->block_frames) != 0)
-        return -5;
-    if (delta_frames > (UINT64_MAX / 1000000000ULL))
-        return -6;
-    delta_ns = (delta_frames * 1000000000ULL) / AURORA_GENAVB_RATE_HZ;
-    if (UINT64_MAX - handle->anchor_avtp_ns < delta_ns)
-        return -7;
-    presentation_ns = handle->anchor_avtp_ns + delta_ns;
-
     if ((UINT64_MAX - now_ns < handle->presentation_offset_ns) ||
         (presentation_ns < now_ns + handle->presentation_offset_ns))
         return -8;
@@ -252,8 +352,7 @@ int aurora_genavb_stop(void *opaque)
     if (!handle || !handle->prepared)
         return -1;
 
-    handle->started = 0;
-    handle->anchored = 0;
+    anchor_stop(handle);
     return 0;
 }
 
@@ -261,10 +360,9 @@ int aurora_genavb_reset(void *opaque)
 {
     struct aurora_genavb_handle *handle = opaque;
 
-    if (!handle)
+    if (!handle || handle->started)
         return -1;
 
-    handle->anchored = 0;
     return 0;
 }
 
