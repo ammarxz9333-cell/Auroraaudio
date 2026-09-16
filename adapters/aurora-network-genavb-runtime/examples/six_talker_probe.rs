@@ -68,7 +68,9 @@ fn block_set<'a>(
     }
 }
 
-fn receive_initial_connections(runtime: &mut GenAvbSixTalkerRuntime) -> Result<(), GenAvbRuntimeError> {
+fn receive_initial_connections(
+    runtime: &mut GenAvbSixTalkerRuntime,
+) -> Result<(), GenAvbRuntimeError> {
     for _ in 0..5 {
         let update = runtime.receive_one()?.expect("CONNECT event");
         assert!(update.connected);
