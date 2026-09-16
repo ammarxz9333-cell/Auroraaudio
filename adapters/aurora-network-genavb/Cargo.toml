@@ -9,4 +9,5 @@ rust-version = "1.78"
 [workspace]
 
 [dependencies]
+aurora-network-genavb-avdecc = { path = "../aurora-network-genavb-avdecc" }
 aurora-realtime-audio-api = { path = "../../crates/aurora-realtime-audio-api" }
