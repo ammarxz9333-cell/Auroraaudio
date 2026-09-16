@@ -140,12 +140,9 @@ impl LibspatialaudioSelectionIntent {
             .map_err(|_| SelectionError::SceneLayoutMismatch)?;
         let expected = StandardLayout::SevenOneFour.canonical_roles();
         if speakers.len() != expected.len()
-            || speakers
-                .iter()
-                .zip(expected.iter())
-                .any(|(speaker, role)| {
-                    !speaker.enabled || speaker.channel_role.as_str() != role.as_str()
-                })
+            || speakers.iter().zip(expected.iter()).any(|(speaker, role)| {
+                !speaker.enabled || speaker.channel_role.as_str() != role.as_str()
+            })
         {
             return Err(SelectionError::SceneLayoutMismatch);
         }
@@ -238,9 +235,8 @@ impl fmt::Display for SelectionError {
             Self::UnsupportedMediaContract => formatter.write_str(
                 "libspatialaudio v1 requires canonical 7.1.4 at 48 kHz with 256-frame blocks",
             ),
-            Self::EngineMediaContractMismatch => formatter.write_str(
-                "realtime engine rate/block does not match libspatialaudio selection",
-            ),
+            Self::EngineMediaContractMismatch => formatter
+                .write_str("realtime engine rate/block does not match libspatialaudio selection"),
             Self::SceneLayoutMismatch => {
                 formatter.write_str("scene is not canonical enabled Aurora 7.1.4")
             }
@@ -269,8 +265,10 @@ mod tests {
     use super::*;
 
     fn scene() -> RenderScene {
-        serde_json::from_str(include_str!("../../../fixtures/scenes/7_1_4_reference.json"))
-            .expect("7.1.4 fixture scene")
+        serde_json::from_str(include_str!(
+            "../../../fixtures/scenes/7_1_4_reference.json"
+        ))
+        .expect("7.1.4 fixture scene")
     }
 
     fn engine_config() -> RealTimeEngineConfig {
@@ -332,10 +330,9 @@ mod tests {
 
     #[test]
     fn wrong_scene_layout_fails_before_native_load() {
-        let stereo: RenderScene = serde_json::from_str(include_str!(
-            "../../../fixtures/scenes/stereo_circle.json"
-        ))
-        .unwrap();
+        let stereo: RenderScene =
+            serde_json::from_str(include_str!("../../../fixtures/scenes/stereo_circle.json"))
+                .unwrap();
         let error = materialization_error(&intent(), stereo);
         assert!(matches!(error, SelectionError::SceneLayoutMismatch));
     }
