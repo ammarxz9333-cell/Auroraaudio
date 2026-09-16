@@ -53,7 +53,7 @@ static int get_gm_status(struct genavb_handle *genavb, uint8_t domain, uint64_t 
         goto out;
     }
 
-    *gm_id = status->gm_id;
+    memcpy(gm_id, &status->gm_id, sizeof(*gm_id));
 
 out:
     genavb_control_close(control);
@@ -148,16 +148,15 @@ static int parse_clock_domain(const char *value, genavb_clock_domain_t *out)
     return 0;
 }
 
-static void print_gm_id(uint64_t gm_id)
+static void print_gm_id(const uint64_t *gm_id)
 {
-    unsigned int shift;
+    const uint8_t *identity = (const uint8_t *)gm_id;
+    size_t index;
 
-    for (shift = 56; shift <= 56; shift -= 8) {
-        printf("%02" PRIx64, (gm_id >> shift) & 0xffULL);
-        if (shift)
+    for (index = 0; index < sizeof(*gm_id); index++) {
+        printf("%02x", identity[index]);
+        if (index + 1 < sizeof(*gm_id))
             putchar(':');
-        if (shift == 0)
-            break;
     }
 }
 
@@ -223,7 +222,7 @@ int main(int argc, char **argv)
            ",\"gptp_domain\":%u,\"clock_domain\":%d,\"grandmaster_id\":\"",
            SNAPSHOT_SCHEMA, locked ? "PASS" : "FAIL", sampled_at,
            (unsigned int)gptp_domain, (int)clock_domain);
-    print_gm_id(gm_id);
+    print_gm_id(&gm_id);
     printf("\",\"clock_status\":\"%s\",\"source_type\":\"%s\",\"source_local_id\":%d,"
            "\"locked\":%s}\n",
            clock_status_name(clock_status.status), source_type_name(clock_status.source_type),
