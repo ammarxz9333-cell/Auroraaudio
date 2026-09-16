@@ -1,6 +1,6 @@
 # ADR 0021: Open pro-audio stack integration boundaries
 
-Status: proposed and implementation-started on `open-audio-stack-integration`
+Status: implemented baseline; embedded ESP endpoint evaluation added on `esp-avb-ptp-integration`
 
 ## Context
 
@@ -10,6 +10,7 @@ The evaluated candidates in `config/open-audio-stack-v1.json` are:
 
 - AOO for peer/UDP network audio;
 - NXP GenAVB/TSN for wired AVB/TSN/Milan on supported NXP platforms;
+- Scramble Tools `esp_avb` + `esp_ptp` for embedded ESP32-P4/C6 AVB speaker-endpoint and PTP/gPTP experiments;
 - Sound Open Firmware (SOF) for i.MX8M Plus HiFi4 system DSP;
 - VideoLAN libspatialaudio as a possible production spatial renderer.
 
@@ -45,7 +46,7 @@ Only then does it fan out to local outputs, wired network transport, or wireless
 
 AOO is integrated only behind the Aurora network transport worker boundary. Its useful mechanisms include timestamped PCM, jitter handling, retransmission and adaptive peer-clock compensation. Aurora retains the right to disable or replace AOO resampling when another clock-domain controller owns the crossing.
 
-The exact upstream pin is recorded in `config/open-audio-stack-v1.json`. A runtime AOO adapter cannot be marked selected until it has deterministic packet-loss, drift, reconnect and sustained-soak evidence through Aurora's own contracts.
+The exact upstream pin is recorded in `config/open-audio-stack-v1.json`. Runtime selection remains explicit and fail-closed.
 
 ### 6. GenAVB/TSN is the preferred wired pro-audio candidate on supported NXP hardware
 
@@ -53,23 +54,33 @@ GenAVB/TSN is platform-gated. Generic CI may validate source provenance, configu
 
 On supported hardware, GenAVB/TSN may own the wired PTP/network-media mapping while Aurora remains the owner of the logical media timeline and channel semantics.
 
-### 7. SOF is a DSP execution target, not a second Aurora DSP policy engine
+### 7. ESP-AVB and ESP-PTP are embedded speaker-endpoint candidates, not a 7.1.4 transport claim
 
-RoomEQ or another Aurora-approved optimizer may generate correction intent. Aurora owns the semantic DSP graph and coefficients. SOF may execute supported FIR/IIR/DRC/SRC operations on the i.MX8MP HiFi4 DSP after a translation/validation step.
+Aurora pins Scramble Tools `esp_avb` and `esp_ptp` as an experimental embedded endpoint path for ESP32-P4/C6 hardware. `esp_avb` supplies AVB talker/listener and Ethernet/Wi-Fi endpoint/bridge mechanisms, while `esp_ptp` supplies IEEE 1588 PTP / IEEE 802.1AS gPTP time mapping for those endpoints.
+
+They remain behind Aurora's `NetworkAudioTransport` worker boundary. Their PTP/gPTP clock may map Aurora media time to endpoint/network time, but it never becomes Aurora's logical media-clock owner.
+
+At the pinned `esp_avb` revision the upstream-declared streaming profile is AAF PCM, 24-bit, 48 kHz, with one talker plus one listener and at most two channels per stream. Therefore this integration is a stereo speaker-node candidate only. Aurora must not describe it as a complete 7.1.4 path until multi-endpoint channel mapping, cross-endpoint synchronization, loss/reconnect behavior, RF resilience and physical latency have been demonstrated on real hardware.
+
+Generic CI validates exact source pins and declared source contracts only. It does not build an ESP-IDF firmware image or prove P4 hardware timestamps, C6 software-clock discipline, Wi-Fi synchronization, bridge QoS, or acoustic speaker synchronization.
+
+### 8. SOF is a DSP execution target, not a second Aurora DSP policy engine
+
+RoomEQ or another Aurora-approved optimizer may generate correction intent. Aurora owns the semantic DSP graph and coefficients. SOF may execute supported FIR/IIR/DRC/SRC operations on the i.MX8M Plus HiFi4 DSP after a translation/validation step.
 
 Unsupported graph semantics must fail closed or use an explicitly selected software fallback; they must not be silently approximated.
 
-### 8. libspatialaudio is a renderer candidate, not automatically the production renderer
+### 9. libspatialaudio is a renderer candidate, not automatically the production renderer
 
-Aurora currently has native renderer implementations and independent reference lanes. libspatialaudio may be selected only after an adapter satisfies Aurora's allocation/caller-owned-buffer contract and passes deterministic semantic differentials against the existing Aurora renderer plus independent EAR/SAF/OAR evidence where applicable.
+Aurora currently has native renderer implementations and independent reference lanes. libspatialaudio remains behind Aurora-owned object-PCM and control-plane boundaries.
 
-Because libspatialaudio is LGPL-2.1-or-later, integration should preserve a replaceable library boundary rather than copying its implementation into MIT-licensed Aurora core.
+Because libspatialaudio is LGPL-2.1-or-later, integration preserves a replaceable library boundary rather than copying its implementation into MIT-licensed Aurora core.
 
 Only one production speaker renderer processes a block. Reference renderers remain out of the steady-state chain.
 
 ## Initial implementation
 
-This ADR introduces the first concrete shared boundary in `aurora-realtime-audio-api`:
+The shared network boundary in `aurora-realtime-audio-api` includes:
 
 - `MediaTimestamp`;
 - `NetworkAudioFormat` and exact shape validation;
@@ -79,7 +90,9 @@ This ADR introduces the first concrete shared boundary in `aurora-realtime-audio
 - `NetworkAudioBlock`;
 - `NetworkAudioTransport`, documented as worker-thread-only.
 
-These types intentionally contain no AOO, GenAVB, PTP, RTP or SOF types.
+These types intentionally contain no AOO, GenAVB, ESP-AVB, ESP-PTP, PTP, RTP or SOF types.
+
+The open-audio-stack validation lane exact-pins `esp_avb` and `esp_ptp`, checks their declared component versions/licenses, verifies the pinned stereo AAF profile and target families, and fails closed if their source revisions drift.
 
 ## Validation gates before runtime selection
 
@@ -94,10 +107,12 @@ A network backend must demonstrate:
 7. no allocation/blocking/network I/O from Aurora's audio callback;
 8. truthful distinction between simulation, software runtime and physical evidence.
 
+An ESP-AVB/ESP-PTP endpoint path must additionally prove multi-endpoint synchronization for the intended speaker count, explicit channel-to-node mapping, real RF/loss/reconnect behavior, and physical timing evidence before selection for immersive speaker output.
+
 A renderer backend must additionally prove caller-owned steady-state storage, bounded latency and semantic agreement on the repository's declared object/layout corpus.
 
 A SOF target must additionally prove coefficient/route round-trip, fail-closed unsupported operations, and physical i.MX8MP evidence before being described as hardware validated.
 
 ## Consequences
 
-This keeps Aurora hardware-neutral while allowing high-quality platform acceleration. AOO, GenAVB/TSN, SOF and libspatialaudio remain replaceable. No external upstream can force Aurora to adopt its timing model, buffer ownership, object model or public API.
+This keeps Aurora hardware-neutral while allowing high-quality platform acceleration. AOO, GenAVB/TSN, ESP-AVB/ESP-PTP, SOF and libspatialaudio remain replaceable. No external upstream can force Aurora to adopt its timing model, buffer ownership, object model or public API.
