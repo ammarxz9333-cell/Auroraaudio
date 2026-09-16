@@ -125,15 +125,68 @@ aurora.genavb.nxp-gptp-evidence.v1
 
 The bundler requires both snapshots to be locked to the same non-zero GM, use the same gPTP and clock domains, and have strictly increasing capture times. Its `PASS` is NXP clock evidence only, not a complete physical verdict.
 
-## ESP listener evidence boundary at the exact pin
+## ESP listener exact-pin evidence
 
-The pinned `esp_avb` source contains useful internal receive-state primitives, including `avb_stream_in_last_rx_us(...)`, monotonic stream receive state such as `stream_bytes_received`, and internal STREAM_INPUT counter structures. Its GET_STREAM_INFO response also reports the active listener stream identity and connected flag.
+The pinned `esp_avb` source contains the state needed for a strict listener proof, but not all of it is exposed through the component's public status API. Aurora therefore uses a **narrow test-firmware instrumentation patch against the exact pinned commit**, rather than pretending a controller-visible feature exists upstream.
 
-However, at the exact pinned commit used by Aurora, the ATDECC functions that send GET_COUNTERS command/response/unsolicited messages are still explicit `not implemented` stubs. Therefore **controller-visible AECP GET_COUNTERS must not be claimed or used as the receive-evidence source for this pin**.
+The relevant existing pinned primitives are:
 
-For the first wired P4 test, listener evidence must use an actually exposed source from that exact firmware build. The next implementation step is to bind the existing internal receive activity and gPTP state into a machine-readable evidence path (or, if unavoidable, a narrowly scoped pinned firmware instrumentation patch) while retaining GET_STREAM_INFO/ACMP for stream identity and connection state.
+- `avb_listener_stream_s` owns the ACMP listener connection and active `stream_id`;
+- `avb_stream_in_last_rx_us(state, 0)` reports the most recent real audio input frame arrival;
+- `avb_get_stream_in_counters(...)` already produces the Milan STREAM_INPUT counters internally; its `frames_rx` value comes from the live stream RX context packet counter;
+- `esp_ptp` status exposes whether a remote clock source is valid, the active PTP profile and the selected best-clock identity.
 
-Do not accept audible output, an LED, a stale lifetime counter or raw Ethernet packet presence by itself as listener receive proof. The evidence must bind the active STREAM_INPUT/stream identity to increasing receive activity during the host probe.
+At the exact pin, the ATDECC GET_COUNTERS command/response/unsolicited functions remain explicit `not implemented` stubs. Aurora **does not** claim AECP GET_COUNTERS support and does not use those stubs as evidence.
+
+Aurora's instrumentation tool is:
+
+```text
+validation/physical/aurora_patch_esp_avb_listener_evidence.py
+```
+
+It applies only when exact source anchors from pinned `esp_avb` commit `5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9` are present. It extends the existing serialized `avb_status()` request path with a read-only validation payload containing:
+
+- gPTP profile state and selected grandmaster identity;
+- listener-present and ACMP-connected state;
+- the ACMP-owned stream ID;
+- AAF sample rate, channel count and bit depth;
+- the existing internal `frames_rx` counter;
+- `last_rx_us`.
+
+This is deliberately a physical-validation firmware patch, not a new production API or an upstream compatibility claim. Patched and unpatched `avb_status_s` layouts must not be mixed across separately compiled binaries.
+
+The snapshot helper intended to be compiled into the wired ESP32-P4 test firmware is:
+
+```text
+validation/physical/esp_avb_aurora_snapshot.c
+```
+
+It emits one JSON object with schema:
+
+```text
+aurora.esp-avb.listener-snapshot.v1
+```
+
+The snapshot caller supplies the exact `epoch_id` from the NXP host probe and a host/controller `capture_unix_ms`. Aurora deliberately does not derive that Unix timestamp from the ESP PTP clock because the physical test must not assume an unverified PTP-timescale-to-UTC conversion.
+
+Capture one ESP snapshot before the NXP send interval and one after it. Convert them into the schema consumed by the final correlator with:
+
+```bash
+python validation/physical/aurora_esp_avb_listener_evidence.py build \
+  --before esp-before.json \
+  --after esp-after.json \
+  --output esp-listener-evidence.json
+```
+
+The output schema is:
+
+```text
+aurora.genavb.esp-listener-evidence.v1
+```
+
+The bundler fails closed if the epoch, stream identity, 48 kHz/stereo/24-bit contract or grandmaster changes; if ACMP/gPTP is not valid in either snapshot; if the receive counter does not increase; if no post-send RX arrival is observed; or if capture times are not strictly ordered. Its `PASS` remains `physical_complete:false` until the NXP host, NXP gPTP and ESP evidence are correlated together.
+
+Do not accept audible output, an LED, a stale lifetime counter or raw Ethernet packet presence by itself as listener receive proof. The evidence must bind the active ACMP stream identity to increasing real STREAM_INPUT receive activity during the host probe.
 
 ## Required evidence for a complete one-listener physical gate
 

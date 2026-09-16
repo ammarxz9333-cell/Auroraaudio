@@ -39,6 +39,8 @@ jobs:
           python -m py_compile validation/physical/aurora_alsa_iec61937_stream.py
           python -m py_compile validation/physical/aurora_genavb_single_listener_evidence.py
           python -m py_compile validation/physical/aurora_genavb_nxp_gptp_evidence.py
+          python -m py_compile validation/physical/aurora_esp_avb_listener_evidence.py
+          python -m py_compile validation/physical/aurora_patch_esp_avb_listener_evidence.py
 
       - name: Run fixed-capture ingress positive and fail-closed self-tests
         run: python validation/physical/aurora_physical_ingress.py self-test
@@ -57,3 +59,20 @@ jobs:
 
       - name: Run NXP gPTP evidence bundler self-tests
         run: python validation/physical/aurora_genavb_nxp_gptp_evidence.py self-test
+
+      - name: Run ESP listener evidence bundler self-tests
+        run: python validation/physical/aurora_esp_avb_listener_evidence.py self-test
+
+      - name: Verify ESP instrumentation applies to exact pinned source
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          ESP_AVB_SHA=5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9
+          git clone --filter=blob:none --no-checkout https://github.com/scrambletools/esp_avb.git "$RUNNER_TEMP/esp_avb"
+          git -C "$RUNNER_TEMP/esp_avb" fetch --depth 1 origin "$ESP_AVB_SHA"
+          git -C "$RUNNER_TEMP/esp_avb" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/esp_avb" rev-parse HEAD)" = "$ESP_AVB_SHA"
+          python validation/physical/aurora_patch_esp_avb_listener_evidence.py apply-check \
+            --root "$RUNNER_TEMP/esp_avb"
+          grep -q 'listener_evidence.frames_rx' "$RUNNER_TEMP/esp_avb/avb.c"
+          grep -q 'grandmaster_id\[8\]' "$RUNNER_TEMP/esp_avb/include/esp_avb.h"
