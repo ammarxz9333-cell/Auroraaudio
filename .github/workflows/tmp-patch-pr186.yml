@@ -1,0 +1,172 @@
+name: Temporary patch PR186
+
+on:
+  push:
+    branches:
+      - native-v4-libspatialaudio-materialization
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: native-v4-libspatialaudio-materialization
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Patch prepared object-PCM renderer contracts and self-remove
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def once(text: str, old: str, new: str, label: str) -> str:
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{label}: expected exactly one match, found {count}")
+              return text.replace(old, new, 1)
+
+          lib_path = Path("crates/aurora-runtime-assembly/src/lib.rs")
+          text = lib_path.read_text()
+          text = once(
+              text,
+              'pub const REALTIME_RENDERER_CONTRACT_MINOR: u16 = 0;\n/// Aurora basic renderer implementation version.\n',
+              'pub const REALTIME_RENDERER_CONTRACT_MINOR: u16 = 0;\n/// Aurora object-PCM renderer contract major used by external PCM renderers.\npub const OBJECT_PCM_RENDERER_CONTRACT_VERSION: u16 = 1;\n/// Aurora object-PCM renderer contract minor used by external PCM renderers.\npub const OBJECT_PCM_RENDERER_CONTRACT_MINOR: u16 = 0;\n/// Aurora basic renderer implementation version.\n',
+              "object pcm contract constants",
+          )
+          text = once(
+              text,
+              'pub const VBAP_RENDERER_IMPLEMENTATION_VERSION: &str = "0.1.0";\n/// Compatible realtime-delay contract version selected by runtime assembly.\n',
+              'pub const VBAP_RENDERER_IMPLEMENTATION_VERSION: &str = "0.1.0";\n/// Aurora libspatialaudio adapter implementation version.\npub const LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION: &str = "0.1.0";\n/// Compatible realtime-delay contract version selected by runtime assembly.\n',
+              "libspatialaudio version constant",
+          )
+          text = once(
+              text,
+              'pub const VBAP_RENDERER_IMPLEMENTATION_ID: &str = "org.aurora.renderer.vbap";\n/// Stable implementation identity for Aurora\'s current basic realtime delay component.\n',
+              'pub const VBAP_RENDERER_IMPLEMENTATION_ID: &str = "org.aurora.renderer.vbap";\n/// Stable implementation identity for Aurora\'s opt-in libspatialaudio object-PCM renderer.\npub const LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID: &str =\n    "org.aurora.renderer.libspatialaudio";\n/// Stable implementation identity for Aurora\'s current basic realtime delay component.\n',
+              "libspatialaudio id constant",
+          )
+          text = once(
+              text,
+              '    /// Existing horizontal spread VBAP renderer.\n    HorizontalSpreadVbap,\n}\n',
+              '    /// Existing horizontal spread VBAP renderer.\n    HorizontalSpreadVbap,\n    /// Opt-in libspatialaudio object-PCM renderer.\n    LibspatialaudioObjectPcm,\n}\n',
+              "prepared renderer kind",
+          )
+          text = once(
+              text,
+              '    /// Describes horizontal spread VBAP with a normalized spread value.\n',
+              '    /// Describes the opt-in libspatialaudio object-PCM renderer.\n    pub const fn libspatialaudio_object_pcm() -> Self {\n        Self {\n            kind: PreparedRendererKind::LibspatialaudioObjectPcm,\n            horizontal_spread: None,\n            component_identity: PreparedComponentIdentity::new(\n                LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID,\n                LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION,\n                OBJECT_PCM_RENDERER_CONTRACT_VERSION,\n                OBJECT_PCM_RENDERER_CONTRACT_MINOR,\n            ),\n        }\n    }\n\n    /// Describes horizontal spread VBAP with a normalized spread value.\n',
+              "object pcm prepared renderer constructor",
+          )
+          text = once(
+              text,
+              '    /// The requested layout cannot satisfy component capabilities.\n    LayoutCapabilityMismatch,\n    /// Registry construction attempted to add a duplicate component ID.\n',
+              '    /// The requested layout cannot satisfy component capabilities.\n    LayoutCapabilityMismatch,\n    /// The requested sample-rate/block media contract is not supported by the component.\n    MediaContractMismatch,\n    /// Registry construction attempted to add a duplicate component ID.\n',
+              "renderer media contract error",
+          )
+          lib_path.write_text(text)
+
+          derivation_path = Path("crates/aurora-runtime-assembly/src/derivation.rs")
+          text = derivation_path.read_text()
+          text = once(
+              text,
+              '    RendererComponentRegistry, RuntimeCapacityPlan, RuntimeInvariant, RuntimePlanMetadata,\n    RuntimePreparationError,\n};\n',
+              '    RendererComponentIssue, RendererComponentRegistry, RuntimeCapacityPlan, RuntimeInvariant,\n    RuntimePlanMetadata, RuntimePreparationError, LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID,\n};\n',
+              "derivation imports",
+          )
+          old_resolve = '    let renderer = renderer_registry.resolve(&config.renderer, active_speakers)?;\n'
+          new_resolve = old_resolve + '    validate_renderer_media_contract(\n        &renderer,\n        &layout,\n        config.audio_format.sample_rate,\n        config.audio_format.callback_frames,\n    )?;\n'
+          count = text.count(old_resolve)
+          if count != 2:
+              raise SystemExit(f"renderer resolve sites: expected two matches, found {count}")
+          text = text.replace(old_resolve, new_resolve)
+          helper_anchor = 'fn prepare_device_selector(\n'
+          helper = '''fn validate_renderer_media_contract(
+    renderer: &crate::PreparedRendererPlan,
+    layout: &PreparedLayoutPlan,
+    sample_rate: u32,
+    callback_frames: u32,
+) -> Result<(), RuntimePreparationError> {
+    if renderer.kind() != crate::PreparedRendererKind::LibspatialaudioObjectPcm {
+        return Ok(());
+    }
+    if layout.kind() != PreparedLayoutKind::Standard(StandardLayout::SevenOneFour) {
+        return Err(RuntimePreparationError::RendererComponent {
+            component_id: LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID.to_owned(),
+            issue: RendererComponentIssue::LayoutCapabilityMismatch,
+        });
+    }
+    if sample_rate != 48_000 || callback_frames != 256 {
+        return Err(RuntimePreparationError::RendererComponent {
+            component_id: LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID.to_owned(),
+            issue: RendererComponentIssue::MediaContractMismatch,
+        });
+    }
+    Ok(())
+}
+
+'''
+          text = once(text, helper_anchor, helper + helper_anchor, "media contract helper")
+          text = once(
+              text,
+              '        SampleFormatIntent, ValidatedConfiguration, ValidatedConfigurationV4,\n',
+              '        AuroraConfigurationV4, SampleFormatIntent, ValidatedConfiguration,\n        ValidatedConfigurationV4,\n',
+              "test config imports",
+          )
+          test_anchor = '    #[test]\n    fn custom_horizontal_preserves_normalized_speaker_order_and_roles() {\n'
+          tests = '''    #[test]
+    fn native_v4_libspatialaudio_is_prepared_as_object_pcm_renderer() {
+        let mut config: AuroraConfigurationV4 = serde_json::from_slice(SURROUND_714_V4).unwrap();
+        config.renderer = renderer_ref(
+            LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID,
+            serde_json::json!({}),
+        );
+        let validated = ValidatedConfigurationV4::new(config).unwrap();
+        let plan = PreparedRuntimePlan::from_configuration_v4(&validated).unwrap();
+        assert_eq!(
+            plan.execution().renderer().kind(),
+            crate::PreparedRendererKind::LibspatialaudioObjectPcm
+        );
+        assert_eq!(
+            plan.execution()
+                .renderer()
+                .component_identity()
+                .implementation_id(),
+            LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID
+        );
+    }
+
+    #[test]
+    fn native_v4_libspatialaudio_rejects_unproven_media_rate() {
+        let mut config: AuroraConfigurationV4 = serde_json::from_slice(SURROUND_714_V4).unwrap();
+        config.renderer = renderer_ref(
+            LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID,
+            serde_json::json!({}),
+        );
+        config.audio_format.sample_rate = 44_100;
+        let validated = ValidatedConfigurationV4::new(config).unwrap();
+        assert_eq!(
+            PreparedRuntimePlan::from_configuration_v4(&validated),
+            Err(RuntimePreparationError::RendererComponent {
+                component_id: LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID.to_owned(),
+                issue: RendererComponentIssue::MediaContractMismatch,
+            })
+        );
+    }
+
+'''
+          text = once(text, test_anchor, tests + test_anchor, "native object pcm tests")
+          derivation_path.write_text(text)
+          PY
+          cargo fmt --all
+          rm .github/workflows/tmp-patch-pr186.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Prepare native v4 libspatialaudio object-PCM intent"
+          git push origin HEAD:native-v4-libspatialaudio-materialization
