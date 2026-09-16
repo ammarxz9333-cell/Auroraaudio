@@ -27,7 +27,8 @@ Current canonical base:
 - #194 merged AVDECC media-stack CONNECT/DISCONNECT ownership and AVDECC-supplied talker parameters at merge commit `d6b0f6171003a6833bd05b8c81e8739d7bb43868`.
 - #195 merged the Rust AVDECC worker/control wrapper at merge commit `674553b3c21be3782f5c01552ddd84bf165ea6b3`.
 - #196 merged the fixed-size fail-closed six-stream AVDECC session gate at merge commit `e675f400fd471c6b4c0a45e38df0c40e7639e624`.
-- Active draft #198 (`genavb-rust-avdecc-prepare`) exposes the native AVDECC-driven talker prepare path through the Rust GenAVB adapter and adds a cross-language FFI probe.
+- #198 merged the Rust talker-side AVDECC prepare bridge and cross-language FFI probe at merge commit `e030cd9ee152352e156ebd597492b8e2721466f2`.
+- Active draft #200 (`genavb-avdecc-runtime`) orchestrates AVDECC control, six accepted stream roles, six GenAVB talkers and the canonical 7.1.4 -> six-stereo fanout as one fail-closed worker epoch.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -69,6 +70,7 @@ Rules:
 - #194 — NXP AVDECC media-stack control adapter and stack-owned CONNECT -> talker-prepare parameters.
 - #195 — Rust AVDECC worker/control wrapper with pollable control fd and sanitized CONNECT/DISCONNECT events.
 - #196 — fixed-size six-stream AVDECC session gate requiring all six canonical stereo endpoint roles before immersive start eligibility.
+- #198 — Rust AVDECC-driven GenAVB talker preparation with same-shim validation and cross-language FFI proof.
 
 These are software/reference milestones unless a specific item explicitly states physical evidence.
 
@@ -121,13 +123,15 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 - exact-pin CI proved six talkers, one `genavb_init()`, equal first timestamps and exactly +1,000,000 ns per 48 frames;
 - the static `aurora_genavb_prepare(...)` path remains a software/validation fallback and is not the preferred native ESP plug-and-play path.
 
-### AVDECC-owned GenAVB lifecycle — merged #194/#195/#196; active #198
+### AVDECC-owned GenAVB lifecycle — merged #194/#195/#196/#198; active #200
 - #194 opens `GENAVB_CTRL_AVDECC_MEDIA_STACK` on the shared runtime, exposes the control RX fd, accepts only supported AAF/48 kHz/stereo/24-bit talker CONNECTs, caches exact stack-supplied `genavb_stream_params`, and invalidates them on matching DISCONNECT;
 - `aurora_genavb_prepare_avdecc(...)` creates a talker from the cached stack-owned parameters, so stream ID, destination MAC, port, class and format are not invented by Aurora;
 - #195 wraps that control channel in Rust and exposes only sanitized CONNECT/DISCONNECT events plus a worker-only opaque native handle while the channel is open;
 - #196 maps exactly six deployment-selected AVDECC Stream Output descriptor indices to Front, Center/LFE, Surround, Back Surround, Top Front and Top Rear roles; duplicate/unknown indices, duplicate stream IDs/MACs, invalid media contracts, partial sets and mismatched DISCONNECTs fail closed;
 - immersive start eligibility is explicit: `require_complete()` requires all six accepted connections; no missing speaker pair is silently routed;
 - #198 adds the Rust talker-side AVDECC prepare bridge, an AVDECC-only constructor with no placeholder network identities, same-shim validation before native pointer crossing, and a cross-language FFI probe;
+- #200 adds `adapters/aurora-network-genavb-runtime`: one worker-owned AVDECC control channel + six-stream session gate + six AVDECC-prepared GenAVB talkers + canonical 12-channel-to-six-stereo fanout;
+- #200 software probe passes the positive lifecycle `6 CONNECT -> 6 prepare -> 6 start -> 6 same-timeline submits -> DISCONNECT -> abort all`, while exact NXP 7.3.2 compile/shared-clock/control probes remain green;
 - exact-pin/native/Rust CI is software/API evidence only; no real NXP service or ESP endpoint has yet completed the physical ADP/ACMP/gPTP path.
 
 ### Sound Open Firmware / libspatialaudio
@@ -145,13 +149,12 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Finish #198: keep Rust 1.78 fmt/check/clippy/tests, the cross-language Rust AVDECC-prepare FFI probe, exact NXP 7.3.2 compile/probes, and general CI green before merge.
-2. Add a six-talker GenAVB worker runtime that consumes accepted session events, prepares each talker from the matching AVDECC cached stream state, and requires both six accepted connections and six successful current-epoch prepares before start.
-3. Make six-talker start/submit fail closed as a set: partial start rolls back, any one-talker submit fault stops the set, DISCONNECT immediately removes start eligibility, and reconnect must re-prepare the affected stream in the new epoch.
-4. Add deterministic negative probes for one prepare failure, one start failure, one submit failure, duplicate/reordered CONNECTs, DISCONNECT while active, stale prepared state, and reconnect recovery.
-5. On supported physical NXP GenAVB hardware/service, establish gPTP lock and prove ADP/ACMP connection to one real ESP-AVB listener first, then six listeners.
-6. Prove reconnect, drift, multi-endpoint synchronization, RF resilience and physical loopback latency before production-selection claims.
-7. Continue native-v4/libspatialaudio work (#193) independently; resume binaural and physical tracker #143 by user priority.
+1. Finish #200: keep Rust 1.78 fmt/check/clippy/tests, the six-stream runtime FFI lifecycle probe, exact NXP 7.3.2 compile/probes, and general Linux/Windows/MSRV CI green before merge.
+2. Add deterministic runtime negative probes for one prepare failure, one start failure, one submit failure, duplicate/reordered CONNECTs, DISCONNECT while active, stale prepared state, and reconnect recovery.
+3. Keep reconnect fail closed: a disconnected/reconnected role must be accepted by the six-stream session again and all talkers must enter a fresh prepare/start epoch before PCM resumes.
+4. On supported physical NXP GenAVB hardware/service, establish gPTP lock and prove ADP/ACMP connection to one real ESP-AVB listener first.
+5. Extend physical proof from one ESP listener to all six and measure reconnect, drift, multi-endpoint synchronization, RF resilience and physical loopback latency before production-selection claims.
+6. Continue native-v4/libspatialaudio work (#193) independently; resume binaural and physical tracker #143 by user priority.
 
 ## 7. Physical acceptance critical path — tracker #143
 
@@ -182,7 +185,7 @@ Do not invent ALSA device names, reset/drop counters, hardware timings, supporte
 - realtime engine: `crates/aurora-realtime-engine/`;
 - open pro-audio: `config/open-audio-stack-v1.json`, `validation/open-audio-stack/`, `docs/adr/0021-open-pro-audio-stack-integration.md`;
 - ESP fanout/orchestration: `adapters/aurora-network-esp-avb/`;
-- GenAVB talker/control/session: `adapters/aurora-network-genavb/`, `adapters/aurora-network-genavb-avdecc/`, `adapters/aurora-network-genavb-session/`, `.github/workflows/genavb-aaf-talker-ci.yml`;
+- GenAVB talker/control/session/runtime: `adapters/aurora-network-genavb/`, `adapters/aurora-network-genavb-avdecc/`, `adapters/aurora-network-genavb-session/`, `adapters/aurora-network-genavb-runtime/`, `.github/workflows/genavb-aaf-talker-ci.yml`;
 - immersive/JOC: `validation/immersive/`; open immersive references: `validation/open-immersive/`;
 - binaural: `validation/binaural/`; room correction: `validation/room-correction/`;
 - physical ingress: `validation/physical/`; virtual hardware: `validation/virtual-hardware/`;
@@ -198,4 +201,4 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-Also run every domain-specific gate touched by the change. GenAVB adapter/control changes must run `GenAVB AAF Talker CI`; open pro-audio config/source-policy changes must run `Open Audio Stack CI`; ESP fanout/orchestration changes must run `ESP-AVB Endpoint Contract CI`. Tooling/simulation/reference gates must never be reported as physical, RF, synchronization, interoperability, acoustic or perceptual proof.
+Also run every domain-specific gate touched by the change. GenAVB adapter/control/runtime changes must run `GenAVB AAF Talker CI`; open pro-audio config/source-policy changes must run `Open Audio Stack CI`; ESP fanout/orchestration changes must run `ESP-AVB Endpoint Contract CI`. Tooling/simulation/reference gates must never be reported as physical, RF, synchronization, interoperability, acoustic or perceptual proof.
