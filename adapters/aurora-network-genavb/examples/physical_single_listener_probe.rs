@@ -85,9 +85,7 @@ mod linux_probe {
         talker
             .prepare_from_avdecc(&control, args.stream_index, config)
             .map_err(|error| format!("prepare={error}"))?;
-        talker
-            .start()
-            .map_err(|error| format!("start={error}"))?;
+        talker.start().map_err(|error| format!("start={error}"))?;
 
         let blocks = args.duration_ms.max(1);
         let send_start = Instant::now();
@@ -116,9 +114,7 @@ mod linux_probe {
                 .map_err(|error| format!("submit-block-{block_index}={error}"))?;
         }
 
-        talker
-            .stop()
-            .map_err(|error| format!("stop={error}"))?;
+        talker.stop().map_err(|error| format!("stop={error}"))?;
         control
             .close()
             .map_err(|error| format!("control-close={error}"))?;
@@ -148,16 +144,12 @@ mod linux_probe {
 
     fn parse_args() -> Result<Args, String> {
         let mut args = std::env::args().skip(1);
-        let shim = args
-            .next()
-            .map(PathBuf::from)
-            .ok_or_else(usage)?;
+        let shim = args.next().map(PathBuf::from).ok_or_else(usage)?;
         let stream_index = parse_value::<u16>(args.next(), "stream-index")?;
         let duration_ms = parse_optional::<u64>(args.next(), 5_000, "duration-ms")?;
         let target_latency_frames =
             parse_optional::<u32>(args.next(), 480, "target-latency-frames")?;
-        let connect_timeout_ms =
-            parse_optional::<u64>(args.next(), 30_000, "connect-timeout-ms")?;
+        let connect_timeout_ms = parse_optional::<u64>(args.next(), 30_000, "connect-timeout-ms")?;
         if args.next().is_some() {
             return Err(usage());
         }
@@ -233,7 +225,9 @@ mod linux_probe {
                     if event.stream_index == stream_index
                         && event.kind == GenAvbAvdeccEventKind::Disconnect =>
                 {
-                    return Err(format!("disconnect-before-connect stream-index={stream_index}"));
+                    return Err(format!(
+                        "disconnect-before-connect stream-index={stream_index}"
+                    ));
                 }
                 Some(_) => {}
             }
