@@ -143,7 +143,9 @@ impl LibspatialaudioSelectionIntent {
             || speakers
                 .iter()
                 .zip(expected.iter())
-                .any(|(speaker, role)| !speaker.enabled || speaker.channel_role != *role)
+                .any(|(speaker, role)| {
+                    !speaker.enabled || speaker.channel_role.as_str() != role.as_str()
+                })
         {
             return Err(SelectionError::SceneLayoutMismatch);
         }
@@ -286,6 +288,15 @@ mod tests {
         LibspatialaudioSelectionIntent::v1(PathBuf::from("/definitely/not/a/real/shim.so"))
     }
 
+    fn materialization_error(
+        intent: &LibspatialaudioSelectionIntent,
+        scene: RenderScene,
+    ) -> SelectionError {
+        materialize_selected_libspatialaudio_engine(intent, scene, engine_config(), 0)
+            .err()
+            .expect("selection must fail before producing an engine")
+    }
+
     #[test]
     fn canonical_intent_round_trips_exact_schema() {
         let intent = intent();
@@ -299,13 +310,7 @@ mod tests {
     fn disabled_selection_fails_before_native_load() {
         let mut intent = intent();
         intent.enabled = false;
-        let error = materialize_selected_libspatialaudio_engine(
-            &intent,
-            scene(),
-            engine_config(),
-            0,
-        )
-        .unwrap_err();
+        let error = materialization_error(&intent, scene());
         assert!(matches!(error, SelectionError::NotSelected));
     }
 
@@ -313,13 +318,7 @@ mod tests {
     fn wrong_component_identity_fails_before_native_load() {
         let mut intent = intent();
         intent.component_id = "org.aurora.renderer.other".to_owned();
-        let error = materialize_selected_libspatialaudio_engine(
-            &intent,
-            scene(),
-            engine_config(),
-            0,
-        )
-        .unwrap_err();
+        let error = materialization_error(&intent, scene());
         assert!(matches!(error, SelectionError::ComponentIdentityMismatch));
     }
 
@@ -327,13 +326,7 @@ mod tests {
     fn wrong_media_contract_fails_before_native_load() {
         let mut intent = intent();
         intent.block_frames = 128;
-        let error = materialize_selected_libspatialaudio_engine(
-            &intent,
-            scene(),
-            engine_config(),
-            0,
-        )
-        .unwrap_err();
+        let error = materialization_error(&intent, scene());
         assert!(matches!(error, SelectionError::UnsupportedMediaContract));
     }
 
@@ -343,13 +336,7 @@ mod tests {
             "../../../fixtures/scenes/stereo_circle.json"
         ))
         .unwrap();
-        let error = materialize_selected_libspatialaudio_engine(
-            &intent(),
-            stereo,
-            engine_config(),
-            0,
-        )
-        .unwrap_err();
+        let error = materialization_error(&intent(), stereo);
         assert!(matches!(error, SelectionError::SceneLayoutMismatch));
     }
 
