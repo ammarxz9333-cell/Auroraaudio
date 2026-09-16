@@ -23,8 +23,8 @@ Current canonical base:
 - PR #182 merged mutually exclusive object-PCM realtime materialization.
 - PR #183 merged explicit libspatialaudio control-plane selection.
 - Draft PR #184 is separately adding Configuration v4 native 7.1.4 elevation intent; do not couple this ESP endpoint evaluation to that schema change.
-- PR #186 (`esp-avb-ptp-integration`) is the active exact-pin/governance gate for Scramble Tools `esp_avb` + `esp_ptp`.
-- Stacked PR #187 (`esp-avb-endpoint-contract`) adds Aurora's first deterministic 7.1.4 -> six stereo ESP-AVB endpoint fanout contract without claiming physical transport.
+- PR #186 merged the exact-pin/governance gate for Scramble Tools `esp_avb` + `esp_ptp` into `main-v2` at merge commit `9de1014fa7d8366d37622974791f43d9427ecada`.
+- Active PR #187 (`esp-avb-endpoint-contract`) adds Aurora's first deterministic 7.1.4 -> six stereo ESP-AVB endpoint fanout contract. Its dedicated fmt/check/clippy/tests and six-node probe are green at the current implementation head before this handoff-only refresh.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -66,6 +66,7 @@ Rules:
 - #173–#175 — RoomEQ/CamillaDSP reference, synthetic optimization, and real 12-channel execution differential.
 - #176 — pinned Google OBR / EBU BEAR / `sofar` binaural-reference provenance baseline.
 - #179–#183 — open pro-audio boundary, real AOO adapter, libspatialaudio adapter, object-PCM materialization, and explicit control-plane selection.
+- #186 — exact-pinned ESP-AVB/ESP-PTP source, governance, registry and license boundary.
 
 These are software/reference milestones only unless a specific item explicitly says physical evidence exists.
 
@@ -125,7 +126,7 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network I/O 
 - upstream documents ESP32-P4 EMAC hardware timestamps, ESP32-C6 software-disciplined clock operation and Wi-Fi FollowUpInformation transport;
 - it may map Aurora media time to endpoint/network time but never becomes Aurora's logical media-clock owner.
 
-### Aurora ESP-AVB fanout adapter — stacked PR #187
+### Aurora ESP-AVB fanout adapter — PR #187
 - standalone package: `adapters/aurora-network-esp-avb`;
 - canonical mapping: `FL/FR`, `FC/LFE`, `SL/SR`, `SBL/SBR`, `TFL/TFR`, `TRL/TRR`;
 - every endpoint stream is exactly stereo at Aurora's canonical 48 kHz network media rate;
@@ -134,7 +135,7 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network I/O 
 - prepared endpoint buffers are allocated before streaming; `split()` performs bounded PCM copies only and no network I/O;
 - capability truth separates wired P4 hardware-timestamp support from wireless C6 software-clock operation;
 - required clock discipline is `PtpFollower`; no adaptive-rate or packet-repair capability is claimed;
-- dedicated CI builds/tests the standalone crate and requires the six-node contract probe to pass.
+- dedicated CI builds/tests the standalone crate and the six-node contract probe has passed.
 
 ### Sound Open Firmware
 - pin: `11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c`;
@@ -159,12 +160,11 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network I/O 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Make PR #186 (`esp-avb-ptp-integration`) green and merge its exact-pin/governance gate without weakening the stereo-per-stream or physical-evidence truth boundaries.
-2. Make stacked PR #187 (`esp-avb-endpoint-contract`) green; preserve exact six-stream channel coverage, shared timestamp/sequence semantics and PTP-follower ownership.
-3. After #186/#187 are stable, bind each prepared stereo node stream to an actual host AVB sender plus ESP-AVB listener firmware without moving network I/O into Aurora's realtime callback.
-4. Prove multi-endpoint synchronization, loss/reconnect, drift, RF resilience and measured physical latency on selected ESP32-P4/C6 hardware before considering it an immersive speaker transport.
-5. Keep draft Configuration v4 work (#184) independent and reconcile only through public Aurora contracts after it merges.
-6. Resume Phase 11 binaural semantic/HRTF/head-rotation work and physical tracker #143 according to user priority.
+1. Merge PR #187 after its final-head `ESP-AVB Endpoint Contract CI` remains green; preserve exact six-stream channel coverage, shared timestamp/sequence semantics and PTP-follower ownership.
+2. Bind each prepared stereo node stream to an actual host AVB sender plus ESP-AVB listener firmware without moving network I/O into Aurora's realtime callback.
+3. Prove multi-endpoint synchronization, loss/reconnect, drift, RF resilience and measured physical latency on selected ESP32-P4/C6 hardware before considering it an immersive speaker transport.
+4. Keep draft Configuration v4 work (#184) independent and reconcile only through public Aurora contracts after it merges.
+5. Resume Phase 11 binaural semantic/HRTF/head-rotation work and physical tracker #143 according to user priority.
 
 ## 8. Physical acceptance critical path — tracker #143
 
