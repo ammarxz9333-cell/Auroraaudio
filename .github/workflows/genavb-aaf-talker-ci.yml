@@ -45,6 +45,21 @@ jobs:
           cargo clippy --manifest-path adapters/aurora-network-genavb-session/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path adapters/aurora-network-genavb-session/Cargo.toml
 
+      - name: Exercise Rust AVDECC prepare FFI boundary
+        run: |
+          mkdir -p artifacts
+          cc -std=c11 -Wall -Wextra -Werror -shared -fPIC \
+            adapters/aurora-network-genavb/native/rust_avdecc_mock.c \
+            -o "$RUNNER_TEMP/libaurora-genavb-mock-a.so"
+          cp "$RUNNER_TEMP/libaurora-genavb-mock-a.so" "$RUNNER_TEMP/libaurora-genavb-mock-b.so"
+          cargo run --quiet --manifest-path adapters/aurora-network-genavb/Cargo.toml \
+            --example avdecc_prepare_probe -- \
+            "$RUNNER_TEMP/libaurora-genavb-mock-a.so" \
+            "$RUNNER_TEMP/libaurora-genavb-mock-b.so" \
+            | tee artifacts/genavb-rust-avdecc.txt
+          grep -q 'PASS prepare=ffi same-shim=required static-placeholder=forbidden' \
+            artifacts/genavb-rust-avdecc.txt
+
       - name: Fetch exact NXP GenAVB TSN source
         run: |
           git init "$RUNNER_TEMP/genavb"
@@ -98,4 +113,5 @@ jobs:
           path: |
             artifacts/genavb-aaf-talker.txt
             artifacts/genavb-avdecc-control.txt
+            artifacts/genavb-rust-avdecc.txt
           if-no-files-found: warn
