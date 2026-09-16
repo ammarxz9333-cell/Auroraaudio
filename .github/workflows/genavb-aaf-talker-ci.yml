@@ -94,6 +94,29 @@ jobs:
           git -C "$RUNNER_TEMP/genavb" checkout --detach FETCH_HEAD
           test "$(git -C "$RUNNER_TEMP/genavb" rev-parse HEAD)" = "$GENAVB_SHA"
 
+      - name: Exercise exact-API NXP gPTP snapshot contract
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -Wno-error=empty-body \
+            -I"$RUNNER_TEMP/genavb/include" \
+            -I"$RUNNER_TEMP/genavb/include/linux" \
+            adapters/aurora-network-genavb/native/genavb_gptp_snapshot.c \
+            adapters/aurora-network-genavb/native/genavb_gptp_snapshot_mock.c \
+            -o "$RUNNER_TEMP/genavb-gptp-snapshot"
+          AURORA_GPTP_MOCK_SCENARIO=locked "$RUNNER_TEMP/genavb-gptp-snapshot" \
+            | tee artifacts/genavb-gptp-snapshot.txt
+          grep -q '"verdict":"PASS"' artifacts/genavb-gptp-snapshot.txt
+          grep -q '"grandmaster_id":"02:00:00:ff:fe:00:00:01"' artifacts/genavb-gptp-snapshot.txt
+          grep -q '"clock_status":"LOCKED"' artifacts/genavb-gptp-snapshot.txt
+          grep -q '"source_type":"INTERNAL"' artifacts/genavb-gptp-snapshot.txt
+          for scenario in unlocked free-wheeling wrong-source gm-zero; do
+            if AURORA_GPTP_MOCK_SCENARIO="$scenario" "$RUNNER_TEMP/genavb-gptp-snapshot" \
+              > "$RUNNER_TEMP/gptp-$scenario.json"; then
+              echo "negative gPTP scenario unexpectedly passed: $scenario" >&2
+              exit 1
+            fi
+            grep -q '"verdict":"FAIL"' "$RUNNER_TEMP/gptp-$scenario.json"
+          done
+
       - name: Compile shim against exact public API
         run: |
           cc -std=c11 -Wall -Wextra -Werror -Wno-error=empty-body -fPIC \
@@ -142,4 +165,5 @@ jobs:
             artifacts/genavb-rust-avdecc.txt
             artifacts/genavb-runtime.txt
             artifacts/genavb-runtime-negative.txt
+            artifacts/genavb-gptp-snapshot.txt
           if-no-files-found: warn
