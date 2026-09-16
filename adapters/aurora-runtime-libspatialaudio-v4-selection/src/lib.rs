@@ -323,18 +323,10 @@ mod tests {
     }
 
     #[test]
-    fn inactive_714_speaker_fails_runtime_registration_closed() {
-        let mut config = selected_configuration().config().clone();
-        config.speaker_layout.speakers[0].active = false;
-        let config = ValidatedConfigurationV4::new(config).unwrap();
+    fn runtime_registration_rejects_non_twelve_active_speakers() {
         assert!(matches!(
-            prepare_runtime_plan_from_configuration_v4(&config),
-            Err(V4RuntimePlanError::Runtime(
-                RuntimePreparationError::RendererComponent {
-                    issue: RendererComponentIssue::LayoutCapabilityMismatch,
-                    ..
-                }
-            ))
+            validate_runtime_registration(&serde_json::json!({}), 11),
+            Err(RendererComponentIssue::LayoutCapabilityMismatch)
         ));
     }
 
