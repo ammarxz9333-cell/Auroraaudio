@@ -1,0 +1,15 @@
+[package]
+name = "aurora-network-genavb-session"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.78"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[dependencies]
+aurora-network-genavb-avdecc = { path = "../aurora-network-genavb-avdecc" }
+
+[lib]
+path = "src/lib.rs"
+
+[workspace]
