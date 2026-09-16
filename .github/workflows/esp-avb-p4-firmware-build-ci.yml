@@ -38,6 +38,8 @@ jobs:
 
           cfg = json.loads(Path("config/esp-avb-p4-build-reference-v1.json").read_text())
           print(f"ESP_IDF_IMAGE={cfg['esp_idf']['docker_image']}")
+          print(f"ESP_IDF_SHA={cfg['esp_idf']['pinned_commit']}")
+          print(f"ESP_IDF_UPSTREAM={cfg['esp_idf']['upstream']}")
           print(f"ENDPOINT_SHA={cfg['endpoint_app']['pinned_commit']}")
           for component in cfg["local_component_overrides"]:
               key = component["name"].upper()
@@ -68,6 +70,9 @@ jobs:
           clone_pin https://github.com/scrambletools/esp_ptp.git "$ESP_PTP_SHA" "$root/endpoint/components/esp_ptp"
           clone_pin https://github.com/scrambletools/esp_ptp_rpc.git "$ESP_PTP_RPC_SHA" "$root/endpoint/components/esp_ptp_rpc"
 
+          clone_pin "$ESP_IDF_UPSTREAM" "$ESP_IDF_SHA" "$root/esp-idf"
+          git -C "$root/esp-idf" submodule update --init --recursive --depth 1
+
           echo "AURORA_ESP_P4_ROOT=$root" >> "$GITHUB_ENV"
 
       - name: Apply Aurora exact-pin PTP and listener instrumentation
@@ -93,15 +98,18 @@ jobs:
           path.write_text(text.replace(old, new, 1), encoding="utf-8")
           PY
 
-      - name: Build wired ESP32-P4 validation firmware with ESP-IDF 6.0.2
+      - name: Build wired ESP32-P4 validation firmware with exact compatible SDK
         shell: bash
         run: |
           set -euo pipefail
-          docker run --rm \
+          docker run --rm --entrypoint /bin/bash \
             -v "$AURORA_ESP_P4_ROOT/endpoint:/project" \
+            -v "$AURORA_ESP_P4_ROOT/esp-idf:/opt/aurora-idf" \
+            -e IDF_PATH=/opt/aurora-idf \
+            -e IDF_TOOLS_PATH=/opt/aurora-idf-tools \
             -w /project \
             "$ESP_IDF_IMAGE" \
-            bash -lc 'idf.py set-target esp32p4 && idf.py build'
+            -lc 'set -euo pipefail; unset IDF_PYTHON_ENV_PATH; /opt/aurora-idf/install.sh esp32p4; . /opt/aurora-idf/export.sh; idf.py --version; idf.py set-target esp32p4; idf.py build'
 
       - name: Verify Aurora snapshot translation unit was compiled
         shell: bash

@@ -208,7 +208,7 @@ Before flashing hardware, Aurora compiles the exact validation firmware composit
 config/esp-avb-p4-build-reference-v1.json
 ```
 
-The gate pins the upstream `ESP-AVB-Endpoint` application, Aurora's exact `esp_avb`/`esp_ptp` pins, `esp_ptp_rpc`, the `esp32p4` target and an ESP-IDF 6.0.2 build image. It applies both validation patches, compiles `esp_avb_aurora_snapshot.c` into the endpoint application, runs `idf.py set-target esp32p4` plus `idf.py build`, and verifies that the snapshot translation unit produced a build object.
+The gate pins the upstream `ESP-AVB-Endpoint` application, Aurora's exact `esp_avb`/`esp_ptp` pins, `esp_ptp_rpc`, the `esp32p4` target and a compatible exact SDK revision (the ESP-IDF 6.0.2 image is bootstrap only; see [SDK compatibility](esp-p4-sdk-compatibility.md)). It applies both validation patches, compiles `esp_avb_aurora_snapshot.c` into the endpoint application, runs `idf.py set-target esp32p4` plus `idf.py build`, and verifies that the snapshot translation unit produced a build object.
 
 A green firmware build is only source/API/toolchain compatibility evidence. It is **not** a physical AVDECC, AAF, gPTP, RX, synchronization or latency result.
 

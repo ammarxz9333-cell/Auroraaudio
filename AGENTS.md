@@ -34,7 +34,7 @@ Current canonical base:
 - #203 merged the fail-closed one-listener physical evidence correlator at merge commit `c4f744c1bfb3c788e1fd16f556e0f7e45ffa1312`.
 - #204 merged exact-public-API NXP gPTP snapshots and before/after evidence bundling at merge commit `18c75cfe9388f1667546f46b96835dcd6a991ad1`.
 - #205 merged exact-pin ESP ACMP/stream/RX/gPTP evidence tooling at merge commit `3efcc4005724b46fef021ecb7654ab54d744d5a3`.
-- Active PR #206 (`esp-p4-firmware-build-gate`) builds the pinned wired ESP32-P4 validation firmware with Aurora's #205 instrumentation under ESP-IDF 6.0.2. Build success remains compile/toolchain evidence only.
+- Active PR #206 (`esp-p4-firmware-build-gate`) builds the pinned wired ESP32-P4 validation firmware with Aurora's #205 instrumentation with exact SDK `eff8fd1d0b182429b1b574cba4ae8e9be7afa457` (6.1-dev; stock 6.0.2 lacks the required hardware-clock APIs). Build success remains compile/toolchain evidence only.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -121,7 +121,7 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 - exact-pinned `esp_ptp` status exposes active PTP profile, remote-clock validity and selected best-clock identity;
 - exact-pinned ATDECC GET_COUNTERS command/response/unsolicited functions are still explicit not-implemented stubs, so controller-visible AECP GET_COUNTERS must not be claimed for this pin;
 - merged #205 uses a narrow exact-source validation-firmware patch to surface those existing ACMP/RX/gPTP facts through the serialized `avb_status()` path and machine-readable before/after snapshots;
-- active #206 pins the upstream `ESP-AVB-Endpoint` app plus ESP-IDF 6.0.2 and compiles the instrumented wired P4 firmware in CI;
+- active #206 pins the upstream `ESP-AVB-Endpoint` app plus exact compatible Scramble Tools ESP-IDF SDK (see `docs/esp-p4-sdk-compatibility.md`) and compiles the instrumented wired P4 firmware in CI;
 - no physical RF/synchronization/latency claim exists yet.
 
 ### Aurora ESP fanout/orchestration — merged #187/#189
