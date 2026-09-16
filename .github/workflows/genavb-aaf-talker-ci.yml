@@ -1,0 +1,75 @@
+name: GenAVB AAF Talker CI
+
+on:
+  pull_request:
+    paths:
+      - "adapters/aurora-network-genavb/**"
+      - ".github/workflows/genavb-aaf-talker-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: genavb-aaf-talker-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  GENAVB_SHA: 6b962d6c34b0c3f142295a213dfa70bda193b23d
+
+jobs:
+  exact-api-and-adapter:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@1.78.0
+        with:
+          components: rustfmt,clippy
+
+      - name: Validate standalone Rust adapter
+        run: |
+          cargo fmt --manifest-path adapters/aurora-network-genavb/Cargo.toml -- --check
+          cargo check --manifest-path adapters/aurora-network-genavb/Cargo.toml --all-targets
+          cargo clippy --manifest-path adapters/aurora-network-genavb/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path adapters/aurora-network-genavb/Cargo.toml
+
+      - name: Fetch exact NXP GenAVB TSN source
+        run: |
+          git init "$RUNNER_TEMP/genavb"
+          git -C "$RUNNER_TEMP/genavb" remote add origin https://github.com/NXP/GenAVB_TSN.git
+          git -C "$RUNNER_TEMP/genavb" fetch --depth 1 origin "$GENAVB_SHA"
+          git -C "$RUNNER_TEMP/genavb" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/genavb" rev-parse HEAD)" = "$GENAVB_SHA"
+
+      - name: Compile shim against exact public API
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror -fPIC \
+            -Iadapters/aurora-network-genavb/native \
+            -I"$RUNNER_TEMP/genavb/include" \
+            -I"$RUNNER_TEMP/genavb/include/linux" \
+            -c adapters/aurora-network-genavb/native/aurora_genavb_shim.c \
+            -o "$RUNNER_TEMP/aurora_genavb_shim.o"
+
+      - name: Exercise shared-runtime and shared-PTP-anchor contract
+        run: |
+          mkdir -p artifacts
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iadapters/aurora-network-genavb/native \
+            -I"$RUNNER_TEMP/genavb/include" \
+            -I"$RUNNER_TEMP/genavb/include/linux" \
+            adapters/aurora-network-genavb/native/aurora_genavb_shim.c \
+            adapters/aurora-network-genavb/native/genavb_shim_contract_probe.c \
+            -pthread -o "$RUNNER_TEMP/genavb-shim-contract-probe"
+          "$RUNNER_TEMP/genavb-shim-contract-probe" | tee artifacts/genavb-aaf-talker.txt
+          grep -q 'PASS talkers=6 init_calls=1 rate=48000 channels=2 block=48 shared_ptp_anchor=1 delta_ns=1000000' \
+            artifacts/genavb-aaf-talker.txt
+
+      - name: Upload GenAVB talker evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: genavb-aaf-talker-evidence
+          path: artifacts/genavb-aaf-talker.txt
+          if-no-files-found: warn
