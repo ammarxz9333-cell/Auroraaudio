@@ -29,7 +29,8 @@ Current canonical base:
 - #196 merged the fixed-size fail-closed six-stream AVDECC session gate at merge commit `e675f400fd471c6b4c0a45e38df0c40e7639e624`.
 - #198 merged the Rust talker-side AVDECC prepare bridge and cross-language FFI probe at merge commit `e030cd9ee152352e156ebd597492b8e2721466f2`.
 - #200 merged the six-stream AVDECC-owned GenAVB runtime at merge commit `7979bdbd0f1c0923166baa6e0ed87ffa59983404`.
-- Active draft #201 (`genavb-runtime-negative-probes`) adds deterministic whole-set failure, stale-state and reconnect recovery probes for that runtime.
+- #201 merged deterministic whole-set failure, stale-state and reconnect recovery probes at merge commit `098c7ea32480259f93c4b6ed19d06fb5a0085812`.
+- Active draft #202 (`genavb-single-listener-physical-probe`) adds a Linux/NXP single-listener hardware-ready host probe and a strict evidence protocol. It is not physical proof by itself.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -73,6 +74,7 @@ Rules:
 - #196 — fixed-size six-stream AVDECC session gate requiring all six canonical stereo endpoint roles before immersive start eligibility.
 - #198 — Rust AVDECC-driven GenAVB talker preparation with same-shim validation and cross-language FFI proof.
 - #200 — worker-side six-talker AVDECC-owned GenAVB runtime with canonical 7.1.4 fanout and whole-set fail-closed positive lifecycle proof.
+- #201 — deterministic prepare/start/submit fault rollback, duplicate/reordered CONNECT, active DISCONNECT, stale-state and reconnect recovery proof.
 
 These are software/reference milestones unless a specific item explicitly states physical evidence.
 
@@ -106,6 +108,7 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 - `esp_avb` pin `5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9` (2.18.0, MIT): AAF PCM 24-bit/48 kHz, maximum two channels/stream, P4 Ethernet and C6 Wi-Fi endpoint modes;
 - `esp_ptp` pin `5b7eec233a93733ae954beefb6df3bb9c12dc901` (1.2.3, Apache-2.0): IEEE 1588 / 802.1AS candidate; P4 hardware-timestamp and C6 software-disciplined paths;
 - ESP listener binding is AVDECC/ACMP-oriented: talker entity + talker stream identity matter; raw packet arrival alone is not treated as the native plug-and-play connection lifecycle;
+- pinned listener code already exposes receive evidence primitives including STREAM_INPUT counters, `avb_stream_in_last_rx_us()` and periodic stream-in diagnostics;
 - no physical RF/synchronization/latency claim exists yet.
 
 ### Aurora ESP fanout/orchestration — merged #187/#189
@@ -125,17 +128,17 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 - exact-pin CI proved six talkers, one `genavb_init()`, equal first timestamps and exactly +1,000,000 ns per 48 frames;
 - the static `aurora_genavb_prepare(...)` path remains a software/validation fallback and is not the preferred native ESP plug-and-play path.
 
-### AVDECC-owned GenAVB lifecycle — merged #194/#195/#196/#198/#200; active #201
+### AVDECC-owned GenAVB lifecycle — merged #194/#195/#196/#198/#200/#201; active #202
 - #194 opens `GENAVB_CTRL_AVDECC_MEDIA_STACK` on the shared runtime, exposes the control RX fd, accepts only supported AAF/48 kHz/stereo/24-bit talker CONNECTs, caches exact stack-supplied `genavb_stream_params`, and invalidates them on matching DISCONNECT;
 - `aurora_genavb_prepare_avdecc(...)` creates a talker from the cached stack-owned parameters, so stream ID, destination MAC, port, class and format are not invented by Aurora;
 - #195 wraps that control channel in Rust and exposes only sanitized CONNECT/DISCONNECT events plus a worker-only opaque native handle while the channel is open;
 - #196 maps exactly six deployment-selected AVDECC Stream Output descriptor indices to Front, Center/LFE, Surround, Back Surround, Top Front and Top Rear roles; duplicate/unknown indices, duplicate stream IDs/MACs, invalid media contracts, partial sets and mismatched DISCONNECTs fail closed;
-- immersive start eligibility is explicit: `require_complete()` requires all six accepted connections; no missing speaker pair is silently routed;
-- #198 adds the Rust talker-side AVDECC prepare bridge, an AVDECC-only constructor with no placeholder network identities, same-shim validation before native pointer crossing, and a cross-language FFI probe;
+- #198 exposes the AVDECC-driven talker prepare bridge through Rust with same-shim validation and a cross-language FFI probe;
 - #200 adds `adapters/aurora-network-genavb-runtime`: one worker-owned AVDECC control channel + six-stream session gate + six AVDECC-prepared GenAVB talkers + canonical 12-channel-to-six-stereo fanout;
-- #200 software probe passes the positive lifecycle `6 CONNECT -> 6 prepare -> 6 start -> 6 same-timeline submits -> DISCONNECT -> abort all`, while exact NXP 7.3.2 compile/shared-clock/control probes remain green;
-- #201 deterministic fault probes pass prepare/start/submit whole-set rollback, duplicate CONNECT fail-closed behavior, reordered unique CONNECT acceptance, active DISCONNECT invalidation, stale-start rejection, and fresh six-talker prepare/start recovery after reconnect;
-- exact-pin/native/Rust CI is software/API evidence only; no real NXP service or ESP endpoint has yet completed the physical ADP/ACMP/gPTP path.
+- #201 proves deterministic whole-set rollback/recovery for prepare/start/submit faults, duplicate/reordered CONNECT, active DISCONNECT, stale start and reconnect;
+- #202 adds Linux `physical_single_listener_probe`: wait for one real selected AVDECC CONNECT, prepare from ACMP-owned parameters, start, send deterministic 997 Hz AAF blocks, fail on target DISCONNECT, and emit `HOST_PASS` evidence with `physical_complete:false`;
+- #202 defines the complete one-listener gate in `docs/genavb-single-listener-physical-probe.md`: NXP host evidence + NXP gPTP lock + ESP STREAM_INPUT receive delta + identity/epoch correlation are all required before `PHYSICAL-PASS`;
+- exact-pin/native/Rust CI remains software/API/build evidence only; no real NXP service + ESP endpoint epoch has yet satisfied that complete physical gate.
 
 ### Sound Open Firmware / libspatialaudio
 - SOF pin `11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c`; i.MX8M Plus HiFi4 candidate; physical execution unproven.
@@ -152,11 +155,12 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Finish #201: keep the six deterministic fault/reconnect scenarios, Rust 1.78 GenAVB gate and general Linux/Windows/MSRV CI green before merge.
-2. On supported physical NXP GenAVB hardware/service, establish gPTP lock and prove ADP/ACMP connection to one real ESP-AVB listener first.
-3. Extend physical proof from one ESP listener to all six; verify stream identity, reconnect behavior and common presentation timing on hardware.
-4. Measure drift, multi-endpoint synchronization, RF resilience and physical loopback latency before any production-selection claim.
-5. Continue native-v4/libspatialaudio work (#193) independently; resume binaural and physical tracker #143 by user priority.
+1. Finish #202: keep the Linux physical host probe buildable on Rust 1.78, the exact NXP GenAVB gate green, and general Linux/Windows/MSRV CI green before merge. Do not execute/label it as physical proof in CI.
+2. On supported physical NXP GenAVB hardware/service + one wired ESP32-P4 listener, establish real gPTP state, perform ADP/ACMP connection, run `physical_single_listener_probe`, capture ESP STREAM_INPUT receive delta, and correlate stream identity within one epoch.
+3. Add machine-verifiable evidence correlation for the real one-listener run and prove disconnect/reconnect physically before expanding endpoint count.
+4. Extend physical proof from one ESP listener to all six; verify stream identity, reconnect behavior and common presentation timing on hardware.
+5. Measure drift, multi-endpoint synchronization, RF resilience and physical loopback latency before any production-selection claim.
+6. Continue native-v4/libspatialaudio work (#193) independently; resume binaural and physical tracker #143 by user priority.
 
 ## 7. Physical acceptance critical path — tracker #143
 
@@ -188,6 +192,7 @@ Do not invent ALSA device names, reset/drop counters, hardware timings, supporte
 - open pro-audio: `config/open-audio-stack-v1.json`, `validation/open-audio-stack/`, `docs/adr/0021-open-pro-audio-stack-integration.md`;
 - ESP fanout/orchestration: `adapters/aurora-network-esp-avb/`;
 - GenAVB talker/control/session/runtime: `adapters/aurora-network-genavb/`, `adapters/aurora-network-genavb-avdecc/`, `adapters/aurora-network-genavb-session/`, `adapters/aurora-network-genavb-runtime/`, `.github/workflows/genavb-aaf-talker-ci.yml`;
+- GenAVB one-listener physical protocol: `docs/genavb-single-listener-physical-probe.md` and `adapters/aurora-network-genavb/examples/physical_single_listener_probe.rs`;
 - immersive/JOC: `validation/immersive/`; open immersive references: `validation/open-immersive/`;
 - binaural: `validation/binaural/`; room correction: `validation/room-correction/`;
 - physical ingress: `validation/physical/`; virtual hardware: `validation/virtual-hardware/`;
