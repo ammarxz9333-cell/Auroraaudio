@@ -1,4 +1,4 @@
-use std::collections::{BTreeSet, HashSet};
+use std::collections::BTreeSet;
 
 use serde::{Deserialize, Serialize};
 
@@ -286,9 +286,7 @@ fn validate_horizontal_v4(config: &AuroraConfigurationV4) -> Result<(), ConfigEr
     let expected = match config.speaker_layout.kind {
         LayoutKindV4::Stereo => &["FL", "FR"][..],
         LayoutKindV4::Surround51 => &["FL", "FR", "FC", "LFE", "SL", "SR"][..],
-        LayoutKindV4::Surround71 => {
-            &["FL", "FR", "FC", "LFE", "SL", "SR", "SBL", "SBR"][..]
-        }
+        LayoutKindV4::Surround71 => &["FL", "FR", "FC", "LFE", "SL", "SR", "SBL", "SBR"][..],
         LayoutKindV4::CustomHorizontal => &[][..],
         LayoutKindV4::Surround714 => unreachable!("7.1.4 has dedicated validation"),
     };
@@ -313,12 +311,16 @@ fn validate_surround_714(config: &AuroraConfigurationV4) -> Result<(), ConfigErr
         ));
     }
     const EXPECTED: &[&str] = &[
-        "FL", "FR", "FC", "LFE", "SL", "SR", "SBL", "SBR", "TFL", "TFR", "TRL",
-        "TRR",
+        "FL", "FR", "FC", "LFE", "SL", "SR", "SBL", "SBR", "TFL", "TFR", "TRL", "TRR",
     ];
     validate_standard_roles(&config.speaker_layout.speakers, EXPECTED)?;
 
-    for speaker in config.speaker_layout.speakers.iter().filter(|speaker| speaker.active) {
+    for speaker in config
+        .speaker_layout
+        .speakers
+        .iter()
+        .filter(|speaker| speaker.active)
+    {
         let is_height = matches!(speaker.role.as_str(), "TFL" | "TFR" | "TRL" | "TRR");
         if is_height {
             if !speaker
@@ -361,7 +363,7 @@ fn validate_standard_roles(
     let roles = active
         .iter()
         .map(|speaker| speaker.role.as_str())
-        .collect::<HashSet<_>>();
+        .collect::<BTreeSet<_>>();
     if active.len() != expected.len()
         || roles.len() != expected.len()
         || expected.iter().any(|role| !roles.contains(role))
@@ -429,23 +431,14 @@ fn v3_shadow(config: &AuroraConfigurationV4) -> AuroraConfiguration {
     }
 }
 
-fn v4_error(
-    code: ErrorCode,
-    path: &str,
-    category: ErrorCategory,
-    detail: &str,
-) -> ConfigError {
-    // Public constructors intentionally remain bounded/private. Serialize a tiny
-    // invalid v3 document to obtain no hidden state; then replace the structured
-    // fields through serde, preserving ConfigError's stable public representation.
-    serde_json::from_value(serde_json::json!({
-        "code": code,
-        "field_path": path,
-        "category": category,
-        "detail": detail,
-        "remediation": "correct the v4 field and validate again"
-    }))
-    .expect("static v4 ConfigError representation must remain serializable")
+fn v4_error(code: ErrorCode, path: &str, category: ErrorCategory, detail: &str) -> ConfigError {
+    ConfigError::new(
+        code,
+        path,
+        category,
+        detail,
+        Some("correct the v4 field and validate again"),
+    )
 }
 
 #[cfg(test)]
@@ -460,7 +453,10 @@ mod tests {
         let validated = ValidatedConfigurationV4::from_json(SURROUND_714).unwrap();
         assert_eq!(validated.config().audio_format.channel_count, 12);
         assert!(validated.config().speaker_layout.elevation_rendering);
-        assert_eq!(validated.config().speaker_layout.kind, LayoutKindV4::Surround714);
+        assert_eq!(
+            validated.config().speaker_layout.kind,
+            LayoutKindV4::Surround714
+        );
         assert!(validated
             .config()
             .speaker_layout
