@@ -1,0 +1,115 @@
+name: Temporary external Object-PCM prepared-plan update
+
+on:
+  push:
+    branches:
+      - prepared-external-object-pcm-renderer
+
+permissions:
+  contents: write
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: prepared-external-object-pcm-renderer
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - name: Apply prepared-plan contract update
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace_once(path, old, new):
+              p = Path(path)
+              text = p.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f"{path}: expected one match, found {count}: {old[:80]!r}")
+              p.write_text(text.replace(old, new, 1))
+
+          assembly = "crates/aurora-runtime-assembly/src/lib.rs"
+          replace_once(
+              assembly,
+              '''    /// Existing horizontal spread VBAP renderer.\n    HorizontalSpreadVbap,\n}\n''',
+              '''    /// Existing horizontal spread VBAP renderer.\n    HorizontalSpreadVbap,\n    /// External object-to-PCM renderer selected by a prepared component identity.\n    ///\n    /// This is passive control-plane intent only. It does not load native code,\n    /// construct a renderer, or imply runtime availability.\n    ExternalObjectPcm,\n}\n''',
+          )
+          replace_once(
+              assembly,
+              '''    /// Overrides the implementation identity after registry resolution.\n    pub fn with_component_identity(mut self, identity: PreparedComponentIdentity) -> Self {\n''',
+              '''    /// Describes an external object-to-PCM renderer implementation.\n    ///\n    /// The supplied identity must come from an already validated component\n    /// registration. This constructor remains passive and performs no loading or I/O.\n    pub const fn external_object_pcm(identity: PreparedComponentIdentity) -> Self {\n        Self {\n            kind: PreparedRendererKind::ExternalObjectPcm,\n            horizontal_spread: None,\n            component_identity: identity,\n        }\n    }\n\n    /// Overrides the implementation identity after registry resolution.\n    pub fn with_component_identity(mut self, identity: PreparedComponentIdentity) -> Self {\n''',
+          )
+          replace_once(
+              assembly,
+              '''        let spread = PreparedRendererPlan::horizontal_spread_vbap(0.25).unwrap();\n        assert_eq!(basic.kind(), PreparedRendererKind::BasicInverseDistance);\n''',
+              '''        let spread = PreparedRendererPlan::horizontal_spread_vbap(0.25).unwrap();\n        let external_identity = PreparedComponentIdentity::new(\n            "org.aurora.renderer.external-object-pcm-test",\n            "0.0.1-test",\n            1,\n            0,\n        );\n        let external = PreparedRendererPlan::external_object_pcm(external_identity);\n        assert_eq!(basic.kind(), PreparedRendererKind::BasicInverseDistance);\n''',
+          )
+          replace_once(
+              assembly,
+              '''        assert_eq!(spread.kind(), PreparedRendererKind::HorizontalSpreadVbap);\n        assert_eq!(spread.horizontal_spread(), Some(0.25));\n''',
+              '''        assert_eq!(spread.kind(), PreparedRendererKind::HorizontalSpreadVbap);\n        assert_eq!(spread.horizontal_spread(), Some(0.25));\n        assert_eq!(external.kind(), PreparedRendererKind::ExternalObjectPcm);\n        assert_eq!(external.horizontal_spread(), None);\n        assert_eq!(external.component_identity(), external_identity);\n''',
+          )
+
+          inspection = "crates/aurora-runtime-inspection/src/model.rs"
+          replace_once(
+              inspection,
+              '''pub const INSPECTION_SCHEMA_VERSION: u16 = 3;\n''',
+              '''pub const INSPECTION_SCHEMA_VERSION: u16 = 4;\n''',
+          )
+          replace_once(
+              inspection,
+              '''    /// Horizontal spread VBAP intent.\n    HorizontalSpreadVbap,\n}\n''',
+              '''    /// Horizontal spread VBAP intent.\n    HorizontalSpreadVbap,\n    /// External object-to-PCM renderer intent.\n    ExternalObjectPcm,\n}\n''',
+          )
+          replace_once(
+              inspection,
+              '''            | "top-front-left"\n            | "top-front-right"\n''',
+              '''            | "top-front-left"\n            | "top-front-right"\n            | "top-rear-left"\n            | "top-rear-right"\n''',
+          )
+          replace_once(
+              inspection,
+              '''        PreparedRendererKind::HorizontalSpreadVbap => RendererKindProjection::HorizontalSpreadVbap,\n    }\n}\n''',
+              '''        PreparedRendererKind::HorizontalSpreadVbap => RendererKindProjection::HorizontalSpreadVbap,\n        PreparedRendererKind::ExternalObjectPcm => RendererKindProjection::ExternalObjectPcm,\n    }\n}\n''',
+          )
+
+          tests = "crates/aurora-runtime-inspection/src/model/tests.rs"
+          p = Path(tests)
+          text = p.read_text()
+          if 'assert_eq!(report.inspection_schema_version(), 3);' not in text:
+              raise SystemExit("inspection schema assertion not found")
+          p.write_text(text.replace(
+              'assert_eq!(report.inspection_schema_version(), 3);',
+              'assert_eq!(report.inspection_schema_version(), 4);',
+          ))
+
+          expected_dir = Path("crates/aurora-runtime-inspection/src/model/expected")
+          for path in expected_dir.iterdir():
+              if path.suffix == ".json":
+                  text = path.read_text()
+                  old = '"inspection_schema_version":3'
+                  if old not in text:
+                      raise SystemExit(f"{path}: expected JSON schema marker missing")
+                  path.write_text(text.replace(old, '"inspection_schema_version":4', 1))
+              elif path.suffix == ".txt":
+                  text = path.read_text()
+                  old = 'inspection_schema_version: 3'
+                  if old not in text:
+                      raise SystemExit(f"{path}: expected text schema marker missing")
+                  path.write_text(text.replace(old, 'inspection_schema_version: 4', 1))
+          PY
+
+          cargo fmt --all
+          cargo clippy -p aurora-runtime-assembly -p aurora-runtime-inspection --all-targets -- -D warnings
+          cargo test -p aurora-runtime-assembly -p aurora-runtime-inspection
+
+          rm .github/workflows/tmp-external-object-pcm-prepared.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Add passive external Object-PCM renderer plan"
+          git push origin HEAD:prepared-external-object-pcm-renderer
