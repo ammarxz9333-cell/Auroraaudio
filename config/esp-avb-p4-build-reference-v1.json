@@ -28,7 +28,8 @@
     }
   ],
   "aurora_instrumentation": {
-    "source_patch": "validation/physical/aurora_patch_esp_avb_listener_evidence.py",
+    "ptp_lock_source_patch": "validation/physical/aurora_patch_esp_ptp_lock_evidence.py",
+    "avb_listener_source_patch": "validation/physical/aurora_patch_esp_avb_listener_evidence.py",
     "snapshot_translation_unit": "validation/physical/esp_avb_aurora_snapshot.c"
   },
   "truth_boundary": "A successful ESP-IDF build proves exact-source/API/compile compatibility only. It is not physical AVDECC, AAF, gPTP, RX, latency, synchronization, RF or acoustic evidence."
