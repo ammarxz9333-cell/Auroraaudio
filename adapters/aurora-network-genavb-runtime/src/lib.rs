@@ -53,20 +53,29 @@ pub enum GenAvbRuntimeLoadError {
     Session(SessionError),
     Fanout(EspAvbFanoutError),
     InvalidBlockFrames(usize),
-    NonCanonicalFanout { endpoint: usize },
+    NonCanonicalFanout {
+        endpoint: usize,
+    },
 }
 
 impl fmt::Display for GenAvbRuntimeLoadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Control(source) => write!(formatter, "GenAVB AVDECC control load failed: {source}"),
+            Self::Control(source) => {
+                write!(formatter, "GenAVB AVDECC control load failed: {source}")
+            }
             Self::Talker { endpoint, source } => {
                 write!(formatter, "GenAVB talker {endpoint} load failed: {source}")
             }
-            Self::Session(source) => write!(formatter, "GenAVB AVDECC session setup failed: {source}"),
+            Self::Session(source) => {
+                write!(formatter, "GenAVB AVDECC session setup failed: {source}")
+            }
             Self::Fanout(source) => write!(formatter, "GenAVB fanout setup failed: {source}"),
             Self::InvalidBlockFrames(frames) => {
-                write!(formatter, "GenAVB runtime requires 48-frame blocks, got {frames}")
+                write!(
+                    formatter,
+                    "GenAVB runtime requires 48-frame blocks, got {frames}"
+                )
             }
             Self::NonCanonicalFanout { endpoint } => write!(
                 formatter,
@@ -98,7 +107,10 @@ impl fmt::Display for GenAvbRuntimeError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidLifecycle { expected, actual } => {
-                write!(formatter, "GenAVB runtime expected {expected:?}, got {actual:?}")
+                write!(
+                    formatter,
+                    "GenAVB runtime expected {expected:?}, got {actual:?}"
+                )
             }
             Self::InvalidTiming => formatter.write_str("invalid GenAVB scheduled latency"),
             Self::Control(source) => write!(formatter, "GenAVB AVDECC control failed: {source}"),
@@ -145,9 +157,8 @@ impl SixStreamGenAvbRuntime {
 
         let mut loaded = Vec::with_capacity(ESP_AVB_7_1_4_ENDPOINTS);
         for endpoint in 0..ESP_AVB_7_1_4_ENDPOINTS {
-            let talker = GenAvbNetworkTransport::load_avdecc(shim_path.clone()).map_err(|source| {
-                GenAvbRuntimeLoadError::Talker { endpoint, source }
-            })?;
+            let talker = GenAvbNetworkTransport::load_avdecc(shim_path.clone())
+                .map_err(|source| GenAvbRuntimeLoadError::Talker { endpoint, source })?;
             loaded.push(talker);
         }
         let talkers = match loaded.try_into() {
@@ -214,7 +225,11 @@ impl SixStreamGenAvbRuntime {
             });
         }
 
-        let event = match self.control.receive().map_err(GenAvbRuntimeError::Control)? {
+        let event = match self
+            .control
+            .receive()
+            .map_err(GenAvbRuntimeError::Control)?
+        {
             Some(event) => event,
             None => return Ok(None),
         };
