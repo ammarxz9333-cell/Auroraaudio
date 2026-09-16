@@ -69,6 +69,19 @@ aurora-genavb-single-listener-host: PASS connect=avdecc prepare=from-acmp send=a
 
 `HOST_PASS` is intentionally **not** a complete physical verdict.
 
+## Existing ESP listener telemetry
+
+The pinned `esp_avb` source already contains listener-side evidence primitives, so the first physical gate does not require an Aurora-specific firmware fork merely to prove receive activity:
+
+- `avb_stream_in_last_rx_us(state, index)` reports the most recent input-stream frame arrival in the ESP timer domain;
+- listener state maintains monotonic `stream_bytes_received` data for the media-clock/reference path;
+- `avb_get_stream_in_counters(...)` exposes STREAM_INPUT counters through the existing ATDECC/AECP implementation;
+- the built-in periodic diagnostics call `avb_stream_in_print_diag()` and retain network/PTP receive diagnostics separately.
+
+For the first wired P4 test, prefer controller-visible ATDECC/AECP STREAM_INPUT counters when available, with a raw serial diagnostic capture retained as corroborating evidence. The useful assertion is a **before/after delta during the exact host test epoch**, not merely a non-zero lifetime counter.
+
+Do not accept audible output, an LED, a stale lifetime counter or raw Ethernet packet presence by itself as listener receive proof. The evidence must bind the active STREAM_INPUT/stream identity to increasing receive activity during the host probe.
+
 ## Required evidence for a complete one-listener physical gate
 
 A complete one-listener evidence bundle must contain all of the following from the same test epoch:
@@ -89,7 +102,7 @@ A complete one-listener evidence bundle must contain all of the following from t
    - the real ESP32-P4 ATDECC entity is discovered;
    - ACMP reports the intended listener connection;
    - the listener receives the same stream identity advertised in the host CONNECT;
-   - AAF receive counters/audio activity increase during the host test signal;
+   - STREAM_INPUT/AAF receive activity increases between before/after samples taken around the host test interval;
    - listener-side gPTP/clock state is retained for the same epoch.
 
 4. **Identity correlation**
