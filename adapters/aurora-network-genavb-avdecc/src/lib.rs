@@ -53,7 +53,9 @@ impl fmt::Display for GenAvbAvdeccLoadError {
                 formatter,
                 "GenAVB shim ABI mismatch: expected {expected}, got {actual}"
             ),
-            Self::CreateFailed => formatter.write_str("GenAVB AVDECC shim failed to create a handle"),
+            Self::CreateFailed => {
+                formatter.write_str("GenAVB AVDECC shim failed to create a handle")
+            }
         }
     }
 }
@@ -70,7 +72,9 @@ impl fmt::Display for GenAvbAvdeccError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Native(code) => write!(formatter, "GenAVB AVDECC native error {code}"),
-            Self::UnknownEventKind(kind) => write!(formatter, "unknown GenAVB AVDECC event kind {kind}"),
+            Self::UnknownEventKind(kind) => {
+                write!(formatter, "unknown GenAVB AVDECC event kind {kind}")
+            }
         }
     }
 }
