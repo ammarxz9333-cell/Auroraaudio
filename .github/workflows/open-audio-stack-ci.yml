@@ -26,6 +26,8 @@ concurrency:
 env:
   AOO_SHA: dc2a5be2962ba02d6cebe297f31f2774f34e7bc7
   GENAVB_SHA: 6b962d6c34b0c3f142295a213dfa70bda193b23d
+  ESP_AVB_SHA: 5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9
+  ESP_PTP_SHA: 5b7eec233a93733ae954beefb6df3bb9c12dc901
   SOF_SHA: 11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c
   LIBSPATIALAUDIO_SHA: d149ed9744fd399b835c6f2920511f8cbcfce5ea
 
@@ -139,6 +141,24 @@ jobs:
           test -d "$RUNNER_TEMP/genavb/avtp"
           grep -q 'i.MX 8MP' "$RUNNER_TEMP/genavb/README.md"
 
+      - name: Fetch exact ESP-AVB and ESP-PTP candidates
+        run: |
+          git init "$RUNNER_TEMP/esp-avb"
+          git -C "$RUNNER_TEMP/esp-avb" remote add origin https://github.com/scrambletools/esp_avb.git
+          git -C "$RUNNER_TEMP/esp-avb" fetch --depth 1 origin "$ESP_AVB_SHA"
+          git -C "$RUNNER_TEMP/esp-avb" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/esp-avb" rev-parse HEAD)" = "$ESP_AVB_SHA"
+          test -f "$RUNNER_TEMP/esp-avb/idf_component.yml"
+          test -f "$RUNNER_TEMP/esp-avb/README.md"
+
+          git init "$RUNNER_TEMP/esp-ptp"
+          git -C "$RUNNER_TEMP/esp-ptp" remote add origin https://github.com/scrambletools/esp_ptp.git
+          git -C "$RUNNER_TEMP/esp-ptp" fetch --depth 1 origin "$ESP_PTP_SHA"
+          git -C "$RUNNER_TEMP/esp-ptp" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/esp-ptp" rev-parse HEAD)" = "$ESP_PTP_SHA"
+          test -f "$RUNNER_TEMP/esp-ptp/idf_component.yml"
+          test -f "$RUNNER_TEMP/esp-ptp/README.md"
+
       - name: Fetch exact Sound Open Firmware candidate
         run: |
           git init "$RUNNER_TEMP/sof"
@@ -152,8 +172,11 @@ jobs:
         run: |
           python3 validation/open-audio-stack/open_audio_stack_evidence.py \
             --config config/open-audio-stack-v1.json \
+            --registry config/external-components-v1.json \
             --aoo "$RUNNER_TEMP/aoo" \
             --genavb "$RUNNER_TEMP/genavb" \
+            --esp-avb "$RUNNER_TEMP/esp-avb" \
+            --esp-ptp "$RUNNER_TEMP/esp-ptp" \
             --sof "$RUNNER_TEMP/sof" \
             --libspatialaudio "$RUNNER_TEMP/libspatialaudio" \
             --output artifacts/open-audio-stack-evidence.json
@@ -170,8 +193,11 @@ jobs:
           PY
           if python3 validation/open-audio-stack/open_audio_stack_evidence.py \
             --config artifacts/bad-open-audio-stack-v1.json \
+            --registry config/external-components-v1.json \
             --aoo "$RUNNER_TEMP/aoo" \
             --genavb "$RUNNER_TEMP/genavb" \
+            --esp-avb "$RUNNER_TEMP/esp-avb" \
+            --esp-ptp "$RUNNER_TEMP/esp-ptp" \
             --sof "$RUNNER_TEMP/sof" \
             --libspatialaudio "$RUNNER_TEMP/libspatialaudio" \
             --output artifacts/bad-open-audio-stack-evidence.json; then
