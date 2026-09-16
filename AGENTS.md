@@ -4,7 +4,7 @@
 >
 > **Maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge.
 
-Last updated: **2026-09-15**
+Last updated: **2026-09-16**
 
 ## 1. Source of truth and continuation rule
 
@@ -15,12 +15,15 @@ Last updated: **2026-09-15**
 
 Current canonical base:
 - Phase 9 decoded-PCM upmix matrix is complete for the declared software subset: 5.1 -> 7.1.4, 5.1 -> custom 11.1.4, and 7.1 -> custom 11.1.4.
-- PR #173 merged the Phase 10 pinned RoomEQ/CamillaDSP reference baseline.
-- PR #174 merged the deterministic synthetic 7.1.4 RoomEQ lane and simulation-coverage registration.
-- PR #175 merged the RoomEQ -> CamillaDSP PCM execution differential, role-aware 7.1/7.1.4 WAV mapping, real 12-channel CamillaDSP sentinel, fail-closed unsupported semantics, and non-vacuous RoomEQ reference regression at merge commit `ed46a671cae70fa14c14658f6df89ca6eb6378ca`.
-- Phase 10 is complete for its declared **software/reference** scope. Physical room/DAC/speaker evidence remains separate and unproven.
-- PR #176 merged the initial Phase 11 pinned binaural-reference baseline into `main-v2` at merge commit `0b2b1d722f473db4caee43510c04914b2d217104`.
-- Active user-priority integration work is draft PR #179 on `open-audio-stack-integration`.
+- PRs #173–#175 completed the declared Phase 10 RoomEQ/CamillaDSP software/reference scope; physical room/DAC/speaker evidence remains separate and unproven.
+- PR #176 merged the initial Phase 11 binaural-reference baseline.
+- PR #179 merged the open pro-audio transport/platform boundary.
+- PR #180 merged the real AOO worker-side runtime transport adapter and host-network fault evidence; AOO is software-proven but not production-selected.
+- PR #181 merged the libspatialaudio runtime object-PCM renderer adapter.
+- PR #182 merged mutually exclusive object-PCM realtime materialization.
+- PR #183 merged explicit libspatialaudio control-plane selection.
+- Draft PR #184 is separately adding Configuration v4 native 7.1.4 elevation intent; do not couple this ESP endpoint evaluation to that schema change.
+- Active user-requested transport work is `esp-avb-ptp-integration`: exact-pin Scramble Tools `esp_avb` + `esp_ptp` as an embedded ESP32-P4/C6 speaker-endpoint/time-sync candidate.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -46,10 +49,10 @@ Rules:
 - GPL/incompatible or legally conditional references remain external unless a deliberate licensing decision changes that boundary;
 - every new simulator-testable capability must be declared in `config/simulation-coverage-v1.json` with executable healthy/fault evidence before it can be marked covered.
 
-## 3. Recent merged software/reference milestones
+## 3. Important merged software/reference milestones
 
 - #158 — Aurora-vs-OAR 5.1 object semantic differential.
-- #159 — software/runtime completion: adaptive clock-rate correction evidence, bounded reconnect recovery, panic-isolated decoder/runtime recovery, live JOC validation, placeholder regression audit, and sustained realtime/fault evidence.
+- #159 — software/runtime completion: adaptive clock-rate correction evidence, bounded reconnect recovery, panic-isolated decoder/runtime recovery, live JOC validation, placeholder regression audit, sustained realtime/fault evidence.
 - #160 — pinned JOCForge external fixture/conformance-generator lane.
 - #161 — pinned IAMF stereo encode/decode independent reference cross-check using `iamf-tools` and `libiamf`.
 - #163 — exact-pin FFmpeg compatibility matrix.
@@ -59,16 +62,13 @@ Rules:
 - #167 — exact-pin SAF 3D-VBAP differential reference lane.
 - #170 — Aurora 7.1.4 plus explicit custom 11.1.4 geometry/continuity validation against pinned SAF semantics.
 - #172 — decoded-PCM upmix validation matrix through custom 11.1.4.
-- #173 — exact-pinned RoomEQ + CamillaDSP Phase 10 external-reference baseline.
-- #174 — deterministic RoomEQ 7.1.4 synthetic optimization, four PR-eligible LFE/sub topologies, phase/policy guards and simulation-coverage evidence.
-- #175 — exact RoomEQ -> CamillaDSP real-PCM execution differential, 7.1/7.1.4 semantic channel mapping, real 12-channel CamillaDSP sentinel, unsupported-graph fail-closed behavior, and hardened non-vacuous RoomEQ reference test.
-- #176 — exact-pinned Google OBR / EBU BEAR / `sofar` Phase 11 binaural-reference provenance and upstream build/test baseline.
+- #173–#175 — RoomEQ/CamillaDSP reference, synthetic optimization, and real 12-channel execution differential.
+- #176 — pinned Google OBR / EBU BEAR / `sofar` binaural-reference provenance baseline.
+- #179–#183 — open pro-audio boundary, real AOO adapter, libspatialaudio adapter, object-PCM materialization, and explicit control-plane selection.
 
-These are software/reference milestones only. They do not establish physical eARC/DAC/acoustic behavior, protected-service compatibility, perceptual parity, or certification.
+These are software/reference milestones only unless a specific item explicitly says physical evidence exists.
 
-## 4. Phase 10 — room correction and system DSP — merged software scope
-
-Pinned external references remain external to Aurora core:
+## 4. Phase 10 — room correction and system DSP
 
 ### RoomEQ / `pierreaubert/autoeq`
 - pin: `579dd7486024fc18ff219e31eb7337362814f602`;
@@ -82,101 +82,75 @@ Pinned external references remain external to Aurora core:
 - upstream license: `GPL-3.0-only OR MPL-2.0`;
 - integration: external DSP executor/reference only.
 
-Merged Phase 10 evidence includes exact provenance, deterministic 7.1.4 optimization, multi-seat/phase/policy guards, real 12-channel CamillaDSP execution, role-aware WAVE mapping, fail-closed graph semantics, and non-vacuous regression gates.
-
 A green Phase 10 lane does **not** prove microphone/acoustic correction, physical DAC/speaker routing, measured physical latency, protected-service compatibility, Dolby/DTS/HDMI certification, or arbitrary unrepresented DSP graphs.
 
-## 5. Phase 11 — binaural — baseline merged, semantic expansion pending
+## 5. Phase 11 — binaural
 
-PR #176 is merged. Its exact external reference pins remain:
+Pinned baseline references:
+- Google OBR pin `478dc7c752d5eccae534635139ff0253eee3a14a`; external oracle only; BSD-style source plus Open Binaural Renderer Patent License 1.0.
+- EBU BEAR pin `6127e897b941211051c2ad135ee09b00be2e6ae0`; Apache-2.0; upstream explicitly pre-release; external oracle only.
+- `andreiltd/sofar` pin `06a629292689e99841e5dacaa25c4c6298616ca6`; MIT OR Apache-2.0; Rust-native SOFA/HRTF candidate only.
 
-### Google OBR
-- pin: `478dc7c752d5eccae534635139ff0253eee3a14a`;
-- boundary: external binaural validation oracle only;
-- licensing: BSD-style source license plus **Open Binaural Renderer Patent License 1.0**.
+Physical/perceptual binaural quality, personalized HRTF behavior and head-tracker hardware remain unproven.
 
-### EBU BEAR
-- pin: `6127e897b941211051c2ad135ee09b00be2e6ae0`;
-- license: Apache-2.0;
-- upstream maturity: explicitly pre-release;
-- boundary: independent external ADM-oriented binaural validation oracle only.
+## 6. Open pro-audio and embedded endpoint integration
 
-### `andreiltd/sofar`
-- pin: `06a629292689e99841e5dacaa25c4c6298616ca6`;
-- observed crate version: `0.3.0`;
-- license: `MIT OR Apache-2.0`;
-- exact `libmysofa` gitlink: `da9e4adc619ee3d1ae5e68da3ed14aa5e60b3ec1`;
-- boundary: Rust-native SOFA/HRTF/convolution candidate only, not selected runtime implementation.
+Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network I/O stays on worker threads; common rendering/system DSP completes before local/wired/wireless fanout.
 
-The merged baseline proves provenance and selected upstream build/test execution only. It does not yet prove Aurora binaural output, agreement between independent renderers, personalized HRTF quality, perceptual front/back/elevation performance, head-tracker hardware behavior, or measured latency.
-
-## 6. Open pro-audio stack integration — active PR #179
-
-Active branch: `open-audio-stack-integration`.
-
-The integration preserves Aurora-owned decoder/scene/renderer/DSP/realtime/runtime boundaries instead of importing a second architecture.
-
-### Implemented in PR #179
-- `aurora-realtime-audio-api` now owns a backend-neutral `NetworkAudioTransport` contract with exact PCM shape validation, absolute media-frame timestamps, explicit clock discipline, bounded latency/rate-correction policy and fixed telemetry/fault events.
-- The network transport contract is **worker-thread only**. Network I/O is forbidden from Aurora's audio callback.
-- `aurora-realtime-engine` contains a preallocated callback -> network-worker bridge using bounded fixed-block PCM storage plus bounded metadata; sequence and media timestamp continuity fail closed.
-- Allocation tests require steady-state callback-side bridge push/pop to allocate zero times after preparation.
-- `aurora-realtime-audio-sim` contains a deterministic bounded `SimNetworkTransport` for common lifecycle/timestamp/overflow/format-drift semantics.
-- `network-audio-transport-contract` is registered in `config/simulation-coverage-v1.json`; the Rust simulator exports its capability/fault catalogue through `validation/open-audio-stack/network_transport_sim_contract.py`, while executable evidence remains the Rust tests run by Open Audio Stack CI.
-- `config/open-audio-stack-v1.json` pins exact upstream source candidates and defines the single-clock/single-rate-controller/single-production-renderer rules.
-- The exact AOO probe now exercises client setup, source registration, stream start/stop, 12-channel 48 kHz/48-frame PCM-f32 processing, and Aurora media-frame -> AOO NTP timestamp mapping.
-- The exact libspatialaudio probe configures 7.1.4, verifies 12 outputs and finite/non-silent object rendering. Its direct object path has a documented `(512-1)/2 = 255` sample compensation delay, so the probe renders two 256-frame blocks before evaluating steady-state output.
-- The dedicated CI builds pinned AOO and VideoLAN `libspatialaudio`, verifies NXP GenAVB/TSN and SOF source/platform contracts, runs Aurora fmt/check/clippy/tests for touched realtime/network crates, and requires source-pin drift to fail closed.
-
-### Exact candidates and boundaries
-
-#### AOO
+### AOO
 - pin: `dc2a5be2962ba02d6cebe297f31f2774f34e7bc7`;
 - license: Standard Improved BSD;
 - role: peer/wireless network-audio candidate behind Aurora's worker contract;
-- useful mechanisms include timestamped PCM, jitter/loss handling, retransmission and adaptive clock-rate compensation;
-- AOO is not Aurora's logical media-clock owner.
+- status: software-proven runtime adapter with real UDP host evidence for healthy transport, deterministic loss/reorder/jitter, ±250 ppm peer-clock cases, receiver restart and lifecycle/reload; not production-selected and not RF/physical-sync proof.
 
-#### NXP GenAVB/TSN
+### NXP GenAVB/TSN
 - pin: `6b962d6c34b0c3f142295a213dfa70bda193b23d` (7.3.2);
-- role: preferred wired AVB/TSN/Milan candidate on supported NXP platforms;
-- license surface is mixed: main user-space stack is permissive/BSD-oriented while Linux modules include GPL surfaces; keep the boundary explicit;
-- hardware timestamping, gPTP lock and Milan interoperability remain physical/platform evidence, not generic CI claims.
+- role: wired AVB/TSN/Milan candidate on supported NXP platforms;
+- hardware timestamping, gPTP lock and Milan interoperability remain physical/platform evidence.
 
-#### Sound Open Firmware
+### Scramble Tools `esp_avb`
+- pin: `5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9` (component 2.18.0);
+- license: MIT;
+- role: ESP32-P4/C6 embedded AVB speaker-endpoint candidate behind Aurora's network-worker boundary;
+- pinned upstream profile: AAF PCM 24-bit/48 kHz, one talker plus one listener, maximum two channels per stream;
+- upstream includes wired endpoint, Wi-Fi endpoint and experimental Ethernet/Wi-Fi bridge modes;
+- source/provenance only in Aurora for now: no 7.1.4, RF, physical synchronization or latency claim.
+
+### Scramble Tools `esp_ptp`
+- pin: `5b7eec233a93733ae954beefb6df3bb9c12dc901` (component 1.2.3);
+- license: Apache-2.0;
+- role: embedded IEEE 1588 PTP / IEEE 802.1AS gPTP time-mapping candidate for ESP endpoints;
+- upstream documents ESP32-P4 EMAC hardware timestamps, ESP32-C6 software-disciplined clock operation and Wi-Fi FollowUpInformation transport;
+- it may map Aurora media time to endpoint/network time but never becomes Aurora's logical media-clock owner.
+
+### Sound Open Firmware
 - pin: `11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c`;
 - role: i.MX8M Plus HiFi4 DSP execution candidate;
-- Aurora continues to own DSP policy, semantic graph and coefficients;
-- physical i.MX8MP firmware/topology execution is not yet proven.
+- Aurora owns DSP policy/coefficients; physical i.MX8MP execution remains unproven.
 
-#### VideoLAN `libspatialaudio`
+### VideoLAN `libspatialaudio`
 - pin: `d149ed9744fd399b835c6f2920511f8cbcfce5ea`;
 - license: LGPL-2.1-or-later;
-- role: production spatial-renderer candidate behind a replaceable adapter/library boundary;
-- exact upstream software accepts Aurora's 7.1.4/48 kHz object-render contract after its documented direct-path compensation latency;
-- it cannot become the selected renderer until it passes Aurora realtime/allocation contracts and semantic differentials against Aurora plus independent EAR/SAF/OAR evidence where applicable.
+- role: runtime object-PCM spatial renderer behind a replaceable dynamic-shim/control-plane boundary;
+- proven software contract is canonical 7.1.4 at 48 kHz / 256 frames with 255-frame direct-path renderer latency and explicit opt-in selection;
+- not the automatic/default production renderer; no physical/acoustic parity claim.
 
 ### Clock/DSP ownership rules
 - Aurora owns the logical media timeline.
 - Exactly one adaptive sample-rate controller may own any clock-domain crossing.
-- PTP/GenAVB may own the wired network-time mapping on a supported endpoint; AOO may track an asynchronous peer only when no other rate controller owns that crossing.
-- Wired/wireless/local output fan-out occurs after common rendering and system DSP.
-- RoomEQ generates correction intent; a runtime DSP target such as SOF may execute supported operations after explicit translation/validation.
-- Only one production speaker renderer processes a block; EAR/SAF/OAR remain independent reference/oracle lanes.
-
-### Truth boundary for PR #179
-A green software CI can prove source pins, portable builds, Aurora contract behavior, deterministic simulation, AOO worker lifecycle/timestamp-format compatibility and bounded libspatialaudio 7.1.4 software output. It **cannot** prove i.MX8MP native eARC capture, GenAVB hardware timestamps/gPTP/Milan, SOF-on-HiFi4 execution, Wi-Fi/RF resilience, peer packet-loss recovery, multi-speaker physical synchronization, measured physical latency, or acoustic performance.
+- PTP/GenAVB or ESP-PTP may own network-time mapping on their supported endpoint; AOO peer correction is used only when no other controller owns the same crossing.
+- Wired/wireless/local output fanout occurs after common rendering and system DSP.
+- Only one production speaker renderer processes a block.
 
 ## 7. Current work / Next actions
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Make PR #179 green at its final head across repository-wide CI, Open Audio Stack CI, simulation/governance and sustained realtime checks; fix failures without weakening contracts.
-2. After #179 is stable, implement a real AOO peer/network adapter only behind the callback -> worker bridge and add deterministic packet loss/reorder/reconnect/drift-soak evidence. The current lifecycle/process probe is not a production network path.
-3. Add a `libspatialaudio` Aurora adapter and deterministic 7.1.4 semantic/realtime differential, including its 255-sample direct-path compensation behavior, before considering renderer selection. EAR/SAF/OAR remain independent comparison lanes.
-4. Add NXP GenAVB/TSN and SOF platform adapters only with explicit i.MX8MP gating; generic CI may validate configuration/provenance but not claim physical platform behavior.
-5. Resume Phase 11 binaural semantic differential/head-rotation/HRTF-transition work after the higher-priority open-audio integration is stabilized, unless the user changes priority again.
-6. Keep physical tracker #143 visible; resume physical eARC/JOC and multichannel output validation when authorized hardware exists.
+1. Finish the `esp-avb-ptp-integration` source/provenance gate and merge only after Open Audio Stack CI is green; do not weaken the stereo-per-stream or physical-evidence truth boundaries.
+2. Build the first real ESP-AVB/ESP-PTP endpoint prototype behind Aurora's existing network-worker/timeline contracts; define explicit channel-to-node mapping before any multi-speaker claim.
+3. Prove multi-endpoint synchronization, loss/reconnect, drift, RF resilience and measured physical latency on selected ESP32-P4/C6 hardware before considering it an immersive speaker transport.
+4. Keep draft Configuration v4 work (#184) independent and reconcile only through public Aurora contracts after it merges.
+5. Resume Phase 11 binaural semantic/HRTF/head-rotation work and physical tracker #143 according to user priority.
 
 ## 8. Physical acceptance critical path — tracker #143
 
@@ -190,19 +164,19 @@ Still unproven physically:
 - physical wired/wireless multi-speaker network synchronization;
 - physical head tracker and headphone/HRTF transfer behavior.
 
-Two ingress paths are now relevant hypotheses, neither a product freeze:
-- existing fallback validation chain: `authorized TV/player -> Lindy 38368 / SiI9437 project tap -> Linux capture host -> Aurora`;
-- preferred low-component-count investigation: legitimate TV/player eARC -> native i.MX8M Plus audio-XCVR/Linux path -> Aurora, subject to real compressed/JOC/MAT capture evidence on the selected board/design.
+Two ingress paths remain hypotheses, neither a product freeze:
+- fallback validation chain: `authorized TV/player -> Lindy 38368 / SiI9437 project tap -> Linux capture host -> Aurora`;
+- low-component-count investigation: legitimate TV/player eARC -> native i.MX8M Plus audio-XCVR/Linux path -> Aurora, subject to real compressed/JOC/MAT capture evidence on selected hardware.
 
 Do not invent ALSA device names, reset/drop counters, hardware timings, supported compressed formats, or measured acoustic results. Use actual physical evidence when hardware is present.
 
 ## 9. Key repository map
 
 - core/layouts: `crates/aurora-core/`, `crates/aurora-scene/`;
-- renderers: `crates/aurora-renderer-api/`, `aurora-renderer-basic/`, `aurora-renderer-vbap/`;
+- renderers: `crates/aurora-renderer-api/`, `aurora-renderer-basic/`, `aurora-renderer-vbap/`, external adapters under `adapters/`;
 - decoders: `crates/aurora-decoder-api/`, `aurora-decoder-*`;
 - DSP: `crates/aurora-dsp-api/`, `aurora-dsp-basic/`, `aurora-dsp-camilladsp/`;
-- audio I/O: `crates/aurora-audio-io/`, `crates/aurora-realtime-audio-*`;
+- audio I/O/network: `crates/aurora-audio-io/`, `crates/aurora-realtime-audio-*`, network adapters under `adapters/`;
 - realtime engine: `crates/aurora-realtime-engine/`;
 - open pro-audio integration: `config/open-audio-stack-v1.json`, `validation/open-audio-stack/`, `docs/adr/0021-open-pro-audio-stack-integration.md`;
 - config/runtime: `crates/aurora-config/`, `aurora-runtime-assembly/`, `aurora-runtime-materialization/`, `aurora-runtime-inspection/`;
@@ -225,4 +199,4 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-Also run every domain-specific gate touched by the change. PR #179 must run `Open Audio Stack CI` plus repository-wide realtime/simulation/governance checks. Tooling/simulation/reference gates must never be reported as physical or perceptual proof.
+Also run every domain-specific gate touched by the change. The ESP endpoint integration must run `Open Audio Stack CI` plus repository-wide realtime/simulation/governance checks. Tooling/simulation/reference gates must never be reported as physical or perceptual proof.
