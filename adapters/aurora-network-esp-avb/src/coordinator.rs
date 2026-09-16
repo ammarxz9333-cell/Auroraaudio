@@ -24,11 +24,11 @@ enum Lifecycle {
 
 /// Aurora-side coordinator for six synchronized stereo AVB transports.
 ///
-/// This is deliberately transport-implementation agnostic. A future host AVB
-/// sender can implement `NetworkAudioTransport` and be inserted here; no ESP-IDF
-/// or upstream AVB types cross Aurora's public contracts. The coordinator keeps
-/// all six endpoints on one Aurora media timeline and treats any endpoint fault
-/// as a whole-stream fault rather than allowing silent per-speaker divergence.
+/// A concrete host AVB sender can implement `NetworkAudioTransport` and be
+/// inserted here without leaking ESP-IDF or upstream AVB types into Aurora's
+/// public contracts. All endpoints stay on one Aurora media timeline, and any
+/// endpoint fault invalidates the whole stream rather than silently allowing
+/// one speaker pair to diverge.
 pub struct EspAvbTransportSet {
     fanout: PreparedEspAvbFanout,
     transports: EspAvbTransportArray,
@@ -37,8 +37,7 @@ pub struct EspAvbTransportSet {
 }
 
 impl EspAvbTransportSet {
-    /// Validates endpoint capabilities and allocates the worker-side fanout.
-    /// No transport is prepared or started until `prepare` is called.
+    /// Validates endpoint capabilities and allocates worker-side fanout storage.
     pub fn new(
         plan: EspAvbFanoutPlan,
         transports: EspAvbTransportArray,
@@ -72,25 +71,22 @@ impl EspAvbTransportSet {
         })
     }
 
-    /// Prepares all six transports with the exact same stereo format, fixed
-    /// scheduled latency and PTP-follower discipline.
-    ///
-    /// Backend preparation is intentionally inactive. If one endpoint rejects
-    /// preparation, already-prepared endpoints are reset and the set remains
-    /// unstartable until the caller retries or discards it.
-    pub fn prepare(&mut self, scheduled_latency_frames: u32) -> Result<(), EspAvbTransportSetError> {
+    /// Prepares all endpoints with one stereo format and PTP-follower policy.
+    pub fn prepare(
+        &mut self,
+        scheduled_latency_frames: u32,
+    ) -> Result<(), EspAvbTransportSetError> {
         if self.lifecycle == Lifecycle::Started {
             return Err(EspAvbTransportSetError::InvalidLifecycle);
         }
         if scheduled_latency_frames == 0 {
             return Err(EspAvbTransportSetError::InvalidTiming);
         }
+
         let timing = NetworkTimingPolicy {
             target_latency_frames: scheduled_latency_frames,
             minimum_latency_frames: scheduled_latency_frames,
             maximum_latency_frames: scheduled_latency_frames,
-            // PTP/gPTP maps the clock domain. This coordinator does not permit a
-            // second adaptive sample-rate controller in series.
             maximum_rate_correction_ppm: 0.0,
         };
         timing
@@ -112,16 +108,18 @@ impl EspAvbTransportSet {
                 return Err(EspAvbTransportSetError::Endpoint { endpoint, source });
             }
         }
+
         self.lifecycle = Lifecycle::Prepared;
         self.fanout.reset();
         Ok(())
     }
 
-    /// Starts all endpoints. A partial start is rolled back immediately.
+    /// Starts all endpoints and rolls back a partial start immediately.
     pub fn start(&mut self) -> Result<(), EspAvbTransportSetError> {
         if self.lifecycle != Lifecycle::Prepared {
             return Err(EspAvbTransportSetError::InvalidLifecycle);
         }
+
         for endpoint in 0..ESP_AVB_7_1_4_ENDPOINTS {
             if let Err(source) = self.transports[endpoint].start() {
                 for started in 0..endpoint {
@@ -133,26 +131,24 @@ impl EspAvbTransportSet {
                 return Err(EspAvbTransportSetError::Endpoint { endpoint, source });
             }
         }
+
         self.lifecycle = Lifecycle::Started;
         self.fanout.reset();
         Ok(())
     }
 
-    /// Splits and submits one 7.1.4 block to all six transports.
+    /// Splits one 7.1.4 block and submits six timestamp-identical stereo blocks.
     ///
-    /// Every endpoint receives the same sequence number and media timestamp.
-    /// If any submission fails, all transports are stopped/reset immediately;
-    /// the stream must be explicitly prepared/started again before more audio is
-    /// accepted. A backend is expected to use scheduled playout so a failed
-    /// submission can be detected before its timestamp reaches the speakers.
+    /// Any endpoint submission failure aborts every endpoint and requires an
+    /// explicit prepare/start cycle before additional audio is accepted.
     pub fn submit(&mut self, block: &NetworkAudioBlock<'_>) -> Result<(), EspAvbTransportSetError> {
         if self.lifecycle != Lifecycle::Started {
             return Err(EspAvbTransportSetError::InvalidLifecycle);
         }
+
         self.fanout
             .split(block)
             .map_err(EspAvbTransportSetError::Fanout)?;
-
         for endpoint in 0..ESP_AVB_7_1_4_ENDPOINTS {
             let endpoint_block = self
                 .fanout
@@ -166,7 +162,7 @@ impl EspAvbTransportSet {
         Ok(())
     }
 
-    /// Polls at most one event per endpoint without allocating a temporary list.
+    /// Polls at most one fixed event per endpoint without temporary allocation.
     pub fn poll_events(
         &mut self,
         output: &mut [Option<NetworkTransportEvent>; ESP_AVB_7_1_4_ENDPOINTS],
@@ -176,11 +172,12 @@ impl EspAvbTransportSet {
         }
     }
 
-    /// Stops all active endpoints and retains their prepared capacity.
+    /// Stops all active endpoints while retaining prepared backend capacity.
     pub fn stop(&mut self) -> Result<(), EspAvbTransportSetError> {
         if self.lifecycle != Lifecycle::Started {
             return Err(EspAvbTransportSetError::InvalidLifecycle);
         }
+
         let mut first_error = None;
         for endpoint in 0..ESP_AVB_7_1_4_ENDPOINTS {
             if let Err(source) = self.transports[endpoint].stop() {
@@ -192,14 +189,14 @@ impl EspAvbTransportSet {
         }
         self.lifecycle = Lifecycle::Prepared;
         self.fanout.reset();
+
         match first_error {
             Some(error) => Err(error),
             None => Ok(()),
         }
     }
 
-    /// Explicitly resets timeline history on every endpoint without changing
-    /// preparation state.
+    /// Clears endpoint and fanout timeline history without network I/O.
     pub fn reset(&mut self) {
         for transport in &mut self.transports {
             transport.reset();
@@ -212,7 +209,7 @@ impl EspAvbTransportSet {
             let _ = transport.stop();
             transport.reset();
         }
-        self.lifecycle = Lifecycle::Prepared;
+        self.lifecycle = Lifecycle::New;
         self.fanout.reset();
     }
 }
@@ -222,8 +219,7 @@ impl EspAvbTransportSet {
 pub enum EspAvbTransportSetError {
     /// Channel/stream fanout plan is invalid.
     Fanout(EspAvbFanoutError),
-    /// One endpoint advertises a transport capability that is unsafe or
-    /// incompatible with this PTP-disciplined stereo topology.
+    /// One endpoint advertises an incompatible transport capability.
     Capability { endpoint: usize },
     /// One endpoint failed an Aurora network-transport operation.
     Endpoint {
@@ -232,7 +228,7 @@ pub enum EspAvbTransportSetError {
     },
     /// Scheduled latency is invalid.
     InvalidTiming,
-    /// Operation is not legal in the current prepare/start lifecycle.
+    /// Operation is not legal in the current lifecycle.
     InvalidLifecycle,
 }
 
@@ -241,13 +237,18 @@ impl fmt::Display for EspAvbTransportSetError {
         match self {
             Self::Fanout(error) => write!(formatter, "ESP-AVB fanout failed: {error}"),
             Self::Capability { endpoint } => {
-                write!(formatter, "ESP-AVB endpoint {endpoint} has incompatible capabilities")
+                write!(
+                    formatter,
+                    "ESP-AVB endpoint {endpoint} has incompatible capabilities"
+                )
             }
             Self::Endpoint { endpoint, source } => {
                 write!(formatter, "ESP-AVB endpoint {endpoint} failed: {source}")
             }
             Self::InvalidTiming => formatter.write_str("invalid ESP-AVB scheduled latency"),
-            Self::InvalidLifecycle => formatter.write_str("invalid ESP-AVB transport-set lifecycle"),
+            Self::InvalidLifecycle => {
+                formatter.write_str("invalid ESP-AVB transport-set lifecycle")
+            }
         }
     }
 }
@@ -276,18 +277,16 @@ mod tests {
 
     struct FakeAvbTransport {
         state: Arc<Mutex<ProbeState>>,
-        hardware_timestamps: bool,
         fail_submit: bool,
         prepared: bool,
         started: bool,
     }
 
     impl FakeAvbTransport {
-        fn new(state: Arc<Mutex<ProbeState>>) -> Self {
+        fn new(state: Arc<Mutex<ProbeState>>, fail_submit: bool) -> Self {
             Self {
                 state,
-                hardware_timestamps: false,
-                fail_submit: false,
+                fail_submit,
                 prepared: false,
                 started: false,
             }
@@ -300,7 +299,7 @@ mod tests {
                 family: NetworkTransportFamily::AvbTsn,
                 max_channels: 2,
                 scheduled_playout: true,
-                hardware_timestamps: self.hardware_timestamps,
+                hardware_timestamps: false,
                 adaptive_rate_matching: false,
                 packet_repair: false,
             }
@@ -363,13 +362,26 @@ mod tests {
         }
     }
 
+    fn states() -> [Arc<Mutex<ProbeState>>; ESP_AVB_7_1_4_ENDPOINTS] {
+        std::array::from_fn(|_| Arc::new(Mutex::new(ProbeState::default())))
+    }
+
     fn transport_array(
         states: &[Arc<Mutex<ProbeState>>; ESP_AVB_7_1_4_ENDPOINTS],
+        fail_submit: Option<usize>,
     ) -> EspAvbTransportArray {
         std::array::from_fn(|index| {
-            Box::new(FakeAvbTransport::new(Arc::clone(&states[index])))
-                as Box<dyn NetworkAudioTransport>
+            Box::new(FakeAvbTransport::new(
+                Arc::clone(&states[index]),
+                fail_submit == Some(index),
+            )) as Box<dyn NetworkAudioTransport>
         })
+    }
+
+    fn input_samples() -> Vec<f32> {
+        (0..AURORA_7_1_4_CHANNELS * 2)
+            .map(|value| value as f32)
+            .collect()
     }
 
     fn input_block(samples: &[f32]) -> NetworkAudioBlock<'_> {
@@ -386,17 +398,14 @@ mod tests {
     }
 
     #[test]
-    fn six_transports_prepare_start_and_receive_same_timeline() {
-        let states: [Arc<Mutex<ProbeState>>; ESP_AVB_7_1_4_ENDPOINTS] =
-            std::array::from_fn(|_| Arc::new(Mutex::new(ProbeState::default())));
+    fn six_transports_receive_same_timeline_and_channel_pairs() {
+        let states = states();
         let plan = EspAvbFanoutPlan::canonical(EspAvbEndpointMedium::WirelessEsp32C6);
-        let mut set = EspAvbTransportSet::new(plan, transport_array(&states), 2).unwrap();
+        let mut set = EspAvbTransportSet::new(plan, transport_array(&states, None), 2).unwrap();
         set.prepare(480).unwrap();
         set.start().unwrap();
 
-        let samples: Vec<f32> = (0..(AURORA_7_1_4_CHANNELS * 2))
-            .map(|value| value as f32)
-            .collect();
+        let samples = input_samples();
         set.submit(&input_block(&samples)).unwrap();
 
         for (endpoint, state) in states.iter().enumerate() {
@@ -418,41 +427,83 @@ mod tests {
     #[test]
     fn unsafe_capability_is_rejected_before_prepare() {
         struct AdaptiveTransport(FakeAvbTransport);
+
         impl NetworkAudioTransport for AdaptiveTransport {
             fn capabilities(&self) -> NetworkTransportCapabilities {
-                let mut caps = self.0.capabilities();
-                caps.adaptive_rate_matching = true;
-                caps
+                let mut capabilities = self.0.capabilities();
+                capabilities.adaptive_rate_matching = true;
+                capabilities
             }
-            fn prepare(&mut self, config: NetworkStreamConfig) -> Result<(), NetworkTransportError> {
+
+            fn prepare(
+                &mut self,
+                config: NetworkStreamConfig,
+            ) -> Result<(), NetworkTransportError> {
                 self.0.prepare(config)
             }
+
             fn start(&mut self) -> Result<(), NetworkTransportError> {
                 self.0.start()
             }
-            fn submit(&mut self, block: NetworkAudioBlock<'_>) -> Result<(), NetworkTransportError> {
+
+            fn submit(
+                &mut self,
+                block: NetworkAudioBlock<'_>,
+            ) -> Result<(), NetworkTransportError> {
                 self.0.submit(block)
             }
+
             fn poll_event(&mut self) -> Option<NetworkTransportEvent> {
                 self.0.poll_event()
             }
+
             fn stop(&mut self) -> Result<(), NetworkTransportError> {
                 self.0.stop()
             }
+
             fn reset(&mut self) {
                 self.0.reset();
             }
         }
 
-        let states: [Arc<Mutex<ProbeState>>; ESP_AVB_7_1_4_ENDPOINTS] =
-            std::array::from_fn(|_| Arc::new(Mutex::new(ProbeState::default())));
-        let mut transports = transport_array(&states);
-        transports[3] = Box::new(AdaptiveTransport(FakeAvbTransport::new(Arc::clone(&states[3]))));
+        let states = states();
+        let mut transports = transport_array(&states, None);
+        transports[3] = Box::new(AdaptiveTransport(FakeAvbTransport::new(
+            Arc::clone(&states[3]),
+            false,
+        )));
         let plan = EspAvbFanoutPlan::canonical(EspAvbEndpointMedium::WirelessEsp32C6);
         assert!(matches!(
             EspAvbTransportSet::new(plan, transports, 48),
             Err(EspAvbTransportSetError::Capability { endpoint: 3 })
         ));
-        assert!(states.iter().all(|state| state.lock().unwrap().prepared == 0));
+        assert!(states
+            .iter()
+            .all(|state| state.lock().unwrap().prepared == 0));
+    }
+
+    #[test]
+    fn endpoint_submit_failure_aborts_whole_stream_and_requires_reprepare() {
+        let states = states();
+        let plan = EspAvbFanoutPlan::canonical(EspAvbEndpointMedium::WirelessEsp32C6);
+        let mut set = EspAvbTransportSet::new(plan, transport_array(&states, Some(3)), 2).unwrap();
+        set.prepare(480).unwrap();
+        set.start().unwrap();
+
+        let samples = input_samples();
+        assert!(matches!(
+            set.submit(&input_block(&samples)),
+            Err(EspAvbTransportSetError::Endpoint { endpoint: 3, .. })
+        ));
+        assert!(matches!(
+            set.start(),
+            Err(EspAvbTransportSetError::InvalidLifecycle)
+        ));
+
+        for state in &states {
+            let state = state.lock().unwrap();
+            assert_eq!(state.stopped, 1);
+            assert_eq!(state.reset, 1);
+        }
     }
 }
