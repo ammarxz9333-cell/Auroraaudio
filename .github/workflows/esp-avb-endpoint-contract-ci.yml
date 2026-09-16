@@ -14,6 +14,10 @@ concurrency:
   group: esp-avb-endpoint-contract-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  ESP_AVB_SHA: 5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9
+  ESP_PTP_SHA: 5b7eec233a93733ae954beefb6df3bb9c12dc901
+
 jobs:
   stereo-fanout-contract:
     runs-on: ubuntu-latest
@@ -49,6 +53,53 @@ jobs:
           grep -q 'PASS endpoints=6 rate=48000 block=48 clock=ptp-follower sequence=23 timestamp=96000' \
             artifacts/esp-avb-orchestration.txt
 
+      - name: Fetch exact ESP AVB and PTP source pins
+        run: |
+          git init "$RUNNER_TEMP/esp_avb"
+          git -C "$RUNNER_TEMP/esp_avb" remote add origin https://github.com/scrambletools/esp_avb.git
+          git -C "$RUNNER_TEMP/esp_avb" fetch --depth 1 origin "$ESP_AVB_SHA"
+          git -C "$RUNNER_TEMP/esp_avb" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/esp_avb" rev-parse HEAD)" = "$ESP_AVB_SHA"
+
+          git init "$RUNNER_TEMP/esp_ptp"
+          git -C "$RUNNER_TEMP/esp_ptp" remote add origin https://github.com/scrambletools/esp_ptp.git
+          git -C "$RUNNER_TEMP/esp_ptp" fetch --depth 1 origin "$ESP_PTP_SHA"
+          git -C "$RUNNER_TEMP/esp_ptp" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/esp_ptp" rev-parse HEAD)" = "$ESP_PTP_SHA"
+
+      - name: Verify exact-pin listener evidence source contract
+        run: |
+          python adapters/aurora-network-esp-avb/evidence/verify_exact_pin.py \
+            --esp-avb "$RUNNER_TEMP/esp_avb" \
+            --esp-ptp "$RUNNER_TEMP/esp_ptp" \
+            | tee artifacts/esp-avb-evidence-pin.txt
+          grep -q 'PASS status=public ptp=public stream=pin-coupled frames_rx=actual-packets get-counters-wire=not-claimed' \
+            artifacts/esp-avb-evidence-pin.txt
+
+      - name: Build and exercise ESP listener evidence shim contract
+        run: |
+          cc -std=c11 -Wall -Wextra -Werror \
+            -Iadapters/aurora-network-esp-avb/evidence/include \
+            -Iadapters/aurora-network-esp-avb/evidence/test_stubs \
+            adapters/aurora-network-esp-avb/evidence/aurora_esp_avb_evidence_espidf.c \
+            adapters/aurora-network-esp-avb/evidence/esp_evidence_contract_probe.c \
+            -o "$RUNNER_TEMP/esp-evidence-probe"
+
+          "$RUNNER_TEMP/esp-evidence-probe" healthy | tee artifacts/esp-avb-listener-evidence.txt
+          grep -q '"schema":"aurora.genavb.esp-listener-snapshot.v1"' artifacts/esp-avb-listener-evidence.txt
+          grep -q '"verdict":"PASS"' artifacts/esp-avb-listener-evidence.txt
+          grep -q '"stream_id":"02:00:00:00:00:01:00:0a"' artifacts/esp-avb-listener-evidence.txt
+          grep -q '"grandmaster_id":"02:00:00:ff:fe:00:00:01"' artifacts/esp-avb-listener-evidence.txt
+          grep -q '"rx_frames":500' artifacts/esp-avb-listener-evidence.txt
+
+          for scenario in disconnected gptp-invalid profile-wrong gm-zero format-wrong stream-zero no-listener; do
+            if "$RUNNER_TEMP/esp-evidence-probe" "$scenario" > "$RUNNER_TEMP/esp-$scenario.txt"; then
+              echo "negative ESP evidence scenario unexpectedly passed: $scenario" >&2
+              cat "$RUNNER_TEMP/esp-$scenario.txt" >&2
+              exit 1
+            fi
+          done
+
       - name: Upload endpoint evidence
         if: always()
         uses: actions/upload-artifact@v4
@@ -57,4 +108,6 @@ jobs:
           path: |
             artifacts/esp-avb-fanout.txt
             artifacts/esp-avb-orchestration.txt
+            artifacts/esp-avb-evidence-pin.txt
+            artifacts/esp-avb-listener-evidence.txt
           if-no-files-found: warn
