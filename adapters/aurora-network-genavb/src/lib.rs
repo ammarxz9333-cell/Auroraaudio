@@ -11,6 +11,7 @@ use std::fmt;
 use std::os::raw::{c_char, c_int, c_void};
 use std::path::{Path, PathBuf};
 
+use aurora_network_genavb_avdecc::GenAvbAvdeccControl;
 use aurora_realtime_audio_api::{
     MediaTimestamp, NetworkAudioBlock, NetworkAudioFormat, NetworkAudioTransport,
     NetworkClockDiscipline, NetworkStreamConfig, NetworkTransportCapabilities,
@@ -25,6 +26,10 @@ const AAF_BYTES_PER_SAMPLE: usize = 4;
 const EVENT_CAPACITY: usize = 8;
 
 /// Static parameters for one GenAVB AAF talker stream.
+///
+/// This configuration is retained for the explicit static/manual validation
+/// path. Normal AVDECC operation uses [`GenAvbNetworkTransport::load_avdecc`]
+/// and receives stream identity from the GenAVB media-stack CONNECT state.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct GenAvbTalkerConfig {
     /// Path to Aurora's native GenAVB shim shared library.
@@ -78,6 +83,8 @@ struct ShimConfig {
 type AbiVersionFn = unsafe extern "C" fn() -> u32;
 type CreateFn = unsafe extern "C" fn() -> *mut c_void;
 type PrepareFn = unsafe extern "C" fn(*mut c_void, *const ShimConfig) -> i32;
+type PrepareAvdeccFn =
+    unsafe extern "C" fn(*mut c_void, *mut c_void, u16, u32, u32) -> i32;
 type StartFn = unsafe extern "C" fn(*mut c_void) -> i32;
 type SubmitFn = unsafe extern "C" fn(*mut c_void, *const u8, u32, u64) -> i32;
 type StopFn = unsafe extern "C" fn(*mut c_void) -> i32;
@@ -87,6 +94,7 @@ type DestroyFn = unsafe extern "C" fn(*mut c_void);
 #[derive(Clone, Copy)]
 struct ShimApi {
     prepare: PrepareFn,
+    prepare_avdecc: PrepareAvdeccFn,
     start: StartFn,
     submit: SubmitFn,
     stop: StopFn,
@@ -106,7 +114,8 @@ pub struct GenAvbNetworkTransport {
     library: SharedLibrary,
     api: ShimApi,
     handle: *mut c_void,
-    config: GenAvbTalkerConfig,
+    shim_path: PathBuf,
+    static_config: Option<GenAvbTalkerConfig>,
     lifecycle: Lifecycle,
     prepared_format: Option<NetworkAudioFormat>,
     expected_sequence: Option<u64>,
@@ -123,9 +132,25 @@ pub struct GenAvbNetworkTransport {
 unsafe impl Send for GenAvbNetworkTransport {}
 
 impl GenAvbNetworkTransport {
-    /// Loads the Aurora-owned native shim without initializing network state.
+    /// Loads the Aurora-owned native shim for the static/manual stream path.
     pub fn load(config: GenAvbTalkerConfig) -> Result<Self, GenAvbAdapterLoadError> {
-        let library = SharedLibrary::open(&config.shim_path)?;
+        let shim_path = config.shim_path.clone();
+        Self::load_inner(shim_path, Some(config))
+    }
+
+    /// Loads a talker whose network identity is supplied by AVDECC CONNECT.
+    ///
+    /// No placeholder stream ID, multicast MAC or port is accepted here. The
+    /// stream can only be prepared through [`Self::prepare_from_avdecc`].
+    pub fn load_avdecc(shim_path: impl Into<PathBuf>) -> Result<Self, GenAvbAdapterLoadError> {
+        Self::load_inner(shim_path.into(), None)
+    }
+
+    fn load_inner(
+        shim_path: PathBuf,
+        static_config: Option<GenAvbTalkerConfig>,
+    ) -> Result<Self, GenAvbAdapterLoadError> {
+        let library = SharedLibrary::open(&shim_path)?;
         let abi_version: AbiVersionFn = unsafe { library.symbol(b"aurora_genavb_abi_version\0")? };
         let actual = unsafe { abi_version() };
         if actual != SHIM_ABI_VERSION {
@@ -138,6 +163,7 @@ impl GenAvbNetworkTransport {
         let create: CreateFn = unsafe { library.symbol(b"aurora_genavb_create\0")? };
         let api = ShimApi {
             prepare: unsafe { library.symbol(b"aurora_genavb_prepare\0")? },
+            prepare_avdecc: unsafe { library.symbol(b"aurora_genavb_prepare_avdecc\0")? },
             start: unsafe { library.symbol(b"aurora_genavb_start\0")? },
             submit: unsafe { library.symbol(b"aurora_genavb_submit\0")? },
             stop: unsafe { library.symbol(b"aurora_genavb_stop\0")? },
@@ -153,7 +179,8 @@ impl GenAvbNetworkTransport {
             library,
             api,
             handle,
-            config,
+            shim_path,
+            static_config,
             lifecycle: Lifecycle::Loaded,
             prepared_format: None,
             expected_sequence: None,
@@ -164,6 +191,71 @@ impl GenAvbNetworkTransport {
             event_write: 0,
             event_count: 0,
         })
+    }
+
+    /// Prepares this talker from the exact stream parameters cached by the
+    /// sibling AVDECC control adapter after a supported CONNECT indication.
+    pub fn prepare_from_avdecc(
+        &mut self,
+        control: &GenAvbAvdeccControl,
+        stream_index: u16,
+        config: NetworkStreamConfig,
+    ) -> Result<(), NetworkTransportError> {
+        if self.lifecycle == Lifecycle::Started {
+            return Err(NetworkTransportError::AlreadyStarted);
+        }
+        if self.shim_path != control.shim_path() {
+            return Err(NetworkTransportError::WorkerFault);
+        }
+        let samples = self.validate_prepare_config(config)?;
+        let control_handle = control
+            .native_handle()
+            .map_err(|_| NetworkTransportError::WorkerFault)?;
+        Self::native_ok(unsafe {
+            (self.api.prepare_avdecc)(
+                self.handle,
+                control_handle,
+                stream_index,
+                config.timing.target_latency_frames,
+                GENAVB_BLOCK_FRAMES as u32,
+            )
+        })?;
+        self.commit_prepared(config, samples);
+        Ok(())
+    }
+
+    pub fn shim_path(&self) -> &Path {
+        &self.shim_path
+    }
+
+    fn validate_prepare_config(
+        &self,
+        config: NetworkStreamConfig,
+    ) -> Result<usize, NetworkTransportError> {
+        config.format.validate(self.capabilities())?;
+        config.timing.validate()?;
+        if config.format.sample_rate != AURORA_NETWORK_MEDIA_RATE
+            || config.format.channels != GENAVB_CHANNELS
+            || config.format.block_frames != GENAVB_BLOCK_FRAMES
+            || config.clock_discipline != NetworkClockDiscipline::PtpFollower
+            || config.timing.minimum_latency_frames != config.timing.target_latency_frames
+            || config.timing.maximum_latency_frames != config.timing.target_latency_frames
+            || config.timing.maximum_rate_correction_ppm != 0.0
+        {
+            return Err(NetworkTransportError::InvalidFormat);
+        }
+        config
+            .format
+            .samples_per_block()
+            .ok_or(NetworkTransportError::InvalidFormat)
+    }
+
+    fn commit_prepared(&mut self, config: NetworkStreamConfig, samples: usize) {
+        self.packed_aaf.resize(samples * AAF_BYTES_PER_SAMPLE, 0);
+        self.prepared_format = Some(config.format);
+        self.lifecycle = Lifecycle::Prepared;
+        self.reset_timeline();
+        self.push_event(NetworkTransportEvent::Prepared);
     }
 
     fn push_event(&mut self, event: NetworkTransportEvent) {
@@ -218,39 +310,23 @@ impl NetworkAudioTransport for GenAvbNetworkTransport {
         if self.lifecycle == Lifecycle::Started {
             return Err(NetworkTransportError::AlreadyStarted);
         }
-        config.format.validate(self.capabilities())?;
-        config.timing.validate()?;
-        if config.format.sample_rate != AURORA_NETWORK_MEDIA_RATE
-            || config.format.channels != GENAVB_CHANNELS
-            || config.format.block_frames != GENAVB_BLOCK_FRAMES
-            || config.clock_discipline != NetworkClockDiscipline::PtpFollower
-            || config.timing.minimum_latency_frames != config.timing.target_latency_frames
-            || config.timing.maximum_latency_frames != config.timing.target_latency_frames
-            || config.timing.maximum_rate_correction_ppm != 0.0
-        {
-            return Err(NetworkTransportError::InvalidFormat);
-        }
+        let static_config = self
+            .static_config
+            .as_ref()
+            .ok_or(NetworkTransportError::WorkerFault)?;
+        let samples = self.validate_prepare_config(config)?;
 
         let native = ShimConfig {
-            port: self.config.port,
+            port: static_config.port,
             _reserved: 0,
-            stream_id: self.config.stream_id,
-            destination_mac: self.config.destination_mac,
+            stream_id: static_config.stream_id,
+            destination_mac: static_config.destination_mac,
             _padding: [0; 2],
             target_latency_frames: config.timing.target_latency_frames,
             block_frames: GENAVB_BLOCK_FRAMES as u32,
         };
         Self::native_ok(unsafe { (self.api.prepare)(self.handle, &native) })?;
-
-        let samples = config
-            .format
-            .samples_per_block()
-            .ok_or(NetworkTransportError::InvalidFormat)?;
-        self.packed_aaf.resize(samples * AAF_BYTES_PER_SAMPLE, 0);
-        self.prepared_format = Some(config.format);
-        self.lifecycle = Lifecycle::Prepared;
-        self.reset_timeline();
-        self.push_event(NetworkTransportEvent::Prepared);
+        self.commit_prepared(config, samples);
         Ok(())
     }
 
