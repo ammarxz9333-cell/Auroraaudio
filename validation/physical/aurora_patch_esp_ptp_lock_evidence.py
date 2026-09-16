@@ -4,8 +4,9 @@
 The pinned esp_ptp API exposes whether a remote source is selected, but that is
 not the same thing as the daemon's own servo-stability decision. This narrow
 validation patch persists the existing internal "clock is stabilized" result in
-ptp_state_s and copies it into ptpd_status_s. It does not change the stability
-algorithm or production timing behaviour.
+ptp_state_s and copies it into ptpd_status_s. The existing stability algorithm
+and thresholds are preserved; only its state lifetime is made explicit so a
+source/profile change cannot inherit a stale local static counter.
 """
 
 from __future__ import annotations
@@ -18,23 +19,27 @@ PINNED_ESP_PTP_COMMIT = "5b7eec233a93733ae954beefb6df3bb9c12dc901"
 
 HEADER_OLD = """  /* Is there a valid remote clock source active? */\n\n  bool clock_source_valid;\n\n  /* Information about selected best clock source */\n"""
 
-HEADER_NEW = """  /* Is there a valid remote clock source active? */\n\n  bool clock_source_valid;\n\n  /* Aurora physical-validation evidence: true only after the daemon's\n   * existing servo-stability gate reports \"clock is stabilized\" for the\n   * currently selected source. This field is added only to the exact-pinned\n   * validation build and does not alter the stability algorithm. */\n  bool clock_stable;\n\n  /* Information about selected best clock source */\n"""
+HEADER_NEW = """  /* Is there a valid remote clock source active? */\n\n  bool clock_source_valid;\n\n  /* Aurora physical-validation evidence: true only after the daemon's\n   * existing servo-stability gate reports \"clock is stabilized\" for the\n   * currently selected source. This field is added only to the exact-pinned\n   * validation build and does not alter the stability thresholds. */\n  bool clock_stable;\n\n  /* Information about selected best clock source */\n"""
 
 STATE_OLD = """  bool selected_source_valid;            /* True if operating as client */\n  struct ptp_announce_s selected_source; /* Currently selected server */\n"""
 
-STATE_NEW = """  bool selected_source_valid;            /* True if operating as client */\n  bool clock_stable;                    /* Existing servo stability result */\n  struct ptp_announce_s selected_source; /* Currently selected server */\n"""
+STATE_NEW = """  bool selected_source_valid;            /* True if operating as client */\n  bool clock_stable;                    /* Existing servo stability result */\n  int clock_stability_count;            /* Consecutive stable samples, max 4 */\n  struct ptp_announce_s selected_source; /* Currently selected server */\n"""
 
 RESET_OLD = """  state->selected_source_valid = false;\n  memset(&state->selected_source, 0, sizeof(state->selected_source));\n"""
 
-RESET_NEW = """  state->selected_source_valid = false;\n  state->clock_stable = false;\n  memset(&state->selected_source, 0, sizeof(state->selected_source));\n"""
+RESET_NEW = """  state->selected_source_valid = false;\n  state->clock_stable = false;\n  state->clock_stability_count = 0;\n  memset(&state->selected_source, 0, sizeof(state->selected_source));\n"""
 
 SWITCH_OLD = """      state->selected_source = *msg;\n      state->port[0].last_received_sync = state->port[0].last_received_announce;\n"""
 
-SWITCH_NEW = """      state->clock_stable = false;\n      state->selected_source = *msg;\n      state->port[0].last_received_sync = state->port[0].last_received_announce;\n"""
+SWITCH_NEW = """      state->clock_stable = false;\n      state->clock_stability_count = 0;\n      state->selected_source = *msg;\n      state->port[0].last_received_sync = state->port[0].last_received_announce;\n"""
 
-STABLE_OLD = """  if (cnt > 3) {\n    ptpdebug(\"clock is stabilized\");\n    state->port[0].can_send_delayreq = true;\n  } else {\n    ptpdebug(\"clock is still unstable\");\n  }\n  state->last_offset_ns = offset_ns;\n"""
+LOCAL_COUNTER_OLD = """  int64_t diff = llabs(offset_ns) - llabs(state->last_offset_ns);\n  static int cnt = 0;\n  bool within_stability;\n"""
 
-STABLE_NEW = """  state->clock_stable = cnt > 3;\n  if (state->clock_stable) {\n    ptpdebug(\"clock is stabilized\");\n    state->port[0].can_send_delayreq = true;\n  } else {\n    ptpdebug(\"clock is still unstable\");\n  }\n  state->last_offset_ns = offset_ns;\n"""
+LOCAL_COUNTER_NEW = """  int64_t diff = llabs(offset_ns) - llabs(state->last_offset_ns);\n  bool within_stability;\n"""
+
+STABLE_OLD = """  if (within_stability) {\n    if (cnt <= 3)\n      cnt++;\n  } else {\n    cnt = 0;\n  }\n  if (cnt > 3) {\n    ptpdebug(\"clock is stabilized\");\n    state->port[0].can_send_delayreq = true;\n  } else {\n    ptpdebug(\"clock is still unstable\");\n  }\n  state->last_offset_ns = offset_ns;\n"""
+
+STABLE_NEW = """  if (within_stability) {\n    if (state->clock_stability_count <= 3)\n      state->clock_stability_count++;\n  } else {\n    state->clock_stability_count = 0;\n  }\n  state->clock_stable = state->clock_stability_count > 3;\n  if (state->clock_stable) {\n    ptpdebug(\"clock is stabilized\");\n    state->port[0].can_send_delayreq = true;\n  } else {\n    ptpdebug(\"clock is still unstable\");\n  }\n  state->last_offset_ns = offset_ns;\n"""
 
 STATUS_OLD = """  status->ptp_profile = state->active_ptp_profile;\n  status->peer_is_endpoint = state->port[0].peer_is_endpoint;\n  status->clock_source_valid = state->selected_source_valid;\n\n  /* Copy own identity info to status struct */\n"""
 
@@ -61,6 +66,7 @@ def apply(root: Path) -> None:
     replace_exact(source, STATE_OLD, STATE_NEW, "daemon-state")
     replace_exact(source, RESET_OLD, RESET_NEW, "profile-reset")
     replace_exact(source, SWITCH_OLD, SWITCH_NEW, "source-switch")
+    replace_exact(source, LOCAL_COUNTER_OLD, LOCAL_COUNTER_NEW, "local-stability-counter")
     replace_exact(source, STABLE_OLD, STABLE_NEW, "servo-stability")
     replace_exact(source, STATUS_OLD, STATUS_NEW, "status-copy")
 
@@ -71,14 +77,19 @@ def check(root: Path) -> None:
     required_header = ("bool clock_source_valid;", "bool clock_stable;")
     required_source = (
         "bool clock_stable;                    /* Existing servo stability result */",
-        "state->clock_stable = false;",
-        "state->clock_stable = cnt > 3;",
+        "int clock_stability_count;            /* Consecutive stable samples, max 4 */",
+        "state->clock_stability_count = 0;",
+        "state->clock_stable = state->clock_stability_count > 3;",
         "status->clock_stable = state->selected_source_valid && state->clock_stable;",
     )
+    forbidden_source = ("static int cnt = 0;", "state->clock_stable = cnt > 3;")
     missing = [token for token in required_header if token not in header]
     missing += [token for token in required_source if token not in source]
+    forbidden = [token for token in forbidden_source if token in source]
     if missing:
         raise ValueError("lock instrumentation check missing: " + ", ".join(missing))
+    if forbidden:
+        raise ValueError("stale lock implementation remains: " + ", ".join(forbidden))
 
 
 def build_parser() -> argparse.ArgumentParser:
