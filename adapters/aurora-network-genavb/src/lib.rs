@@ -275,7 +275,9 @@ impl NetworkAudioTransport for GenAvbNetworkTransport {
         if self.prepared_format != Some(block.format) {
             return Err(NetworkTransportError::InvalidFormat);
         }
-        if self.expected_sequence.is_some_and(|expected| block.sequence != expected)
+        if self
+            .expected_sequence
+            .is_some_and(|expected| block.sequence != expected)
             || self
                 .expected_timestamp
                 .is_some_and(|expected| block.timestamp != expected)
@@ -323,6 +325,10 @@ impl NetworkAudioTransport for GenAvbNetworkTransport {
     }
 
     fn reset(&mut self) {
+        if self.lifecycle == Lifecycle::Started {
+            let _ = unsafe { (self.api.stop)(self.handle) };
+            self.lifecycle = Lifecycle::Prepared;
+        }
         if self.lifecycle != Lifecycle::Loaded {
             let _ = unsafe { (self.api.reset)(self.handle) };
         }
@@ -372,10 +378,7 @@ impl SharedLibrary {
         platform::open(path).map(|handle| Self { handle })
     }
 
-    unsafe fn symbol<T: Copy>(
-        &self,
-        name: &'static [u8],
-    ) -> Result<T, GenAvbAdapterLoadError> {
+    unsafe fn symbol<T: Copy>(&self, name: &'static [u8]) -> Result<T, GenAvbAdapterLoadError> {
         let c_name = CStr::from_bytes_with_nul(name)
             .map_err(|_| GenAvbAdapterLoadError::MissingSymbol("invalid-symbol-name".into()))?;
         let ptr = platform::symbol(self.handle, c_name)?;
