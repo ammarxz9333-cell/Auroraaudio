@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "adapters/aurora-network-genavb/**"
+      - "adapters/aurora-network-genavb-avdecc/**"
       - ".github/workflows/genavb-aaf-talker-ci.yml"
   workflow_dispatch:
 
@@ -28,12 +29,16 @@ jobs:
         with:
           components: rustfmt,clippy
 
-      - name: Validate standalone Rust adapter
+      - name: Validate standalone Rust adapters
         run: |
           cargo fmt --manifest-path adapters/aurora-network-genavb/Cargo.toml -- --check
           cargo check --manifest-path adapters/aurora-network-genavb/Cargo.toml --all-targets
           cargo clippy --manifest-path adapters/aurora-network-genavb/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path adapters/aurora-network-genavb/Cargo.toml
+          cargo fmt --manifest-path adapters/aurora-network-genavb-avdecc/Cargo.toml -- --check
+          cargo check --manifest-path adapters/aurora-network-genavb-avdecc/Cargo.toml --all-targets
+          cargo clippy --manifest-path adapters/aurora-network-genavb-avdecc/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path adapters/aurora-network-genavb-avdecc/Cargo.toml
 
       - name: Fetch exact NXP GenAVB TSN source
         run: |
@@ -45,9 +50,6 @@ jobs:
 
       - name: Compile shim against exact public API
         run: |
-          # NXP 7.3.2's public avdecc.h intentionally contains an empty else
-          # body. Keep that upstream warning visible without letting it mask
-          # -Werror findings in Aurora-owned C code.
           cc -std=c11 -Wall -Wextra -Werror -Wno-error=empty-body -fPIC \
             -Iadapters/aurora-network-genavb/native \
             -I"$RUNNER_TEMP/genavb/include" \
