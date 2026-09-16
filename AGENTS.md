@@ -202,3 +202,11 @@ Also run every domain-specific gate touched by the change. GenAVB adapter/contro
 - Final-head general and dedicated native CI remain mandatory; no native or physical success is inferred from compilation.
 - Next renderer integration gap: scene speaker topology remains supplied independently of the prepared plan; bind or validate that boundary before claiming full plan-owned runtime topology.
 
+
+### External PCM callback continuity
+- Host callbacks spanning several engine blocks must consume successive input frames. The previous loop reused the same input prefix for every block in both gain and Object-PCM paths.
+- The worker-independent callback now validates the complete external input length before advancing renderer/delay/media state and slices each input block without allocation. Existing multichannel-to-mono source semantics are unchanged.
+- Regression tests cover exact frame continuity, zero callback allocations, short-input silence with no media advance, and gain-renderer parity including partial tails. The native prepared-plan probe additionally compares 1024 host mono PCM frames submitted in one callback versus four callbacks; dedicated CI must prove that comparison.
+- This is a correction to the existing callback contract, not decoded multi-object ingestion or new physical evidence. Independent prepared-plan/scene topology and true decoded-object handoff remain open integration gaps.
+- Local GNU Windows workspace tests reproduce an existing VBAP checksum failure on unchanged main-v2 d6b0f61 as well as #193. Linux/MSVC/MSRV CI are the merge gates; no checksum baseline was relaxed. Local MSVC cannot link without Visual C++ build tools.
+
