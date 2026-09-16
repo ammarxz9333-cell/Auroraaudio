@@ -3,7 +3,7 @@ mod linux_probe {
     use std::f32::consts::TAU;
     use std::os::raw::{c_int, c_short};
     use std::path::PathBuf;
-    use std::time::{Duration, Instant};
+    use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
     use aurora_network_genavb::GenAvbNetworkTransport;
     use aurora_network_genavb_avdecc::{
@@ -36,6 +36,7 @@ mod linux_probe {
     struct Args {
         shim: PathBuf,
         stream_index: u16,
+        epoch_id: String,
         duration_ms: u64,
         target_latency_frames: u32,
         connect_timeout_ms: u64,
@@ -50,11 +51,16 @@ mod linux_probe {
 
     fn run() -> Result<(), String> {
         let args = parse_args()?;
+        let host_started_unix_ms = unix_ms()?;
         let mut control = GenAvbAvdeccControl::load(args.shim.clone())
             .map_err(|error| format!("control-load={error}"))?;
         control
             .open()
             .map_err(|error| format!("control-open={error}"))?;
+        println!(
+            "aurora-genavb-single-listener-host: ARMED epoch_id={} stream_index={}",
+            args.epoch_id, args.stream_index
+        );
 
         let event = wait_for_connect(
             &mut control,
@@ -62,6 +68,7 @@ mod linux_probe {
             Duration::from_millis(args.connect_timeout_ms),
         )?;
         validate_event(&event, args.stream_index)?;
+        let connect_unix_ms = unix_ms()?;
 
         let mut talker = GenAvbNetworkTransport::load_avdecc(args.shim)
             .map_err(|error| format!("talker-load={error}"))?;
@@ -88,6 +95,7 @@ mod linux_probe {
         talker.start().map_err(|error| format!("start={error}"))?;
 
         let blocks = args.duration_ms.max(1);
+        let send_started_unix_ms = unix_ms()?;
         let send_start = Instant::now();
         let mut samples = vec![0.0_f32; BLOCK_FRAMES * CHANNELS];
         for block_index in 0..blocks {
@@ -113,6 +121,7 @@ mod linux_probe {
                 .submit(block)
                 .map_err(|error| format!("submit-block-{block_index}={error}"))?;
         }
+        let send_ended_unix_ms = unix_ms()?;
 
         talker.stop().map_err(|error| format!("stop={error}"))?;
         control
@@ -122,7 +131,12 @@ mod linux_probe {
         let stream_id = hex_bytes(&event.stream_id, ':');
         let destination_mac = hex_bytes(&event.destination_mac, ':');
         println!(
-            "{{\"schema\":\"aurora.genavb.single-listener-host-evidence.v1\",\"verdict\":\"HOST_PASS\",\"physical_complete\":false,\"stream_index\":{},\"port\":{},\"stream_class\":{},\"stream_id\":\"{}\",\"destination_mac\":\"{}\",\"sample_rate_hz\":{},\"channels\":{},\"bit_depth\":{},\"block_frames\":{},\"blocks_submitted\":{},\"target_latency_frames\":{},\"tone_hz\":{},\"listener_rx_evidence\":\"REQUIRED\",\"gptp_lock_evidence\":\"REQUIRED\"}}",
+            "{{\"schema\":\"aurora.genavb.single-listener-host-evidence.v1\",\"verdict\":\"HOST_PASS\",\"physical_complete\":false,\"epoch_id\":\"{}\",\"host_started_unix_ms\":{},\"connect_unix_ms\":{},\"send_started_unix_ms\":{},\"send_ended_unix_ms\":{},\"stream_index\":{},\"port\":{},\"stream_class\":{},\"stream_id\":\"{}\",\"destination_mac\":\"{}\",\"sample_rate_hz\":{},\"channels\":{},\"bit_depth\":{},\"block_frames\":{},\"blocks_submitted\":{},\"target_latency_frames\":{},\"tone_hz\":{},\"listener_rx_evidence\":\"REQUIRED\",\"gptp_lock_evidence\":\"REQUIRED\"}}",
+            args.epoch_id,
+            host_started_unix_ms,
+            connect_unix_ms,
+            send_started_unix_ms,
+            send_ended_unix_ms,
             event.stream_index,
             event.port,
             event.stream_class,
@@ -137,7 +151,8 @@ mod linux_probe {
             TONE_HZ,
         );
         println!(
-            "aurora-genavb-single-listener-host: PASS connect=avdecc prepare=from-acmp send=aaf24-48k-stereo listener-rx=required gptp-lock=required"
+            "aurora-genavb-single-listener-host: PASS epoch_id={} connect=avdecc prepare=from-acmp send=aaf24-48k-stereo listener-rx=required gptp-lock=required",
+            args.epoch_id
         );
         Ok(())
     }
@@ -146,6 +161,8 @@ mod linux_probe {
         let mut args = std::env::args().skip(1);
         let shim = args.next().map(PathBuf::from).ok_or_else(usage)?;
         let stream_index = parse_value::<u16>(args.next(), "stream-index")?;
+        let epoch_id = args.next().ok_or_else(usage)?;
+        validate_epoch_id(&epoch_id)?;
         let duration_ms = parse_optional::<u64>(args.next(), 5_000, "duration-ms")?;
         let target_latency_frames =
             parse_optional::<u32>(args.next(), 480, "target-latency-frames")?;
@@ -159,6 +176,7 @@ mod linux_probe {
         Ok(Args {
             shim,
             stream_index,
+            epoch_id,
             duration_ms,
             target_latency_frames,
             connect_timeout_ms,
@@ -166,7 +184,29 @@ mod linux_probe {
     }
 
     fn usage() -> String {
-        "usage: physical_single_listener_probe <shim.so> <stream-index> [duration-ms=5000] [target-latency-frames=480] [connect-timeout-ms=30000]".into()
+        "usage: physical_single_listener_probe <shim.so> <stream-index> <epoch-id> [duration-ms=5000] [target-latency-frames=480] [connect-timeout-ms=30000]".into()
+    }
+
+    fn validate_epoch_id(epoch_id: &str) -> Result<(), String> {
+        if epoch_id.is_empty()
+            || epoch_id.len() > 64
+            || !epoch_id
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.'))
+        {
+            return Err(
+                "epoch-id must be 1..64 ASCII alphanumeric characters plus '-', '_' or '.'".into(),
+            );
+        }
+        Ok(())
+    }
+
+    fn unix_ms() -> Result<u64, String> {
+        let millis = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| format!("system-clock-before-unix-epoch={error}"))?
+            .as_millis();
+        u64::try_from(millis).map_err(|_| "unix-millisecond timestamp overflow".to_string())
     }
 
     fn parse_value<T>(value: Option<String>, name: &str) -> Result<T, String>
