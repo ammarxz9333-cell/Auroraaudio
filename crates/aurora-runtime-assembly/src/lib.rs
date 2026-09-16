@@ -613,6 +613,11 @@ pub enum PreparedRendererKind {
     PointSourceHorizontalVbap,
     /// Existing horizontal spread VBAP renderer.
     HorizontalSpreadVbap,
+    /// External object-to-PCM renderer selected by a prepared component identity.
+    ///
+    /// This is passive control-plane intent only. It does not load native code,
+    /// construct a renderer, or imply runtime availability.
+    ExternalObjectPcm,
 }
 
 /// Passive renderer selection with no renderer instance or backend handle.
@@ -669,6 +674,18 @@ impl PreparedRendererPlan {
                 REALTIME_RENDERER_CONTRACT_MINOR,
             ),
         })
+    }
+
+    /// Describes an external object-to-PCM renderer implementation.
+    ///
+    /// The supplied identity must come from an already validated component
+    /// registration. This constructor remains passive and performs no loading or I/O.
+    pub const fn external_object_pcm(identity: PreparedComponentIdentity) -> Self {
+        Self {
+            kind: PreparedRendererKind::ExternalObjectPcm,
+            horizontal_spread: None,
+            component_identity: identity,
+        }
     }
 
     /// Overrides the implementation identity after registry resolution.
@@ -1451,6 +1468,13 @@ mod tests {
         let basic = PreparedRendererPlan::basic_inverse_distance();
         let point = PreparedRendererPlan::point_source_horizontal_vbap();
         let spread = PreparedRendererPlan::horizontal_spread_vbap(0.25).unwrap();
+        let external_identity = PreparedComponentIdentity::new(
+            "org.aurora.renderer.external-object-pcm-test",
+            "0.0.1-test",
+            1,
+            0,
+        );
+        let external = PreparedRendererPlan::external_object_pcm(external_identity);
         assert_eq!(basic.kind(), PreparedRendererKind::BasicInverseDistance);
         assert_eq!(
             point.kind(),
@@ -1458,6 +1482,9 @@ mod tests {
         );
         assert_eq!(spread.kind(), PreparedRendererKind::HorizontalSpreadVbap);
         assert_eq!(spread.horizontal_spread(), Some(0.25));
+        assert_eq!(external.kind(), PreparedRendererKind::ExternalObjectPcm);
+        assert_eq!(external.horizontal_spread(), None);
+        assert_eq!(external.component_identity(), external_identity);
     }
 
     #[test]
