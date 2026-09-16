@@ -23,6 +23,7 @@ def require(condition: bool, message: str) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", required=True, type=Path)
+    parser.add_argument("--registry", required=True, type=Path)
     parser.add_argument("--aoo", required=True, type=Path)
     parser.add_argument("--genavb", required=True, type=Path)
     parser.add_argument("--esp-avb", required=True, type=Path)
@@ -34,6 +35,8 @@ def main() -> None:
 
     config = json.loads(args.config.read_text())
     require(config.get("schema_version") == 1, "unsupported open-audio-stack schema")
+    registry = json.loads(args.registry.read_text())
+    require(registry.get("schema_version") == 1, "unsupported external-component registry schema")
 
     contract = config["aurora_contract"]
     require(contract["canonical_media_rate_hz"] == 48_000, "canonical media rate drifted")
@@ -55,6 +58,20 @@ def main() -> None:
         actual = git_head(path)
         require(actual == expected, f"{name} pin mismatch: expected {expected}, got {actual}")
         observed[name] = actual
+
+    registry_by_id = {entry["id"]: entry for entry in registry["components"]}
+    registry_pairs = {
+        "esp_avb": "scrambletools-esp-avb",
+        "esp_ptp": "scrambletools-esp-ptp",
+    }
+    for config_name, registry_id in registry_pairs.items():
+        require(registry_id in registry_by_id, f"external registry missing {registry_id}")
+        entry = registry_by_id[registry_id]
+        require(
+            entry["pinned_commit"] == config["components"][config_name]["pinned_commit"],
+            f"{registry_id} pin differs between open-audio config and external registry",
+        )
+        require(entry.get("production_ready") is False, f"{registry_id} must not be production-ready")
 
     require((args.aoo / "include" / "aoo.h").is_file(), "AOO public C API header missing")
     require((args.genavb / "api").is_dir(), "GenAVB public API directory missing")
