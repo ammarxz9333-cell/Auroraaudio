@@ -269,17 +269,12 @@ impl SixStreamGenAvbRuntime {
         let config = endpoint_config(self.endpoint_format, scheduled_latency_frames)?;
 
         let mut failure = None;
-        for (endpoint, (talker, stream)) in self
-            .talkers
-            .iter_mut()
-            .zip(connected.iter())
-            .enumerate()
+        for (endpoint, (talker, stream)) in
+            self.talkers.iter_mut().zip(connected.iter()).enumerate()
         {
-            if let Err(source) = talker.prepare_from_avdecc(
-                &self.control,
-                stream.stream_index,
-                config,
-            ) {
+            if let Err(source) =
+                talker.prepare_from_avdecc(&self.control, stream.stream_index, config)
+            {
                 failure = Some((endpoint, source));
                 break;
             }
