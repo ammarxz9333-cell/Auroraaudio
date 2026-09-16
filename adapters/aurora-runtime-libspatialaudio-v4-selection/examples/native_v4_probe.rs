@@ -51,9 +51,15 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         || prepared_identity.contract_major() != OBJECT_PCM_RENDERER_CONTRACT_MAJOR
         || prepared_identity.contract_minor() != OBJECT_PCM_RENDERER_CONTRACT_MINOR
     {
-        return Err("native v4 runtime plan did not preserve exact libspatialaudio identity".into());
+        return Err(
+            "native v4 runtime plan did not preserve exact libspatialaudio identity".into(),
+        );
     }
-    if runtime_plan.execution().audio_format().output_channel_count() != 12
+    if runtime_plan
+        .execution()
+        .audio_format()
+        .output_channel_count()
+        != 12
         || runtime_plan.execution().audio_format().sample_rate() != LIBSPATIALAUDIO_MEDIA_RATE_HZ
         || runtime_plan.execution().audio_format().callback_frames() as usize
             != LIBSPATIALAUDIO_BLOCK_FRAMES
