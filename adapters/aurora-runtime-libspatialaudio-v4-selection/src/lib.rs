@@ -302,17 +302,22 @@ pub enum PreparedPlanMaterializationError {
 impl fmt::Display for PreparedPlanMaterializationError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::RendererExecutionMismatch => formatter
-                .write_str("prepared renderer is not an external object-to-PCM renderer"),
+            Self::RendererExecutionMismatch => {
+                formatter.write_str("prepared renderer is not an external object-to-PCM renderer")
+            }
             Self::ComponentIdentityMismatch => formatter
                 .write_str("prepared renderer identity does not match exact libspatialaudio v1"),
-            Self::MediaContractMismatch => formatter
-                .write_str("prepared media contract does not match libspatialaudio v1"),
+            Self::MediaContractMismatch => {
+                formatter.write_str("prepared media contract does not match libspatialaudio v1")
+            }
             Self::LayoutMismatch => {
                 formatter.write_str("prepared topology is not canonical enabled Aurora 7.1.4")
             }
             Self::Selection(error) => {
-                write!(formatter, "libspatialaudio deployment materialization failed: {error}")
+                write!(
+                    formatter,
+                    "libspatialaudio deployment materialization failed: {error}"
+                )
             }
         }
     }
