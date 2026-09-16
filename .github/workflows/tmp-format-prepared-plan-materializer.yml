@@ -1,0 +1,31 @@
+name: Temporary prepared-plan materializer formatter
+
+on:
+  push:
+    branches:
+      - prepared-plan-libspatialaudio-materialization
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: prepared-plan-libspatialaudio-materialization
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Format and remove temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --manifest-path adapters/aurora-runtime-libspatialaudio-v4-selection/Cargo.toml
+          rm .github/workflows/tmp-format-prepared-plan-materializer.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "Format prepared-plan libspatialaudio materializer"
+          git push origin HEAD:prepared-plan-libspatialaudio-materialization
