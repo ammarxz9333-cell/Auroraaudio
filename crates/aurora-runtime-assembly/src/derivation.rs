@@ -1,6 +1,7 @@
 use aurora_config::{
-    ChannelIdentity, DeviceDirection, DeviceSelectionIntent, LayoutKind, RoutingConfiguration,
-    SpeakerConfiguration, SpeakerLayoutConfiguration, ValidatedConfiguration,
+    ChannelIdentity, DeviceDirection, DeviceSelectionIntent, LayoutKind, LayoutKindV4,
+    RoutingConfiguration, SpeakerConfiguration, SpeakerLayoutConfiguration,
+    SpeakerLayoutConfigurationV4, ValidatedConfiguration, ValidatedConfigurationV4,
 };
 use aurora_core::{ChannelRole, StandardLayout, Vector3};
 
@@ -121,6 +122,99 @@ pub fn prepare_runtime_plan_with_registries(
     )
 }
 
+impl PreparedRuntimePlan {
+    /// Derives a native elevation-aware runtime plan from validated Configuration v4.
+    ///
+    /// This is deterministic control-plane assembly only. It does not construct a
+    /// renderer, open a backend, negotiate a device, or claim physical speaker state.
+    pub fn from_configuration_v4(
+        configuration: &ValidatedConfigurationV4,
+    ) -> Result<Self, RuntimePreparationError> {
+        let renderer_registry = RendererComponentRegistry::builtin();
+        let backend_registry = BackendComponentRegistry::builtin();
+        Self::from_configuration_v4_with_registries(
+            configuration,
+            &renderer_registry,
+            &backend_registry,
+        )
+    }
+
+    /// Derives a native Configuration v4 runtime plan with explicit registries.
+    pub fn from_configuration_v4_with_registries(
+        configuration: &ValidatedConfigurationV4,
+        renderer_registry: &RendererComponentRegistry,
+        backend_registry: &BackendComponentRegistry,
+    ) -> Result<Self, RuntimePreparationError> {
+        let config = configuration.config();
+        let routing = prepare_routing(&config.routing)?;
+        let input_channel_count = routing.inputs().len();
+        let output_channel_count = routing.outputs().len();
+
+        if usize::from(config.audio_format.channel_count) != output_channel_count {
+            return Err(RuntimePreparationError::InternalInvariantViolation {
+                invariant: RuntimeInvariant::AudioOutputCountMismatch,
+            });
+        }
+
+        let callback_frame_count =
+            usize::try_from(config.audio_format.callback_frames).map_err(|_| {
+                RuntimePreparationError::ArithmeticOverflow {
+                    operation: ArithmeticOperation::CallbackFrameConversion,
+                }
+            })?;
+        let layout = prepare_layout_v4(&config.speaker_layout)?;
+        let route_count = routing.routes().len();
+        let speaker_count = layout.speakers().len();
+        let format = PreparedAudioFormatIntent::new(
+            config.audio_format.sample_rate,
+            config.audio_format.sample_format,
+            input_channel_count,
+            output_channel_count,
+            config.audio_format.callback_frames,
+            config.audio_format.fallback_policy.clone(),
+        )?;
+        let active_speakers = layout
+            .speakers()
+            .iter()
+            .filter(|speaker| speaker.is_active())
+            .count();
+        let renderer = renderer_registry.resolve(&config.renderer, active_speakers)?;
+        let device_intent = PreparedDeviceIntent::new(
+            prepare_device_selector(
+                config.input_device.as_ref(),
+                DeviceDirection::Input,
+                backend_registry,
+                config.engine.operating_mode,
+                config.audio_format.sample_rate,
+                input_channel_count,
+            )?,
+            prepare_device_selector(
+                config.output_device.as_ref(),
+                DeviceDirection::Output,
+                backend_registry,
+                config.engine.operating_mode,
+                config.audio_format.sample_rate,
+                output_channel_count,
+            )?,
+        );
+        let capacity = RuntimeCapacityPlan::new(
+            input_channel_count,
+            output_channel_count,
+            route_count,
+            speaker_count,
+            callback_frame_count,
+        )?;
+
+        PreparedRuntimePlan::new(
+            RuntimePlanMetadata::new(config.schema.schema_version),
+            PreparedExecutionPlan::new(format, renderer, PreparedDspPlan::None),
+            PreparedTopologyPlan::new(routing, layout),
+            device_intent,
+            capacity,
+        )
+    }
+}
+
 fn prepare_routing(
     routing: &RoutingConfiguration,
 ) -> Result<PreparedRoutingPlan, RuntimePreparationError> {
@@ -167,6 +261,35 @@ fn prepare_layout(
     PreparedLayoutPlan::new(kind, speakers)
 }
 
+fn prepare_layout_v4(
+    layout: &SpeakerLayoutConfigurationV4,
+) -> Result<PreparedLayoutPlan, RuntimePreparationError> {
+    let kind = match layout.kind {
+        LayoutKindV4::Stereo => PreparedLayoutKind::Standard(StandardLayout::Stereo),
+        LayoutKindV4::Surround51 => PreparedLayoutKind::Standard(StandardLayout::FiveOne),
+        LayoutKindV4::Surround71 => PreparedLayoutKind::Standard(StandardLayout::SevenOne),
+        LayoutKindV4::Surround714 => {
+            PreparedLayoutKind::Standard(StandardLayout::SevenOneFour)
+        }
+        LayoutKindV4::CustomHorizontal => PreparedLayoutKind::CustomHorizontal,
+    };
+    let mut speakers = layout
+        .speakers
+        .iter()
+        .map(prepare_speaker_v4)
+        .collect::<Result<Vec<_>, _>>()?;
+
+    if layout.kind == LayoutKindV4::Surround714 {
+        speakers.sort_by(|left, right| {
+            canonical_714_rank(left.channel_role())
+                .cmp(&canonical_714_rank(right.channel_role()))
+                .then_with(|| left.id().cmp(right.id()))
+        });
+    }
+
+    PreparedLayoutPlan::new(kind, speakers)
+}
+
 fn prepare_speaker(
     speaker: &SpeakerConfiguration,
 ) -> Result<PreparedSpeaker, RuntimePreparationError> {
@@ -175,6 +298,21 @@ fn prepare_speaker(
         speaker.label.clone(),
         prepare_role(&speaker.role),
         horizontal_unit_direction(speaker.azimuth_degrees)?,
+        speaker.active,
+    )
+}
+
+fn prepare_speaker_v4(
+    speaker: &SpeakerConfiguration,
+) -> Result<PreparedSpeaker, RuntimePreparationError> {
+    PreparedSpeaker::new(
+        speaker.id.clone(),
+        speaker.label.clone(),
+        prepare_role(&speaker.role),
+        spherical_unit_direction(
+            speaker.azimuth_degrees,
+            speaker.elevation_degrees.unwrap_or(0.0),
+        )?,
         speaker.active,
     )
 }
@@ -191,8 +329,18 @@ fn prepare_role(role: &str) -> ChannelRole {
         "SBR" | "surround-back-right" => ChannelRole::SurroundBackRight,
         "TFL" | "top-front-left" => ChannelRole::TopFrontLeft,
         "TFR" | "top-front-right" => ChannelRole::TopFrontRight,
+        "TRL" | "TBL" | "top-rear-left" | "top-back-left" => ChannelRole::TopRearLeft,
+        "TRR" | "TBR" | "top-rear-right" | "top-back-right" => ChannelRole::TopRearRight,
         custom => ChannelRole::Custom(custom.to_owned()),
     }
+}
+
+fn canonical_714_rank(role: &ChannelRole) -> usize {
+    StandardLayout::SevenOneFour
+        .canonical_roles()
+        .iter()
+        .position(|canonical| canonical == role)
+        .unwrap_or(usize::MAX)
 }
 
 /// Converts clockwise-positive azimuth into a horizontal unit direction.
@@ -211,6 +359,30 @@ fn horizontal_unit_direction(azimuth_degrees: f32) -> Result<Vector3, RuntimePre
     let radians = azimuth_degrees.to_radians();
     let (sin, cos) = radians.sin_cos();
     Ok(Vector3::new(canonical_axis(sin), canonical_axis(cos), 0.0))
+}
+
+/// Converts clockwise-positive azimuth and positive-up elevation into a 3D unit direction.
+///
+/// Aurora coordinates are `+X` right, `+Y` front, and `+Z` up. The returned
+/// vector is dimensionless and carries no radius, room coordinate, or physical
+/// speaker-distance claim.
+fn spherical_unit_direction(
+    azimuth_degrees: f32,
+    elevation_degrees: f32,
+) -> Result<Vector3, RuntimePreparationError> {
+    if !azimuth_degrees.is_finite() || !elevation_degrees.is_finite() {
+        return Err(RuntimePreparationError::InternalInvariantViolation {
+            invariant: RuntimeInvariant::NonFiniteSpeakerGeometry,
+        });
+    }
+    let azimuth = azimuth_degrees.to_radians();
+    let elevation = elevation_degrees.to_radians();
+    let elevation_cos = elevation.cos();
+    Ok(Vector3::new(
+        canonical_axis(elevation_cos * azimuth.sin()),
+        canonical_axis(elevation_cos * azimuth.cos()),
+        canonical_axis(elevation.sin()),
+    ))
 }
 
 fn canonical_axis(value: f32) -> f32 {
@@ -263,9 +435,9 @@ fn prepare_device_selector(
 #[cfg(test)]
 mod tests {
     use aurora_config::{
-        AmbiguityPolicy, CompatibleMinorRange, ComponentContractKind, ComponentReference,
-        DeviceDirection, DeviceSelectionIntent, FormatFallbackPolicy, SampleFormatIntent,
-        ValidatedConfiguration,
+        migrate_v3_to_v4, AmbiguityPolicy, CompatibleMinorRange, ComponentContractKind,
+        ComponentReference, DeviceDirection, DeviceSelectionIntent, FormatFallbackPolicy,
+        SampleFormatIntent, ValidatedConfiguration, ValidatedConfigurationV4,
     };
 
     use super::*;
@@ -278,6 +450,8 @@ mod tests {
     const STEREO: &[u8] = include_bytes!("../../../fixtures/config/stereo-basic-v3.json");
     const FIVE_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-5-1-v3.json");
     const SEVEN_ONE: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-v3.json");
+    const SURROUND_714_V4: &[u8] =
+        include_bytes!("../../../fixtures/config/surround-7-1-4-v4.json");
     const POINT: &[u8] = include_bytes!("../../../fixtures/config/phase-3a-point-source-v3.json");
     const SPREAD: &[u8] = include_bytes!("../../../fixtures/config/phase-3b-spread-v3.json");
     const IRREGULAR: &[u8] =
@@ -370,6 +544,69 @@ mod tests {
         for role in StandardLayout::SevenOne.canonical_roles() {
             assert!(roles.contains(&role));
         }
+    }
+
+    #[test]
+    fn native_v4_7_1_4_derives_full_three_dimensional_runtime_plan() {
+        let validated = ValidatedConfigurationV4::from_json(SURROUND_714_V4).unwrap();
+        let plan = PreparedRuntimePlan::from_configuration_v4(&validated).unwrap();
+
+        assert_eq!(plan.metadata().configuration_schema_version(), 4);
+        assert_eq!(plan.execution().audio_format().sample_rate(), 48_000);
+        assert_eq!(plan.execution().audio_format().output_channel_count(), 12);
+        assert_eq!(plan.capacity().input_channel_count(), 12);
+        assert_eq!(plan.capacity().output_channel_count(), 12);
+        assert_eq!(plan.capacity().route_count(), 12);
+        assert_eq!(plan.capacity().speaker_count(), 12);
+        assert_eq!(
+            plan.topology().layout().kind(),
+            PreparedLayoutKind::Standard(StandardLayout::SevenOneFour)
+        );
+
+        let roles = plan
+            .topology()
+            .layout()
+            .speakers()
+            .iter()
+            .map(|speaker| speaker.channel_role().clone())
+            .collect::<Vec<_>>();
+        assert_eq!(roles, StandardLayout::SevenOneFour.canonical_roles());
+
+        for speaker in plan.topology().layout().speakers() {
+            let position = speaker.position();
+            let length =
+                (position.x * position.x + position.y * position.y + position.z * position.z)
+                    .sqrt();
+            assert!((length - 1.0).abs() < 1.0e-5);
+            match speaker.channel_role() {
+                ChannelRole::TopFrontLeft
+                | ChannelRole::TopFrontRight
+                | ChannelRole::TopRearLeft
+                | ChannelRole::TopRearRight => assert!(position.z > 0.0),
+                _ => assert_eq!(position.z, 0.0),
+            }
+        }
+    }
+
+    #[test]
+    fn migrated_v3_stereo_preserves_runtime_layout_semantics() {
+        let v3 = validated(STEREO);
+        let v3_plan = prepare_runtime_plan(&v3).unwrap();
+        let migrated = migrate_v3_to_v4(STEREO).unwrap();
+        let v4_plan = PreparedRuntimePlan::from_configuration_v4(&migrated.configuration).unwrap();
+
+        assert_eq!(
+            v4_plan.topology().layout().kind(),
+            v3_plan.topology().layout().kind()
+        );
+        assert_eq!(
+            v4_plan.topology().layout().speakers(),
+            v3_plan.topology().layout().speakers()
+        );
+        assert_eq!(
+            v4_plan.execution().audio_format().output_channel_count(),
+            v3_plan.execution().audio_format().output_channel_count()
+        );
     }
 
     #[test]
@@ -667,6 +904,26 @@ mod tests {
         assert_eq!(
             horizontal_unit_direction(-180.0),
             Ok(Vector3::new(0.0, -1.0, 0.0))
+        );
+    }
+
+    #[test]
+    fn spherical_axes_follow_documented_three_dimensional_convention() {
+        assert_eq!(
+            spherical_unit_direction(0.0, 0.0),
+            Ok(Vector3::new(0.0, 1.0, 0.0))
+        );
+        assert_eq!(
+            spherical_unit_direction(90.0, 0.0),
+            Ok(Vector3::new(1.0, 0.0, 0.0))
+        );
+        assert_eq!(
+            spherical_unit_direction(-90.0, 0.0),
+            Ok(Vector3::new(-1.0, 0.0, 0.0))
+        );
+        assert_eq!(
+            spherical_unit_direction(0.0, 90.0),
+            Ok(Vector3::new(0.0, 0.0, 1.0))
         );
     }
 
