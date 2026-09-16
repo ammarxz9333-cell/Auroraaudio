@@ -195,3 +195,10 @@ cargo test --workspace --all-features --locked
 ```
 
 Also run every domain-specific gate touched by the change. GenAVB adapter/control changes must run `GenAVB AAF Talker CI`; open pro-audio config/source-policy changes must run `Open Audio Stack CI`; ESP fanout/orchestration changes must run `ESP-AVB Endpoint Contract CI`. Tooling/simulation/reference gates must never be reported as physical, RF, synchronization, interoperability, acoustic or perceptual proof.
+
+### Prepared-plan libspatialaudio continuation — PR #193
+- Synchronized with main-v2 after #194; renderer selection is validated from the prepared plan before loading the local shim.
+- Fixed the negative test to extract the error without requiring Debug on RealTimeEngine. The deployment-path test uses a platform-native absolute temporary path.
+- Final-head general and dedicated native CI remain mandatory; no native or physical success is inferred from compilation.
+- Next renderer integration gap: scene speaker topology remains supplied independently of the prepared plan; bind or validate that boundary before claiming full plan-owned runtime topology.
+

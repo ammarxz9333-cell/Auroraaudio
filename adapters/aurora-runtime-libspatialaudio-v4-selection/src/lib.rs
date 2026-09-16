@@ -381,7 +381,7 @@ mod tests {
     fn canonical_v4_derives_exact_proven_selector() {
         let selected = selection_from_configuration_v4(
             &selected_configuration(),
-            PathBuf::from("/opt/aurora/libaurora_libspatialaudio_shim.so"),
+            std::env::temp_dir().join("libaurora_libspatialaudio_shim.so"),
         )
         .unwrap();
 
@@ -451,7 +451,8 @@ mod tests {
             engine_config(),
             0,
         )
-        .unwrap_err();
+        .err()
+        .expect("incompatible prepared plan must be rejected");
         assert!(matches!(
             error,
             PreparedPlanMaterializationError::RendererExecutionMismatch
