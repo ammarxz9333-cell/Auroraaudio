@@ -1,9 +1,7 @@
 use std::path::PathBuf;
 
 use aurora_network_esp_avb::{EspAvbEndpointMedium, EspAvbFanoutPlan};
-use aurora_network_genavb_runtime::{
-    GenAvbRuntimeError, RuntimeLifecycle, SixStreamGenAvbRuntime,
-};
+use aurora_network_genavb_runtime::{GenAvbRuntimeError, RuntimeLifecycle, SixStreamGenAvbRuntime};
 use aurora_network_genavb_session::{ExpectedStream, SessionError, StereoEndpointRole};
 use aurora_realtime_audio_api::{
     MediaTimestamp, NetworkAudioBlock, NetworkAudioFormat, AURORA_NETWORK_MEDIA_RATE,
@@ -57,7 +55,7 @@ fn connect_six(runtime: &mut SixStreamGenAvbRuntime) {
     assert!(runtime.session_complete());
 }
 
-fn block(sequence: u64, frame_index: u64) -> (Vec<f32>, NetworkAudioFormat, MediaTimestamp) {
+fn block(frame_index: u64) -> (Vec<f32>, NetworkAudioFormat, MediaTimestamp) {
     let samples = vec![0.125_f32; 48 * 12];
     let format = NetworkAudioFormat {
         sample_rate: AURORA_NETWORK_MEDIA_RATE,
@@ -66,12 +64,11 @@ fn block(sequence: u64, frame_index: u64) -> (Vec<f32>, NetworkAudioFormat, Medi
     };
     let timestamp =
         MediaTimestamp::new(frame_index, AURORA_NETWORK_MEDIA_RATE).expect("valid timestamp");
-    let _ = sequence;
     (samples, format, timestamp)
 }
 
 fn submit(runtime: &mut SixStreamGenAvbRuntime, sequence: u64, frame_index: u64) {
-    let (samples, format, timestamp) = block(sequence, frame_index);
+    let (samples, format, timestamp) = block(frame_index);
     let block = NetworkAudioBlock {
         sequence,
         timestamp,
@@ -111,7 +108,7 @@ fn scenario_submit_fail(shim: PathBuf) {
     runtime.prepare_complete(480).expect("prepare all six");
     runtime.start().expect("start all six");
 
-    let (samples, format, timestamp) = block(23, 96_000);
+    let (samples, format, timestamp) = block(96_000);
     let block = NetworkAudioBlock {
         sequence: 23,
         timestamp,
@@ -134,12 +131,16 @@ fn scenario_duplicate_connect(shim: PathBuf) {
         .expect("first CONNECT event");
     assert!(matches!(
         runtime.receive_control(),
-        Err(GenAvbRuntimeError::Session(SessionError::DuplicateConnect(10)))
+        Err(GenAvbRuntimeError::Session(SessionError::DuplicateConnect(
+            10
+        )))
     ));
     assert_eq!(runtime.connected_count(), 0);
     assert!(!runtime.session_complete());
     assert_eq!(runtime.lifecycle(), RuntimeLifecycle::ControlOpen);
-    runtime.close_control().expect("close after duplicate CONNECT");
+    runtime
+        .close_control()
+        .expect("close after duplicate CONNECT");
 }
 
 fn scenario_reordered(shim: PathBuf) {
