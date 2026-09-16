@@ -4,7 +4,9 @@ use serde_json::Value;
 use crate::{
     PreparedComponentIdentity, PreparedRendererPlan, RendererComponentIssue,
     RuntimePreparationError, BASIC_RENDERER_IMPLEMENTATION_ID,
-    BASIC_RENDERER_IMPLEMENTATION_VERSION, REALTIME_RENDERER_CONTRACT_MINOR,
+    BASIC_RENDERER_IMPLEMENTATION_VERSION, LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID,
+    LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION, OBJECT_PCM_RENDERER_CONTRACT_MINOR,
+    OBJECT_PCM_RENDERER_CONTRACT_VERSION, REALTIME_RENDERER_CONTRACT_MINOR,
     REALTIME_RENDERER_CONTRACT_VERSION, VBAP_RENDERER_IMPLEMENTATION_ID,
     VBAP_RENDERER_IMPLEMENTATION_VERSION,
 };
@@ -82,6 +84,14 @@ impl RendererComponentRegistry {
                     REALTIME_RENDERER_CONTRACT_MINOR,
                     1,
                     resolve_vbap,
+                ),
+                RendererComponentRegistration::new(
+                    LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_ID,
+                    LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION,
+                    OBJECT_PCM_RENDERER_CONTRACT_VERSION,
+                    OBJECT_PCM_RENDERER_CONTRACT_MINOR,
+                    1,
+                    resolve_libspatialaudio,
                 ),
             ],
         }
@@ -198,6 +208,19 @@ fn resolve_vbap(
             PreparedRendererPlan::horizontal_spread_vbap(spread as f32)
                 .map_err(|_| RendererComponentIssue::InvalidConfiguration)
         }
+        _ => Err(RendererComponentIssue::InvalidConfiguration),
+    }
+}
+
+fn resolve_libspatialaudio(
+    payload: &Value,
+    active_speakers: usize,
+) -> Result<PreparedRendererPlan, RendererComponentIssue> {
+    if active_speakers != 12 {
+        return Err(RendererComponentIssue::LayoutCapabilityMismatch);
+    }
+    match payload.as_object() {
+        Some(values) if values.is_empty() => Ok(PreparedRendererPlan::libspatialaudio_object_pcm()),
         _ => Err(RendererComponentIssue::InvalidConfiguration),
     }
 }
