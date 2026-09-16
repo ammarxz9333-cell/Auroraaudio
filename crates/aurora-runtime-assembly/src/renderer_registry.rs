@@ -12,8 +12,7 @@ use crate::{
 pub type RendererConfigurationResolver =
     fn(&Value, usize) -> Result<PreparedRendererPlan, RendererComponentIssue>;
 
-pub type RendererConfigurationValidator =
-    fn(&Value, usize) -> Result<(), RendererComponentIssue>;
+pub type RendererConfigurationValidator = fn(&Value, usize) -> Result<(), RendererComponentIssue>;
 
 #[derive(Clone, Copy)]
 enum RendererRegistrationBehavior {
