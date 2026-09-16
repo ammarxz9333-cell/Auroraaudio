@@ -24,7 +24,7 @@ The pinned NXP API supplies `genavb_stream_params` to a media application throug
 
 Every physical evidence source in one run must use the same operator/controller-supplied `epoch_id`. The allowed form is 1–64 ASCII alphanumeric characters plus `-`, `_` or `.`. A recommended value is a UTC timestamp plus a short run suffix, for example `20260916T193000Z-run01`.
 
-The host probe prints an `ARMED` line containing the epoch before it waits for AVDECC CONNECT. Use that exact epoch in the NXP gPTP snapshot and the ESP listener before/after evidence. Evidence with a missing or different epoch must fail closed even when individual counters look healthy.
+The host probe prints an `ARMED` line containing the epoch before it waits for AVDECC CONNECT. Use that exact epoch in the NXP gPTP evidence and the ESP listener before/after evidence. Evidence with a missing or different epoch must fail closed even when individual counters look healthy.
 
 ## Host probe
 
@@ -77,16 +77,61 @@ aurora-genavb-single-listener-host: PASS epoch_id=<epoch> connect=avdecc prepare
 
 `HOST_PASS` is intentionally **not** a complete physical verdict and the JSON remains `physical_complete:false`.
 
-## Existing ESP listener telemetry
+## NXP gPTP exact-API evidence
 
-The pinned `esp_avb` source already contains listener-side evidence primitives, so the first physical gate does not require an Aurora-specific firmware fork merely to prove receive activity:
+Aurora includes a one-shot NXP snapshot collector:
 
-- `avb_stream_in_last_rx_us(state, index)` reports the most recent input-stream frame arrival in the ESP timer domain;
-- listener state maintains monotonic `stream_bytes_received` data for the media-clock/reference path;
-- `avb_get_stream_in_counters(...)` exposes STREAM_INPUT counters through the existing ATDECC/AECP implementation;
-- the built-in periodic diagnostics call `avb_stream_in_print_diag()` and retain network/PTP receive diagnostics separately.
+```text
+adapters/aurora-network-genavb/native/genavb_gptp_snapshot.c
+```
 
-For the first wired P4 test, prefer controller-visible ATDECC/AECP STREAM_INPUT counters when available, with a raw serial diagnostic capture retained as corroborating evidence. The useful assertion is a **before/after delta during the exact host test epoch**, not merely a non-zero lifetime counter.
+It uses only the pinned public GenAVB/TSN control API:
+
+- `GENAVB_CTRL_GPTP` + `GENAVB_MSG_GM_GET_STATUS` -> `GENAVB_MSG_GM_STATUS` for the grandmaster identity;
+- `GENAVB_CTRL_CLOCK_DOMAIN` + `GENAVB_MSG_CLOCK_DOMAIN_GET_STATUS` -> `GENAVB_MSG_CLOCK_DOMAIN_STATUS` for media clock state.
+
+A snapshot is `PASS` only when all of these are true:
+
+- the grandmaster identity is non-zero;
+- the requested clock domain reports `GENAVB_CLOCK_DOMAIN_STATUS_LOCKED`;
+- its source type is `GENAVB_CLOCK_SOURCE_TYPE_INTERNAL`;
+- its local source is `GENAVB_CLOCK_SOURCE_PTP_CLK`.
+
+`FREE_WHEELING`, `UNLOCKED`, an audio-clock source, a zero GM identity, malformed responses or control-query failures fail closed. Merely observing a GM identity is not treated as clock lock.
+
+Build the collector on the target against the same GenAVB headers/library used by the deployment, then capture a snapshot before and after the host send interval. The defaults are gPTP domain `0` and `GENAVB_CLOCK_DOMAIN_0`; alternate domains must be passed explicitly and remain identical across both snapshots.
+
+The snapshot schema is:
+
+```text
+aurora.genavb.nxp-gptp-snapshot.v1
+```
+
+Two snapshots are converted to the correlator input with:
+
+```bash
+python validation/physical/aurora_genavb_nxp_gptp_evidence.py build \
+  --before nxp-before.json \
+  --after nxp-after.json \
+  --epoch-id <same-epoch-id> \
+  --output nxp-gptp-evidence.json
+```
+
+The output schema is:
+
+```text
+aurora.genavb.nxp-gptp-evidence.v1
+```
+
+The bundler requires both snapshots to be locked to the same non-zero GM, use the same gPTP and clock domains, and have strictly increasing capture times. Its `PASS` is NXP clock evidence only, not a complete physical verdict.
+
+## ESP listener evidence boundary at the exact pin
+
+The pinned `esp_avb` source contains useful internal receive-state primitives, including `avb_stream_in_last_rx_us(...)`, monotonic stream receive state such as `stream_bytes_received`, and internal STREAM_INPUT counter structures. Its GET_STREAM_INFO response also reports the active listener stream identity and connected flag.
+
+However, at the exact pinned commit used by Aurora, the ATDECC functions that send GET_COUNTERS command/response/unsolicited messages are still explicit `not implemented` stubs. Therefore **controller-visible AECP GET_COUNTERS must not be claimed or used as the receive-evidence source for this pin**.
+
+For the first wired P4 test, listener evidence must use an actually exposed source from that exact firmware build. The next implementation step is to bind the existing internal receive activity and gPTP state into a machine-readable evidence path (or, if unavoidable, a narrowly scoped pinned firmware instrumentation patch) while retaining GET_STREAM_INFO/ACMP for stream identity and connection state.
 
 Do not accept audible output, an LED, a stale lifetime counter or raw Ethernet packet presence by itself as listener receive proof. The evidence must bind the active STREAM_INPUT/stream identity to increasing receive activity during the host probe.
 
@@ -104,25 +149,33 @@ A complete one-listener evidence bundle must contain all of the following from t
 
 2. **NXP gPTP evidence**
    - the same `epoch_id`;
-   - the relevant NXP network port is link-up and gPTP-capable;
-   - the GenAVB clock used by the stream is synchronized for the test epoch;
-   - the raw NXP gPTP status/log excerpt is retained in the evidence bundle.
+   - valid before/after snapshots from the public NXP gPTP and clock-domain control APIs;
+   - `LOCKED` PTP clock source in both snapshots;
+   - one stable non-zero grandmaster identity across the epoch;
+   - before/after timestamps bracket the host send interval when evaluated by the final correlator.
 
 3. **ESP listener evidence**
    - the same `epoch_id`;
    - the real ESP32-P4 ATDECC entity is discovered;
    - ACMP reports the intended listener connection;
    - the listener reports the same stream identity advertised in the host CONNECT;
-   - STREAM_INPUT/AAF receive activity increases between before/after samples bracketing the host send interval;
+   - real STREAM_INPUT/AAF receive activity increases between before/after samples bracketing the host send interval;
    - listener-side gPTP/clock state is retained for the same epoch.
 
 4. **Identity and time correlation**
    - all evidence objects carry the identical `epoch_id`;
    - Stream ID and connection identity match across host AVDECC evidence and listener evidence;
-   - listener before/after samples bracket or overlap the host `send_started_unix_ms`–`send_ended_unix_ms` interval;
+   - NXP and ESP before/after samples bracket the host `send_started_unix_ms`–`send_ended_unix_ms` interval;
+   - NXP and ESP remain on the same grandmaster across the epoch;
    - unrelated prior connections/counters cannot satisfy the gate.
 
-Only when all four evidence groups pass may this gate be labelled `PHYSICAL-PASS: one-listener AVDECC/ACMP + AAF + gPTP`.
+The final correlator is:
+
+```text
+validation/physical/aurora_genavb_single_listener_evidence.py
+```
+
+Only when all evidence groups pass may it emit `PHYSICAL-PASS: one-listener AVDECC/ACMP + AAF + gPTP`. CI fixture success remains validator/software proof only.
 
 ## Negative physical checks
 
