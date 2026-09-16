@@ -1,6 +1,6 @@
 use aurora_network_esp_avb::{
-    EspAvbEndpointMedium, EspAvbFanoutPlan, PreparedEspAvbFanout,
-    AURORA_7_1_4_CHANNELS, ESP_AVB_7_1_4_ENDPOINTS,
+    EspAvbEndpointMedium, EspAvbFanoutPlan, PreparedEspAvbFanout, AURORA_7_1_4_CHANNELS,
+    ESP_AVB_7_1_4_ENDPOINTS,
 };
 use aurora_realtime_audio_api::{
     MediaTimestamp, NetworkAudioBlock, NetworkAudioFormat, NetworkClockDiscipline,
@@ -45,7 +45,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         if block.format.channels != 2 || block.format.sample_rate != AURORA_NETWORK_MEDIA_RATE {
             return Err("endpoint format violated pinned stereo/48 kHz contract".into());
         }
-        checksum += block.samples.iter().map(|sample| f64::from(*sample)).sum::<f64>();
+        checksum += block
+            .samples
+            .iter()
+            .map(|sample| f64::from(*sample))
+            .sum::<f64>();
     }
     if !checksum.is_finite() || checksum <= 0.0 {
         return Err("fanout checksum is invalid".into());
