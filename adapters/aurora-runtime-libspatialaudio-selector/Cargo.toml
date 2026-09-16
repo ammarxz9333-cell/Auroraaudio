@@ -1,0 +1,18 @@
+[package]
+name = "aurora-runtime-libspatialaudio-selector"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/ammarxz9333-cell/Auroraaudio"
+rust-version = "1.78"
+
+[workspace]
+
+[dependencies]
+aurora-core = { path = "../../crates/aurora-core" }
+aurora-realtime-engine = { path = "../../crates/aurora-realtime-engine" }
+aurora-renderer-libspatialaudio = { path = "../aurora-renderer-libspatialaudio" }
+aurora-runtime-materialization = { path = "../../crates/aurora-runtime-materialization" }
+aurora-scene = { path = "../../crates/aurora-scene" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
