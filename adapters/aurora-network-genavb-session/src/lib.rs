@@ -455,6 +455,24 @@ mod tests {
     }
 
     #[test]
+    fn reset_closes_start_gate_and_clears_all_connections() {
+        let mut session = SixStreamAvdeccSession::new(mapping()).unwrap();
+        for (offset, index) in (10_u16..=15).enumerate() {
+            session.apply(connect(index, (offset + 1) as u8)).unwrap();
+        }
+        assert!(session.is_complete());
+
+        session.reset();
+
+        assert_eq!(session.connected_count(), 0);
+        assert!(!session.is_complete());
+        assert_eq!(
+            session.require_complete(),
+            Err(SessionError::PartialConnectionSet { connected: 0 })
+        );
+    }
+
+    #[test]
     fn expected_mapping_rejects_duplicate_roles_and_indices() {
         let mut duplicate_role = mapping();
         duplicate_role[1].role = StereoEndpointRole::Front;
