@@ -13,4 +13,6 @@ aurora-config = { path = "../../crates/aurora-config" }
 aurora-runtime-libspatialaudio-selector = { path = "../aurora-runtime-libspatialaudio-selector" }
 
 [dev-dependencies]
+aurora-realtime-engine = { path = "../../crates/aurora-realtime-engine" }
+aurora-scene = { path = "../../crates/aurora-scene" }
 serde_json = "1"
