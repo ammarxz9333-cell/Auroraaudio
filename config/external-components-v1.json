@@ -374,6 +374,44 @@
       ]
     },
     {
+      "id": "scrambletools-esp-avb",
+      "upstream": "https://github.com/scrambletools/esp_avb",
+      "decision": "evaluate-active",
+      "integration": "embedded-platform-gated-network-endpoint-candidate",
+      "tested_version": "2.18.0",
+      "pinned_commit": "5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9",
+      "license": "MIT",
+      "roles": ["avb-endpoint", "aaf-pcm-24bit-48khz", "ethernet-endpoint", "wifi-endpoint", "ethernet-wifi-bridge", "i2s-codec-output"],
+      "object_metadata": "not-applicable-post-dsp-pcm-transport",
+      "production_ready": false,
+      "evidence": [
+        "config/open-audio-stack-v1.json",
+        "validation/open-audio-stack/open_audio_stack_evidence.py",
+        ".github/workflows/open-audio-stack-ci.yml",
+        "docs/adr/0021-open-pro-audio-stack-integration.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
+      "id": "scrambletools-esp-ptp",
+      "upstream": "https://github.com/scrambletools/esp_ptp",
+      "decision": "evaluate-active",
+      "integration": "embedded-platform-gated-time-sync-candidate",
+      "tested_version": "1.2.3",
+      "pinned_commit": "5b7eec233a93733ae954beefb6df3bb9c12dc901",
+      "license": "Apache-2.0",
+      "roles": ["ieee-1588-ptp", "ieee-8021as-gptp", "esp32-p4-hardware-timestamping", "esp32-c6-software-disciplined-clock", "wifi-follow-up-information-transport"],
+      "object_metadata": "not-applicable-time-mapping",
+      "production_ready": false,
+      "evidence": [
+        "config/open-audio-stack-v1.json",
+        "validation/open-audio-stack/open_audio_stack_evidence.py",
+        ".github/workflows/open-audio-stack-ci.yml",
+        "docs/adr/0021-open-pro-audio-stack-integration.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
+    },
+    {
       "id": "sound-open-firmware",
       "upstream": "https://github.com/thesofproject/sof",
       "decision": "evaluate-active",
