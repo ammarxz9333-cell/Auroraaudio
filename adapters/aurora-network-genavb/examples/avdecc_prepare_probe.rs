@@ -33,7 +33,8 @@ fn main() {
     let mut control = GenAvbAvdeccControl::load(primary.clone()).expect("load AVDECC control");
     control.open().expect("open AVDECC control");
 
-    let mut talker = GenAvbNetworkTransport::load_avdecc(primary.clone()).expect("load AVDECC talker");
+    let mut talker =
+        GenAvbNetworkTransport::load_avdecc(primary.clone()).expect("load AVDECC talker");
     talker
         .prepare_from_avdecc(&control, 4, stream_config())
         .expect("prepare talker from AVDECC state");
