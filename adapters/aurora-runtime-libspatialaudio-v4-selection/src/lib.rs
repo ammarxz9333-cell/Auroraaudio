@@ -13,6 +13,10 @@ use std::path::PathBuf;
 use aurora_config::{
     ComponentContractKind, LayoutKindV4, SampleFormatIntent, ValidatedConfigurationV4,
 };
+use aurora_runtime_assembly::{
+    BackendComponentRegistry, PreparedRuntimePlan, RendererComponentIssue,
+    RendererComponentRegistration, RendererComponentRegistry, RuntimePreparationError,
+};
 use aurora_runtime_libspatialaudio_selector::{
     LibspatialaudioSelectionIntent, LIBSPATIALAUDIO_BLOCK_FRAMES, LIBSPATIALAUDIO_MEDIA_RATE_HZ,
     LIBSPATIALAUDIO_RENDERER_COMPONENT_ID, LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION,
@@ -29,6 +33,51 @@ pub fn selection_from_configuration_v4(
     configuration: &ValidatedConfigurationV4,
     shim_path: impl Into<PathBuf>,
 ) -> Result<LibspatialaudioSelectionIntent, V4SelectionError> {
+    validate_configuration_v4(configuration)?;
+
+    let shim_path = shim_path.into();
+    if shim_path.as_os_str().is_empty() || !shim_path.is_absolute() {
+        return Err(V4SelectionError::InvalidDeploymentPath);
+    }
+
+    Ok(LibspatialaudioSelectionIntent::v1(shim_path))
+}
+
+/// Derives Aurora's passive runtime plan for the exact proven libspatialaudio
+/// Configuration v4 contract.
+///
+/// This does not load libspatialaudio or the Aurora shim. It registers the
+/// external object-to-PCM execution model with runtime assembly, validates the
+/// same fail-closed contract used by [`selection_from_configuration_v4`], and
+/// returns an immutable [`PreparedRuntimePlan`].
+pub fn prepare_runtime_plan_from_configuration_v4(
+    configuration: &ValidatedConfigurationV4,
+) -> Result<PreparedRuntimePlan, V4RuntimePlanError> {
+    validate_configuration_v4(configuration).map_err(V4RuntimePlanError::Selection)?;
+
+    let renderer_registry = RendererComponentRegistry::builtin()
+        .with_registration(RendererComponentRegistration::external_object_pcm(
+            LIBSPATIALAUDIO_RENDERER_COMPONENT_ID,
+            LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION,
+            OBJECT_PCM_RENDERER_CONTRACT_MAJOR,
+            OBJECT_PCM_RENDERER_CONTRACT_MINOR,
+            1,
+            validate_runtime_registration,
+        ))
+        .map_err(V4RuntimePlanError::Runtime)?;
+    let backend_registry = BackendComponentRegistry::builtin();
+
+    PreparedRuntimePlan::from_configuration_v4_with_registries(
+        configuration,
+        &renderer_registry,
+        &backend_registry,
+    )
+    .map_err(V4RuntimePlanError::Runtime)
+}
+
+fn validate_configuration_v4(
+    configuration: &ValidatedConfigurationV4,
+) -> Result<(), V4SelectionError> {
     let config = configuration.config();
     let renderer = &config.renderer;
 
@@ -69,12 +118,20 @@ pub fn selection_from_configuration_v4(
         return Err(V4SelectionError::InvalidComponentConfiguration);
     }
 
-    let shim_path = shim_path.into();
-    if shim_path.as_os_str().is_empty() || !shim_path.is_absolute() {
-        return Err(V4SelectionError::InvalidDeploymentPath);
-    }
+    Ok(())
+}
 
-    Ok(LibspatialaudioSelectionIntent::v1(shim_path))
+fn validate_runtime_registration(
+    payload: &serde_json::Value,
+    active_speakers: usize,
+) -> Result<(), RendererComponentIssue> {
+    if active_speakers != 12 {
+        return Err(RendererComponentIssue::LayoutCapabilityMismatch);
+    }
+    match payload.as_object() {
+        Some(values) if values.is_empty() => Ok(()),
+        _ => Err(RendererComponentIssue::InvalidConfiguration),
+    }
 }
 
 /// Fail-closed native-v4 selection failures.
@@ -116,10 +173,38 @@ impl fmt::Display for V4SelectionError {
 
 impl Error for V4SelectionError {}
 
+/// Failure to derive the passive native-v4 runtime plan.
+#[derive(Debug)]
+pub enum V4RuntimePlanError {
+    /// The Configuration v4 request is outside the proven libspatialaudio contract.
+    Selection(V4SelectionError),
+    /// Runtime assembly rejected the validated component or plan invariants.
+    Runtime(RuntimePreparationError),
+}
+
+impl fmt::Display for V4RuntimePlanError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Self::Selection(error) => write!(formatter, "libspatialaudio v4 selection rejected: {error}"),
+            Self::Runtime(error) => write!(formatter, "libspatialaudio v4 runtime plan rejected: {error}"),
+        }
+    }
+}
+
+impl Error for V4RuntimePlanError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Selection(error) => Some(error),
+            Self::Runtime(error) => Some(error),
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use aurora_config::{AuroraConfigurationV4, CompatibleMinorRange, ComponentReference};
+    use aurora_runtime_assembly::PreparedRendererKind;
 
     const SURROUND_714: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-4-v4.json");
 
@@ -161,12 +246,38 @@ mod tests {
     }
 
     #[test]
+    fn canonical_v4_derives_external_object_pcm_runtime_plan() {
+        let plan = prepare_runtime_plan_from_configuration_v4(&selected_configuration()).unwrap();
+        let renderer = plan.execution().renderer();
+        let identity = renderer.component_identity();
+
+        assert_eq!(renderer.kind(), PreparedRendererKind::ExternalObjectPcm);
+        assert_eq!(renderer.horizontal_spread(), None);
+        assert_eq!(identity.implementation_id(), LIBSPATIALAUDIO_RENDERER_COMPONENT_ID);
+        assert_eq!(
+            identity.implementation_version(),
+            LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION
+        );
+        assert_eq!(identity.contract_major(), OBJECT_PCM_RENDERER_CONTRACT_MAJOR);
+        assert_eq!(identity.contract_minor(), OBJECT_PCM_RENDERER_CONTRACT_MINOR);
+        assert_eq!(plan.execution().audio_format().output_channel_count(), 12);
+        assert_eq!(plan.execution().audio_format().sample_rate(), 48_000);
+        assert_eq!(plan.execution().audio_format().callback_frames(), 256);
+    }
+
+    #[test]
     fn basic_renderer_fixture_is_not_silently_promoted() {
         let config = ValidatedConfigurationV4::from_json(SURROUND_714).unwrap();
         assert_eq!(
             selection_from_configuration_v4(&config, "/opt/aurora/shim.so").unwrap_err(),
             V4SelectionError::ComponentIdentityMismatch
         );
+        assert!(matches!(
+            prepare_runtime_plan_from_configuration_v4(&config),
+            Err(V4RuntimePlanError::Selection(
+                V4SelectionError::ComponentIdentityMismatch
+            ))
+        ));
     }
 
     #[test]
@@ -189,6 +300,28 @@ mod tests {
             selection_from_configuration_v4(&config, "/opt/aurora/shim.so").unwrap_err(),
             V4SelectionError::UnsupportedMediaContract
         );
+        assert!(matches!(
+            prepare_runtime_plan_from_configuration_v4(&config),
+            Err(V4RuntimePlanError::Selection(
+                V4SelectionError::UnsupportedMediaContract
+            ))
+        ));
+    }
+
+    #[test]
+    fn inactive_714_speaker_fails_runtime_registration_closed() {
+        let mut config = selected_configuration().config().clone();
+        config.speaker_layout.speakers[0].active = false;
+        let config = ValidatedConfigurationV4::new(config).unwrap();
+        assert!(matches!(
+            prepare_runtime_plan_from_configuration_v4(&config),
+            Err(V4RuntimePlanError::Runtime(
+                RuntimePreparationError::RendererComponent {
+                    issue: RendererComponentIssue::LayoutCapabilityMismatch,
+                    ..
+                }
+            ))
+        ));
     }
 
     #[test]
