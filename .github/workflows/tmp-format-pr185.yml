@@ -32,3 +32,4 @@ jobs:
           fi
           git commit -m "Format native v4 runtime assembly"
           git push origin HEAD:native-7-1-4-runtime-assembly
+# trigger formatter after workflow exists
