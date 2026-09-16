@@ -41,10 +41,20 @@ jobs:
           grep -q 'PASS nodes=6 channels=12 per_stream=2 rate=48000 clock=ptp-follower' \
             artifacts/esp-avb-fanout.txt
 
-      - name: Upload fanout evidence
+      - name: Exercise six-endpoint transport orchestration
+        run: |
+          cargo run --release \
+            --manifest-path adapters/aurora-network-esp-avb/Cargo.toml \
+            --example orchestration_probe | tee artifacts/esp-avb-orchestration.txt
+          grep -q 'PASS endpoints=6 rate=48000 block=48 clock=ptp-follower sequence=23 timestamp=96000' \
+            artifacts/esp-avb-orchestration.txt
+
+      - name: Upload endpoint evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: esp-avb-endpoint-contract-evidence
-          path: artifacts/esp-avb-fanout.txt
+          path: |
+            artifacts/esp-avb-fanout.txt
+            artifacts/esp-avb-orchestration.txt
           if-no-files-found: warn
