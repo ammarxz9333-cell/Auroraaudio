@@ -88,8 +88,12 @@ impl fmt::Display for GenAvbRuntimeLoadError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::InvalidConfig => formatter.write_str("invalid six-talker GenAVB runtime config"),
-            Self::Control(source) => write!(formatter, "GenAVB AVDECC control load failed: {source}"),
-            Self::Session(source) => write!(formatter, "GenAVB AVDECC session setup failed: {source}"),
+            Self::Control(source) => {
+                write!(formatter, "GenAVB AVDECC control load failed: {source}")
+            }
+            Self::Session(source) => {
+                write!(formatter, "GenAVB AVDECC session setup failed: {source}")
+            }
             Self::Talker { endpoint, source } => {
                 write!(formatter, "GenAVB talker {endpoint} load failed: {source}")
             }
@@ -369,7 +373,10 @@ impl GenAvbSixTalkerRuntime {
     }
 
     pub fn prepared_count(&self) -> usize {
-        self.prepared_epoch.iter().filter(|prepared| **prepared).count()
+        self.prepared_epoch
+            .iter()
+            .filter(|prepared| **prepared)
+            .count()
     }
 
     pub const fn is_ready(&self) -> bool {
@@ -517,7 +524,10 @@ mod tests {
             samples: bad_samples,
             ..set
         };
-        assert!(matches!(bad.validate(), Err(GenAvbRuntimeError::InvalidBlockSet)));
+        assert!(matches!(
+            bad.validate(),
+            Err(GenAvbRuntimeError::InvalidBlockSet)
+        ));
     }
 
     #[test]
