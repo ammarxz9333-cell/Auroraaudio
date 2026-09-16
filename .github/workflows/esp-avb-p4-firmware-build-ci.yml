@@ -3,6 +3,7 @@ name: ESP-AVB P4 Firmware Build CI
 on:
   pull_request:
     paths:
+      - "validation/physical/aurora_patch_esp_ptp_lock_evidence.py"
       - "validation/physical/aurora_patch_esp_avb_listener_evidence.py"
       - "validation/physical/esp_avb_aurora_snapshot.c"
       - "config/esp-avb-p4-build-reference-v1.json"
@@ -69,10 +70,12 @@ jobs:
 
           echo "AURORA_ESP_P4_ROOT=$root" >> "$GITHUB_ENV"
 
-      - name: Apply Aurora exact-pin listener instrumentation
+      - name: Apply Aurora exact-pin PTP and listener instrumentation
         shell: bash
         run: |
           set -euo pipefail
+          python validation/physical/aurora_patch_esp_ptp_lock_evidence.py apply-check \
+            --root "$AURORA_ESP_P4_ROOT/endpoint/components/esp_ptp"
           python validation/physical/aurora_patch_esp_avb_listener_evidence.py apply-check \
             --root "$AURORA_ESP_P4_ROOT/endpoint/components/esp_avb"
           cp validation/physical/esp_avb_aurora_snapshot.c \
