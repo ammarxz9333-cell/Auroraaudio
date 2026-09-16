@@ -10,6 +10,7 @@ rust-version = "1.78"
 
 [dependencies]
 aurora-config = { path = "../../crates/aurora-config" }
+aurora-runtime-assembly = { path = "../../crates/aurora-runtime-assembly" }
 aurora-runtime-libspatialaudio-selector = { path = "../aurora-runtime-libspatialaudio-selector" }
 
 [dev-dependencies]
