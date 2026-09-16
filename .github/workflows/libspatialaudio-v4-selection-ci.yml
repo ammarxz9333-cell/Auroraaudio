@@ -1,0 +1,105 @@
+name: Libspatialaudio V4 Selection CI
+
+on:
+  pull_request:
+    paths:
+      - "adapters/aurora-runtime-libspatialaudio-v4-selection/**"
+      - "adapters/aurora-runtime-libspatialaudio-selector/**"
+      - "adapters/aurora-renderer-libspatialaudio/**"
+      - "crates/aurora-config/**"
+      - "crates/aurora-realtime-engine/**"
+      - "crates/aurora-runtime-materialization/**"
+      - "validation/open-audio-stack/libspatialaudio_runtime_shim.cpp"
+      - ".github/workflows/libspatialaudio-v4-selection-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: libspatialaudio-v4-selection-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  LIBSPATIALAUDIO_SHA: d149ed9744fd399b835c6f2920511f8cbcfce5ea
+
+jobs:
+  rust:
+    strategy:
+      matrix:
+        toolchain: [stable, "1.78.0"]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          toolchain: ${{ matrix.toolchain }}
+          components: rustfmt, clippy
+      - name: Format
+        run: cargo fmt --manifest-path adapters/aurora-runtime-libspatialaudio-v4-selection/Cargo.toml -- --check
+      - name: Check
+        run: cargo check --manifest-path adapters/aurora-runtime-libspatialaudio-v4-selection/Cargo.toml --all-targets
+      - name: Clippy
+        run: cargo clippy --manifest-path adapters/aurora-runtime-libspatialaudio-v4-selection/Cargo.toml --all-targets -- -D warnings
+      - name: Tests
+        run: cargo test --manifest-path adapters/aurora-runtime-libspatialaudio-v4-selection/Cargo.toml
+
+  native-e2e:
+    needs: rust
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Install native build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build pkg-config
+
+      - name: Fetch exact libspatialaudio
+        run: |
+          git init "$RUNNER_TEMP/libspatialaudio"
+          git -C "$RUNNER_TEMP/libspatialaudio" remote add origin https://github.com/videolan/libspatialaudio.git
+          git -C "$RUNNER_TEMP/libspatialaudio" fetch --depth 1 origin "$LIBSPATIALAUDIO_SHA"
+          git -C "$RUNNER_TEMP/libspatialaudio" checkout --detach FETCH_HEAD
+          test "$(git -C "$RUNNER_TEMP/libspatialaudio" rev-parse HEAD)" = "$LIBSPATIALAUDIO_SHA"
+
+      - name: Build exact libspatialaudio shared library
+        run: |
+          cmake -S "$RUNNER_TEMP/libspatialaudio" -B "$RUNNER_TEMP/libspatialaudio-build" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="$RUNNER_TEMP/libspatialaudio-install" \
+            -DBUILD_SHARED_LIBS=ON \
+            -DBUILD_TESTING=ON
+          cmake --build "$RUNNER_TEMP/libspatialaudio-build" --parallel 2
+          ctest --test-dir "$RUNNER_TEMP/libspatialaudio-build" --output-on-failure
+          cmake --install "$RUNNER_TEMP/libspatialaudio-build"
+
+      - name: Build Aurora-owned shim
+        run: |
+          export PKG_CONFIG_PATH="$RUNNER_TEMP/libspatialaudio-install/lib/pkgconfig${PKG_CONFIG_PATH:+:$PKG_CONFIG_PATH}"
+          c++ -std=c++17 -O2 -fPIC -shared -Wall -Wextra -Werror \
+            validation/open-audio-stack/libspatialaudio_runtime_shim.cpp \
+            -o "$RUNNER_TEMP/libaurora_spaudio_shim.so" \
+            $(pkg-config --cflags --libs spatialaudio)
+          test -s "$RUNNER_TEMP/libaurora_spaudio_shim.so"
+
+      - name: Exercise native Configuration v4 selection end to end
+        run: |
+          mkdir -p artifacts
+          AURORA_LIBSPATIALAUDIO_SHIM="$RUNNER_TEMP/libaurora_spaudio_shim.so" \
+          LD_LIBRARY_PATH="$RUNNER_TEMP/libspatialaudio-install/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}" \
+            cargo run --release \
+              --manifest-path adapters/aurora-runtime-libspatialaudio-v4-selection/Cargo.toml \
+              --example native_v4_probe | tee artifacts/libspatialaudio-v4-selection.txt
+          grep -q 'PASS component=org.aurora.renderer.libspatialaudio rate=48000 block=256 layout=7.1.4 latency=255' \
+            artifacts/libspatialaudio-v4-selection.txt
+
+      - name: Upload native v4 selection evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: libspatialaudio-v4-selection-evidence
+          path: artifacts/libspatialaudio-v4-selection.txt
+          if-no-files-found: warn
