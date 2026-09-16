@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "purpose": "Exact-pin ESP32-P4 validation-firmware build reference for Aurora's one-listener physical evidence path",
+  "target": "esp32p4",
+  "esp_idf": {
+    "docker_image": "espressif/idf:v6.0.2",
+    "scope": "build-validation-only"
+  },
+  "endpoint_app": {
+    "upstream": "https://github.com/scrambletools/ESP-AVB-Endpoint",
+    "pinned_commit": "43765a5a828187b647c77d91d8f988b743816f8b"
+  },
+  "local_component_overrides": [
+    {
+      "name": "esp_avb",
+      "upstream": "https://github.com/scrambletools/esp_avb",
+      "pinned_commit": "5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9"
+    },
+    {
+      "name": "esp_ptp",
+      "upstream": "https://github.com/scrambletools/esp_ptp",
+      "pinned_commit": "5b7eec233a93733ae954beefb6df3bb9c12dc901"
+    },
+    {
+      "name": "esp_ptp_rpc",
+      "upstream": "https://github.com/scrambletools/esp_ptp_rpc",
+      "pinned_commit": "4183c8392be08aaffcb7bfb008b17016106a7df3"
+    }
+  ],
+  "aurora_instrumentation": {
+    "source_patch": "validation/physical/aurora_patch_esp_avb_listener_evidence.py",
+    "snapshot_translation_unit": "validation/physical/esp_avb_aurora_snapshot.c"
+  },
+  "truth_boundary": "A successful ESP-IDF build proves exact-source/API/compile compatibility only. It is not physical AVDECC, AAF, gPTP, RX, latency, synchronization, RF or acoustic evidence."
+}
