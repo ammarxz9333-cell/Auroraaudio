@@ -1,0 +1,50 @@
+name: ESP-AVB Endpoint Contract CI
+
+on:
+  pull_request:
+    paths:
+      - "adapters/aurora-network-esp-avb/**"
+      - ".github/workflows/esp-avb-endpoint-contract-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: esp-avb-endpoint-contract-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  stereo-fanout-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt,clippy
+
+      - name: Validate standalone ESP-AVB adapter package
+        run: |
+          cargo fmt --manifest-path adapters/aurora-network-esp-avb/Cargo.toml -- --check
+          cargo check --manifest-path adapters/aurora-network-esp-avb/Cargo.toml --all-targets
+          cargo clippy --manifest-path adapters/aurora-network-esp-avb/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path adapters/aurora-network-esp-avb/Cargo.toml
+
+      - name: Exercise canonical 7.1.4 to six-stereo-node fanout
+        run: |
+          mkdir -p artifacts
+          cargo run --release \
+            --manifest-path adapters/aurora-network-esp-avb/Cargo.toml \
+            --example fanout_probe | tee artifacts/esp-avb-fanout.txt
+          grep -q 'PASS nodes=6 channels=12 per_stream=2 rate=48000 clock=ptp-follower' \
+            artifacts/esp-avb-fanout.txt
+
+      - name: Upload fanout evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: esp-avb-endpoint-contract-evidence
+          path: artifacts/esp-avb-fanout.txt
+          if-no-files-found: warn
