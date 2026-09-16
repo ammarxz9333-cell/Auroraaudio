@@ -45,7 +45,10 @@ jobs:
 
       - name: Compile shim against exact public API
         run: |
-          cc -std=c11 -Wall -Wextra -Werror -fPIC \
+          # NXP 7.3.2's public avdecc.h intentionally contains an empty else
+          # body. Keep that upstream warning visible without letting it mask
+          # -Werror findings in Aurora-owned C code.
+          cc -std=c11 -Wall -Wextra -Werror -Wno-error=empty-body -fPIC \
             -Iadapters/aurora-network-genavb/native \
             -I"$RUNNER_TEMP/genavb/include" \
             -I"$RUNNER_TEMP/genavb/include/linux" \
@@ -55,7 +58,7 @@ jobs:
       - name: Exercise shared-runtime and shared-PTP-anchor contract
         run: |
           mkdir -p artifacts
-          cc -std=c11 -Wall -Wextra -Werror \
+          cc -std=c11 -Wall -Wextra -Werror -Wno-error=empty-body \
             -Iadapters/aurora-network-genavb/native \
             -I"$RUNNER_TEMP/genavb/include" \
             -I"$RUNNER_TEMP/genavb/include/linux" \
