@@ -42,6 +42,8 @@ struct aurora_genavb_avdecc_event {
 uint32_t aurora_genavb_abi_version(void);
 void *aurora_genavb_create(void);
 int aurora_genavb_prepare(void *opaque, const struct aurora_genavb_config *config);
+int aurora_genavb_prepare_avdecc(void *opaque, void *control_opaque, uint16_t stream_index,
+                                 uint32_t target_latency_frames, uint32_t block_frames);
 int aurora_genavb_start(void *opaque);
 int aurora_genavb_submit(void *opaque, const uint8_t *aaf_payload, uint32_t payload_bytes,
                          uint64_t media_frame_index);
