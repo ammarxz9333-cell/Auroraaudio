@@ -92,7 +92,9 @@ pub enum SessionError {
     },
     DisconnectNotConnected(u16),
     DisconnectIdentityMismatch(u16),
-    PartialConnectionSet { connected: usize },
+    PartialConnectionSet {
+        connected: usize,
+    },
 }
 
 impl fmt::Display for SessionError {
@@ -149,9 +151,7 @@ pub struct SixStreamAvdeccSession {
 }
 
 impl SixStreamAvdeccSession {
-    pub fn new(
-        expected: [ExpectedStream; IMMERSIVE_STREAM_COUNT],
-    ) -> Result<Self, SessionError> {
+    pub fn new(expected: [ExpectedStream; IMMERSIVE_STREAM_COUNT]) -> Result<Self, SessionError> {
         let mut role_seen = [false; IMMERSIVE_STREAM_COUNT];
         for (position, item) in expected.iter().enumerate() {
             let slot = item.role.slot();
@@ -269,8 +269,8 @@ impl SixStreamAvdeccSession {
     fn disconnect(&mut self, event: GenAvbAvdeccEvent) -> Result<SessionUpdate, SessionError> {
         let role = self.role_for_index(event.stream_index)?;
         let slot = role.slot();
-        let active = self.connected[slot]
-            .ok_or(SessionError::DisconnectNotConnected(event.stream_index))?;
+        let active =
+            self.connected[slot].ok_or(SessionError::DisconnectNotConnected(event.stream_index))?;
         if active.identity.stream_id != event.stream_id
             || active.identity.port != event.port
             || active.identity.stream_class != event.stream_class
@@ -302,12 +302,30 @@ mod tests {
 
     fn mapping() -> [ExpectedStream; IMMERSIVE_STREAM_COUNT] {
         [
-            ExpectedStream { role: StereoEndpointRole::Front, stream_index: 10 },
-            ExpectedStream { role: StereoEndpointRole::CenterLfe, stream_index: 11 },
-            ExpectedStream { role: StereoEndpointRole::Surround, stream_index: 12 },
-            ExpectedStream { role: StereoEndpointRole::BackSurround, stream_index: 13 },
-            ExpectedStream { role: StereoEndpointRole::TopFront, stream_index: 14 },
-            ExpectedStream { role: StereoEndpointRole::TopRear, stream_index: 15 },
+            ExpectedStream {
+                role: StereoEndpointRole::Front,
+                stream_index: 10,
+            },
+            ExpectedStream {
+                role: StereoEndpointRole::CenterLfe,
+                stream_index: 11,
+            },
+            ExpectedStream {
+                role: StereoEndpointRole::Surround,
+                stream_index: 12,
+            },
+            ExpectedStream {
+                role: StereoEndpointRole::BackSurround,
+                stream_index: 13,
+            },
+            ExpectedStream {
+                role: StereoEndpointRole::TopFront,
+                stream_index: 14,
+            },
+            ExpectedStream {
+                role: StereoEndpointRole::TopRear,
+                stream_index: 15,
+            },
         ]
     }
 
@@ -376,7 +394,9 @@ mod tests {
         duplicate_mac.destination_mac = connect(10, 1).destination_mac;
         assert_eq!(
             session.apply(duplicate_mac),
-            Err(SessionError::DuplicateDestinationMac(duplicate_mac.destination_mac))
+            Err(SessionError::DuplicateDestinationMac(
+                duplicate_mac.destination_mac
+            ))
         );
     }
 
@@ -440,7 +460,9 @@ mod tests {
         duplicate_role[1].role = StereoEndpointRole::Front;
         assert!(matches!(
             SixStreamAvdeccSession::new(duplicate_role),
-            Err(SessionError::DuplicateExpectedRole(StereoEndpointRole::Front))
+            Err(SessionError::DuplicateExpectedRole(
+                StereoEndpointRole::Front
+            ))
         ));
 
         let mut duplicate_index = mapping();
