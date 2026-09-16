@@ -13,7 +13,10 @@ static int init_calls;
 static int exit_calls;
 static int create_calls;
 static int destroy_calls;
+static int clock_mismatch_index = -1;
+static int send_fail_index = -1;
 static uint64_t clock_now_ns = 100000000000ULL;
+static uint64_t clock_step_ns = 100000ULL;
 static unsigned int last_ts[ENDPOINTS];
 static unsigned int previous_ts[ENDPOINTS];
 
@@ -75,7 +78,10 @@ unsigned int genavb_stream_presentation_offset(const struct genavb_stream_handle
 
 genavb_clock_id_t genavb_stream_avtp_clock(const struct genavb_stream_handle *stream)
 {
-    (void)stream;
+    unsigned int index = (unsigned int)((uintptr_t)stream - 0x1000u);
+
+    if ((int)index == clock_mismatch_index)
+        return (genavb_clock_id_t)(GENAVB_CLOCK_AVTP_0 + 1);
     return GENAVB_CLOCK_AVTP_0;
 }
 
@@ -84,7 +90,7 @@ int genavb_clock_gettime64(genavb_clock_id_t id, uint64_t *ns)
     if (id != GENAVB_CLOCK_AVTP_0)
         return -1;
     *ns = clock_now_ns;
-    clock_now_ns += 100000ULL;
+    clock_now_ns += clock_step_ns;
     return GENAVB_SUCCESS;
 }
 
@@ -98,9 +104,39 @@ int genavb_stream_send(const struct genavb_stream_handle *stream, const void *da
         return -1;
     if (!event || event->event_mask != AVTP_SYNC || event->index != 0)
         return -2;
+    if ((int)index == send_fail_index)
+        return -77;
     previous_ts[index] = last_ts[index];
     last_ts[index] = event->ts;
     return (int)data_len;
+}
+
+static void reset_stub_state(void)
+{
+    create_calls = 0;
+    destroy_calls = 0;
+    clock_mismatch_index = -1;
+    send_fail_index = -1;
+    clock_now_ns = 100000000000ULL;
+    clock_step_ns = 100000ULL;
+    memset(last_ts, 0, sizeof(last_ts));
+    memset(previous_ts, 0, sizeof(previous_ts));
+}
+
+static void fill_config(struct aurora_genavb_config *config, unsigned int id,
+                        uint32_t target_latency_frames)
+{
+    memset(config, 0, sizeof(*config));
+    config->port = 0;
+    config->stream_id[7] = (uint8_t)id;
+    config->destination_mac[0] = 0x91;
+    config->destination_mac[1] = 0xe0;
+    config->destination_mac[2] = 0xf0;
+    config->destination_mac[3] = 0x00;
+    config->destination_mac[4] = 0x00;
+    config->destination_mac[5] = (uint8_t)id;
+    config->target_latency_frames = target_latency_frames;
+    config->block_frames = 48;
 }
 
 static int all_equal(const unsigned int *values)
@@ -113,68 +149,168 @@ static int all_equal(const unsigned int *values)
     return 1;
 }
 
-int main(void)
+static int healthy_six_talker_contract(void)
 {
     struct aurora_genavb_config config;
     void *handles[ENDPOINTS] = {0};
     uint8_t payload[PAYLOAD_BYTES] = {0};
     unsigned int first_ts;
+    unsigned int init_before = (unsigned int)init_calls;
+    unsigned int exit_before = (unsigned int)exit_calls;
     unsigned int i;
 
-    memset(&config, 0, sizeof(config));
-    config.port = 0;
-    config.destination_mac[0] = 0x91;
-    config.destination_mac[1] = 0xe0;
-    config.destination_mac[2] = 0xf0;
-    config.destination_mac[3] = 0x00;
-    config.destination_mac[4] = 0x00;
-    config.target_latency_frames = 480;
-    config.block_frames = 48;
-
-    if (aurora_genavb_abi_version() != AURORA_GENAVB_SHIM_ABI_VERSION)
-        return 10;
-
+    reset_stub_state();
     for (i = 0; i < ENDPOINTS; i++) {
-        config.stream_id[7] = (uint8_t)(i + 1);
-        config.destination_mac[5] = (uint8_t)(i + 1);
+        fill_config(&config, i + 1, 480);
         handles[i] = aurora_genavb_create();
-        if (!handles[i])
-            return 11;
-        if (aurora_genavb_prepare(handles[i], &config) != 0)
-            return 12;
-        if (aurora_genavb_start(handles[i]) != 0)
-            return 13;
+        if (!handles[i] || aurora_genavb_prepare(handles[i], &config) != 0 ||
+            aurora_genavb_start(handles[i]) != 0)
+            return 10;
     }
-
-    if (init_calls != 1 || create_calls != ENDPOINTS)
-        return 14;
+    if ((unsigned int)init_calls != init_before + 1 || create_calls != ENDPOINTS)
+        return 11;
 
     for (i = 0; i < ENDPOINTS; i++) {
         if (aurora_genavb_submit(handles[i], payload, sizeof(payload), 96000) != 0)
-            return 15;
+            return 12;
     }
     if (!all_equal(last_ts))
-        return 16;
+        return 13;
     first_ts = last_ts[0];
 
     for (i = 0; i < ENDPOINTS; i++) {
         if (aurora_genavb_submit(handles[i], payload, sizeof(payload), 96048) != 0)
-            return 17;
+            return 14;
     }
     if (!all_equal(last_ts) || !all_equal(previous_ts))
-        return 18;
+        return 15;
     if ((uint32_t)(last_ts[0] - first_ts) != 1000000u)
-        return 19;
+        return 16;
 
     for (i = 0; i < ENDPOINTS; i++) {
         if (aurora_genavb_stop(handles[i]) != 0)
-            return 20;
+            return 17;
         aurora_genavb_destroy(handles[i]);
     }
+    if (destroy_calls != ENDPOINTS || (unsigned int)exit_calls != exit_before + 1)
+        return 18;
+    return 0;
+}
 
-    if (destroy_calls != ENDPOINTS || exit_calls != 1)
+static int mismatched_avtp_clock_fails_closed(void)
+{
+    struct aurora_genavb_config config;
+    void *first;
+    void *second;
+
+    reset_stub_state();
+    clock_mismatch_index = 1;
+    fill_config(&config, 1, 480);
+    first = aurora_genavb_create();
+    second = aurora_genavb_create();
+    if (!first || !second)
+        return 20;
+    if (aurora_genavb_prepare(first, &config) != 0)
         return 21;
+    fill_config(&config, 2, 480);
+    if (aurora_genavb_prepare(second, &config) == 0)
+        return 22;
+    aurora_genavb_destroy(second);
+    aurora_genavb_destroy(first);
+    return 0;
+}
 
-    printf("aurora-genavb-shim: PASS talkers=6 init_calls=1 rate=48000 channels=2 block=48 shared_ptp_anchor=1 delta_ns=1000000\n");
+static int mismatched_target_latency_fails_closed(void)
+{
+    struct aurora_genavb_config config;
+    void *first;
+    void *second;
+
+    reset_stub_state();
+    fill_config(&config, 1, 480);
+    first = aurora_genavb_create();
+    second = aurora_genavb_create();
+    if (!first || !second || aurora_genavb_prepare(first, &config) != 0)
+        return 30;
+    fill_config(&config, 2, 576);
+    if (aurora_genavb_prepare(second, &config) != 0)
+        return 31;
+    if (aurora_genavb_start(first) != 0)
+        return 32;
+    if (aurora_genavb_start(second) == 0)
+        return 33;
+    if (aurora_genavb_stop(first) != 0)
+        return 34;
+    aurora_genavb_destroy(second);
+    aurora_genavb_destroy(first);
+    return 0;
+}
+
+static int late_presentation_fails_closed(void)
+{
+    struct aurora_genavb_config config;
+    uint8_t payload[PAYLOAD_BYTES] = {0};
+    void *handle;
+
+    reset_stub_state();
+    clock_step_ns = 9000000ULL;
+    fill_config(&config, 1, 480);
+    handle = aurora_genavb_create();
+    if (!handle || aurora_genavb_prepare(handle, &config) != 0 ||
+        aurora_genavb_start(handle) != 0)
+        return 40;
+    if (aurora_genavb_submit(handle, payload, sizeof(payload), 96000) == 0)
+        return 41;
+    if (aurora_genavb_stop(handle) != 0)
+        return 42;
+    aurora_genavb_destroy(handle);
+    return 0;
+}
+
+static int send_failure_propagates(void)
+{
+    struct aurora_genavb_config config;
+    uint8_t payload[PAYLOAD_BYTES] = {0};
+    void *handle;
+
+    reset_stub_state();
+    send_fail_index = 0;
+    fill_config(&config, 1, 480);
+    handle = aurora_genavb_create();
+    if (!handle || aurora_genavb_prepare(handle, &config) != 0 ||
+        aurora_genavb_start(handle) != 0)
+        return 50;
+    if (aurora_genavb_submit(handle, payload, sizeof(payload), 96000) != -77)
+        return 51;
+    if (aurora_genavb_stop(handle) != 0)
+        return 52;
+    aurora_genavb_destroy(handle);
+    return 0;
+}
+
+int main(void)
+{
+    int rc;
+
+    if (aurora_genavb_abi_version() != AURORA_GENAVB_SHIM_ABI_VERSION)
+        return 1;
+
+    rc = healthy_six_talker_contract();
+    if (rc)
+        return rc;
+    rc = mismatched_avtp_clock_fails_closed();
+    if (rc)
+        return rc;
+    rc = mismatched_target_latency_fails_closed();
+    if (rc)
+        return rc;
+    rc = late_presentation_fails_closed();
+    if (rc)
+        return rc;
+    rc = send_failure_propagates();
+    if (rc)
+        return rc;
+
+    printf("aurora-genavb-shim: PASS talkers=6 init_calls=1 rate=48000 channels=2 block=48 shared_ptp_anchor=1 delta_ns=1000000 clock_mismatch=fail-closed latency_mismatch=fail-closed late_deadline=fail-closed send_failure=propagated\n");
     return 0;
 }
