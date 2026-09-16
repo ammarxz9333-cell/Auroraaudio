@@ -1,0 +1,13 @@
+[package]
+name = "aurora-runtime-libspatialaudio-v4-selection"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+repository = "https://github.com/ammarxz9333-cell/Auroraaudio"
+rust-version = "1.78"
+
+[workspace]
+
+[dependencies]
+aurora-config = { path = "../../crates/aurora-config" }
+aurora-runtime-libspatialaudio-selector = { path = "../aurora-runtime-libspatialaudio-selector" }
