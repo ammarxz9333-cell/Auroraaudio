@@ -113,3 +113,4 @@ jobs:
           git add -A
           git commit -m "Add passive external Object-PCM renderer plan"
           git push origin HEAD:prepared-external-object-pcm-renderer
+# trigger after workflow exists
