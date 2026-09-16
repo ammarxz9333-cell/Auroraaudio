@@ -6,6 +6,7 @@ on:
       - "adapters/aurora-network-genavb/**"
       - "adapters/aurora-network-genavb-avdecc/**"
       - "adapters/aurora-network-genavb-session/**"
+      - "adapters/aurora-network-genavb-runtime/**"
       - ".github/workflows/genavb-aaf-talker-ci.yml"
   workflow_dispatch:
 
@@ -44,6 +45,10 @@ jobs:
           cargo check --manifest-path adapters/aurora-network-genavb-session/Cargo.toml --all-targets
           cargo clippy --manifest-path adapters/aurora-network-genavb-session/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path adapters/aurora-network-genavb-session/Cargo.toml
+          cargo fmt --manifest-path adapters/aurora-network-genavb-runtime/Cargo.toml -- --check
+          cargo check --manifest-path adapters/aurora-network-genavb-runtime/Cargo.toml --all-targets
+          cargo clippy --manifest-path adapters/aurora-network-genavb-runtime/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path adapters/aurora-network-genavb-runtime/Cargo.toml
 
       - name: Exercise Rust AVDECC prepare FFI boundary
         run: |
