@@ -185,8 +185,13 @@ pub enum V4RuntimePlanError {
 impl fmt::Display for V4RuntimePlanError {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Selection(error) => write!(formatter, "libspatialaudio v4 selection rejected: {error}"),
-            Self::Runtime(error) => write!(formatter, "libspatialaudio v4 runtime plan rejected: {error}"),
+            Self::Selection(error) => {
+                write!(formatter, "libspatialaudio v4 selection rejected: {error}")
+            }
+            Self::Runtime(error) => write!(
+                formatter,
+                "libspatialaudio v4 runtime plan rejected: {error}"
+            ),
         }
     }
 }
@@ -253,13 +258,22 @@ mod tests {
 
         assert_eq!(renderer.kind(), PreparedRendererKind::ExternalObjectPcm);
         assert_eq!(renderer.horizontal_spread(), None);
-        assert_eq!(identity.implementation_id(), LIBSPATIALAUDIO_RENDERER_COMPONENT_ID);
+        assert_eq!(
+            identity.implementation_id(),
+            LIBSPATIALAUDIO_RENDERER_COMPONENT_ID
+        );
         assert_eq!(
             identity.implementation_version(),
             LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION
         );
-        assert_eq!(identity.contract_major(), OBJECT_PCM_RENDERER_CONTRACT_MAJOR);
-        assert_eq!(identity.contract_minor(), OBJECT_PCM_RENDERER_CONTRACT_MINOR);
+        assert_eq!(
+            identity.contract_major(),
+            OBJECT_PCM_RENDERER_CONTRACT_MAJOR
+        );
+        assert_eq!(
+            identity.contract_minor(),
+            OBJECT_PCM_RENDERER_CONTRACT_MINOR
+        );
         assert_eq!(plan.execution().audio_format().output_channel_count(), 12);
         assert_eq!(plan.execution().audio_format().sample_rate(), 48_000);
         assert_eq!(plan.execution().audio_format().callback_frames(), 256);
