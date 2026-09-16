@@ -14,10 +14,9 @@ use aurora_config::{
     ComponentContractKind, LayoutKindV4, SampleFormatIntent, ValidatedConfigurationV4,
 };
 use aurora_runtime_libspatialaudio_selector::{
-    LibspatialaudioSelectionIntent, LIBSPATIALAUDIO_BLOCK_FRAMES,
-    LIBSPATIALAUDIO_MEDIA_RATE_HZ, LIBSPATIALAUDIO_RENDERER_COMPONENT_ID,
-    LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION, OBJECT_PCM_RENDERER_CONTRACT_MAJOR,
-    OBJECT_PCM_RENDERER_CONTRACT_MINOR,
+    LibspatialaudioSelectionIntent, LIBSPATIALAUDIO_BLOCK_FRAMES, LIBSPATIALAUDIO_MEDIA_RATE_HZ,
+    LIBSPATIALAUDIO_RENDERER_COMPONENT_ID, LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION,
+    OBJECT_PCM_RENDERER_CONTRACT_MAJOR, OBJECT_PCM_RENDERER_CONTRACT_MINOR,
 };
 
 /// Derives the already-proven libspatialaudio v1 selector from native Aurora
@@ -121,12 +120,9 @@ impl Error for V4SelectionError {}
 #[cfg(test)]
 mod tests {
     use super::*;
-    use aurora_config::{
-        AuroraConfigurationV4, CompatibleMinorRange, ComponentReference,
-    };
+    use aurora_config::{AuroraConfigurationV4, CompatibleMinorRange, ComponentReference};
 
-    const SURROUND_714: &[u8] =
-        include_bytes!("../../../fixtures/config/surround-7-1-4-v4.json");
+    const SURROUND_714: &[u8] = include_bytes!("../../../fixtures/config/surround-7-1-4-v4.json");
 
     fn selected_configuration() -> ValidatedConfigurationV4 {
         let mut config: AuroraConfigurationV4 = serde_json::from_slice(SURROUND_714).unwrap();
