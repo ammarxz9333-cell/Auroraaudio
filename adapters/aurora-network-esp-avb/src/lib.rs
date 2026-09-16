@@ -81,7 +81,9 @@ impl EspAvbFanoutPlan {
                 return Err(EspAvbFanoutError::InvalidPlan);
             }
             for other in self.endpoints.iter().skip(index + 1) {
-                if endpoint.endpoint_id == other.endpoint_id || endpoint.stream_id == other.stream_id {
+                if endpoint.endpoint_id == other.endpoint_id
+                    || endpoint.stream_id == other.stream_id
+                {
                     return Err(EspAvbFanoutError::InvalidPlan);
                 }
             }
@@ -156,10 +158,7 @@ pub struct PreparedEspAvbFanout {
 
 impl PreparedEspAvbFanout {
     /// Allocates fixed endpoint buffers on the control/worker thread.
-    pub fn prepare(
-        plan: EspAvbFanoutPlan,
-        block_frames: usize,
-    ) -> Result<Self, EspAvbFanoutError> {
+    pub fn prepare(plan: EspAvbFanoutPlan, block_frames: usize) -> Result<Self, EspAvbFanoutError> {
         plan.validate()?;
         if block_frames == 0 {
             return Err(EspAvbFanoutError::InvalidFormat);
@@ -317,8 +316,7 @@ mod tests {
         let mut samples = vec![0.0; block_frames * AURORA_7_1_4_CHANNELS];
         for frame in 0..block_frames {
             for channel in 0..AURORA_7_1_4_CHANNELS {
-                samples[frame * AURORA_7_1_4_CHANNELS + channel] =
-                    (frame * 100 + channel) as f32;
+                samples[frame * AURORA_7_1_4_CHANNELS + channel] = (frame * 100 + channel) as f32;
             }
         }
         samples
