@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "validation/physical/aurora_patch_esp_ptp_lock_evidence.py"
+      - "validation/physical/aurora_patch_esp_ptp_medium_build.py"
       - "validation/physical/aurora_patch_esp_avb_listener_evidence.py"
       - "validation/physical/esp_avb_aurora_snapshot.c"
       - "config/esp-avb-p4-build-reference-v1.json"
@@ -79,6 +80,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+          python validation/physical/aurora_patch_esp_ptp_medium_build.py \
+            --root "$AURORA_ESP_P4_ROOT/endpoint/components/esp_ptp"
           python validation/physical/aurora_patch_esp_ptp_lock_evidence.py apply-check \
             --root "$AURORA_ESP_P4_ROOT/endpoint/components/esp_ptp"
           python validation/physical/aurora_patch_esp_avb_listener_evidence.py apply-check \
@@ -109,7 +112,7 @@ jobs:
             -e IDF_TOOLS_PATH=/opt/aurora-idf-tools \
             -w /project \
             "$ESP_IDF_IMAGE" \
-            -lc 'set -euo pipefail; unset IDF_PYTHON_ENV_PATH; /opt/aurora-idf/install.sh esp32p4; . /opt/aurora-idf/export.sh; idf.py --version; idf.py set-target esp32p4; idf.py build'
+            -lc 'set -euo pipefail; unset IDF_PYTHON_ENV_PATH; /opt/aurora-idf/install.sh esp32p4; python3 /opt/aurora-idf/tools/idf_tools.py install cmake ninja; . /opt/aurora-idf/export.sh; idf.py --version; idf.py set-target esp32p4; idf.py build'
 
       - name: Verify Aurora snapshot translation unit was compiled
         shell: bash

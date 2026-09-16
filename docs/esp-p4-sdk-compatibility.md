@@ -26,3 +26,10 @@ compatibility. Source pin checks and the full firmware link remain mandatory.
 The Aurora servo-stability/GM instrumentation is unchanged. Build success is
 software/toolchain compatibility only, never physical gPTP convergence, AAF
 delivery, AVDECC interoperability, synchronization, RF, latency or acoustics.
+
+The separate exact-source medium patch compiles Wi-Fi transport/event code only
+when a Wi-Fi PTP port is configured. The wired initializer explicitly returns
+`ERROR` for Wi-Fi requests; no success stubs or clock fallbacks are introduced.
+It validates HEAD and both pristine source files before writing any changes,
+and runs before the unchanged clock-evidence patch. This does not claim a
+working C6 or coprocessor Wi-Fi build.

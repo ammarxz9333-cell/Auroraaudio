@@ -34,7 +34,7 @@ Current canonical base:
 - #203 merged the fail-closed one-listener physical evidence correlator at merge commit `c4f744c1bfb3c788e1fd16f556e0f7e45ffa1312`.
 - #204 merged exact-public-API NXP gPTP snapshots and before/after evidence bundling at merge commit `18c75cfe9388f1667546f46b96835dcd6a991ad1`.
 - #205 merged exact-pin ESP ACMP/stream/RX/gPTP evidence tooling at merge commit `3efcc4005724b46fef021ecb7654ab54d744d5a3`.
-- Active PR #206 (`esp-p4-firmware-build-gate`) builds the pinned wired ESP32-P4 validation firmware with Aurora's #205 instrumentation with exact SDK `eff8fd1d0b182429b1b574cba4ae8e9be7afa457` (6.1-dev; stock 6.0.2 lacks the required hardware-clock APIs). Build success remains compile/toolchain evidence only.
+- Active PR #206 (`esp-p4-firmware-build-gate`) builds the pinned wired ESP32-P4 validation firmware with Aurora's #205 instrumentation with exact SDK `eff8fd1d0b182429b1b574cba4ae8e9be7afa457` (6.1-dev; stock 6.0.2 lacks the required hardware-clock APIs). The exact-source medium build patch excludes unconfigured Wi-Fi code and rejects Wi-Fi initialization in wired builds. Build success remains compile/toolchain evidence only.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
