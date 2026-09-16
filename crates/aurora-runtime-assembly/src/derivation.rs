@@ -268,9 +268,7 @@ fn prepare_layout_v4(
         LayoutKindV4::Stereo => PreparedLayoutKind::Standard(StandardLayout::Stereo),
         LayoutKindV4::Surround51 => PreparedLayoutKind::Standard(StandardLayout::FiveOne),
         LayoutKindV4::Surround71 => PreparedLayoutKind::Standard(StandardLayout::SevenOne),
-        LayoutKindV4::Surround714 => {
-            PreparedLayoutKind::Standard(StandardLayout::SevenOneFour)
-        }
+        LayoutKindV4::Surround714 => PreparedLayoutKind::Standard(StandardLayout::SevenOneFour),
         LayoutKindV4::CustomHorizontal => PreparedLayoutKind::CustomHorizontal,
     };
     let mut speakers = layout
