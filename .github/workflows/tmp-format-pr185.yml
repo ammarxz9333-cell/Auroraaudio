@@ -1,0 +1,34 @@
+name: Temporary format PR185
+
+on:
+  push:
+    branches:
+      - native-7-1-4-runtime-assembly
+
+permissions:
+  contents: write
+
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: native-7-1-4-runtime-assembly
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - name: Format and self-remove
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo fmt --all
+          rm .github/workflows/tmp-format-pr185.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "Format native v4 runtime assembly"
+          git push origin HEAD:native-7-1-4-runtime-assembly
