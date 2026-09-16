@@ -7,6 +7,7 @@ on:
       - "adapters/aurora-runtime-libspatialaudio-selector/**"
       - "adapters/aurora-renderer-libspatialaudio/**"
       - "crates/aurora-config/**"
+      - "crates/aurora-runtime-assembly/**"
       - "crates/aurora-realtime-engine/**"
       - "crates/aurora-runtime-materialization/**"
       - "validation/open-audio-stack/libspatialaudio_runtime_shim.cpp"
@@ -85,7 +86,7 @@ jobs:
             $(pkg-config --cflags --libs spatialaudio)
           test -s "$RUNNER_TEMP/libaurora_spaudio_shim.so"
 
-      - name: Exercise native Configuration v4 selection end to end
+      - name: Exercise native Configuration v4 runtime plan end to end
         run: |
           mkdir -p artifacts
           AURORA_LIBSPATIALAUDIO_SHIM="$RUNNER_TEMP/libaurora_spaudio_shim.so" \
@@ -95,6 +96,7 @@ jobs:
               --example native_v4_probe | tee artifacts/libspatialaudio-v4-selection.txt
           grep -q 'PASS component=org.aurora.renderer.libspatialaudio rate=48000 block=256 layout=7.1.4 latency=255' \
             artifacts/libspatialaudio-v4-selection.txt
+          grep -q 'plan=external_object_pcm' artifacts/libspatialaudio-v4-selection.txt
 
       - name: Upload native v4 selection evidence
         if: always()

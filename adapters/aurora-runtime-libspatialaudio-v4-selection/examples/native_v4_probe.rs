@@ -5,13 +5,16 @@ use aurora_config::{
     ValidatedConfigurationV4,
 };
 use aurora_realtime_engine::{ProcessStatus, RealTimeEngineConfig, TestSignal};
+use aurora_runtime_assembly::PreparedRendererKind;
 use aurora_runtime_libspatialaudio_selector::{
     materialize_selected_libspatialaudio_engine, LIBSPATIALAUDIO_BLOCK_FRAMES,
     LIBSPATIALAUDIO_MEDIA_RATE_HZ, LIBSPATIALAUDIO_RENDERER_COMPONENT_ID,
     LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION, OBJECT_PCM_RENDERER_CONTRACT_MAJOR,
     OBJECT_PCM_RENDERER_CONTRACT_MINOR,
 };
-use aurora_runtime_libspatialaudio_v4_selection::selection_from_configuration_v4;
+use aurora_runtime_libspatialaudio_v4_selection::{
+    prepare_runtime_plan_from_configuration_v4, selection_from_configuration_v4,
+};
 use aurora_scene::RenderScene;
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -35,6 +38,35 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         configuration: serde_json::json!({}),
     };
     let configuration = ValidatedConfigurationV4::new(raw)?;
+
+    let runtime_plan = prepare_runtime_plan_from_configuration_v4(&configuration)?;
+    let prepared_renderer = runtime_plan.execution().renderer();
+    let prepared_identity = prepared_renderer.component_identity();
+    if prepared_renderer.kind() != PreparedRendererKind::ExternalObjectPcm {
+        return Err("native v4 runtime plan did not preserve external Object-PCM execution".into());
+    }
+    if prepared_identity.implementation_id() != LIBSPATIALAUDIO_RENDERER_COMPONENT_ID
+        || prepared_identity.implementation_version()
+            != LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION
+        || prepared_identity.contract_major() != OBJECT_PCM_RENDERER_CONTRACT_MAJOR
+        || prepared_identity.contract_minor() != OBJECT_PCM_RENDERER_CONTRACT_MINOR
+    {
+        return Err(
+            "native v4 runtime plan did not preserve exact libspatialaudio identity".into(),
+        );
+    }
+    if runtime_plan
+        .execution()
+        .audio_format()
+        .output_channel_count()
+        != 12
+        || runtime_plan.execution().audio_format().sample_rate() != LIBSPATIALAUDIO_MEDIA_RATE_HZ
+        || runtime_plan.execution().audio_format().callback_frames() as usize
+            != LIBSPATIALAUDIO_BLOCK_FRAMES
+    {
+        return Err("native v4 runtime plan changed the proven media contract".into());
+    }
+
     let selection = selection_from_configuration_v4(&configuration, shim)?;
 
     let scene: RenderScene = serde_json::from_str(include_str!(
@@ -78,7 +110,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!(
-        "aurora-libspatialaudio-v4-selection: PASS component={} rate={} block={} layout=7.1.4 latency=255 callbacks={} peak={:.8}",
+        "aurora-libspatialaudio-v4-selection: PASS component={} rate={} block={} layout=7.1.4 latency=255 callbacks={} peak={:.8} plan=external_object_pcm",
         LIBSPATIALAUDIO_RENDERER_COMPONENT_ID,
         LIBSPATIALAUDIO_MEDIA_RATE_HZ,
         LIBSPATIALAUDIO_BLOCK_FRAMES,
