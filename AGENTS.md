@@ -17,14 +17,11 @@ Current canonical base:
 - Phase 9 decoded-PCM upmix matrix is complete for the declared software subset: 5.1 -> 7.1.4, 5.1 -> custom 11.1.4, and 7.1 -> custom 11.1.4.
 - PRs #173–#175 completed the declared Phase 10 RoomEQ/CamillaDSP software/reference scope; physical room/DAC/speaker evidence remains separate and unproven.
 - PR #176 merged the initial Phase 11 binaural-reference baseline.
-- PR #179 merged the open pro-audio transport/platform boundary.
-- PR #180 merged the real AOO worker-side runtime transport adapter and host-network fault evidence; AOO is software-proven but not production-selected.
-- PR #181 merged the libspatialaudio runtime object-PCM renderer adapter.
-- PR #182 merged mutually exclusive object-PCM realtime materialization.
-- PR #183 merged explicit libspatialaudio control-plane selection.
-- Draft PR #184 is separately adding Configuration v4 native 7.1.4 elevation intent; do not couple this ESP endpoint evaluation to that schema change.
-- PR #186 merged the exact-pin/governance gate for Scramble Tools `esp_avb` + `esp_ptp` into `main-v2` at merge commit `9de1014fa7d8366d37622974791f43d9427ecada`.
-- Active PR #187 (`esp-avb-endpoint-contract`) adds Aurora's first deterministic 7.1.4 -> six stereo ESP-AVB endpoint fanout contract. Its dedicated fmt/check/clippy/tests and six-node probe are green at the current implementation head before this handoff-only refresh.
+- PRs #179–#183 merged the open pro-audio boundary, real AOO runtime transport adapter, libspatialaudio runtime adapter, object-PCM realtime materialization, and explicit libspatialaudio control-plane selection.
+- Draft PR #184 separately adds Configuration v4 native 7.1.4 elevation intent; keep transport work decoupled from that schema change.
+- PR #186 merged the exact-pin/governance boundary for Scramble Tools `esp_avb` + `esp_ptp` at merge commit `9de1014fa7d8366d37622974791f43d9427ecada`.
+- PR #187 merged the deterministic canonical 7.1.4 -> six stereo ESP-AVB endpoint fanout at merge commit `0a3339bf718c08acbd612feb9fe688588918abbe`.
+- Active PR #189 (`esp-avb-sender-orchestration`) coordinates six AVB `NetworkAudioTransport` workers as one fail-closed PTP-disciplined endpoint set. Its dedicated endpoint CI, Linux/Windows stable CI, and Rust 1.78 MSRV checks are green at the implementation head before this handoff refresh.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -53,44 +50,42 @@ Rules:
 ## 3. Important merged software/reference milestones
 
 - #158 — Aurora-vs-OAR 5.1 object semantic differential.
-- #159 — software/runtime completion: adaptive clock-rate correction evidence, bounded reconnect recovery, panic-isolated decoder/runtime recovery, live JOC validation, placeholder regression audit, sustained realtime/fault evidence.
+- #159 — adaptive clock-rate correction, bounded reconnect recovery, panic-isolated decoder/runtime recovery, live JOC validation, placeholder audit, and sustained realtime/fault evidence.
 - #160 — pinned JOCForge external fixture/conformance-generator lane.
-- #161 — pinned IAMF stereo encode/decode independent reference cross-check using `iamf-tools` and `libiamf`.
+- #161 — pinned IAMF encode/decode independent reference cross-check.
 - #163 — exact-pin FFmpeg compatibility matrix.
-- #164 — exact-pin MPEG-H dual-oracle validation with Fraunhofer `mpeghdec` and Ittiam `libmpegh`.
-- #165 — exact-pin EBU `libadm` ADM structure/round-trip validation.
-- #166 — exact-pin EBU EAR ADM/BS.2127-oriented renderer reference lane.
-- #167 — exact-pin SAF 3D-VBAP differential reference lane.
-- #170 — Aurora 7.1.4 plus explicit custom 11.1.4 geometry/continuity validation against pinned SAF semantics.
-- #172 — decoded-PCM upmix validation matrix through custom 11.1.4.
+- #164 — MPEG-H dual-oracle reference validation.
+- #165–#170 — ADM/libadm, EAR, SAF and 3D layout/trajectory reference work.
+- #172 — decoded-PCM upmix validation through custom 11.1.4.
 - #173–#175 — RoomEQ/CamillaDSP reference, synthetic optimization, and real 12-channel execution differential.
-- #176 — pinned Google OBR / EBU BEAR / `sofar` binaural-reference provenance baseline.
-- #179–#183 — open pro-audio boundary, real AOO adapter, libspatialaudio adapter, object-PCM materialization, and explicit control-plane selection.
-- #186 — exact-pinned ESP-AVB/ESP-PTP source, governance, registry and license boundary.
+- #176 — Google OBR / EBU BEAR / `sofar` binaural reference baseline.
+- #179–#183 — open pro-audio boundary, AOO runtime, libspatialaudio runtime, object-PCM materialization, control-plane selection.
+- #186 — exact-pinned ESP-AVB/ESP-PTP source/governance/license boundary.
+- #187 — deterministic 12-channel Aurora 7.1.4 -> six stereo ESP-AVB endpoint fanout.
 
-These are software/reference milestones only unless a specific item explicitly says physical evidence exists.
+These are software/reference milestones only unless a specific item explicitly states physical evidence.
 
 ## 4. Phase 10 — room correction and system DSP
 
 ### RoomEQ / `pierreaubert/autoeq`
 - pin: `579dd7486024fc18ff219e31eb7337362814f602`;
-- observed workspace version: `0.5.73`;
-- root package license: `GPL-3.0-or-later`;
-- integration: external optimization/validation reference; it generates correction intent rather than running inside Aurora's realtime callback.
+- observed version: `0.5.73`;
+- license: GPL-3.0-or-later;
+- external optimization/validation reference only.
 
 ### CamillaDSP
 - pin: `05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74`;
 - version: `4.1.3`;
-- upstream license: `GPL-3.0-only OR MPL-2.0`;
-- integration: external DSP executor/reference only.
+- license: GPL-3.0-only OR MPL-2.0;
+- external DSP executor/reference only.
 
-A green Phase 10 lane does **not** prove microphone/acoustic correction, physical DAC/speaker routing, measured physical latency, protected-service compatibility, Dolby/DTS/HDMI certification, or arbitrary unrepresented DSP graphs.
+A green Phase 10 lane does **not** prove microphone/acoustic correction, physical DAC/speaker routing, measured physical latency, protected-service compatibility, certification, or arbitrary unrepresented DSP graphs.
 
 ## 5. Phase 11 — binaural
 
 Pinned baseline references:
 - Google OBR pin `478dc7c752d5eccae534635139ff0253eee3a14a`; external oracle only; BSD-style source plus Open Binaural Renderer Patent License 1.0.
-- EBU BEAR pin `6127e897b941211051c2ad135ee09b00be2e6ae0`; Apache-2.0; upstream explicitly pre-release; external oracle only.
+- EBU BEAR pin `6127e897b941211051c2ad135ee09b00be2e6ae0`; Apache-2.0; upstream pre-release; external oracle only.
 - `andreiltd/sofar` pin `06a629292689e99841e5dacaa25c4c6298616ca6`; MIT OR Apache-2.0; Rust-native SOFA/HRTF candidate only.
 
 Physical/perceptual binaural quality, personalized HRTF behavior and head-tracker hardware remain unproven.
@@ -102,57 +97,67 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network I/O 
 ### AOO
 - pin: `dc2a5be2962ba02d6cebe297f31f2774f34e7bc7`;
 - license: Standard Improved BSD;
-- role: peer/wireless network-audio candidate behind Aurora's worker contract;
-- status: software-proven runtime adapter with real UDP host evidence for healthy transport, deterministic loss/reorder/jitter, ±250 ppm peer-clock cases, receiver restart and lifecycle/reload; not production-selected and not RF/physical-sync proof.
+- peer/wireless network-audio candidate behind Aurora's worker contract;
+- software-proven runtime adapter with real UDP host evidence for healthy transport, deterministic loss/reorder/jitter, ±250 ppm peer-clock cases, receiver restart and lifecycle/reload;
+- not production-selected and not RF/physical-sync proof.
 
 ### NXP GenAVB/TSN
 - pin: `6b962d6c34b0c3f142295a213dfa70bda193b23d` (7.3.2);
-- role: wired AVB/TSN/Milan candidate on supported NXP platforms;
+- wired AVB/TSN/Milan candidate on supported NXP platforms;
 - hardware timestamping, gPTP lock and Milan interoperability remain physical/platform evidence.
+- The pinned Linux media-app reference already defines **six AAF talker streams**, each stereo, 48 kHz, `AAF_FORMAT_INT_32BIT` with 24-bit PCM depth, SR Class B and a 1 ms batch/latency setting. This is a strong software/API match for Aurora's six-stereo ESP endpoint topology, but it is not physical proof.
 
 ### Scramble Tools `esp_avb`
-- pin: `5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9` (component 2.18.0);
+- pin: `5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9` (2.18.0);
 - license: MIT;
-- role: ESP32-P4/C6 embedded AVB speaker-endpoint candidate behind Aurora's network-worker boundary;
-- pinned upstream profile: AAF PCM 24-bit/48 kHz, one talker plus one listener, maximum two channels per stream;
+- ESP32-P4/C6 embedded AVB endpoint candidate behind Aurora's network-worker boundary;
+- pinned profile: AAF PCM 24-bit/48 kHz, one talker plus one listener, maximum two channels per stream;
 - upstream includes wired endpoint, Wi-Fi endpoint and experimental Ethernet/Wi-Fi bridge modes;
-- PR #187 models immersive fanout honestly as six coordinated stereo streams, not one 12-channel ESP-AVB stream;
 - no physical RF/synchronization/latency claim exists yet.
 
 ### Scramble Tools `esp_ptp`
-- pin: `5b7eec233a93733ae954beefb6df3bb9c12dc901` (component 1.2.3);
+- pin: `5b7eec233a93733ae954beefb6df3bb9c12dc901` (1.2.3);
 - license: Apache-2.0;
-- role: embedded IEEE 1588 PTP / IEEE 802.1AS gPTP time-mapping candidate for ESP endpoints;
-- upstream documents ESP32-P4 EMAC hardware timestamps, ESP32-C6 software-disciplined clock operation and Wi-Fi FollowUpInformation transport;
-- it may map Aurora media time to endpoint/network time but never becomes Aurora's logical media-clock owner.
+- IEEE 1588 PTP / IEEE 802.1AS gPTP time-mapping candidate for ESP endpoints;
+- upstream documents ESP32-P4 EMAC hardware timestamps and ESP32-C6 software-disciplined clock operation;
+- may map Aurora media time to endpoint/network time but never becomes Aurora's logical media-clock owner.
 
-### Aurora ESP-AVB fanout adapter — PR #187
-- standalone package: `adapters/aurora-network-esp-avb`;
+### Aurora ESP-AVB fanout — merged PR #187
+- package: `adapters/aurora-network-esp-avb`;
 - canonical mapping: `FL/FR`, `FC/LFE`, `SL/SR`, `SBL/SBR`, `TFL/TFR`, `TRL/TRR`;
-- every endpoint stream is exactly stereo at Aurora's canonical 48 kHz network media rate;
+- each stream is exactly stereo at Aurora's canonical 48 kHz network rate;
 - all endpoint blocks preserve the same source sequence and `MediaTimestamp`;
-- sequence/timestamp discontinuity fails closed; `reset()` explicitly starts a new epoch while retaining prepared storage;
-- prepared endpoint buffers are allocated before streaming; `split()` performs bounded PCM copies only and no network I/O;
-- capability truth separates wired P4 hardware-timestamp support from wireless C6 software-clock operation;
-- required clock discipline is `PtpFollower`; no adaptive-rate or packet-repair capability is claimed;
-- dedicated CI builds/tests the standalone crate and the six-node contract probe has passed.
+- timeline discontinuity fails closed;
+- prepared buffers allocate before streaming; `split()` performs bounded PCM copies only and no network I/O;
+- P4/C6 timestamp capabilities remain explicitly distinct;
+- required discipline is `PtpFollower`; no adaptive-rate or packet-repair capability is claimed.
+
+### Aurora six-endpoint transport orchestration — active PR #189
+- `EspAvbTransportSet` owns six `NetworkAudioTransport` implementations behind the worker-only contract;
+- each endpoint must advertise AVB/TSN family, stereo capacity, scheduled playout and no adaptive rate matcher;
+- all six are prepared with identical 48 kHz stereo format, fixed latency bounds and `PtpFollower` discipline;
+- partial start failure rolls back the already-started endpoints;
+- one 7.1.4 block is split and submitted to all six with the exact same sequence and Aurora `MediaTimestamp`;
+- any endpoint submission failure stops/resets the entire set and returns the lifecycle to `New`, requiring explicit prepare/start before more audio;
+- executable CI probe proves six transports observe `sequence=23`, `timestamp=96000` for the same block;
+- this remains host-side orchestration only, not actual GenAVB packet transmission or ESP firmware.
 
 ### Sound Open Firmware
 - pin: `11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c`;
-- role: i.MX8M Plus HiFi4 DSP execution candidate;
+- i.MX8M Plus HiFi4 DSP execution candidate;
 - Aurora owns DSP policy/coefficients; physical i.MX8MP execution remains unproven.
 
 ### VideoLAN `libspatialaudio`
 - pin: `d149ed9744fd399b835c6f2920511f8cbcfce5ea`;
 - license: LGPL-2.1-or-later;
-- role: runtime object-PCM spatial renderer behind a replaceable dynamic-shim/control-plane boundary;
-- proven software contract is canonical 7.1.4 at 48 kHz / 256 frames with 255-frame direct-path renderer latency and explicit opt-in selection;
+- runtime object-PCM renderer behind a replaceable dynamic-shim/control-plane boundary;
+- proven software contract: canonical 7.1.4 at 48 kHz / 256 frames with 255-frame direct-path latency and explicit opt-in selection;
 - not the automatic/default production renderer; no physical/acoustic parity claim.
 
 ### Clock/DSP ownership rules
 - Aurora owns the logical media timeline.
 - Exactly one adaptive sample-rate controller may own any clock-domain crossing.
-- PTP/GenAVB or ESP-PTP may own network-time mapping on their supported endpoint; AOO peer correction is used only when no other controller owns the same crossing.
+- PTP/GenAVB or ESP-PTP may own network-time mapping on supported endpoints; AOO peer correction is used only when no other controller owns the same crossing.
 - Wired/wireless/local output fanout occurs after common rendering and system DSP.
 - Only one production speaker renderer processes a block.
 
@@ -160,11 +165,12 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network I/O 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Merge PR #187 after its final-head `ESP-AVB Endpoint Contract CI` remains green; preserve exact six-stream channel coverage, shared timestamp/sequence semantics and PTP-follower ownership.
-2. Bind each prepared stereo node stream to an actual host AVB sender plus ESP-AVB listener firmware without moving network I/O into Aurora's realtime callback.
-3. Prove multi-endpoint synchronization, loss/reconnect, drift, RF resilience and measured physical latency on selected ESP32-P4/C6 hardware before considering it an immersive speaker transport.
-4. Keep draft Configuration v4 work (#184) independent and reconcile only through public Aurora contracts after it merges.
-5. Resume Phase 11 binaural semantic/HRTF/head-rotation work and physical tracker #143 according to user priority.
+1. Merge PR #189 only after its refreshed final-head general CI and `ESP-AVB Endpoint Contract CI` remain green.
+2. Implement a **platform-gated NXP GenAVB AAF talker adapter** behind `NetworkAudioTransport`, using the exact pinned GenAVB 7.3.2 API. Keep it outside the default workspace/runtime selection until proven.
+3. The GenAVB adapter must convert Aurora f32 stereo to deterministic saturated 24-bit PCM carried in AAF 32-bit slots and create one talker stream per stereo endpoint. Do not invent AVTP timestamps.
+4. Define a control-plane mapping from Aurora absolute media frames to the GenAVB/gPTP domain using real GenAVB clock APIs and `genavb_stream_presentation_offset()`. The AVTP `genavb_event.ts` mapping must be derived from an explicit PTP anchor, not from an assumed epoch.
+5. After host talker software/API evidence is green, bind the six streams to real ESP-AVB listener firmware and prove multi-endpoint gPTP synchronization, loss/reconnect behavior, drift, RF resilience and measured physical latency on selected ESP32-P4/C6 hardware.
+6. Keep Configuration v4 work (#184) independent; resume Phase 11 binaural work and physical tracker #143 according to user priority.
 
 ## 8. Physical acceptance critical path — tracker #143
 
@@ -175,7 +181,7 @@ Still unproven physically:
 - protected-service Atmos through a legitimate TV/streamer -> eARC path;
 - physical loopback latency/drift;
 - acoustic correction/parity and amplifier/speaker design;
-- physical wired/wireless multi-speaker network synchronization;
+- physical wired/wireless multi-speaker synchronization;
 - physical head tracker and headphone/HRTF transfer behavior.
 
 Two ingress paths remain hypotheses, neither a product freeze:
@@ -193,7 +199,7 @@ Do not invent ALSA device names, reset/drop counters, hardware timings, supporte
 - audio I/O/network: `crates/aurora-audio-io/`, `crates/aurora-realtime-audio-*`, network adapters under `adapters/`;
 - realtime engine: `crates/aurora-realtime-engine/`;
 - open pro-audio integration: `config/open-audio-stack-v1.json`, `validation/open-audio-stack/`, `docs/adr/0021-open-pro-audio-stack-integration.md`;
-- ESP-AVB fanout adapter: `adapters/aurora-network-esp-avb/`;
+- ESP-AVB fanout/orchestration: `adapters/aurora-network-esp-avb/`;
 - config/runtime: `crates/aurora-config/`, `aurora-runtime-assembly/`, `aurora-runtime-materialization/`, `aurora-runtime-inspection/`;
 - immersive/JOC: `validation/immersive/`;
 - open immersive references: `validation/open-immersive/`;
@@ -214,4 +220,4 @@ cargo clippy --workspace --all-targets --all-features --locked -- -D warnings
 cargo test --workspace --all-features --locked
 ```
 
-Also run every domain-specific gate touched by the change. The ESP endpoint integration must run `Open Audio Stack CI`; the fanout adapter must run `ESP-AVB Endpoint Contract CI`. Tooling/simulation/reference gates must never be reported as physical or perceptual proof.
+Also run every domain-specific gate touched by the change. ESP fanout/orchestration must run `ESP-AVB Endpoint Contract CI`; open pro-audio source/API changes must run `Open Audio Stack CI`. Tooling/simulation/reference gates must never be reported as physical or perceptual proof.
