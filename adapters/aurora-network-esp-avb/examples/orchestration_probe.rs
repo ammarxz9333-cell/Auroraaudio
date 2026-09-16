@@ -98,8 +98,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let states: [Arc<Mutex<ProbeState>>; ESP_AVB_7_1_4_ENDPOINTS] =
         std::array::from_fn(|_| Arc::new(Mutex::new(ProbeState::default())));
     let transports: EspAvbTransportArray = std::array::from_fn(|index| {
-        Box::new(ProbeTransport::new(Arc::clone(&states[index])))
-            as Box<dyn NetworkAudioTransport>
+        Box::new(ProbeTransport::new(Arc::clone(&states[index]))) as Box<dyn NetworkAudioTransport>
     });
 
     let plan = EspAvbFanoutPlan::canonical(EspAvbEndpointMedium::WirelessEsp32C6);
