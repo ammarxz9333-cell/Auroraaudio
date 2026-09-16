@@ -2,10 +2,10 @@
  * Aurora exact-pin ESP-AVB physical-evidence snapshot helper.
  *
  * This file is intended to be compiled into the ESP32-P4 listener test
- * firmware after applying aurora_patch_esp_avb_listener_evidence.py to the
- * pinned esp_avb component. It deliberately takes capture_unix_ms from the
- * host/controller request instead of assuming the ESP PTP timescale is UTC.
- * The resulting JSON is consumed by aurora_esp_avb_listener_evidence.py.
+ * firmware after applying both Aurora validation patches to the pinned
+ * esp_ptp and esp_avb components. It deliberately takes capture_unix_ms from
+ * the host/controller request instead of assuming the ESP PTP timescale is
+ * UTC. The resulting JSON is consumed by aurora_esp_avb_listener_evidence.py.
  */
 
 #include "esp_avb.h"
@@ -69,8 +69,9 @@ int aurora_esp_avb_print_listener_snapshot(const char *epoch_id,
   bool media_ok = status.listener_evidence.sample_rate_hz == 48000 &&
                   status.listener_evidence.channels == 2 &&
                   status.listener_evidence.bit_depth == 24;
-  bool pass = status_rc == 0 && status.gptp_profile &&
-              status.clock_source_valid && gm_valid &&
+  bool gptp_locked = status.gptp_profile && status.clock_source_valid &&
+                     status.gptp_clock_stable;
+  bool pass = status_rc == 0 && gptp_locked && gm_valid &&
               status.listener_evidence.present &&
               status.listener_evidence.acmp_connected && stream_id_valid &&
               media_ok;
@@ -87,7 +88,7 @@ int aurora_esp_avb_print_listener_snapshot(const char *epoch_id,
          (unsigned)status.listener_evidence.channels,
          (unsigned)status.listener_evidence.bit_depth,
          status.listener_evidence.acmp_connected ? "true" : "false",
-         (status.gptp_profile && status.clock_source_valid) ? "true" : "false");
+         gptp_locked ? "true" : "false");
   print_id(status.grandmaster_id);
   printf("\",\"rx_counter\":%" PRIu32 ",\"last_rx_us\":%" PRId64 "}\n",
          status.listener_evidence.frames_rx,
