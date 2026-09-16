@@ -80,7 +80,7 @@ jobs:
             adapters/aurora-network-genavb/native/genavb_avdecc_contract_probe.c \
             -pthread -o "$RUNNER_TEMP/genavb-avdecc-contract-probe"
           "$RUNNER_TEMP/genavb-avdecc-contract-probe" | tee artifacts/genavb-avdecc-control.txt
-          grep -q 'PASS channel=media-stack connect=aaf24-48k-stereo invalid-format=fail-closed disconnect=propagated bind=ignored runtime-init=1' \
+          grep -q 'PASS channel=media-stack connect=aaf24-48k-stereo prepare=from-connect shared-runtime-init=1 invalid-format=fail-closed disconnect=invalidates-cache stale-prepare=fail-closed bind=ignored' \
             artifacts/genavb-avdecc-control.txt
 
       - name: Upload GenAVB talker evidence
