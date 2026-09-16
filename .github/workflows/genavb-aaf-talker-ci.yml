@@ -6,6 +6,7 @@ on:
       - "adapters/aurora-network-genavb/**"
       - "adapters/aurora-network-genavb-avdecc/**"
       - "adapters/aurora-network-genavb-session/**"
+      - "adapters/aurora-network-genavb-runtime/**"
       - ".github/workflows/genavb-aaf-talker-ci.yml"
   workflow_dispatch:
 
@@ -44,6 +45,10 @@ jobs:
           cargo check --manifest-path adapters/aurora-network-genavb-session/Cargo.toml --all-targets
           cargo clippy --manifest-path adapters/aurora-network-genavb-session/Cargo.toml --all-targets -- -D warnings
           cargo test --manifest-path adapters/aurora-network-genavb-session/Cargo.toml
+          cargo fmt --manifest-path adapters/aurora-network-genavb-runtime/Cargo.toml -- --check
+          cargo check --manifest-path adapters/aurora-network-genavb-runtime/Cargo.toml --all-targets
+          cargo clippy --manifest-path adapters/aurora-network-genavb-runtime/Cargo.toml --all-targets -- -D warnings
+          cargo test --manifest-path adapters/aurora-network-genavb-runtime/Cargo.toml
 
       - name: Exercise Rust AVDECC prepare FFI boundary
         run: |
@@ -59,6 +64,15 @@ jobs:
             | tee artifacts/genavb-rust-avdecc.txt
           grep -q 'PASS prepare=ffi same-shim=required static-placeholder=forbidden' \
             artifacts/genavb-rust-avdecc.txt
+
+      - name: Exercise six-talker AVDECC runtime contract
+        run: |
+          cargo run --quiet --manifest-path adapters/aurora-network-genavb-runtime/Cargo.toml \
+            --example six_talker_probe -- \
+            "$RUNNER_TEMP/libaurora-genavb-mock-a.so" \
+            | tee artifacts/genavb-six-runtime.txt
+          grep -q 'PASS connect=6 prepare-rollback=1 start-rollback=1 submit-abort=1 disconnect-stop=1 reconnect-reprepare=6' \
+            artifacts/genavb-six-runtime.txt
 
       - name: Fetch exact NXP GenAVB TSN source
         run: |
@@ -79,7 +93,6 @@ jobs:
 
       - name: Exercise shared-runtime and shared-PTP-anchor contract
         run: |
-          mkdir -p artifacts
           cc -std=c11 -Wall -Wextra -Werror -Wno-error=empty-body \
             -Iadapters/aurora-network-genavb/native \
             -I"$RUNNER_TEMP/genavb/include" \
@@ -114,4 +127,5 @@ jobs:
             artifacts/genavb-aaf-talker.txt
             artifacts/genavb-avdecc-control.txt
             artifacts/genavb-rust-avdecc.txt
+            artifacts/genavb-six-runtime.txt
           if-no-files-found: warn
