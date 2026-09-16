@@ -6,10 +6,14 @@
 
 #include <genavb/genavb.h>
 
+#define PAYLOAD_BYTES (48u * 2u * 4u)
+
 static int init_calls;
 static int exit_calls;
 static int control_open_calls;
 static int control_close_calls;
+static int stream_create_calls;
+static int stream_destroy_calls;
 static int receive_case;
 
 int genavb_init(struct genavb_handle **genavb, unsigned int flags)
@@ -68,6 +72,8 @@ static void fill_connect(struct genavb_msg_media_stack_connect *connect, unsigne
     params->dst_mac[1] = 0xe0;
     params->dst_mac[2] = 0xf0;
     params->dst_mac[5] = 0x04;
+    params->clock_domain = AVB_CLOCK_DOMAIN_0;
+    params->talker.latency = 1000000u;
     params->format.u.s.v = 0;
     params->format.u.s.subtype = AVTP_SUBTYPE_AAF;
     params->format.u.s.subtype_u.aaf.nsr = AAF_NSR_48000;
@@ -115,22 +121,39 @@ int genavb_control_receive(const struct genavb_control_handle *handle, genavb_ms
     return GENAVB_SUCCESS;
 }
 
-/* Unused stream/clock functions are provided because the shim object contains
- * both the talker and AVDECC adapters. */
 int genavb_stream_create(struct genavb_handle *genavb, struct genavb_stream_handle **stream,
                          const struct genavb_stream_params *params, unsigned int *batch_size,
                          genavb_stream_create_flags_t flags)
 {
-    (void)genavb; (void)stream; (void)params; (void)batch_size; (void)flags;
-    return -1;
+    if (genavb != (struct genavb_handle *)(uintptr_t)0x1 || !stream || !params || !batch_size)
+        return -1;
+    if (params->direction != AVTP_DIRECTION_TALKER || params->subtype != AVTP_SUBTYPE_AAF ||
+        params->stream_class != SR_CLASS_B || params->stream_id[7] != 0x04 ||
+        params->dst_mac[5] != 0x04 || params->format.u.s.subtype_u.aaf.nsr != AAF_NSR_48000 ||
+        params->format.u.s.subtype_u.aaf.format_u.pcm.bit_depth != 24 ||
+        AVDECC_FMT_AAF_PCM_CHANNELS_PER_FRAME(&params->format) != 2 ||
+        *batch_size != PAYLOAD_BYTES || !(flags & AVTP_NONBLOCK))
+        return -2;
+
+    stream_create_calls++;
+    *stream = (struct genavb_stream_handle *)(uintptr_t)0x3000u;
+    return GENAVB_SUCCESS;
 }
-int genavb_stream_destroy(struct genavb_stream_handle *stream) { (void)stream; return 0; }
+
+int genavb_stream_destroy(struct genavb_stream_handle *stream)
+{
+    if (stream != (struct genavb_stream_handle *)(uintptr_t)0x3000u)
+        return -1;
+    stream_destroy_calls++;
+    return GENAVB_SUCCESS;
+}
+
 unsigned int genavb_stream_presentation_offset(const struct genavb_stream_handle *stream)
-{ (void)stream; return 0; }
+{ (void)stream; return 2000000u; }
 genavb_clock_id_t genavb_stream_avtp_clock(const struct genavb_stream_handle *stream)
 { (void)stream; return GENAVB_CLOCK_AVTP_0; }
 int genavb_clock_gettime64(genavb_clock_id_t id, uint64_t *ns)
-{ (void)id; *ns = 0; return GENAVB_SUCCESS; }
+{ if (id != GENAVB_CLOCK_AVTP_0) return -1; *ns = 100000000000ULL; return GENAVB_SUCCESS; }
 int genavb_stream_send(const struct genavb_stream_handle *stream, const void *data,
                        unsigned int data_len, const struct genavb_event *event,
                        unsigned int event_len)
@@ -140,8 +163,9 @@ int main(void)
 {
     struct aurora_genavb_avdecc_event event;
     void *control = aurora_genavb_avdecc_create();
+    void *talker = aurora_genavb_create();
 
-    if (!control || aurora_genavb_avdecc_open(control) != 0)
+    if (!control || !talker || aurora_genavb_avdecc_open(control) != 0)
         return 10;
     if (init_calls != 1 || control_open_calls != 1 || aurora_genavb_avdecc_rx_fd(control) != 42)
         return 11;
@@ -155,27 +179,39 @@ int main(void)
         event.stream_id[7] != 0x04 || event.destination_mac[5] != 0x04)
         return 13;
 
-    receive_case = 1;
-    if (aurora_genavb_avdecc_receive(control, &event) != -2)
+    if (aurora_genavb_prepare_avdecc(talker, control, 4, 480, 48) != 0)
         return 14;
+    if (stream_create_calls != 1 || init_calls != 1)
+        return 15;
+    aurora_genavb_destroy(talker);
+    talker = aurora_genavb_create();
+    if (!talker || stream_destroy_calls != 1 || exit_calls != 0)
+        return 16;
+
+    receive_case = 1;
+    if (aurora_genavb_avdecc_receive(control, &event) != -3)
+        return 17;
 
     receive_case = 2;
     if (aurora_genavb_avdecc_receive(control, &event) != 1)
-        return 15;
+        return 18;
     if (event.kind != AURORA_GENAVB_AVDECC_EVENT_DISCONNECT || event.stream_index != 4 ||
         event.direction != AVTP_DIRECTION_TALKER || event.stream_id[7] != 0x04)
-        return 16;
+        return 19;
+    if (aurora_genavb_prepare_avdecc(talker, control, 4, 480, 48) != -2)
+        return 20;
 
     receive_case = 3;
     if (aurora_genavb_avdecc_receive(control, &event) != 0)
-        return 17;
+        return 21;
 
+    aurora_genavb_destroy(talker);
     if (aurora_genavb_avdecc_close(control) != 0)
-        return 18;
+        return 22;
     aurora_genavb_avdecc_destroy(control);
     if (control_close_calls != 1 || exit_calls != 1)
-        return 19;
+        return 23;
 
-    printf("aurora-genavb-avdecc: PASS channel=media-stack connect=aaf24-48k-stereo invalid-format=fail-closed disconnect=propagated bind=ignored runtime-init=1\n");
+    printf("aurora-genavb-avdecc: PASS channel=media-stack connect=aaf24-48k-stereo prepare=from-connect shared-runtime-init=1 invalid-format=fail-closed disconnect=invalidates-cache stale-prepare=fail-closed bind=ignored\n");
     return 0;
 }
