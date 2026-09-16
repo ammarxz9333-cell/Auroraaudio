@@ -268,16 +268,26 @@ impl SixStreamGenAvbRuntime {
             .map_err(GenAvbRuntimeError::Session)?;
         let config = endpoint_config(self.endpoint_format, scheduled_latency_frames)?;
 
-        for endpoint in 0..ESP_AVB_7_1_4_ENDPOINTS {
-            if let Err(source) = self.talkers[endpoint].prepare_from_avdecc(
+        let mut failure = None;
+        for (endpoint, (talker, stream)) in self
+            .talkers
+            .iter_mut()
+            .zip(connected.iter())
+            .enumerate()
+        {
+            if let Err(source) = talker.prepare_from_avdecc(
                 &self.control,
-                connected[endpoint].stream_index,
+                stream.stream_index,
                 config,
             ) {
-                self.abort_data_plane();
-                self.lifecycle = RuntimeLifecycle::ControlOpen;
-                return Err(GenAvbRuntimeError::Endpoint { endpoint, source });
+                failure = Some((endpoint, source));
+                break;
             }
+        }
+        if let Some((endpoint, source)) = failure {
+            self.abort_data_plane();
+            self.lifecycle = RuntimeLifecycle::ControlOpen;
+            return Err(GenAvbRuntimeError::Endpoint { endpoint, source });
         }
 
         self.fanout.reset();
@@ -294,12 +304,17 @@ impl SixStreamGenAvbRuntime {
             });
         }
 
-        for endpoint in 0..ESP_AVB_7_1_4_ENDPOINTS {
-            if let Err(source) = self.talkers[endpoint].start() {
-                self.abort_data_plane();
-                self.lifecycle = RuntimeLifecycle::ControlOpen;
-                return Err(GenAvbRuntimeError::Endpoint { endpoint, source });
+        let mut failure = None;
+        for (endpoint, talker) in self.talkers.iter_mut().enumerate() {
+            if let Err(source) = talker.start() {
+                failure = Some((endpoint, source));
+                break;
             }
+        }
+        if let Some((endpoint, source)) = failure {
+            self.abort_data_plane();
+            self.lifecycle = RuntimeLifecycle::ControlOpen;
+            return Err(GenAvbRuntimeError::Endpoint { endpoint, source });
         }
 
         self.fanout.reset();
@@ -322,16 +337,25 @@ impl SixStreamGenAvbRuntime {
             self.lifecycle = RuntimeLifecycle::ControlOpen;
             return Err(GenAvbRuntimeError::Fanout(source));
         }
-        for endpoint in 0..ESP_AVB_7_1_4_ENDPOINTS {
-            let endpoint_block = self
-                .fanout
-                .endpoint_block(endpoint)
-                .map_err(GenAvbRuntimeError::Fanout)?;
-            if let Err(source) = self.talkers[endpoint].submit(endpoint_block) {
-                self.abort_data_plane();
-                self.lifecycle = RuntimeLifecycle::ControlOpen;
-                return Err(GenAvbRuntimeError::Endpoint { endpoint, source });
+
+        let mut failure = None;
+        for (endpoint, talker) in self.talkers.iter_mut().enumerate() {
+            let endpoint_block = match self.fanout.endpoint_block(endpoint) {
+                Ok(endpoint_block) => endpoint_block,
+                Err(source) => {
+                    failure = Some(GenAvbRuntimeError::Fanout(source));
+                    break;
+                }
+            };
+            if let Err(source) = talker.submit(endpoint_block) {
+                failure = Some(GenAvbRuntimeError::Endpoint { endpoint, source });
+                break;
             }
+        }
+        if let Some(error) = failure {
+            self.abort_data_plane();
+            self.lifecycle = RuntimeLifecycle::ControlOpen;
+            return Err(error);
         }
         Ok(())
     }
@@ -346,8 +370,8 @@ impl SixStreamGenAvbRuntime {
         }
 
         let mut first_error = None;
-        for endpoint in 0..ESP_AVB_7_1_4_ENDPOINTS {
-            if let Err(source) = self.talkers[endpoint].stop() {
+        for (endpoint, talker) in self.talkers.iter_mut().enumerate() {
+            if let Err(source) = talker.stop() {
                 if first_error.is_none() {
                     first_error = Some(GenAvbRuntimeError::Endpoint { endpoint, source });
                 }
