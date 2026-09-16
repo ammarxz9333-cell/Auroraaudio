@@ -7,13 +7,13 @@ use aurora_config::{
 use aurora_realtime_engine::{ProcessStatus, RealTimeEngineConfig, TestSignal};
 use aurora_runtime_assembly::PreparedRendererKind;
 use aurora_runtime_libspatialaudio_selector::{
-    materialize_selected_libspatialaudio_engine, LIBSPATIALAUDIO_BLOCK_FRAMES,
-    LIBSPATIALAUDIO_MEDIA_RATE_HZ, LIBSPATIALAUDIO_RENDERER_COMPONENT_ID,
-    LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION, OBJECT_PCM_RENDERER_CONTRACT_MAJOR,
-    OBJECT_PCM_RENDERER_CONTRACT_MINOR,
+    LIBSPATIALAUDIO_BLOCK_FRAMES, LIBSPATIALAUDIO_MEDIA_RATE_HZ,
+    LIBSPATIALAUDIO_RENDERER_COMPONENT_ID, LIBSPATIALAUDIO_RENDERER_IMPLEMENTATION_VERSION,
+    OBJECT_PCM_RENDERER_CONTRACT_MAJOR, OBJECT_PCM_RENDERER_CONTRACT_MINOR,
 };
 use aurora_runtime_libspatialaudio_v4_selection::{
-    prepare_runtime_plan_from_configuration_v4, selection_from_configuration_v4,
+    materialize_libspatialaudio_engine_from_prepared_plan,
+    prepare_runtime_plan_from_configuration_v4,
 };
 use aurora_scene::RenderScene;
 
@@ -67,8 +67,6 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("native v4 runtime plan changed the proven media contract".into());
     }
 
-    let selection = selection_from_configuration_v4(&configuration, shim)?;
-
     let scene: RenderScene = serde_json::from_str(include_str!(
         "../../../fixtures/scenes/7_1_4_reference.json"
     ))?;
@@ -80,8 +78,13 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         speed_of_sound: 343.0,
         test_signal: TestSignal::Sine,
     };
-    let mut engine =
-        materialize_selected_libspatialaudio_engine(&selection, scene, engine_config, 0)?;
+    let mut engine = materialize_libspatialaudio_engine_from_prepared_plan(
+        &runtime_plan,
+        shim,
+        scene,
+        engine_config,
+        0,
+    )?;
 
     if engine.metrics().renderer_latency_frames != 255 {
         return Err(format!(
@@ -110,7 +113,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     println!(
-        "aurora-libspatialaudio-v4-selection: PASS component={} rate={} block={} layout=7.1.4 latency=255 callbacks={} peak={:.8} plan=external_object_pcm",
+        "aurora-libspatialaudio-v4-selection: PASS component={} rate={} block={} layout=7.1.4 latency=255 callbacks={} peak={:.8} plan=external_object_pcm driver=prepared_plan",
         LIBSPATIALAUDIO_RENDERER_COMPONENT_ID,
         LIBSPATIALAUDIO_MEDIA_RATE_HZ,
         LIBSPATIALAUDIO_BLOCK_FRAMES,
