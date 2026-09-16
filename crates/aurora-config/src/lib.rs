@@ -4,8 +4,10 @@
 //! This crate is a control-plane library. It describes configuration intent;
 //! it does not probe devices, negotiate formats, mutate audio callbacks, or
 //! prove physical behavior. Use [`ValidatedConfiguration`] before consuming a
-//! configuration.
+//! v3 configuration and [`ValidatedConfigurationV4`] for native elevation-aware
+//! Configuration v4 intent.
 
+mod configuration_v4;
 mod error;
 mod limits;
 mod migration;
@@ -14,6 +16,11 @@ mod preset;
 mod redaction;
 mod validation;
 
+pub use configuration_v4::{
+    migrate_v3_to_v4, AuroraConfigurationV4, LayoutKindV4, MigrationResultV4,
+    SpeakerLayoutConfigurationV4, ValidatedConfigurationV4,
+    CONFIGURATION_V4_MINIMUM_READER_VERSION, CONFIGURATION_V4_SCHEMA_VERSION,
+};
 pub use error::{ConfigError, ErrorCategory, ErrorCode};
 pub use limits::*;
 pub use migration::{
