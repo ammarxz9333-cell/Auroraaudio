@@ -100,7 +100,10 @@ fn healthy_jitter_and_dropout_stay_within_declared_budgets() {
         HeadTrackerFaultProfile::Dropout,
     ] {
         let report = evaluate(profile);
-        assert!(report.clock_rejections.is_empty(), "{profile:?}: {report:?}");
+        assert!(
+            report.clock_rejections.is_empty(),
+            "{profile:?}: {report:?}"
+        );
         assert_eq!(report.reconnects, 0);
         assert_eq!(report.stale_failures, 0);
     }

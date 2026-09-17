@@ -255,8 +255,7 @@ pub fn simulate_head_tracker_delivery(
                         let sequence = epoch_index + offset + 1;
                         events.push(HeadTrackerDeliveryEvent::Drop {
                             sequence,
-                            source_timestamp_ns: (epoch_index + offset)
-                                * config.source_period_ns(),
+                            source_timestamp_ns: (epoch_index + offset) * config.source_period_ns(),
                             nominal_media_frame: (global_index + offset)
                                 * config.frames_per_sample(),
                         });
@@ -381,21 +380,23 @@ mod tests {
 
     #[test]
     fn duplicate_reorder_and_dropout_have_explicit_events() {
-        let duplicate = simulate_head_tracker_delivery(config(), HeadTrackerFaultProfile::Duplicate);
+        let duplicate =
+            simulate_head_tracker_delivery(config(), HeadTrackerFaultProfile::Duplicate);
         assert_eq!(duplicate.len(), config().sample_count() as usize + 1);
         assert!(duplicate.windows(2).any(|pair| pair[0] == pair[1]));
 
         let reorder = simulate_head_tracker_delivery(config(), HeadTrackerFaultProfile::Reorder);
-        let has_reordered_pair = reorder.windows(2).any(|pair| {
-            let (
-                HeadTrackerDeliveryEvent::Sample(first),
-                HeadTrackerDeliveryEvent::Sample(second),
-            ) = (&pair[0], &pair[1])
-            else {
-                return false;
-            };
-            first.sequence == second.sequence + 1
-        });
+        let has_reordered_pair =
+            reorder.windows(2).any(|pair| {
+                let (
+                    HeadTrackerDeliveryEvent::Sample(first),
+                    HeadTrackerDeliveryEvent::Sample(second),
+                ) = (&pair[0], &pair[1])
+                else {
+                    return false;
+                };
+                first.sequence == second.sequence + 1
+            });
         assert!(has_reordered_pair);
 
         let dropout = simulate_head_tracker_delivery(config(), HeadTrackerFaultProfile::Dropout);
@@ -425,7 +426,8 @@ mod tests {
             .iter()
             .any(|event| matches!(event, HeadTrackerDeliveryEvent::Reconnect { .. })));
 
-        let reconnect = simulate_head_tracker_delivery(config(), HeadTrackerFaultProfile::Reconnect);
+        let reconnect =
+            simulate_head_tracker_delivery(config(), HeadTrackerFaultProfile::Reconnect);
         let reconnect_index = reconnect
             .iter()
             .position(|event| matches!(event, HeadTrackerDeliveryEvent::Reconnect { .. }))
