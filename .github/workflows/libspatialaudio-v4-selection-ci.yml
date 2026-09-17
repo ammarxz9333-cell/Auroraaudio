@@ -86,7 +86,7 @@ jobs:
             $(pkg-config --cflags --libs spatialaudio)
           test -s "$RUNNER_TEMP/libaurora_spaudio_shim.so"
 
-      - name: Exercise native Configuration v4 runtime plan end to end
+      - name: Exercise prepared-plan-driven native Configuration v4 runtime end to end
         run: |
           mkdir -p artifacts
           AURORA_LIBSPATIALAUDIO_SHIM="$RUNNER_TEMP/libaurora_spaudio_shim.so" \
@@ -97,6 +97,7 @@ jobs:
           grep -q 'PASS component=org.aurora.renderer.libspatialaudio rate=48000 block=256 layout=7.1.4 latency=255' \
             artifacts/libspatialaudio-v4-selection.txt
           grep -q 'plan=external_object_pcm' artifacts/libspatialaudio-v4-selection.txt
+          grep -q 'driver=prepared_plan' artifacts/libspatialaudio-v4-selection.txt
 
       - name: Upload native v4 selection evidence
         if: always()
