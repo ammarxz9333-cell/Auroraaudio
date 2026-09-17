@@ -1,5 +1,7 @@
 //! Deterministic geometric renderer implementations.
 
+pub mod binaural;
+
 use aurora_core::{ChannelRole, Listener, Speaker, Vector3};
 use aurora_renderer_api::{
     RenderObject, Renderer, RendererCapabilities, RendererError, RendererScratch,
