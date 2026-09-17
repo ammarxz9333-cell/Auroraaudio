@@ -109,25 +109,23 @@ mod tests {
 
     #[test]
     fn identity_preserves_direction_and_normalizes_magnitude() {
-        let direction = head_to_world_direction(
-            UnitQuaternion::IDENTITY,
-            Vector3::new(0.0, 4.0, 0.0),
-        )
-        .unwrap();
+        let direction =
+            head_to_world_direction(UnitQuaternion::IDENTITY, Vector3::new(0.0, 4.0, 0.0))
+                .unwrap();
         assert_direction(direction, Vector3::new(0.0, 1.0, 0.0));
     }
 
     #[test]
     fn positive_z_yaw_turns_head_front_toward_world_left() {
-        let world = head_to_world_direction(yaw_left_90(), Vector3::new(0.0, 1.0, 0.0))
-            .unwrap();
+        let world =
+            head_to_world_direction(yaw_left_90(), Vector3::new(0.0, 1.0, 0.0)).unwrap();
         assert_direction(world, Vector3::new(-1.0, 0.0, 0.0));
     }
 
     #[test]
     fn world_front_moves_to_head_right_after_left_yaw() {
-        let head = world_to_head_direction(yaw_left_90(), Vector3::new(0.0, 1.0, 0.0))
-            .unwrap();
+        let head =
+            world_to_head_direction(yaw_left_90(), Vector3::new(0.0, 1.0, 0.0)).unwrap();
         assert_direction(head, Vector3::new(1.0, 0.0, 0.0));
     }
 
@@ -147,10 +145,7 @@ mod tests {
             Err(HeadPoseTransformError::ZeroDirection)
         );
         assert_eq!(
-            world_to_head_direction(
-                UnitQuaternion::IDENTITY,
-                Vector3::new(f32::NAN, 0.0, 1.0),
-            ),
+            world_to_head_direction(UnitQuaternion::IDENTITY, Vector3::new(f32::NAN, 0.0, 1.0),),
             Err(HeadPoseTransformError::NonFiniteDirection)
         );
     }
