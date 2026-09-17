@@ -376,9 +376,7 @@ mod tests {
             })
         );
         assert_eq!(renderer.generation(), 1);
-        scheduler
-            .commit_at_boundary(&mut renderer, 100, 1)
-            .unwrap();
+        scheduler.commit_at_boundary(&mut renderer, 100, 1).unwrap();
         assert_eq!(renderer.generation(), 2);
         assert_eq!(
             scheduler.commit_at_boundary(&mut renderer, 100, 1),
@@ -429,9 +427,7 @@ mod tests {
         let mut scheduler = scheduler(10);
         let generation = scheduler.prepare_at(100, &objects()).unwrap();
         let mut renderer = renderer();
-        scheduler
-            .commit_at_boundary(&mut renderer, 100, 1)
-            .unwrap();
+        scheduler.commit_at_boundary(&mut renderer, 100, 1).unwrap();
         scheduler.release_committed(generation).unwrap();
         assert_eq!(
             scheduler.prepare_at(100, &objects()),
