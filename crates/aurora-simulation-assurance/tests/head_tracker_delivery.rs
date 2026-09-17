@@ -57,11 +57,12 @@ fn evaluate(profile: HeadTrackerFaultProfile) -> Report {
                 poses = HeadPoseState::new(pose_policy());
                 report.reconnects += 1;
             }
-            HeadTrackerDeliveryEvent::StaleProbe { media_frame } => match poses.resolve(media_frame)
-            {
-                Err(HeadPoseError::StalePose { .. }) => report.stale_failures += 1,
-                other => panic!("expected stale pose at frame {media_frame}, got {other:?}"),
-            },
+            HeadTrackerDeliveryEvent::StaleProbe { media_frame } => {
+                match poses.resolve(media_frame) {
+                    Err(HeadPoseError::StalePose { .. }) => report.stale_failures += 1,
+                    other => panic!("expected stale pose at frame {media_frame}, got {other:?}"),
+                }
+            }
             HeadTrackerDeliveryEvent::Sample(sample) => {
                 let orientation = UnitQuaternion::try_new(
                     sample.orientation_wxyz[0],
