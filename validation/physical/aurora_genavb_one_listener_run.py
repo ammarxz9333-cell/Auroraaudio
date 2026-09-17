@@ -5,9 +5,10 @@ This runner does not capture hardware by itself. It consumes the independently
 captured host, NXP gPTP and ESP listener snapshots, builds the two intermediate
 evidence objects and invokes Aurora's final one-listener correlator.
 
-Without --fixture-mode, a successful final correlation is allowed to report
-PHYSICAL-PASS only because the underlying correlator requires real evidence
-contracts and marks fixture-mode runs as non-physical.
+The operator must explicitly select either --physical-run or --fixture-mode.
+Fixture mode can never report PHYSICAL-PASS. Physical mode only permits the
+existing correlator to report PHYSICAL-PASS; it does not authenticate evidence
+provenance and must be used only with real independently captured hardware data.
 """
 
 from __future__ import annotations
@@ -90,6 +91,7 @@ def bundle(
         "verdict": report.verdict,
         "physical_complete": report.physical_complete,
         "fixture_mode": fixture_mode,
+        "mode": "fixture" if fixture_mode else "physical",
         "epoch_id": report.epoch_id,
         "stream_id": report.stream_id,
         "grandmaster_id": report.grandmaster_id,
@@ -107,7 +109,8 @@ def bundle(
         "failures": report.failures,
         "truth_boundary": (
             "This runner only bundles independently captured evidence. "
-            "Fixture-mode can never produce PHYSICAL-PASS; real hardware capture remains required."
+            "Fixture mode can never produce PHYSICAL-PASS. Physical mode does not authenticate provenance; "
+            "real hardware capture remains an operator responsibility."
         ),
     }
     write_object(output_dir / "run-manifest.json", manifest)
@@ -156,6 +159,7 @@ def self_test() -> int:
         )
         assert result["verdict"] == "VALIDATOR-PASS"
         assert result["physical_complete"] is False
+        assert result["mode"] == "fixture"
         assert result["esp_rx_delta"] == 5_000
         for name in (
             "nxp-gptp-evidence.json",
@@ -181,7 +185,31 @@ def self_test() -> int:
         assert broken["verdict"] == "FAIL"
         assert broken["physical_complete"] is False
 
-    print("aurora-genavb-one-listener-run: SELF-TEST PASS positive=1 negative=1 fixture-physical-pass=forbidden")
+        parser_instance = parser()
+        physical_args = parser_instance.parse_args(
+            [
+                "bundle",
+                "--host",
+                str(inputs / "host.json"),
+                "--nxp-before",
+                str(inputs / "nxp-before.json"),
+                "--nxp-after",
+                str(inputs / "nxp-after.json"),
+                "--esp-before",
+                str(inputs / "esp-before.json"),
+                "--esp-after",
+                str(inputs / "esp-after.json"),
+                "--epoch-id",
+                epoch,
+                "--output-dir",
+                str(root / "explicit-physical-output"),
+                "--physical-run",
+            ]
+        )
+        assert physical_args.physical_run is True
+        assert physical_args.fixture_mode is False
+
+    print("aurora-genavb-one-listener-run: SELF-TEST PASS positive=1 negative=1 explicit-mode=required fixture-physical-pass=forbidden")
     return 0
 
 
@@ -203,6 +231,7 @@ def command_bundle(args: argparse.Namespace) -> int:
             "verdict": "FAIL",
             "physical_complete": False,
             "fixture_mode": args.fixture_mode,
+            "mode": "fixture" if args.fixture_mode else "physical",
             "epoch_id": args.epoch_id,
             "failures": [str(exc)],
             "truth_boundary": "Malformed or unreadable evidence fails closed.",
@@ -227,7 +256,13 @@ def parser() -> argparse.ArgumentParser:
     run.add_argument("--esp-after", type=Path, required=True)
     run.add_argument("--epoch-id", required=True)
     run.add_argument("--output-dir", type=Path, required=True)
-    run.add_argument(
+    mode = run.add_mutually_exclusive_group(required=True)
+    mode.add_argument(
+        "--physical-run",
+        action="store_true",
+        help="explicitly declare that all inputs are real hardware captures",
+    )
+    mode.add_argument(
         "--fixture-mode",
         action="store_true",
         help="mark the run as validator-only; PHYSICAL-PASS is forbidden",
