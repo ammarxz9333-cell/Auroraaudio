@@ -96,7 +96,7 @@ pub enum RendererError {
     ScratchBufferSize {
         /// Required floating-point scratch count.
         required: usize,
-        /// Supplied scratch count.
+        /// Supplied floating-point scratch count.
         actual: usize,
     },
     /// A setup-time renderer configuration is invalid.
