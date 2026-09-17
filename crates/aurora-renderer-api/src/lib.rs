@@ -1,9 +1,11 @@
 //! Stable, allocation-free renderer boundary for Aurora implementations.
 
 pub mod head_pose;
+pub mod head_pose_clock;
 pub mod head_pose_transform;
 pub mod pcm;
 pub use head_pose::*;
+pub use head_pose_clock::*;
 pub use head_pose_transform::*;
 pub use pcm::*;
 
@@ -94,7 +96,7 @@ pub enum RendererError {
     ScratchBufferSize {
         /// Required floating-point scratch count.
         required: usize,
-        /// Supplied floating-point scratch count.
+        /// Supplied scratch count.
         actual: usize,
     },
     /// A setup-time renderer configuration is invalid.
