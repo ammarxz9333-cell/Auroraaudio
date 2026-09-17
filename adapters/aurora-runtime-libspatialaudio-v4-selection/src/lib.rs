@@ -536,7 +536,11 @@ mod tests {
             let relative = scene_speaker.position - bound.listener.position;
             let radius = relative.length();
             assert!((radius - original_radius).abs() < 1.0e-5);
-            let actual = Vector3::new(relative.x / radius, relative.y / radius, relative.z / radius);
+            let actual = Vector3::new(
+                relative.x / radius,
+                relative.y / radius,
+                relative.z / radius,
+            );
             let expected = prepared_speaker.position();
             let expected_length = expected.length();
             let expected = Vector3::new(
