@@ -61,14 +61,14 @@ fn mapped_tracker_pose_drives_exact_scheduler_boundary() {
     let mut renderer = PreparedBinaural::new(initial, 8).unwrap();
     assert_eq!(
         scheduler.commit_at_boundary(&mut renderer, 99, 1),
-        Err(aurora_renderer_basic::binaural::hrtf::scheduler::SchedulerError::BoundaryFrame {
-            expected: 100,
-            actual: 99,
-        })
+        Err(
+            aurora_renderer_basic::binaural::hrtf::scheduler::SchedulerError::BoundaryFrame {
+                expected: 100,
+                actual: 99,
+            }
+        )
     );
-    scheduler
-        .commit_at_boundary(&mut renderer, 100, 1)
-        .unwrap();
+    scheduler.commit_at_boundary(&mut renderer, 100, 1).unwrap();
     assert_eq!(renderer.generation(), generation);
 
     let mut output = [0.0; 16];
