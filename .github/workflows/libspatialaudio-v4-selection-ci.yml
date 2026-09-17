@@ -98,6 +98,7 @@ jobs:
             artifacts/libspatialaudio-v4-selection.txt
           grep -q 'plan=external_object_pcm' artifacts/libspatialaudio-v4-selection.txt
           grep -q 'driver=prepared_plan' artifacts/libspatialaudio-v4-selection.txt
+          grep -q 'aurora-libspatialaudio-input-continuity: PASS source=host_mono_pcm frames=1024 channels=12' artifacts/libspatialaudio-v4-selection.txt
 
       - name: Upload native v4 selection evidence
         if: always()
