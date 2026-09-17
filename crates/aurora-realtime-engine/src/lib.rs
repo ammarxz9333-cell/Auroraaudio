@@ -692,18 +692,40 @@ impl RealTimeEngine {
             && output.len() % output_channels == 0
             && !output.is_empty()
             && (!full_block_only || output.len() % chunk_samples == 0);
-        let result = if shape_valid {
+        // Validate the entire external-input callback before advancing renderer,
+        // delay or media state. A later short block must not replay its prefix.
+        let uses_input = self.config.test_signal == TestSignal::None;
+        let input_valid = !uses_input
+            || (shape_valid
+                && self.config.input_channels > 0
+                && (output.len() / output_channels)
+                    .checked_mul(self.config.input_channels)
+                    .is_some_and(|required| {
+                        input.is_some_and(|samples| samples.len() >= required)
+                    }));
+        let result = if !shape_valid {
+            Err(RealTimeFault::OutputBuffer)
+        } else if !input_valid {
+            Err(RealTimeFault::InputBuffer)
+        } else {
             let mut result = Ok(());
+            let mut input_offset = 0;
             for chunk in output.chunks_mut(chunk_samples) {
-                if let Err(fault) = self.process_inner(input, chunk) {
+                let block_input = if uses_input {
+                    let count = (chunk.len() / output_channels) * self.config.input_channels;
+                    let block = input.map(|samples| &samples[input_offset..input_offset + count]);
+                    input_offset += count;
+                    block
+                } else {
+                    input
+                };
+                if let Err(fault) = self.process_inner(block_input, chunk) {
                     result = Err(fault);
                     break;
                 }
                 self.metrics.processed_blocks = self.metrics.processed_blocks.saturating_add(1);
             }
             result
-        } else {
-            Err(RealTimeFault::OutputBuffer)
         };
         let status = if let Err(fault) = result {
             output.fill(0.0);
@@ -1282,6 +1304,63 @@ mod tests {
     }
 
     #[test]
+    fn external_pcm_multi_block_callback_preserves_each_input_frame_without_allocating() {
+        let mut engine = pcm_engine(TestSignal::None, false, 64);
+        let input: Vec<f32> = (0..192)
+            .flat_map(|frame| [frame as f32 / 512.0, frame as f32 / 256.0])
+            .collect();
+        let mut output = vec![0.0; 192 * 2];
+        let mut status = ProcessStatus::Ok;
+        let allocations = measured_allocations(|| {
+            status = engine.process_interleaved(Some(&input), &mut output);
+        });
+        assert_eq!(status, ProcessStatus::Ok);
+        assert_eq!(allocations, 0);
+        for (source, rendered) in input.chunks_exact(2).zip(output.chunks_exact(2)) {
+            assert_eq!(rendered[0], (source[0] + source[1]) / 2.0);
+            assert_eq!(rendered[1], 0.0);
+        }
+        assert_eq!(engine.metrics().processed_blocks, 3);
+    }
+
+    #[test]
+    fn short_multi_block_input_is_rejected_before_advancing_media_state() {
+        let mut engine = pcm_engine(TestSignal::None, false, 64);
+        let input = vec![0.25; 64 * 2];
+        let mut output = vec![1.0; 192 * 2];
+        assert_eq!(
+            engine.process_interleaved(Some(&input), &mut output),
+            ProcessStatus::Fault(RealTimeFault::InputBuffer)
+        );
+        assert!(output.iter().all(|sample| *sample == 0.0));
+        assert_eq!(engine.metrics().processed_blocks, 0);
+        assert_eq!(engine.frame_cursor, 0);
+        assert_eq!(engine.metrics().input_underruns, 1);
+    }
+
+    #[test]
+    fn gain_renderer_external_input_matches_separate_callbacks_including_partial_tail() {
+        let mut config = config(TestSignal::None, false);
+        config.input_channels = 2;
+        let mut batched = test_engine(scene(), config.clone(), 0).unwrap();
+        let mut separate = test_engine(scene(), config, 0).unwrap();
+        let input: Vec<f32> = (0..145 * 2).map(|i| i as f32 / 1024.0).collect();
+        let mut actual = vec![0.0; 145 * 2];
+        let mut expected = vec![0.0; 145 * 2];
+        assert_eq!(
+            batched.process_interleaved(Some(&input), &mut actual),
+            ProcessStatus::Ok
+        );
+        for (source, target) in input.chunks(128).zip(expected.chunks_mut(128)) {
+            assert_eq!(
+                separate.process_interleaved(Some(source), target),
+                ProcessStatus::Ok
+            );
+        }
+        assert_eq!(actual, expected);
+    }
+
+    #[test]
     fn geometric_binaural_processing_allocates_zero_times_after_startup() {
         let mut engine = test_engine_with_mode(
             scene(),
@@ -1587,7 +1666,11 @@ mod tests {
         let config = RealTimeEngineConfig {
             sample_rate: 48_000,
             block_size,
-            input_channels: 0,
+            input_channels: if test_signal == TestSignal::None {
+                2
+            } else {
+                0
+            },
             apply_geometric_delay: apply_delay,
             speed_of_sound: 343.0,
             test_signal,

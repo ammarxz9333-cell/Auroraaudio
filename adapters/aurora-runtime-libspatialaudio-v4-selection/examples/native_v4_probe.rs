@@ -80,9 +80,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut engine = materialize_libspatialaudio_engine_from_prepared_plan(
         &runtime_plan,
-        shim,
-        scene,
-        engine_config,
+        shim.as_str(),
+        scene.clone(),
+        engine_config.clone(),
         0,
     )?;
 
@@ -120,5 +120,64 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         engine.metrics().callback_count,
         peak,
     );
+    // Host-provided PCM uses the same prepared-plan path. The current engine
+    // contract is one mono source with scene metadata, not decoded object beds.
+    let mut input_config = engine_config;
+    input_config.input_channels = 1;
+    input_config.test_signal = TestSignal::None;
+    let mut batched = materialize_libspatialaudio_engine_from_prepared_plan(
+        &runtime_plan,
+        shim.as_str(),
+        scene.clone(),
+        input_config.clone(),
+        0,
+    )?;
+    let mut separate = materialize_libspatialaudio_engine_from_prepared_plan(
+        &runtime_plan,
+        shim.as_str(),
+        scene,
+        input_config,
+        0,
+    )?;
+    let frames = LIBSPATIALAUDIO_BLOCK_FRAMES * 4;
+    let input: Vec<f32> = (0..frames)
+        .map(|frame| ((frame * 37 % 257) as f32 - 128.0) / 1024.0)
+        .collect();
+    let mut actual = vec![0.0; frames * 12];
+    let mut expected = vec![0.0; frames * 12];
+    if batched.process_interleaved(Some(&input), &mut actual) != ProcessStatus::Ok {
+        return Err("native external PCM batched callback failed".into());
+    }
+    for (source, target) in input
+        .chunks_exact(LIBSPATIALAUDIO_BLOCK_FRAMES)
+        .zip(expected.chunks_exact_mut(LIBSPATIALAUDIO_BLOCK_FRAMES * 12))
+    {
+        if separate.process_interleaved(Some(source), target) != ProcessStatus::Ok {
+            return Err("native external PCM single callback failed".into());
+        }
+    }
+    if actual
+        .iter()
+        .chain(expected.iter())
+        .any(|sample| !sample.is_finite())
+    {
+        return Err("native external PCM output is non-finite".into());
+    }
+    let max_delta = actual
+        .iter()
+        .zip(&expected)
+        .map(|(a, b)| (a - b).abs())
+        .fold(0.0_f32, f32::max);
+    let input_peak = actual
+        .iter()
+        .map(|sample| sample.abs())
+        .fold(0.0_f32, f32::max);
+    if max_delta > 1.0e-6 || input_peak <= f32::EPSILON {
+        return Err(format!(
+            "native external PCM continuity failed: delta={max_delta} peak={input_peak}"
+        )
+        .into());
+    }
+    println!("aurora-libspatialaudio-input-continuity: PASS source=host_mono_pcm frames={frames} channels=12 batched_callbacks=1 separate_callbacks=4 max_delta={max_delta:.8} peak={input_peak:.8}");
     Ok(())
 }
