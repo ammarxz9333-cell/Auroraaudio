@@ -97,10 +97,7 @@ pub enum HeadPoseClockError {
         actual_timestamp_ns: u64,
     },
     /// Consecutive source samples are separated by more than the configured gap budget.
-    SourceGapTooLarge {
-        gap_ns: u64,
-        maximum_ns: u64,
-    },
+    SourceGapTooLarge { gap_ns: u64, maximum_ns: u64 },
     /// Timestamp conversion or anchor addition exceeded the logical frame range.
     FrameOverflow,
     /// Two advancing source samples mapped to a non-advancing logical frame.
@@ -196,7 +193,8 @@ impl HeadPoseClockMapper {
         // Nearest logical frame, half-way values rounded forward. The integer conversion
         // makes the result deterministic and avoids accumulating floating-point drift.
         let offset_frames = (scaled + HALF_NANOSECOND_SCALE) / NANOS_PER_SECOND;
-        let offset_frames = u64::try_from(offset_frames).map_err(|_| HeadPoseClockError::FrameOverflow)?;
+        let offset_frames =
+            u64::try_from(offset_frames).map_err(|_| HeadPoseClockError::FrameOverflow)?;
         let media_frame = self
             .anchor
             .media_frame
@@ -269,9 +267,27 @@ mod tests {
             media_frame: 96_000,
         };
         let mut mapper = HeadPoseClockMapper::new(policy(), anchor);
-        assert_eq!(mapper.map(sample(10, 1_000_000_000), 96_000).unwrap().media_frame, 96_000);
-        assert_eq!(mapper.map(sample(11, 1_010_000_000), 96_480).unwrap().media_frame, 96_480);
-        assert_eq!(mapper.map(sample(12, 1_011_000_000), 96_528).unwrap().media_frame, 96_528);
+        assert_eq!(
+            mapper
+                .map(sample(10, 1_000_000_000), 96_000)
+                .unwrap()
+                .media_frame,
+            96_000
+        );
+        assert_eq!(
+            mapper
+                .map(sample(11, 1_010_000_000), 96_480)
+                .unwrap()
+                .media_frame,
+            96_480
+        );
+        assert_eq!(
+            mapper
+                .map(sample(12, 1_011_000_000), 96_528)
+                .unwrap()
+                .media_frame,
+            96_528
+        );
     }
 
     #[test]
@@ -289,7 +305,10 @@ mod tests {
             })
         );
         // Same source sample remains admissible when delivered under the stated budget.
-        assert_eq!(mapper.map(sample(1, 10_000_000), 480).unwrap().media_frame, 480);
+        assert_eq!(
+            mapper.map(sample(1, 10_000_000), 480).unwrap().media_frame,
+            480
+        );
     }
 
     #[test]
@@ -338,7 +357,10 @@ mod tests {
                 maximum_frames: 48,
             })
         );
-        assert_eq!(mapper.map(sample(2, 2_000_000), 48).unwrap().media_frame, 96);
+        assert_eq!(
+            mapper.map(sample(2, 2_000_000), 48).unwrap().media_frame,
+            96
+        );
     }
 
     #[test]
