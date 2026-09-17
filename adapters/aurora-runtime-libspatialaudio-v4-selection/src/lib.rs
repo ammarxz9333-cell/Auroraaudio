@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use aurora_config::{
     ComponentContractKind, LayoutKindV4, SampleFormatIntent, ValidatedConfigurationV4,
 };
-use aurora_core::StandardLayout;
+use aurora_core::{StandardLayout, Vector3};
 use aurora_realtime_engine::{RealTimeEngine, RealTimeEngineConfig};
 use aurora_runtime_assembly::{
     BackendComponentRegistry, PreparedLayoutKind, PreparedRendererKind, PreparedRuntimePlan,
@@ -88,6 +88,11 @@ pub fn prepare_runtime_plan_from_configuration_v4(
 /// The prepared plan is validated before the selector or dynamic loader is
 /// touched. Renderer execution kind, exact component identity, media contract,
 /// and canonical enabled 7.1.4 topology must all match the proven v1 path.
+/// Speaker directions used by the runtime scene are then bound to the prepared
+/// plan while retaining each scene speaker's listener-relative radius. This
+/// makes prepared topology authoritative without pretending that normalized
+/// configuration directions are physical room distances.
+///
 /// The shim path is intentionally supplied separately and is never persisted in
 /// portable configuration or the prepared plan.
 pub fn materialize_libspatialaudio_engine_from_prepared_plan(
@@ -98,6 +103,7 @@ pub fn materialize_libspatialaudio_engine_from_prepared_plan(
     estimated_device_latency_frames: usize,
 ) -> Result<RealTimeEngine, PreparedPlanMaterializationError> {
     validate_prepared_plan(plan)?;
+    let scene = bind_scene_to_prepared_plan(plan, scene)?;
     let selection = LibspatialaudioSelectionIntent::v1(shim_path);
     materialize_selected_libspatialaudio_engine(
         &selection,
@@ -152,6 +158,70 @@ fn validate_prepared_plan(
     }
 
     Ok(())
+}
+
+/// Binds the runtime scene's speaker directions to prepared topology while
+/// preserving scene-owned listener-relative radius, trims, delays and labels.
+///
+/// Configuration-v4 speaker geometry is a normalized direction. RenderScene
+/// speaker positions are meter-space locations. Comparing or copying either
+/// representation directly would conflate different units, so binding projects
+/// each prepared direction onto the scene speaker's existing radius around the
+/// listener. Missing/duplicate roles, inactive speakers, non-finite geometry or
+/// a zero-radius scene speaker fail before any native library is loaded.
+fn bind_scene_to_prepared_plan(
+    plan: &PreparedRuntimePlan,
+    mut scene: RenderScene,
+) -> Result<RenderScene, PreparedPlanMaterializationError> {
+    if scene.layout != StandardLayout::SevenOneFour || scene.speakers.len() != 12 {
+        return Err(PreparedPlanMaterializationError::SceneTopologyMismatch);
+    }
+
+    let prepared = plan.topology().layout().speakers();
+    if prepared.len() != 12 {
+        return Err(PreparedPlanMaterializationError::LayoutMismatch);
+    }
+
+    for prepared_speaker in prepared {
+        let matches = scene
+            .speakers
+            .iter()
+            .filter(|speaker| speaker.channel_role == *prepared_speaker.channel_role())
+            .count();
+        if matches != 1 {
+            return Err(PreparedPlanMaterializationError::SceneTopologyMismatch);
+        }
+
+        let scene_speaker = scene
+            .speakers
+            .iter_mut()
+            .find(|speaker| speaker.channel_role == *prepared_speaker.channel_role())
+            .expect("role count was exactly one");
+        if scene_speaker.enabled != prepared_speaker.is_active() {
+            return Err(PreparedPlanMaterializationError::SceneTopologyMismatch);
+        }
+
+        let relative = scene_speaker.position - scene.listener.position;
+        let radius = relative.length();
+        let prepared_direction = prepared_speaker.position();
+        let prepared_length = prepared_direction.length();
+        if !radius.is_finite()
+            || radius <= f32::EPSILON
+            || !prepared_length.is_finite()
+            || prepared_length <= f32::EPSILON
+        {
+            return Err(PreparedPlanMaterializationError::SceneGeometryMismatch);
+        }
+
+        let scale = radius / prepared_length;
+        scene_speaker.position = Vector3::new(
+            scene.listener.position.x + prepared_direction.x * scale,
+            scene.listener.position.y + prepared_direction.y * scale,
+            scene.listener.position.z + prepared_direction.z * scale,
+        );
+    }
+
+    Ok(scene)
 }
 
 fn validate_configuration_v4(
@@ -295,6 +365,10 @@ pub enum PreparedPlanMaterializationError {
     MediaContractMismatch,
     /// Prepared topology is not canonical enabled Aurora 7.1.4.
     LayoutMismatch,
+    /// Runtime scene roles/activation do not match the prepared 7.1.4 topology.
+    SceneTopologyMismatch,
+    /// Runtime scene cannot preserve a finite nonzero radius while applying prepared direction.
+    SceneGeometryMismatch,
     /// Deployment selection or native/realtime materialization failed after plan validation.
     Selection(SelectionError),
 }
@@ -313,6 +387,11 @@ impl fmt::Display for PreparedPlanMaterializationError {
             Self::LayoutMismatch => {
                 formatter.write_str("prepared topology is not canonical enabled Aurora 7.1.4")
             }
+            Self::SceneTopologyMismatch => formatter
+                .write_str("render scene roles/activation do not match prepared Aurora 7.1.4"),
+            Self::SceneGeometryMismatch => formatter.write_str(
+                "render scene cannot bind prepared direction while preserving a finite nonzero radius",
+            ),
             Self::Selection(error) => {
                 write!(
                     formatter,
@@ -423,6 +502,92 @@ mod tests {
         assert_eq!(plan.execution().audio_format().sample_rate(), 48_000);
         assert_eq!(plan.execution().audio_format().callback_frames(), 256);
         validate_prepared_plan(&plan).unwrap();
+    }
+
+    #[test]
+    fn scene_binding_uses_prepared_directions_and_preserves_scene_radii() {
+        let plan = prepare_runtime_plan_from_configuration_v4(&selected_configuration()).unwrap();
+        let source = scene();
+        let listener = source.listener.position;
+        let original_radii: Vec<f32> = StandardLayout::SevenOneFour
+            .canonical_roles()
+            .iter()
+            .map(|role| {
+                source
+                    .speakers
+                    .iter()
+                    .find(|speaker| speaker.channel_role == *role)
+                    .unwrap()
+                    .position
+                    .distance_to(listener)
+            })
+            .collect();
+
+        let bound = bind_scene_to_prepared_plan(&plan, source).unwrap();
+        let ordered = bound.ordered_speakers().unwrap();
+        for (((scene_speaker, prepared_speaker), original_radius), role) in ordered
+            .iter()
+            .zip(plan.topology().layout().speakers())
+            .zip(original_radii.iter())
+            .zip(StandardLayout::SevenOneFour.canonical_roles())
+        {
+            assert_eq!(&scene_speaker.channel_role, role);
+            assert_eq!(scene_speaker.channel_role, *prepared_speaker.channel_role());
+            let relative = scene_speaker.position - bound.listener.position;
+            let radius = relative.length();
+            assert!((radius - original_radius).abs() < 1.0e-5);
+            let actual = Vector3::new(relative.x / radius, relative.y / radius, relative.z / radius);
+            let expected = prepared_speaker.position();
+            let expected_length = expected.length();
+            let expected = Vector3::new(
+                expected.x / expected_length,
+                expected.y / expected_length,
+                expected.z / expected_length,
+            );
+            assert!((actual.x - expected.x).abs() < 1.0e-5);
+            assert!((actual.y - expected.y).abs() < 1.0e-5);
+            assert!((actual.z - expected.z).abs() < 1.0e-5);
+        }
+    }
+
+    #[test]
+    fn zero_radius_scene_speaker_fails_before_native_load() {
+        let plan = prepare_runtime_plan_from_configuration_v4(&selected_configuration()).unwrap();
+        let mut render_scene = scene();
+        render_scene.speakers[0].position = render_scene.listener.position;
+        let error = materialize_libspatialaudio_engine_from_prepared_plan(
+            &plan,
+            "/definitely/not/a/real/shim.so",
+            render_scene,
+            engine_config(),
+            0,
+        )
+        .err()
+        .expect("zero-radius scene must fail before native load");
+        assert!(matches!(
+            error,
+            PreparedPlanMaterializationError::SceneGeometryMismatch
+        ));
+    }
+
+    #[test]
+    fn duplicate_scene_role_fails_before_native_load() {
+        let plan = prepare_runtime_plan_from_configuration_v4(&selected_configuration()).unwrap();
+        let mut render_scene = scene();
+        render_scene.speakers[1].channel_role = render_scene.speakers[0].channel_role.clone();
+        let error = materialize_libspatialaudio_engine_from_prepared_plan(
+            &plan,
+            "/definitely/not/a/real/shim.so",
+            render_scene,
+            engine_config(),
+            0,
+        )
+        .err()
+        .expect("duplicate scene role must fail before native load");
+        assert!(matches!(
+            error,
+            PreparedPlanMaterializationError::SceneTopologyMismatch
+        ));
     }
 
     #[test]
