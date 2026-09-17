@@ -261,7 +261,6 @@ pub fn simulate_head_tracker_delivery(
                         });
                     }
                     global_index += dropped;
-                    epoch_index += dropped;
                     let media_frame = global_index * config.frames_per_sample();
                     events.push(HeadTrackerDeliveryEvent::StaleProbe { media_frame });
                     events.push(HeadTrackerDeliveryEvent::Reconnect {
