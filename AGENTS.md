@@ -35,7 +35,9 @@ Current canonical base:
 - #204 merged exact-public-API NXP gPTP snapshots and before/after evidence bundling at merge commit `18c75cfe9388f1667546f46b96835dcd6a991ad1`.
 - #205 merged exact-pin ESP ACMP/stream/RX/gPTP evidence tooling at merge commit `3efcc4005724b46fef021ecb7654ab54d744d5a3`.
 - #206 merged the exact-pin wired ESP32-P4 validation-firmware build gate at merge commit `2470aa5ef33f93c829ffc4870d4c6047861aa3ed`; it pins compatible Scramble Tools ESP-IDF `eff8fd1d0b182429b1b574cba4ae8e9be7afa457` because stock 6.0.2 lacks required hardware-clock APIs. Build success remains compile/toolchain evidence only.
-- Active PR #207 (`physical-one-listener-orchestrator`) bundles independently captured host/NXP/ESP one-listener evidence in one fail-closed command, keeps fixture mode non-physical, and gates the helper in CI.
+- #207 merged the one-command host/NXP/ESP one-listener evidence bundler at merge commit `991e63dceecb12ef65bb7fc6853621a204adf5d9`; `--physical-run` or `--fixture-mode` must be selected explicitly and fixture mode cannot emit `PHYSICAL-PASS`.
+- #208 merged prepared-plan-driven native libspatialaudio materialization at merge commit `1e8b6fbd0e87046363983a54e17951ae8ddd6a1b`.
+- #209 merged external PCM multi-block callback continuity at merge commit `9e5e55fbb89148e8e0f1f8adbfdad6899f0dc28d`; full callback input is validated before state advance and successive blocks consume successive PCM frames with zero callback allocations.
 - Synthetic upmix is never described as object recovery, JOC reconstruction, IAMF rendering, or authored Atmos recovery.
 
 ## 2. Product goal and non-negotiable truth rules
@@ -85,6 +87,9 @@ Rules:
 - #204 — exact-public-API NXP gPTP snapshot collection and stable-GM before/after evidence bundling.
 - #205 — exact-pin ESP validation-firmware status instrumentation, machine-readable listener snapshots and fail-closed before/after evidence bundling.
 - #206 — exact-pinned ESP32-P4 endpoint/ESP-IDF firmware build gate for the #205 validation instrumentation.
+- #207 — one-command raw host/NXP/ESP evidence bundling into the existing fail-closed one-listener correlator.
+- #208 — prepared-plan-driven libspatialaudio native materialization with exact renderer identity, media-contract and canonical 7.1.4 plan validation before native loading.
+- #209 — external PCM continuity across multi-block callbacks, fail-closed whole-callback input validation and zero-allocation regression proof.
 
 These are software/reference/tooling milestones unless a specific item explicitly states physical evidence.
 
@@ -143,7 +148,7 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 - exact-pin CI proved six talkers, one `genavb_init()`, equal first timestamps and exactly +1,000,000 ns per 48 frames;
 - the static `aurora_genavb_prepare(...)` path remains a software/validation fallback and is not the preferred native ESP plug-and-play path.
 
-### AVDECC-owned GenAVB lifecycle — merged #194/#195/#196/#198/#200/#201/#202/#203/#204/#205/#206; active #207
+### AVDECC-owned GenAVB lifecycle — merged #194/#195/#196/#198/#200/#201/#202/#203/#204/#205/#206/#207
 - #194 opens `GENAVB_CTRL_AVDECC_MEDIA_STACK` on the shared runtime, exposes the control RX fd, accepts only supported AAF/48 kHz/stereo/24-bit talker CONNECTs, caches exact stack-supplied `genavb_stream_params`, and invalidates them on matching DISCONNECT;
 - `aurora_genavb_prepare_avdecc(...)` creates a talker from the cached stack-owned parameters, so stream ID, destination MAC, port, class and format are not invented by Aurora;
 - #195 wraps that control channel in Rust and exposes only sanitized CONNECT/DISCONNECT events plus a worker-only opaque native handle while the channel is open;
@@ -162,6 +167,9 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 ### Sound Open Firmware / libspatialaudio
 - SOF pin `11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c`; i.MX8M Plus HiFi4 candidate; physical execution unproven.
 - libspatialaudio pin `d149ed9744fd399b835c6f2920511f8cbcfce5ea`; LGPL-2.1-or-later; software-proven canonical 7.1.4 object-PCM adapter, explicit selection only, no physical/acoustic parity claim.
+- #208 makes `PreparedRuntimePlan` the portable source of renderer kind/identity/media/topology intent before native libspatialaudio loading; the machine-local shim path remains external.
+- #209 proves host external PCM continuity across callbacks larger than one engine block and fails closed on a short whole-callback input before media state advances.
+- Remaining software gap in this lane: `RenderScene` is still supplied independently from the prepared plan. Before claiming plan-owned topology end to end, bind or validate scene speaker directions against prepared layout geometry without confusing normalized direction with physical speaker distance.
 
 ### Clock/DSP ownership
 - Aurora owns the logical media timeline.
@@ -174,12 +182,12 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Finish #207: require Linux/Windows CI for the one-command one-listener evidence bundler; fixture mode must remain unable to emit `PHYSICAL-PASS`.
-2. On supported physical NXP GenAVB hardware/service + one wired ESP32-P4 listener, flash the validated P4 firmware, capture ESP/NXP before snapshots, run the #202 host probe, capture ESP/NXP after snapshots, and feed all raw captures through #207 under one epoch.
-3. Prove listener unplug/disconnect and fresh reconnect physically before expanding endpoint count.
-4. Extend physical proof from one ESP listener to all six; verify stream identity, reconnect behavior and common presentation timing on hardware.
-5. Measure drift, multi-endpoint synchronization, RF resilience and physical loopback latency before any production-selection claim.
-6. Continue native-v4/libspatialaudio work (#193) independently; resume binaural and physical tracker #143 by user priority.
+1. On supported physical NXP GenAVB hardware/service + one wired ESP32-P4 listener, flash the validated P4 firmware, capture ESP/NXP before snapshots, run the #202 host probe, capture ESP/NXP after snapshots, and feed all raw captures through the merged #207 runner under one explicit `--physical-run` epoch.
+2. Prove listener unplug/disconnect and fresh reconnect physically before expanding endpoint count.
+3. Extend physical proof from one ESP listener to all six; verify stream identity, reconnect behavior and common presentation timing on hardware.
+4. Measure drift, multi-endpoint synchronization, RF resilience and physical loopback latency before any production-selection claim.
+5. Independently close the libspatialaudio prepared-plan/RenderScene geometry-binding gap; compare normalized directions with tolerance rather than raw meter coordinates, and keep all validation before native loading.
+6. Resume binaural/head-tracking and physical tracker #143 according to user priority.
 
 ## 7. Physical acceptance critical path — tracker #143
 
