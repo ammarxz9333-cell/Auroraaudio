@@ -9,8 +9,8 @@ Last updated: **2026-09-17**
 ### Binaural software continuation
 
 - #212 prepared FIR core, #213 bounded pose timeline, #214 zero-allocation proof and
-  #216 world-to-head direction transforms are merged. #215 contains the isolated,
-  exact-pinned SOFA/sofar FIR reference gate; verify its current GitHub state.
+  #216 world-to-head direction transforms are merged. #215 merged the isolated,
+  exact-pinned SOFA/sofar FIR reference gate at `798ced82aa82c5638109fbbf6b166f4761eb81f4`.
 - `binaural::hrtf::DirectionalHrtf` prepares object FIR candidates on the control
   thread from canonical SOFA measurements and an explicit pose/media-frame snapshot.
   It performs bounded nearest-direction selection with an explicit angular budget,
