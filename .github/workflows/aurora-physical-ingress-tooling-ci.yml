@@ -40,6 +40,7 @@ jobs:
           python -m py_compile validation/physical/aurora_genavb_single_listener_evidence.py
           python -m py_compile validation/physical/aurora_genavb_nxp_gptp_evidence.py
           python -m py_compile validation/physical/aurora_esp_avb_listener_evidence.py
+          python -m py_compile validation/physical/aurora_genavb_one_listener_run.py
           python -m py_compile validation/physical/aurora_patch_esp_ptp_lock_evidence.py
           python -m py_compile validation/physical/aurora_patch_esp_avb_listener_evidence.py
 
@@ -63,6 +64,9 @@ jobs:
 
       - name: Run ESP listener evidence bundler self-tests
         run: python validation/physical/aurora_esp_avb_listener_evidence.py self-test
+
+      - name: Run one-listener physical evidence orchestrator self-tests
+        run: python validation/physical/aurora_genavb_one_listener_run.py self-test
 
       - name: Verify ESP PTP and AVB instrumentation applies to exact pinned sources
         if: runner.os == 'Linux'
