@@ -127,33 +127,43 @@ The bundler requires both snapshots to be locked to the same non-zero GM, use th
 
 ## ESP listener exact-pin evidence
 
-The pinned `esp_avb` source contains the state needed for a strict listener proof, but not all of it is exposed through the component's public status API. Aurora therefore uses a **narrow test-firmware instrumentation patch against the exact pinned commit**, rather than pretending a controller-visible feature exists upstream.
+The pinned `esp_avb` and `esp_ptp` sources contain the state needed for a strict listener proof, but not all of it is exposed through their public status APIs. Aurora therefore uses **narrow validation-firmware instrumentation patches against the exact pinned commits**, rather than pretending controller-visible or production APIs exist upstream.
 
 The relevant existing pinned primitives are:
 
 - `avb_listener_stream_s` owns the ACMP listener connection and active `stream_id`;
 - `avb_stream_in_last_rx_us(state, 0)` reports the most recent real audio input frame arrival;
 - `avb_get_stream_in_counters(...)` already produces the Milan STREAM_INPUT counters internally; its `frames_rx` value comes from the live stream RX context packet counter;
-- `esp_ptp` status exposes whether a remote clock source is valid, the active PTP profile and the selected best-clock identity.
+- `esp_ptp` status exposes the active PTP profile, whether a remote source is selected, selected-source timing data and best-time-clock data;
+- the `esp_ptp` daemon has a separate internal servo-stability gate that prints `clock is stabilized` only after the existing stability condition is satisfied for consecutive samples.
 
-At the exact pin, the ATDECC GET_COUNTERS command/response/unsolicited functions remain explicit `not implemented` stubs. Aurora **does not** claim AECP GET_COUNTERS support and does not use those stubs as evidence.
+Two source-level distinctions are important for the physical proof:
 
-Aurora's instrumentation tool is:
+1. `clock_source_valid` means a remote source is selected; it is **not** by itself proof that the local clock servo has converged.
+2. `clock_source_info.id` is the selected announce sender, while `clock_source_info.btc_id` carries the propagated best-time-clock / grandmaster identity. The latter is what Aurora correlates with NXP GM evidence, including topologies containing a bridge.
+
+At the exact `esp_avb` pin, the ATDECC GET_COUNTERS command/response/unsolicited functions remain explicit `not implemented` stubs. Aurora **does not** claim AECP GET_COUNTERS support and does not use those stubs as evidence.
+
+Aurora's exact-pin validation instrumentation tools are:
 
 ```text
+validation/physical/aurora_patch_esp_ptp_lock_evidence.py
 validation/physical/aurora_patch_esp_avb_listener_evidence.py
 ```
 
-It applies only when exact source anchors from pinned `esp_avb` commit `5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9` are present. It extends the existing serialized `avb_status()` request path with a read-only validation payload containing:
+The `esp_ptp` patch applies only to pinned commit `5b7eec233a93733ae954beefb6df3bb9c12dc901`. It persists the daemon's existing servo-stability decision into validation status, resets the validation stability counter when the profile/source changes, and leaves the existing stability thresholds unchanged.
 
-- gPTP profile state and selected grandmaster identity;
+The `esp_avb` patch applies only to pinned commit `5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9`. It extends the existing serialized `avb_status()` request path with a read-only validation payload containing:
+
+- gPTP profile state and the separately instrumented servo-stable state;
+- propagated BTC/grandmaster identity from `clock_source_info.btc_id`;
 - listener-present and ACMP-connected state;
 - the ACMP-owned stream ID;
 - AAF sample rate, channel count and bit depth;
 - the existing internal `frames_rx` counter;
 - `last_rx_us`.
 
-This is deliberately a physical-validation firmware patch, not a new production API or an upstream compatibility claim. Patched and unpatched `avb_status_s` layouts must not be mixed across separately compiled binaries.
+These are deliberately physical-validation firmware patches, not new production APIs or upstream compatibility claims. Patched and unpatched status layouts must not be mixed across separately compiled binaries.
 
 The snapshot helper intended to be compiled into the wired ESP32-P4 test firmware is:
 
@@ -166,6 +176,8 @@ It emits one JSON object with schema:
 ```text
 aurora.esp-avb.listener-snapshot.v1
 ```
+
+A snapshot reports `gptp_locked:true` only when the endpoint is in the gPTP profile, has a selected remote source, and the instrumented daemon servo-stability gate is true. The reported `grandmaster_id` is the propagated BTC/GM identity, not merely the adjacent announce sender.
 
 The snapshot caller supplies the exact `epoch_id` from the NXP host probe and a host/controller `capture_unix_ms`. Aurora deliberately does not derive that Unix timestamp from the ESP PTP clock because the physical test must not assume an unverified PTP-timescale-to-UTC conversion.
 
@@ -184,9 +196,21 @@ The output schema is:
 aurora.genavb.esp-listener-evidence.v1
 ```
 
-The bundler fails closed if the epoch, stream identity, 48 kHz/stereo/24-bit contract or grandmaster changes; if ACMP/gPTP is not valid in either snapshot; if the receive counter does not increase; if no post-send RX arrival is observed; or if capture times are not strictly ordered. Its `PASS` remains `physical_complete:false` until the NXP host, NXP gPTP and ESP evidence are correlated together.
+The bundler fails closed if the epoch, stream identity, 48 kHz/stereo/24-bit contract or grandmaster changes; if ACMP/gPTP lock evidence is not valid in either snapshot; if the receive counter does not increase; if no post-send RX arrival is observed; or if capture times are not strictly ordered. Its `PASS` remains `physical_complete:false` until the NXP host, NXP gPTP and ESP evidence are correlated together.
 
-Do not accept audible output, an LED, a stale lifetime counter or raw Ethernet packet presence by itself as listener receive proof. The evidence must bind the active ACMP stream identity to increasing real STREAM_INPUT receive activity during the host probe.
+Do not accept audible output, an LED, a stale lifetime counter, source selection alone or raw Ethernet packet presence by itself as listener receive/clock proof. The evidence must bind the active ACMP stream identity to increasing real STREAM_INPUT receive activity while retaining a stable gPTP servo and one GM during the host probe.
+
+## Pinned ESP32-P4 validation-firmware build gate
+
+Before flashing hardware, Aurora compiles the exact validation firmware composition in CI. The build reference is:
+
+```text
+config/esp-avb-p4-build-reference-v1.json
+```
+
+The gate pins the upstream `ESP-AVB-Endpoint` application, Aurora's exact `esp_avb`/`esp_ptp` pins, `esp_ptp_rpc`, the `esp32p4` target and a compatible exact SDK revision (the ESP-IDF 6.0.2 image is bootstrap only; see [SDK compatibility](esp-p4-sdk-compatibility.md)). It applies both validation patches, compiles `esp_avb_aurora_snapshot.c` into the endpoint application, runs `idf.py set-target esp32p4` plus `idf.py build`, and verifies that the snapshot translation unit produced a build object.
+
+A green firmware build is only source/API/toolchain compatibility evidence. It is **not** a physical AVDECC, AAF, gPTP, RX, synchronization or latency result.
 
 ## Required evidence for a complete one-listener physical gate
 
@@ -213,7 +237,8 @@ A complete one-listener evidence bundle must contain all of the following from t
    - ACMP reports the intended listener connection;
    - the listener reports the same stream identity advertised in the host CONNECT;
    - real STREAM_INPUT/AAF receive activity increases between before/after samples bracketing the host send interval;
-   - listener-side gPTP/clock state is retained for the same epoch.
+   - gPTP profile/source plus the instrumented servo-stability gate remain valid in both snapshots;
+   - the propagated BTC/GM identity matches the NXP GM evidence.
 
 4. **Identity and time correlation**
    - all evidence objects carry the identical `epoch_id`;
