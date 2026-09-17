@@ -209,11 +209,7 @@ fn sample_event(
 ) -> HeadTrackerDeliveryEvent {
     let nominal_media_frame = global_index * config.frames_per_sample();
     let observed_media_frame = if jitter_enabled {
-        observed_media_frame(
-            nominal_media_frame,
-            config.delivery_jitter_frames,
-            rng,
-        )
+        observed_media_frame(nominal_media_frame, config.delivery_jitter_frames, rng)
     } else {
         nominal_media_frame
     };
@@ -390,13 +386,17 @@ mod tests {
         assert!(duplicate.windows(2).any(|pair| pair[0] == pair[1]));
 
         let reorder = simulate_head_tracker_delivery(config(), HeadTrackerFaultProfile::Reorder);
-        assert!(reorder.windows(2).any(|pair| match (&pair[0], &pair[1]) {
-            (
+        let has_reordered_pair = reorder.windows(2).any(|pair| {
+            let (
                 HeadTrackerDeliveryEvent::Sample(first),
                 HeadTrackerDeliveryEvent::Sample(second),
-            ) => first.sequence == second.sequence + 1,
-            _ => false,
-        }));
+            ) = (&pair[0], &pair[1])
+            else {
+                return false;
+            };
+            first.sequence == second.sequence + 1
+        });
+        assert!(has_reordered_pair);
 
         let dropout = simulate_head_tracker_delivery(config(), HeadTrackerFaultProfile::Dropout);
         assert_eq!(
