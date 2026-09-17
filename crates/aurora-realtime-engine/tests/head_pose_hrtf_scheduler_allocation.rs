@@ -1,8 +1,6 @@
 use aurora_core::Vector3;
 use aurora_renderer_api::{HeadPosePolicy, HeadPoseSample, UnitQuaternion};
-use aurora_renderer_basic::binaural::hrtf::scheduler::{
-    HeadPoseHrtfScheduler, ObjectDirection,
-};
+use aurora_renderer_basic::binaural::hrtf::scheduler::{HeadPoseHrtfScheduler, ObjectDirection};
 use aurora_renderer_basic::binaural::hrtf::{DirectionalHrtf, SofaMeasurement};
 use aurora_renderer_basic::binaural::{Filters, Input, PreparedBinaural};
 use aurora_test_alloc::{count_allocations, CountingAllocator};
@@ -54,23 +52,15 @@ fn scheduled_boundary_commit_and_realtime_processing_allocate_zero_times() {
     ];
     let generation = scheduler.prepare_at(100, &objects).unwrap();
 
-    let initial = Filters::prepare(
-        Input::Objects(2),
-        48_000,
-        1,
-        1,
-        vec![0.5, 0.5, 0.5, 0.5],
-    )
-    .unwrap();
+    let initial =
+        Filters::prepare(Input::Objects(2), 48_000, 1, 1, vec![0.5, 0.5, 0.5, 0.5]).unwrap();
     let mut renderer = PreparedBinaural::new(initial, 8).unwrap();
     let input = [0.5; 16];
     let mut output = [0.0; 16];
     let mut okay = true;
 
     let allocations = count_allocations(|| {
-        okay &= scheduler
-            .commit_at_boundary(&mut renderer, 100, 80)
-            .is_ok();
+        okay &= scheduler.commit_at_boundary(&mut renderer, 100, 80).is_ok();
         for _ in 0..10_000 {
             okay &= renderer.process(&input, &mut output).is_ok();
         }
