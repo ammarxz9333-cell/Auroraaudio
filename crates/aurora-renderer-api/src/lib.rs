@@ -1,6 +1,8 @@
 //! Stable, allocation-free renderer boundary for Aurora implementations.
 
+pub mod head_pose;
 pub mod pcm;
+pub use head_pose::*;
 pub use pcm::*;
 
 use aurora_core::{Listener, Speaker, Vector3};
