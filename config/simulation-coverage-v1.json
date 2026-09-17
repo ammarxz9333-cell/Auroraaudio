@@ -285,7 +285,12 @@
       "id": "binaural-head-tracking",
       "status": "planned",
       "evidence_class": "software_reference",
-      "truth_boundary": "Binaural/head-tracking reference validation is not yet implemented; OAR/OBR/BEAR are candidate external oracles."
+      "evidence": [
+        "crates/aurora-renderer-basic/tests/hrtf_preparation.rs",
+        "crates/aurora-realtime-engine/tests/prepared_binaural_allocation.rs",
+        "validation/binaural/aurora_prepared_fir_probe.rs"
+      ],
+      "truth_boundary": "Prepared pose snapshots select bounded nearest-direction FIRs from canonical SOFA measurements on the control thread. Tests exercise axis/yaw semantics, PCM crossfades, malformed/stale/uncovered rejection and allocation-free commit/process; exact-pinned sofar supplies six-direction PCM reference evidence. Continuous tracker scheduling and AuroraSim integration remain planned. No physical tracking, personalization, perception or latency proof."
     },
     {
       "id": "personalized-audio-element-timeline",

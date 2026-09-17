@@ -4,6 +4,7 @@ on:
   pull_request:
     paths:
       - "crates/aurora-renderer-basic/**"
+      - "crates/aurora-renderer-api/**"
       - "validation/binaural/sofar_direct_filter_export.rs"
       - "validation/binaural/aurora_prepared_fir_probe.rs"
       - "config/binaural-reference-v1.json"
@@ -66,6 +67,8 @@ jobs:
           [workspace]
           [dependencies]
           aurora-renderer-basic = { path = "$GITHUB_WORKSPACE/crates/aurora-renderer-basic" }
+          aurora-core = { path = "$GITHUB_WORKSPACE/crates/aurora-core" }
+          aurora-renderer-api = { path = "$GITHUB_WORKSPACE/crates/aurora-renderer-api" }
           serde_json = "1"
           EOF
           cargo generate-lockfile --manifest-path "$RUNNER_TEMP/aurora-fir-probe/Cargo.toml"
@@ -84,6 +87,9 @@ jobs:
           assert len(cases) == 6
           for case in cases:
               assert case["pass"] is True
+              assert case["head_pose_cases"] == 2
+              assert math.isfinite(case["head_pose_max_absolute_pcm_error"])
+              assert case["head_pose_max_absolute_pcm_error"] <= 1e-5
               assert math.isfinite(case["max_absolute_pcm_error"])
               assert case["max_absolute_pcm_error"] <= 1e-5
               assert case["left_energy"] + case["right_energy"] > 1e-12
