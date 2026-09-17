@@ -1,0 +1,111 @@
+name: Prepared Binaural SOFA FIR Reference CI
+
+on:
+  pull_request:
+    paths:
+      - "crates/aurora-renderer-basic/**"
+      - "validation/binaural/sofar_direct_filter_export.rs"
+      - "validation/binaural/aurora_prepared_fir_probe.rs"
+      - "config/binaural-reference-v1.json"
+      - ".github/workflows/prepared-binaural-sofar-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prepared-binaural-sofar-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  prepared-sofa-fir:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Fetch exact pinned sofar reference
+        run: |
+          git clone https://github.com/andreiltd/sofar.git "$RUNNER_TEMP/sofar"
+          git -C "$RUNNER_TEMP/sofar" checkout --detach 06a629292689e99841e5dacaa25c4c6298616ca6
+          git -C "$RUNNER_TEMP/sofar" submodule update --init --recursive
+          test "$(git -C "$RUNNER_TEMP/sofar" rev-parse HEAD)" = 06a629292689e99841e5dacaa25c4c6298616ca6
+          test "$(git -C "$RUNNER_TEMP/sofar/libmysofa-sys/libmysofa" rev-parse HEAD)" = da9e4adc619ee3d1ae5e68da3ed14aa5e60b3ec1
+          test "$(sha256sum "$RUNNER_TEMP/sofar/libmysofa-sys/libmysofa/share/MIT_KEMAR_normal_pinna.sofa" | cut -d' ' -f1)" = 2768ac841213a7ae11d1ea7fd0f25a69b39216102dc5dd913ea6ba0f0dc57e28
+
+      - name: Build isolated sofar exporter and emit bounded FIR oracle
+        run: |
+          mkdir -p "$RUNNER_TEMP/sofar-export/src" artifacts
+          cp validation/binaural/sofar_direct_filter_export.rs "$RUNNER_TEMP/sofar-export/src/main.rs"
+          cat > "$RUNNER_TEMP/sofar-export/Cargo.toml" <<EOF
+          [package]
+          name = "aurora-sofar-direct-export"
+          version = "0.1.0"
+          edition = "2024"
+          [workspace]
+          [dependencies]
+          sofar = { path = "$RUNNER_TEMP/sofar" }
+          EOF
+          cargo generate-lockfile --manifest-path "$RUNNER_TEMP/sofar-export/Cargo.toml"
+          cp "$RUNNER_TEMP/sofar-export/Cargo.lock" artifacts/sofar-export-Cargo.lock
+          cargo run --release --locked --manifest-path "$RUNNER_TEMP/sofar-export/Cargo.toml" -- \
+            "$RUNNER_TEMP/sofar/libmysofa-sys/libmysofa/share/MIT_KEMAR_normal_pinna.sofa" \
+            "$GITHUB_WORKSPACE/artifacts/sofar-direct-oracle.json"
+
+      - name: Build isolated Aurora FIR probe and compare exact PCM
+        run: |
+          mkdir -p "$RUNNER_TEMP/aurora-fir-probe/src"
+          cp validation/binaural/aurora_prepared_fir_probe.rs "$RUNNER_TEMP/aurora-fir-probe/src/main.rs"
+          cat > "$RUNNER_TEMP/aurora-fir-probe/Cargo.toml" <<EOF
+          [package]
+          name = "aurora-prepared-fir-reference-probe"
+          version = "0.1.0"
+          edition = "2021"
+          [workspace]
+          [dependencies]
+          aurora-renderer-basic = { path = "$GITHUB_WORKSPACE/crates/aurora-renderer-basic" }
+          serde_json = "1"
+          EOF
+          cargo generate-lockfile --manifest-path "$RUNNER_TEMP/aurora-fir-probe/Cargo.toml"
+          cp "$RUNNER_TEMP/aurora-fir-probe/Cargo.lock" artifacts/aurora-probe-Cargo.lock
+          cargo run --release --locked --manifest-path "$RUNNER_TEMP/aurora-fir-probe/Cargo.toml" -- \
+            artifacts/sofar-direct-oracle.json artifacts/aurora-prepared-fir-evidence.json
+
+      - name: Validate evidence shape and directional case coverage
+        run: |
+          python3 - <<'PY'
+          import json, math
+          data=json.load(open("artifacts/aurora-prepared-fir-evidence.json"))
+          assert data["schema_version"] == 1 and data["verdict"] == "pass"
+          cases=data["cases"]
+          assert {c["name"] for c in cases} == {"front","back","left","right","up","down"}
+          assert len(cases) == 6
+          for case in cases:
+              assert case["pass"] is True
+              assert math.isfinite(case["max_absolute_pcm_error"])
+              assert case["max_absolute_pcm_error"] <= 1e-5
+              assert case["left_energy"] + case["right_energy"] > 1e-12
+          PY
+
+      - name: Require corrupted oracle PCM to fail closed
+        run: |
+          python3 - <<'PY'
+          import json
+          path="artifacts/sofar-direct-oracle.json"
+          data=json.load(open(path))
+          data["cases"][0]["expected"][512] += 0.05
+          json.dump(data, open("artifacts/sofar-direct-oracle-corrupt.json", "w"))
+          PY
+          if cargo run --quiet --release --locked --manifest-path "$RUNNER_TEMP/aurora-fir-probe/Cargo.toml" -- \
+            artifacts/sofar-direct-oracle-corrupt.json artifacts/corrupt-evidence.json; then
+            echo "corrupted SOFA oracle was unexpectedly accepted" >&2
+            exit 1
+          fi
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: prepared-binaural-sofar-fir-evidence
+          path: artifacts/
