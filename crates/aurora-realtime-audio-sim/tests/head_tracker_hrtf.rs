@@ -3,9 +3,7 @@ use aurora_realtime_audio_sim::{
     builtin_head_tracker_profile, generate_head_tracker_trace, HeadTrackerDeliveryEvent,
 };
 use aurora_renderer_api::{HeadPoseClockMapper, HeadPoseClockPolicy, HeadPosePolicy};
-use aurora_renderer_basic::binaural::hrtf::scheduler::{
-    HeadPoseHrtfScheduler, ObjectDirection,
-};
+use aurora_renderer_basic::binaural::hrtf::scheduler::{HeadPoseHrtfScheduler, ObjectDirection};
 use aurora_renderer_basic::binaural::hrtf::{DirectionalHrtf, SofaMeasurement};
 use aurora_renderer_basic::binaural::{Filters, Input, PreparedBinaural};
 
@@ -52,9 +50,7 @@ fn reconnect_trace_drives_continuous_mapper_scheduler_and_hrtf_commits() {
             } => {
                 let mapped = mapper.map(sample, observed_media_frame).unwrap();
                 scheduler.commit_pose(mapped).unwrap();
-                let generation = scheduler
-                    .prepare_at(mapped.media_frame, &objects)
-                    .unwrap();
+                let generation = scheduler.prepare_at(mapped.media_frame, &objects).unwrap();
                 scheduler
                     .commit_at_boundary(&mut renderer, mapped.media_frame, 1)
                     .unwrap();
