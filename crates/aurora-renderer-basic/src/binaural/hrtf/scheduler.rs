@@ -439,9 +439,7 @@ mod tests {
             .unwrap();
         let generation = scheduler.prepare_at(200, &objects()).unwrap();
         let mut renderer = renderer();
-        scheduler
-            .commit_at_boundary(&mut renderer, 200, 1)
-            .unwrap();
+        scheduler.commit_at_boundary(&mut renderer, 200, 1).unwrap();
         scheduler.release_committed(generation).unwrap();
     }
 
