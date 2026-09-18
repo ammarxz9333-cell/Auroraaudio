@@ -5,9 +5,7 @@ use aurora_realtime_engine::{
 use aurora_renderer_api::{
     HeadPoseClockAnchor, HeadPoseClockPolicy, HeadPosePolicy, TrackerPoseSample, UnitQuaternion,
 };
-use aurora_renderer_basic::binaural::hrtf::scheduler::{
-    HeadPoseHrtfScheduler, ObjectDirection,
-};
+use aurora_renderer_basic::binaural::hrtf::scheduler::{HeadPoseHrtfScheduler, ObjectDirection};
 use aurora_renderer_basic::binaural::hrtf::{DirectionalHrtf, SofaMeasurement};
 use aurora_renderer_basic::binaural::{Filters, Input, PreparedBinaural};
 
@@ -133,7 +131,10 @@ fn full_queue_is_explicit_and_recoverable_at_adapter_boundary() {
         control.try_poll(0),
         Some(HeadPoseControlEvent::Mapped(_))
     ));
-    assert_eq!(control.try_poll(0), Some(HeadPoseControlEvent::Disconnected));
+    assert_eq!(
+        control.try_poll(0),
+        Some(HeadPoseControlEvent::Disconnected)
+    );
 
     let next_anchor = HeadPoseClockAnchor {
         source_timestamp_ns: 10,
