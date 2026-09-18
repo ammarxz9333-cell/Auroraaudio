@@ -338,7 +338,10 @@ mod tests {
         assert_eq!(control.anchor(), next_anchor);
         assert!(matches!(
             control.try_poll(50_000),
-            Some(HeadPoseControlEvent::Mapped(HeadPoseSample { sequence: 1, .. }))
+            Some(HeadPoseControlEvent::Mapped(HeadPoseSample {
+                sequence: 1,
+                ..
+            }))
         ));
     }
 
