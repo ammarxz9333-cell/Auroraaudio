@@ -11,16 +11,23 @@ Last updated: **2026-09-17**
 - #212 prepared FIR core, #213 bounded pose timeline, #214 zero-allocation proof and
   #216 world-to-head direction transforms are merged. #215 merged the isolated,
   exact-pinned SOFA/sofar FIR reference gate at `798ced82aa82c5638109fbbf6b166f4761eb81f4`.
-- `binaural::hrtf::DirectionalHrtf` prepares object FIR candidates on the control
-  thread from canonical SOFA measurements and an explicit pose/media-frame snapshot.
-  It performs bounded nearest-direction selection with an explicit angular budget,
-  rejects stale/missing poses and malformed data, and uses the existing borrowed,
-  allocation-free filter commit/crossfade. No runtime SOFA dependency is introduced.
-- Validate with `hrtf_preparation`, `prepared_binaural_allocation`, general CI and
-  `Prepared Binaural SOFA FIR Reference CI`; see `docs/head-pose-hrtf-preparation.md`.
-- Next software gap: delivery/scheduling of prepared pose snapshots with stable
-  object identity and control-owned lifetime. Continuous tracker/runtime integration,
-  physical head tracking and perceptual HRTF quality remain unproven.
+- PR #217 (`head-pose-hrtf-preparation`) connects world-space object directions and an
+  explicit pose/media-frame snapshot to bounded nearest-direction HRTF preparation on
+  the control thread. It rejects stale/missing poses, malformed banks and uncovered
+  directions and reuses the borrowed allocation-free FIR commit/crossfade path.
+- Draft PR #218 (`head-pose-scheduler-v1`) adds `HeadPoseHrtfScheduler`: a single bounded
+  control-owned candidate, stable object IDs tied to PCM channel order, monotonic filter
+  generations and an exact target media-frame boundary. Boundary commit only borrows the
+  candidate; release/cancel is a separate control-thread operation so candidate storage
+  is not dropped at the realtime boundary.
+- Validate #217 with `hrtf_preparation`, `prepared_binaural_allocation`, general CI and
+  `Prepared Binaural SOFA FIR Reference CI`. Validate #218 with its scheduler unit tests,
+  `head_pose_hrtf_scheduler_allocation`, general CI and the inherited binaural gates; see
+  `docs/head-pose-hrtf-preparation.md` and `docs/head-pose-hrtf-scheduler.md`.
+- Next software gap after #218: a hardware-neutral tracker delivery adapter that maps
+  device timestamps to Aurora logical media frames with bounded latency/jitter and feeds
+  this scheduler continuously, plus deterministic dropout/reorder/staleness simulation
+  and AuroraSim coverage. Physical tracker latency and perceptual HRTF quality remain unproven.
 
 ## 1. Source of truth and continuation rule
 
@@ -198,12 +205,12 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. On supported physical NXP GenAVB hardware/service + one wired ESP32-P4 listener, flash the validated P4 firmware, capture ESP/NXP before snapshots, run the #202 host probe, capture ESP/NXP after snapshots, and feed all raw captures through the merged #207 runner under one explicit `--physical-run` epoch.
-2. Prove listener unplug/disconnect and fresh reconnect physically before expanding endpoint count.
-3. Extend physical proof from one ESP listener to all six; verify stream identity, reconnect behavior and common presentation timing on hardware.
-4. Measure drift, multi-endpoint synchronization, RF resilience and physical loopback latency before any production-selection claim.
+1. Finish PR #217 only after all final-head CI is green; merge it into `main-v2` without inflating the physical/perceptual truth boundary.
+2. Finish draft PR #218: keep stable object identity + exact boundary scheduling + control-owned candidate lifetime fail-closed, make formatter/check/clippy/tests and binaural domain gates green, then retarget to `main-v2` after #217 merges and merge only when green.
+3. Add a hardware-neutral tracker delivery/clock-mapping adapter: map validated tracker timestamp/sequence/orientation into Aurora logical media frames with bounded queueing and explicit reset/discontinuity semantics; never perform device I/O or unbounded work in the audio callback.
+4. Add deterministic delivery simulation for jitter, burst loss, reorder, duplicate sequence, timestamp jump, stale hold and reconnect; export the declared capability into AuroraSim before upgrading continuous head-tracking coverage.
 5. Independently close the libspatialaudio prepared-plan/RenderScene geometry-binding gap; compare normalized directions with tolerance rather than raw meter coordinates, and keep all validation before native loading.
-6. Resume binaural/head-tracking and physical tracker #143 according to user priority.
+6. Physical NXP/ESP listener, physical head tracker, DAC/eARC and acoustic acceptance remain separate later gates when the required hardware is actually present.
 
 ## 7. Physical acceptance critical path — tracker #143
 

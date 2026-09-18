@@ -1,6 +1,8 @@
 //! Control-thread direction selection over already decoded, delay-baked HRTF FIRs.
 //! No SOFA parser or reference library is linked into the runtime.
 
+pub mod scheduler;
+
 use aurora_core::Vector3;
 use aurora_renderer_api::{
     world_to_head_direction, HeadPoseError, HeadPoseState, HeadPoseTransformError, UnitQuaternion,
