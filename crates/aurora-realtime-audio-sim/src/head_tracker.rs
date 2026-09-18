@@ -67,9 +67,7 @@ impl HeadTrackerFault {
             Self::DropBurst { at_sample, count } if count > 0 => {
                 at_sample.checked_add(count).map(|end| at_sample..end)
             }
-            Self::ReorderPair { at_sample } => {
-                at_sample.checked_add(2).map(|end| at_sample..end)
-            }
+            Self::ReorderPair { at_sample } => at_sample.checked_add(2).map(|end| at_sample..end),
             Self::Duplicate { at_sample }
             | Self::TimestampJump { at_sample, .. }
             | Self::StaleHold { at_sample, .. }
@@ -759,10 +757,7 @@ mod tests {
                 } => {
                     let result = mapper.map(sample, observed_media_frame);
                     if ignored_reanchor
-                        && matches!(
-                            result,
-                            Err(HeadPoseClockError::NonMonotonicSequence { .. })
-                        )
+                        && matches!(result, Err(HeadPoseClockError::NonMonotonicSequence { .. }))
                     {
                         restart_rejected = true;
                         break;
@@ -775,10 +770,10 @@ mod tests {
         assert!(restart_rejected);
 
         let report = run_head_tracker_simulation(policy(), &config).unwrap();
-        assert!(report.records.iter().any(|record| matches!(
-            record,
-            HeadTrackerSimulationRecord::Reanchored { .. }
-        )));
+        assert!(report
+            .records
+            .iter()
+            .any(|record| matches!(record, HeadTrackerSimulationRecord::Reanchored { .. })));
         assert!(matches!(
             report.records.last(),
             Some(HeadTrackerSimulationRecord::Accepted(_))
