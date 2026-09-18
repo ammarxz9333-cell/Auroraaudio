@@ -300,12 +300,15 @@
         "crates/aurora-renderer-basic/tests/hrtf_preparation.rs",
         "crates/aurora-realtime-engine/tests/prepared_binaural_allocation.rs",
         "crates/aurora-realtime-engine/tests/head_pose_clock_scheduler.rs",
+        "crates/aurora-realtime-engine/src/head_pose_delivery.rs",
+        "crates/aurora-realtime-engine/tests/head_pose_delivery_bridge.rs",
         "crates/aurora-realtime-audio-sim/src/head_tracker.rs",
         "crates/aurora-realtime-audio-sim/tests/head_tracker_hrtf.rs",
         "validation/binaural/aurora_prepared_fir_probe.rs",
-        "docs/head-tracker-delivery-simulation.md"
+        "docs/head-tracker-delivery-simulation.md",
+        "docs/head-pose-delivery-bridge.md"
       ],
-      "truth_boundary": "Executable software/reference coverage now includes explicit tracker-clock anchoring, bounded timestamp-to-media-frame mapping, stable object identity, exact-boundary HRTF scheduling, deterministic healthy/jitter delivery, burst loss, reorder, duplicate sequence, timestamp jump, stale hold and explicit reconnect/re-anchor recovery through AuroraSim. The reconnect path resets mapper and scheduler pose epochs without resetting Aurora media time or filter generation. Exact-pinned sofar remains the FIR reference lane. No physical tracker, sensor calibration, OS/radio latency, personalized HRTF, perception, acoustic output or measured motion-to-sound latency is proven."
+      "truth_boundary": "Executable software/reference coverage now includes explicit tracker-clock anchoring, bounded timestamp-to-media-frame mapping, stable object identity, exact-boundary HRTF scheduling, deterministic healthy/jitter delivery, burst loss, reorder, duplicate sequence, timestamp jump, stale hold and explicit reconnect/re-anchor recovery through AuroraSim. The reconnect path resets mapper and scheduler pose epochs without resetting Aurora media time or filter generation. A fixed-capacity nonblocking adapter-thread to control-thread bridge now carries raw samples, disconnect and explicit re-anchor events with allocation-free push/single-event poll tests. Exact-pinned sofar remains the FIR reference lane. No physical tracker, sensor calibration, OS/radio latency, personalized HRTF, perception, acoustic output or measured motion-to-sound latency is proven."
     },
     {
       "id": "personalized-audio-element-timeline",
