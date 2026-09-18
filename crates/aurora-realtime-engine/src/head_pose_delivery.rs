@@ -92,10 +92,7 @@ pub fn create_head_pose_delivery_bridge(
     policy: HeadPoseClockPolicy,
     initial_anchor: HeadPoseClockAnchor,
     capacity_events: usize,
-) -> Result<
-    (HeadPoseIngressProducer, HeadPoseDeliveryControl),
-    HeadPoseDeliveryCreateError,
-> {
+) -> Result<(HeadPoseIngressProducer, HeadPoseDeliveryControl), HeadPoseDeliveryCreateError> {
     if !(2..=MAX_HEAD_POSE_DELIVERY_EVENTS).contains(&capacity_events) {
         return Err(HeadPoseDeliveryCreateError::InvalidCapacity);
     }
@@ -247,23 +244,25 @@ mod tests {
     fn queue_overflow_rejects_without_discarding_accepted_events() {
         let (producer, mut control) =
             create_head_pose_delivery_bridge(policy(), anchor(), 2).unwrap();
-        producer
-            .try_push_sample(sample(1, 1_000_000_000))
-            .unwrap();
-        producer
-            .try_push_sample(sample(2, 1_010_000_000))
-            .unwrap();
+        producer.try_push_sample(sample(1, 1_000_000_000)).unwrap();
+        producer.try_push_sample(sample(2, 1_010_000_000)).unwrap();
         assert_eq!(
             producer.try_push_sample(sample(3, 1_020_000_000)),
             Err(HeadPoseIngressPushError::Overflow)
         );
         assert!(matches!(
             control.try_poll(48_000),
-            Some(HeadPoseControlEvent::Mapped(HeadPoseSample { sequence: 1, .. }))
+            Some(HeadPoseControlEvent::Mapped(HeadPoseSample {
+                sequence: 1,
+                ..
+            }))
         ));
         assert!(matches!(
             control.try_poll(48_480),
-            Some(HeadPoseControlEvent::Mapped(HeadPoseSample { sequence: 2, .. }))
+            Some(HeadPoseControlEvent::Mapped(HeadPoseSample {
+                sequence: 2,
+                ..
+            }))
         ));
         assert_eq!(control.try_poll(48_960), None);
     }
@@ -272,19 +271,16 @@ mod tests {
     fn mapper_rejection_is_transactional_for_following_sample() {
         let (producer, mut control) =
             create_head_pose_delivery_bridge(policy(), anchor(), 4).unwrap();
-        producer
-            .try_push_sample(sample(10, 1_000_000_000))
-            .unwrap();
-        producer
-            .try_push_sample(sample(10, 1_010_000_000))
-            .unwrap();
-        producer
-            .try_push_sample(sample(11, 1_010_000_000))
-            .unwrap();
+        producer.try_push_sample(sample(10, 1_000_000_000)).unwrap();
+        producer.try_push_sample(sample(10, 1_010_000_000)).unwrap();
+        producer.try_push_sample(sample(11, 1_010_000_000)).unwrap();
 
         assert!(matches!(
             control.try_poll(48_000),
-            Some(HeadPoseControlEvent::Mapped(HeadPoseSample { sequence: 10, .. }))
+            Some(HeadPoseControlEvent::Mapped(HeadPoseSample {
+                sequence: 10,
+                ..
+            }))
         ));
         assert!(matches!(
             control.try_poll(48_480),
@@ -295,7 +291,10 @@ mod tests {
         ));
         assert!(matches!(
             control.try_poll(48_480),
-            Some(HeadPoseControlEvent::Mapped(HeadPoseSample { sequence: 11, .. }))
+            Some(HeadPoseControlEvent::Mapped(HeadPoseSample {
+                sequence: 11,
+                ..
+            }))
         ));
     }
 
