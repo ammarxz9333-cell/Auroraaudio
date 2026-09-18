@@ -6,6 +6,22 @@
 
 Last updated: **2026-09-17**
 
+### Binaural software continuation
+
+- #212 prepared FIR core, #213 bounded pose timeline, #214 zero-allocation proof and
+  #216 world-to-head direction transforms are merged. #215 merged the isolated,
+  exact-pinned SOFA/sofar FIR reference gate at `798ced82aa82c5638109fbbf6b166f4761eb81f4`.
+- `binaural::hrtf::DirectionalHrtf` prepares object FIR candidates on the control
+  thread from canonical SOFA measurements and an explicit pose/media-frame snapshot.
+  It performs bounded nearest-direction selection with an explicit angular budget,
+  rejects stale/missing poses and malformed data, and uses the existing borrowed,
+  allocation-free filter commit/crossfade. No runtime SOFA dependency is introduced.
+- Validate with `hrtf_preparation`, `prepared_binaural_allocation`, general CI and
+  `Prepared Binaural SOFA FIR Reference CI`; see `docs/head-pose-hrtf-preparation.md`.
+- Next software gap: delivery/scheduling of prepared pose snapshots with stable
+  object identity and control-owned lifetime. Continuous tracker/runtime integration,
+  physical head tracking and perceptual HRTF quality remain unproven.
+
 ## 1. Source of truth and continuation rule
 
 - Canonical long-lived branch: `main-v2`.

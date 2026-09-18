@@ -2,6 +2,8 @@
 //! belong on the control thread. The callback only convolves fixed storage.
 //! This does not imply a personalized HRTF or perceptual discrimination guarantee.
 
+pub mod hrtf;
+
 /// Explicit supported input interpretation. HOA uses ACN ordering and SN3D only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Input {

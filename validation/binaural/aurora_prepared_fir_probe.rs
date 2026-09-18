@@ -4,6 +4,9 @@
 //! does not become a dependency of `aurora-renderer-basic` or any production runtime path.
 
 use aurora_renderer_basic::binaural::{Filters, Input, PreparedBinaural};
+use aurora_renderer_basic::binaural::hrtf::{DirectionalHrtf, SofaMeasurement};
+use aurora_core::Vector3;
+use aurora_renderer_api::{HeadPosePolicy, HeadPoseSample, HeadPoseState, UnitQuaternion};
 use serde_json::{json, Value};
 use std::{collections::BTreeSet, error::Error, fs};
 
@@ -52,6 +55,22 @@ fn main() -> Result<(), Box<dyn Error>> {
     let expected_names = ["front", "back", "left", "right", "up", "down"];
     let mut names = BTreeSet::new();
     let mut evidence = Vec::new();
+
+    let mut measurements = Vec::new();
+    for case in cases {
+        let d = finite_f32_array(&case["direction"], "direction")?;
+        if d.len() != 3 { return Err("invalid SOFA direction".into()); }
+        measurements.push(SofaMeasurement {
+            direction: Vector3::new(d[0], d[1], d[2]),
+            coefficients: finite_f32_array(&case["coefficients"], "coefficients")?,
+        });
+    }
+    let bank = DirectionalHrtf::prepare(48_000, 1024, 0.01, measurements)
+        .map_err(|e| format!("HRTF bank: {e:?}"))?;
+    let mut poses = HeadPoseState::new(HeadPosePolicy::new(100, 10).unwrap());
+    poses.commit(HeadPoseSample { sequence: 1, media_frame: 100, orientation: UnitQuaternion::IDENTITY }).unwrap();
+    let half = std::f32::consts::FRAC_PI_4;
+    poses.commit(HeadPoseSample { sequence: 2, media_frame: 200, orientation: UnitQuaternion::try_new(half.cos(), 0.0, 0.0, half.sin()).unwrap() }).unwrap();
 
     for case in cases {
         let name = case["name"].as_str().ok_or("missing case name")?;
@@ -107,7 +126,31 @@ fn main() -> Result<(), Box<dyn Error>> {
             )
             .into());
         }
+        let mut tracked_max_error = 0.0_f32;
+        for (frame, world) in [
+            (100, Vector3::new(-direction[1], direction[0], direction[2])),
+            // Analytic +90 degree head-to-world yaw, independent of transform implementation.
+            (200, Vector3::new(-direction[0], -direction[1], direction[2])),
+        ] {
+            let filters = bank.prepare_objects(&poses, frame, &[world], 1)
+                .map_err(|e| format!("head-pose preparation {name}: {e:?}"))?;
+            let mut tracked = PreparedBinaural::new(filters, 256)
+                .map_err(|e| format!("tracked renderer: {e:?}"))?;
+            let mut pcm = vec![0.0; 4096];
+            for (block, stereo) in pcm.chunks_exact_mut(512).enumerate() {
+                input.fill(0.0);
+                if block == 1 { input[0] = impulse_gain; }
+                tracked.process(&input, stereo).map_err(|e| format!("tracked PCM: {e:?}"))?;
+            }
+            for (actual, reference) in pcm.iter().zip(&expected) {
+                if !actual.is_finite() { return Err("nonfinite tracked PCM".into()); }
+                tracked_max_error = tracked_max_error.max((actual - reference).abs());
+            }
+        }
+        if tracked_max_error > 1e-5 { return Err(format!("tracked SOFA mismatch {name}: {tracked_max_error}").into()); }
         evidence.push(json!({
+            "head_pose_cases": 2,
+            "head_pose_max_absolute_pcm_error": tracked_max_error,
             "name": name,
             "direction": direction,
             "max_absolute_pcm_error": max_error,
@@ -126,7 +169,7 @@ fn main() -> Result<(), Box<dyn Error>> {
             "schema_version": 1,
             "verdict": "pass",
             "cases": evidence,
-            "truth_boundary": "Exact-pinned sofar extracts MIT KEMAR FIRs and produces the convolution oracle; Aurora reproduces that PCM with its prepared FIR primitive. This proves software transfer-function execution only, not independent HRTF semantic correctness, personalization, head tracking, perception, physical latency or certification."
+            "truth_boundary": "Exact-pinned sofar extracts MIT KEMAR FIRs and produces the convolution oracle; Aurora reproduces that PCM with its prepared FIR primitive. This proves software transfer-function execution and canonical direction selection at identity and analytic 90-degree yaw. It does not prove continuous tracker scheduling, personalization, perception, physical tracking, physical latency or certification."
         }))?,
     )?;
     Ok(())
