@@ -412,10 +412,15 @@ jobs:
           mkdir -p daviewer/lib/features/sources
           cat > daviewer/lib/features/sources/art_sources_screen.dart <<'DART'
           import 'dart:async';
+          import 'dart:convert';
 
+          import 'package:cached_network_image/cached_network_image.dart';
+          import 'package:dakit_flutter/dakit_flutter.dart';
           import 'package:flutter/material.dart';
+          import 'package:flutter_riverpod/flutter_riverpod.dart';
           import 'package:flutter_inappwebview/flutter_inappwebview.dart';
-          import 'package:url_launcher/url_launcher.dart';
+
+          import '../../core/runtime/runtime_provider.dart';
 
           enum ArtSource {
             artStation('ArtStation', 'https://www.artstation.com/'),
@@ -451,14 +456,30 @@ jobs:
               }
             }
 
-            String get matureNote {
+            Map<String, String>? get imageHeaders {
+              switch (this) {
+                case ArtSource.pixiv:
+                  return const <String, String>{
+                    'Referer': 'https://www.pixiv.net/',
+                  };
+                case ArtSource.artStation:
+                  return const <String, String>{
+                    'Referer': 'https://www.artstation.com/',
+                  };
+                case ArtSource.tumblr:
+                case ArtSource.behance:
+                  return null;
+              }
+            }
+
+            String get note {
               switch (this) {
                 case ArtSource.artStation:
-                  return 'Mature artistic content is controlled by your ArtStation browsing settings.';
+                  return 'Mature art follows your ArtStation browsing settings.';
                 case ArtSource.tumblr:
-                  return 'Mature posts follow Tumblr content labels and your account settings.';
+                  return 'Sensitive posts follow Tumblr content labels and your account settings.';
                 case ArtSource.behance:
-                  return 'Adult projects may require an 18+ Behance account with Safe Browsing disabled.';
+                  return 'Adult projects may require an 18+ account with Safe Browsing disabled.';
                 case ArtSource.pixiv:
                   return 'Age-restricted works follow your Pixiv birthday and viewing settings.';
               }
@@ -474,37 +495,65 @@ jobs:
             'trans character design',
           ];
 
-          final class ArtSourcesScreen extends StatefulWidget {
+          final class ArtSourcesScreen extends ConsumerStatefulWidget {
             const ArtSourcesScreen({super.key});
 
             @override
-            State<ArtSourcesScreen> createState() => _ArtSourcesScreenState();
+            ConsumerState<ArtSourcesScreen> createState() =>
+                _ArtSourcesScreenState();
           }
 
-          final class _ArtSourcesScreenState extends State<ArtSourcesScreen> {
-            final TextEditingController _searchController = TextEditingController();
-            InAppWebViewController? _controller;
+          final class _ArtSourcesScreenState
+              extends ConsumerState<ArtSourcesScreen> {
+            final TextEditingController _searchController =
+                TextEditingController(text: 'transgender art');
+            final ScrollController _gridController = ScrollController();
+            final List<String> _images = <String>[];
+            final Set<String> _seen = <String>{};
+
+            InAppWebViewController? _collector;
             ArtSource _source = ArtSource.artStation;
-            double _progress = 0;
-            bool _loading = true;
-            Uri? _currentUri;
+            bool _loadingPage = true;
+            bool _loadingMore = false;
+            double _pageProgress = 0;
+            String? _status;
+
+            @override
+            void initState() {
+              super.initState();
+              _gridController.addListener(_onGridScroll);
+            }
 
             @override
             void dispose() {
+              _gridController
+                ..removeListener(_onGridScroll)
+                ..dispose();
               _searchController.dispose();
               super.dispose();
             }
 
-            Future<void> _load(Uri uri) async {
-              _currentUri = uri;
-              final controller = _controller;
-              if (controller == null) return;
-              await controller.loadUrl(
-                urlRequest: URLRequest(url: WebUri(uri.toString())),
-              );
+            void _onGridScroll() {
+              if (!_gridController.hasClients || _loadingMore) return;
+              final position = _gridController.position;
+              if (position.pixels >= position.maxScrollExtent - 900) {
+                unawaited(_loadMore());
+              }
             }
 
-            Future<void> _search([String? supplied]) async {
+            Future<void> _switchSource(ArtSource source) async {
+              if (_source == source) return;
+              setState(() {
+                _source = source;
+                _status = null;
+              });
+              await _search(reset: true);
+            }
+
+            Future<void> _search({
+              String? supplied,
+              bool reset = true,
+            }) async {
               final query = (supplied ?? _searchController.text).trim();
               if (supplied != null) {
                 _searchController.text = supplied;
@@ -512,22 +561,234 @@ jobs:
                   offset: _searchController.text.length,
                 );
               }
-              await _load(_source.searchUri(query));
+
+              if (reset) {
+                setState(() {
+                  _images.clear();
+                  _seen.clear();
+                  _loadingPage = true;
+                  _pageProgress = 0;
+                  _status = 'Searching ${_source.label}…';
+                });
+              }
+
+              final controller = _collector;
+              if (controller == null) return;
+              await controller.loadUrl(
+                urlRequest: URLRequest(
+                  url: WebUri(_source.searchUri(query).toString()),
+                ),
+              );
             }
 
-            Future<void> _openExternal() async {
-              final uri = _currentUri ?? Uri.parse(_source.homeUrl);
-              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            Future<void> _extractImages() async {
+              final controller = _collector;
+              if (controller == null) return;
+
+              const script = r'''
+              (() => {
+                const out = [];
+                const seen = new Set();
+
+                const add = (url, el) => {
+                  if (!url || typeof url !== 'string') return;
+                  url = url.trim();
+                  if (!/^https?:/i.test(url)) return;
+                  if (/avatar|favicon|emoji|logo|badge|sprite/i.test(url)) {
+                    const w = el?.naturalWidth || el?.clientWidth || 0;
+                    const h = el?.naturalHeight || el?.clientHeight || 0;
+                    if (Math.max(w, h) < 500) return;
+                  }
+                  if (!seen.has(url)) {
+                    seen.add(url);
+                    out.push(url);
+                  }
+                };
+
+                const bestSrcset = (srcset) => {
+                  if (!srcset) return '';
+                  const parts = srcset.split(',');
+                  return parts[parts.length - 1]
+                    .trim()
+                    .split(/\s+/)[0] || '';
+                };
+
+                document.querySelectorAll('img').forEach((img) => {
+                  const w = img.naturalWidth || img.clientWidth || 0;
+                  const h = img.naturalHeight || img.clientHeight || 0;
+                  if (w > 0 && h > 0 && (w < 150 || h < 150)) return;
+                  add(bestSrcset(img.getAttribute('srcset')), img);
+                  add(img.currentSrc, img);
+                  add(img.getAttribute('data-src'), img);
+                  add(img.getAttribute('data-original'), img);
+                  add(img.getAttribute('data-lazy-src'), img);
+                  add(img.src, img);
+                });
+
+                document.querySelectorAll('source[srcset]').forEach((source) => {
+                  add(bestSrcset(source.getAttribute('srcset')), source);
+                });
+
+                document.querySelectorAll('[style*="background-image"]').forEach((el) => {
+                  const bg = getComputedStyle(el).backgroundImage || '';
+                  const match = bg.match(/url\(["']?(.*?)["']?\)/);
+                  if (match) add(match[1], el);
+                });
+
+                return JSON.stringify(out);
+              })();
+              ''';
+
+              try {
+                final dynamic raw = await controller.evaluateJavascript(
+                  source: script,
+                );
+                final urls = _decodeUrlList(raw);
+                if (!mounted || urls.isEmpty) return;
+
+                final fresh = <String>[];
+                for (final url in urls) {
+                  if (_seen.add(url)) fresh.add(url);
+                }
+                if (fresh.isEmpty) return;
+
+                setState(() {
+                  _images.addAll(fresh);
+                  _status = '${_images.length} images';
+                });
+              } on Object {
+                if (mounted && _images.isEmpty) {
+                  setState(() => _status = 'Could not read images from this page.');
+                }
+              }
             }
 
-            void _selectSource(ArtSource source) {
-              if (_source == source) return;
-              setState(() {
-                _source = source;
-                _loading = true;
-                _progress = 0;
-              });
-              unawaited(_load(source.searchUri(_searchController.text)));
+            List<String> _decodeUrlList(dynamic raw) {
+              dynamic value = raw;
+              for (var i = 0; i < 2; i += 1) {
+                if (value is String) {
+                  try {
+                    value = jsonDecode(value);
+                  } on Object {
+                    break;
+                  }
+                }
+              }
+              if (value is! List) return const <String>[];
+              return value
+                  .whereType<String>()
+                  .where((url) => url.startsWith('http://') || url.startsWith('https://'))
+                  .toList(growable: false);
+            }
+
+            Future<void> _loadMore() async {
+              final controller = _collector;
+              if (controller == null || _loadingMore) return;
+              setState(() => _loadingMore = true);
+              try {
+                await controller.evaluateJavascript(
+                  source:
+                      'window.scrollBy(0, Math.max(window.innerHeight * 2.5, 1800));',
+                );
+                await Future<void>.delayed(const Duration(milliseconds: 900));
+                await _extractImages();
+                await controller.evaluateJavascript(
+                  source:
+                      'window.scrollBy(0, Math.max(window.innerHeight * 2.5, 1800));',
+                );
+                await Future<void>.delayed(const Duration(milliseconds: 1100));
+                await _extractImages();
+              } finally {
+                if (mounted) setState(() => _loadingMore = false);
+              }
+            }
+
+            Future<void> _downloadImage(String url) async {
+              final uri = Uri.tryParse(url);
+              if (uri == null) return;
+
+              final pathName = uri.pathSegments.isEmpty
+                  ? ''
+                  : uri.pathSegments.last.split('?').first;
+              final safeName = _safeFilename(
+                pathName.isEmpty
+                    ? 'daviewer_${DateTime.now().millisecondsSinceEpoch}.jpg'
+                    : pathName,
+              );
+
+              final asset = MediaAsset(
+                id: 'external-${_source.name}-${url.hashCode.abs()}',
+                kind: MediaKind.image,
+                role: MediaRole.original,
+                availability: MediaAvailability.available,
+                uri: uri,
+                filename: safeName,
+              );
+
+              try {
+                final manager = ref.read(runtimeProvider).transfers;
+                await manager.initialize();
+                final id =
+                    'source-${_source.name}-${url.hashCode.abs()}';
+                final existing = (await manager.records())
+                    .where((record) => record.id == id)
+                    .firstOrNull;
+                if (existing != null &&
+                    existing.state != TransferState.failed &&
+                    existing.state != TransferState.cancelled &&
+                    existing.state != TransferState.notFound) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(context).showSnackBar(
+                      const SnackBar(content: Text('Already in Downloads')),
+                    );
+                  }
+                  return;
+                }
+                if (existing != null) await manager.remove(id);
+
+                await manager.enqueue(
+                  TransferRequest(id: id, asset: asset, filename: safeName),
+                );
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Download started')),
+                  );
+                }
+              } on Object {
+                if (mounted) {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(
+                      content: Text(
+                        'Download failed. Open the original page if this source blocks direct downloads.',
+                      ),
+                    ),
+                  );
+                }
+              }
+            }
+
+            String _safeFilename(String raw) {
+              var name = raw
+                  .replaceAll(RegExp(r'[^A-Za-z0-9._-]+'), '_')
+                  .replaceAll(RegExp(r'_+'), '_');
+              if (name.length > 100) {
+                name = name.substring(name.length - 100);
+              }
+              if (!name.contains('.')) name = '$name.jpg';
+              return name;
+            }
+
+            void _openViewer(int index) {
+              Navigator.of(context).push(
+                MaterialPageRoute<void>(
+                  builder: (context) => _SourceImageViewer(
+                    images: List<String>.unmodifiable(_images),
+                    initialIndex: index,
+                    source: _source,
+                    onDownload: _downloadImage,
+                  ),
+                ),
+              );
             }
 
             @override
@@ -536,163 +797,487 @@ jobs:
               final scheme = theme.colorScheme;
 
               return Scaffold(
+                backgroundColor: scheme.surface,
                 appBar: AppBar(
                   title: const Text('Art Sources'),
                   actions: <Widget>[
                     IconButton(
                       tooltip: 'Refresh',
-                      onPressed: () => _controller?.reload(),
+                      onPressed: () => unawaited(_search(reset: true)),
                       icon: const Icon(Icons.refresh),
                     ),
-                    IconButton(
-                      tooltip: 'Open in browser',
-                      onPressed: _openExternal,
-                      icon: const Icon(Icons.open_in_new),
-                    ),
                   ],
-                  bottom: _loading
-                      ? PreferredSize(
-                          preferredSize: const Size.fromHeight(3),
-                          child: LinearProgressIndicator(
-                            minHeight: 3,
-                            value: _progress > 0 && _progress < 1 ? _progress : null,
-                          ),
-                        )
-                      : null,
                 ),
-                body: Column(
+                body: Stack(
                   children: <Widget>[
-                    Material(
-                      color: scheme.surfaceContainerLow,
-                      child: Padding(
-                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                    Positioned.fill(
+                      child: IgnorePointer(
+                        child: Opacity(
+                          opacity: 0.001,
+                          child: InAppWebView(
+                            initialUrlRequest: URLRequest(
+                              url: WebUri(
+                                _source
+                                    .searchUri(_searchController.text)
+                                    .toString(),
+                              ),
+                            ),
+                            initialSettings: InAppWebViewSettings(
+                              javaScriptEnabled: true,
+                              domStorageEnabled: true,
+                              databaseEnabled: true,
+                              thirdPartyCookiesEnabled: true,
+                              mediaPlaybackRequiresUserGesture: true,
+                              useShouldOverrideUrlLoading: true,
+                              supportZoom: false,
+                            ),
+                            onWebViewCreated: (controller) {
+                              _collector = controller;
+                            },
+                            onLoadStart: (controller, url) {
+                              if (!mounted) return;
+                              setState(() {
+                                _loadingPage = true;
+                                _pageProgress = 0;
+                              });
+                            },
+                            onLoadStop: (controller, url) {
+                              if (!mounted) return;
+                              setState(() {
+                                _loadingPage = false;
+                                _pageProgress = 1;
+                              });
+                              unawaited(_extractImages());
+                              Future<void>.delayed(
+                                const Duration(milliseconds: 900),
+                                _extractImages,
+                              );
+                              Future<void>.delayed(
+                                const Duration(milliseconds: 2200),
+                                _extractImages,
+                              );
+                            },
+                            onProgressChanged: (controller, progress) {
+                              if (!mounted) return;
+                              final next =
+                                  (progress / 100).clamp(0.0, 1.0).toDouble();
+                              if ((next - _pageProgress).abs() < 0.02 &&
+                                  progress != 100) {
+                                return;
+                              }
+                              setState(() => _pageProgress = next);
+                            },
+                          ),
+                        ),
+                      ),
+                    ),
+                    Positioned.fill(
+                      child: ColoredBox(
+                        color: scheme.surface,
                         child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: <Widget>[
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: <Widget>[
-                                  for (final source in ArtSource.values)
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: 8),
-                                      child: ChoiceChip(
-                                        label: Text(source.label),
-                                        selected: _source == source,
-                                        onSelected: (_) => _selectSource(source),
+                            _SearchPanel(
+                              source: _source,
+                              controller: _searchController,
+                              loading: _loadingPage,
+                              progress: _pageProgress,
+                              status: _status,
+                              onSourceChanged: _switchSource,
+                              onSearch: (value) =>
+                                  unawaited(_search(supplied: value)),
+                            ),
+                            Expanded(
+                              child: _images.isEmpty
+                                  ? _EmptyState(
+                                      loading: _loadingPage,
+                                      source: _source,
+                                      onSearch: () =>
+                                          unawaited(_search(reset: true)),
+                                    )
+                                  : GridView.builder(
+                                      controller: _gridController,
+                                      padding: const EdgeInsets.fromLTRB(
+                                        6,
+                                        6,
+                                        6,
+                                        24,
                                       ),
+                                      gridDelegate:
+                                          const SliverGridDelegateWithFixedCrossAxisCount(
+                                            crossAxisCount: 2,
+                                            crossAxisSpacing: 6,
+                                            mainAxisSpacing: 6,
+                                            childAspectRatio: 0.78,
+                                          ),
+                                      itemCount:
+                                          _images.length + (_loadingMore ? 2 : 0),
+                                      itemBuilder: (context, index) {
+                                        if (index >= _images.length) {
+                                          return const _LoadingTile();
+                                        }
+                                        final url = _images[index];
+                                        return _ImageTile(
+                                          url: url,
+                                          headers: _source.imageHeaders,
+                                          onTap: () => _openViewer(index),
+                                        );
+                                      },
                                     ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 8),
-                            Row(
-                              children: <Widget>[
-                                Expanded(
-                                  child: TextField(
-                                    controller: _searchController,
-                                    textInputAction: TextInputAction.search,
-                                    onSubmitted: (_) => unawaited(_search()),
-                                    decoration: InputDecoration(
-                                      hintText: 'Search ${_source.label}',
-                                      prefixIcon: const Icon(Icons.search),
-                                      isDense: true,
-                                      border: const OutlineInputBorder(),
-                                    ),
-                                  ),
-                                ),
-                                const SizedBox(width: 8),
-                                FilledButton(
-                                  onPressed: () => unawaited(_search()),
-                                  child: const Text('Search'),
-                                ),
-                              ],
-                            ),
-                            const SizedBox(height: 8),
-                            SingleChildScrollView(
-                              scrollDirection: Axis.horizontal,
-                              child: Row(
-                                children: <Widget>[
-                                  for (final query in transArtQueries)
-                                    Padding(
-                                      padding: const EdgeInsets.only(right: 7),
-                                      child: ActionChip(
-                                        label: Text(query),
-                                        onPressed: () => unawaited(_search(query)),
-                                      ),
-                                    ),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(height: 5),
-                            Text(
-                              _source.matureNote,
-                              style: theme.textTheme.bodySmall?.copyWith(
-                                color: scheme.onSurfaceVariant,
-                              ),
                             ),
                           ],
                         ),
                       ),
                     ),
+                  ],
+                ),
+              );
+            }
+          }
+
+          final class _SearchPanel extends StatelessWidget {
+            const _SearchPanel({
+              required this.source,
+              required this.controller,
+              required this.loading,
+              required this.progress,
+              required this.status,
+              required this.onSourceChanged,
+              required this.onSearch,
+            });
+
+            final ArtSource source;
+            final TextEditingController controller;
+            final bool loading;
+            final double progress;
+            final String? status;
+            final ValueChanged<ArtSource> onSourceChanged;
+            final ValueChanged<String> onSearch;
+
+            @override
+            Widget build(BuildContext context) {
+              final theme = Theme.of(context);
+              final scheme = theme.colorScheme;
+
+              return Material(
+                color: scheme.surfaceContainerLow,
+                child: Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 8, 12, 8),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: <Widget>[
+                            for (final item in ArtSource.values)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 7),
+                                child: ChoiceChip(
+                                  label: Text(item.label),
+                                  selected: source == item,
+                                  onSelected: (_) => onSourceChanged(item),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 7),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: TextField(
+                              controller: controller,
+                              textInputAction: TextInputAction.search,
+                              onSubmitted: onSearch,
+                              decoration: InputDecoration(
+                                hintText: 'Search ${source.label}',
+                                prefixIcon: const Icon(Icons.search),
+                                suffixIcon: controller.text.isEmpty
+                                    ? null
+                                    : IconButton(
+                                        onPressed: () {
+                                          controller.clear();
+                                        },
+                                        icon: const Icon(Icons.close),
+                                      ),
+                                filled: true,
+                                fillColor: scheme.surfaceContainerHighest,
+                                isDense: true,
+                                border: OutlineInputBorder(
+                                  borderRadius: BorderRadius.circular(18),
+                                  borderSide: BorderSide.none,
+                                ),
+                              ),
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          FilledButton.icon(
+                            onPressed: () => onSearch(controller.text),
+                            icon: const Icon(Icons.search),
+                            label: const Text('Go'),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 7),
+                      SingleChildScrollView(
+                        scrollDirection: Axis.horizontal,
+                        child: Row(
+                          children: <Widget>[
+                            for (final query in transArtQueries)
+                              Padding(
+                                padding: const EdgeInsets.only(right: 6),
+                                child: ActionChip(
+                                  label: Text(query),
+                                  onPressed: () => onSearch(query),
+                                ),
+                              ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 5),
+                      Row(
+                        children: <Widget>[
+                          Expanded(
+                            child: Text(
+                              status ?? source.note,
+                              maxLines: 2,
+                              overflow: TextOverflow.ellipsis,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ),
+                          if (loading)
+                            const Padding(
+                              padding: EdgeInsets.only(left: 8),
+                              child: SizedBox.square(
+                                dimension: 18,
+                                child: CircularProgressIndicator(strokeWidth: 2),
+                              ),
+                            ),
+                        ],
+                      ),
+                      if (loading)
+                        Padding(
+                          padding: const EdgeInsets.only(top: 5),
+                          child: LinearProgressIndicator(
+                            minHeight: 2,
+                            value: progress > 0 && progress < 1 ? progress : null,
+                          ),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+
+          final class _ImageTile extends StatelessWidget {
+            const _ImageTile({
+              required this.url,
+              required this.headers,
+              required this.onTap,
+            });
+
+            final String url;
+            final Map<String, String>? headers;
+            final VoidCallback onTap;
+
+            @override
+            Widget build(BuildContext context) {
+              final scheme = Theme.of(context).colorScheme;
+              return Material(
+                color: scheme.surfaceContainerHighest,
+                borderRadius: BorderRadius.circular(14),
+                clipBehavior: Clip.antiAlias,
+                child: InkWell(
+                  onTap: onTap,
+                  child: CachedNetworkImage(
+                    imageUrl: url,
+                    httpHeaders: headers,
+                    fit: BoxFit.cover,
+                    memCacheWidth: 720,
+                    fadeInDuration: const Duration(milliseconds: 120),
+                    placeholder: (context, url) => const Center(
+                      child: SizedBox.square(
+                        dimension: 26,
+                        child: CircularProgressIndicator(strokeWidth: 2),
+                      ),
+                    ),
+                    errorWidget: (context, url, error) => const Center(
+                      child: Icon(Icons.broken_image_outlined),
+                    ),
+                  ),
+                ),
+              );
+            }
+          }
+
+          final class _LoadingTile extends StatelessWidget {
+            const _LoadingTile();
+
+            @override
+            Widget build(BuildContext context) => const Center(
+              child: SizedBox.square(
+                dimension: 28,
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            );
+          }
+
+          final class _EmptyState extends StatelessWidget {
+            const _EmptyState({
+              required this.loading,
+              required this.source,
+              required this.onSearch,
+            });
+
+            final bool loading;
+            final ArtSource source;
+            final VoidCallback onSearch;
+
+            @override
+            Widget build(BuildContext context) {
+              return Center(
+                child: Padding(
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Icon(
+                        loading ? Icons.image_search : Icons.photo_library_outlined,
+                        size: 64,
+                        color: Theme.of(context).colorScheme.primary,
+                      ),
+                      const SizedBox(height: 14),
+                      Text(
+                        loading
+                            ? 'Finding images…'
+                            : 'No images yet. Search ${source.label}.',
+                        textAlign: TextAlign.center,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
+                      const SizedBox(height: 12),
+                      if (!loading)
+                        FilledButton.icon(
+                          onPressed: onSearch,
+                          icon: const Icon(Icons.search),
+                          label: const Text('Search'),
+                        ),
+                    ],
+                  ),
+                ),
+              );
+            }
+          }
+
+          final class _SourceImageViewer extends StatefulWidget {
+            const _SourceImageViewer({
+              required this.images,
+              required this.initialIndex,
+              required this.source,
+              required this.onDownload,
+            });
+
+            final List<String> images;
+            final int initialIndex;
+            final ArtSource source;
+            final Future<void> Function(String url) onDownload;
+
+            @override
+            State<_SourceImageViewer> createState() => _SourceImageViewerState();
+          }
+
+          final class _SourceImageViewerState extends State<_SourceImageViewer> {
+            late final PageController _controller =
+                PageController(initialPage: widget.initialIndex);
+            late int _index = widget.initialIndex;
+            bool _downloading = false;
+
+            @override
+            void dispose() {
+              _controller.dispose();
+              super.dispose();
+            }
+
+            Future<void> _download() async {
+              if (_downloading) return;
+              setState(() => _downloading = true);
+              try {
+                await widget.onDownload(widget.images[_index]);
+              } finally {
+                if (mounted) setState(() => _downloading = false);
+              }
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              return Scaffold(
+                backgroundColor: Colors.black,
+                appBar: AppBar(
+                  backgroundColor: Colors.black,
+                  foregroundColor: Colors.white,
+                  title: Text(
+                    '${widget.source.label}  ·  ${_index + 1}/${widget.images.length}',
+                  ),
+                ),
+                body: Column(
+                  children: <Widget>[
                     Expanded(
-                      child: InAppWebView(
-                        initialUrlRequest: URLRequest(
-                          url: WebUri(_source.homeUrl),
+                      child: PageView.builder(
+                        controller: _controller,
+                        itemCount: widget.images.length,
+                        onPageChanged: (index) => setState(() => _index = index),
+                        itemBuilder: (context, index) {
+                          return InteractiveViewer(
+                            minScale: 1,
+                            maxScale: 5,
+                            child: Center(
+                              child: CachedNetworkImage(
+                                imageUrl: widget.images[index],
+                                httpHeaders: widget.source.imageHeaders,
+                                fit: BoxFit.contain,
+                                fadeInDuration:
+                                    const Duration(milliseconds: 100),
+                                placeholder: (context, url) => const Center(
+                                  child: CircularProgressIndicator(),
+                                ),
+                                errorWidget: (context, url, error) =>
+                                    const Icon(
+                                      Icons.broken_image_outlined,
+                                      color: Colors.white70,
+                                      size: 60,
+                                    ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
+                    ),
+                    SafeArea(
+                      top: false,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(14, 10, 14, 12),
+                        child: SizedBox(
+                          width: double.infinity,
+                          height: 54,
+                          child: FilledButton.icon(
+                            onPressed: _downloading ? null : _download,
+                            icon: _downloading
+                                ? const SizedBox.square(
+                                    dimension: 19,
+                                    child: CircularProgressIndicator(
+                                      strokeWidth: 2,
+                                    ),
+                                  )
+                                : const Icon(Icons.download_outlined),
+                            label: Text(
+                              _downloading
+                                  ? 'Downloading…'
+                                  : 'Download image',
+                            ),
+                          ),
                         ),
-                        initialSettings: InAppWebViewSettings(
-                          javaScriptEnabled: true,
-                          domStorageEnabled: true,
-                          databaseEnabled: true,
-                          thirdPartyCookiesEnabled: true,
-                          mediaPlaybackRequiresUserGesture: true,
-                          supportZoom: true,
-                          useShouldOverrideUrlLoading: true,
-                        ),
-                        onWebViewCreated: (controller) {
-                          _controller = controller;
-                        },
-                        shouldOverrideUrlLoading:
-                            (controller, navigationAction) async {
-                          final uri = navigationAction.request.url;
-                          if (uri == null) return NavigationActionPolicy.ALLOW;
-                          final scheme = uri.scheme.toLowerCase();
-                          if (scheme == 'http' || scheme == 'https') {
-                            return NavigationActionPolicy.ALLOW;
-                          }
-                          try {
-                            await launchUrl(
-                              Uri.parse(uri.toString()),
-                              mode: LaunchMode.externalApplication,
-                            );
-                          } on Object {
-                            // Ignore unsupported custom schemes.
-                          }
-                          return NavigationActionPolicy.CANCEL;
-                        },
-                        onLoadStart: (controller, url) {
-                          if (!mounted) return;
-                          setState(() {
-                            _loading = true;
-                            if (url != null) _currentUri = Uri.tryParse(url.toString());
-                          });
-                        },
-                        onLoadStop: (controller, url) {
-                          if (!mounted) return;
-                          setState(() {
-                            _loading = false;
-                            _progress = 1;
-                            if (url != null) _currentUri = Uri.tryParse(url.toString());
-                          });
-                        },
-                        onProgressChanged: (controller, progress) {
-                          if (!mounted) return;
-                          final next = (progress / 100).clamp(0.0, 1.0).toDouble();
-                          if ((next - _progress).abs() < 0.02 && progress != 100) {
-                            return;
-                          }
-                          setState(() => _progress = next);
-                        },
                       ),
                     ),
                   ],
