@@ -1,0 +1,123 @@
+name: Build DAViewer Google Login Fix
+
+on:
+  push:
+    branches: [daviewer-google-login-fix]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout DAViewer v0.3.0
+        uses: actions/checkout@v4
+        with:
+          repository: redtidev1918/daviewer
+          ref: v0.3.0
+          path: daviewer
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+
+      - name: Patch OAuth to use system browser
+        shell: bash
+        working-directory: daviewer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          bridge = Path("lib/core/auth/webview_oauth_bridge.dart")
+          text = bridge.read_text()
+          old = """  @override
+  Future<void> launch(Uri uri) async {
+    // The WebLoginScreen subscribes in initState right after its route is
+    // pushed, so give it a short grace period before falling back to the
+    // system browser. Falling back too eagerly would leave the embedded web
+    // session out of sync with the OAuth account.
+    for (var i = 0; i < 25 && !_launchController.hasListener; i++) {
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+    }
+    if (_launchController.hasListener) {
+      debugPrint('[oauth] routing authorize to embedded WebView');
+      _launchController.add(uri);
+    } else {
+      debugPrint('[oauth] NO WebView listener -> system browser fallback');
+      await _fallback.launch(uri);
+    }
+  }
+"""
+          new = """  @override
+  Future<void> launch(Uri uri) async {
+    // Google blocks OAuth sign-in inside embedded WebViews. Always hand the
+    // authorization request to the system browser / Chrome Custom Tab. The
+    // existing AppLinksCallbackUriSource receives dakit://oauth/callback and
+    // returns the completed PKCE transaction to the app.
+    debugPrint('[oauth] routing authorize to system browser');
+    await _fallback.launch(uri);
+  }
+"""
+          if old not in text:
+              raise SystemExit("OAuth bridge patch target not found")
+          bridge.write_text(text.replace(old, new))
+
+          screen = Path("lib/features/web_login/web_login_screen.dart")
+          text = screen.read_text()
+          old = """      if (previous?.status != AuthStatus.signedIn &&
+          next.status == AuthStatus.signedIn &&
+          mounted &&
+          !_closeAfterReport) {
+        _closeAfterReport = true;
+        // Fallback: if the home page never reports (navigation stalls), close
+        // after a generous timeout so the user isn't stuck.
+        Future<void>.delayed(const Duration(seconds: 8), () {
+          if (mounted && _closeAfterReport) {
+            _closeAfterReport = false;
+            _closeScreen();
+          }
+        });
+      }
+"""
+          new = """      if (previous?.status != AuthStatus.signedIn &&
+          next.status == AuthStatus.signedIn &&
+          mounted) {
+        // The OAuth flow now completes in the system browser. Close the login
+        // screen as soon as the token exchange succeeds; do not wait for the
+        // embedded WebView cookie session, which is intentionally separate.
+        WidgetsBinding.instance.addPostFrameCallback((_) => _closeScreen());
+      }
+"""
+          if old not in text:
+              raise SystemExit("Login screen patch target not found")
+          screen.write_text(text.replace(old, new))
+          PY
+
+      - name: Install dependencies
+        working-directory: daviewer
+        run: flutter pub get
+
+      - name: Build Android debug APK
+        working-directory: daviewer
+        run: flutter build apk --debug
+
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          cp daviewer/build/app/outputs/flutter-apk/app-debug.apk DAViewer-v0.3.0-google-login-fixed.apk
+          sha256sum DAViewer-v0.3.0-google-login-fixed.apk > SHA256SUMS.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-v0.3.0-google-login-fixed
+          path: |
+            DAViewer-v0.3.0-google-login-fixed.apk
+            SHA256SUMS.txt
+          if-no-files-found: error
