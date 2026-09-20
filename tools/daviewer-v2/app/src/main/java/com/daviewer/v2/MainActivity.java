@@ -229,7 +229,7 @@ public class MainActivity extends Activity {
 
         String escaped = imageUrl
                 .replace("&", "&amp;")
-                .replace(""", "&quot;")
+                .replace("\"", "&quot;")
                 .replace("<", "&lt;")
                 .replace(">", "&gt;");
 
