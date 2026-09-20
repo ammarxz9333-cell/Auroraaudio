@@ -119,61 +119,7 @@ jobs:
               ),
             ),
           EOF
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("daviewer/lib/features/web_login/web_login_screen.dart")
-          s = p.read_text()
-
-          if "int? _popupWindowId;" not in s:
-              anchor = "  InAppWebViewController? _controller;\n"
-              if anchor not in s:
-                  raise SystemExit("controller field patch point not found")
-              s = s.replace(anchor, anchor + "  int? _popupWindowId;\n", 1)
-
-          if "supportMultipleWindows: true," not in s:
-              anchor = "                    initialSettings: InAppWebViewSettings(\n                      javaScriptEnabled: true,\n"
-              repl = anchor + "                      supportMultipleWindows: true,\n                      javaScriptCanOpenWindowsAutomatically: true,\n                      thirdPartyCookiesEnabled: true,\n"
-              if anchor not in s:
-                  raise SystemExit("main settings patch point not found")
-              s = s.replace(anchor, repl, 1)
-
-          if "onCreateWindow: (controller, createWindowAction)" not in s:
-              anchor = "                    shouldOverrideUrlLoading:\n"
-              if anchor not in s:
-                  raise SystemExit("navigation patch point not found")
-              s = s.replace(anchor, Path("/tmp/oncreate.txt").read_text() + anchor, 1)
-
-          if "windowId: _popupWindowId," not in s:
-              anchor = "          if (_closeAfterReport) _LoginSuccessOverlay(s: s),\n"
-              if anchor not in s:
-                  raise SystemExit("overlay patch point not found")
-              s = s.replace(anchor, Path("/tmp/popup.txt").read_text() + anchor, 1)
-
-          p.write_text(s)
-
-          router = Path("daviewer/lib/app/router.dart")
-          rs = router.read_text()
-          anchor = "    location == '/watch' ||\n"
-          if anchor not in rs:
-              raise SystemExit("router search patch point not found")
-          rs = rs.replace(anchor, anchor + "    location == '/search' ||\n    location == '/downloads' ||\n", 1)
-          tail = "    location.startsWith('/settings/');"
-          if tail not in rs:
-              raise SystemExit("router tail patch point not found")
-          rs = rs.replace(tail, "    location.startsWith('/settings/') ||\n    location.startsWith('/artwork/') ||\n    location.startsWith('/tag/');", 1)
-          router.write_text(rs)
-
-          detail = Path("daviewer/lib/features/artwork/artwork_detail_screen.dart")
-          ds = detail.read_text()
-          image_anchor = """              onDownloadImage: (asset, page) =>
-                  unawaited(_confirmAndDownloadImage(asset, page)),
-            ),
-            const SizedBox(height: 16),
-"""
-          image_replacement = """              onDownloadImage: (asset, page) =>
-                  unawaited(_confirmAndDownloadImage(asset, page)),
-            ),
+          cat > /tmp/quick_download_widget.txt <<'EOF'
             const SizedBox(height: 10),
             originalResolution.when(
               loading: () => SizedBox(
@@ -224,8 +170,56 @@ jobs:
                 );
               },
             ),
-            const SizedBox(height: 16),
-"""
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("daviewer/lib/features/web_login/web_login_screen.dart")
+          s = p.read_text()
+
+          if "int? _popupWindowId;" not in s:
+              anchor = "  InAppWebViewController? _controller;\n"
+              if anchor not in s:
+                  raise SystemExit("controller field patch point not found")
+              s = s.replace(anchor, anchor + "  int? _popupWindowId;\n", 1)
+
+          if "supportMultipleWindows: true," not in s:
+              anchor = "                    initialSettings: InAppWebViewSettings(\n                      javaScriptEnabled: true,\n"
+              repl = anchor + "                      supportMultipleWindows: true,\n                      javaScriptCanOpenWindowsAutomatically: true,\n                      thirdPartyCookiesEnabled: true,\n"
+              if anchor not in s:
+                  raise SystemExit("main settings patch point not found")
+              s = s.replace(anchor, repl, 1)
+
+          if "onCreateWindow: (controller, createWindowAction)" not in s:
+              anchor = "                    shouldOverrideUrlLoading:\n"
+              if anchor not in s:
+                  raise SystemExit("navigation patch point not found")
+              s = s.replace(anchor, Path("/tmp/oncreate.txt").read_text() + anchor, 1)
+
+          if "windowId: _popupWindowId," not in s:
+              anchor = "          if (_closeAfterReport) _LoginSuccessOverlay(s: s),\n"
+              if anchor not in s:
+                  raise SystemExit("overlay patch point not found")
+              s = s.replace(anchor, Path("/tmp/popup.txt").read_text() + anchor, 1)
+
+          p.write_text(s)
+
+          router = Path("daviewer/lib/app/router.dart")
+          rs = router.read_text()
+          anchor = "    location == '/watch' ||\n"
+          if anchor not in rs:
+              raise SystemExit("router search patch point not found")
+          rs = rs.replace(anchor, anchor + "    location == '/search' ||\n    location == '/downloads' ||\n", 1)
+          tail = "    location.startsWith('/settings/');"
+          if tail not in rs:
+              raise SystemExit("router tail patch point not found")
+          rs = rs.replace(tail, "    location.startsWith('/settings/') ||\n    location.startsWith('/artwork/') ||\n    location.startsWith('/tag/');", 1)
+          router.write_text(rs)
+
+          detail = Path("daviewer/lib/features/artwork/artwork_detail_screen.dart")
+          ds = detail.read_text()
+          image_anchor = "              onDownloadImage: (asset, page) =>\\n                  unawaited(_confirmAndDownloadImage(asset, page)),\\n            ),\\n            const SizedBox(height: 16),\\n"
+          image_replacement = "              onDownloadImage: (asset, page) =>\\n                  unawaited(_confirmAndDownloadImage(asset, page)),\\n            ),\\n" + Path("/tmp/quick_download_widget.txt").read_text() + "            const SizedBox(height: 16),\\n"
           if image_anchor not in ds:
               raise SystemExit("quick download button patch point not found")
           detail.write_text(ds.replace(image_anchor, image_replacement, 1))
