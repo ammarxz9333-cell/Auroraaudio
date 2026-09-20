@@ -151,7 +151,31 @@ jobs:
               s = s.replace(anchor, Path("/tmp/popup.txt").read_text() + anchor, 1)
 
           p.write_text(s)
-          print("Patched", p)
+
+          router = Path("daviewer/lib/app/router.dart")
+          rs = router.read_text()
+          old = """bool isSignedOutRoute(String location) =>
+    location == '/' ||
+    location == '/watch' ||
+    location == '/web-login' ||
+    location == '/settings' ||
+    location.startsWith('/settings/');
+"""
+          new = """bool isSignedOutRoute(String location) =>
+    location == '/' ||
+    location == '/watch' ||
+    location == '/search' ||
+    location == '/downloads' ||
+    location == '/web-login' ||
+    location == '/settings' ||
+    location.startsWith('/settings/') ||
+    location.startsWith('/artwork/') ||
+    location.startsWith('/tag/');
+"""
+          if old not in rs:
+              raise SystemExit("router signed-out route patch point not found")
+          router.write_text(rs.replace(old, new, 1))
+          print("Patched", p, "and", router)
           PY
 
       - name: Install dependencies
@@ -191,8 +215,8 @@ jobs:
         shell: bash
         run: |
           cd daviewer
-          dart format lib/features/web_login/web_login_screen.dart
-          flutter analyze lib/features/web_login/web_login_screen.dart
+          dart format lib/features/web_login/web_login_screen.dart lib/app/router.dart
+          flutter analyze lib/features/web_login/web_login_screen.dart lib/app/router.dart
           flutter build apk --debug
           cp build/app/outputs/flutter-apk/app-debug.apk ../DAViewer-popup-oauth-search-fix.apk
 
