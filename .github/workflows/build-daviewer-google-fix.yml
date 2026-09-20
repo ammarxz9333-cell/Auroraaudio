@@ -1,4 +1,4 @@
-name: Build patched DAViewer Google OAuth
+name: Build DAViewer popup OAuth fix
 
 on:
   push:
@@ -12,7 +12,7 @@ permissions:
 jobs:
   android:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 35
     steps:
       - name: Checkout DAViewer upstream
         uses: actions/checkout@v4
@@ -28,37 +28,158 @@ jobs:
           channel: stable
           cache: true
 
-      - name: Patch Android OAuth to system browser
+      - name: Patch embedded Google OAuth popup handling
         shell: bash
         run: |
           python3 - <<'PY'
           from pathlib import Path
 
-          p = Path("daviewer/lib/core/auth/webview_oauth_bridge.dart")
+          p = Path("daviewer/lib/features/web_login/web_login_screen.dart")
           s = p.read_text()
 
-          if "import 'dart:io';" not in s:
-              s = s.replace("import 'dart:async';\n", "import 'dart:async';\nimport 'dart:io';\n", 1)
-
-          needle = "  @override\n  Future<void> launch(Uri uri) async {\n"
-          replacement = (
-              "  @override\n"
-              "  Future<void> launch(Uri uri) async {\n"
-              "    // Google and other identity providers do not reliably allow OAuth in an\n"
-              "    // embedded Android WebView. Use the system browser on Android so social\n"
-              "    // sign-in runs in a supported user agent. The existing\n"
-              "    // dakit://oauth/callback intent filter returns the OAuth result to the app.\n"
-              "    if (Platform.isAndroid) {\n"
-              "      debugPrint('[oauth] Android -> system browser (social-login compatible)');\n"
-              "      await _fallback.launch(uri);\n"
-              "      return;\n"
-              "    }\n\n"
+          # Track the native popup window created by Google/other providers.
+          field_needle = "  InAppWebViewController? _controller;\n"
+          field_repl = (
+              "  InAppWebViewController? _controller;\n"
+              "  int? _popupWindowId;\n"
           )
+          if "int? _popupWindowId;" not in s:
+              if field_needle not in s:
+                  raise SystemExit("controller field patch point not found")
+              s = s.replace(field_needle, field_repl, 1)
 
-          if replacement not in s:
-              if needle not in s:
-                  raise SystemExit("Patch point not found; upstream changed")
-              s = s.replace(needle, replacement, 1)
+          # Allow target=_blank/window.open provider flows and third-party cookies.
+          settings_needle = (
+              "                    initialSettings: InAppWebViewSettings(\n"
+              "                      javaScriptEnabled: true,\n"
+          )
+          settings_repl = (
+              "                    initialSettings: InAppWebViewSettings(\n"
+              "                      javaScriptEnabled: true,\n"
+              "                      supportMultipleWindows: true,\n"
+              "                      javaScriptCanOpenWindowsAutomatically: true,\n"
+              "                      thirdPartyCookiesEnabled: true,\n"
+          )
+          if "supportMultipleWindows: true," not in s:
+              if settings_needle not in s:
+                  raise SystemExit("main settings patch point not found")
+              s = s.replace(settings_needle, settings_repl, 1)
+
+          # Handle the popup with a real child WebView using the native windowId.
+          created_needle = """                    onWebViewCreated: (controller) {
+                      _controller = controller;
+                      final pending = _pendingAuthUri;
+                      if (pending != null) {
+                        _pendingAuthUri = null;
+                        controller.loadUrl(
+                          urlRequest: URLRequest(
+                            url: WebUri(pending.toString()),
+                          ),
+                        );
+                      }
+                    },
+"""
+          created_repl = created_needle + """                    onCreateWindow: (controller, createWindowAction) async {
+                      final windowId = createWindowAction.windowId;
+                      if (windowId == null) return false;
+                      if (mounted) {
+                        setState(() => _popupWindowId = windowId);
+                      }
+                      return true;
+                    },
+"""
+          if "onCreateWindow: (controller, createWindowAction)" not in s:
+              if created_needle not in s:
+                  raise SystemExit("onWebViewCreated patch point not found")
+              s = s.replace(created_needle, created_repl, 1)
+
+          # Add a full-screen popup WebView. It shares the Android WebView cookie
+          # store with the parent, preserving DeviantArt's userinfo/CSRF session.
+          overlay_needle = "          if (_closeAfterReport) _LoginSuccessOverlay(s: s),\n"
+          overlay_repl = """          if (_popupWindowId != null)
+            Positioned.fill(
+              child: Material(
+                color: theme.scaffoldBackgroundColor,
+                child: SafeArea(
+                  child: Stack(
+                    children: <Widget>[
+                      InAppWebView(
+                        windowId: _popupWindowId,
+                        initialSettings: InAppWebViewSettings(
+                          javaScriptEnabled: true,
+                          userAgent: webUserAgent,
+                          thirdPartyCookiesEnabled: true,
+                          javaScriptCanOpenWindowsAutomatically: true,
+                          supportMultipleWindows: false,
+                        ),
+                        shouldOverrideUrlLoading:
+                            (popupController, navigationAction) async {
+                          final uri = navigationAction.request.url;
+                          if (uri != null &&
+                              uri.scheme == 'dakit' &&
+                              uri.host == 'oauth') {
+                            _bridge?.addCallback(uri);
+                            if (mounted) {
+                              setState(() => _popupWindowId = null);
+                            }
+                            final parent = _controller;
+                            if (parent != null) {
+                              unawaited(
+                                parent.loadUrl(
+                                  urlRequest: URLRequest(
+                                    url: WebUri(_homeUri.toString()),
+                                  ),
+                                ),
+                              );
+                            }
+                            return NavigationActionPolicy.CANCEL;
+                          }
+                          return NavigationActionPolicy.ALLOW;
+                        },
+                        onCloseWindow: (popupController) {
+                          if (mounted) {
+                            setState(() => _popupWindowId = null);
+                          }
+                          final parent = _controller;
+                          if (parent != null) {
+                            unawaited(
+                              parent.loadUrl(
+                                urlRequest: URLRequest(
+                                  url: WebUri(_homeUri.toString()),
+                                ),
+                              ),
+                            );
+                          }
+                        },
+                      ),
+                      Positioned(
+                        top: 4,
+                        right: 4,
+                        child: Material(
+                          color: theme.colorScheme.surface.withValues(alpha: 0.9),
+                          shape: const CircleBorder(),
+                          child: IconButton(
+                            tooltip: s.close,
+                            icon: const Icon(Icons.close),
+                            onPressed: () {
+                              if (mounted) {
+                                setState(() => _popupWindowId = null);
+                              }
+                            },
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          if (_closeAfterReport) _LoginSuccessOverlay(s: s),
+"""
+          if "windowId: _popupWindowId," not in s:
+              if overlay_needle not in s:
+                  raise SystemExit("overlay patch point not found")
+              s = s.replace(overlay_needle, overlay_repl, 1)
 
           p.write_text(s)
           print("Patched", p)
@@ -101,13 +222,15 @@ jobs:
         shell: bash
         run: |
           cd daviewer
+          dart format lib/features/web_login/web_login_screen.dart
+          flutter analyze lib/features/web_login/web_login_screen.dart
           flutter build apk --debug
-          cp build/app/outputs/flutter-apk/app-debug.apk ../DAViewer-google-oauth-fix.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk ../DAViewer-popup-oauth-search-fix.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-google-oauth-fix
-          path: DAViewer-google-oauth-fix.apk
+          name: DAViewer-popup-oauth-search-fix
+          path: DAViewer-popup-oauth-search-fix.apk
           retention-days: 7
           if-no-files-found: error
