@@ -202,6 +202,30 @@ jobs:
                   raise SystemExit("overlay patch point not found")
               s = s.replace(anchor, Path("/tmp/popup.txt").read_text() + anchor, 1)
 
+          # Do not leave the login screen merely because the website cookie is
+          # signed in. The app identity is OAuth; closing early leaves Home showing
+          # "Sign in" even though the embedded website is already logged in.
+          premature_close = """      if (isLoggedIn && mounted) {
+                WidgetsBinding.instance.addPostFrameCallback((_) => _closeScreen());
+              } else {
+                _maybeClose();
+              }
+          """
+          coordinated_close = """      if (isLoggedIn && mounted) {
+                final auth = ref.read(authControllerProvider);
+                if (auth.oauthSignedIn) {
+                  _closeAfterReport = true;
+                }
+                _maybeClose();
+              } else {
+                _maybeClose();
+              }
+          """
+          if premature_close in s:
+              s = s.replace(premature_close, coordinated_close, 1)
+          elif "if (auth.oauthSignedIn)" not in s:
+              raise SystemExit("coordinated login patch point not found")
+
           p.write_text(s)
 
           router = Path("daviewer/lib/app/router.dart")
@@ -1570,6 +1594,43 @@ jobs:
                   "            ),\n"
               )
               hs = hs.replace(home_anchor, home_anchor + source_button, 1)
+
+          if "Browse Art Sources" not in hs:
+              body_anchor = "            const UpdateBanner(),\n"
+              if body_anchor not in hs:
+                  raise SystemExit("home portal insertion point not found")
+              portal = (
+                  "            Padding(\n"
+                  "              padding: const EdgeInsets.fromLTRB(10, 8, 10, 4),\n"
+                  "              child: Card(\n"
+                  "                clipBehavior: Clip.antiAlias,\n"
+                  "                child: InkWell(\n"
+                  "                  onTap: () => context.push('/sources'),\n"
+                  "                  child: const Padding(\n"
+                  "                    padding: EdgeInsets.symmetric(horizontal: 14, vertical: 12),\n"
+                  "                    child: Row(\n"
+                  "                      children: <Widget>[\n"
+                  "                        Icon(Icons.photo_library_outlined, size: 30),\n"
+                  "                        SizedBox(width: 12),\n"
+                  "                        Expanded(\n"
+                  "                          child: Column(\n"
+                  "                            crossAxisAlignment: CrossAxisAlignment.start,\n"
+                  "                            children: <Widget>[\n"
+                  "                              Text('Browse Art Sources', style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),\n"
+                  "                              SizedBox(height: 3),\n"
+                  "                              Text('Pixiv · Newgrounds · Bluesky · Mastodon · Tumblr · ArtStation · Behance'),\n"
+                  "                            ],\n"
+                  "                          ),\n"
+                  "                        ),\n"
+                  "                        Icon(Icons.chevron_right),\n"
+                  "                      ],\n"
+                  "                    ),\n"
+                  "                  ),\n"
+                  "                ),\n"
+                  "              ),\n"
+                  "            ),\n"
+              )
+              hs = hs.replace(body_anchor, body_anchor + portal, 1)
 
           home.write_text(hs)
           print("Added Art Sources route, UI and Home entry point")
