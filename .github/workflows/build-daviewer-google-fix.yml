@@ -75,6 +75,28 @@ jobs:
           done
           exit 1
 
+      - name: Create temporary CI signing config
+        shell: bash
+        run: |
+          cd daviewer
+          keytool -genkeypair -v \
+            -keystore android/app/upload-keystore.p12 \
+            -storetype PKCS12 \
+            -storepass android \
+            -keypass android \
+            -alias upload \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 10000 \
+            -dname "CN=DAViewer Test Build, OU=CI, O=Local, L=Berlin, C=DE"
+          cat > android/key.properties <<'EOF'
+          storePassword=android
+          keyPassword=android
+          keyAlias=upload
+          storeFile=upload-keystore.p12
+          storeType=PKCS12
+          EOF
+
       - name: Build installable debug APK
         shell: bash
         run: |
