@@ -715,32 +715,34 @@ jobs:
                   raise SystemExit("sources import patch point not found")
               rs = rs.replace(import_anchor, import_anchor + source_import, 1)
 
-          route_anchor = "      GoRoute(\n        path: '/tag/:tag',\n"
-          source_route = """      GoRoute(
-                path: '/sources',
-                builder: (context, state) => const ArtSourcesScreen(),
-              ),
-          """
           if "path: '/sources'" not in rs:
+              route_anchor = "      GoRoute(\n        path: '/tag/:tag',\n"
               if route_anchor not in rs:
-                  raise SystemExit("sources route patch point not found")
+                  raise SystemExit("sources route insertion point not found")
+              source_route = (
+                  "      GoRoute(\n"
+                  "        path: '/sources',\n"
+                  "        builder: (context, state) => const ArtSourcesScreen(),\n"
+                  "      ),\n"
+              )
               rs = rs.replace(route_anchor, source_route + route_anchor, 1)
 
           router.write_text(rs)
 
           home = Path("daviewer/lib/features/home/home_screen.dart")
           hs = home.read_text()
-          settings_anchor = "            IconButton(\n              tooltip: s.settings,\n"
-          source_button = """            IconButton(
-              tooltip: 'Art Sources',
-              onPressed: () => context.push('/sources'),
-              icon: const Icon(Icons.collections_outlined),
-            ),
-          """
           if "tooltip: 'Art Sources'" not in hs:
-              if settings_anchor not in hs:
-                  raise SystemExit("home sources button patch point not found")
-              hs = hs.replace(settings_anchor, source_button + settings_anchor, 1)
+              home_anchor = "            _NotificationsBell(),\n"
+              if home_anchor not in hs:
+                  raise SystemExit("home sources insertion point not found")
+              source_button = (
+                  "            IconButton(\n"
+                  "              tooltip: 'Art Sources',\n"
+                  "              onPressed: () => context.push('/sources'),\n"
+                  "              icon: const Icon(Icons.collections_outlined),\n"
+                  "            ),\n"
+              )
+              hs = hs.replace(home_anchor, home_anchor + source_button, 1)
 
           home.write_text(hs)
           print("Added Art Sources route, UI and Home entry point")
