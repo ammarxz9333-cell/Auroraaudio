@@ -358,20 +358,15 @@ jobs:
                   1,
               )
 
-          dio_anchor = """    final dio = createDynamicProxyDio(
-              () => proxyController.directive,
-              options: BaseOptions(
-                connectTimeout: const Duration(seconds: 15),
-                receiveTimeout: const Duration(seconds: 30),
-              ),
-            );
-          """
-          dio_replacement = dio_anchor + """    dio.interceptors.add(ProviderRateLimitInterceptor(dio));
-          """
+          runtime_anchor = "    final runtime = _build(null, dio: dio, proxyController: proxyController);\n"
           if "ProviderRateLimitInterceptor(dio)" not in s:
-              if dio_anchor not in s:
-                  raise SystemExit("runtime dio patch point not found")
-              s = s.replace(dio_anchor, dio_replacement, 1)
+              if runtime_anchor not in s:
+                  raise SystemExit("runtime creation patch point not found")
+              s = s.replace(
+                  runtime_anchor,
+                  "    dio.interceptors.add(ProviderRateLimitInterceptor(dio));\n" + runtime_anchor,
+                  1,
+              )
 
           p.write_text(s)
 
