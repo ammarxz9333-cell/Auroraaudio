@@ -1,0 +1,92 @@
+name: Build patched DAViewer Google OAuth
+
+on:
+  push:
+    branches:
+      - build/daviewer-google-oauth-fix
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout DAViewer upstream
+        uses: actions/checkout@v4
+        with:
+          repository: redtidev1918/daviewer
+          ref: main
+          path: daviewer
+
+      - name: Setup Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+
+      - name: Patch Android OAuth to system browser
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("daviewer/lib/core/auth/webview_oauth_bridge.dart")
+          s = p.read_text()
+
+          if "import 'dart:io';" not in s:
+              s = s.replace("import 'dart:async';\n", "import 'dart:async';\nimport 'dart:io';\n", 1)
+
+          needle = """  @override
+  Future<void> launch(Uri uri) async {
+"""
+          replacement = """  @override
+  Future<void> launch(Uri uri) async {
+    // Google and other identity providers do not reliably allow OAuth in an
+    // embedded Android WebView. Use the system browser on Android so social
+    // sign-in runs in a supported user agent. The existing
+    // dakit://oauth/callback intent filter returns the OAuth result to the app.
+    if (Platform.isAndroid) {
+      debugPrint('[oauth] Android -> system browser (social-login compatible)');
+      await _fallback.launch(uri);
+      return;
+    }
+
+"""
+          if replacement not in s:
+              if needle not in s:
+                  raise SystemExit("Patch point not found; upstream changed")
+              s = s.replace(needle, replacement, 1)
+
+          p.write_text(s)
+          print(p.read_text())
+          PY
+
+      - name: Install dependencies
+        shell: bash
+        run: |
+          cd daviewer
+          for attempt in 1 2 3 4 5; do
+            if flutter pub get; then exit 0; fi
+            echo "flutter pub get failed (attempt $attempt/5), retrying..."
+            sleep 15
+          done
+          exit 1
+
+      - name: Build installable debug APK
+        shell: bash
+        run: |
+          cd daviewer
+          flutter build apk --debug
+          cp build/app/outputs/flutter-apk/app-debug.apk ../DAViewer-google-oauth-fix.apk
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-google-oauth-fix
+          path: DAViewer-google-oauth-fix.apk
+          retention-days: 7
+          if-no-files-found: error
