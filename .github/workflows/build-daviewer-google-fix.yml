@@ -423,10 +423,12 @@ jobs:
           import '../../core/runtime/runtime_provider.dart';
 
           enum ArtSource {
-            artStation('ArtStation', 'https://www.artstation.com/'),
+            pixiv('Pixiv', 'https://www.pixiv.net/en/'),
+            newgrounds('Newgrounds', 'https://www.newgrounds.com/art'),
+            bluesky('Bluesky', 'https://bsky.app/'),
             tumblr('Tumblr', 'https://www.tumblr.com/'),
-            behance('Behance', 'https://www.behance.net/'),
-            pixiv('Pixiv', 'https://www.pixiv.net/en/');
+            artStation('ArtStation', 'https://www.artstation.com/'),
+            behance('Behance', 'https://www.behance.net/');
 
             const ArtSource(this.label, this.homeUrl);
 
@@ -453,6 +455,14 @@ jobs:
                   return Uri.parse(
                     'https://www.pixiv.net/en/tags/${Uri.encodeComponent(query)}/artworks',
                   );
+                case ArtSource.newgrounds:
+                  return Uri.parse(
+                    'https://www.newgrounds.com/search/conduct/art?suitabilities=etma&terms=${Uri.encodeQueryComponent(query)}',
+                  );
+                case ArtSource.bluesky:
+                  return Uri.parse(
+                    'https://bsky.app/search?q=${Uri.encodeQueryComponent(query)}',
+                  );
               }
             }
 
@@ -465,6 +475,14 @@ jobs:
                 case ArtSource.artStation:
                   return const <String, String>{
                     'Referer': 'https://www.artstation.com/',
+                  };
+                case ArtSource.newgrounds:
+                  return const <String, String>{
+                    'Referer': 'https://www.newgrounds.com/',
+                  };
+                case ArtSource.bluesky:
+                  return const <String, String>{
+                    'Referer': 'https://bsky.app/',
                   };
                 case ArtSource.tumblr:
                 case ArtSource.behance:
@@ -482,6 +500,10 @@ jobs:
                   return 'Adult projects may require an 18+ account with Safe Browsing disabled.';
                 case ArtSource.pixiv:
                   return 'Age-restricted works follow your Pixiv birthday and viewing settings.';
+                case ArtSource.newgrounds:
+                  return 'Newgrounds M/A art follows your account content-rating settings.';
+                case ArtSource.bluesky:
+                  return 'Adult media follows your Bluesky moderation and adult-content settings.';
               }
             }
           }
@@ -489,10 +511,12 @@ jobs:
           const List<String> transArtQueries = <String>[
             'transgender art',
             'trans woman art',
+            'trans femme art',
             'trans man art',
+            'transmasc art',
+            'trans bulge art',
             'nonbinary art',
             'genderfluid art',
-            'trans character design',
           ];
 
           final class ArtSourcesScreen extends ConsumerStatefulWidget {
@@ -512,7 +536,7 @@ jobs:
             final Set<String> _seen = <String>{};
 
             InAppWebViewController? _collector;
-            ArtSource _source = ArtSource.artStation;
+            ArtSource _source = ArtSource.pixiv;
             bool _loadingPage = true;
             bool _loadingMore = false;
             double _pageProgress = 0;
