@@ -715,12 +715,8 @@ jobs:
                   raise SystemExit("sources import patch point not found")
               rs = rs.replace(import_anchor, import_anchor + source_import, 1)
 
-          route_anchor = """      GoRoute(
-                path: '/history',
-                builder: (context, state) => const HistoryScreen(),
-              ),
-          """
-          source_route = route_anchor + """      GoRoute(
+          route_anchor = "      GoRoute(\n        path: '/tag/:tag',\n"
+          source_route = """      GoRoute(
                 path: '/sources',
                 builder: (context, state) => const ArtSourcesScreen(),
               ),
@@ -728,7 +724,7 @@ jobs:
           if "path: '/sources'" not in rs:
               if route_anchor not in rs:
                   raise SystemExit("sources route patch point not found")
-              rs = rs.replace(route_anchor, source_route, 1)
+              rs = rs.replace(route_anchor, source_route + route_anchor, 1)
 
           router.write_text(rs)
 
