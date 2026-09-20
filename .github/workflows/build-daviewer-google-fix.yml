@@ -1,4 +1,4 @@
-name: Build DAViewer unlimited-browse stability
+name: Build DAViewer multi-source mature art
 
 on:
   push:
@@ -209,7 +209,7 @@ jobs:
           anchor = "    location == '/watch' ||\n"
           if anchor not in rs:
               raise SystemExit("router search patch point not found")
-          rs = rs.replace(anchor, anchor + "    location == '/search' ||\n    location == '/downloads' ||\n", 1)
+          rs = rs.replace(anchor, anchor + "    location == '/search' ||\n    location == '/downloads' ||\n    location == '/sources' ||\n", 1)
           tail = "    location.startsWith('/settings/');"
           if tail not in rs:
               raise SystemExit("router tail patch point not found")
@@ -406,6 +406,355 @@ jobs:
           print("Patched provider pacing/backoff and feed burst guard")
           PY
 
+      - name: Add integrated art sources browser
+        shell: bash
+        run: |
+          mkdir -p daviewer/lib/features/sources
+          cat > daviewer/lib/features/sources/art_sources_screen.dart <<'DART'
+          import 'dart:async';
+
+          import 'package:flutter/material.dart';
+          import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+          import 'package:url_launcher/url_launcher.dart';
+
+          enum ArtSource {
+            artStation('ArtStation', 'https://www.artstation.com/'),
+            tumblr('Tumblr', 'https://www.tumblr.com/'),
+            behance('Behance', 'https://www.behance.net/'),
+            pixiv('Pixiv', 'https://www.pixiv.net/en/');
+
+            const ArtSource(this.label, this.homeUrl);
+
+            final String label;
+            final String homeUrl;
+
+            Uri searchUri(String rawQuery) {
+              final query = rawQuery.trim();
+              if (query.isEmpty) return Uri.parse(homeUrl);
+              switch (this) {
+                case ArtSource.artStation:
+                  return Uri.parse(
+                    'https://www.artstation.com/search?sort_by=relevance&query=${Uri.encodeQueryComponent(query)}',
+                  );
+                case ArtSource.tumblr:
+                  return Uri.parse(
+                    'https://www.tumblr.com/search/${Uri.encodeComponent(query)}',
+                  );
+                case ArtSource.behance:
+                  return Uri.parse(
+                    'https://www.behance.net/search/projects?search=${Uri.encodeQueryComponent(query)}',
+                  );
+                case ArtSource.pixiv:
+                  return Uri.parse(
+                    'https://www.pixiv.net/en/tags/${Uri.encodeComponent(query)}/artworks',
+                  );
+              }
+            }
+
+            String get matureNote {
+              switch (this) {
+                case ArtSource.artStation:
+                  return 'Mature artistic content is controlled by your ArtStation browsing settings.';
+                case ArtSource.tumblr:
+                  return 'Mature posts follow Tumblr content labels and your account settings.';
+                case ArtSource.behance:
+                  return 'Adult projects may require an 18+ Behance account with Safe Browsing disabled.';
+                case ArtSource.pixiv:
+                  return 'Age-restricted works follow your Pixiv birthday and viewing settings.';
+              }
+            }
+          }
+
+          const List<String> transArtQueries = <String>[
+            'transgender art',
+            'trans woman art',
+            'trans man art',
+            'nonbinary art',
+            'genderfluid art',
+            'trans character design',
+          ];
+
+          final class ArtSourcesScreen extends StatefulWidget {
+            const ArtSourcesScreen({super.key});
+
+            @override
+            State<ArtSourcesScreen> createState() => _ArtSourcesScreenState();
+          }
+
+          final class _ArtSourcesScreenState extends State<ArtSourcesScreen> {
+            final TextEditingController _searchController = TextEditingController();
+            InAppWebViewController? _controller;
+            ArtSource _source = ArtSource.artStation;
+            double _progress = 0;
+            bool _loading = true;
+            Uri? _currentUri;
+
+            @override
+            void dispose() {
+              _searchController.dispose();
+              super.dispose();
+            }
+
+            Future<void> _load(Uri uri) async {
+              _currentUri = uri;
+              final controller = _controller;
+              if (controller == null) return;
+              await controller.loadUrl(
+                urlRequest: URLRequest(url: WebUri(uri.toString())),
+              );
+            }
+
+            Future<void> _search([String? supplied]) async {
+              final query = (supplied ?? _searchController.text).trim();
+              if (supplied != null) {
+                _searchController.text = supplied;
+                _searchController.selection = TextSelection.collapsed(
+                  offset: _searchController.text.length,
+                );
+              }
+              await _load(_source.searchUri(query));
+            }
+
+            Future<void> _openExternal() async {
+              final uri = _currentUri ?? Uri.parse(_source.homeUrl);
+              await launchUrl(uri, mode: LaunchMode.externalApplication);
+            }
+
+            void _selectSource(ArtSource source) {
+              if (_source == source) return;
+              setState(() {
+                _source = source;
+                _loading = true;
+                _progress = 0;
+              });
+              unawaited(_load(source.searchUri(_searchController.text)));
+            }
+
+            @override
+            Widget build(BuildContext context) {
+              final theme = Theme.of(context);
+              final scheme = theme.colorScheme;
+
+              return Scaffold(
+                appBar: AppBar(
+                  title: const Text('Art Sources'),
+                  actions: <Widget>[
+                    IconButton(
+                      tooltip: 'Refresh',
+                      onPressed: () => _controller?.reload(),
+                      icon: const Icon(Icons.refresh),
+                    ),
+                    IconButton(
+                      tooltip: 'Open in browser',
+                      onPressed: _openExternal,
+                      icon: const Icon(Icons.open_in_new),
+                    ),
+                  ],
+                  bottom: _loading
+                      ? PreferredSize(
+                          preferredSize: const Size.fromHeight(3),
+                          child: LinearProgressIndicator(
+                            minHeight: 3,
+                            value: _progress > 0 && _progress < 1 ? _progress : null,
+                          ),
+                        )
+                      : null,
+                ),
+                body: Column(
+                  children: <Widget>[
+                    Material(
+                      color: scheme.surfaceContainerLow,
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(12, 10, 12, 8),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: <Widget>[
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: <Widget>[
+                                  for (final source in ArtSource.values)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 8),
+                                      child: ChoiceChip(
+                                        label: Text(source.label),
+                                        selected: _source == source,
+                                        onSelected: (_) => _selectSource(source),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 8),
+                            Row(
+                              children: <Widget>[
+                                Expanded(
+                                  child: TextField(
+                                    controller: _searchController,
+                                    textInputAction: TextInputAction.search,
+                                    onSubmitted: (_) => unawaited(_search()),
+                                    decoration: InputDecoration(
+                                      hintText: 'Search ${_source.label}',
+                                      prefixIcon: const Icon(Icons.search),
+                                      isDense: true,
+                                      border: const OutlineInputBorder(),
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 8),
+                                FilledButton(
+                                  onPressed: () => unawaited(_search()),
+                                  child: const Text('Search'),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 8),
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: Row(
+                                children: <Widget>[
+                                  for (final query in transArtQueries)
+                                    Padding(
+                                      padding: const EdgeInsets.only(right: 7),
+                                      child: ActionChip(
+                                        label: Text(query),
+                                        onPressed: () => unawaited(_search(query)),
+                                      ),
+                                    ),
+                                ],
+                              ),
+                            ),
+                            const SizedBox(height: 5),
+                            Text(
+                              _source.matureNote,
+                              style: theme.textTheme.bodySmall?.copyWith(
+                                color: scheme.onSurfaceVariant,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    Expanded(
+                      child: InAppWebView(
+                        initialUrlRequest: URLRequest(
+                          url: WebUri(_source.homeUrl),
+                        ),
+                        initialSettings: InAppWebViewSettings(
+                          javaScriptEnabled: true,
+                          domStorageEnabled: true,
+                          databaseEnabled: true,
+                          thirdPartyCookiesEnabled: true,
+                          mediaPlaybackRequiresUserGesture: true,
+                          supportZoom: true,
+                          useShouldOverrideUrlLoading: true,
+                        ),
+                        onWebViewCreated: (controller) {
+                          _controller = controller;
+                        },
+                        shouldOverrideUrlLoading:
+                            (controller, navigationAction) async {
+                          final uri = navigationAction.request.url;
+                          if (uri == null) return NavigationActionPolicy.ALLOW;
+                          final scheme = uri.scheme.toLowerCase();
+                          if (scheme == 'http' || scheme == 'https') {
+                            return NavigationActionPolicy.ALLOW;
+                          }
+                          try {
+                            await launchUrl(
+                              Uri.parse(uri.toString()),
+                              mode: LaunchMode.externalApplication,
+                            );
+                          } on Object {
+                            // Ignore unsupported custom schemes.
+                          }
+                          return NavigationActionPolicy.CANCEL;
+                        },
+                        onLoadStart: (controller, url) {
+                          if (!mounted) return;
+                          setState(() {
+                            _loading = true;
+                            if (url != null) _currentUri = Uri.tryParse(url.toString());
+                          });
+                        },
+                        onLoadStop: (controller, url) {
+                          if (!mounted) return;
+                          setState(() {
+                            _loading = false;
+                            _progress = 1;
+                            if (url != null) _currentUri = Uri.tryParse(url.toString());
+                          });
+                        },
+                        onProgressChanged: (controller, progress) {
+                          if (!mounted) return;
+                          final next = (progress / 100).clamp(0.0, 1.0).toDouble();
+                          if ((next - _progress).abs() < 0.02 && progress != 100) {
+                            return;
+                          }
+                          setState(() => _progress = next);
+                        },
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }
+          }
+          DART
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          router = Path("daviewer/lib/app/router.dart")
+          rs = router.read_text()
+
+          import_anchor = "import '../features/search/search_screen.dart';\n"
+          source_import = "import '../features/sources/art_sources_screen.dart';\n"
+          if source_import not in rs:
+              if import_anchor not in rs:
+                  raise SystemExit("sources import patch point not found")
+              rs = rs.replace(import_anchor, import_anchor + source_import, 1)
+
+          route_anchor = """      GoRoute(
+                path: '/history',
+                builder: (context, state) => const HistoryScreen(),
+              ),
+          """
+          source_route = route_anchor + """      GoRoute(
+                path: '/sources',
+                builder: (context, state) => const ArtSourcesScreen(),
+              ),
+          """
+          if "path: '/sources'" not in rs:
+              if route_anchor not in rs:
+                  raise SystemExit("sources route patch point not found")
+              rs = rs.replace(route_anchor, source_route, 1)
+
+          router.write_text(rs)
+
+          home = Path("daviewer/lib/features/home/home_screen.dart")
+          hs = home.read_text()
+          settings_anchor = """            IconButton(
+                    tooltip: s.settings,
+                    onPressed: () => context.push('/settings'),
+                    icon: const Icon(Icons.settings_outlined),
+                  ),
+          """
+          source_button = """            IconButton(
+                    tooltip: 'Art Sources',
+                    onPressed: () => context.push('/sources'),
+                    icon: const Icon(Icons.collections_outlined),
+                  ),
+          """ + settings_anchor
+          if "tooltip: 'Art Sources'" not in hs:
+              if settings_anchor not in hs:
+                  raise SystemExit("home sources button patch point not found")
+              hs = hs.replace(settings_anchor, source_button, 1)
+
+          home.write_text(hs)
+          print("Added Art Sources route, UI and Home entry point")
+          PY
+
       - name: Install dependencies
         shell: bash
         run: |
@@ -443,15 +792,15 @@ jobs:
         shell: bash
         run: |
           cd daviewer
-          dart format lib/features/web_login/web_login_screen.dart lib/app/router.dart lib/features/artwork/artwork_detail_screen.dart lib/core/network/provider_rate_limit_interceptor.dart lib/core/runtime/app_runtime.dart lib/core/feed/artwork_feed_controller.dart
-          flutter analyze lib/features/web_login/web_login_screen.dart lib/app/router.dart lib/features/artwork/artwork_detail_screen.dart lib/core/network/provider_rate_limit_interceptor.dart lib/core/runtime/app_runtime.dart lib/core/feed/artwork_feed_controller.dart
+          dart format lib/features/web_login/web_login_screen.dart lib/app/router.dart lib/features/home/home_screen.dart lib/features/sources/art_sources_screen.dart lib/features/artwork/artwork_detail_screen.dart lib/core/network/provider_rate_limit_interceptor.dart lib/core/runtime/app_runtime.dart lib/core/feed/artwork_feed_controller.dart
+          flutter analyze lib/features/web_login/web_login_screen.dart lib/app/router.dart lib/features/home/home_screen.dart lib/features/sources/art_sources_screen.dart lib/features/artwork/artwork_detail_screen.dart lib/core/network/provider_rate_limit_interceptor.dart lib/core/runtime/app_runtime.dart lib/core/feed/artwork_feed_controller.dart
           flutter build apk --debug
           cp build/app/outputs/flutter-apk/app-debug.apk ../DAViewer-quick-download.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-unlimited-browse
+          name: DAViewer-multi-source
           path: DAViewer-quick-download.apk
           retention-days: 7
           if-no-files-found: error
