@@ -218,8 +218,8 @@ jobs:
 
           detail = Path("daviewer/lib/features/artwork/artwork_detail_screen.dart")
           ds = detail.read_text()
-          image_anchor = "              onDownloadImage: (asset, page) =>\\n                  unawaited(_confirmAndDownloadImage(asset, page)),\\n            ),\\n            const SizedBox(height: 16),\\n"
-          image_replacement = "              onDownloadImage: (asset, page) =>\\n                  unawaited(_confirmAndDownloadImage(asset, page)),\\n            ),\\n" + Path("/tmp/quick_download_widget.txt").read_text() + "            const SizedBox(height: 16),\\n"
+          image_anchor = "              onDownloadImage: (asset, page) =>\n                  unawaited(_confirmAndDownloadImage(asset, page)),\n            ),\n            const SizedBox(height: 16),\n"
+          image_replacement = "              onDownloadImage: (asset, page) =>\n                  unawaited(_confirmAndDownloadImage(asset, page)),\n            ),\n" + Path("/tmp/quick_download_widget.txt").read_text() + "            const SizedBox(height: 16),\n"
           if image_anchor not in ds:
               raise SystemExit("quick download button patch point not found")
           detail.write_text(ds.replace(image_anchor, image_replacement, 1))
