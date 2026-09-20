@@ -1,4 +1,4 @@
-name: Build DAViewer quick download fix
+name: Build DAViewer unlimited-browse stability
 
 on:
   push:
@@ -226,6 +226,191 @@ jobs:
           print("Patched", p, router, "and", detail)
           PY
 
+      - name: Patch request pacing and 429 backoff
+        shell: bash
+        run: |
+          cat > daviewer/lib/core/network/provider_rate_limit_interceptor.dart <<'DART'
+          import 'dart:async';
+
+          import 'package:dio/dio.dart';
+
+          /// Smooths bursts to DeviantArt endpoints and retries safe reads when
+          /// the provider asks us to slow down. This does not bypass provider
+          /// limits; it prevents the app from needlessly reaching them.
+          final class ProviderRateLimitInterceptor extends Interceptor {
+            ProviderRateLimitInterceptor(
+              this._dio, {
+              this.minimumSpacing = const Duration(milliseconds: 350),
+              this.maxRetries = 5,
+            });
+
+            final Dio _dio;
+            final Duration minimumSpacing;
+            final int maxRetries;
+
+            Future<void> _queue = Future<void>.value();
+            DateTime _nextAllowed = DateTime.fromMillisecondsSinceEpoch(0);
+
+            bool _targetsProvider(RequestOptions options) {
+              final host = options.uri.host.toLowerCase();
+              return host == 'deviantart.com' ||
+                  host.endsWith('.deviantart.com') ||
+                  host == 'deviantart.net' ||
+                  host.endsWith('.deviantart.net');
+            }
+
+            Future<void> _waitForSlot() {
+              final completer = Completer<void>();
+              _queue = _queue.then((_) async {
+                final now = DateTime.now();
+                final wait = _nextAllowed.difference(now);
+                if (wait > Duration.zero) {
+                  await Future<void>.delayed(wait);
+                }
+                _nextAllowed = DateTime.now().add(minimumSpacing);
+                completer.complete();
+              });
+              return completer.future;
+            }
+
+            @override
+            void onRequest(
+              RequestOptions options,
+              RequestInterceptorHandler handler,
+            ) async {
+              if (_targetsProvider(options)) {
+                await _waitForSlot();
+              }
+              handler.next(options);
+            }
+
+            @override
+            void onError(DioException err, ErrorInterceptorHandler handler) async {
+              final options = err.requestOptions;
+              final status = err.response?.statusCode;
+              final method = options.method.toUpperCase();
+              final safeRead = method == 'GET' || method == 'HEAD';
+              final retryCount =
+                  (options.extra['daviewerProviderRetry'] as int?) ?? 0;
+
+              if (!_targetsProvider(options) ||
+                  !safeRead ||
+                  retryCount >= maxRetries ||
+                  (status != 429 && status != 503)) {
+                handler.next(err);
+                return;
+              }
+
+              final retryAfter = _retryAfter(err.response);
+              final fallbackSeconds = 2 << retryCount;
+              final delay = retryAfter ??
+                  Duration(
+                    seconds: fallbackSeconds > 30 ? 30 : fallbackSeconds,
+                  );
+
+              final candidate = DateTime.now().add(delay);
+              if (candidate.isAfter(_nextAllowed)) {
+                _nextAllowed = candidate;
+              }
+
+              options.extra['daviewerProviderRetry'] = retryCount + 1;
+              try {
+                final response = await _dio.fetch<dynamic>(options);
+                handler.resolve(response);
+              } on DioException catch (retryError) {
+                handler.next(retryError);
+              }
+            }
+
+            Duration? _retryAfter(Response<dynamic>? response) {
+              final raw = response?.headers.value('retry-after')?.trim();
+              if (raw == null || raw.isEmpty) return null;
+
+              final seconds = int.tryParse(raw);
+              if (seconds != null && seconds >= 0) {
+                return Duration(seconds: seconds > 60 ? 60 : seconds);
+              }
+
+              final date = DateTime.tryParse(raw)?.toUtc();
+              if (date == null) return null;
+              final wait = date.difference(DateTime.now().toUtc());
+              if (wait <= Duration.zero) return const Duration(seconds: 1);
+              return wait > const Duration(seconds: 60)
+                  ? const Duration(seconds: 60)
+                  : wait;
+            }
+          }
+          DART
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("daviewer/lib/core/runtime/app_runtime.dart")
+          s = p.read_text()
+
+          import_anchor = "import '../network/proxy_controller.dart';\n"
+          if "provider_rate_limit_interceptor.dart" not in s:
+              if import_anchor not in s:
+                  raise SystemExit("runtime import patch point not found")
+              s = s.replace(
+                  import_anchor,
+                  "import '../network/provider_rate_limit_interceptor.dart';\n" + import_anchor,
+                  1,
+              )
+
+          dio_anchor = """    final dio = createDynamicProxyDio(
+              () => proxyController.directive,
+              options: BaseOptions(
+                connectTimeout: const Duration(seconds: 15),
+                receiveTimeout: const Duration(seconds: 30),
+              ),
+            );
+          """
+          dio_replacement = dio_anchor + """    dio.interceptors.add(ProviderRateLimitInterceptor(dio));
+          """
+          if "ProviderRateLimitInterceptor(dio)" not in s:
+              if dio_anchor not in s:
+                  raise SystemExit("runtime dio patch point not found")
+              s = s.replace(dio_anchor, dio_replacement, 1)
+
+          p.write_text(s)
+
+          feed = Path("daviewer/lib/core/feed/artwork_feed_controller.dart")
+          fs = feed.read_text()
+          field_anchor = "  Future<void>? _activeFirstPageFetch;\n"
+          if "_lastLoadMoreAt" not in fs:
+              if field_anchor not in fs:
+                  raise SystemExit("feed field patch point not found")
+              fs = fs.replace(
+                  field_anchor,
+                  field_anchor + "  DateTime? _lastLoadMoreAt;\n",
+                  1,
+              )
+
+          load_anchor = """  Future<void> loadMore() async {
+              if (!mounted || state.isLoading || !state.hasMore) return;
+              final cursor = state.nextCursor;
+          """
+          load_replacement = """  Future<void> loadMore() async {
+              if (!mounted || state.isLoading || !state.hasMore) return;
+              final now = DateTime.now();
+              final previousLoad = _lastLoadMoreAt;
+              if (previousLoad != null &&
+                  now.difference(previousLoad) < const Duration(milliseconds: 700)) {
+                return;
+              }
+              _lastLoadMoreAt = now;
+              final cursor = state.nextCursor;
+          """
+          if "previousLoad != null" not in fs:
+              if load_anchor not in fs:
+                  raise SystemExit("feed loadMore patch point not found")
+              fs = fs.replace(load_anchor, load_replacement, 1)
+
+          feed.write_text(fs)
+          print("Patched provider pacing/backoff and feed burst guard")
+          PY
+
       - name: Install dependencies
         shell: bash
         run: |
@@ -263,15 +448,15 @@ jobs:
         shell: bash
         run: |
           cd daviewer
-          dart format lib/features/web_login/web_login_screen.dart lib/app/router.dart lib/features/artwork/artwork_detail_screen.dart
-          flutter analyze lib/features/web_login/web_login_screen.dart lib/app/router.dart lib/features/artwork/artwork_detail_screen.dart
+          dart format lib/features/web_login/web_login_screen.dart lib/app/router.dart lib/features/artwork/artwork_detail_screen.dart lib/core/network/provider_rate_limit_interceptor.dart lib/core/runtime/app_runtime.dart lib/core/feed/artwork_feed_controller.dart
+          flutter analyze lib/features/web_login/web_login_screen.dart lib/app/router.dart lib/features/artwork/artwork_detail_screen.dart lib/core/network/provider_rate_limit_interceptor.dart lib/core/runtime/app_runtime.dart lib/core/feed/artwork_feed_controller.dart
           flutter build apk --debug
           cp build/app/outputs/flutter-apk/app-debug.apk ../DAViewer-quick-download.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-quick-download
+          name: DAViewer-unlimited-browse
           path: DAViewer-quick-download.apk
           retention-days: 7
           if-no-files-found: error
