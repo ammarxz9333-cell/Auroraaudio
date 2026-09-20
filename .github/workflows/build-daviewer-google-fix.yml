@@ -82,18 +82,13 @@ jobs:
                           return NavigationActionPolicy.ALLOW;
                         },
                         onCloseWindow: (popupController) {
+                          // Google/Apple sign-in commonly closes this child window
+                          // and then resumes the OAuth authorize flow in the parent.
+                          // Do NOT navigate the parent away here: doing so aborts the
+                          // pending OAuth transaction and leaves only the website
+                          // cookie signed in while DAViewer itself stays signed out.
                           if (mounted) {
                             setState(() => _popupWindowId = null);
-                          }
-                          final parent = _controller;
-                          if (parent != null) {
-                            unawaited(
-                              parent.loadUrl(
-                                urlRequest: URLRequest(
-                                  url: WebUri(_homeUri.toString()),
-                                ),
-                              ),
-                            );
                           }
                         },
                       ),
