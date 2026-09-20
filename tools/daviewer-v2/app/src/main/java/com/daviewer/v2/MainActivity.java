@@ -41,6 +41,9 @@ import android.widget.Toast;
 
 import org.json.JSONArray;
 
+import com.bumptech.glide.Glide;
+import com.bumptech.glide.load.engine.DiskCacheStrategy;
+
 import java.io.InputStream;
 import java.net.HttpURLConnection;
 import java.net.URL;
@@ -259,7 +262,7 @@ public class MainActivity extends Activity {
         s.setLoadsImagesAutomatically(true);
         s.setCacheMode(WebSettings.LOAD_DEFAULT);
         s.setMediaPlaybackRequiresUserGesture(true);
-        s.setUserAgentString(s.getUserAgentString() + " DaViewer/3.0");
+        s.setUserAgentString(s.getUserAgentString() + " DaViewer/4.0");
 
         CookieManager.getInstance().setAcceptCookie(true);
         CookieManager.getInstance().setAcceptThirdPartyCookies(collector, true);
@@ -291,9 +294,10 @@ public class MainActivity extends Activity {
             }
         });
 
-        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(dp(2), dp(2));
-        lp.gravity = Gravity.BOTTOM | Gravity.END;
-        root.addView(collector, lp);
+        FrameLayout.LayoutParams lp = new FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT);
+        root.addView(collector, 0, lp);
     }
 
     private void buildViewer() {
@@ -436,22 +440,27 @@ public class MainActivity extends Activity {
         String js =
                 "(function(){" +
                 "var out=[];" +
-                "var imgs=document.images||[];" +
-                "for(var i=0;i<imgs.length;i++){" +
-                "var im=imgs[i];" +
-                "var w=im.naturalWidth||im.width||0;" +
-                "var h=im.naturalHeight||im.height||0;" +
-                "if(w<180||h<160)continue;" +
-                "var u=im.currentSrc||im.src||'';" +
-                "var ss=im.getAttribute('srcset')||'';" +
-                "if(ss){" +
-                "var parts=ss.split(',');" +
-                "if(parts.length){var last=parts[parts.length-1].trim().split(/\\s+/)[0];if(last)u=last;}" +
-                "}" +
-                "if(!/^https?:/i.test(u))continue;" +
-                "if(/avatar|icon|logo|badge|emoji/i.test(u) && Math.max(w,h)<500)continue;" +
+                "function add(u,el){" +
+                "if(!u)return;u=(''+u).trim();" +
+                "if(!/^https?:/i.test(u))return;" +
+                "if(/favicon|sprite|emoji|logo|badge|avatar/i.test(u) && el && Math.max(el.clientWidth||0,el.clientHeight||0)<450)return;" +
                 "out.push(u);" +
                 "}" +
+                "function best(s){if(!s)return '';var p=s.split(',');return p[p.length-1].trim().split(/\\s+/)[0]||'';}" +
+                "document.querySelectorAll('img').forEach(function(im){" +
+                "var w=im.naturalWidth||im.clientWidth||0,h=im.naturalHeight||im.clientHeight||0;" +
+                "if(w>0&&h>0&&w<120&&h<120)return;" +
+                "add(best(im.getAttribute('srcset')),im);" +
+                "add(im.currentSrc,im);" +
+                "add(im.getAttribute('data-src'),im);" +
+                "add(im.getAttribute('data-original'),im);" +
+                "add(im.getAttribute('data-lazy-src'),im);" +
+                "add(im.src,im);" +
+                "});" +
+                "document.querySelectorAll('source[srcset]').forEach(function(s){add(best(s.getAttribute('srcset')),s);});" +
+                "document.querySelectorAll('[style*=background-image]').forEach(function(el){" +
+                "var b=getComputedStyle(el).backgroundImage||'';var m=b.match(/url\\([\\\"']?(.*?)[\\\"']?\\)/);if(m)add(m[1],el);" +
+                "});" +
                 "if(out.length)DaViewerImages.addImages(JSON.stringify(out));" +
                 "})();";
         collector.evaluateJavascript(js, null);
@@ -484,19 +493,30 @@ public class MainActivity extends Activity {
         imageProgress.setVisibility(View.VISIBLE);
         downloadButton.setEnabled(true);
 
-        final String wanted = url;
-        imagePool.submit(() -> {
-            Bitmap b = loadBitmap(wanted);
-            main.post(() -> {
-                if (!wanted.equals(currentImageUrl)) return;
-                imageProgress.setVisibility(View.GONE);
-                if (b != null) {
-                    fullImage.setImageBitmap(b);
-                } else {
-                    Toast.makeText(this, "Could not load full image", Toast.LENGTH_SHORT).show();
-                }
-            });
-        });
+        Glide.with(this)
+                .asBitmap()
+                .load(url)
+                .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                .into(new com.bumptech.glide.request.target.CustomTarget<Bitmap>() {
+                    @Override
+                    public void onResourceReady(
+                            Bitmap resource,
+                            com.bumptech.glide.request.transition.Transition<? super Bitmap> transition) {
+                        if (!url.equals(currentImageUrl)) return;
+                        imageProgress.setVisibility(View.GONE);
+                        fullImage.setImageBitmap(resource);
+                    }
+
+                    @Override
+                    public void onLoadCleared(android.graphics.drawable.Drawable placeholder) {
+                    }
+
+                    @Override
+                    public void onLoadFailed(android.graphics.drawable.Drawable errorDrawable) {
+                        imageProgress.setVisibility(View.GONE);
+                        Toast.makeText(MainActivity.this, "Could not load full image", Toast.LENGTH_SHORT).show();
+                    }
+                });
     }
 
     private void closeViewer() {
@@ -599,18 +619,6 @@ public class MainActivity extends Activity {
     }
 
     private class ImageAdapter extends BaseAdapter {
-        private final LruCache<String, Bitmap> cache;
-
-        ImageAdapter() {
-            int maxKb = (int) (Runtime.getRuntime().maxMemory() / 1024);
-            cache = new LruCache<String, Bitmap>(maxKb / 8) {
-                @Override
-                protected int sizeOf(String key, Bitmap value) {
-                    return value.getByteCount() / 1024;
-                }
-            };
-        }
-
         @Override
         public int getCount() {
             return imageUrls.size();
@@ -641,21 +649,12 @@ public class MainActivity extends Activity {
 
             String url = imageUrls.get(position);
             iv.setTag(url);
-            Bitmap cached = cache.get(url);
-            if (cached != null) {
-                iv.setImageBitmap(cached);
-            } else {
-                iv.setImageDrawable(null);
-                imagePool.submit(() -> {
-                    Bitmap b = loadBitmap(url);
-                    if (b != null) {
-                        cache.put(url, b);
-                        main.post(() -> {
-                            if (url.equals(iv.getTag())) iv.setImageBitmap(b);
-                        });
-                    }
-                });
-            }
+            Glide.with(MainActivity.this)
+                    .load(url)
+                    .diskCacheStrategy(DiskCacheStrategy.AUTOMATIC)
+                    .thumbnail(0.2f)
+                    .centerCrop()
+                    .into(iv);
             return iv;
         }
     }
