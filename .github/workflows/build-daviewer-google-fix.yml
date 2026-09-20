@@ -416,6 +416,7 @@ jobs:
 
           import 'package:cached_network_image/cached_network_image.dart';
           import 'package:dakit_flutter/dakit_flutter.dart';
+          import 'package:dio/dio.dart';
           import 'package:flutter/material.dart';
           import 'package:flutter_riverpod/flutter_riverpod.dart';
           import 'package:flutter_inappwebview/flutter_inappwebview.dart';
@@ -426,6 +427,7 @@ jobs:
             pixiv('Pixiv', 'https://www.pixiv.net/en/'),
             newgrounds('Newgrounds', 'https://www.newgrounds.com/art'),
             bluesky('Bluesky', 'https://bsky.app/'),
+            mastodon('Mastodon', 'https://mastodon.social/'),
             tumblr('Tumblr', 'https://www.tumblr.com/'),
             artStation('ArtStation', 'https://www.artstation.com/'),
             behance('Behance', 'https://www.behance.net/');
@@ -463,6 +465,13 @@ jobs:
                   return Uri.parse(
                     'https://bsky.app/search?q=${Uri.encodeQueryComponent(query)}',
                   );
+                case ArtSource.mastodon:
+                  final tag = query
+                      .replaceFirst(RegExp(r'^#'), '')
+                      .replaceAll(RegExp(r'[^A-Za-z0-9_]+'), '');
+                  return Uri.parse(
+                    'https://mastodon.social/tags/${Uri.encodeComponent(tag.isEmpty ? 'transart' : tag)}',
+                  );
               }
             }
 
@@ -484,6 +493,7 @@ jobs:
                   return const <String, String>{
                     'Referer': 'https://bsky.app/',
                   };
+                case ArtSource.mastodon:
                 case ArtSource.tumblr:
                 case ArtSource.behance:
                   return null;
@@ -504,6 +514,8 @@ jobs:
                   return 'Newgrounds M/A art follows your account content-rating settings.';
                 case ArtSource.bluesky:
                   return 'Adult media follows your Bluesky moderation and adult-content settings.';
+                case ArtSource.mastodon:
+                  return 'Mastodon uses public hashtag media; sensitive posts stay subject to the instance and account rules.';
               }
             }
           }
@@ -517,6 +529,10 @@ jobs:
             'trans bulge art',
             'nonbinary art',
             'genderfluid art',
+            '#transart',
+            '#transfem',
+            '#transmasc',
+            '#nonbinaryart',
           ];
 
           final class ArtSourcesScreen extends ConsumerStatefulWidget {
@@ -541,6 +557,14 @@ jobs:
             bool _loadingMore = false;
             double _pageProgress = 0;
             String? _status;
+            String? _mastodonMaxId;
+            final Dio _mastodonDio = Dio(
+              BaseOptions(
+                baseUrl: 'https://mastodon.social',
+                connectTimeout: const Duration(seconds: 12),
+                receiveTimeout: const Duration(seconds: 20),
+              ),
+            );
 
             @override
             void initState() {
@@ -570,6 +594,7 @@ jobs:
               setState(() {
                 _source = source;
                 _status = null;
+                _mastodonMaxId = null;
               });
               await _search(reset: true);
             }
@@ -596,6 +621,11 @@ jobs:
                 });
               }
 
+              if (_source == ArtSource.mastodon) {
+                await _searchMastodon(query, reset: reset);
+                return;
+              }
+
               final controller = _collector;
               if (controller == null) return;
               await controller.loadUrl(
@@ -603,6 +633,89 @@ jobs:
                   url: WebUri(_source.searchUri(query).toString()),
                 ),
               );
+            }
+
+            String _mastodonTagFor(String raw) {
+              final query = raw.trim().toLowerCase().replaceFirst('#', '');
+              const aliases = <String, String>{
+                'transgender art': 'transart',
+                'trans woman art': 'transfemart',
+                'trans femme art': 'transfemart',
+                'trans man art': 'transmascart',
+                'transmasc art': 'transmascart',
+                'trans bulge art': 'transart',
+                'nonbinary art': 'nonbinaryart',
+                'genderfluid art': 'genderfluidart',
+              };
+              final alias = aliases[query];
+              if (alias != null) return alias;
+              final compact = query.replaceAll(RegExp(r'[^a-z0-9_]+'), '');
+              return compact.isEmpty ? 'transart' : compact;
+            }
+
+            Future<void> _searchMastodon(
+              String rawQuery, {
+              required bool reset,
+            }) async {
+              final tag = _mastodonTagFor(rawQuery);
+              if (reset) _mastodonMaxId = null;
+
+              setState(() {
+                _loadingPage = true;
+                _status = 'Loading #$tag from Mastodon…';
+              });
+
+              try {
+                final response = await _mastodonDio.get<List<dynamic>>(
+                  '/api/v1/timelines/tag/${Uri.encodeComponent(tag)}',
+                  queryParameters: <String, dynamic>{
+                    'only_media': true,
+                    'limit': 40,
+                    if (_mastodonMaxId != null) 'max_id': _mastodonMaxId,
+                  },
+                );
+
+                final data = response.data ?? const <dynamic>[];
+                final fresh = <String>[];
+                String? lastId;
+
+                for (final item in data) {
+                  if (item is! Map) continue;
+                  final map = Map<String, dynamic>.from(item);
+                  final id = map['id']?.toString();
+                  if (id != null && id.isNotEmpty) lastId = id;
+
+                  final attachments = map['media_attachments'];
+                  if (attachments is! List) continue;
+                  for (final attachment in attachments) {
+                    if (attachment is! Map) continue;
+                    final media = Map<String, dynamic>.from(attachment);
+                    final type = media['type']?.toString();
+                    if (type != 'image' && type != 'gifv') continue;
+                    final url = (media['url'] ?? media['preview_url'])?.toString();
+                    if (url == null || url.isEmpty) continue;
+                    if (_seen.add(url)) fresh.add(url);
+                  }
+                }
+
+                if (!mounted) return;
+                setState(() {
+                  _mastodonMaxId = lastId;
+                  _images.addAll(fresh);
+                  _loadingPage = false;
+                  _status = _images.isEmpty
+                      ? 'No media found for #$tag'
+                      : '${_images.length} images · #$tag';
+                });
+              } on DioException catch (error) {
+                if (!mounted) return;
+                setState(() {
+                  _loadingPage = false;
+                  _status = error.response?.statusCode == 401
+                      ? 'This Mastodon instance requires sign-in for public timelines.'
+                      : 'Mastodon request failed. Try another tag.';
+                });
+              }
             }
 
             Future<void> _extractImages() async {
@@ -706,8 +819,22 @@ jobs:
             }
 
             Future<void> _loadMore() async {
+              if (_loadingMore) return;
+              if (_source == ArtSource.mastodon) {
+                setState(() => _loadingMore = true);
+                try {
+                  await _searchMastodon(
+                    _searchController.text,
+                    reset: false,
+                  );
+                } finally {
+                  if (mounted) setState(() => _loadingMore = false);
+                }
+                return;
+              }
+
               final controller = _collector;
-              if (controller == null || _loadingMore) return;
+              if (controller == null) return;
               setState(() => _loadingMore = true);
               try {
                 await controller.evaluateJavascript(
