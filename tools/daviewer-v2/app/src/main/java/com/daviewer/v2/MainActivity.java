@@ -1,19 +1,16 @@
 package com.daviewer.v2;
 
 import android.app.Activity;
-import android.app.AlertDialog;
 import android.app.DownloadManager;
 import android.content.Context;
-import android.content.Intent;
 import android.graphics.Color;
 import android.net.Uri;
 import android.os.Bundle;
 import android.os.Environment;
-import android.view.Gravity;
 import android.view.View;
 import android.view.ViewGroup;
 import android.webkit.CookieManager;
-import android.webkit.DownloadListener;
+import android.webkit.JavascriptInterface;
 import android.webkit.URLUtil;
 import android.webkit.WebChromeClient;
 import android.webkit.WebResourceRequest;
@@ -21,7 +18,6 @@ import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
 import android.widget.Button;
-import android.widget.EditText;
 import android.widget.HorizontalScrollView;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
@@ -32,9 +28,12 @@ import java.util.Map;
 
 public class MainActivity extends Activity {
     private WebView webView;
-    private EditText address;
     private ProgressBar progress;
+    private Button downloadButton;
+    private Button galleryButton;
     private final Map<String, String> sources = new LinkedHashMap<>();
+    private String currentImageUrl = null;
+    private String galleryUrl = null;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
@@ -50,60 +49,26 @@ public class MainActivity extends Activity {
 
         LinearLayout root = new LinearLayout(this);
         root.setOrientation(LinearLayout.VERTICAL);
-        root.setBackgroundColor(Color.rgb(18, 18, 18));
+        root.setBackgroundColor(Color.BLACK);
 
         HorizontalScrollView sourceScroll = new HorizontalScrollView(this);
         sourceScroll.setHorizontalScrollBarEnabled(false);
+        sourceScroll.setBackgroundColor(Color.rgb(18, 18, 18));
+
         LinearLayout sourceBar = new LinearLayout(this);
         sourceBar.setOrientation(LinearLayout.HORIZONTAL);
         sourceBar.setPadding(6, 6, 6, 6);
+
         for (Map.Entry<String, String> entry : sources.entrySet()) {
-            Button b = compactButton(entry.getKey());
-            b.setOnClickListener(v -> load(entry.getValue()));
+            Button b = button(entry.getKey());
+            b.setOnClickListener(v -> openGallery(entry.getValue()));
             sourceBar.addView(b);
         }
-        Button mature = compactButton("18+");
-        mature.setOnClickListener(v -> showMatureInfo());
-        sourceBar.addView(mature);
+
         sourceScroll.addView(sourceBar);
         root.addView(sourceScroll, new LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT));
-
-        LinearLayout nav = new LinearLayout(this);
-        nav.setOrientation(LinearLayout.HORIZONTAL);
-        nav.setGravity(Gravity.CENTER_VERTICAL);
-        nav.setPadding(6, 2, 6, 4);
-
-        Button back = compactButton("‹");
-        back.setOnClickListener(v -> { if (webView.canGoBack()) webView.goBack(); });
-        nav.addView(back);
-
-        Button forward = compactButton("›");
-        forward.setOnClickListener(v -> { if (webView.canGoForward()) webView.goForward(); });
-        nav.addView(forward);
-
-        Button reload = compactButton("↻");
-        reload.setOnClickListener(v -> webView.reload());
-        nav.addView(reload);
-
-        Button home = compactButton("⌂");
-        home.setOnClickListener(v -> load(sources.get("DeviantArt")));
-        nav.addView(home);
-
-        address = new EditText(this);
-        address.setSingleLine(true);
-        address.setTextColor(Color.WHITE);
-        address.setHintTextColor(Color.GRAY);
-        address.setHint("URL or search");
-        address.setBackgroundColor(Color.rgb(40, 40, 40));
-        LinearLayout.LayoutParams addressLp = new LinearLayout.LayoutParams(0, 48, 1f);
-        addressLp.setMargins(6, 0, 6, 0);
-        nav.addView(address, addressLp);
-
-        Button go = compactButton("GO");
-        go.setOnClickListener(v -> navigateAddress());
-        nav.addView(go);
-        root.addView(nav);
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT));
 
         progress = new ProgressBar(this, null, android.R.attr.progressBarStyleHorizontal);
         progress.setMax(100);
@@ -111,22 +76,46 @@ public class MainActivity extends Activity {
                 ViewGroup.LayoutParams.MATCH_PARENT, 4));
 
         webView = new WebView(this);
+        webView.setBackgroundColor(Color.BLACK);
         root.addView(webView, new LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f));
+
+        LinearLayout bottomBar = new LinearLayout(this);
+        bottomBar.setOrientation(LinearLayout.HORIZONTAL);
+        bottomBar.setPadding(8, 6, 8, 8);
+        bottomBar.setBackgroundColor(Color.rgb(18, 18, 18));
+
+        galleryButton = button("‹ Gallery");
+        galleryButton.setEnabled(false);
+        galleryButton.setOnClickListener(v -> returnToGallery());
+        bottomBar.addView(galleryButton, new LinearLayout.LayoutParams(0, 56, 1f));
+
+        downloadButton = button("⬇ Download");
+        downloadButton.setEnabled(false);
+        downloadButton.setOnClickListener(v -> {
+            if (currentImageUrl != null) {
+                download(currentImageUrl);
+            } else {
+                Toast.makeText(this, "Tap an image first", Toast.LENGTH_SHORT).show();
+            }
+        });
+        bottomBar.addView(downloadButton, new LinearLayout.LayoutParams(0, 56, 1f));
+
+        root.addView(bottomBar);
         setContentView(root);
 
         configureWebView();
 
         String last = getPreferences(MODE_PRIVATE)
-                .getString("last_url", sources.get("DeviantArt"));
-        load(last);
+                .getString("last_gallery", sources.get("DeviantArt"));
+        openGallery(last);
     }
 
-    private Button compactButton(String text) {
+    private Button button(String text) {
         Button b = new Button(this);
         b.setText(text);
         b.setAllCaps(false);
-        b.setTextSize(13f);
+        b.setTextSize(14f);
         b.setMinWidth(0);
         b.setMinimumWidth(0);
         b.setPadding(18, 4, 18, 4);
@@ -143,13 +132,21 @@ public class MainActivity extends Activity {
         s.setBuiltInZoomControls(true);
         s.setDisplayZoomControls(false);
         s.setSupportZoom(true);
-        s.setJavaScriptCanOpenWindowsAutomatically(true);
-        s.setSupportMultipleWindows(false);
+        s.setUseWideViewPort(true);
+        s.setLoadWithOverviewMode(true);
         s.setMediaPlaybackRequiresUserGesture(true);
 
         CookieManager cookies = CookieManager.getInstance();
         cookies.setAcceptCookie(true);
         cookies.setAcceptThirdPartyCookies(webView, true);
+
+        webView.addJavascriptInterface(new Object() {
+            @JavascriptInterface
+            public void openImage(String url) {
+                if (url == null || !(url.startsWith("https://") || url.startsWith("http://"))) return;
+                runOnUiThread(() -> showImage(url));
+            }
+        }, "DaViewer");
 
         webView.setWebChromeClient(new WebChromeClient() {
             @Override
@@ -164,35 +161,30 @@ public class MainActivity extends Activity {
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
                 Uri uri = request.getUrl();
                 String scheme = uri.getScheme();
-                if ("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme)) {
-                    return false;
-                }
-                try {
-                    startActivity(new Intent(Intent.ACTION_VIEW, uri));
-                } catch (Exception e) {
-                    Toast.makeText(MainActivity.this, "Cannot open this link", Toast.LENGTH_SHORT).show();
-                }
-                return true;
+                return !("http".equalsIgnoreCase(scheme) || "https".equalsIgnoreCase(scheme));
             }
 
             @Override
             public void onPageFinished(WebView view, String url) {
-                address.setText(url);
-                getPreferences(MODE_PRIVATE).edit().putString("last_url", url).apply();
                 CookieManager.getInstance().flush();
+                if (currentImageUrl == null) {
+                    galleryUrl = url;
+                    getPreferences(MODE_PRIVATE).edit().putString("last_gallery", url).apply();
+                    injectImageTapHandler();
+                }
             }
         });
 
         webView.setDownloadListener((url, userAgent, contentDisposition, mimetype, contentLength) ->
-                download(url, userAgent, contentDisposition, mimetype));
+                download(url));
 
         webView.setOnLongClickListener(v -> {
             WebView.HitTestResult hit = webView.getHitTestResult();
             if (hit != null && (hit.getType() == WebView.HitTestResult.IMAGE_TYPE
                     || hit.getType() == WebView.HitTestResult.SRC_IMAGE_ANCHOR_TYPE)) {
-                String imageUrl = hit.getExtra();
-                if (imageUrl != null && imageUrl.startsWith("http")) {
-                    download(imageUrl, webView.getSettings().getUserAgentString(), null, "image/*");
+                String url = hit.getExtra();
+                if (url != null && url.startsWith("http")) {
+                    showImage(url);
                     return true;
                 }
             }
@@ -200,55 +192,102 @@ public class MainActivity extends Activity {
         });
     }
 
-    private void navigateAddress() {
-        String value = address.getText().toString().trim();
-        if (value.isEmpty()) return;
-        if (value.startsWith("http://") || value.startsWith("https://")) {
-            load(value);
-        } else if (value.contains(".") && !value.contains(" ")) {
-            load("https://" + value);
-        } else {
-            load("https://www.deviantart.com/search?q=" + Uri.encode(value));
-        }
+    private void injectImageTapHandler() {
+        String js =
+                "(function(){" +
+                "if(window.__daviewerInstalled)return;" +
+                "window.__daviewerInstalled=true;" +
+                "document.addEventListener('click',function(e){" +
+                "var img=e.target.closest?e.target.closest('img'):null;" +
+                "if(!img)return;" +
+                "var u=img.currentSrc||img.src;" +
+                "if(!u||u.indexOf('http')!==0)return;" +
+                "e.preventDefault();e.stopPropagation();" +
+                "DaViewer.openImage(u);" +
+                "},true);" +
+                "})();";
+        webView.evaluateJavascript(js, null);
     }
 
-    private void load(String url) {
-        if (url == null || url.isEmpty()) return;
+    private void openGallery(String url) {
+        currentImageUrl = null;
+        galleryUrl = url;
+        galleryButton.setEnabled(false);
+        downloadButton.setEnabled(false);
+        webView.getSettings().setLoadWithOverviewMode(false);
         webView.loadUrl(url);
     }
 
-    private void showMatureInfo() {
-        new AlertDialog.Builder(this)
-                .setTitle("Mature / Sensitive content")
-                .setMessage("DaViewer does not bypass age gates, subscriptions, private posts, or permissions. Sign in to each source and enable Mature/Sensitive content in that site's own settings. DaViewer keeps the login cookies so your allowed content remains visible.")
-                .setPositiveButton("OK", null)
-                .show();
+    private void showImage(String imageUrl) {
+        if (currentImageUrl == null && webView.getUrl() != null) {
+            galleryUrl = webView.getUrl();
+        }
+        currentImageUrl = imageUrl;
+        galleryButton.setEnabled(true);
+        downloadButton.setEnabled(true);
+        webView.getSettings().setLoadWithOverviewMode(true);
+
+        String escaped = imageUrl
+                .replace("&", "&amp;")
+                .replace(""", "&quot;")
+                .replace("<", "&lt;")
+                .replace(">", "&gt;");
+
+        String html =
+                "<!doctype html><html><head>" +
+                "<meta name='viewport' content='width=device-width,initial-scale=1,maximum-scale=5,user-scalable=yes'>" +
+                "<style>html,body{margin:0;background:#000;width:100%;height:100%;display:flex;align-items:center;justify-content:center;overflow:auto}" +
+                "img{max-width:100%;height:auto;display:block;margin:auto}</style></head>" +
+                "<body><img src=\"" + escaped + "\"></body></html>";
+
+        String base = galleryUrl != null ? galleryUrl : imageUrl;
+        webView.loadDataWithBaseURL(base, html, "text/html", "UTF-8", null);
     }
 
-    private void download(String url, String userAgent, String contentDisposition, String mimeType) {
+    private void returnToGallery() {
+        currentImageUrl = null;
+        galleryButton.setEnabled(false);
+        downloadButton.setEnabled(false);
+        webView.getSettings().setLoadWithOverviewMode(false);
+
+        if (webView.canGoBack()) {
+            webView.goBack();
+        } else if (galleryUrl != null) {
+            webView.loadUrl(galleryUrl);
+        }
+    }
+
+    private void download(String url) {
         if (url == null || !(url.startsWith("http://") || url.startsWith("https://"))) {
-            Toast.makeText(this, "This item cannot be downloaded directly", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "No downloadable image selected", Toast.LENGTH_SHORT).show();
             return;
         }
+
         try {
-            String fileName = URLUtil.guessFileName(url, contentDisposition, mimeType);
+            String fileName = URLUtil.guessFileName(url, null, "image/*");
             DownloadManager.Request request = new DownloadManager.Request(Uri.parse(url));
             request.setTitle(fileName);
-            request.setDescription("Downloading with DaViewer");
-            request.setNotificationVisibility(DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
+            request.setDescription("DaViewer image");
+            request.setNotificationVisibility(
+                    DownloadManager.Request.VISIBILITY_VISIBLE_NOTIFY_COMPLETED);
             request.setAllowedOverMetered(true);
             request.setAllowedOverRoaming(true);
-            if (mimeType != null) request.setMimeType(mimeType);
-            if (userAgent != null) request.addRequestHeader("User-Agent", userAgent);
+            request.addRequestHeader("User-Agent", webView.getSettings().getUserAgentString());
+
             String cookie = CookieManager.getInstance().getCookie(url);
             if (cookie != null) request.addRequestHeader("Cookie", cookie);
-            request.setDestinationInExternalPublicDir(Environment.DIRECTORY_DOWNLOADS, "DaViewer/" + fileName);
+            if (galleryUrl != null) request.addRequestHeader("Referer", galleryUrl);
 
-            DownloadManager dm = (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
+            request.setDestinationInExternalPublicDir(
+                    Environment.DIRECTORY_DOWNLOADS,
+                    "DaViewer/" + fileName);
+
+            DownloadManager dm =
+                    (DownloadManager) getSystemService(Context.DOWNLOAD_SERVICE);
             dm.enqueue(request);
-            Toast.makeText(this, "Download started", Toast.LENGTH_SHORT).show();
+            Toast.makeText(this, "Saved to Downloads/DaViewer", Toast.LENGTH_SHORT).show();
         } catch (Exception e) {
-            Toast.makeText(this, "Download failed: " + e.getMessage(), Toast.LENGTH_LONG).show();
+            Toast.makeText(this, "Download failed", Toast.LENGTH_LONG).show();
         }
     }
 
@@ -273,7 +312,9 @@ public class MainActivity extends Activity {
 
     @Override
     public void onBackPressed() {
-        if (webView != null && webView.canGoBack()) {
+        if (currentImageUrl != null) {
+            returnToGallery();
+        } else if (webView.canGoBack()) {
             webView.goBack();
         } else {
             super.onBackPressed();
