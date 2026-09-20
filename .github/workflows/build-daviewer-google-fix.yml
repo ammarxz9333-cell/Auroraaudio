@@ -205,13 +205,14 @@ jobs:
           # Do not leave the login screen merely because the website cookie is
           # signed in. The app identity is OAuth; closing early leaves Home showing
           # "Sign in" even though the embedded website is already logged in.
-          premature_close = """      if (isLoggedIn && mounted) {
-                WidgetsBinding.instance.addPostFrameCallback((_) => _closeScreen());
-              } else {
-                _maybeClose();
-              }
-          """
-          coordinated_close = """      if (isLoggedIn && mounted) {
+          import re
+          if "final auth = ref.read(authControllerProvider);" not in s:
+              pattern = re.compile(
+                  r"(?ms)^\s*if \(isLoggedIn && mounted\) \{\s*"
+                  r"WidgetsBinding\.instance\.addPostFrameCallback\(\(_\) => _closeScreen\(\)\);\s*"
+                  r"\} else \{\s*_maybeClose\(\);\s*\}"
+              )
+              coordinated_close = """      if (isLoggedIn && mounted) {
                 final auth = ref.read(authControllerProvider);
                 if (auth.oauthSignedIn) {
                   _closeAfterReport = true;
@@ -219,12 +220,10 @@ jobs:
                 _maybeClose();
               } else {
                 _maybeClose();
-              }
-          """
-          if premature_close in s:
-              s = s.replace(premature_close, coordinated_close, 1)
-          elif "if (auth.oauthSignedIn)" not in s:
-              raise SystemExit("coordinated login patch point not found")
+              }"""
+              s, count = pattern.subn(coordinated_close, s, count=1)
+              if count != 1:
+                  raise SystemExit("coordinated login regex patch point not found")
 
           p.write_text(s)
 
