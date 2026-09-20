@@ -34,7 +34,6 @@ jobs:
           cat > /tmp/oncreate.txt <<'EOF'
                     onCreateWindow: (controller, createWindowAction) async {
                       final windowId = createWindowAction.windowId;
-                      if (windowId == null) return false;
                       if (mounted) {
                         setState(() => _popupWindowId = windowId);
                       }
