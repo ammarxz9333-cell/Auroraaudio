@@ -31,55 +31,8 @@ jobs:
       - name: Patch embedded Google OAuth popup handling
         shell: bash
         run: |
-          python3 - <<'PY'
-          from pathlib import Path
-
-          p = Path("daviewer/lib/features/web_login/web_login_screen.dart")
-          s = p.read_text()
-
-          # Track the native popup window created by Google/other providers.
-          field_needle = "  InAppWebViewController? _controller;\n"
-          field_repl = (
-              "  InAppWebViewController? _controller;\n"
-              "  int? _popupWindowId;\n"
-          )
-          if "int? _popupWindowId;" not in s:
-              if field_needle not in s:
-                  raise SystemExit("controller field patch point not found")
-              s = s.replace(field_needle, field_repl, 1)
-
-          # Allow target=_blank/window.open provider flows and third-party cookies.
-          settings_needle = (
-              "                    initialSettings: InAppWebViewSettings(\n"
-              "                      javaScriptEnabled: true,\n"
-          )
-          settings_repl = (
-              "                    initialSettings: InAppWebViewSettings(\n"
-              "                      javaScriptEnabled: true,\n"
-              "                      supportMultipleWindows: true,\n"
-              "                      javaScriptCanOpenWindowsAutomatically: true,\n"
-              "                      thirdPartyCookiesEnabled: true,\n"
-          )
-          if "supportMultipleWindows: true," not in s:
-              if settings_needle not in s:
-                  raise SystemExit("main settings patch point not found")
-              s = s.replace(settings_needle, settings_repl, 1)
-
-          # Handle the popup with a real child WebView using the native windowId.
-          created_needle = """                    onWebViewCreated: (controller) {
-                      _controller = controller;
-                      final pending = _pendingAuthUri;
-                      if (pending != null) {
-                        _pendingAuthUri = null;
-                        controller.loadUrl(
-                          urlRequest: URLRequest(
-                            url: WebUri(pending.toString()),
-                          ),
-                        );
-                      }
-                    },
-"""
-          created_repl = created_needle + """                    onCreateWindow: (controller, createWindowAction) async {
+          cat > /tmp/oncreate.txt <<'EOF'
+                    onCreateWindow: (controller, createWindowAction) async {
                       final windowId = createWindowAction.windowId;
                       if (windowId == null) return false;
                       if (mounted) {
@@ -87,16 +40,9 @@ jobs:
                       }
                       return true;
                     },
-"""
-          if "onCreateWindow: (controller, createWindowAction)" not in s:
-              if created_needle not in s:
-                  raise SystemExit("onWebViewCreated patch point not found")
-              s = s.replace(created_needle, created_repl, 1)
-
-          # Add a full-screen popup WebView. It shares the Android WebView cookie
-          # store with the parent, preserving DeviantArt's userinfo/CSRF session.
-          overlay_needle = "          if (_closeAfterReport) _LoginSuccessOverlay(s: s),\n"
-          overlay_repl = """          if (_popupWindowId != null)
+          EOF
+          cat > /tmp/popup.txt <<'EOF'
+          if (_popupWindowId != null)
             Positioned.fill(
               child: Material(
                 color: theme.scaffoldBackgroundColor,
@@ -159,7 +105,6 @@ jobs:
                           color: theme.colorScheme.surface.withValues(alpha: 0.9),
                           shape: const CircleBorder(),
                           child: IconButton(
-                            tooltip: s.close,
                             icon: const Icon(Icons.close),
                             onPressed: () {
                               if (mounted) {
@@ -174,12 +119,37 @@ jobs:
                 ),
               ),
             ),
-          if (_closeAfterReport) _LoginSuccessOverlay(s: s),
-"""
+          EOF
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path("daviewer/lib/features/web_login/web_login_screen.dart")
+          s = p.read_text()
+
+          if "int? _popupWindowId;" not in s:
+              anchor = "  InAppWebViewController? _controller;\n"
+              if anchor not in s:
+                  raise SystemExit("controller field patch point not found")
+              s = s.replace(anchor, anchor + "  int? _popupWindowId;\n", 1)
+
+          if "supportMultipleWindows: true," not in s:
+              anchor = "                    initialSettings: InAppWebViewSettings(\n                      javaScriptEnabled: true,\n"
+              repl = anchor + "                      supportMultipleWindows: true,\n                      javaScriptCanOpenWindowsAutomatically: true,\n                      thirdPartyCookiesEnabled: true,\n"
+              if anchor not in s:
+                  raise SystemExit("main settings patch point not found")
+              s = s.replace(anchor, repl, 1)
+
+          if "onCreateWindow: (controller, createWindowAction)" not in s:
+              anchor = "                    shouldOverrideUrlLoading:\n"
+              if anchor not in s:
+                  raise SystemExit("navigation patch point not found")
+              s = s.replace(anchor, Path("/tmp/oncreate.txt").read_text() + anchor, 1)
+
           if "windowId: _popupWindowId," not in s:
-              if overlay_needle not in s:
+              anchor = "          if (_closeAfterReport) _LoginSuccessOverlay(s: s),\n"
+              if anchor not in s:
                   raise SystemExit("overlay patch point not found")
-              s = s.replace(overlay_needle, overlay_repl, 1)
+              s = s.replace(anchor, Path("/tmp/popup.txt").read_text() + anchor, 1)
 
           p.write_text(s)
           print("Patched", p)
