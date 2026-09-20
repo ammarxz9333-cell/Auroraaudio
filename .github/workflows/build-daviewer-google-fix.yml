@@ -730,22 +730,17 @@ jobs:
 
           home = Path("daviewer/lib/features/home/home_screen.dart")
           hs = home.read_text()
-          settings_anchor = """            IconButton(
-                    tooltip: s.settings,
-                    onPressed: () => context.push('/settings'),
-                    icon: const Icon(Icons.settings_outlined),
-                  ),
-          """
+          settings_anchor = "            IconButton(\n              tooltip: s.settings,\n"
           source_button = """            IconButton(
-                    tooltip: 'Art Sources',
-                    onPressed: () => context.push('/sources'),
-                    icon: const Icon(Icons.collections_outlined),
-                  ),
-          """ + settings_anchor
+              tooltip: 'Art Sources',
+              onPressed: () => context.push('/sources'),
+              icon: const Icon(Icons.collections_outlined),
+            ),
+          """
           if "tooltip: 'Art Sources'" not in hs:
               if settings_anchor not in hs:
                   raise SystemExit("home sources button patch point not found")
-              hs = hs.replace(settings_anchor, source_button, 1)
+              hs = hs.replace(settings_anchor, source_button + settings_anchor, 1)
 
           home.write_text(hs)
           print("Added Art Sources route, UI and Home entry point")
