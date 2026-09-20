@@ -154,27 +154,15 @@ jobs:
 
           router = Path("daviewer/lib/app/router.dart")
           rs = router.read_text()
-          old = """bool isSignedOutRoute(String location) =>
-    location == '/' ||
-    location == '/watch' ||
-    location == '/web-login' ||
-    location == '/settings' ||
-    location.startsWith('/settings/');
-"""
-          new = """bool isSignedOutRoute(String location) =>
-    location == '/' ||
-    location == '/watch' ||
-    location == '/search' ||
-    location == '/downloads' ||
-    location == '/web-login' ||
-    location == '/settings' ||
-    location.startsWith('/settings/') ||
-    location.startsWith('/artwork/') ||
-    location.startsWith('/tag/');
-"""
-          if old not in rs:
-              raise SystemExit("router signed-out route patch point not found")
-          router.write_text(rs.replace(old, new, 1))
+          anchor = "    location == '/watch' ||\\n"
+          if anchor not in rs:
+              raise SystemExit("router search patch point not found")
+          rs = rs.replace(anchor, anchor + "    location == '/search' ||\\n    location == '/downloads' ||\\n", 1)
+          tail = "    location.startsWith('/settings/');"
+          if tail not in rs:
+              raise SystemExit("router tail patch point not found")
+          rs = rs.replace(tail, "    location.startsWith('/settings/') ||\\n    location.startsWith('/artwork/') ||\\n    location.startsWith('/tag/');", 1)
+          router.write_text(rs)
           print("Patched", p, "and", router)
           PY
 
