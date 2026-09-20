@@ -163,7 +163,73 @@ jobs:
               raise SystemExit("router tail patch point not found")
           rs = rs.replace(tail, "    location.startsWith('/settings/') ||\n    location.startsWith('/artwork/') ||\n    location.startsWith('/tag/');", 1)
           router.write_text(rs)
-          print("Patched", p, "and", router)
+
+          detail = Path("daviewer/lib/features/artwork/artwork_detail_screen.dart")
+          ds = detail.read_text()
+          image_anchor = """              onDownloadImage: (asset, page) =>
+                  unawaited(_confirmAndDownloadImage(asset, page)),
+            ),
+            const SizedBox(height: 16),
+"""
+          image_replacement = """              onDownloadImage: (asset, page) =>
+                  unawaited(_confirmAndDownloadImage(asset, page)),
+            ),
+            const SizedBox(height: 10),
+            originalResolution.when(
+              loading: () => SizedBox(
+                width: double.infinity,
+                child: FilledButton.icon(
+                  onPressed: null,
+                  icon: const SizedBox.square(
+                    dimension: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+                  label: Text(s.checkingDownloadAvailability),
+                ),
+              ),
+              error: (error, stackTrace) => const SizedBox.shrink(),
+              data: (resolution) {
+                final quickPlan = planDownload(
+                  original: resolution.asset,
+                  media: media,
+                );
+                if (!quickPlan.canDownload) {
+                  return const SizedBox.shrink();
+                }
+                return SizedBox(
+                  width: double.infinity,
+                  child: FilledButton.icon(
+                    onPressed: _downloading
+                        ? null
+                        : () => unawaited(
+                            _download(
+                              quickPlan.downloadable,
+                              pages: additionalOriginals,
+                            ),
+                          ),
+                    icon: _downloading
+                        ? const SizedBox.square(
+                            dimension: 18,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                        : const Icon(Icons.download_outlined),
+                    label: Text(
+                      _downloading
+                          ? s.downloading
+                          : quickPlan.usingFallback
+                          ? s.downloadImage
+                          : s.downloadOriginal,
+                    ),
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 16),
+"""
+          if image_anchor not in ds:
+              raise SystemExit("quick download button patch point not found")
+          detail.write_text(ds.replace(image_anchor, image_replacement, 1))
+          print("Patched", p, router, "and", detail)
           PY
 
       - name: Install dependencies
@@ -203,15 +269,15 @@ jobs:
         shell: bash
         run: |
           cd daviewer
-          dart format lib/features/web_login/web_login_screen.dart lib/app/router.dart
-          flutter analyze lib/features/web_login/web_login_screen.dart lib/app/router.dart
+          dart format lib/features/web_login/web_login_screen.dart lib/app/router.dart lib/features/artwork/artwork_detail_screen.dart
+          flutter analyze lib/features/web_login/web_login_screen.dart lib/app/router.dart lib/features/artwork/artwork_detail_screen.dart
           flutter build apk --debug
-          cp build/app/outputs/flutter-apk/app-debug.apk ../DAViewer-popup-oauth-search-fix.apk
+          cp build/app/outputs/flutter-apk/app-debug.apk ../DAViewer-quick-download.apk
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-popup-oauth-search-fix
-          path: DAViewer-popup-oauth-search-fix.apk
+          name: DAViewer-quick-download
+          path: DAViewer-quick-download.apk
           retention-days: 7
           if-no-files-found: error
