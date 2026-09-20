@@ -1,0 +1,13 @@
+<resources>
+    <style name="Theme.DaViewer" parent="Theme.MaterialComponents.DayNight.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:statusBarColor">#0B0B0E</item>
+        <item name="android:navigationBarColor">#0B0B0E</item>
+        <item name="android:windowBackground">#0B0B0E</item>
+        <item name="colorPrimary">#8B7CFF</item>
+        <item name="colorPrimaryVariant">#6F63D8</item>
+        <item name="colorSecondary">#A99FFF</item>
+        <item name="android:colorAccent">#8B7CFF</item>
+    </style>
+</resources>
