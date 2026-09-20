@@ -40,29 +40,28 @@ jobs:
           if "import 'dart:io';" not in s:
               s = s.replace("import 'dart:async';\n", "import 'dart:async';\nimport 'dart:io';\n", 1)
 
-          needle = """  @override
-  Future<void> launch(Uri uri) async {
-"""
-          replacement = """  @override
-  Future<void> launch(Uri uri) async {
-    // Google and other identity providers do not reliably allow OAuth in an
-    // embedded Android WebView. Use the system browser on Android so social
-    // sign-in runs in a supported user agent. The existing
-    // dakit://oauth/callback intent filter returns the OAuth result to the app.
-    if (Platform.isAndroid) {
-      debugPrint('[oauth] Android -> system browser (social-login compatible)');
-      await _fallback.launch(uri);
-      return;
-    }
+          needle = "  @override\n  Future<void> launch(Uri uri) async {\n"
+          replacement = (
+              "  @override\n"
+              "  Future<void> launch(Uri uri) async {\n"
+              "    // Google and other identity providers do not reliably allow OAuth in an\n"
+              "    // embedded Android WebView. Use the system browser on Android so social\n"
+              "    // sign-in runs in a supported user agent. The existing\n"
+              "    // dakit://oauth/callback intent filter returns the OAuth result to the app.\n"
+              "    if (Platform.isAndroid) {\n"
+              "      debugPrint('[oauth] Android -> system browser (social-login compatible)');\n"
+              "      await _fallback.launch(uri);\n"
+              "      return;\n"
+              "    }\n\n"
+          )
 
-"""
           if replacement not in s:
               if needle not in s:
                   raise SystemExit("Patch point not found; upstream changed")
               s = s.replace(needle, replacement, 1)
 
           p.write_text(s)
-          print(p.read_text())
+          print("Patched", p)
           PY
 
       - name: Install dependencies
