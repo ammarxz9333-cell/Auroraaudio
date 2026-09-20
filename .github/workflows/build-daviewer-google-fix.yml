@@ -1,4 +1,4 @@
-name: Build DAViewer popup OAuth fix
+name: Build DAViewer quick download fix
 
 on:
   push:
