@@ -60,10 +60,7 @@ old_callbacks = """      callbacks: MergedCallbackUriSource(
 new_callbacks = """      callbacks: Platform.isAndroid
           ? MergedCallbackUriSource(
               initial: androidNativeOAuthCallbackSource!,
-              others: <CallbackUriSource>[
-                appLinksCallbackSource,
-                webViewOAuthBridge.callbacks,
-              ],
+              others: <CallbackUriSource>[webViewOAuthBridge.callbacks],
             )
           : MergedCallbackUriSource(
               initial: appLinksCallbackSource,
