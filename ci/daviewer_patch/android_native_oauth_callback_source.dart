@@ -67,7 +67,7 @@ final class AndroidNativeOAuthCallbackSource
 
   Future<void> dispose() async {
     if (Platform.isAndroid) {
-      await _channel.setMethodCallHandler(null);
+      _channel.setMethodCallHandler(null);
     }
     await _controller.close();
   }
