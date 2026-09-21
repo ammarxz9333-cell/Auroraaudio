@@ -67,6 +67,7 @@ jobs:
           cp ci/daviewer_patch/adult_content_policy.dart DAViewer/lib/core/content/adult_content_policy.dart
           cp ci/daviewer_patch/adult_content_policy_test.dart DAViewer/test/adult_content_policy_test.dart
           python3 ci/daviewer_patch/apply_adult_only_mode.py
+          python3 ci/daviewer_patch/apply_adult_only_test_fixtures.py
 
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
 
@@ -127,6 +128,10 @@ jobs:
               "lib/features/artwork/artwork_store.dart",
               "lib/features/artwork/artwork_detail_providers.dart",
               "test/adult_content_policy_test.dart",
+              "test/artwork_feed_controller_test.dart",
+              "test/artwork_store_test.dart",
+              "test/more_like_this_section_test.dart",
+              "test/tag_screen_test.dart",
           }
           out = subprocess.check_output(["git", "status", "--porcelain"], text=True)
           changed = set()
