@@ -285,6 +285,7 @@ p.write_text(s)
 # unverified thumbnails.
 p = Path("DAViewer/lib/features/artwork/artwork_detail_screen.dart")
 s = p.read_text()
+s = s.replace("import 'collection_sections.dart';\n", "")
 s = s.replace(
     "          FeaturedInCollectionsSection(artworkId: widget.artworkId),\n",
     "",
