@@ -118,6 +118,7 @@ jobs:
               "lib/features/home/home_providers.dart",
               "lib/features/tag/tag_screen.dart",
               "lib/features/artist/artist_providers.dart",
+              "lib/features/favourites/favourites_providers.dart",
               "lib/features/settings/settings_screen.dart",
               "lib/features/artwork/external_adult_similar.dart",
               "test/external_adult_similar_test.dart",
