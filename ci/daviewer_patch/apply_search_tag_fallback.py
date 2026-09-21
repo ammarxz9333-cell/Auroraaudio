@@ -67,6 +67,12 @@ Future<Page<Artwork>> _officialSearchFallback(
   List<String> suggestions;
   try {
     suggestions = await discovery.suggestTags(query);
+    if (suggestions.isEmpty) {
+      final compact = _normalizeTag(query);
+      if (compact.isNotEmpty && compact != query.trim().toLowerCase()) {
+        suggestions = await discovery.suggestTags(compact);
+      }
+    }
   } on Object {
     return page;
   }
