@@ -52,6 +52,8 @@ final_text = p.read_text()
 segment = final_text.split(
     "bool isDefinitiveCredentialFailure", 1
 )[1].split("/// Owns the app", 1)[0]
-if "oauth.refresh.invalid" in segment:
+if "error.code == 'oauth.refresh.invalid'" in segment:
     raise SystemExit("app layer still treats refresh.invalid as definitive")
+if "error.code.contains('invalid_grant')" in segment:
+    raise SystemExit("app layer still treats invalid_grant as definitive")
 print("Auth UI now waits for OAuthSession invalidation confirmation.")
