@@ -43,6 +43,21 @@ jobs:
           cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
           cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("DAKit/packages/dakit_api/test/official_api_client_test.dart")
+          s = p.read_text()
+          old = """    expect(delays, <Duration>[
+                const Duration(seconds: 1),
+                const Duration(seconds: 2),
+              ]);"""
+          new = """    expect(delays, hasLength(2));
+              expect(delays[0].inMilliseconds, closeTo(4000, 100));
+              expect(delays[1].inMilliseconds, closeTo(8000, 100));"""
+          if old not in s:
+              raise SystemExit("adaptive rate-limit expectation changed upstream")
+          p.write_text(s.replace(old, new))
+          PY
           cat > DAViewer/pubspec_overrides.yaml <<'EOF'
           dependency_overrides:
             dakit_api:
