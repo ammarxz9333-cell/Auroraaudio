@@ -163,7 +163,7 @@ jobs:
         run: |
           mkdir -p out
           cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.0-native-google-callback-20260921.apk
-          sha256sum out/DAViewer-v0.4.0-clean-google-ratefix-20260921.apk > out/SHA256SUMS.txt
+          sha256sum out/DAViewer-v0.4.0-native-google-callback-20260921.apk > out/SHA256SUMS.txt
           printf '%s\n' \
             'DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb' \
             'DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3' \
