@@ -1,0 +1,200 @@
+name: Build DAViewer session + rate-limit fix APK
+
+on:
+  push:
+    branches:
+      - fix/daviewer-session-ratelimit-20260921
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout patch carrier
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter 3.47.2
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Fetch pinned DAViewer and DAKit
+        run: |
+          git clone https://github.com/redtidev1918/DAViewer.git
+          git -C DAViewer checkout 7c27e975ce0913286c3c2cc88561f1ceac3daefb
+          git clone https://github.com/redtidev1918/DAKit.git
+          git -C DAKit checkout 03d4a90f71e9f496c13838330b4942c050c76ba3
+
+      - name: Apply DAViewer and DAKit patches
+        run: |
+          cp ci/daviewer_patch/api_config.dart DAKit/packages/dakit_api/lib/src/http/api_config.dart
+          cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
+          python3 ci/daviewer_patch/apply_rate_cache.py
+          python3 ci/daviewer_patch/apply_oauth_endpoint_resilience.py
+          python3 ci/daviewer_patch/apply_oauth_session_resilience.py
+          cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
+          cp ci/daviewer_patch/oauth_resilience_test.dart DAKit/packages/dakit_api/test/oauth_resilience_test.dart
+
+          cp ci/daviewer_patch/webview_oauth_bridge.dart DAViewer/lib/core/auth/webview_oauth_bridge.dart
+          cp ci/daviewer_patch/google_external_oauth_test.dart DAViewer/test/google_external_oauth_test.dart
+          python3 ci/daviewer_patch/apply_clean_google.py
+          python3 ci/daviewer_patch/apply_android_callback_fix.py
+          cp ci/daviewer_patch/MainActivity.kt DAViewer/android/app/src/main/kotlin/app/daviewer/MainActivity.kt
+          cp ci/daviewer_patch/android_native_oauth_callback_source.dart DAViewer/lib/core/auth/android_native_oauth_callback_source.dart
+          python3 ci/daviewer_patch/apply_native_callback_runtime.py
+          python3 ci/daviewer_patch/apply_hq_fullscreen.py
+          python3 ci/daviewer_patch/apply_hq_fullscreen_test.py
+          python3 ci/daviewer_patch/apply_mature_search_dakit.py
+          python3 ci/daviewer_patch/apply_search_tag_fallback.py
+          cp ci/daviewer_patch/android_native_oauth_callback_source_test.dart DAViewer/test/android_native_oauth_callback_source_test.dart
+
+          sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
+
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("DAKit/packages/dakit_api/test/official_api_client_test.dart")
+          s = p.read_text()
+          old = """    expect(delays, <Duration>[
+                const Duration(seconds: 1),
+                const Duration(seconds: 2),
+              ]);"""
+          new = """    expect(delays, hasLength(2));
+              expect(delays[0].inMilliseconds, closeTo(2000, 100));
+              expect(delays[1].inMilliseconds, closeTo(4000, 100));"""
+          if old not in s:
+              raise SystemExit("adaptive rate-limit expectation changed upstream")
+          p.write_text(s.replace(old, new))
+          PY
+
+          cat > DAViewer/pubspec_overrides.yaml <<'EOF'
+          dependency_overrides:
+            dakit_api:
+              path: ../DAKit/packages/dakit_api
+          EOF
+
+      - name: Verify DAViewer patch scope
+        working-directory: DAViewer
+        run: |
+          git status --short
+          python3 - <<'PY'
+          import subprocess
+          allowed = {
+              "lib/core/auth/webview_oauth_bridge.dart",
+              "lib/features/web_login/web_login_screen.dart",
+              "pubspec_overrides.yaml",
+              "test/google_external_oauth_test.dart",
+              "android/app/src/main/AndroidManifest.xml",
+              "android/app/src/main/kotlin/app/daviewer/MainActivity.kt",
+              "lib/core/auth/android_native_oauth_callback_source.dart",
+              "lib/core/runtime/app_runtime.dart",
+              "test/android_native_oauth_callback_source_test.dart",
+              "lib/features/artwork/media_viewer.dart",
+              "lib/features/artwork/artwork_detail_screen.dart",
+              "test/media_viewer_test.dart",
+              "lib/features/search/search_providers.dart",
+          }
+          out = subprocess.check_output(["git", "status", "--porcelain"], text=True)
+          changed = set()
+          for line in out.splitlines():
+              if line.strip():
+                  changed.add(line[3:].strip())
+          unexpected = changed - allowed
+          if unexpected:
+              raise SystemExit(f"Unexpected DAViewer files changed: {sorted(unexpected)}")
+          print("Minimal DAViewer patch scope OK:", sorted(changed))
+          PY
+
+      - name: Test patched DAKit
+        working-directory: DAKit/packages/dakit_api
+        run: |
+          dart pub get
+          dart format lib test
+          dart test
+
+      - name: Resolve DAViewer dependencies
+        working-directory: DAViewer
+        run: flutter pub get
+
+      - name: Analyze DAViewer
+        working-directory: DAViewer
+        run: flutter analyze
+
+      - name: Run ALL DAViewer tests
+        working-directory: DAViewer
+        run: flutter test
+
+      - name: Use debug signing for custom release APK
+        working-directory: DAViewer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/build.gradle.kts")
+          s = p.read_text()
+          old = '''            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          error(
+                              "Release signing is not configured. " +
+                              "Create android/key.properties and " +
+                              "android/app/upload-keystore.p12 before building a release APK. " +
+                              "See README.md / CI signing secrets."
+                          )
+                      }'''
+          new = '''            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          signingConfigs.getByName("debug")
+                      }'''
+          if old not in s:
+              raise SystemExit("release signing block changed upstream")
+          p.write_text(s.replace(old, new))
+          PY
+
+      - name: Build optimized APK
+        working-directory: DAViewer
+        run: flutter build apk --release
+
+      - name: Verify final APK manifest and ABIs
+        run: |
+          APK="DAViewer/build/app/outputs/flutter-apk/app-release.apk"
+          ANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          test -x "$ANALYZER"
+          "$ANALYZER" manifest print "$APK" > /tmp/manifest.xml
+          grep -q 'android:scheme="dakit"' /tmp/manifest.xml
+          grep -q 'android:host="oauth"' /tmp/manifest.xml
+          grep -q 'android:path="/callback"' /tmp/manifest.xml
+          grep -q 'android:name="flutter_deeplinking_enabled"' /tmp/manifest.xml
+          grep -A2 'flutter_deeplinking_enabled' /tmp/manifest.xml | grep -q 'android:value="false"'
+          "$ANALYZER" files list "$APK" > /tmp/apk-files.txt
+          grep -q 'lib/arm64-v8a/libapp.so' /tmp/apk-files.txt
+          grep -q 'lib/armeabi-v7a/libapp.so' /tmp/apk-files.txt
+          grep -q 'lib/x86_64/libapp.so' /tmp/apk-files.txt
+          echo "Final APK callback manifest and universal ABIs verified."
+
+      - name: Package and checksum
+        run: |
+          mkdir -p out
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.1-session-ratelimit-fix-20260921.apk
+          sha256sum out/DAViewer-v0.4.1-session-ratelimit-fix-20260921.apk > out/SHA256SUMS.txt
+          printf '%s\n' \
+            'DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb' \
+            'DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3' \
+            'Session fix: OAuth 429/5xx cannot invalidate credentials; suspect invalid refresh requires confirmation; newer stored refresh token wins races' \
+            'Rate-limit fix: 1.2s global pacing + GET dedupe + 45s fresh cache + 15m stale-on-429/5xx fallback' \
+            'Other retained fixes: Google OAuth callback + HQ fullscreen + mature search fallback' \
+            'Signing: Android debug key (custom build)' \
+            > out/BUILD-INFO.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-session-ratelimit-fix-APK
+          path: out/*
+          if-no-files-found: error
+          retention-days: 7
