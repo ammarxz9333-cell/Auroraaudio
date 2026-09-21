@@ -142,6 +142,12 @@ bool isAdultOnlyArtwork(Artwork artwork) {
   if (!hasDisplayableImage(artwork)) return false;
   if (!artwork.isMature) return false;
   if (hasAgeRiskSignal(artwork)) return false;
+
+  // DeviantArt's website feed payloads are intentionally sparse and do not
+  // include tags. When tags are present, require a positive adult semantic
+  // signal. When they are absent, keep the source-provided mature flag as the
+  // only available content signal instead of dropping the entire web feed.
+  if (artwork.tags.isEmpty) return true;
   return hasAdultSemanticSignal(artwork);
 }
 
