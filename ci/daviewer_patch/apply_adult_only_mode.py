@@ -42,10 +42,19 @@ if imp not in s:
 
 old = """    for (final artwork in artworks) {
       if (artwork.id.isEmpty) continue;
-      final cached = next[artwork.id];"""
+      final cached = next[artwork.id];
+      // List endpoints are allowed to return sparse artwork objects. Never let
+      // a later feed refresh erase tags that the canonical detail endpoint has
+      // already hydrated.
+      next[artwork.id] = mergeArtwork(cached: cached, incoming: artwork);
+      if (artwork.tags.isNotEmpty) _resolvedTagIds.add(artwork.id);"""
 new = """    for (final artwork in artworks) {
-      if (artwork.id.isEmpty || !isAdultOnlyArtwork(artwork)) continue;
-      final cached = next[artwork.id];"""
+      if (artwork.id.isEmpty) continue;
+      final cached = next[artwork.id];
+      final merged = mergeArtwork(cached: cached, incoming: artwork);
+      if (!isAdultOnlyArtwork(merged)) continue;
+      next[artwork.id] = merged;
+      if (artwork.tags.isNotEmpty) _resolvedTagIds.add(artwork.id);"""
 if old not in s:
     raise SystemExit("artwork store putAll anchor missing")
 s = s.replace(old, new, 1)
