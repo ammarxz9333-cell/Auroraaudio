@@ -7,7 +7,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/l10n/app_strings.dart';
 import '../../core/runtime/runtime_provider.dart';
 import 'artwork_detail_providers.dart';
 
@@ -239,17 +238,19 @@ final class ExternalAdultArtClient {
     };
     final tags = <String>['rating:explicit', ...seedTags.take(2)].join(' ');
     try {
-      final response = await _dio.getUri<Object?>(
-        endpoint,
-        queryParameters: <String, Object?>{
+      final requestUri = endpoint.replace(
+        queryParameters: <String, String>{
           'page': 'dapi',
           's': 'post',
           'q': 'index',
-          'json': 1,
-          'limit': 40,
-          'pid': 0,
+          'json': '1',
+          'limit': '40',
+          'pid': '0',
           'tags': tags,
         },
+      );
+      final response = await _dio.getUri<Object?>(
+        requestUri,
         options: Options(
           headers: const <String, String>{
             'Accept': 'application/json',
@@ -371,7 +372,6 @@ final class ExternalAdultSimilarSection extends ConsumerWidget {
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final s = strings(ref.watch(appLanguageProvider));
     final result = ref.watch(externalAdultSimilarProvider(artworkId));
 
     return result.when(
@@ -388,7 +388,7 @@ final class ExternalAdultSimilarSection extends ConsumerWidget {
                 children: <Widget>[
                   Expanded(
                     child: Text(
-                      s.externalAdultSimilar,
+                      'Similar adult art · external',
                       style: Theme.of(context).textTheme.titleMedium,
                     ),
                   ),
@@ -397,7 +397,7 @@ final class ExternalAdultSimilarSection extends ConsumerWidget {
               ),
               const SizedBox(height: 4),
               Text(
-                s.externalAdultSimilarHint,
+                'Explicit-only results with strict age-risk filtering.',
                 style: Theme.of(context).textTheme.bodySmall,
               ),
               const SizedBox(height: 10),
