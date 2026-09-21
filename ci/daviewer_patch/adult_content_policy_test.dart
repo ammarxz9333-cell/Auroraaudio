@@ -15,6 +15,19 @@ void main() {
     );
   });
 
+
+  test('accepts sparse mature web artwork when tags are unavailable', () {
+    expect(
+      isAdultOnlyArtwork(
+        _artwork(
+          isMature: true,
+          tags: const <String>[],
+        ),
+      ),
+      isTrue,
+    );
+  });
+
   test('rejects mature but non-adult artwork', () {
     expect(
       isAdultOnlyArtwork(
