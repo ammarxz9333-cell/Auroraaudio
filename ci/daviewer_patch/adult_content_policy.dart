@@ -174,7 +174,10 @@ Future<Page<Artwork>> fetchAdultOnlyPage(
     hasMore = page.hasMore;
     nextCursor = page.nextCursor;
 
-    if (accepted.length >= request.limit || !hasMore || nextCursor == null) {
+    // Preserve normal pagination when this source page produced at least one
+    // accepted item. Only skip ahead when the whole source page was filtered
+    // out, otherwise a refresh would eagerly consume later cursors.
+    if (accepted.isNotEmpty || !hasMore || nextCursor == null) {
       break;
     }
     if (!seenCursors.add(nextCursor)) {
