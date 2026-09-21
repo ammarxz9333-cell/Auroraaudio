@@ -43,9 +43,9 @@ List<String> focusedQueries(String raw) {
   final query = raw.trim();
   if (query.isEmpty) return const <String>[];
   return <String>[
-    $'query glamour model',
-    $'query sensual fashion',
-    $'query boudoir portrait',
+    '$query glamour model',
+    '$query sensual fashion',
+    '$query boudoir portrait',
   ];
 }
 
