@@ -24,27 +24,29 @@ Uri? parseAndroidOAuthCallback(String? raw) {
 /// replays it as soon as the first Dart listener subscribes.
 final class AndroidNativeOAuthCallbackSource
     implements InitialCallbackUriSource {
-  AndroidNativeOAuthCallbackSource() {
+  AndroidNativeOAuthCallbackSource({
+    MethodChannel? channel,
+    bool? forceAndroid,
+  }) : _channel = channel ?? const MethodChannel('daviewer/oauth_callback'),
+       _isAndroid = forceAndroid ?? Platform.isAndroid {
     _controller = StreamController<Uri>.broadcast(
       onListen: () {
         unawaited(_replayPending());
       },
     );
-    if (Platform.isAndroid) {
+    if (_isAndroid) {
       _channel.setMethodCallHandler(_handleMethodCall);
     }
   }
 
-  static const MethodChannel _channel = MethodChannel(
-    'daviewer/oauth_callback',
-  );
-
+  final MethodChannel _channel;
+  final bool _isAndroid;
   late final StreamController<Uri> _controller;
   Uri? _buffered;
 
   @override
   Future<Uri?> initialUri() async {
-    if (!Platform.isAndroid) return null;
+    if (!_isAndroid) return null;
     try {
       final raw = await _channel.invokeMethod<String>(
         'getPendingOAuthCallback',
@@ -77,7 +79,7 @@ final class AndroidNativeOAuthCallbackSource
   }
 
   Future<void> _replayPending() async {
-    if (!Platform.isAndroid || _controller.isClosed) return;
+    if (!_isAndroid || _controller.isClosed) return;
 
     final buffered = _buffered;
     if (buffered != null) {
@@ -109,7 +111,7 @@ final class AndroidNativeOAuthCallbackSource
   }
 
   Future<void> dispose() async {
-    if (Platform.isAndroid) {
+    if (_isAndroid) {
       _channel.setMethodCallHandler(null);
     }
     await _controller.close();
