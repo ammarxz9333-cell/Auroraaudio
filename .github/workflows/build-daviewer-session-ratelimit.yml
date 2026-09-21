@@ -113,7 +113,8 @@ jobs:
 
               await harness.client.getJson('browse/dailydeviations');
 
-              expect(delays, <Duration>[const Duration(seconds: 5)]);
+              expect(delays, hasLength(1));
+              expect(delays.single.inMilliseconds, closeTo(5000, 100));
             });"""
           if old not in s:
               raise SystemExit("adaptive rate-limit test changed upstream")
