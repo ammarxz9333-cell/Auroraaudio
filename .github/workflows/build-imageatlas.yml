@@ -1,0 +1,134 @@
+name: Build ImageAtlas APK
+
+on:
+  push:
+    branches:
+      - app/imageatlas-mvp-20260921
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 40
+
+    steps:
+      - name: Checkout source carrier
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter 3.47.2
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Create clean Flutter app
+        run: |
+          flutter create --org com.imageatlas --project-name imageatlas ImageAtlas
+          cp ci/imageatlas/pubspec.yaml ImageAtlas/pubspec.yaml
+          cp ci/imageatlas/main.dart ImageAtlas/lib/main.dart
+          cp ci/imageatlas/widget_test.dart ImageAtlas/test/widget_test.dart
+          cp ci/imageatlas/AndroidManifest.xml ImageAtlas/android/app/src/main/AndroidManifest.xml
+          cp ci/imageatlas/MainActivity.kt ImageAtlas/android/app/src/main/kotlin/com/imageatlas/imageatlas/MainActivity.kt
+
+      - name: Resolve dependencies
+        working-directory: ImageAtlas
+        run: flutter pub get
+
+      - name: Format source
+        working-directory: ImageAtlas
+        run: dart format lib test
+
+      - name: Analyze app
+        working-directory: ImageAtlas
+        run: flutter analyze
+
+      - name: Run tests
+        working-directory: ImageAtlas
+        run: flutter test
+
+      - name: Smoke-test source endpoints
+        run: |
+          python3 - <<'PY'
+          import json, urllib.parse, urllib.request
+
+          UA = {"User-Agent": "ImageAtlas-CI/0.1"}
+
+          def get(url):
+              req = urllib.request.Request(url, headers=UA)
+              with urllib.request.urlopen(req, timeout=25) as r:
+                  return r.status, r.read().decode("utf-8")
+
+          q = urllib.parse.quote("bride")
+
+          status, body = get(
+              "https://api.openverse.org/v1/images/?q=" + q +
+              "&page_size=1&include_sensitive_results=true"
+          )
+          data = json.loads(body)
+          assert status == 200 and isinstance(data.get("results"), list)
+          print("Openverse OK")
+
+          status, body = get(
+              "https://commons.wikimedia.org/w/api.php?action=query&generator=search"
+              "&gsrsearch=" + q +
+              "&gsrnamespace=6&gsrlimit=1&prop=imageinfo%7Cinfo"
+              "&iiprop=url&format=json&formatversion=2&origin=*"
+          )
+          data = json.loads(body)
+          assert status == 200 and isinstance(data, dict)
+          print("Wikimedia OK")
+
+          status, body = get(
+              "https://www.flickr.com/services/feeds/photos_public.gne"
+              "?format=json&nojsoncallback=1&tags=" + q + "&tagmode=any"
+          )
+          data = json.loads(body)
+          assert status == 200 and isinstance(data.get("items"), list)
+          print("Flickr feed OK")
+          PY
+
+      - name: Build release APK
+        working-directory: ImageAtlas
+        run: flutter build apk --release
+
+      - name: Verify APK
+        run: |
+          APK="ImageAtlas/build/app/outputs/flutter-apk/app-release.apk"
+          test -f "$APK"
+          unzip -t "$APK" >/tmp/unzip-check.txt
+          grep -q "No errors detected" /tmp/unzip-check.txt
+          ANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          "$ANALYZER" manifest print "$APK" > /tmp/manifest.xml
+          grep -q 'android:label="ImageAtlas"' /tmp/manifest.xml
+          grep -q 'android.permission.INTERNET' /tmp/manifest.xml
+          "$ANALYZER" files list "$APK" > /tmp/apk-files.txt
+          grep -q 'lib/arm64-v8a/libapp.so' /tmp/apk-files.txt
+          grep -q 'lib/armeabi-v7a/libapp.so' /tmp/apk-files.txt
+          grep -q 'lib/x86_64/libapp.so' /tmp/apk-files.txt
+          echo "APK integrity, manifest, and ABIs verified."
+
+      - name: Package artifact
+        run: |
+          mkdir -p out
+          cp ImageAtlas/build/app/outputs/flutter-apk/app-release.apk out/ImageAtlas-v0.1.0.apk
+          sha256sum out/ImageAtlas-v0.1.0.apk > out/SHA256SUMS.txt
+          printf '%s\n' \
+            'ImageAtlas 0.1.0' \
+            'Sources: Openverse, Wikimedia Commons, Flickr public feed' \
+            'Sensitive content: Hide / Blur / Show (source-aware)' \
+            'Favorites: local' \
+            'Downloads: Pictures/ImageAtlas via Android MediaStore' \
+            'Search history: local' \
+            'Signing: Flutter template release build (debug key for custom distribution)' \
+            > out/BUILD-INFO.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: ImageAtlas-APK
+          path: out/*
+          if-no-files-found: error
+          retention-days: 7
