@@ -1,0 +1,115 @@
+name: Build DAViewer resilient APK
+
+on:
+  push:
+    branches:
+      - ci/daviewer-apk-20260921
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout CI patch carrier
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter 3.47.2
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Show toolchain
+        run: |
+          flutter --version
+          java -version
+          flutter doctor -v
+
+      - name: Fetch pinned DAViewer and DAKit
+        run: |
+          git clone https://github.com/redtidev1918/DAViewer.git
+          git -C DAViewer checkout 7c27e975ce0913286c3c2cc88561f1ceac3daefb
+          git clone https://github.com/redtidev1918/DAKit.git
+          git -C DAKit checkout 03d4a90f71e9f496c13838330b4942c050c76ba3
+
+      - name: Apply resilient request patch
+        run: |
+          cp ci/daviewer_patch/api_config.dart DAKit/packages/dakit_api/lib/src/http/api_config.dart
+          cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
+          cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
+          sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
+          cat > DAViewer/pubspec_overrides.yaml <<'EOF'
+          dependency_overrides:
+            dakit_api:
+              path: ../DAKit/packages/dakit_api
+          EOF
+
+      - name: Test patched DAKit API
+        working-directory: DAKit/packages/dakit_api
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed lib test
+          dart test
+
+      - name: Resolve DAViewer dependencies
+        working-directory: DAViewer
+        run: flutter pub get
+
+      - name: Analyze DAViewer
+        working-directory: DAViewer
+        run: flutter analyze
+
+      - name: Run DAViewer tests
+        working-directory: DAViewer
+        run: flutter test
+
+      - name: Use debug signing for custom release APK
+        working-directory: DAViewer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/build.gradle.kts")
+          s = p.read_text()
+          old = '''            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          error(
+                              "Release signing is not configured. " +
+                              "Create android/key.properties and " +
+                              "android/app/upload-keystore.p12 before building a release APK. " +
+                              "See README.md / CI signing secrets."
+                          )
+                      }'''
+          new = '''            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          signingConfigs.getByName("debug")
+                      }'''
+          if old not in s:
+              raise SystemExit("release signing block changed upstream")
+          p.write_text(s.replace(old, new))
+          PY
+
+      - name: Build optimized APK
+        working-directory: DAViewer
+        run: flutter build apk --release
+
+      - name: Package artifact and checksums
+        run: |
+          mkdir -p out
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.0-resilient-20260921.apk
+          sha256sum out/DAViewer-v0.4.0-resilient-20260921.apk > out/SHA256SUMS.txt
+          printf '%s\n'             'DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb'             'DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3'             'Flutter: 3.47.2 stable'             'Signing: Android debug key (custom build)'             > out/BUILD-INFO.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-resilient-APK
+          path: out/*
+          if-no-files-found: error
+          retention-days: 7
