@@ -295,3 +295,19 @@ s = s.replace(
     "",
 )
 p.write_text(s)
+
+# 6) Collection recommendation rails are removed in adult-only mode. Their
+# collection covers/contents are not guaranteed to carry enough adult metadata
+# for the central Artwork policy to prove them safe.
+p = Path("DAViewer/lib/features/artwork/artwork_detail_screen.dart")
+s = p.read_text()
+s = s.replace("import 'collection_sections.dart';\n", "")
+s = s.replace(
+    "          FeaturedInCollectionsSection(artworkId: widget.artworkId),\n",
+    "",
+)
+s = s.replace(
+    "          SuggestedCollectionsSection(artworkId: widget.artworkId),\n",
+    "",
+)
+p.write_text(s)
