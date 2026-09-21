@@ -3,7 +3,7 @@ name: Build DAViewer clean Google + rate-limit APK
 on:
   push:
     branches:
-      - ci/daviewer-clean-google-ratefix-20260921
+      - ci/daviewer-native-oauth-callback-20260921
 
 permissions:
   contents: read
@@ -40,6 +40,9 @@ jobs:
           cp ci/daviewer_patch/google_external_oauth_test.dart DAViewer/test/google_external_oauth_test.dart
           python3 ci/daviewer_patch/apply_clean_google.py
           python3 ci/daviewer_patch/apply_android_callback_fix.py
+          cp ci/daviewer_patch/MainActivity.kt DAViewer/android/app/src/main/kotlin/app/daviewer/MainActivity.kt
+          cp ci/daviewer_patch/android_native_oauth_callback_source.dart DAViewer/lib/core/auth/android_native_oauth_callback_source.dart
+          python3 ci/daviewer_patch/apply_native_callback_runtime.py
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
           python3 - <<'PY'
           from pathlib import Path
@@ -74,6 +77,9 @@ jobs:
               "pubspec_overrides.yaml",
               "test/google_external_oauth_test.dart",
               "android/app/src/main/AndroidManifest.xml",
+              "android/app/src/main/kotlin/app/daviewer/MainActivity.kt",
+              "lib/core/auth/android_native_oauth_callback_source.dart",
+              "lib/core/runtime/app_runtime.dart",
           }
           out = subprocess.check_output(["git", "status", "--porcelain"], text=True)
           changed = set()
@@ -139,12 +145,12 @@ jobs:
       - name: Package and checksum
         run: |
           mkdir -p out
-          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.0-clean-google-ratefix-20260921.apk
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.0-native-google-callback-20260921.apk
           sha256sum out/DAViewer-v0.4.0-clean-google-ratefix-20260921.apk > out/SHA256SUMS.txt
           printf '%s\n' \
             'DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb' \
             'DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3' \
-            'DAViewer changes: Google external OAuth + Android app_links callback fix only' \
+            'DAViewer changes: Google external OAuth + native Android callback receiver' \
             'DAKit changes: resilient rate limiting + GET dedupe only' \
             'Home/For You/search/download/features: upstream unchanged' \
             'Signing: Android debug key (custom build)' \
@@ -153,7 +159,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-clean-google-ratefix-APK
+          name: DAViewer-native-google-callback-APK
           path: out/*
           if-no-files-found: error
           retention-days: 7
