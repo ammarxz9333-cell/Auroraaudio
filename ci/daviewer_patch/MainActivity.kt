@@ -16,7 +16,6 @@ class MainActivity : FlutterActivity() {
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
 
-        // Capture a cold-start OAuth callback before Dart asks for it.
         pendingOAuthCallback =
             pendingOAuthCallback ?: validatedOAuthCallback(intent?.dataString)
 
@@ -26,13 +25,22 @@ class MainActivity : FlutterActivity() {
         ).also { channel ->
             channel.setMethodCallHandler { call, result ->
                 when (call.method) {
-                    "getInitialOAuthCallback" -> {
+                    "getPendingOAuthCallback" -> {
                         val callback =
                             pendingOAuthCallback
                                 ?: validatedOAuthCallback(intent?.dataString)
                         pendingOAuthCallback = null
                         result.success(callback)
                     }
+
+                    "ackOAuthCallback" -> {
+                        val callback = call.argument<String>("callback")
+                        if (callback != null && pendingOAuthCallback == callback) {
+                            pendingOAuthCallback = null
+                        }
+                        result.success(true)
+                    }
+
                     else -> result.notImplemented()
                 }
             }
@@ -79,7 +87,11 @@ class MainActivity : FlutterActivity() {
             callback,
             object : MethodChannel.Result {
                 override fun success(result: Any?) {
-                    if (pendingOAuthCallback == callback) {
+                    // Dart returns true only when an OAuth stream listener was
+                    // already attached and accepted this callback. Otherwise
+                    // keep it pending so Dart can replay it when the listener
+                    // subscribes a moment later.
+                    if (result == true && pendingOAuthCallback == callback) {
                         pendingOAuthCallback = null
                     }
                 }
@@ -89,11 +101,11 @@ class MainActivity : FlutterActivity() {
                     errorMessage: String?,
                     errorDetails: Any?,
                 ) {
-                    // Keep the callback pending so Dart can recover it.
+                    // Keep the callback pending for replay.
                 }
 
                 override fun notImplemented() {
-                    // Dart is not ready yet. Keep it for getInitialOAuthCallback.
+                    // Dart is not ready yet. Keep it pending for replay.
                 }
             },
         )
