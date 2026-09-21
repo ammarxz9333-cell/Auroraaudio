@@ -140,7 +140,7 @@ class Net {
         final retryAfter =
             int.tryParse(response.headers['retry-after'] ?? '') ?? 0;
         final delay = retryAfter > 0
-            ? Duration(seconds: retryAfter.clamp(1, 30))
+            ? Duration(seconds: retryAfter > 30 ? 30 : retryAfter)
             : Duration(milliseconds: 700 * (1 << attempt));
         await Future<void>.delayed(delay);
       } on Object catch (error) {
