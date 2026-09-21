@@ -9,6 +9,18 @@ import 'package:flutter/services.dart';
 /// This bypasses plugin routing for the critical browser -> app OAuth redirect.
 /// MainActivity captures both cold-start intents and warm-start onNewIntent()
 /// deliveries and forwards only dakit://oauth/callback URIs to this channel.
+Uri? parseAndroidOAuthCallback(String? raw) {
+  if (raw == null || raw.isEmpty) return null;
+  final uri = Uri.tryParse(raw);
+  if (uri == null ||
+      uri.scheme != 'dakit' ||
+      uri.host != 'oauth' ||
+      uri.path != '/callback') {
+    return null;
+  }
+  return uri;
+}
+
 final class AndroidNativeOAuthCallbackSource
     implements InitialCallbackUriSource {
   AndroidNativeOAuthCallbackSource() {
@@ -31,7 +43,7 @@ final class AndroidNativeOAuthCallbackSource
       final raw = await _channel.invokeMethod<String>(
         'getInitialOAuthCallback',
       );
-      return _parse(raw);
+      return parseAndroidOAuthCallback(raw);
     } on PlatformException {
       return null;
     } on MissingPluginException {
@@ -46,23 +58,11 @@ final class AndroidNativeOAuthCallbackSource
     if (call.method != 'oauthCallback') return null;
     final raw = call.arguments;
     if (raw is! String) return null;
-    final uri = _parse(raw);
+    final uri = parseAndroidOAuthCallback(raw);
     if (uri != null && !_controller.isClosed) {
       _controller.add(uri);
     }
     return true;
-  }
-
-  Uri? _parse(String? raw) {
-    if (raw == null || raw.isEmpty) return null;
-    final uri = Uri.tryParse(raw);
-    if (uri == null ||
-        uri.scheme != 'dakit' ||
-        uri.host != 'oauth' ||
-        uri.path != '/callback') {
-      return null;
-    }
-    return uri;
   }
 
   Future<void> dispose() async {
