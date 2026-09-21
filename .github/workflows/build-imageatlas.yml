@@ -32,6 +32,7 @@ jobs:
           cp ci/imageatlas/widget_test.dart ImageAtlas/test/widget_test.dart
           cp ci/imageatlas/AndroidManifest.xml ImageAtlas/android/app/src/main/AndroidManifest.xml
           cp ci/imageatlas/MainActivity.kt ImageAtlas/android/app/src/main/kotlin/com/imageatlas/imageatlas/MainActivity.kt
+          python3 ci/imageatlas/apply_focus_patch.py ImageAtlas/lib/main.dart
 
       - name: Resolve dependencies
         working-directory: ImageAtlas
