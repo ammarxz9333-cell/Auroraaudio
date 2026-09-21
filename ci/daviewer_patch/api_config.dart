@@ -55,21 +55,28 @@ final class RetryPolicy {
   }
 }
 
-/// Conservative client-side pacing for DeviantArt's undocumented dynamic
-/// OAuth rate limits. This does not bypass provider limits; it prevents bursts,
-/// honours Retry-After, and keeps idempotent reads alive across long cooldowns.
+/// Conservative client-side pacing for DeviantArt's dynamic OAuth API limits.
+///
+/// Reads are serialized through one shared gate, successful GET responses are
+/// reused briefly, and a stale successful response may be served during a
+/// provider 429/5xx cooldown. This avoids request bursts without attempting to
+/// bypass the provider's limits.
 final class RateLimitPolicy {
   const RateLimitPolicy({
-    this.maxRetries = 10,
-    this.initialDelay = const Duration(seconds: 4),
-    this.maximumDelay = const Duration(minutes: 5),
-    this.minimumSpacing = const Duration(milliseconds: 350),
+    this.maxRetries = 4,
+    this.initialDelay = const Duration(seconds: 2),
+    this.maximumDelay = const Duration(seconds: 30),
+    this.minimumSpacing = const Duration(milliseconds: 1200),
+    this.freshCacheTtl = const Duration(seconds: 45),
+    this.staleCacheTtl = const Duration(minutes: 15),
   }) : assert(maxRetries >= 0);
 
   final int maxRetries;
   final Duration initialDelay;
   final Duration maximumDelay;
   final Duration minimumSpacing;
+  final Duration freshCacheTtl;
+  final Duration staleCacheTtl;
 
   Duration delayFor(int retry) {
     final multiplier = 1 << (retry - 1).clamp(0, 30);
