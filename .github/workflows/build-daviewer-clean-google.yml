@@ -39,6 +39,7 @@ jobs:
           cp ci/daviewer_patch/webview_oauth_bridge.dart DAViewer/lib/core/auth/webview_oauth_bridge.dart
           cp ci/daviewer_patch/google_external_oauth_test.dart DAViewer/test/google_external_oauth_test.dart
           python3 ci/daviewer_patch/apply_clean_google.py
+          python3 ci/daviewer_patch/apply_android_callback_fix.py
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
           python3 - <<'PY'
           from pathlib import Path
@@ -72,6 +73,7 @@ jobs:
               "lib/features/web_login/web_login_screen.dart",
               "pubspec_overrides.yaml",
               "test/google_external_oauth_test.dart",
+              "android/app/src/main/AndroidManifest.xml",
           }
           out = subprocess.check_output(["git", "status", "--porcelain"], text=True)
           changed = set()
@@ -142,7 +144,7 @@ jobs:
           printf '%s\n' \
             'DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb' \
             'DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3' \
-            'DAViewer changes: Google external OAuth button + bridge only' \
+            'DAViewer changes: Google external OAuth + Android app_links callback fix only' \
             'DAKit changes: resilient rate limiting + GET dedupe only' \
             'Home/For You/search/download/features: upstream unchanged' \
             'Signing: Android debug key (custom build)' \
