@@ -17,7 +17,7 @@ final class ArtworkPageCacheStore {
   static const Duration defaultFreshFor = Duration(minutes: 2);
   static const Duration defaultStaleFor = Duration(days: 7);
 
-  static Future<_CachedArtworkPage?> load(
+  static Future<CachedArtworkPage?> load(
     String key, {
     Directory? directory,
   }) async {
@@ -32,7 +32,7 @@ final class ArtworkPageCacheStore {
       if (savedAt == null || pageRaw is! Map<Object?, Object?>) return null;
       final page = _decodePage(pageRaw);
       if (page == null) return null;
-      return _CachedArtworkPage(page: page, savedAt: savedAt.toUtc());
+      return CachedArtworkPage(page: page, savedAt: savedAt.toUtc());
     } on Object catch (error, stack) {
       AppLogger.instance.warning(
         'feed-cache',
@@ -112,8 +112,8 @@ final class ArtworkPageCacheStore {
   }
 }
 
-final class _CachedArtworkPage {
-  const _CachedArtworkPage({required this.page, required this.savedAt});
+final class CachedArtworkPage {
+  const CachedArtworkPage({required this.page, required this.savedAt});
 
   final Page<Artwork> page;
   final DateTime savedAt;
