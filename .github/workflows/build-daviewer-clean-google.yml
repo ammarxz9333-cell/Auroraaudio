@@ -3,7 +3,7 @@ name: Build DAViewer clean Google + rate-limit APK
 on:
   push:
     branches:
-      - ci/daviewer-clean-auth-v2-20260921
+      - ci/daviewer-clean-auth-v2-hq-images-20260921
 
 permissions:
   contents: read
@@ -43,6 +43,8 @@ jobs:
           cp ci/daviewer_patch/MainActivity.kt DAViewer/android/app/src/main/kotlin/app/daviewer/MainActivity.kt
           cp ci/daviewer_patch/android_native_oauth_callback_source.dart DAViewer/lib/core/auth/android_native_oauth_callback_source.dart
           python3 ci/daviewer_patch/apply_native_callback_runtime.py
+          python3 ci/daviewer_patch/apply_hq_fullscreen.py
+          python3 ci/daviewer_patch/apply_hq_fullscreen_test.py
           cp ci/daviewer_patch/android_native_oauth_callback_source_test.dart DAViewer/test/android_native_oauth_callback_source_test.dart
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
           python3 - <<'PY'
@@ -82,6 +84,9 @@ jobs:
               "lib/core/auth/android_native_oauth_callback_source.dart",
               "lib/core/runtime/app_runtime.dart",
               "test/android_native_oauth_callback_source_test.dart",
+              "lib/features/artwork/media_viewer.dart",
+              "lib/features/artwork/artwork_detail_screen.dart",
+              "test/media_viewer_test.dart",
           }
           out = subprocess.check_output(["git", "status", "--porcelain"], text=True)
           changed = set()
@@ -164,12 +169,12 @@ jobs:
       - name: Package and checksum
         run: |
           mkdir -p out
-          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.0-clean-auth-v2-20260921.apk
-          sha256sum out/DAViewer-v0.4.0-clean-auth-v2-20260921.apk > out/SHA256SUMS.txt
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.0-clean-auth-v2-hq-images-20260921.apk
+          sha256sum out/DAViewer-v0.4.0-clean-auth-v2-hq-images-20260921.apk > out/SHA256SUMS.txt
           printf '%s\n' \
             'DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb' \
             'DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3' \
-            'DAViewer changes: Google external OAuth + replay-safe native Android callback; Home untouched' \
+            'DAViewer changes: Google external OAuth + replay-safe native Android callback + verified-original fullscreen; Home untouched' \
             'DAKit changes: resilient rate limiting + GET dedupe only' \
             'Home/For You: byte-for-byte upstream source, no fallback patch' \
             'Signing: Android debug key (custom build)' \
@@ -178,7 +183,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-clean-auth-v2-APK
+          name: DAViewer-clean-auth-v2-hq-images-APK
           path: out/*
           if-no-files-found: error
           retention-days: 7
