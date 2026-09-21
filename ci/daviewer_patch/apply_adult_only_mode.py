@@ -66,6 +66,33 @@ new = """    final normalized = List<String>.unmodifiable(tags);
 if old not in s:
     raise SystemExit("artwork store setTags anchor missing")
 s = s.replace(old, new, 1)
+
+old = """Artwork mergeArtwork({Artwork? cached, required Artwork incoming}) {
+  if (cached == null) return incoming;
+  if (incoming.tags.isEmpty && cached.tags.isNotEmpty) {
+    return incoming.copyWith(tags: cached.tags);
+  }
+  return incoming;
+}"""
+new = """Artwork mergeArtwork({Artwork? cached, required Artwork incoming}) {
+  if (cached == null) return incoming;
+  final sparse = incoming.tags.isEmpty && incoming.media.isEmpty;
+  return incoming.copyWith(
+    tags: incoming.tags.isEmpty && cached.tags.isNotEmpty
+        ? cached.tags
+        : incoming.tags,
+    media: incoming.media.isEmpty && cached.media.isNotEmpty
+        ? cached.media
+        : incoming.media,
+    // Sparse list payloads commonly omit mature metadata. Preserve a
+    // previously-confirmed mature bit only for that sparse update shape.
+    isMature: sparse && cached.isMature ? true : incoming.isMature,
+  );
+}"""
+if old not in s:
+    raise SystemExit("artwork merge anchor missing")
+s = s.replace(old, new, 1)
+
 p.write_text(s)
 
 # 3) Direct Daily feed bypasses ArtworkFeedController.
