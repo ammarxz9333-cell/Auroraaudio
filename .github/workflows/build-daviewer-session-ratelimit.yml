@@ -1,4 +1,4 @@
-name: Build DAViewer web-first cache APK
+name: Build DAViewer web-first + external adult similar APK
 
 on:
   push:
@@ -59,6 +59,10 @@ jobs:
           python3 ci/daviewer_patch/apply_persistent_feed_cache.py
           python3 ci/daviewer_patch/apply_cache_settings.py
 
+          cp ci/daviewer_patch/external_adult_similar.dart DAViewer/lib/features/artwork/external_adult_similar.dart
+          cp ci/daviewer_patch/external_adult_similar_test.dart DAViewer/test/external_adult_similar_test.dart
+          python3 ci/daviewer_patch/apply_external_adult_similar.py
+
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
 
           python3 - <<'PY'
@@ -109,6 +113,9 @@ jobs:
               "lib/features/tag/tag_screen.dart",
               "lib/features/artist/artist_providers.dart",
               "lib/features/settings/settings_screen.dart",
+              "lib/features/artwork/external_adult_similar.dart",
+              "test/external_adult_similar_test.dart",
+              "lib/core/l10n/app_strings.dart",
           }
           out = subprocess.check_output(["git", "status", "--porcelain"], text=True)
           changed = set()
@@ -191,8 +198,8 @@ jobs:
       - name: Package and checksum
         run: |
           mkdir -p out
-          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.2-webfirst-cache-20260921.apk
-          sha256sum out/DAViewer-v0.4.2-webfirst-cache-20260921.apk > out/SHA256SUMS.txt
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.3-external-adult-similar-20260921.apk
+          sha256sum out/DAViewer-v0.4.3-external-adult-similar-20260921.apk > out/SHA256SUMS.txt
           printf '%s\n' \
             'DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb' \
             'DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3' \
@@ -201,6 +208,7 @@ jobs:
             'Persistent feed cache: Daily/Following/Tag/Gallery/Favourites/Folder pages; 2m fast path + 7d transient fallback' \
             'Search idle tag previews: local artwork only, zero network requests' \
             'Web-first retained: For You, artwork search, gallery search, related art and collection contents use website session where supported' \
+            'External similar adult art: Rule34 + Gelbooru single-request adapters, explicit-only, local underage/age-ambiguous tag rejection, similarity ranking' \
             'Other retained fixes: Google OAuth callback + HQ fullscreen + mature search fallback' \
             'Signing: Android debug key (custom build)' \
             > out/BUILD-INFO.txt
@@ -208,7 +216,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-webfirst-cache-APK
+          name: DAViewer-external-adult-similar-APK
           path: out/*
           if-no-files-found: error
           retention-days: 7
