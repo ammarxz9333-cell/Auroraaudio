@@ -1,4 +1,4 @@
-name: Build DAViewer adult-only + fast downloads APK
+name: Build DAViewer v0.5.2 session + network resilience APK
 
 on:
   push:
@@ -36,9 +36,11 @@ jobs:
           cp ci/daviewer_patch/api_config.dart DAKit/packages/dakit_api/lib/src/http/api_config.dart
           cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
           python3 ci/daviewer_patch/apply_rate_cache.py
+          python3 ci/daviewer_patch/apply_network_resilience.py
           python3 ci/daviewer_patch/apply_oauth_endpoint_resilience.py
           python3 ci/daviewer_patch/apply_oauth_session_resilience.py
           cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
+          cp ci/daviewer_patch/network_resilience_test.dart DAKit/packages/dakit_api/test/network_resilience_test.dart
           cp ci/daviewer_patch/oauth_resilience_test.dart DAKit/packages/dakit_api/test/oauth_resilience_test.dart
 
           cp ci/daviewer_patch/webview_oauth_bridge.dart DAViewer/lib/core/auth/webview_oauth_bridge.dart
@@ -69,6 +71,8 @@ jobs:
           python3 ci/daviewer_patch/apply_adult_only_mode.py
           python3 ci/daviewer_patch/apply_adult_only_test_fixtures.py
           python3 ci/daviewer_patch/apply_download_fastpath.py
+          python3 ci/daviewer_patch/apply_auth_ui_invalidation_guard.py
+          python3 ci/daviewer_patch/apply_auth_invalidation_tests.py
 
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
 
@@ -102,9 +106,11 @@ jobs:
           import subprocess
           allowed = {
               "lib/core/auth/webview_oauth_bridge.dart",
+              "lib/core/auth/auth_controller.dart",
               "lib/features/web_login/web_login_screen.dart",
               "pubspec_overrides.yaml",
               "test/google_external_oauth_test.dart",
+              "test/auth_restore_policy_test.dart",
               "android/app/src/main/AndroidManifest.xml",
               "android/app/src/main/kotlin/app/daviewer/MainActivity.kt",
               "lib/core/auth/android_native_oauth_callback_source.dart",
@@ -216,8 +222,8 @@ jobs:
       - name: Package and checksum
         run: |
           mkdir -p out
-          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.5.1-adult-only-fast-downloads-20260921.apk
-          sha256sum out/DAViewer-v0.5.1-adult-only-fast-downloads-20260921.apk > out/SHA256SUMS.txt
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.5.2-session-network-resilience-20260921.apk
+          sha256sum out/DAViewer-v0.5.2-session-network-resilience-20260921.apk > out/SHA256SUMS.txt
           printf '%s\n' \
             'DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb' \
             'DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3' \
@@ -229,6 +235,8 @@ jobs:
             'External similar adult art: Rule34 + Gelbooru single-request adapters, explicit-only, local age-risk rejection, similarity ranking' \
             'Adult-only mode: centralized image+mature+adult-signal gate, strict age-risk rejection, filtered persistent cache, direct-detail protection, multi-page filtered feed fill' \
             'Download fast path: new downloads use indexed ID lookup through enqueue; full history scan only on duplicate ID; multi-page queue skips duplicates without loading all records' \
+            'Network resilience: transient GET connection/timeouts retry with backoff and may serve stale cache instead of immediate API-unreachable errors' \
+            'Session resilience: DAViewer waits for OAuthSession confirmed invalidation before switching UI to signed-out' \
             'Other retained fixes: Google OAuth callback + HQ fullscreen + mature search fallback' \
             'Signing: Android debug key (custom build)' \
             > out/BUILD-INFO.txt
@@ -236,7 +244,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-adult-only-fast-downloads-APK
+          name: DAViewer-v0.5.2-session-network-resilience-APK
           path: out/*
           if-no-files-found: error
           retention-days: 7
