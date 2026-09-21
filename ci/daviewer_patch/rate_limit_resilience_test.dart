@@ -4,12 +4,11 @@ import 'package:dio/dio.dart';
 import 'package:test/test.dart';
 
 void main() {
-  test('backs off repeatedly on 429 and eventually succeeds', () async {
+  test('uses one conservative retry on 429 and then succeeds', () async {
     final clock = FakeClock(DateTime.utc(2026, 9, 21, 8));
     final harness = Harness(
       clock: clock,
       responses: <ResponseSpec>[
-        const ResponseSpec(429, <String, Object?>{'error': 'rate_limit'}),
         const ResponseSpec(429, <String, Object?>{'error': 'rate_limit'}),
         const ResponseSpec(200, <String, Object?>{'status': 'success'}),
       ],
@@ -18,11 +17,8 @@ void main() {
     final result = await harness.client.getJson('browse/dailydeviations');
 
     expect(result['status'], 'success');
-    expect(harness.requests, 3);
-    expect(clock.delays, <Duration>[
-      const Duration(seconds: 2),
-      const Duration(seconds: 4),
-    ]);
+    expect(harness.requests, 2);
+    expect(clock.delays, <Duration>[const Duration(seconds: 5)]);
   });
 
   test('honours Retry-After when it is longer than local backoff', () async {
@@ -66,22 +62,46 @@ void main() {
     expect(harness.requests, 1);
   });
 
-  test('serves a recent cached GET instead of surfacing 429', () async {
+  test('serves a fresh cached GET without touching the network', () async {
     final clock = FakeClock(DateTime.utc(2026, 9, 21, 8));
     final harness = Harness(
       clock: clock,
       responses: <ResponseSpec>[
         const ResponseSpec(200, <String, Object?>{'value': 'cached'}),
-        const ResponseSpec(429, <String, Object?>{'error': 'rate_limit'}),
       ],
     );
 
     final first = await harness.client.getJson('browse/home');
-    clock.current = clock.current.add(const Duration(minutes: 1));
+    clock.current = clock.current.add(const Duration(minutes: 5));
     final second = await harness.client.getJson('browse/home');
 
     expect(first['value'], 'cached');
     expect(second['value'], 'cached');
+    expect(harness.requests, 1);
+  });
+
+  test('429 cooldown serves stale cache without another provider request', () async {
+    final clock = FakeClock(DateTime.utc(2026, 9, 21, 8));
+    final harness = Harness(
+      clock: clock,
+      responses: <ResponseSpec>[
+        const ResponseSpec(200, <String, Object?>{'value': 'cached'}),
+        const ResponseSpec(
+          429,
+          <String, Object?>{'error': 'rate_limit'},
+          headers: <String, List<String>>{'retry-after': <String>['60']},
+        ),
+      ],
+    );
+
+    final first = await harness.client.getJson('browse/home');
+    clock.current = clock.current.add(const Duration(minutes: 11));
+    final second = await harness.client.getJson('browse/home');
+    final third = await harness.client.getJson('browse/home');
+
+    expect(first['value'], 'cached');
+    expect(second['value'], 'cached');
+    expect(third['value'], 'cached');
     expect(harness.requests, 2);
   });
 
