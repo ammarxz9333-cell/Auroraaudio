@@ -143,27 +143,9 @@ rep(
 "ranking",
 )
 
-rep(
-"""  int _score(ImageItem item, String query) {
-    final title = item.title.toLowerCase();
-    final haystack = '${item.title} ${item.creator}'.toLowerCase();
-    var score = 0;
-    for (final token in query
-        .toLowerCase()
-        .split(RegExp(r'\\\s+'))
-        .where((token) => token.isNotEmpty)) {
-      if (haystack.contains(token)) score += 3;
-      if (title.contains(token)) score += 2;
-    }
-    if (item.source == 'Openverse') score += 1;
-    return score;
-  }
-
- """,
-"",
-"old score",
-)
-
+score_start = s.index("  int _score(")
+score_end = s.index("  @override\n  Widget build", score_start)
+s = s[:score_start] + s[score_end:]
 rep(
 "              hintText: 'Search images across sources',\n",
 "              hintText: 'Search mature / suggestive imagery',\n",
