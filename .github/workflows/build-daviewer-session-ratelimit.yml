@@ -104,6 +104,7 @@ jobs:
               "test/media_viewer_test.dart",
               "lib/features/search/search_providers.dart",
               "lib/core/cache/artwork_page_cache.dart",
+              "lib/core/cache/",
               "lib/features/home/home_providers.dart",
               "lib/features/tag/tag_screen.dart",
               "lib/features/artist/artist_providers.dart",
