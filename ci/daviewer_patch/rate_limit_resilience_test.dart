@@ -20,8 +20,8 @@ void main() {
     expect(result['status'], 'success');
     expect(harness.requests, 3);
     expect(clock.delays, <Duration>[
+      const Duration(seconds: 2),
       const Duration(seconds: 4),
-      const Duration(seconds: 8),
     ]);
   });
 
@@ -64,6 +64,25 @@ void main() {
     await Future.wait(<Future<Map<String, Object?>>>[first, second]);
 
     expect(harness.requests, 1);
+  });
+
+  test('serves a recent cached GET instead of surfacing 429', () async {
+    final clock = FakeClock(DateTime.utc(2026, 9, 21, 8));
+    final harness = Harness(
+      clock: clock,
+      responses: <ResponseSpec>[
+        const ResponseSpec(200, <String, Object?>{'value': 'cached'}),
+        const ResponseSpec(429, <String, Object?>{'error': 'rate_limit'}),
+      ],
+    );
+
+    final first = await harness.client.getJson('browse/home');
+    clock.current = clock.current.add(const Duration(minutes: 1));
+    final second = await harness.client.getJson('browse/home');
+
+    expect(first['value'], 'cached');
+    expect(second['value'], 'cached');
+    expect(harness.requests, 2);
   });
 
   test('paces distinct official API requests through the shared gate', () async {
