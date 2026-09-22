@@ -67,6 +67,32 @@ jobs:
           flutter analyze
           flutter test
 
+      - name: Allow custom build to use debug signing
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("DAViewer/android/app/build.gradle.kts")
+          s = p.read_text()
+          old = '''            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          error(
+                              "Release signing is not configured. " +
+                              "Create android/key.properties and " +
+                              "android/app/upload-keystore.p12 before building a release APK. " +
+                              "See README.md / CI signing secrets."
+                          )
+                      }'''
+          new = '''            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          signingConfigs.getByName("debug")
+                      }'''
+          if old not in s:
+              raise SystemExit("release signing block changed upstream")
+          p.write_text(s.replace(old, new))
+          PY
+
       - name: Build installable debug APK
         working-directory: DAViewer
         run: flutter build apk --debug
