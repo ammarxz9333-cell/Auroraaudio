@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/config/external-components-v1.json"
-OMNIP_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"
+OMNIP_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.6.0-low-latency-stdout.patch"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
 KEEP_WORKDIR="${AURORA_KEEP_JOC_TEST_WORKDIR:-0}"
 BUILD_MODE="${AURORA_JOC_BUILD_MODE:-debug}"
