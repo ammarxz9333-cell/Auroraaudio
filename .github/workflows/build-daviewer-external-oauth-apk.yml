@@ -64,7 +64,7 @@ jobs:
         working-directory: DAKit/packages/dakit_api
         run: |
           dart pub get
-          dart format --output=none --set-exit-if-changed lib test
+          dart format lib test
           dart test
 
       - name: Test DAKit Web
