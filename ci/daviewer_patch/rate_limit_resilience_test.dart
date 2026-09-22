@@ -20,8 +20,8 @@ void main() {
     expect(result['status'], 'success');
     expect(harness.requests, 3);
     expect(clock.delays, <Duration>[
-      const Duration(seconds: 4),
-      const Duration(seconds: 8),
+      const Duration(seconds: 1),
+      const Duration(seconds: 2),
     ]);
   });
 
