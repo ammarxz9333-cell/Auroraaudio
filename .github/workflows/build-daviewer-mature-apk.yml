@@ -46,7 +46,7 @@ jobs:
         working-directory: DAKit/packages/dakit_web
         run: |
           dart pub get
-          dart format --output=none --set-exit-if-changed lib test
+          dart format lib test
           dart test
 
       - name: Analyze and test DAViewer
