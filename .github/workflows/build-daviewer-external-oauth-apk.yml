@@ -1,9 +1,9 @@
-name: Build DAViewer External OAuth Mature APK
+name: Build DAViewer v0.5.1 Resilient External OAuth Mature APK
 
 on:
   push:
     branches:
-      - ci/daviewer-external-oauth-20260922
+      - ci/daviewer-v051-resilient-20260922
   workflow_dispatch:
 
 permissions:
@@ -32,12 +32,18 @@ jobs:
           git clone https://github.com/redtidev1918/DAKit.git DAKit
           git -C DAKit checkout f226cef261a5fa5e4030d84ceb3f55aac1c86afa
 
-      - name: Apply mature entitlement fallback
+      - name: Apply resilient API and mature entitlement fallback
         run: |
+          cp ci/daviewer_patch/api_config.dart DAKit/packages/dakit_api/lib/src/http/api_config.dart
+          cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
+          cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
           python3 ci/daviewer_patch/apply_mature_entitlement_fallback.py
+          sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_web/pubspec.yaml
           cat > DAViewer/pubspec_overrides.yaml <<'EOF'
           dependency_overrides:
+            dakit_api:
+              path: ../DAKit/packages/dakit_api
             dakit_web:
               path: ../DAKit/packages/dakit_web
           EOF
@@ -53,6 +59,13 @@ jobs:
           grep -q 'android:scheme="dakit"' DAViewer/android/app/src/main/AndroidManifest.xml
           grep -q 'android:host="oauth"' DAViewer/android/app/src/main/AndroidManifest.xml
           grep -q 'android:path="/callback"' DAViewer/android/app/src/main/AndroidManifest.xml
+
+      - name: Test DAKit API resilience
+        working-directory: DAKit/packages/dakit_api
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed lib test
+          dart test
 
       - name: Test DAKit Web
         working-directory: DAKit/packages/dakit_web
@@ -101,8 +114,8 @@ jobs:
       - name: Package APK
         run: |
           mkdir -p out
-          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.5.0-external-oauth-mature-20260922.apk
-          sha256sum out/DAViewer-v0.5.0-external-oauth-mature-20260922.apk > out/SHA256SUMS.txt
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.5.1-resilient-external-oauth-mature-20260922.apk
+          sha256sum out/DAViewer-v0.5.1-resilient-external-oauth-mature-20260922.apk > out/SHA256SUMS.txt
           cat > out/BUILD-INFO.txt <<'EOF'
           DAViewer upstream commit: 862ec4571adaccdd4feb0d70cec7ad78b98b96b4
           DAKit upstream commit: f226cef261a5fa5e4030d84ceb3f55aac1c86afa
@@ -116,7 +129,7 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-v0.5.0-external-oauth-mature-APK
+          name: DAViewer-v0.5.1-resilient-external-oauth-mature-APK
           path: out/*
           if-no-files-found: error
           retention-days: 7
