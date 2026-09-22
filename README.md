@@ -63,7 +63,7 @@ Linux stable is the primary validation environment. Windows stable verifies the 
 
 ## Immersive software validation
 
-The JOC/IEC61937 validation lane is deliberately a **software test**, not a hardware claim. It pins the external Harletty and Omniphony revisions, exercises real E-AC-3 JOC metadata/object handling, checks a plain E-AC-3 negative control, and renders a 7.1.4 output file.
+The JOC/IEC61937 validation lane is deliberately a **software test**, not a hardware claim. It pins Harletty 0.8.0 and Omniphony 0.6.0 as one compatible bridge/render pair, exercises real E-AC-3 JOC metadata/object handling, checks a plain E-AC-3 negative control, renders standard 7.1.4, and renders Aurora's custom 11.1.4 geometry as 16-channel PCM.
 
 ```bash
 bash validation/immersive/test-joc-stack.sh
@@ -75,6 +75,7 @@ The gate is successful only when it emits all of these markers:
 PLAIN-EAC3-NEGATIVE-CONTROL-PASS
 JOC-IEC61937-PASS
 7.1.4 render PASS
+AURORA-11.1.4-JOC-RENDER-PASS
 AURORA JOC SOFTWARE STACK PASS
 ```
 
@@ -86,6 +87,27 @@ bash validation/immersive/test-joc-differential.sh
 ```
 
 These OpenJOC lanes are evaluation evidence only; they do not make OpenJOC an Aurora core dependency or establish hardware eARC, proprietary-streaming compatibility, certification, or production readiness.
+
+## Raspberry Pi 5 eARC runtime profile
+
+Aurora now carries an optional single-SBC home-theater profile:
+
+```text
+TV eARC -> Lindy 38368/SiI9437 -> Pi5 I2S slave -> ALSA
+-> Aurora IEC61937 canonicalizer -> Harletty 0.8 -> Omniphony 0.6
+-> Aurora 11.1.4 custom layout -> PipeWire multichannel output
+```
+
+The runtime deliberately feeds canonical IEC61937 to `orender` over stdin and does **not** depend on Omniphony's still-experimental encoded PipeWire input sink. Exact source pins, the Pi5 device-tree overlay, build/install scripts, one-command launcher, and truth boundaries are in [`docs/pi5-earc-runtime.md`](docs/pi5-earc-runtime.md).
+
+```bash
+bash scripts/pi5/build-runtime.sh
+bash scripts/pi5/install-earc-overlay.sh
+# reboot once after first overlay install
+AURORA_OUTPUT_DEVICE="<PipeWire device>" bash scripts/pi5/run-earc-joc.sh
+```
+
+Native ARM64 CI runs the media-paced JOC path against the 16-output Aurora layout. This is software/architecture evidence; the exact TV/Lindy/Pi5 physical chain and protected TV apps remain hardware validation gates.
 
 A separate experimental surround-upmix path exists for channel-based E-AC-3. It explicitly does not claim object recovery.
 
