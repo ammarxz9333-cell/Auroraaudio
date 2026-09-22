@@ -28,8 +28,8 @@ ZIP_SHA = "f94d5e3e933f756856686546763f42a8a5f16b10c264fc7af1d228acc09baa62"
 SOURCE_SHA = "2470373db2c3621d56a2852df070e140293e9a99fdaa07e5c06de3c86bec307f"
 DERIVED_SHA = "0219a241559de5231f31c6093072740ff9fe0657b3354541bc6838ef2d5e5be0"
 FIRST_AU_BYTES = 2560
-HARLETTY_URL = "https://github.com/harletty/harletty-bridge/releases/download/v0.7.4/harletty-bridge-v0.7.4-windows-x86_64.zip"
-HARLETTY_ZIP_SHA = "3ed126e5bb837882c5c2abbc5d35d1ebede199f81ed64127fb968bfe86bd6686"
+HARLETTY_URL = "https://github.com/harletty/harletty-bridge/releases/download/v0.8.0/harletty-bridge-v0.8.0-windows-x86_64.zip"
+HARLETTY_ZIP_SHA = "a8486d6fcf32b1e860cb4d5dce045b903621ae44320893391d3c27647642d3b2"
 ASIO_COMMIT = "496a0765b8bb9c26f764f22f9a9712a937177db2"
 ASIO_URL = f"https://github.com/audiosdk/asio/archive/{ASIO_COMMIT}.zip"
 SYNC = bytes.fromhex("72f81f4e")
@@ -203,7 +203,7 @@ def main() -> int:
     work.mkdir(parents=True)
 
     manifest_path = root / "config/external-components-v1.json"
-    patch = root / "validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"
+    patch = root / "validation/immersive/omniphony-v0.6.0-low-latency-stdout.patch"
     moving_analyzer = root / "validation/immersive/aurora_joc_moving_evidence.py"
     virtual_analyzer = root / "validation/virtual-hardware/aurora_full_system_sim.py"
     coverage_validator = root / "validation/virtual-hardware/validate_simulation_coverage.py"
@@ -260,8 +260,8 @@ def main() -> int:
         raise RuntimeError(f"Missing Windows renderer build product: orender={orender.exists()} layout={layout.exists()}")
 
     phase("acquire verified Harletty Windows bridge")
-    harletty_zip = cache / "harletty-bridge-v0.7.4-windows-x86_64.zip"
-    harletty_dir = cache / "harletty-bridge-v0.7.4-windows"
+    harletty_zip = cache / "harletty-bridge-v0.8.0-windows-x86_64.zip"
+    harletty_dir = cache / "harletty-bridge-v0.8.0-windows"
     download_verified(HARLETTY_URL, harletty_zip, HARLETTY_ZIP_SHA, "Harletty Windows bridge archive")
     if harletty_dir.exists():
         shutil.rmtree(harletty_dir)
