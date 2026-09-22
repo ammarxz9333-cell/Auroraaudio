@@ -32,12 +32,25 @@ jobs:
           git clone https://github.com/redtidev1918/DAKit.git DAKit
           git -C DAKit checkout 03d4a90f71e9f496c13838330b4942c050c76ba3
 
-      - name: Apply rate-limit and mature entitlement patches
+      - name: Apply rate-limit, mature entitlement, and Android login UA fixes
         run: |
           cp ci/daviewer_patch/api_config.dart DAKit/packages/dakit_api/lib/src/http/api_config.dart
           cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
           cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
           python3 ci/daviewer_patch/apply_mature_entitlement_fallback.py
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("DAViewer/lib/features/web_login/web_login_screen.dart")
+          s = p.read_text()
+          if "import 'dart:io';" not in s:
+              s = s.replace("import 'dart:convert';\n", "import 'dart:convert';\nimport 'dart:io';\n", 1)
+          old = "userAgent: webUserAgent,"
+          new = "userAgent: Platform.isAndroid ? null : webUserAgent,"
+          if old not in s:
+              raise SystemExit("web login user-agent anchor changed")
+          s = s.replace(old, new, 1)
+          p.write_text(s)
+          PY
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_web/pubspec.yaml
           cat > DAViewer/pubspec_overrides.yaml <<'EOF'
@@ -107,7 +120,7 @@ jobs:
           Base: DAViewer 0.4.0+191
           DAViewer commit: 7c27e975ce0913286c3c2cc88561f1ceac3daefb
           DAKit commit: 03d4a90f71e9f496c13838330b4942c050c76ba3
-          Auth/login code: unchanged from known-working base
+          Auth/login flow: 0.4.0 base; Android WebView uses real device UA to avoid PerimeterX emulation challenge
           Added: mature web-session fallback, entitlement-aware premium handling, rate-limit resilience
           Build: release mode, Android debug key
           EOF
