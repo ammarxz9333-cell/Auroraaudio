@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: daviewer-temp-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -45,6 +49,7 @@ jobs:
           set +e
           set -o pipefail
           {
+            set -e
             echo "== clone pinned sources =="
             git clone https://github.com/redtidev1918/DAViewer.git
             git -C DAViewer checkout 7c27e975ce0913286c3c2cc88561f1ceac3daefb
