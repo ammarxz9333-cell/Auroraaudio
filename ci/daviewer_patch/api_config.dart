@@ -61,7 +61,7 @@ final class RetryPolicy {
 final class RateLimitPolicy {
   const RateLimitPolicy({
     this.maxRetries = 10,
-    this.initialDelay = const Duration(seconds: 4),
+    this.initialDelay = const Duration(seconds: 1),
     this.maximumDelay = const Duration(minutes: 5),
     this.minimumSpacing = const Duration(milliseconds: 350),
   }) : assert(maxRetries >= 0);
