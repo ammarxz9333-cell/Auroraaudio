@@ -3,11 +3,13 @@
 
 The fixed-duration capture adapter remains unchanged. This tool locks one of the
 four explicitly allowed word-layout interpretations, then converts subsequent
-ALSA frames continuously and can feed Gate A-Live through a growing IEC file.
+ALSA frames continuously and can feed Gate A-Live through a growing IEC file
+or emit a clean binary IEC61937 stream on stdout for a decoder/renderer pipe.
 """
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import shutil
 import subprocess
@@ -110,7 +112,7 @@ class StreamingConverter:
 def write_status(path: Path, payload: dict) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(json.dumps(payload, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-def stream_alsa(*, device: str, iec_out: Path, status_out: Path,
+def stream_alsa(*, device: str, iec_out: Path | None, status_out: Path,
                 hw_params_log: Path, stderr_log: Path,
                 word_lane: str, channel_order: str,
                 max_seconds: float | None, chunk_bytes: int) -> dict:
@@ -120,14 +122,20 @@ def stream_alsa(*, device: str, iec_out: Path, status_out: Path,
     if chunk_bytes < FRAME_BYTES:
         raise CaptureError("chunk size is too small")
     dump_hw_params(arecord, device, hw_params_log)
-    iec_out.parent.mkdir(parents=True, exist_ok=True)
+    if iec_out is not None:
+        iec_out.parent.mkdir(parents=True, exist_ok=True)
     stderr_log.parent.mkdir(parents=True, exist_ok=True)
     command = [arecord, "-D", device, "-f", FORMAT, "-c", str(CHANNELS),
                "-r", str(RATE_HZ), "-t", "raw", "--fatal-errors"]
     converter = StreamingConverter(word_lane=word_lane, channel_order=channel_order)
     started = time.monotonic()
     interrupted = False
-    with stderr_log.open("wb") as err, iec_out.open("wb") as out:
+    out_context = (
+        contextlib.nullcontext(sys.stdout.buffer)
+        if iec_out is None
+        else iec_out.open("wb")
+    )
+    with stderr_log.open("wb") as err, out_context as out:
         proc = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=err)
         assert proc.stdout is not None
         try:
@@ -207,7 +215,11 @@ def main() -> int:
     sub.add_parser("self-test")
     live = sub.add_parser("capture", help="continuously capture ALSA and append canonical IEC61937")
     live.add_argument("--device", required=True)
-    live.add_argument("--iec-out", type=Path, required=True)
+    live.add_argument(
+        "--iec-out",
+        required=True,
+        help="canonical IEC61937 output path, or '-' for binary stdout",
+    )
     live.add_argument("--status", type=Path, required=True)
     live.add_argument("--hw-params-log", type=Path, required=True)
     live.add_argument("--stderr-log", type=Path, required=True)
@@ -220,9 +232,10 @@ def main() -> int:
         return self_test()
     if args.max_seconds is not None and args.max_seconds <= 0:
         raise CaptureError("--max-seconds must be positive when supplied")
+    iec_out = None if args.iec_out == "-" else Path(args.iec_out)
     status = stream_alsa(
         device=args.device,
-        iec_out=args.iec_out,
+        iec_out=iec_out,
         status_out=args.status,
         hw_params_log=args.hw_params_log,
         stderr_log=args.stderr_log,
@@ -234,7 +247,8 @@ def main() -> int:
     print(
         "AURORA-ALSA-IEC61937-STREAM-PASS "
         f"device={args.device} lane={status['selected_word_lane']} "
-        f"order={status['selected_channel_order']} canonical_bytes={status['canonical_bytes']}"
+        f"order={status['selected_channel_order']} canonical_bytes={status['canonical_bytes']}",
+        file=sys.stderr if iec_out is None else sys.stdout,
     )
     return 0
 
