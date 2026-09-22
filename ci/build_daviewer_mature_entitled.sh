@@ -34,6 +34,7 @@ echo "== Apply mature + entitlement fallback =="
   cd "$WORK"
   python3 "$ROOT/ci/daviewer_patch/apply_mature_entitlement_fallback.py"
   python3 "$ROOT/ci/daviewer_patch/apply_external_oauth_android.py"
+  python3 "$ROOT/ci/daviewer_patch/fix_upstream_mature_query_test.py"
 )
 
 sed -i.bak '/^resolution: workspace$/d'   "$WORK/DAKit/packages/dakit_api/pubspec.yaml" || true
