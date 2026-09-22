@@ -478,7 +478,13 @@ final class _RateLimitGate {
         final current = _now().toUtc();
         final target = _later(_blockedUntil, _nextAllowed);
         if (target != null && target.isAfter(current)) {
-          await _delay(target.difference(current));
+          final remaining = target.difference(current);
+          // Policies are millisecond-granular. Round up so scheduling overhead
+          // between blockFor() and the next attempt never shortens the backoff.
+          final waitMillis =
+              (remaining.inMicroseconds + Duration.microsecondsPerMillisecond - 1) ~/
+              Duration.microsecondsPerMillisecond;
+          await _delay(Duration(milliseconds: waitMillis));
         }
         final started = _now().toUtc();
         _nextAllowed = started.add(minimumSpacing);
