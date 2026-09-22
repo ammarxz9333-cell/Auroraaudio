@@ -13,7 +13,11 @@
       "integration": "external-process",
       "tested_version": "6.1.6",
       "pinned_commit": "f1e3a2bf7a2f2cde936d1ed97f09a26853d20125",
-      "roles": ["channel-bed-decode", "resample", "format-conversion"],
+      "roles": [
+        "channel-bed-decode",
+        "resample",
+        "format-conversion"
+      ],
       "object_metadata": "unsupported",
       "production_ready": false,
       "evidence": [
@@ -58,7 +62,14 @@
       "tested_version": "4.1.3",
       "pinned_commit": "05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74",
       "license": "GPL-3.0-only OR MPL-2.0",
-      "roles": ["fir", "iir", "crossover", "delay", "limiter", "room-correction"],
+      "roles": [
+        "fir",
+        "iir",
+        "crossover",
+        "delay",
+        "limiter",
+        "room-correction"
+      ],
       "object_metadata": "not-applicable",
       "production_ready": false,
       "evidence": [
@@ -74,24 +85,60 @@
       "upstream": "https://github.com/mgth/Omniphony",
       "decision": "validation-only",
       "integration": "external-process",
-      "tested_version": "v0.5.2",
-      "pinned_commit": "f9a79721af64ad9c39042d4deded158b568fc598",
-      "roles": ["spatial-renderer-host"],
-      "object_metadata": "experimental",
+      "tested_version": "v0.6.0",
+      "pinned_commit": "dd5546bbc64e60719dfa367bea0534dc8a3ab34b",
+      "roles": [
+        "spatial-renderer-host",
+        "realtime-iec61937-render-host",
+        "linux-arm64-source-build"
+      ],
+      "object_metadata": "experimental-bridge-api-0.4",
       "production_ready": false,
-      "evidence": ["docs/immersive-validation.md"]
+      "evidence": [
+        "docs/immersive-validation.md",
+        "docs/pi5-earc-runtime.md"
+      ]
     },
     {
       "id": "harletty-bridge",
       "upstream": "https://github.com/harletty/harletty-bridge",
       "decision": "validation-only",
       "integration": "runtime-plugin",
-      "tested_version": "v0.7.4",
-      "pinned_commit": "10943821cca7e6886c11f45d2267b06d76e6db7c",
-      "roles": ["optional-codec-bridge"],
-      "object_metadata": "experimental",
+      "tested_version": "v0.8.0",
+      "pinned_commit": "eddb123f876048268ee1f096ccdd1cbcf65ad07d",
+      "roles": [
+        "optional-codec-bridge",
+        "iec61937-eac3-joc-realtime-bridge",
+        "eac3-dependent-pairing",
+        "format-speaker-pose-declaration"
+      ],
+      "object_metadata": "experimental-realtime-joc",
       "production_ready": false,
-      "evidence": ["docs/immersive-validation.md"]
+      "evidence": [
+        "docs/immersive-validation.md",
+        "docs/pi5-earc-runtime.md"
+      ]
+    },
+    {
+      "id": "vibesboxsrc",
+      "upstream": "https://github.com/sofianchitac/VibesboxSRC",
+      "decision": "physical-reference",
+      "integration": "reference-only",
+      "tested_version": "commit-8f84376df8b7499808b17c150a328b8665ba1384",
+      "pinned_commit": "8f84376df8b7499808b17c150a328b8665ba1384",
+      "license": "MIT",
+      "roles": [
+        "raspberry-pi-5-rp1-four-lane-i2s-reference",
+        "lindy-38368-sii9437-earc-tap-reference",
+        "iec61937-ddplus-hardware-capture-reference",
+        "earc-latency-and-rate-behaviour-reference"
+      ],
+      "object_metadata": "not-applicable-transport-reference",
+      "production_ready": false,
+      "evidence": [
+        "docs/pi5-earc-runtime.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
     },
     {
       "id": "openjoc",
@@ -106,10 +153,18 @@
           "sha256": "c015b9f3230bf43b0e3709e596c210e75a16a11b98383c3f3690ecc370db0ded"
         }
       },
-      "roles": ["eac3-joc-decode", "object-scene-reconstruction", "speaker-render-reference", "differential-validation"],
+      "roles": [
+        "eac3-joc-decode",
+        "object-scene-reconstruction",
+        "speaker-render-reference",
+        "differential-validation"
+      ],
       "object_metadata": "supported-with-documented-reconstruction-boundary",
       "production_ready": false,
-      "evidence": ["docs/openjoc-integration.md", "THIRD_PARTY_LICENSES.md"]
+      "evidence": [
+        "docs/openjoc-integration.md",
+        "THIRD_PARTY_LICENSES.md"
+      ]
     },
     {
       "id": "jocforge",
@@ -119,7 +174,11 @@
       "tested_version": "commit-05a4108e0c6288130dec1203b301979a91475fca",
       "pinned_commit": "05a4108e0c6288130dec1203b301979a91475fca",
       "license": "Apache-2.0",
-      "roles": ["eac3-joc-fixture-generation", "structural-conformance-reference", "differential-validation-input"],
+      "roles": [
+        "eac3-joc-fixture-generation",
+        "structural-conformance-reference",
+        "differential-validation-input"
+      ],
       "object_metadata": "static-adm-input-to-joc-oamd-structural-reference",
       "production_ready": false,
       "evidence": [
@@ -135,7 +194,13 @@
       "integration": "external-reference-only",
       "tested_version": "1.0.0",
       "pinned_commit": "5601d50c05a5e71cac7e80babeff7dd2a53b2060",
-      "roles": ["iamf-open-render-reference", "object-render-reference", "hoa-render-reference", "binaural-reference", "differential-validation"],
+      "roles": [
+        "iamf-open-render-reference",
+        "object-render-reference",
+        "hoa-render-reference",
+        "binaural-reference",
+        "differential-validation"
+      ],
       "object_metadata": "supported-by-upstream-reference-api",
       "production_ready": false,
       "evidence": [
@@ -152,7 +217,9 @@
       "integration": "external-process-validation-reference",
       "tested_version": "commit-e55e1832a608affe602de2ee39929bd7759a75ab",
       "pinned_commit": "e55e1832a608affe602de2ee39929bd7759a75ab",
-      "roles": ["iamf-rendered-channel-pcm-reference"],
+      "roles": [
+        "iamf-rendered-channel-pcm-reference"
+      ],
       "object_metadata": "not-exposed-by-rendered-process-adapter",
       "production_ready": false,
       "evidence": [
@@ -171,7 +238,12 @@
       "tested_version": "commit-c6b11b5ea47d7da00fbac9654acc96aa4ced2388",
       "pinned_commit": "c6b11b5ea47d7da00fbac9654acc96aa4ced2388",
       "license": "BSD-3-Clause-Clear with Alliance for Open Media Patent License terms",
-      "roles": ["iamf-encode-reference", "iamf-decode-reference", "iamf-probe-reference", "differential-validation"],
+      "roles": [
+        "iamf-encode-reference",
+        "iamf-decode-reference",
+        "iamf-probe-reference",
+        "differential-validation"
+      ],
       "object_metadata": "descriptor-and-temporal-obu-probe-reference",
       "production_ready": false,
       "evidence": [
@@ -189,7 +261,12 @@
       "tested_version": "0.14.0",
       "pinned_commit": "aed1ac5aea2844da374712a2b51339a09485df6f",
       "license": "Apache-2.0",
-      "roles": ["adm-xml-parse-reference", "adm-xml-write-reference", "adm-roundtrip-validation", "malformed-adm-validation"],
+      "roles": [
+        "adm-xml-parse-reference",
+        "adm-xml-write-reference",
+        "adm-roundtrip-validation",
+        "malformed-adm-validation"
+      ],
       "object_metadata": "adm-document-structure-reference-only",
       "production_ready": false,
       "evidence": [
@@ -208,7 +285,12 @@
       "tested_version": "2.1.0",
       "pinned_commit": "5bb17b4278e8e67f24f90efb7a81a8aea7aed4f3",
       "license": "BSD-3-Clause-Clear; no patent license granted",
-      "roles": ["adm-render-reference", "bs2127-reference", "bs2051-layout-reference", "differential-validation"],
+      "roles": [
+        "adm-render-reference",
+        "bs2127-reference",
+        "bs2051-layout-reference",
+        "differential-validation"
+      ],
       "object_metadata": "rendered-by-upstream-reference-not-exposed-to-aurora-runtime",
       "production_ready": false,
       "evidence": [
@@ -227,7 +309,12 @@
       "tested_version": "1.3.5",
       "pinned_commit": "18fd5aba46e20787b51f28f7197a68506c965c07",
       "license": "ISC core validation subset; GPLv2 tracker/HADES translation units excluded from Aurora validation build graph",
-      "roles": ["vbap-reference", "3d-speaker-render-reference", "ambisonics-reference", "differential-validation"],
+      "roles": [
+        "vbap-reference",
+        "3d-speaker-render-reference",
+        "ambisonics-reference",
+        "differential-validation"
+      ],
       "object_metadata": "not-applicable-gain-render-reference",
       "production_ready": false,
       "evidence": [
@@ -248,7 +335,11 @@
       "tested_version": "commit-4448b69738da2fa5f2f2f2b0ce29eea32509e046",
       "pinned_commit": "4448b69738da2fa5f2f2f2b0ce29eea32509e046",
       "license": "Fraunhofer FDK MPEG-H Software License; no patent license granted",
-      "roles": ["mpegh-decode-reference", "speaker-render-reference", "differential-validation"],
+      "roles": [
+        "mpegh-decode-reference",
+        "speaker-render-reference",
+        "differential-validation"
+      ],
       "object_metadata": "rendered-by-upstream-reference-not-exposed-to-aurora-runtime",
       "production_ready": false,
       "evidence": [
@@ -266,7 +357,12 @@
       "tested_version": "commit-f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8",
       "pinned_commit": "f7ff0ac78d4d83f0b853bf2dff2ef075c92724f8",
       "license": "BSD-like source license plus LICENSE2 patent disclaimer; no patent license granted",
-      "roles": ["mpegh-decode-reference", "speaker-render-reference", "fixture-reference", "differential-validation"],
+      "roles": [
+        "mpegh-decode-reference",
+        "speaker-render-reference",
+        "fixture-reference",
+        "differential-validation"
+      ],
       "object_metadata": "rendered-by-upstream-reference-not-exposed-to-aurora-runtime",
       "production_ready": false,
       "evidence": [
@@ -284,7 +380,13 @@
       "tested_version": "commit-478dc7c752d5eccae534635139ff0253eee3a14a",
       "pinned_commit": "478dc7c752d5eccae534635139ff0253eee3a14a",
       "license": "BSD-3-Clause-Clear plus Open Binaural Renderer Patent License 1.0",
-      "roles": ["binaural-render-reference", "ambisonics-binaural-reference", "channel-based-binaural-reference", "object-binaural-reference", "head-rotation-reference"],
+      "roles": [
+        "binaural-render-reference",
+        "ambisonics-binaural-reference",
+        "channel-based-binaural-reference",
+        "object-binaural-reference",
+        "head-rotation-reference"
+      ],
       "object_metadata": "supported-by-upstream-reference-api",
       "production_ready": false,
       "evidence": [
@@ -304,7 +406,12 @@
       "pinned_commit": "6127e897b941211051c2ad135ee09b00be2e6ae0",
       "license": "Apache-2.0",
       "maturity": "upstream-pre-release",
-      "roles": ["adm-binaural-render-reference", "independent-binaural-reference", "sh-rotation-reference", "dynamic-binaural-render-reference"],
+      "roles": [
+        "adm-binaural-render-reference",
+        "independent-binaural-reference",
+        "sh-rotation-reference",
+        "dynamic-binaural-render-reference"
+      ],
       "object_metadata": "adm-rendered-by-upstream-reference",
       "production_ready": false,
       "evidence": [
@@ -323,7 +430,11 @@
       "tested_version": "0.3.0",
       "pinned_commit": "06a629292689e99841e5dacaa25c4c6298616ca6",
       "license": "MIT OR Apache-2.0",
-      "roles": ["sofa-reader-candidate", "hrtf-renderer-candidate", "partitioned-convolution-reference"],
+      "roles": [
+        "sofa-reader-candidate",
+        "hrtf-renderer-candidate",
+        "partitioned-convolution-reference"
+      ],
       "object_metadata": "not-applicable",
       "production_ready": false,
       "evidence": [
@@ -342,7 +453,13 @@
       "tested_version": "2.0.0",
       "pinned_commit": "dc2a5be2962ba02d6cebe297f31f2774f34e7bc7",
       "license": "Standard Improved BSD License",
-      "roles": ["peer-udp-network-audio", "timestamped-pcm", "jitter-loss-handling", "packet-retransmission", "adaptive-clock-rate-correction"],
+      "roles": [
+        "peer-udp-network-audio",
+        "timestamped-pcm",
+        "jitter-loss-handling",
+        "packet-retransmission",
+        "adaptive-clock-rate-correction"
+      ],
       "object_metadata": "not-applicable-post-dsp-pcm-transport",
       "production_ready": false,
       "evidence": [
@@ -363,7 +480,14 @@
       "tested_version": "7.3.2",
       "pinned_commit": "6b962d6c34b0c3f142295a213dfa70bda193b23d",
       "license": "Mixed: main user-space stack BSD-3-Clause/CC0 surfaces; Linux modules include GPL-2.0-or-later and Linux-syscall-note surfaces",
-      "roles": ["avb-tsn", "gptp-8021as", "avtp-1722", "avdecc-1722-1", "milan", "hardware-media-clock-recovery"],
+      "roles": [
+        "avb-tsn",
+        "gptp-8021as",
+        "avtp-1722",
+        "avdecc-1722-1",
+        "milan",
+        "hardware-media-clock-recovery"
+      ],
       "object_metadata": "not-applicable-post-dsp-pcm-transport",
       "production_ready": false,
       "evidence": [
@@ -381,7 +505,14 @@
       "tested_version": "2.18.0",
       "pinned_commit": "5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9",
       "license": "MIT",
-      "roles": ["avb-endpoint", "aaf-pcm-24bit-48khz", "ethernet-endpoint", "wifi-endpoint", "ethernet-wifi-bridge", "i2s-codec-output"],
+      "roles": [
+        "avb-endpoint",
+        "aaf-pcm-24bit-48khz",
+        "ethernet-endpoint",
+        "wifi-endpoint",
+        "ethernet-wifi-bridge",
+        "i2s-codec-output"
+      ],
       "object_metadata": "not-applicable-post-dsp-pcm-transport",
       "production_ready": false,
       "evidence": [
@@ -400,7 +531,13 @@
       "tested_version": "1.2.3",
       "pinned_commit": "5b7eec233a93733ae954beefb6df3bb9c12dc901",
       "license": "Apache-2.0",
-      "roles": ["ieee-1588-ptp", "ieee-8021as-gptp", "esp32-p4-hardware-timestamping", "esp32-c6-software-disciplined-clock", "wifi-follow-up-information-transport"],
+      "roles": [
+        "ieee-1588-ptp",
+        "ieee-8021as-gptp",
+        "esp32-p4-hardware-timestamping",
+        "esp32-c6-software-disciplined-clock",
+        "wifi-follow-up-information-transport"
+      ],
       "object_metadata": "not-applicable-time-mapping",
       "production_ready": false,
       "evidence": [
@@ -419,7 +556,14 @@
       "tested_version": "commit-11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c",
       "pinned_commit": "11cfcaf8f46d5c02b1c30e8394d10351ccd00e7c",
       "license": "BSD-3-Clause primary with additional permissive bundled-component notices",
-      "roles": ["imx8mp-hifi4-dsp", "fir", "iir", "drc", "src", "multichannel-pipeline"],
+      "roles": [
+        "imx8mp-hifi4-dsp",
+        "fir",
+        "iir",
+        "drc",
+        "src",
+        "multichannel-pipeline"
+      ],
       "object_metadata": "not-applicable-post-render-system-dsp",
       "production_ready": false,
       "evidence": [
@@ -437,7 +581,14 @@
       "tested_version": "commit-d149ed9744fd399b835c6f2920511f8cbcfce5ea",
       "pinned_commit": "d149ed9744fd399b835c6f2920511f8cbcfce5ea",
       "license": "LGPL-2.1-or-later",
-      "roles": ["spatial-renderer-candidate", "object-rendering", "direct-speakers", "hoa", "binaural", "differential-validation"],
+      "roles": [
+        "spatial-renderer-candidate",
+        "object-rendering",
+        "direct-speakers",
+        "hoa",
+        "binaural",
+        "differential-validation"
+      ],
       "object_metadata": "candidate-must-map-through-aurora-scene-contract",
       "production_ready": false,
       "evidence": [
@@ -452,7 +603,10 @@
       "upstream": "https://github.com/hoene/libmysofa",
       "decision": "defer-headphones",
       "integration": "adapter",
-      "roles": ["sofa-hrir-loader", "binaural-headphones"],
+      "roles": [
+        "sofa-hrir-loader",
+        "binaural-headphones"
+      ],
       "object_metadata": "not-applicable",
       "production_ready": false,
       "evidence": []
@@ -462,7 +616,9 @@
       "upstream": "https://github.com/xiph/rnnoise",
       "decision": "defer-dialogue",
       "integration": "worker-adapter",
-      "roles": ["optional-speech-denoise"],
+      "roles": [
+        "optional-speech-denoise"
+      ],
       "object_metadata": "not-applicable",
       "production_ready": false,
       "evidence": []
@@ -472,7 +628,9 @@
       "upstream": "https://github.com/mikebrady/shairport-sync",
       "decision": "defer-streaming",
       "integration": "external-service",
-      "roles": ["airplay-receiver"],
+      "roles": [
+        "airplay-receiver"
+      ],
       "object_metadata": "not-applicable",
       "production_ready": false,
       "evidence": []
@@ -482,7 +640,9 @@
       "upstream": "https://github.com/Spotifyd/spotifyd",
       "decision": "defer-streaming",
       "integration": "external-service",
-      "roles": ["spotify-connect-client"],
+      "roles": [
+        "spotify-connect-client"
+      ],
       "object_metadata": "not-applicable",
       "production_ready": false,
       "evidence": []
@@ -492,7 +652,9 @@
       "upstream": "https://github.com/badaix/snapcast",
       "decision": "defer-multiroom",
       "integration": "external-service",
-      "roles": ["multiroom-reference"],
+      "roles": [
+        "multiroom-reference"
+      ],
       "object_metadata": "not-applicable",
       "production_ready": false,
       "evidence": []
