@@ -117,7 +117,21 @@
       "evidence": [
         "docs/immersive-validation.md",
         "docs/pi5-earc-runtime.md"
-      ]
+      ],
+      "release_artifacts": {
+        "x86_64-unknown-linux-gnu": {
+          "name": "harletty-bridge-v0.8.0-linux-x86_64.zip",
+          "sha256": "860f35404220faab7b2432a1dff7f2f295f47bd7cb3ab3ea6659a41db777ccb4"
+        },
+        "x86_64-pc-windows-msvc": {
+          "name": "harletty-bridge-v0.8.0-windows-x86_64.zip",
+          "sha256": "a8486d6fcf32b1e860cb4d5dce045b903621ae44320893391d3c27647642d3b2"
+        },
+        "aarch64-apple-darwin": {
+          "name": "harletty-bridge-v0.8.0-macos-arm64.zip",
+          "sha256": "091882ad13d505149e15404e4d1980a155c4cf178fb3b5ac349b213b6fe12f8a"
+        }
+      }
     },
     {
       "id": "vibesboxsrc",
