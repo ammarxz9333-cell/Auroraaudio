@@ -3,7 +3,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/config/external-components-v1.json"
-OMNIP_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.6.0-low-latency-stdout.patch"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
 KEEP_WORKDIR="${AURORA_KEEP_JOC_TEST_WORKDIR:-0}"
 BUILD_MODE="${AURORA_JOC_BUILD_MODE:-debug}"
@@ -36,7 +35,6 @@ for cmd in git python3 ffmpeg rustup cargo; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
 [[ -f "$MANIFEST" ]] || { echo "missing external component manifest: $MANIFEST" >&2; exit 2; }
-[[ -f "$OMNIP_PATCH" ]] || { echo "missing Omniphony latency patch: $OMNIP_PATCH" >&2; exit 2; }
 
 if [[ -n "${AURORA_JOC_TEST_WORKDIR:-}" ]]; then
   WORK_DIR="$AURORA_JOC_TEST_WORKDIR"
@@ -100,9 +98,7 @@ CARGO_TARGET_DIR="$HARLETTY_TARGET_DIR" cargo +"$TOOLCHAIN" build --locked "${PR
   --manifest-path "$HARLETTY_DIR/Cargo.toml" \
   -p harletty-bridge
 
-phase "patch and build Omniphony renderer ($BUILD_MODE)"
-git -C "$OMNIP_DIR/omniphony-renderer" apply --check "$OMNIP_PATCH"
-git -C "$OMNIP_DIR/omniphony-renderer" apply "$OMNIP_PATCH"
+phase "build Omniphony renderer ($BUILD_MODE)"
 CARGO_TARGET_DIR="$OMNIP_TARGET_DIR" cargo +"$TOOLCHAIN" build "${PROFILE_ARGS[@]}" \
   --manifest-path "$OMNIP_DIR/omniphony-renderer/Cargo.toml" \
   -p omniphony-renderer
