@@ -203,7 +203,6 @@ def main() -> int:
     work.mkdir(parents=True)
 
     manifest_path = root / "config/external-components-v1.json"
-    patch = root / "validation/immersive/omniphony-v0.6.0-low-latency-stdout.patch"
     moving_analyzer = root / "validation/immersive/aurora_joc_moving_evidence.py"
     virtual_analyzer = root / "validation/virtual-hardware/aurora_full_system_sim.py"
     coverage_validator = root / "validation/virtual-hardware/validate_simulation_coverage.py"
@@ -211,7 +210,6 @@ def main() -> int:
     telemetry_source = root / "validation/virtual-hardware/aurora_moving_telemetry.rs"
     for path in (
         manifest_path,
-        patch,
         moving_analyzer,
         virtual_analyzer,
         coverage_validator,
@@ -243,8 +241,6 @@ def main() -> int:
     omnip_dir = cache / "Omniphony"
     clone_pinned(git, str(omnip["upstream"]), str(omnip["tested_version"]), str(omnip["pinned_commit"]), omnip_dir)
     renderer_dir = omnip_dir / "omniphony-renderer"
-    run([git, "-C", str(renderer_dir), "apply", "--check", str(patch)])
-    run([git, "-C", str(renderer_dir), "apply", str(patch)])
     prepare_windows_sim_renderer(renderer_dir)
 
     omnip_target = cache / "omniphony-target"
