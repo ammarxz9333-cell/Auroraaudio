@@ -61,6 +61,7 @@ jobs:
             cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
             cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
             python3 ci/daviewer_patch/apply_mature_entitlement_fallback.py
+            python3 ci/daviewer_patch/apply_external_oauth_android.py
 
             sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
             sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_web/pubspec.yaml
@@ -136,6 +137,7 @@ jobs:
               'DAKit upstream: f226cef261a5fa5e4030d84ceb3f55aac1c86afa' \
               'Flutter: 3.47.2 stable' \
               'Access: Mature + purchased/subscribed media exposed by the logged-in DeviantArt web session' \
+              'Android OAuth: system browser + AppLinks callback' \
               'No payment/entitlement bypass' \
               'Signing: Android debug key (custom release build)' \
               > out/BUILD-INFO.txt
