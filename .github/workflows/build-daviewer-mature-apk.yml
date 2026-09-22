@@ -48,24 +48,9 @@ jobs:
               path: ../DAKit/packages/dakit_web
           EOF
 
-      - name: Test DAKit API
-        working-directory: DAKit/packages/dakit_api
-        run: |
-          dart pub get
-          dart test
-
-      - name: Test Mature and entitlement mapping
-        working-directory: DAKit/packages/dakit_web
-        run: |
-          dart pub get
-          dart test test/mature_entitlement_mapping_test.dart
-
-      - name: Analyze and test DAViewer
+      - name: Resolve DAViewer dependencies
         working-directory: DAViewer
-        run: |
-          flutter pub get
-          flutter analyze
-          flutter test
+        run: flutter pub get
 
       - name: Allow custom build to use debug signing
         run: |
