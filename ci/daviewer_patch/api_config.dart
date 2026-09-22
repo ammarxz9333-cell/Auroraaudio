@@ -63,7 +63,7 @@ final class RateLimitPolicy {
     this.maxRetries = 10,
     this.initialDelay = const Duration(seconds: 1),
     this.maximumDelay = const Duration(minutes: 5),
-    this.minimumSpacing = const Duration(milliseconds: 350),
+    this.minimumSpacing = const Duration(milliseconds: 10),
   }) : assert(maxRetries >= 0);
 
   final int maxRetries;
