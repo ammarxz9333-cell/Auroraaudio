@@ -33,6 +33,7 @@ echo "== Apply mature + entitlement fallback =="
 (
   cd "$WORK"
   python3 "$ROOT/ci/daviewer_patch/apply_mature_entitlement_fallback.py"
+  python3 "$ROOT/ci/daviewer_patch/apply_external_oauth_android.py"
 )
 
 sed -i.bak '/^resolution: workspace$/d'   "$WORK/DAKit/packages/dakit_api/pubspec.yaml" || true
@@ -117,6 +118,7 @@ cat > "$OUT/BUILD-INFO.txt" <<EOF
 DAViewer upstream: $DA_VIEWER_SHA
 DAKit upstream: $DAKIT_SHA
 Access policy: Mature content + Premium/Subscription media only when DeviantArt reports entitlement for the logged-in web session.
+Android OAuth: system browser + AppLinks callback.
 Payment/entitlement bypass: none.
 EOF
 
