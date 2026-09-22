@@ -1,0 +1,166 @@
+name: Build DAViewer External OAuth Mature APK
+
+on:
+  push:
+    branches:
+      - ci/daviewer-external-oauth-20260922
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout carrier
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Fetch current DAViewer and DAKit
+        run: |
+          git clone https://github.com/redtidev1918/DAViewer.git DAViewer
+          git -C DAViewer checkout 862ec4571adaccdd4feb0d70cec7ad78b98b96b4
+          git clone https://github.com/redtidev1918/DAKit.git DAKit
+          git -C DAKit checkout f226cef261a5fa5e4030d84ceb3f55aac1c86afa
+
+      - name: Apply mature entitlement fallback
+        run: |
+          python3 ci/daviewer_patch/apply_mature_entitlement_fallback.py
+          sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_web/pubspec.yaml
+          cat > DAViewer/pubspec_overrides.yaml <<'EOF'
+          dependency_overrides:
+            dakit_web:
+              path: ../DAKit/packages/dakit_web
+          EOF
+
+      - name: Use system browser OAuth on Android
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("DAViewer/lib/core/runtime/app_runtime.dart")
+          s = p.read_text()
+
+          old_bridge = """    final webViewOAuthBridge = WebViewOAuthBridge();
+    final webViewProxyManager = proxyController == null
+        ? null
+        : WebViewProxyManager(proxyController);
+    final oauth = DAKitOAuthClient(
+"""
+          new_bridge = """    final useSystemBrowserOAuth = Platform.isAndroid;
+    final webViewOAuthBridge =
+        useSystemBrowserOAuth ? null : WebViewOAuthBridge();
+    final webViewProxyManager = proxyController == null
+        ? null
+        : WebViewProxyManager(proxyController);
+    final oauth = DAKitOAuthClient(
+"""
+          if old_bridge not in s:
+              raise SystemExit("runtime bridge anchor changed")
+          s = s.replace(old_bridge, new_bridge, 1)
+
+          old_auth = """      launcher: webViewOAuthBridge,
+      callbacks: MergedCallbackUriSource(
+        initial: AppLinksCallbackUriSource(),
+        others: <CallbackUriSource>[webViewOAuthBridge.callbacks],
+      ),
+"""
+          new_auth = """      launcher: useSystemBrowserOAuth
+          ? const SystemUriLauncher()
+          : webViewOAuthBridge!,
+      callbacks: useSystemBrowserOAuth
+          ? AppLinksCallbackUriSource()
+          : MergedCallbackUriSource(
+              initial: AppLinksCallbackUriSource(),
+              others: <CallbackUriSource>[webViewOAuthBridge!.callbacks],
+            ),
+"""
+          if old_auth not in s:
+              raise SystemExit("runtime OAuth anchor changed")
+          s = s.replace(old_auth, new_auth, 1)
+          p.write_text(s)
+          PY
+
+      - name: Verify Android OAuth wiring
+        run: |
+          grep -q "useSystemBrowserOAuth = Platform.isAndroid" DAViewer/lib/core/runtime/app_runtime.dart
+          grep -q "const SystemUriLauncher()" DAViewer/lib/core/runtime/app_runtime.dart
+          grep -q "AppLinksCallbackUriSource()" DAViewer/lib/core/runtime/app_runtime.dart
+          grep -q 'android:scheme="dakit"' DAViewer/android/app/src/main/AndroidManifest.xml
+          grep -q 'android:host="oauth"' DAViewer/android/app/src/main/AndroidManifest.xml
+          grep -q 'android:path="/callback"' DAViewer/android/app/src/main/AndroidManifest.xml
+
+      - name: Test DAKit Web
+        working-directory: DAKit/packages/dakit_web
+        run: |
+          dart pub get
+          dart test
+
+      - name: Analyze and test DAViewer
+        working-directory: DAViewer
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Allow installable custom release signing
+        working-directory: DAViewer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/build.gradle.kts")
+          s = p.read_text()
+          old = """            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          error(
+                              "Release signing is not configured. " +
+                              "Create android/key.properties and " +
+                              "android/app/upload-keystore.p12 before building a release APK. " +
+                              "See README.md / CI signing secrets."
+                          )
+                      }"""
+          new = """            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          signingConfigs.getByName("debug")
+                      }"""
+          if old not in s:
+              raise SystemExit("release signing block changed upstream")
+          p.write_text(s.replace(old, new))
+          PY
+
+      - name: Build release-mode APK
+        working-directory: DAViewer
+        run: flutter build apk --release
+
+      - name: Package APK
+        run: |
+          mkdir -p out
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.5.0-external-oauth-mature-20260922.apk
+          sha256sum out/DAViewer-v0.5.0-external-oauth-mature-20260922.apk > out/SHA256SUMS.txt
+          cat > out/BUILD-INFO.txt <<'EOF'
+          DAViewer upstream commit: 862ec4571adaccdd4feb0d70cec7ad78b98b96b4
+          DAKit upstream commit: f226cef261a5fa5e4030d84ceb3f55aac1c86afa
+          Android OAuth: SYSTEM BROWSER via SystemUriLauncher + AppLinks callback
+          WebView: retained only for DeviantArt web session / personalized web adapters
+          Mature: website-session fallback enabled
+          Premium/subscription: only when DeviantArt reports account entitlement
+          Build: release mode, custom debug signing key
+          EOF
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-v0.5.0-external-oauth-mature-APK
+          path: out/*
+          if-no-files-found: error
+          retention-days: 7
