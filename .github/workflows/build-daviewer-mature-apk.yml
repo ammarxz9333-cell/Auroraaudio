@@ -83,15 +83,15 @@ jobs:
           p.write_text(s.replace(old, new))
           PY
 
-      - name: Build release APK
+      - name: Build installable debug APK
         working-directory: DAViewer
-        run: flutter build apk --release
+        run: flutter build apk --debug
 
       - name: Package APK
         run: |
           mkdir -p out
-          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.5.0-mature-entitled-20260922.apk
-          sha256sum out/DAViewer-v0.5.0-mature-entitled-20260922.apk > out/SHA256SUMS.txt
+          cp DAViewer/build/app/outputs/flutter-apk/app-debug.apk out/DAViewer-v0.5.0-mature-entitled-20260922-debug.apk
+          sha256sum out/DAViewer-v0.5.0-mature-entitled-20260922-debug.apk > out/SHA256SUMS.txt
           cat > out/BUILD-INFO.txt <<'EOF'
           DAViewer: 0.5.0+212
           DAViewer upstream commit: 0a6cdd47c96d7cbb27bcd7a1a39d9fb560c93100
@@ -99,13 +99,13 @@ jobs:
           Mature: website-session fallback enabled
           Premium/subscription: shown only when DeviantArt reports entitlement for logged-in account
           Auth/session: latest upstream DAViewer auth implementation retained unchanged
-          Signing: Android debug key on release build (custom build)
+          Build type: debug APK (installable custom build)
           EOF
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-v0.5.0-mature-entitled-APK
+          name: DAViewer-v0.5.0-mature-entitled-debug-APK
           path: out/*
           if-no-files-found: error
           retention-days: 7
