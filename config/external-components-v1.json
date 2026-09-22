@@ -122,7 +122,7 @@
     {
       "id": "vibesboxsrc",
       "upstream": "https://github.com/sofianchitac/VibesboxSRC",
-      "decision": "physical-reference",
+      "decision": "validation-only",
       "integration": "reference-only",
       "tested_version": "commit-8f84376df8b7499808b17c150a328b8665ba1384",
       "pinned_commit": "8f84376df8b7499808b17c150a328b8665ba1384",
