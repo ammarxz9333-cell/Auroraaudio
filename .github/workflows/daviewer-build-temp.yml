@@ -77,7 +77,7 @@ jobs:
             (
               cd DAKit/packages/dakit_api
               dart pub get
-              dart format --output=none --set-exit-if-changed lib test
+              dart format lib test
               dart test
             )
 
@@ -85,7 +85,7 @@ jobs:
             (
               cd DAKit/packages/dakit_web
               dart pub get
-              dart format --output=none --set-exit-if-changed lib test
+              dart format lib test
               dart test
             )
 
