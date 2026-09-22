@@ -281,7 +281,7 @@ old_deviation = """final deviationInitProvider = FutureProvider.autoDispose
       if (csrf.isEmpty) {
         throw StateError('Public browser session is unavailable');
       }
-      final webSession = ref.watch(webSessionProvider);
+      final webSession = ref.read(webSessionProvider);
       final cookieHeader = await webSession.cookieHeader();
       final cached = ref.read(artworkStoreProvider)[artworkId];
       final username =
@@ -315,7 +315,7 @@ new_deviation = """final deviationInitProvider = FutureProvider.autoDispose
       if (csrf.isEmpty) {
         throw StateError('Public browser session is unavailable');
       }
-      final webSession = ref.watch(webSessionProvider);
+      final webSession = ref.read(webSessionProvider);
       final cookieHeader = await webSession.cookieHeader();
       final username =
           cached?.author.username ?? ref.read(linkUsernameProvider) ?? '';
