@@ -1,0 +1,168 @@
+name: Build DAViewer mature + entitlement APK
+
+on:
+  push:
+    branches:
+      - ci/daviewer-build-20260922
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daviewer-public-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout patch carrier
+        uses: actions/checkout@v4
+
+      - name: Prepare diagnostics
+        run: |
+          mkdir -p ci-logs out
+          printf 'started\n' > ci-logs/stage.txt
+          printf '1\n' > ci-logs/status.txt
+
+      - name: Install Flutter 3.47.2
+        shell: bash
+        run: |
+          set -o pipefail
+          {
+            echo "== install flutter =="
+            git clone --depth 1 --branch 3.47.2 https://github.com/flutter/flutter.git "$RUNNER_TEMP/flutter"
+            "$RUNNER_TEMP/flutter/bin/flutter" --version
+            "$RUNNER_TEMP/flutter/bin/dart" --version
+          } 2>&1 | tee ci-logs/flutter-install.log
+          echo "$RUNNER_TEMP/flutter/bin" >> "$GITHUB_PATH"
+          printf 'flutter-installed\n' > ci-logs/stage.txt
+
+      - name: Build and test patched DAViewer
+        id: build
+        continue-on-error: true
+        shell: bash
+        run: |
+          set +e
+          set -o pipefail
+          {
+            set -e
+            echo "== clone pinned sources =="
+            git clone https://github.com/redtidev1918/DAViewer.git
+            git -C DAViewer checkout 7c27e975ce0913286c3c2cc88561f1ceac3daefb
+            git clone https://github.com/redtidev1918/DAKit.git
+            git -C DAKit checkout 03d4a90f71e9f496c13838330b4942c050c76ba3
+
+            echo "== apply patches =="
+            cp ci/daviewer_patch/api_config.dart DAKit/packages/dakit_api/lib/src/http/api_config.dart
+            cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
+            cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
+            python3 ci/daviewer_patch/apply_mature_entitlement_fallback.py
+
+            sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
+            sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_web/pubspec.yaml
+
+            cat > DAViewer/pubspec_overrides.yaml <<'EOF'
+          dependency_overrides:
+            dakit_api:
+              path: ../DAKit/packages/dakit_api
+            dakit_web:
+              path: ../DAKit/packages/dakit_web
+          EOF
+
+            echo "== test dakit_api =="
+            (
+              cd DAKit/packages/dakit_api
+              dart pub get
+              dart format lib test
+              dart test
+            )
+
+            echo "== test dakit_web mature/entitlement mapping =="
+            (
+              cd DAKit/packages/dakit_web
+              dart pub get
+              dart format lib test
+              dart test
+            )
+
+            echo "== resolve/analyze DAViewer =="
+            (
+              cd DAViewer
+              flutter pub get
+              flutter analyze
+              flutter test
+            )
+
+            echo "== debug-sign custom release build =="
+            python3 - <<'PY'
+          from pathlib import Path
+          p = Path("DAViewer/android/app/build.gradle.kts")
+          s = p.read_text()
+          old = """            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          error(
+                              "Release signing is not configured. " +
+                              "Create android/key.properties and " +
+                              "android/app/upload-keystore.p12 before building a release APK. " +
+                              "See README.md / CI signing secrets."
+                          )
+                      }"""
+          new = """            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          signingConfigs.getByName("debug")
+                      }"""
+          if old not in s:
+              raise SystemExit("release signing block changed upstream")
+          p.write_text(s.replace(old, new))
+          PY
+
+            echo "== build APK =="
+            (
+              cd DAViewer
+              flutter build apk --release
+            )
+
+            echo "== package =="
+            cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.0-mature-entitled-20260922.apk
+            sha256sum out/DAViewer-v0.4.0-mature-entitled-20260922.apk > out/SHA256SUMS.txt
+            printf '%s\n' \
+              'DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb' \
+              'DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3' \
+              'Flutter: 3.47.2 stable' \
+              'Access: Mature + purchased/subscribed media exposed by the logged-in DeviantArt web session' \
+              'No payment/entitlement bypass' \
+              'Signing: Android debug key (custom release build)' \
+              > out/BUILD-INFO.txt
+          } 2>&1 | tee ci-logs/build.log
+          status=${PIPESTATUS[0]}
+          printf '%s\n' "$status" > ci-logs/status.txt
+          if [ "$status" -eq 0 ]; then
+            printf 'build-complete\n' > ci-logs/stage.txt
+          else
+            printf 'build-failed\n' > ci-logs/stage.txt
+          fi
+          exit "$status"
+
+      - name: Upload APK and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-mature-entitled-build
+          path: |
+            out/*
+            ci-logs/*
+          if-no-files-found: warn
+          retention-days: 7
+
+      - name: Enforce build result
+        if: always()
+        shell: bash
+        run: |
+          status="$(cat ci-logs/status.txt 2>/dev/null || echo 1)"
+          exit "$status"
