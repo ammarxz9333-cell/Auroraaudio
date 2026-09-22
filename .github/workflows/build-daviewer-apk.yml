@@ -52,9 +52,9 @@ jobs:
             set -e
             echo "== clone pinned sources =="
             git clone https://github.com/redtidev1918/DAViewer.git
-            git -C DAViewer checkout 7c27e975ce0913286c3c2cc88561f1ceac3daefb
+            git -C DAViewer checkout 862ec4571adaccdd4feb0d70cec7ad78b98b96b4
             git clone https://github.com/redtidev1918/DAKit.git
-            git -C DAKit checkout 03d4a90f71e9f496c13838330b4942c050c76ba3
+            git -C DAKit checkout f226cef261a5fa5e4030d84ceb3f55aac1c86afa
 
             echo "== apply patches =="
             cp ci/daviewer_patch/api_config.dart DAKit/packages/dakit_api/lib/src/http/api_config.dart
@@ -129,11 +129,11 @@ jobs:
             )
 
             echo "== package =="
-            cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.0-mature-entitled-20260922.apk
-            sha256sum out/DAViewer-v0.4.0-mature-entitled-20260922.apk > out/SHA256SUMS.txt
+            cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.5.0-mature-entitled-resilient-20260922.apk
+            sha256sum out/DAViewer-v0.5.0-mature-entitled-resilient-20260922.apk > out/SHA256SUMS.txt
             printf '%s\n' \
-              'DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb' \
-              'DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3' \
+              'DAViewer upstream: 862ec4571adaccdd4feb0d70cec7ad78b98b96b4' \
+              'DAKit upstream: f226cef261a5fa5e4030d84ceb3f55aac1c86afa' \
               'Flutter: 3.47.2 stable' \
               'Access: Mature + purchased/subscribed media exposed by the logged-in DeviantArt web session' \
               'No payment/entitlement bypass' \
