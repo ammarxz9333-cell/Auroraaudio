@@ -339,14 +339,14 @@ final artworkDetailProvider = FutureProvider.autoDispose
         }
       }
 
-      final uuid = webInit?.uuid ??
-          await ref.watch(artworkUuidProvider(artworkId).future);
+      final String uuid = webInit?.uuid ??
+          (await ref.watch(artworkUuidProvider(artworkId).future));
       try {
         final artwork = await dataAccessFor(runtime).artworkById(uuid);
         ref.read(artworkStoreProvider.notifier).putAll(<Artwork>[artwork]);
         unawaited(InterestStore.recordTags(artwork.tags));
         return artwork;
-      } on Object catch (officialError) {
+      } on Object {
         final websiteArtwork = webInit?.artwork;
         if (webInit != null &&
             websiteArtwork != null &&
