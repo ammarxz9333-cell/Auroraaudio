@@ -23,40 +23,45 @@ jobs:
         with:
           flutter-version: '3.47.2'
           channel: stable
-          cache: false
+          cache: true
 
-      - name: Fetch pinned DAViewer and DAKit
+      - name: Fetch pinned latest DAViewer and DAKit
         run: |
           git clone https://github.com/redtidev1918/DAViewer.git DAViewer
-          git -C DAViewer checkout 7c27e975ce0913286c3c2cc88561f1ceac3daefb
+          git -C DAViewer checkout 0a6cdd47c96d7cbb27bcd7a1a39d9fb560c93100
           git clone https://github.com/redtidev1918/DAKit.git DAKit
-          git -C DAKit checkout 03d4a90f71e9f496c13838330b4942c050c76ba3
+          git -C DAKit checkout f226cef261a5fa5e4030d84ceb3f55aac1c86afa
 
-      - name: Apply custom patches
+      - name: Apply mature and entitlement fallback
         run: |
-          cp ci/daviewer_patch/api_config.dart DAKit/packages/dakit_api/lib/src/http/api_config.dart
-          cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
-          cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
           python3 ci/daviewer_patch/apply_mature_entitlement_fallback.py
-          sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_web/pubspec.yaml
           cat > DAViewer/pubspec_overrides.yaml <<'EOF'
           dependency_overrides:
-            dakit_api:
-              path: ../DAKit/packages/dakit_api
             dakit_web:
               path: ../DAKit/packages/dakit_web
           EOF
 
-      - name: Resolve DAViewer dependencies
-        working-directory: DAViewer
-        run: flutter pub get
+      - name: Test DAKit Web
+        working-directory: DAKit/packages/dakit_web
+        run: |
+          dart pub get
+          dart format --output=none --set-exit-if-changed lib test
+          dart test
 
-      - name: Allow custom build to use debug signing
+      - name: Analyze and test DAViewer
+        working-directory: DAViewer
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Use debug key for custom release APK
+        working-directory: DAViewer
         run: |
           python3 - <<'PY'
           from pathlib import Path
-          p = Path("DAViewer/android/app/build.gradle.kts")
+          p = Path("android/app/build.gradle.kts")
           s = p.read_text()
           old = '''            signingConfig = if (keystorePropertiesFile.exists()) {
                           signingConfigs.getByName("release")
@@ -78,53 +83,29 @@ jobs:
           p.write_text(s.replace(old, new))
           PY
 
-      - name: Allow debug signing for custom build
-        run: |
-          python3 - <<'PY'
-          from pathlib import Path
-          p = Path("DAViewer/android/app/build.gradle.kts")
-          s = p.read_text()
-          old = '''            signingConfig = if (keystorePropertiesFile.exists()) {
-                          signingConfigs.getByName("release")
-                      } else {
-                          error(
-                              "Release signing is not configured. " +
-                              "Create android/key.properties and " +
-                              "android/app/upload-keystore.p12 before building a release APK. " +
-                              "See README.md / CI signing secrets."
-                          )
-                      }'''
-          new = '''            signingConfig = if (keystorePropertiesFile.exists()) {
-                          signingConfigs.getByName("release")
-                      } else {
-                          signingConfigs.getByName("debug")
-                      }'''
-          if old not in s:
-              raise SystemExit("release signing block changed upstream")
-          p.write_text(s.replace(old, new))
-          PY
-
-      - name: Build installable debug APK
+      - name: Build release APK
         working-directory: DAViewer
-        run: flutter build apk --debug
+        run: flutter build apk --release
 
       - name: Package APK
         run: |
           mkdir -p out
-          cp DAViewer/build/app/outputs/flutter-apk/app-debug.apk out/DAViewer-v0.4.0-mature-entitled-20260922-debug.apk
-          sha256sum out/DAViewer-v0.4.0-mature-entitled-20260922-debug.apk > out/SHA256SUMS.txt
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.5.0-mature-entitled-20260922.apk
+          sha256sum out/DAViewer-v0.5.0-mature-entitled-20260922.apk > out/SHA256SUMS.txt
           cat > out/BUILD-INFO.txt <<'EOF'
-          DAViewer upstream: 7c27e975ce0913286c3c2cc88561f1ceac3daefb
-          DAKit upstream: 03d4a90f71e9f496c13838330b4942c050c76ba3
-          Custom changes: rate-limit resilience + mature Web Session fallback
-          Paid content: shown only when DeviantArt reports entitlement for the logged-in account
-          Build type: debug APK
+          DAViewer: 0.5.0+212
+          DAViewer upstream commit: 0a6cdd47c96d7cbb27bcd7a1a39d9fb560c93100
+          DAKit upstream commit: f226cef261a5fa5e4030d84ceb3f55aac1c86afa
+          Mature: website-session fallback enabled
+          Premium/subscription: shown only when DeviantArt reports entitlement for logged-in account
+          Auth/session: latest upstream DAViewer auth implementation retained unchanged
+          Signing: Android debug key on release build (custom build)
           EOF
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-mature-entitled-APK
+          name: DAViewer-v0.5.0-mature-entitled-APK
           path: out/*
           if-no-files-found: error
           retention-days: 7
