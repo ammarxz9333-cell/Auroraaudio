@@ -4,8 +4,8 @@ set -euo pipefail
 ROOT="$(pwd)"
 WORK="$ROOT/.daviewer-build"
 OUT="$ROOT/out"
-DA_VIEWER_SHA="7c27e975ce0913286c3c2cc88561f1ceac3daefb"
-DAKIT_SHA="03d4a90f71e9f496c13838330b4942c050c76ba3"
+DA_VIEWER_SHA="862ec4571adaccdd4feb0d70cec7ad78b98b96b4"
+DAKIT_SHA="f226cef261a5fa5e4030d84ceb3f55aac1c86afa"
 
 command -v git >/dev/null
 command -v flutter >/dev/null
@@ -104,7 +104,7 @@ echo "== Build APK =="
 )
 
 APK="$WORK/DAViewer/build/app/outputs/flutter-apk/app-release.apk"
-DEST="$OUT/DAViewer-v0.4.0-mature-entitled-20260922.apk"
+DEST="$OUT/DAViewer-v0.5.0-mature-entitled-resilient-20260922.apk"
 cp "$APK" "$DEST"
 
 if command -v sha256sum >/dev/null; then
