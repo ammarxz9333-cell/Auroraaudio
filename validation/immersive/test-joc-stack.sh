@@ -113,10 +113,13 @@ PLAIN_IEC_FILE="$WORK_DIR/plain_eac3_5_1.spdif"
 BRIDGE_LIB="$HARLETTY_TARGET_DIR/$PROFILE_DIR/libharletty_bridge.so"
 ORENDER="$OMNIP_TARGET_DIR/$PROFILE_DIR/orender"
 LAYOUT="$OMNIP_DIR/layouts/7.1.4.yaml"
+AURORA_LAYOUT="$ROOT_DIR/config/layouts/omniphony-11.1.4-aurora.yaml"
 RENDER_OUT="$WORK_DIR/joc_atmos_7_1_4.f32"
+AURORA_RENDER_OUT="$WORK_DIR/joc_atmos_aurora_11_1_4.f32"
 RENDER_LOG="$WORK_DIR/orender-joc.log"
+AURORA_RENDER_LOG="$WORK_DIR/orender-joc-aurora-11.1.4.log"
 
-for path in "$JOC_FIXTURE" "$BRIDGE_LIB" "$ORENDER" "$LAYOUT"; do
+for path in "$JOC_FIXTURE" "$BRIDGE_LIB" "$ORENDER" "$LAYOUT" "$AURORA_LAYOUT"; do
   [[ -f "$path" ]] || { echo "expected validation input/build product missing: $path" >&2; exit 1; }
 done
 
@@ -272,6 +275,51 @@ for ch in range(12):
     vals = samples[ch::12]
     rms.append(math.sqrt(sum(v * v for v in vals) / max(1, len(vals))))
 print(f"7.1.4 render PASS: frames={frames} bytes={len(data)} channel_rms=" + ",".join(f"{v:.6g}" for v in rms))
+PY
+
+phase "render real JOC IEC61937 fixture to Aurora custom 11.1.4"
+if ! RUST_LOG="${RUST_LOG:-info}" "$ORENDER" "$IEC_FILE" \
+  --bridge-path "$BRIDGE_LIB" \
+  --enable-vbap \
+  --speaker-layout "$AURORA_LAYOUT" \
+  --output-backend file \
+  --output-file "$AURORA_RENDER_OUT" \
+  --output-file-format raw-f32 \
+  >"$AURORA_RENDER_LOG" 2>&1; then
+  echo "orender failed while rendering Aurora custom 11.1.4:" >&2
+  cat "$AURORA_RENDER_LOG" >&2
+  exit 1
+fi
+
+python3 - "$AURORA_RENDER_OUT" <<'PY'
+from array import array
+import math, pathlib, sys
+p = pathlib.Path(sys.argv[1])
+data = p.read_bytes()
+channels = 16
+frame_bytes = channels * 4
+if len(data) < frame_bytes * 100:
+    raise SystemExit(f"Aurora 11.1.4 render output too short: {len(data)} bytes")
+if len(data) % frame_bytes:
+    raise SystemExit(f"Aurora 11.1.4 output is not whole 16-channel f32 frames: {len(data)} bytes")
+samples = array('f')
+samples.frombytes(data)
+if not all(math.isfinite(v) for v in samples):
+    raise SystemExit("Aurora 11.1.4 render output contains NaN/Inf")
+if not any(abs(v) > 1e-8 for v in samples):
+    raise SystemExit("Aurora 11.1.4 render output is silent")
+frames = len(samples) // channels
+rms = []
+for ch in range(channels):
+    vals = samples[ch::channels]
+    rms.append(math.sqrt(sum(v * v for v in vals) / max(1, len(vals))))
+active = sum(v > 1e-8 for v in rms)
+if active < 2:
+    raise SystemExit(f"Aurora 11.1.4 render has too few active channels: {active}")
+print(
+    f"AURORA-11.1.4-JOC-RENDER-PASS frames={frames} bytes={len(data)} active_channels={active} "
+    + "channel_rms=" + ",".join(f"{v:.6g}" for v in rms)
+)
 PY
 
 echo "AURORA JOC SOFTWARE STACK PASS"
