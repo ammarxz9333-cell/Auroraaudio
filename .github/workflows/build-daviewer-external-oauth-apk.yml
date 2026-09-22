@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: daviewer-v051-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -37,6 +41,7 @@ jobs:
           cp ci/daviewer_patch/api_config.dart DAKit/packages/dakit_api/lib/src/http/api_config.dart
           cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
           cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
+          cp ci/daviewer_patch/official_repositories_test.dart DAKit/packages/dakit_api/test/official_repositories_test.dart
           python3 ci/daviewer_patch/apply_mature_entitlement_fallback.py
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
           sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_web/pubspec.yaml
