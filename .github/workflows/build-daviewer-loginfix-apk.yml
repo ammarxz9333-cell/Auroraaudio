@@ -1,0 +1,121 @@
+name: Build DAViewer Login-Fix Mature APK
+
+on:
+  push:
+    branches:
+      - ci/daviewer-loginfix-20260922
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout carrier
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Fetch known-working DAViewer base and pinned DAKit
+        run: |
+          git clone https://github.com/redtidev1918/DAViewer.git DAViewer
+          git -C DAViewer checkout 7c27e975ce0913286c3c2cc88561f1ceac3daefb
+          git clone https://github.com/redtidev1918/DAKit.git DAKit
+          git -C DAKit checkout 03d4a90f71e9f496c13838330b4942c050c76ba3
+
+      - name: Apply rate-limit and mature entitlement patches
+        run: |
+          cp ci/daviewer_patch/api_config.dart DAKit/packages/dakit_api/lib/src/http/api_config.dart
+          cp ci/daviewer_patch/official_api_client.dart DAKit/packages/dakit_api/lib/src/http/official_api_client.dart
+          cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
+          python3 ci/daviewer_patch/apply_mature_entitlement_fallback.py
+          sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
+          sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_web/pubspec.yaml
+          cat > DAViewer/pubspec_overrides.yaml <<'EOF'
+          dependency_overrides:
+            dakit_api:
+              path: ../DAKit/packages/dakit_api
+            dakit_web:
+              path: ../DAKit/packages/dakit_web
+          EOF
+
+      - name: Test DAKit API
+        working-directory: DAKit/packages/dakit_api
+        run: |
+          dart pub get
+          dart test
+
+      - name: Test DAKit Web mature entitlement
+        working-directory: DAKit/packages/dakit_web
+        run: |
+          dart pub get
+          dart test test/mature_entitlement_mapping_test.dart
+
+      - name: Analyze and test DAViewer
+        working-directory: DAViewer
+        run: |
+          flutter pub get
+          flutter analyze
+          flutter test
+
+      - name: Allow custom release signing
+        working-directory: DAViewer
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          p = Path("android/app/build.gradle.kts")
+          s = p.read_text()
+          old = '''            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          error(
+                              "Release signing is not configured. " +
+                              "Create android/key.properties and " +
+                              "android/app/upload-keystore.p12 before building a release APK. " +
+                              "See README.md / CI signing secrets."
+                          )
+                      }'''
+          new = '''            signingConfig = if (keystorePropertiesFile.exists()) {
+                          signingConfigs.getByName("release")
+                      } else {
+                          signingConfigs.getByName("debug")
+                      }'''
+          if old not in s:
+              raise SystemExit("release signing block changed upstream")
+          p.write_text(s.replace(old, new))
+          PY
+
+      - name: Build release-mode APK
+        working-directory: DAViewer
+        run: flutter build apk --release
+
+      - name: Package APK
+        run: |
+          mkdir -p out
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-v0.4.0-loginfix-mature-20260922.apk
+          sha256sum out/DAViewer-v0.4.0-loginfix-mature-20260922.apk > out/SHA256SUMS.txt
+          cat > out/BUILD-INFO.txt <<'EOF'
+          Base: DAViewer 0.4.0+191
+          DAViewer commit: 7c27e975ce0913286c3c2cc88561f1ceac3daefb
+          DAKit commit: 03d4a90f71e9f496c13838330b4942c050c76ba3
+          Auth/login code: unchanged from known-working base
+          Added: mature web-session fallback, entitlement-aware premium handling, rate-limit resilience
+          Build: release mode, Android debug key
+          EOF
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-v0.4.0-loginfix-mature-APK
+          path: out/*
+          if-no-files-found: error
+          retention-days: 7
