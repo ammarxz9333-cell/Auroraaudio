@@ -1,0 +1,45 @@
+diff --git a/omniphony-renderer/audio_output/src/file_sink.rs b/omniphony-renderer/audio_output/src/file_sink.rs
+--- a/omniphony-renderer/audio_output/src/file_sink.rs
++++ b/omniphony-renderer/audio_output/src/file_sink.rs
+@@ -75,7 +75,7 @@ pub struct FileAudioWriter {
+ }
+ 
+ impl FileAudioWriter {
+-    const BUF_CAPACITY: usize = 64 * 1024;
++    const BUF_CAPACITY: usize = 40 * 12 * 4;
+ 
+     /// Open `destination` (`"-"` for stdout, otherwise a regular file or FIFO
+     /// path) and, for CAF, write the header immediately.
+diff --git a/omniphony-renderer/src/cli/decode/decoder_thread.rs b/omniphony-renderer/src/cli/decode/decoder_thread.rs
+--- a/omniphony-renderer/src/cli/decode/decoder_thread.rs
++++ b/omniphony-renderer/src/cli/decode/decoder_thread.rs
+@@ -454,6 +454,13 @@ pub fn spawn_decoder_thread(config: DecoderThreadConfig) -> thread::JoinHandle<
+             log::info!("Processing complete: {frame_count} frames");
+ 
+             if !continuous {
++                if tx
++                    .send(Ok(DecoderMessage::StreamEnd(DecodedSource::Bridge)))
++                    .is_err()
++                {
++                    log::warn!("Failed to signal finite stream end, receiver closed");
++                }
+                 break;
+             }
+ 
+diff --git a/omniphony-renderer/src/cli/decode/session_run.rs b/omniphony-renderer/src/cli/decode/session_run.rs
+--- a/omniphony-renderer/src/cli/decode/session_run.rs
++++ b/omniphony-renderer/src/cli/decode/session_run.rs
+@@ -650,7 +650,12 @@ fn run_decode_loop(
+             }
+             Ok(DecoderMessage::StreamEnd(source)) => {
+                 if handler.should_accept_source(source) {
+-                    handle_stream_end(handler, ctx.args)?;
++                    if ctx.args.continuous {
++                        handle_stream_end(handler, ctx.args)?;
++                    } else {
++                        log::info!("Finite stream ended; completing render run");
++                        break;
++                    }
+                 } else {
+                     handler.poll_runtime_state()?;
+                 }
