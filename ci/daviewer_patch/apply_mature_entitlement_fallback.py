@@ -457,8 +457,8 @@ final artworkDetailProvider = FutureProvider.autoDispose
 
       // Numeric website ids (pasted links) must be resolved to the OAuth UUID
       // first — the official deviation/{id} endpoint rejects numeric ids.
-      final uuid = webInit?.uuid ??
-          await ref.watch(artworkUuidProvider(artworkId).future);
+      final String uuid = webInit?.uuid ??
+          (await ref.watch(artworkUuidProvider(artworkId).future));
       try {
         final artwork = await dataAccessFor(runtime).artworkById(uuid);
         ref.read(artworkStoreProvider.notifier).putAll(<Artwork>[artwork]);
