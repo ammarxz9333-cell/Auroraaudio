@@ -2,6 +2,18 @@ name: ARM64 Platform Validation
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "validation/immersive/**"
+      - "validation/physical/test-pi5-earc-runtime-contract.sh"
+      - "config/external-components-v1.json"
+      - "config/layouts/**"
+      - "scripts/pi5/**"
+      - "platform/pi5/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/arm64-platform-validation.yml"
   push:
     branches:
       - main-v2
@@ -9,6 +21,9 @@ on:
       - "crates/**"
       - "validation/immersive/**"
       - "config/external-components-v1.json"
+      - "config/layouts/**"
+      - "scripts/pi5/**"
+      - "platform/pi5/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/arm64-platform-validation.yml"
