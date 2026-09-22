@@ -62,6 +62,7 @@ jobs:
             cp ci/daviewer_patch/rate_limit_resilience_test.dart DAKit/packages/dakit_api/test/rate_limit_resilience_test.dart
             python3 ci/daviewer_patch/apply_mature_entitlement_fallback.py
             python3 ci/daviewer_patch/apply_external_oauth_android.py
+            python3 ci/daviewer_patch/fix_upstream_mature_query_test.py
 
             sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_api/pubspec.yaml
             sed -i '/^resolution: workspace$/d' DAKit/packages/dakit_web/pubspec.yaml
