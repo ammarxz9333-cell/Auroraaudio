@@ -40,6 +40,8 @@ checkout_exact() {
   fi
   git -C "$dest" fetch -q --depth 1 origin "$commit"
   git -C "$dest" checkout -q --detach FETCH_HEAD
+  git -C "$dest" reset -q --hard "$commit"
+  git -C "$dest" clean -q -fdx
   local actual
   actual="$(git -C "$dest" rev-parse HEAD)"
   [[ "$actual" == "$commit" ]] || {
