@@ -91,6 +91,11 @@ PY
 echo '[pixvault] dependencies'
 flutter pub get
 
+echo '[pixvault] patching flutter_inappwebview for AGP 9 compatibility'
+PLUGIN_GRADLE="$(find "$HOME/.pub-cache/hosted/pub.dev" -path '*/flutter_inappwebview_android-1.1.3/android/build.gradle' -print -quit)"
+test -n "$PLUGIN_GRADLE"
+sed -i "s/getDefaultProguardFile('proguard-android.txt')/getDefaultProguardFile('proguard-android-optimize.txt')/g" "$PLUGIN_GRADLE"
+
 echo '[pixvault] format and analyze'
 rm -f test/widget_test.dart
 dart format lib/main.dart
