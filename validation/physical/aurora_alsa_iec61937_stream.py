@@ -115,7 +115,8 @@ def write_status(path: Path, payload: dict) -> None:
 def stream_alsa(*, device: str, iec_out: Path | None, status_out: Path,
                 hw_params_log: Path, stderr_log: Path,
                 word_lane: str, channel_order: str,
-                max_seconds: float | None, chunk_bytes: int) -> dict:
+                max_seconds: float | None, chunk_bytes: int,
+                status_interval_seconds: float) -> dict:
     arecord = shutil.which("arecord")
     if not arecord:
         raise CaptureError("arecord not found; install alsa-utils on the Linux capture host")
@@ -129,6 +130,7 @@ def stream_alsa(*, device: str, iec_out: Path | None, status_out: Path,
                "-r", str(RATE_HZ), "-t", "raw", "--fatal-errors"]
     converter = StreamingConverter(word_lane=word_lane, channel_order=channel_order)
     started = time.monotonic()
+    last_status_write = started - status_interval_seconds
     interrupted = False
     out_context = (
         contextlib.nullcontext(sys.stdout.buffer)
@@ -151,9 +153,12 @@ def stream_alsa(*, device: str, iec_out: Path | None, status_out: Path,
                 if canonical:
                     out.write(canonical)
                     out.flush()
-                write_status(status_out, {**converter.status(),
-                    "wall_seconds": time.monotonic() - started,
-                    "arecord_running": proc.poll() is None})
+                now = time.monotonic()
+                if now - last_status_write >= status_interval_seconds:
+                    write_status(status_out, {**converter.status(),
+                        "wall_seconds": now - started,
+                        "arecord_running": proc.poll() is None})
+                    last_status_write = now
         except KeyboardInterrupt:
             interrupted = True
         finally:
@@ -226,12 +231,25 @@ def main() -> int:
     live.add_argument("--word-lane", choices=["auto", "high16", "low16"], default="auto")
     live.add_argument("--channel-order", choices=["auto", "lr", "rl"], default="auto")
     live.add_argument("--max-seconds", type=float)
-    live.add_argument("--chunk-bytes", type=int, default=65536)
+    live.add_argument(
+        "--chunk-bytes",
+        type=int,
+        default=8192,
+        help="raw ALSA read size; 8192 bytes is about 5.3 ms at 192 kHz/S32_LE/stereo",
+    )
+    live.add_argument(
+        "--status-interval-seconds",
+        type=float,
+        default=0.5,
+        help="minimum interval between live status-file rewrites",
+    )
     args = parser.parse_args()
     if args.command == "self-test":
         return self_test()
     if args.max_seconds is not None and args.max_seconds <= 0:
         raise CaptureError("--max-seconds must be positive when supplied")
+    if args.status_interval_seconds <= 0:
+        raise CaptureError("--status-interval-seconds must be positive")
     iec_out = None if args.iec_out == "-" else Path(args.iec_out)
     status = stream_alsa(
         device=args.device,
@@ -243,6 +261,7 @@ def main() -> int:
         channel_order=args.channel_order,
         max_seconds=args.max_seconds,
         chunk_bytes=args.chunk_bytes,
+        status_interval_seconds=args.status_interval_seconds,
     )
     print(
         "AURORA-ALSA-IEC61937-STREAM-PASS "
