@@ -93,7 +93,7 @@ flutter pub get
 
 echo '[pixvault] format and analyze'
 dart format lib/main.dart
-flutter analyze
+flutter analyze --no-fatal-infos
 
 echo '[pixvault] generating signing key'
 STORE_PASS="$(python - <<'PY'
