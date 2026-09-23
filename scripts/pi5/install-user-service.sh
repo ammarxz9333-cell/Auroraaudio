@@ -20,15 +20,26 @@ mkdir -p "$CONFIG_DIR" "$USER_UNIT_DIR"
 if [[ ! -f "$ENV_FILE" ]]; then
   cat >"$ENV_FILE" <<EOF
 AURORA_REPO_ROOT=$ROOT_DIR
-AURORA_LATENCY_MS=80
+AURORA_OUTPUT_MODE=camilladsp
 AURORA_OUTPUT_RATE=48000
 AURORA_MASTER_GAIN_DB=-3
 AURORA_AUTO_GAIN_CEILING_DB=-1
-AURORA_ADAPTIVE_RESAMPLING=1
-# Set this only when you want a specific PipeWire multichannel sink:
-# AURORA_OUTPUT_DEVICE=
-# Optional measured-room config:
+AURORA_ALSA_OUTPUT_DEVICE=default
+AURORA_ALSA_OUTPUT_FORMAT=auto
+AURORA_CAMILLADSP_CHUNK=512
+AURORA_CAMILLADSP_QUEUELIMIT=2
+AURORA_CAMILLADSP_TARGET_LEVEL=512
+AURORA_CAMILLADSP_ADJUST_PERIOD=3
+# Optional full CamillaDSP room-EQ/FIR config. If unset, Aurora generates
+# a flat 16-channel identity config with AsyncSinc clock-drift correction.
+# AURORA_CAMILLADSP_CONFIG=
+# Optional Omniphony renderer config:
 # AURORA_RENDER_CONFIG=
+# Diagnostic fallback only:
+# AURORA_OUTPUT_MODE=pipewire
+# AURORA_OUTPUT_DEVICE=
+# AURORA_LATENCY_MS=80
+# AURORA_ADAPTIVE_RESAMPLING=1
 EOF
   chmod 0600 "$ENV_FILE"
 fi
