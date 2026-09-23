@@ -101,6 +101,8 @@ replace_once(
 home_path = root / 'lib/features/home/home_providers.dart'
 home = home_path.read_text(encoding='utf-8')
 if "import '../../core/runtime/app_runtime.dart';" not in home:
+    home = home.replace("import '../../core/runtime/runtime_provider.dart';", "import '../../core/runtime/app_runtime.dart';\nimport '../../core/runtime/runtime_provider.dart';")
+if "import '../../core/runtime/app_runtime.dart';" not in home:
     home = home.replace(
         "import '../../core/feed/artwork_feed_controller.dart';\n",
         "import '../../core/feed/artwork_feed_controller.dart';\n"
@@ -259,3 +261,10 @@ home = home.replace(marker, helper + marker, 1)
 home_path.write_text(home, encoding='utf-8')
 
 print('DAViewer v0.5.3 patch applied')
+
+# Remove the now-unused WebView close gate state after system-browser OAuth.
+login_path = root / 'lib/features/web_login/web_login_screen.dart'
+login = login_path.read_text(encoding='utf-8')
+login = login.replace("  bool _serverConfirmedWebSession = false;\n", "")
+login = login.replace("          _serverConfirmedWebSession = true;\n", "")
+login_path.write_text(login, encoding='utf-8')
