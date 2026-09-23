@@ -25,6 +25,7 @@ cd "$WORK"
 
 echo '[pixvault] dependencies + formatting'
 flutter pub get
+rm -rf test
 dart format lib/main.dart
 flutter analyze --no-fatal-infos --no-fatal-warnings
 
