@@ -95,7 +95,7 @@ Aurora now carries an optional single-SBC home-theater profile:
 ```text
 TV eARC -> Lindy 38368/SiI9437 -> Pi5 I2S slave -> ALSA
 -> Aurora IEC61937 canonicalizer -> Harletty 0.8 -> Omniphony 0.6
--> Aurora 11.1.4 custom layout -> PipeWire multichannel output
+-> Aurora 11.1.4 custom layout + LR4 bass management -> PipeWire multichannel output
 ```
 
 The runtime deliberately feeds canonical IEC61937 to `orender` over stdin and does **not** depend on Omniphony's still-experimental encoded PipeWire input sink. Exact source pins, the Pi5 device-tree overlay, build/install scripts, one-command launcher, and truth boundaries are in [`docs/pi5-earc-runtime.md`](docs/pi5-earc-runtime.md).
@@ -107,7 +107,7 @@ bash scripts/pi5/install-earc-overlay.sh
 AURORA_OUTPUT_DEVICE="<PipeWire device>" bash scripts/pi5/run-earc-joc.sh
 ```
 
-Native ARM64 CI runs the media-paced JOC path against the 16-output Aurora layout. This is software/architecture evidence; the exact TV/Lindy/Pi5 physical chain and protected TV apps remain hardware validation gates.
+The Pi5 baseline uses an 80 Hz sub/floor crossover, 100 Hz height high-pass, -3 dB headroom and -1 dBFS auto-gain ceiling; measured room EQ remains a deployment-time calibration input. Native ARM64 CI runs the media-paced JOC path against the 16-output Aurora layout. This is software/architecture evidence; the exact TV/Lindy/Pi5 physical chain and protected TV apps remain hardware validation gates.
 
 A separate experimental surround-upmix path exists for channel-based E-AC-3. It explicitly does not claim object recovery.
 
