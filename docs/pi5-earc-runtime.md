@@ -111,6 +111,22 @@ AURORA_OUTPUT_DEVICE="<PipeWire multichannel device>" \
 
 Do not invent room EQ values before measuring the actual speakers and room. The checked-in baseline therefore remains flat apart from crossover/bass routing, gain headroom and anti-clip protection.
 
+For daily use, install the optional systemd user service after the runtime and overlay are ready:
+
+```bash
+bash scripts/pi5/install-user-service.sh
+# or install and start immediately:
+bash scripts/pi5/install-user-service.sh --start
+```
+
+The installer creates `~/.config/aurora/runtime.env` for the tunable runtime settings and enables `aurora-earc.service` for the user session. Before starting playback, or when diagnosing a failure, run:
+
+```bash
+bash scripts/pi5/check-health.sh
+```
+
+The health check verifies the installed renderer/bridge/layout, the configured ALSA eARC endpoint, PipeWire tooling, and reports the latest ingress status plus Pi temperature/throttling data when available.
+
 ## Hardware tap
 
 The overlay is derived from the MIT-licensed VibesboxSRC Pi 5 eARC tap and is stored at `platform/pi5/aurora-earc-tap-overlay.dts`.
