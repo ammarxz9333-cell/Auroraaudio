@@ -97,6 +97,8 @@ AURORA_OUTPUT_DEVICE="<PipeWire multichannel device>" \
 
 If `AURORA_OUTPUT_DEVICE` is omitted, Omniphony uses its default PipeWire output.
 
+The launcher defaults to a 48 kHz output graph, an 80 ms PipeWire latency target, and adaptive resampling enabled to absorb long-term capture/output clock drift. These are software defaults, not measured TV-to-speaker latency. They can be tuned without code changes through `AURORA_OUTPUT_RATE`, `AURORA_LATENCY_MS`, and `AURORA_ADAPTIVE_RESAMPLING`. Keep adaptive resampling enabled unless the final hardware demonstrates a shared/locked clock or an equivalent drift-control mechanism.
+
 The default Aurora layout uses Omniphony 0.6's LR4 frequency-band renderer as the 16-channel bass-management stage: the LFE/sub owns 0–80 Hz, the eleven floor speakers start at 80 Hz, and the four height speakers start at 100 Hz. The launcher also applies -3 dB master headroom and enables automatic peak correction with a -1 dBFS ceiling.
 
 A measured-room configuration can be added later without changing the launcher:
