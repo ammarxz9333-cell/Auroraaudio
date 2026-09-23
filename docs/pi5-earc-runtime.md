@@ -34,10 +34,15 @@ Aurora custom 11.1.4 = 16 output channels
   -> -3 dB baseline headroom + auto-gain ceiling -1 dBFS
   -> per-speaker gain/delay/mute available in Omniphony
         |
-PipeWire multichannel output
+raw interleaved F32, 16ch @ 48 kHz
+        |
+CamillaDSP 4.1.3
+  -> optional PEQ/FIR/measured room correction
+  -> AsyncSinc rate-adjust for independent eARC/DAC clocks
+  -> ALSA 16-channel hardware output
 ```
 
-The encoded PipeWire input experiment in Omniphony is intentionally not used. Aurora already owns a direct ALSA/I2S ingress, and `orender` accepts stdin and detects/extracts IEC61937 before calling the bridge. This removes one unproven virtual-sink layer from the runtime.
+The encoded PipeWire input experiment in Omniphony is intentionally not used. Aurora owns the direct ALSA/I2S ingress, and `orender` accepts IEC61937 on stdin. The selected output path also avoids a virtual PipeWire handoff: Omniphony emits raw 16-channel F32 directly to CamillaDSP over a Unix pipe, and CamillaDSP writes the physical multichannel DAC through ALSA. PipeWire remains a diagnostic fallback only.
 
 ## Exact external revisions
 
@@ -46,6 +51,7 @@ The authoritative pins live in `config/external-components-v1.json`:
 - Omniphony `v0.6.0`, commit `dd5546bbc64e60719dfa367bea0534dc8a3ab34b`
 - Harletty bridge `v0.8.0`, commit `eddb123f876048268ee1f096ccdd1cbcf65ad07d`
 - VibesboxSRC physical reference commit `8f84376df8b7499808b17c150a328b8665ba1384`
+- CamillaDSP `4.1.3`, commit `05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74`; the official Linux ARM64 archive is SHA-256 pinned in the external-component manifest
 - OpenJOC `0.17.0` remains an independent JOC reference lane rather than a second runtime renderer.
 
 Harletty 0.8.0 and Omniphony 0.6.0 are treated as one compatibility unit because the bridge ABI changed to the 0.4 generation. Do not mix Harletty 0.7.x with Omniphony 0.6.x.
@@ -62,7 +68,7 @@ Install build/runtime prerequisites:
 
 ```bash
 sudo apt update
-sudo apt install -y git build-essential pkg-config python3 alsa-utils \
+sudo apt install -y git build-essential pkg-config python3 alsa-utils curl \
   libasound2-dev libpipewire-0.3-dev device-tree-compiler
 ```
 
@@ -88,28 +94,36 @@ arecord -D hw:eARC,0 --dump-hw-params
 
 The card must enumerate as `eARC`. Use ALSA card names, not numeric indices.
 
-Start the JOC-capable runtime:
+Start the JOC-capable runtime after selecting the physical 16-channel ALSA device:
 
 ```bash
-AURORA_OUTPUT_DEVICE="<PipeWire multichannel device>" \
+AURORA_ALSA_OUTPUT_DEVICE="hw:<your-16ch-device>" \
   bash scripts/pi5/run-earc-joc.sh
 ```
 
-If `AURORA_OUTPUT_DEVICE` is omitted, Omniphony uses its default PipeWire output.
+The default output mode is `camilladsp`. Aurora generates a flat 16-channel CamillaDSP configuration with 48 kHz F32 stdin, ALSA playback, a 512-frame processing chunk, target playback level 512 samples, and `AsyncSinc` rate adjustment enabled. The rate servo is important because the TV/eARC capture clock and the DAC playback clock are independent. The exact optimal chunk/target values remain a physical tuning gate; they are configurable through `AURORA_CAMILLADSP_CHUNK`, `AURORA_CAMILLADSP_TARGET_LEVEL`, `AURORA_CAMILLADSP_QUEUELIMIT`, and `AURORA_CAMILLADSP_ADJUST_PERIOD`.
 
-The launcher defaults to a 48 kHz output graph, an 80 ms PipeWire latency target, and adaptive resampling enabled to absorb long-term capture/output clock drift. These are software defaults, not measured TV-to-speaker latency. They can be tuned without code changes through `AURORA_OUTPUT_RATE`, `AURORA_LATENCY_MS`, and `AURORA_ADAPTIVE_RESAMPLING`. Keep adaptive resampling enabled unless the final hardware demonstrates a shared/locked clock or an equivalent drift-control mechanism.
+The default Aurora layout uses Omniphony 0.6's LR4 frequency-band renderer as the bass-management stage: the sub owns 0–80 Hz, the eleven floor speakers start at 80 Hz, and the four height speakers start at 100 Hz. The launcher applies -3 dB master headroom and enables automatic peak correction with a -1 dBFS ceiling before handing F32 PCM to CamillaDSP.
 
-The default Aurora layout uses Omniphony 0.6's LR4 frequency-band renderer as the 16-channel bass-management stage: the LFE/sub owns 0–80 Hz, the eleven floor speakers start at 80 Hz, and the four height speakers start at 100 Hz. The launcher also applies -3 dB master headroom and enables automatic peak correction with a -1 dBFS ceiling.
-
-A measured-room configuration can be added later without changing the launcher:
+The generated CamillaDSP baseline is deliberately **flat**: it proves the realtime 16-channel post-DSP boundary and clock servo without inventing room correction. After measuring the actual speakers and room, provide a full CamillaDSP configuration with the same 16-channel F32 stdin contract:
 
 ```bash
-AURORA_RENDER_CONFIG="$HOME/.config/aurora/room.yaml" \
-AURORA_OUTPUT_DEVICE="<PipeWire multichannel device>" \
+AURORA_CAMILLADSP_CONFIG="$HOME/.config/aurora/room-correction.yml" \
+AURORA_ALSA_OUTPUT_DEVICE="hw:<your-16ch-device>" \
   bash scripts/pi5/run-earc-joc.sh
 ```
 
-Do not invent room EQ values before measuring the actual speakers and room. The checked-in baseline therefore remains flat apart from crossover/bass routing, gain headroom and anti-clip protection.
+That deployment config may add per-channel PEQ, FIR convolution, delays, trims and other CamillaDSP processing. Acoustic improvement remains physical/measured evidence, not a software-only claim.
+
+`AURORA_RENDER_CONFIG` is separate: it is an optional Omniphony renderer configuration, not the room-EQ file.
+
+For diagnostics only, the previous direct PipeWire output remains available:
+
+```bash
+AURORA_OUTPUT_MODE=pipewire \
+AURORA_OUTPUT_DEVICE="<PipeWire multichannel device>" \
+  bash scripts/pi5/run-earc-joc.sh
+```
 
 For daily use, install the optional systemd user service after the runtime and overlay are ready:
 
@@ -119,13 +133,13 @@ bash scripts/pi5/install-user-service.sh
 bash scripts/pi5/install-user-service.sh --start
 ```
 
-The installer creates `~/.config/aurora/runtime.env` for the tunable runtime settings and enables `aurora-earc.service` for the user session. Before starting playback, or when diagnosing a failure, run:
+The installer creates `~/.config/aurora/runtime.env`, defaults to CamillaDSP, and enables `aurora-earc.service` for the user session. Set `AURORA_ALSA_OUTPUT_DEVICE` there before first real playback. Before starting playback, or when diagnosing a failure, run:
 
 ```bash
 bash scripts/pi5/check-health.sh
 ```
 
-The health check verifies the installed renderer/bridge/layout, the configured ALSA eARC endpoint, PipeWire tooling, and reports the latest ingress status plus Pi temperature/throttling data when available.
+The health check verifies the installed renderer, Harletty bridge, CamillaDSP binary, layout, eARC ALSA endpoint and latest ingress status, plus Pi temperature/throttling data when available.
 
 ## Hardware tap
 
@@ -162,6 +176,8 @@ CI runs the JOC stack on native Linux ARM64 and checks the 16-channel paced outp
 - Omniphony render into Aurora's 16-output custom geometry;
 - 16-output LR4 bass-management topology (80 Hz floor/sub split, 100 Hz height high-pass);
 - launcher-level output headroom and anti-clip configuration;
+- generated 16-channel CamillaDSP contract with F32 stdin, ALSA playback and AsyncSinc rate adjustment;
+- checksum-pinned official CamillaDSP Linux ARM64 runtime artifact;
 - media-paced JOC render on native ARM64 CI;
 - fail-closed pin/version/runtime-contract checks.
 
@@ -169,7 +185,7 @@ CI runs the JOC stack on native Linux ARM64 and checks the 16-channel paced outp
 
 - the exact Samsung TV -> Lindy -> this Pi5 wiring under Netflix/Disney+/Prime protected playback;
 - sustained Pi5 thermal/CPU headroom for the final chosen DSP configuration;
-- actual DAC/PipeWire endpoint latency and xruns;
+- actual DAC/ALSA endpoint latency, rate-adjust behaviour and xruns;
 - end-to-end A/V lip-sync and TV-specific compensation;
 - electrical integrity of the soldered tap and final enclosure;
 - acoustic calibration and amplifier/speaker validation.
