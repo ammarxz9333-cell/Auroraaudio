@@ -12,7 +12,7 @@ for script in   "$ROOT_DIR/scripts/pi5/build-runtime.sh"   "$ROOT_DIR/scripts/pi
 done
 python3 -m py_compile "$CONVERTER"
 
-python3 - "$MANIFEST" "$LAYOUT" <<'PY'
+python3 - "$MANIFEST" "$LAYOUT" "$ROOT_DIR/scripts/pi5/run-earc-joc.sh" <<'PY'
 import json, pathlib, re, sys
 manifest=json.loads(pathlib.Path(sys.argv[1]).read_text(encoding="utf-8"))
 components={c["id"]:c for c in manifest["components"]}
@@ -29,6 +29,18 @@ for cid,(version,commit) in expected.items():
         raise SystemExit(f"unexpected {cid} pin: {c.get('tested_version')} {c.get('pinned_commit')}")
 
 text=pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
+runtime=pathlib.Path(sys.argv[3]).read_text(encoding="utf-8")
+for token in ("--master-gain", "--auto-gain-ceiling", "--output-sample-rate", "--latency-target-ms"):
+    if runtime.count(token) != 1:
+        raise SystemExit(f"runtime option must appear exactly once: {token} count={runtime.count(token)}")
+if runtime.count("--enable-adaptive-resampling") != 1:
+    raise SystemExit("adaptive resampling option must appear exactly once")
+for env_name in ("MASTER_GAIN_DB=", "AUTO_GAIN_CEILING_DB=", "OUTPUT_RATE=", "LATENCY_MS=", "ADAPTIVE_RESAMPLING="):
+    if runtime.count(env_name) != 1:
+        raise SystemExit(f"runtime default must be defined exactly once: {env_name}")
+if '"${GLOBAL_ARGS[@]}" render -' not in runtime:
+    raise SystemExit("orender global config args must precede explicit render subcommand")
+print("AURORA-PI5-RUNTIME-OPTIONS-CONTRACT-PASS")
 names=re.findall(r'^  - name: "([^"]+)"$', text, flags=re.M)
 if len(names) != 16 or len(set(names)) != 16:
     raise SystemExit(f"Aurora layout must contain 16 unique outputs, got {len(names)}")
