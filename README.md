@@ -36,6 +36,8 @@ The canonical capability state is a versioned typed registry owned by `aurora-co
 
 <!-- AURORA_CAPABILITIES_END -->
 
+The `camilladsp` row above describes Aurora's Rust `aurora-dsp-camilladsp` adapter, which remains an offline adapter and therefore correctly reports realtime as unsupported. The optional Pi5 home-theater profile below uses the pinned CamillaDSP executable as a separate external realtime post-DSP/output process; that deployment path is validated independently and does not change the core adapter capability.
+
 ## Architecture
 
 The repository is organized around reusable software components:
