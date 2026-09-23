@@ -57,30 +57,33 @@
     {
       "id": "camilladsp",
       "upstream": "https://github.com/HEnquist/camilladsp",
-      "decision": "evaluate-active",
-      "integration": "offline-adapter-and-realtime-post-dsp-candidate",
+      "decision": "adopted",
+      "integration": "offline-rust-adapter-plus-external-process-pi5-realtime-post-dsp",
       "tested_version": "4.1.3",
       "pinned_commit": "05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74",
       "license": "GPL-3.0-only OR MPL-2.0",
       "roles": [
         "offline-multichannel-dsp",
-        "realtime-16ch-post-dsp-candidate",
+        "pi5-realtime-16ch-external-process-post-dsp",
         "fir",
         "iir",
         "peq",
-        "room-correction-candidate",
-        "clock-drift-rate-adjust-candidate",
-        "alsa-output-candidate"
+        "room-correction",
+        "clock-drift-rate-adjust",
+        "alsa-output"
       ],
       "object_metadata": "not-applicable",
       "production_ready": false,
       "evidence": [
         "crates/aurora-dsp-camilladsp/src/lib.rs",
         "crates/aurora-dsp-camilladsp/src/lib_entry.rs",
-        "config/room-correction-reference-v1.json",
-        ".github/workflows/room-correction-reference-ci.yml",
-        "docs/room-correction-reference.md",
+        "scripts/pi5/run-earc-joc.sh",
+        "scripts/pi5/make-camilladsp-config.py",
+        "scripts/pi5/build-runtime.sh",
+        "validation/physical/test-pi5-earc-runtime-contract.sh",
+        ".github/workflows/arm64-platform-validation.yml",
         "docs/pi5-earc-runtime.md",
+        "docs/software-completion-status.md",
         "THIRD_PARTY_LICENSES.md"
       ],
       "release_artifacts": {
