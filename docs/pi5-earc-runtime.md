@@ -165,6 +165,18 @@ AURORA_JOC_REALTIME_LOOPS=4 \
 
 CI runs the JOC stack on native Linux ARM64 and checks the 16-channel paced output.
 
+## Pi 5 RP1 multichannel playback warning
+
+Do **not** treat RP1 four-lane I2S playback as Aurora's guaranteed final 8/16-channel output path yet.
+
+Raspberry Pi Linux issue #7584 documents a Pi 5 + four-lane I2S + CamillaDSP case where, after an XRUN recovery, ALSA and CamillaDSP can remain RUNNING while physical output pairs are missing or remapped. Raspberry Pi PR #7588 restores the stronger upstream DesignWare I2S stop teardown and initial hardware checks on the reporter's DAC8x system were good, but the recovery-specific XRUN stress test was still outstanding when this profile was updated.
+
+This issue concerns **playback/TX recovery**, not Aurora's Lindy/SiI9437 eARC **capture/RX** path. Aurora therefore keeps the Pi5 eARC input design, but the final 16-channel playback endpoint should use a separately validated ALSA multichannel device (for example USB/ADAT/other interface) until the RP1 playback fix is merged and recovery-tested.
+
+References:
+- https://github.com/raspberrypi/linux/issues/7584
+- https://github.com/raspberrypi/linux/pull/7588
+
 ## Truth boundary
 
 ### Demonstrated / CI-testable
