@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
-import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:webview_flutter/webview_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:path_provider/path_provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -235,8 +235,8 @@ class PixivRepo {
       'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36';
 
   Future<String> _cookies() async {
-    final list = await CookieManager.instance().getCookies(
-      url: WebUri('https://www.pixiv.net/'),
+    final list = await WebViewCookieManager().getCookies(
+      domain: Uri.parse('https://www.pixiv.net/'),
     );
     return list.map((c) => '${c.name}=${c.value}').join('; ');
   }
@@ -1083,8 +1083,23 @@ class _DetailPageState extends State<DetailPage> {
   }
 }
 
-class PixivLoginPage extends StatelessWidget {
+class PixivLoginPage extends StatefulWidget {
   const PixivLoginPage({super.key});
+
+  @override
+  State<PixivLoginPage> createState() => _PixivLoginPageState();
+}
+
+class _PixivLoginPageState extends State<PixivLoginPage> {
+  late final WebViewController controller;
+
+  @override
+  void initState() {
+    super.initState();
+    controller = WebViewController()
+      ..setJavaScriptMode(JavaScriptMode.unrestricted)
+      ..loadRequest(Uri.parse('https://www.pixiv.net/'));
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -1098,13 +1113,7 @@ class PixivLoginPage extends StatelessWidget {
           ),
         ],
       ),
-      body: InAppWebView(
-        initialUrlRequest: URLRequest(url: WebUri('https://www.pixiv.net/')),
-        initialSettings: InAppWebViewSettings(
-          javaScriptEnabled: true,
-          mediaPlaybackRequiresUserGesture: false,
-        ),
-      ),
+      body: WebViewWidget(controller: controller),
     );
   }
 }
@@ -1232,7 +1241,7 @@ class _SettingsPageState extends State<SettingsPage> {
   }
 
   Future<void> _logout() async {
-    await CookieManager.instance().deleteAllCookies();
+    await WebViewCookieManager().clearCookies();
     setState(() => logged = PixivRepo().hasLogin());
   }
 
