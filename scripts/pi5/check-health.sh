@@ -6,6 +6,8 @@ RUNTIME_ROOT="${AURORA_RUNTIME_ROOT:-$HOME/.local/share/aurora-runtime}"
 PREFIX="$RUNTIME_ROOT/install"
 STATE_DIR="${AURORA_STATE_DIR:-$RUNTIME_ROOT/state}"
 DEVICE="${AURORA_EARC_DEVICE:-hw:eARC,0}"
+OUTPUT_MODE="${AURORA_OUTPUT_MODE:-camilladsp}"
+ALSA_OUTPUT_DEVICE="${AURORA_ALSA_OUTPUT_DEVICE:-default}"
 
 fail=0
 check() {
@@ -21,10 +23,17 @@ check() {
 check "orender installed" test -x "$PREFIX/bin/orender"
 check "Harletty bridge installed" test -s "$PREFIX/lib/libharletty_bridge.so"
 check "Aurora 11.1.4 layout installed" test -s "$PREFIX/share/aurora/omniphony-11.1.4-aurora.yaml"
+if [[ "$OUTPUT_MODE" == "camilladsp" ]]; then
+  check "CamillaDSP installed" test -x "$PREFIX/bin/camilladsp"
+  check "aplay available for ALSA output" command -v aplay
+fi
 check "eARC converter present" test -s "$ROOT_DIR/validation/physical/aurora_alsa_iec61937_stream.py"
 check "arecord available" command -v arecord
 check "configured eARC ALSA endpoint usable" arecord -D "$DEVICE" --dump-hw-params
-check "PipeWire client available" bash -c 'command -v wpctl >/dev/null || command -v pw-cli >/dev/null'
+if [[ "$OUTPUT_MODE" == "pipewire" ]]; then
+  check "PipeWire client available" bash -c 'command -v wpctl >/dev/null || command -v pw-cli >/dev/null'
+fi
+echo "INFO  output mode=$OUTPUT_MODE alsa_device=$ALSA_OUTPUT_DEVICE"
 
 if [[ -f "$STATE_DIR/earc-status.json" ]]; then
   python3 - "$STATE_DIR/earc-status.json" <<'PY'
