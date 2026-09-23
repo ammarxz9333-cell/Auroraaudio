@@ -2,8 +2,8 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/aurora"
-USER_UNIT_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+CONFIG_DIR="$HOME/.config/aurora"
+USER_UNIT_DIR="$HOME/.config/systemd/user"
 ENV_FILE="$CONFIG_DIR/runtime.env"
 UNIT_FILE="$USER_UNIT_DIR/aurora-earc.service"
 START_NOW=0
