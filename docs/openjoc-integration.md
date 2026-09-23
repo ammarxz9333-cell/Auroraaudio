@@ -10,6 +10,12 @@ Aurora tracks OpenJOC as an independent E-AC-3 JOC decode/render reference backe
 - license: Apache-2.0 for the OpenJOC core; package-specific notices still apply
 - Linux x86_64 release artifact name and SHA-256 are pinned in `config/external-components-v1.json`
 
+## Runtime decision — 2026-09-22
+
+For the selected Pi5 eARC profile, OpenJOC remains the independent reference path rather than a second live renderer. The primary runtime is Harletty 0.8.0 + Omniphony 0.6.0 because that pair already accepts extracted IEC61937 packets, carries JOC metadata into the spatial renderer, and can render Aurora's custom 16-output geometry in one process boundary.
+
+This is not a rejection of OpenJOC. Its 0.17.0 inspector/render lanes remain valuable as an independent differential oracle, and its deterministic JOC reconstruction latency is separately testable. Keeping it outside the live path avoids running two object renderers and avoids making the Pi5 deployment depend on an unqualified Linux-ARM64 OpenJOC release artifact.
+
 ## Boundary
 
 OpenJOC is not part of `aurora-core`. Aurora may use it through either:
