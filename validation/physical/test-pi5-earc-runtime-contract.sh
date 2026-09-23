@@ -35,6 +35,12 @@ for cid,(version,commit) in expected.items():
         raise SystemExit(f"unexpected {cid} pin: {c.get('tested_version')} {c.get('pinned_commit')}")
 
 cam=components["camilladsp"]
+if cam.get("decision") != "adopted":
+    raise SystemExit(f"CamillaDSP Pi5 deployment must be adopted, got {cam.get('decision')}")
+if cam.get("integration") != "offline-rust-adapter-plus-external-process-pi5-realtime-post-dsp":
+    raise SystemExit(f"unexpected CamillaDSP integration boundary: {cam.get('integration')}")
+if cam.get("production_ready") is not False:
+    raise SystemExit("CamillaDSP Pi5 path must remain non-production until physical validation")
 arm=cam.get("release_artifacts",{}).get("aarch64-unknown-linux-gnu",{})
 if arm.get("name") != "camilladsp-linux-aarch64.tar.gz":
     raise SystemExit("CamillaDSP ARM64 asset pin missing")
