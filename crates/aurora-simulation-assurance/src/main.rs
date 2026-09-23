@@ -1,6 +1,6 @@
 mod campaign;
 
-use std::path::PathBuf;
+use std::{env, path::PathBuf, process::Command};
 
 use anyhow::{bail, Result};
 use campaign::{run_campaign, CampaignLevel, CampaignOptions, MAX_SCENARIOS};
