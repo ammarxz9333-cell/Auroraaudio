@@ -20,6 +20,7 @@ flutter create   --platforms=android   --org app.pixvault   --project-name pixva
 cd "$WORK"
 
 cp "$ROOT/tools/pixvault_main.dart" lib/main.dart
+rm -rf test
 
 python - <<'PY'
 from pathlib import Path
