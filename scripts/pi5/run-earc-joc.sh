@@ -12,6 +12,7 @@ LAYOUT="${AURORA_SPEAKER_LAYOUT:-$PREFIX/share/aurora/omniphony-11.1.4-aurora.ya
 OUTPUT_DEVICE="${AURORA_OUTPUT_DEVICE:-}"
 MASTER_GAIN_DB="${AURORA_MASTER_GAIN_DB:--3.0}"
 AUTO_GAIN_CEILING_DB="${AURORA_AUTO_GAIN_CEILING_DB:--1.0}"
+RENDER_CONFIG="${AURORA_RENDER_CONFIG:-}"
 
 CONVERTER="$ROOT_DIR/validation/physical/aurora_alsa_iec61937_stream.py"
 mkdir -p "$STATE_DIR"
@@ -20,6 +21,12 @@ for path in "$ORENDER" "$BRIDGE" "$LAYOUT" "$CONVERTER"; do
   [[ -e "$path" ]] || { echo "missing Aurora runtime component: $path" >&2; exit 2; }
 done
 command -v arecord >/dev/null 2>&1 || { echo "arecord not found (install alsa-utils)" >&2; exit 2; }
+
+GLOBAL_ARGS=()
+if [[ -n "$RENDER_CONFIG" ]]; then
+  [[ -f "$RENDER_CONFIG" ]] || { echo "Aurora render config not found: $RENDER_CONFIG" >&2; exit 2; }
+  GLOBAL_ARGS+=(--config "$RENDER_CONFIG")
+fi
 
 OUTPUT_ARGS=(--output-backend pipewire)
 if [[ -n "$OUTPUT_DEVICE" ]]; then
@@ -32,6 +39,7 @@ echo "  bridge : $BRIDGE" >&2
 echo "  layout : $LAYOUT" >&2
 echo "  output : pipewire ${OUTPUT_DEVICE:-default}" >&2
 echo "  safety : master_gain=${MASTER_GAIN_DB}dB auto_gain_ceiling=${AUTO_GAIN_CEILING_DB}dBFS" >&2
+echo "  config : ${RENDER_CONFIG:-built-in/CLI baseline}" >&2
 
 # Binary-only stdout from the converter feeds orender. Diagnostics stay on
 # stderr/status files, so no text can corrupt IEC61937 framing.
@@ -41,7 +49,7 @@ python3 "$CONVERTER" capture \
   --status "$STATE_DIR/earc-status.json" \
   --hw-params-log "$STATE_DIR/earc-hw-params.txt" \
   --stderr-log "$STATE_DIR/arecord.stderr.log" \
-  | "$ORENDER" - \
+  | "$ORENDER" "${GLOBAL_ARGS[@]}" render - \
       --bridge-path "$BRIDGE" \
       --enable-vbap \
       --speaker-layout "$LAYOUT" \
