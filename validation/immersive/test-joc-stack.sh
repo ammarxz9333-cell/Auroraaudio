@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/config/external-components-v1.json"
+OMNIP_ARM64_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.6.0-arm64-c-char.patch"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
 KEEP_WORKDIR="${AURORA_KEEP_JOC_TEST_WORKDIR:-0}"
 BUILD_MODE="${AURORA_JOC_BUILD_MODE:-debug}"
@@ -35,6 +36,7 @@ for cmd in git python3 ffmpeg rustup cargo; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
 [[ -f "$MANIFEST" ]] || { echo "missing external component manifest: $MANIFEST" >&2; exit 2; }
+[[ -f "$OMNIP_ARM64_PATCH" ]] || { echo "missing Omniphony ARM64 portability patch: $OMNIP_ARM64_PATCH" >&2; exit 2; }
 
 if [[ -n "${AURORA_JOC_TEST_WORKDIR:-}" ]]; then
   WORK_DIR="$AURORA_JOC_TEST_WORKDIR"
@@ -97,6 +99,10 @@ phase "build Harletty bridge ($BUILD_MODE)"
 CARGO_TARGET_DIR="$HARLETTY_TARGET_DIR" cargo +"$TOOLCHAIN" build --locked "${PROFILE_ARGS[@]}" \
   --manifest-path "$HARLETTY_DIR/Cargo.toml" \
   -p harletty-bridge
+
+phase "apply Omniphony 0.6 c_char portability patch"
+git -C "$OMNIP_DIR" apply --check "$OMNIP_ARM64_PATCH"
+git -C "$OMNIP_DIR" apply "$OMNIP_ARM64_PATCH"
 
 phase "build Omniphony renderer ($BUILD_MODE)"
 CARGO_TARGET_DIR="$OMNIP_TARGET_DIR" cargo +"$TOOLCHAIN" build "${PROFILE_ARGS[@]}" \
