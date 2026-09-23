@@ -126,4 +126,53 @@ if status.get("selected_word_lane") != "high16" or status.get("selected_channel_
 print(f"AURORA-PI5-STDOUT-PIPE-CONTRACT-PASS bytes={len(data)}")
 PY
 
+
+cat > "$TMP/bin/orender" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+printf '%s\n' "$@" >"$AURORA_FAKE_ARGS_FILE"
+cat >/dev/null
+FAKE
+chmod +x "$TMP/bin/orender"
+: >"$TMP/libharletty_bridge.so"
+
+AURORA_FAKE_ROOT="$ROOT_DIR" \
+AURORA_FAKE_ARGS_FILE="$TMP/orender.args" \
+AURORA_ORENDER="$TMP/bin/orender" \
+AURORA_HARLETTY_BRIDGE="$TMP/libharletty_bridge.so" \
+AURORA_SPEAKER_LAYOUT="$LAYOUT" \
+AURORA_STATE_DIR="$TMP/state" \
+PATH="$TMP/bin:$PATH" \
+  bash "$ROOT_DIR/scripts/pi5/run-earc-joc.sh" \
+  >"$TMP/launcher.stdout" 2>"$TMP/launcher.stderr"
+
+python3 - "$TMP/orender.args" "$LAYOUT" <<'PY'
+import pathlib, sys
+args=pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+layout=sys.argv[2]
+def require_pair(flag, value):
+    try:
+        i=args.index(flag)
+    except ValueError:
+        raise SystemExit(f"launcher missing {flag}")
+    if i+1 >= len(args) or args[i+1] != value:
+        raise SystemExit(f"launcher {flag} expected {value!r}, got {args[i+1] if i+1 < len(args) else '<missing>'!r}")
+if args[:2] != ["render", "-"]:
+    raise SystemExit(f"launcher must use explicit render stdin flow, got prefix {args[:2]}")
+require_pair("--bridge-path", pathlib.Path(sys.argv[1]).parent.joinpath("libharletty_bridge.so").as_posix())
+require_pair("--speaker-layout", layout)
+require_pair("--output-backend", "pipewire")
+require_pair("--output-sample-rate", "48000")
+require_pair("--latency-target-ms", "80")
+require_pair("--master-gain", "-3")
+require_pair("--auto-gain-ceiling", "-1")
+if args.count("--auto-gain") != 1:
+    raise SystemExit(f"launcher expected one --auto-gain, got {args.count('--auto-gain')}")
+if args.count("--enable-adaptive-resampling") != 1:
+    raise SystemExit("launcher must enable adaptive resampling by default")
+if args.count("--master-gain") != 1 or args.count("--auto-gain-ceiling") != 1:
+    raise SystemExit("launcher gain safety flags must not be duplicated")
+print("AURORA-PI5-LAUNCHER-CONTRACT-PASS latency_ms=80 rate=48000 adaptive=1")
+PY
+
 echo "AURORA-PI5-EARC-RUNTIME-CONTRACT-PASS"
