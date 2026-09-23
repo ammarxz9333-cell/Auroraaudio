@@ -15,7 +15,7 @@ for script in \
   "$ROOT_DIR/scripts/pi5/install-user-service.sh"; do
   bash -n "$script"
 done
-python3 -m py_compile "$CONVERTER"
+python3 -m py_compile "$CONVERTER" "$ROOT_DIR/scripts/pi5/make-camilladsp-config.py"
 
 python3 - "$MANIFEST" "$LAYOUT" "$ROOT_DIR/scripts/pi5/run-earc-joc.sh" <<'PY'
 import json, pathlib, re, sys
@@ -25,6 +25,7 @@ expected={
     "omniphony":("v0.6.0","dd5546bbc64e60719dfa367bea0534dc8a3ab34b"),
     "harletty-bridge":("v0.8.0","eddb123f876048268ee1f096ccdd1cbcf65ad07d"),
     "vibesboxsrc":("commit-8f84376df8b7499808b17c150a328b8665ba1384","8f84376df8b7499808b17c150a328b8665ba1384"),
+    "camilladsp":("4.1.3","05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74"),
 }
 for cid,(version,commit) in expected.items():
     c=components.get(cid)
@@ -33,19 +34,27 @@ for cid,(version,commit) in expected.items():
     if c.get("tested_version") != version or c.get("pinned_commit") != commit:
         raise SystemExit(f"unexpected {cid} pin: {c.get('tested_version')} {c.get('pinned_commit')}")
 
+cam=components["camilladsp"]
+arm=cam.get("release_artifacts",{}).get("aarch64-unknown-linux-gnu",{})
+if arm.get("name") != "camilladsp-linux-aarch64.tar.gz":
+    raise SystemExit("CamillaDSP ARM64 asset pin missing")
+if arm.get("sha256") != "d9a17092923ebfe5d20a770c6b6a7eb2268f9700f999bf604b9db09f518aca5a":
+    raise SystemExit("CamillaDSP ARM64 checksum pin mismatch")
+
 text=pathlib.Path(sys.argv[2]).read_text(encoding="utf-8")
 runtime=pathlib.Path(sys.argv[3]).read_text(encoding="utf-8")
-for token in ("--master-gain", "--auto-gain-ceiling", "--output-sample-rate", "--latency-target-ms"):
+if 'OUTPUT_MODE="${AURORA_OUTPUT_MODE:-camilladsp}"' not in runtime:
+    raise SystemExit("CamillaDSP must be the default Pi5 output mode")
+for token in ("--master-gain", "--auto-gain-ceiling", "--output-sample-rate"):
     if runtime.count(token) != 1:
         raise SystemExit(f"runtime option must appear exactly once: {token} count={runtime.count(token)}")
-if runtime.count("--enable-adaptive-resampling") != 1:
-    raise SystemExit("adaptive resampling option must appear exactly once")
-for env_name in ("MASTER_GAIN_DB=", "AUTO_GAIN_CEILING_DB=", "OUTPUT_RATE=", "LATENCY_MS=", "ADAPTIVE_RESAMPLING="):
-    if runtime.count(env_name) != 1:
-        raise SystemExit(f"runtime default must be defined exactly once: {env_name}")
+for token in ("--output-backend file", "--output-file -", "--output-file-format raw-f32"):
+    if token not in runtime:
+        raise SystemExit(f"CamillaDSP handoff missing runtime token: {token}")
 if '"${GLOBAL_ARGS[@]}" render -' not in runtime:
     raise SystemExit("orender global config args must precede explicit render subcommand")
-print("AURORA-PI5-RUNTIME-OPTIONS-CONTRACT-PASS")
+print("AURORA-PI5-RUNTIME-OPTIONS-CONTRACT-PASS output=camilladsp")
+
 names=re.findall(r'^  - name: "([^"]+)"$', text, flags=re.M)
 if len(names) != 16 or len(set(names)) != 16:
     raise SystemExit(f"Aurora layout must contain 16 unique outputs, got {len(names)}")
@@ -61,7 +70,6 @@ for block in blocks:
 lfe=speaker_blocks.get("LFE","")
 if "spatialize: true" not in lfe or "freq_high: 80" not in lfe:
     raise SystemExit("LFE must own the 0-80 Hz bass-management band")
-
 floor={"FL","FR","C","FWL","FWR","SL","SR","RWL","RWR","BL","BR"}
 heights={"TFL","TFR","TRL","TRR"}
 for name in floor:
@@ -137,47 +145,87 @@ cat > "$TMP/bin/orender" <<'FAKE'
 set -euo pipefail
 printf '%s\n' "$@" >"$AURORA_FAKE_ARGS_FILE"
 cat >/dev/null
+python3 - <<'PY'
+import sys
+# 256 frames of 16-channel F32 silence; enough to exercise the byte pipe.
+sys.stdout.buffer.write(b"\x00" * (256 * 16 * 4))
+PY
 FAKE
 chmod +x "$TMP/bin/orender"
+
+cat > "$TMP/bin/camilladsp" <<'FAKE'
+#!/usr/bin/env bash
+set -euo pipefail
+if [[ "${1:-}" == "--check" ]]; then
+  test -f "${2:-}"
+  exit 0
+fi
+printf '%s\n' "$@" >"$AURORA_FAKE_CAMILLA_ARGS_FILE"
+cat >/dev/null
+FAKE
+chmod +x "$TMP/bin/camilladsp"
+
 : >"$TMP/libharletty_bridge.so"
 
 AURORA_FAKE_ROOT="$ROOT_DIR" \
 AURORA_FAKE_ARGS_FILE="$TMP/orender.args" \
+AURORA_FAKE_CAMILLA_ARGS_FILE="$TMP/camilla.args" \
 AURORA_ORENDER="$TMP/bin/orender" \
+AURORA_CAMILLADSP="$TMP/bin/camilladsp" \
 AURORA_HARLETTY_BRIDGE="$TMP/libharletty_bridge.so" \
 AURORA_SPEAKER_LAYOUT="$LAYOUT" \
+AURORA_ALSA_OUTPUT_DEVICE="hw:AuroraTest,0" \
 AURORA_STATE_DIR="$TMP/state" \
 PATH="$TMP/bin:$PATH" \
   bash "$ROOT_DIR/scripts/pi5/run-earc-joc.sh" \
   >"$TMP/launcher.stdout" 2>"$TMP/launcher.stderr"
 
-python3 - "$TMP/orender.args" "$LAYOUT" <<'PY'
-import pathlib, sys
-args=pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
-layout=sys.argv[2]
-def require_pair(flag, value):
+python3 - "$TMP/orender.args" "$TMP/camilla.args" "$TMP/state/camilladsp-runtime.yml" "$LAYOUT" <<'PY'
+import json, pathlib, sys
+orender=pathlib.Path(sys.argv[1]).read_text(encoding="utf-8").splitlines()
+camilla_args=pathlib.Path(sys.argv[2]).read_text(encoding="utf-8").splitlines()
+cfg=json.loads(pathlib.Path(sys.argv[3]).read_text(encoding="utf-8"))
+layout=sys.argv[4]
+
+def require_pair(args, flag, value):
     try:
         i=args.index(flag)
     except ValueError:
         raise SystemExit(f"launcher missing {flag}")
     if i+1 >= len(args) or args[i+1] != value:
-        raise SystemExit(f"launcher {flag} expected {value!r}, got {args[i+1] if i+1 < len(args) else '<missing>'!r}")
-if args[:2] != ["render", "-"]:
-    raise SystemExit(f"launcher must use explicit render stdin flow, got prefix {args[:2]}")
-require_pair("--bridge-path", pathlib.Path(sys.argv[1]).parent.joinpath("libharletty_bridge.so").as_posix())
-require_pair("--speaker-layout", layout)
-require_pair("--output-backend", "pipewire")
-require_pair("--output-sample-rate", "48000")
-require_pair("--latency-target-ms", "80")
-require_pair("--master-gain", "-3")
-require_pair("--auto-gain-ceiling", "-1")
-if args.count("--auto-gain") != 1:
-    raise SystemExit(f"launcher expected one --auto-gain, got {args.count('--auto-gain')}")
-if args.count("--enable-adaptive-resampling") != 1:
-    raise SystemExit("launcher must enable adaptive resampling by default")
-if args.count("--master-gain") != 1 or args.count("--auto-gain-ceiling") != 1:
-    raise SystemExit("launcher gain safety flags must not be duplicated")
-print("AURORA-PI5-LAUNCHER-CONTRACT-PASS latency_ms=80 rate=48000 adaptive=1")
+        got=args[i+1] if i+1 < len(args) else "<missing>"
+        raise SystemExit(f"launcher {flag} expected {value!r}, got {got!r}")
+
+if orender[:2] != ["render", "-"]:
+    raise SystemExit(f"launcher must use explicit render stdin flow, got prefix {orender[:2]}")
+require_pair(orender, "--bridge-path", pathlib.Path(sys.argv[1]).parent.joinpath("libharletty_bridge.so").as_posix())
+require_pair(orender, "--speaker-layout", layout)
+require_pair(orender, "--output-backend", "file")
+require_pair(orender, "--output-file", "-")
+require_pair(orender, "--output-file-format", "raw-f32")
+require_pair(orender, "--output-sample-rate", "48000")
+require_pair(orender, "--master-gain", "-3")
+require_pair(orender, "--auto-gain-ceiling", "-1")
+if orender.count("--auto-gain") != 1:
+    raise SystemExit(f"launcher expected one --auto-gain, got {orender.count('--auto-gain')}")
+if "--enable-adaptive-resampling" in orender:
+    raise SystemExit("Omniphony adaptive resampling must be off in CamillaDSP output mode")
+
+devices=cfg["devices"]
+assert devices["samplerate"] == 48000
+assert devices["chunksize"] == 512
+assert devices["queuelimit"] == 2
+assert devices["target_level"] == 512
+assert devices["adjust_period"] == 3
+assert devices["enable_rate_adjust"] is True
+assert devices["resampler"] == {"type":"AsyncSinc","profile":"Balanced"}
+assert devices["capture"] == {"type":"Stdin","channels":16,"format":"F32_LE"}
+assert devices["playback"]["type"] == "Alsa"
+assert devices["playback"]["channels"] == 16
+assert devices["playback"]["device"] == "hw:AuroraTest,0"
+if camilla_args != [sys.argv[3]]:
+    raise SystemExit(f"CamillaDSP runtime args mismatch: {camilla_args}")
+print("AURORA-PI5-CAMILLADSP-CONTRACT-PASS channels=16 rate_adjust=AsyncSinc chunk=512")
 PY
 
 echo "AURORA-PI5-EARC-RUNTIME-CONTRACT-PASS"
