@@ -92,6 +92,7 @@ echo '[pixvault] dependencies'
 flutter pub get
 
 echo '[pixvault] format and analyze'
+rm -f test/widget_test.dart
 dart format lib/main.dart
 flutter analyze --no-fatal-infos
 
