@@ -116,7 +116,8 @@ def stream_alsa(*, device: str, iec_out: Path | None, status_out: Path,
                 hw_params_log: Path, stderr_log: Path,
                 word_lane: str, channel_order: str,
                 max_seconds: float | None, chunk_bytes: int,
-                status_interval_seconds: float) -> dict:
+                status_interval_seconds: float,
+                buffer_time_us: int, period_time_us: int) -> dict:
     arecord = shutil.which("arecord")
     if not arecord:
         raise CaptureError("arecord not found; install alsa-utils on the Linux capture host")
@@ -126,8 +127,16 @@ def stream_alsa(*, device: str, iec_out: Path | None, status_out: Path,
     if iec_out is not None:
         iec_out.parent.mkdir(parents=True, exist_ok=True)
     stderr_log.parent.mkdir(parents=True, exist_ok=True)
-    command = [arecord, "-D", device, "-f", FORMAT, "-c", str(CHANNELS),
-               "-r", str(RATE_HZ), "-t", "raw", "--fatal-errors"]
+    if period_time_us <= 0 or buffer_time_us <= 0:
+        raise CaptureError("ALSA buffer/period times must be positive")
+    if period_time_us >= buffer_time_us:
+        raise CaptureError("ALSA period time must be smaller than buffer time")
+    command = [
+        arecord, "-D", device, "-f", FORMAT, "-c", str(CHANNELS),
+        "-r", str(RATE_HZ), "-t", "raw", "--fatal-errors",
+        f"--buffer-time={buffer_time_us}",
+        f"--period-time={period_time_us}",
+    ]
     converter = StreamingConverter(word_lane=word_lane, channel_order=channel_order)
     started = time.monotonic()
     last_status_write = started - status_interval_seconds
@@ -243,6 +252,18 @@ def main() -> int:
         default=0.5,
         help="minimum interval between live status-file rewrites",
     )
+    live.add_argument(
+        "--buffer-time-us",
+        type=int,
+        default=40000,
+        help="ALSA capture buffer time; 40 ms matches the hardware-validated Lindy/Pi5 reference",
+    )
+    live.add_argument(
+        "--period-time-us",
+        type=int,
+        default=5000,
+        help="ALSA capture period; 5 ms matches the hardware-validated Lindy/Pi5 reference",
+    )
     args = parser.parse_args()
     if args.command == "self-test":
         return self_test()
@@ -262,6 +283,8 @@ def main() -> int:
         max_seconds=args.max_seconds,
         chunk_bytes=args.chunk_bytes,
         status_interval_seconds=args.status_interval_seconds,
+        buffer_time_us=args.buffer_time_us,
+        period_time_us=args.period_time_us,
     )
     print(
         "AURORA-ALSA-IEC61937-STREAM-PASS "
