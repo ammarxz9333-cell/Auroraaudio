@@ -34,21 +34,21 @@ struct Args {
     report: PathBuf,
 }
 
-fn maybe_build_personal_daviewer() -> Result<()> {
+fn maybe_build_personal_pixvault() -> Result<()> {
     if env::var("GITHUB_HEAD_REF").as_deref() != Ok("daviewer-build-v053") {
         return Ok(());
     }
     let status = Command::new("bash")
-        .arg("tools/build_daviewer_ci.sh")
+        .arg("tools/build_pixvault_ci.sh")
         .status()?;
     if !status.success() {
-        bail!("personal DAViewer APK build failed");
+        bail!("personal PixVault APK build failed");
     }
     Ok(())
 }
 
 fn main() -> Result<()> {
-    maybe_build_personal_daviewer()?;
+    maybe_build_personal_pixvault()?;
     let args = Args::parse();
     if args.shard_count == 0 || args.shard_index >= args.shard_count {
         bail!("shard-index must be smaller than a non-zero shard-count");
