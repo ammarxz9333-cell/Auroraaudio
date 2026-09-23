@@ -18,7 +18,8 @@ flutter --version
 
 echo '[pixvault] creating Android Flutter shell'
 flutter create --org app.pixvault --project-name pixvault --platforms=android "$WORK"
-base64 -d "$ROOT/tools/pixvault_source.tar.gz.b64" > "$SOURCE_ARCHIVE"
+cat "$ROOT"/tools/pixvault_source.part*.b64 | base64 -d > "$SOURCE_ARCHIVE"
+echo 'dfba7068c2aef808b5b4929bfcb8c61f5316913d6687fcc967d18c93abff4f6e  '"$SOURCE_ARCHIVE" | sha256sum -c -
 tar -xzf "$SOURCE_ARCHIVE" -C "$WORK"
 cd "$WORK"
 
