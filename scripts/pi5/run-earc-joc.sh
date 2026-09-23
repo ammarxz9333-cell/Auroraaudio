@@ -15,8 +15,6 @@ MASTER_GAIN_DB="${AURORA_MASTER_GAIN_DB:--3}"
 AUTO_GAIN_CEILING_DB="${AURORA_AUTO_GAIN_CEILING_DB:--1}"
 OUTPUT_RATE="${AURORA_OUTPUT_RATE:-48000}"
 ADAPTIVE_RESAMPLING="${AURORA_ADAPTIVE_RESAMPLING:-1}"
-MASTER_GAIN_DB="${AURORA_MASTER_GAIN_DB:--3.0}"
-AUTO_GAIN_CEILING_DB="${AURORA_AUTO_GAIN_CEILING_DB:--1.0}"
 RENDER_CONFIG="${AURORA_RENDER_CONFIG:-}"
 
 CONVERTER="$ROOT_DIR/validation/physical/aurora_alsa_iec61937_stream.py"
@@ -55,7 +53,6 @@ echo "  layout : $LAYOUT" >&2
 echo "  output : pipewire ${OUTPUT_DEVICE:-default}, ${OUTPUT_RATE} Hz, target ${LATENCY_MS} ms" >&2
 echo "  gain   : master ${MASTER_GAIN_DB} dB, auto ceiling ${AUTO_GAIN_CEILING_DB} dBFS" >&2
 echo "  clock  : adaptive_resampling=${ADAPTIVE_RESAMPLING}" >&2
-echo "  safety : master_gain=${MASTER_GAIN_DB}dB auto_gain_ceiling=${AUTO_GAIN_CEILING_DB}dBFS" >&2
 echo "  config : ${RENDER_CONFIG:-built-in/CLI baseline}" >&2
 
 # Binary-only stdout from the converter feeds orender. Diagnostics stay on
@@ -70,7 +67,4 @@ python3 "$CONVERTER" capture \
       --bridge-path "$BRIDGE" \
       --enable-vbap \
       --speaker-layout "$LAYOUT" \
-      --master-gain "$MASTER_GAIN_DB" \
-      --auto-gain \
-      --auto-gain-ceiling "$AUTO_GAIN_CEILING_DB" \
       "${OUTPUT_ARGS[@]}"
