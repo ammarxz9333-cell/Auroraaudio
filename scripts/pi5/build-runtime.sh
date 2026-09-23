@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/config/external-components-v1.json"
+OMNIP_ARM64_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.6.0-arm64-c-char.patch"
 RUNTIME_ROOT="${AURORA_RUNTIME_ROOT:-$HOME/.local/share/aurora-runtime}"
 SRC_DIR="$RUNTIME_ROOT/src"
 BUILD_DIR="$RUNTIME_ROOT/build"
@@ -53,6 +54,10 @@ OMNI_DIR="$SRC_DIR/Omniphony"
 echo "== Aurora Pi5 runtime: exact source checkout =="
 checkout_exact "$HARLETTY_UPSTREAM" "$HARLETTY_COMMIT" "$HAR_DIR"
 checkout_exact "$OMNIP_UPSTREAM" "$OMNIP_COMMIT" "$OMNI_DIR"
+
+echo "== Aurora Pi5 runtime: Omniphony ARM64 portability fix =="
+git -C "$OMNI_DIR" apply --check "$OMNIP_ARM64_PATCH"
+git -C "$OMNI_DIR" apply "$OMNIP_ARM64_PATCH"
 
 echo "== Aurora Pi5 runtime: Rust toolchain =="
 rustup toolchain install "$TOOLCHAIN" --profile minimal >/dev/null
