@@ -7,7 +7,12 @@ LAYOUT="$ROOT_DIR/config/layouts/omniphony-11.1.4-aurora.yaml"
 OVERLAY="$ROOT_DIR/platform/pi5/aurora-earc-tap-overlay.dts"
 CONVERTER="$ROOT_DIR/validation/physical/aurora_alsa_iec61937_stream.py"
 
-for script in   "$ROOT_DIR/scripts/pi5/build-runtime.sh"   "$ROOT_DIR/scripts/pi5/run-earc-joc.sh"   "$ROOT_DIR/scripts/pi5/install-earc-overlay.sh"; do
+for script in \
+  "$ROOT_DIR/scripts/pi5/build-runtime.sh" \
+  "$ROOT_DIR/scripts/pi5/run-earc-joc.sh" \
+  "$ROOT_DIR/scripts/pi5/install-earc-overlay.sh" \
+  "$ROOT_DIR/scripts/pi5/check-health.sh" \
+  "$ROOT_DIR/scripts/pi5/install-user-service.sh"; do
   bash -n "$script"
 done
 python3 -m py_compile "$CONVERTER"
