@@ -30,7 +30,7 @@ s = s.replace(
     '  cupertino_icons: ^1.0.8\n',
     '  cupertino_icons: ^1.0.8\n'
     '  cached_network_image: ^3.4.1\n'
-    '  flutter_inappwebview: ^6.1.5\n'
+    '  webview_flutter: ^4.14.1\n'
     '  http: ^1.5.0\n'
     '  path_provider: ^2.1.5\n'
     '  shared_preferences: ^2.5.3\n'
@@ -90,11 +90,6 @@ PY
 
 echo '[pixvault] dependencies'
 flutter pub get
-
-echo '[pixvault] patching flutter_inappwebview for AGP 9 compatibility'
-PLUGIN_GRADLE="$(find "$HOME/.pub-cache/hosted/pub.dev" -path '*/flutter_inappwebview_android-1.1.3/android/build.gradle' -print -quit)"
-test -n "$PLUGIN_GRADLE"
-sed -i "s/getDefaultProguardFile('proguard-android.txt')/getDefaultProguardFile('proguard-android-optimize.txt')/g" "$PLUGIN_GRADLE"
 
 echo '[pixvault] format and analyze'
 rm -f test/widget_test.dart
