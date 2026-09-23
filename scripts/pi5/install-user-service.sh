@@ -48,8 +48,7 @@ escaped_root="${ROOT_DIR//%/%%}"
 cat >"$UNIT_FILE" <<EOF
 [Unit]
 Description=Aurora Pi5 eARC immersive audio runtime
-After=pipewire.service wireplumber.service sound.target
-Wants=pipewire.service
+After=sound.target
 
 [Service]
 Type=simple
