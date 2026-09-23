@@ -30,6 +30,9 @@ Omniphony 0.6.0 orender stdin
   -> Omniphony spatial render
         |
 Aurora custom 11.1.4 = 16 output channels
+  -> LR4 bass management: sub <80 Hz, floor >80 Hz, heights >100 Hz
+  -> -3 dB baseline headroom + auto-gain ceiling -1 dBFS
+  -> per-speaker gain/delay/mute available in Omniphony
         |
 PipeWire multichannel output
 ```
@@ -94,6 +97,18 @@ AURORA_OUTPUT_DEVICE="<PipeWire multichannel device>" \
 
 If `AURORA_OUTPUT_DEVICE` is omitted, Omniphony uses its default PipeWire output.
 
+The default Aurora layout uses Omniphony 0.6's LR4 frequency-band renderer as the 16-channel bass-management stage: the LFE/sub owns 0–80 Hz, the eleven floor speakers start at 80 Hz, and the four height speakers start at 100 Hz. The launcher also applies -3 dB master headroom and enables automatic peak correction with a -1 dBFS ceiling.
+
+A measured-room configuration can be added later without changing the launcher:
+
+```bash
+AURORA_RENDER_CONFIG="$HOME/.config/aurora/room.yaml" \
+AURORA_OUTPUT_DEVICE="<PipeWire multichannel device>" \
+  bash scripts/pi5/run-earc-joc.sh
+```
+
+Do not invent room EQ values before measuring the actual speakers and room. The checked-in baseline therefore remains flat apart from crossover/bass routing, gain headroom and anti-clip protection.
+
 ## Hardware tap
 
 The overlay is derived from the MIT-licensed VibesboxSRC Pi 5 eARC tap and is stored at `platform/pi5/aurora-earc-tap-overlay.dts`.
@@ -127,6 +142,8 @@ CI runs the JOC stack on native Linux ARM64 and checks the 16-channel paced outp
 - IEC61937 E-AC-3 type `0x15` into Harletty;
 - real JOC metadata/object emission from the pinned public fixture;
 - Omniphony render into Aurora's 16-output custom geometry;
+- 16-output LR4 bass-management topology (80 Hz floor/sub split, 100 Hz height high-pass);
+- launcher-level output headroom and anti-clip configuration;
 - media-paced JOC render on native ARM64 CI;
 - fail-closed pin/version/runtime-contract checks.
 
