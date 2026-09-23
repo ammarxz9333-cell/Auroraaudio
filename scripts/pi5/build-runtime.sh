@@ -10,7 +10,7 @@ BUILD_DIR="$RUNTIME_ROOT/build"
 PREFIX="$RUNTIME_ROOT/install"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
 
-for cmd in git python3 cargo rustup; do
+for cmd in git python3 cargo rustup curl tar sha256sum; do
   command -v "$cmd" >/dev/null 2>&1 || {
     echo "missing required command: $cmd" >&2
     exit 2
@@ -26,6 +26,16 @@ for prefix, cid in (("OMNIP","omniphony"),("HARLETTY","harletty-bridge")):
     print(f"{prefix}_UPSTREAM={shlex.quote(x['upstream'])}")
     print(f"{prefix}_COMMIT={shlex.quote(x['pinned_commit'])}")
     print(f"{prefix}_VERSION={shlex.quote(x['tested_version'])}")
+
+cam=c["camilladsp"]
+print(f"CAMILLA_UPSTREAM={shlex.quote(cam['upstream'])}")
+print(f"CAMILLA_VERSION={shlex.quote(cam['tested_version'])}")
+arch={"aarch64":"aarch64-unknown-linux-gnu","x86_64":"x86_64-unknown-linux-gnu"}.get(__import__("platform").machine())
+if not arch:
+    raise SystemExit(f"unsupported CamillaDSP build host architecture: {__import__('platform').machine()}")
+artifact=cam["release_artifacts"][arch]
+print(f"CAMILLA_ASSET={shlex.quote(artifact['name'])}")
+print(f"CAMILLA_SHA256={shlex.quote(artifact['sha256'])}")
 PY
 )"
 
@@ -74,14 +84,34 @@ install -m 0755 "$BUILD_DIR/omniphony/release/orender" "$PREFIX/bin/orender"
 install -m 0644 "$BUILD_DIR/harletty/release/libharletty_bridge.so" "$PREFIX/lib/libharletty_bridge.so"
 install -m 0644 "$ROOT_DIR/config/layouts/omniphony-11.1.4-aurora.yaml"   "$PREFIX/share/aurora/omniphony-11.1.4-aurora.yaml"
 
+echo "== Aurora Pi5 runtime: CamillaDSP $CAMILLA_VERSION =="
+CAMILLA_CACHE="$BUILD_DIR/$CAMILLA_ASSET"
+CAMILLA_URL="$CAMILLA_UPSTREAM/releases/download/v$CAMILLA_VERSION/$CAMILLA_ASSET"
+if [[ ! -f "$CAMILLA_CACHE" ]] || ! printf '%s  %s\n' "$CAMILLA_SHA256" "$CAMILLA_CACHE" | sha256sum -c - >/dev/null 2>&1; then
+  rm -f "$CAMILLA_CACHE"
+  curl -fL --retry 3 --retry-delay 1 "$CAMILLA_URL" -o "$CAMILLA_CACHE"
+fi
+printf '%s  %s\n' "$CAMILLA_SHA256" "$CAMILLA_CACHE" | sha256sum -c -
+CAMILLA_EXTRACT="$BUILD_DIR/camilladsp-$CAMILLA_VERSION"
+rm -rf "$CAMILLA_EXTRACT"
+mkdir -p "$CAMILLA_EXTRACT"
+tar -xzf "$CAMILLA_CACHE" -C "$CAMILLA_EXTRACT"
+CAMILLA_BIN="$(find "$CAMILLA_EXTRACT" -type f -name camilladsp -perm -u+x | head -n1)"
+[[ -n "$CAMILLA_BIN" ]] || { echo "CamillaDSP binary missing from $CAMILLA_ASSET" >&2; exit 1; }
+install -m 0755 "$CAMILLA_BIN" "$PREFIX/bin/camilladsp"
+
 cat > "$PREFIX/share/aurora/runtime-versions.txt" <<EOF
 harletty=$HARLETTY_VERSION
 harletty_commit=$HARLETTY_COMMIT
 omniphony=$OMNIP_VERSION
 omniphony_commit=$OMNIP_COMMIT
+camilladsp=$CAMILLA_VERSION
+camilladsp_asset=$CAMILLA_ASSET
+camilladsp_sha256=$CAMILLA_SHA256
 EOF
 
 "$PREFIX/bin/orender" --help >/dev/null
+"$PREFIX/bin/camilladsp" --version
 test -s "$PREFIX/lib/libharletty_bridge.so"
 
 echo "AURORA-PI5-RUNTIME-BUILD-PASS prefix=$PREFIX"
