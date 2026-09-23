@@ -23,7 +23,7 @@ check "Harletty bridge installed" test -s "$PREFIX/lib/libharletty_bridge.so"
 check "Aurora 11.1.4 layout installed" test -s "$PREFIX/share/aurora/omniphony-11.1.4-aurora.yaml"
 check "eARC converter present" test -s "$ROOT_DIR/validation/physical/aurora_alsa_iec61937_stream.py"
 check "arecord available" command -v arecord
-check "eARC ALSA card visible" bash -c 'arecord -l 2>/dev/null | grep -qi "eARC"'
+check "configured eARC ALSA endpoint usable" arecord -D "$DEVICE" --dump-hw-params
 check "PipeWire client available" bash -c 'command -v wpctl >/dev/null || command -v pw-cli >/dev/null'
 
 if [[ -f "$STATE_DIR/earc-status.json" ]]; then
