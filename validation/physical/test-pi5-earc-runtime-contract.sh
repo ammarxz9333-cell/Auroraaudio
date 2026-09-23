@@ -35,7 +35,27 @@ if len(names) != 16 or len(set(names)) != 16:
 if names.count("LFE") != 1:
     raise SystemExit("Aurora layout must contain one LFE")
 blocks=re.split(r'(?=^  - name: )', text, flags=re.M)
-speaker_blocks={m.group(1):b for b in blocks if (m:=re.search(r'^  - name: "([^"]+)"
+speaker_blocks={}
+for block in blocks:
+    match=re.search(r'^  - name: "([^"]+)"$', block, flags=re.M)
+    if match:
+        speaker_blocks[match.group(1)]=block
+
+lfe=speaker_blocks.get("LFE","")
+if "spatialize: true" not in lfe or "freq_high: 80" not in lfe:
+    raise SystemExit("LFE must own the 0-80 Hz bass-management band")
+
+floor={"FL","FR","C","FWL","FWR","SL","SR","RWL","RWR","BL","BR"}
+heights={"TFL","TFR","TRL","TRR"}
+for name in floor:
+    if "freq_low: 80" not in speaker_blocks.get(name,""):
+        raise SystemExit(f"{name} must be high-passed at 80 Hz")
+for name in heights:
+    if "freq_low: 100" not in speaker_blocks.get(name,""):
+        raise SystemExit(f"{name} must be high-passed at 100 Hz")
+if any("spatialize: false" in block for block in speaker_blocks.values()):
+    raise SystemExit("bass-managed Aurora layout expects every output to participate in its declared frequency band")
+print("AURORA-11.1.4-LAYOUT-CONTRACT-PASS channels=16 bass_management=80/100Hz")
 PY
 
 if command -v dtc >/dev/null 2>&1; then
