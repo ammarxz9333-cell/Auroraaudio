@@ -95,7 +95,8 @@ Aurora now carries an optional single-SBC home-theater profile:
 ```text
 TV eARC -> Lindy 38368/SiI9437 -> Pi5 I2S slave -> ALSA
 -> Aurora IEC61937 canonicalizer -> Harletty 0.8 -> Omniphony 0.6
--> Aurora 11.1.4 custom layout + LR4 bass management -> PipeWire multichannel output
+-> Aurora 11.1.4 + LR4 bass management -> 16ch F32
+-> CamillaDSP 4.1.3 -> ALSA multichannel DAC
 ```
 
 The runtime deliberately feeds canonical IEC61937 to `orender` over stdin and does **not** depend on Omniphony's still-experimental encoded PipeWire input sink. Exact source pins, the Pi5 device-tree overlay, build/install scripts, one-command launcher, and truth boundaries are in [`docs/pi5-earc-runtime.md`](docs/pi5-earc-runtime.md).
@@ -104,10 +105,10 @@ The runtime deliberately feeds canonical IEC61937 to `orender` over stdin and do
 bash scripts/pi5/build-runtime.sh
 bash scripts/pi5/install-earc-overlay.sh
 # reboot once after first overlay install
-AURORA_OUTPUT_DEVICE="<PipeWire device>" bash scripts/pi5/run-earc-joc.sh
+AURORA_ALSA_OUTPUT_DEVICE="hw:<16ch-device>" bash scripts/pi5/run-earc-joc.sh
 ```
 
-The Pi5 baseline uses an 80 Hz sub/floor crossover, 100 Hz height high-pass, -3 dB headroom and -1 dBFS auto-gain ceiling; measured room EQ remains a deployment-time calibration input. Native ARM64 CI runs the media-paced JOC path against the 16-output Aurora layout. This is software/architecture evidence; the exact TV/Lindy/Pi5 physical chain and protected TV apps remain hardware validation gates.
+The Pi5 baseline uses an 80 Hz sub/floor crossover, 100 Hz height high-pass, -3 dB headroom and -1 dBFS auto-gain ceiling. CamillaDSP is the selected realtime post-DSP/output process: the checked-in launcher generates a flat 16-channel F32/ALSA baseline with asynchronous clock-drift correction, while measured PEQ/FIR room correction remains a deployment-time configuration after real acoustic measurements. Native ARM64 CI runs the media-paced JOC path against the 16-output Aurora layout. This is software/architecture evidence; the exact TV/Lindy/Pi5 physical chain and protected TV apps remain hardware validation gates.
 
 A separate experimental surround-upmix path exists for channel-based E-AC-3. It explicitly does not claim object recovery.
 
