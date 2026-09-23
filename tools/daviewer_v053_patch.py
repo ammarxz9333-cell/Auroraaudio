@@ -49,15 +49,13 @@ replace_once(
     'lib/features/web_login/web_login_screen.dart',
     """  bool _serverConfirmedWebSession = false;
 """,
-    """,
-""",
+    "",
 )
 replace_once(
     'lib/features/web_login/web_login_screen.dart',
     """          _serverConfirmedWebSession = true;
 """,
-    """,
-""",
+    "",
 )
 
 
