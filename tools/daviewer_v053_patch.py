@@ -45,6 +45,22 @@ replace_once(
 )
 
 # 2) A system-browser OAuth login cannot populate Android WebView cookies.
+replace_once(
+    'lib/features/web_login/web_login_screen.dart',
+    """  bool _serverConfirmedWebSession = false;
+""",
+    """,
+""",
+)
+replace_once(
+    'lib/features/web_login/web_login_screen.dart',
+    """          _serverConfirmedWebSession = true;
+""",
+    """,
+""",
+)
+
+
 # Close the login screen as soon as OAuth succeeds instead of waiting forever
 # for a separate WebView session.
 replace_once(
@@ -86,6 +102,13 @@ replace_once(
 # endpoint, and fall back to Daily Deviations if that endpoint is unavailable.
 home_path = root / 'lib/features/home/home_providers.dart'
 home = home_path.read_text(encoding='utf-8')
+if "import '../../core/runtime/app_runtime.dart';" not in home:
+    home = home.replace(
+        "import '../../core/feed/artwork_feed_controller.dart';\n",
+        "import '../../core/feed/artwork_feed_controller.dart';\n"
+        "import '../../core/runtime/app_runtime.dart';\n",
+        1,
+    )
 
 old_gate = """        final webSessionState = ref.read(webSessionControllerProvider);
         if (webSessionState.isLoggedIn != true ||
@@ -203,7 +226,7 @@ Future<Page<Artwork>> _fetchOfficialHomeFallback(
     return Page<Artwork>(
       items: items,
       hasMore: hasMore,
-      nextCursor: hasMore && nextOffset != null ? '$nextOffset' : null,
+      nextCursor: hasMore ? '$nextOffset' : null,
     );
   } on Object catch (error, stack) {
     logger.warning(
