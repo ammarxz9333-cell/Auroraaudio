@@ -34,6 +34,24 @@ jobs:
           head -c 3000 /tmp/r34detail.txt
           echo
 
+          echo '===== rule34xxx ====='
+          code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS \
+            -o /tmp/r34xxx.txt -w '%{http_code}' \
+            'https://api.rule34.xxx/index.php?page=dapi&s=post&q=index&json=1&limit=2&tags=futanari')
+          echo "HTTP=$code"
+          wc -c /tmp/r34xxx.txt
+          head -c 1600 /tmp/r34xxx.txt
+          echo
+
+          echo '===== realbooru ====='
+          code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS \
+            -o /tmp/realbooru.txt -w '%{http_code}' \
+            'https://realbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=2&tags=transgender')
+          echo "HTTP=$code"
+          wc -c /tmp/realbooru.txt
+          head -c 1600 /tmp/realbooru.txt
+          echo
+
           echo '===== sankaku ====='
           code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS             -o /tmp/sankaku.txt -w '%{http_code}'             'https://capi-v2.sankakucomplex.com/posts?limit=2&tags=futanari')
           echo "HTTP=$code"
