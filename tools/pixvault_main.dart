@@ -564,14 +564,10 @@ class R34Repo {
       _ => 'pic.jpg',
     };
 
-    final location = files[fmt];
-    var useCdn = true;
-    if (location is List && location.isNotEmpty) {
-      useCdn = location.first == 1 || location.first == true;
-    }
-
-    final base = useCdn ? cdn : root;
-    return '$base/posts/${id ~/ 1000}/$id/$id.$extension';
+    // rule34.xyz currently reports storage codes such as [2], but the
+    // corresponding media URL is served from rule34xyz.b-cdn.net.
+    // The same path on the site origin returns 404.
+    return '$cdn/posts/${id ~/ 1000}/$id/$id.$extension';
   }
 
   Artwork _artwork(Map<String, dynamic> m) {
@@ -782,6 +778,9 @@ class BooruRepo {
       },
     );
     if (r.statusCode != 200) {
+      if (r.statusCode == 401 || r.statusCode == 403) {
+        throw Exception('SOURCE_ACCESS_BLOCKED:${source.label}:${r.statusCode}');
+      }
       throw Exception('${source.label} HTTP ${r.statusCode}');
     }
     return jsonDecode(utf8.decode(r.bodyBytes));
@@ -1156,9 +1155,11 @@ class _BrowsePageState extends State<BrowsePage> {
       setState(() {
         error = msg.contains('PIXIV_LOGIN_REQUIRED')
             ? 'Pixiv R-18 requires login. Tap the account icon above.'
-            : msg.contains('BLOCKED_QUERY')
-                ? 'This search term is blocked.'
-                : 'Could not load from ${source.label}: $msg';
+            : msg.contains('SOURCE_ACCESS_BLOCKED')
+                ? '${source.label} is refusing direct API access. Use Rule34Vault/XYZ or yande.re for now.'
+                : msg.contains('BLOCKED_QUERY')
+                    ? 'This search term is blocked.'
+                    : 'Could not load from ${source.label}: $msg';
       });
     } finally {
       if (mounted) setState(() => loading = false);
@@ -1931,7 +1932,7 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const ListTile(
             leading: Icon(Icons.info_outline),
-            title: Text('PixVault 0.2.1'),
+            title: Text('PixVault 0.2.2'),
             subtitle: Text(
               'Verified-source build: Rule34Vault/XYZ and yande.re work without credentials; Pixiv requires login. Sources currently blocked by API authentication or Cloudflare are hidden.',
             ),
