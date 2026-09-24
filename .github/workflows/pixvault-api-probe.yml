@@ -26,6 +26,20 @@ jobs:
             wc -c /tmp/body.txt
             head -c 1200 /tmp/body.txt
             echo
+
+          echo '===== rule34vault detail ====='
+          code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS             -H 'Accept: application/json'             -H 'Referer: https://rule34vault.com/'             -o /tmp/r34detail.txt -w '%{http_code}'             'https://rule34vault.com/api/v2/post/1317838')
+          echo "HTTP=$code"
+          wc -c /tmp/r34detail.txt
+          head -c 3000 /tmp/r34detail.txt
+          echo
+
+          echo '===== sankaku ====='
+          code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS             -o /tmp/sankaku.txt -w '%{http_code}'             'https://capi-v2.sankakucomplex.com/posts?limit=2&tags=futanari')
+          echo "HTTP=$code"
+          wc -c /tmp/sankaku.txt
+          head -c 1200 /tmp/sankaku.txt
+          echo
           }
 
           probe gelbooru 'https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=2&pid=0&tags=futanari'
