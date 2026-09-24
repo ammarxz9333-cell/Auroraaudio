@@ -80,6 +80,27 @@ jobs:
           head -c 1200 /tmp/r34xyzdetail.txt
           echo
 
+
+          echo '===== rule34.xyz matching detail ====='
+          code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS \
+            -H 'Accept: application/json' -H 'Referer: https://rule34.xyz/' \
+            -o /tmp/r34xyzmatch.txt -w '%{http_code}' \
+            'https://rule34.xyz/api/v2/post/4741100')
+          echo "HTTP=$code"
+          wc -c /tmp/r34xyzmatch.txt
+          head -c 1600 /tmp/r34xyzmatch.txt
+          echo
+
+          echo '===== rule34.xyz media candidates ====='
+          for u in \
+            'https://rule34.xyz/posts/4741/4741100/4741100.pic.jpg' \
+            'https://rule34xyz.b-cdn.net/posts/4741/4741100/4741100.pic.jpg' \
+            'https://r34xyz.b-cdn.net/posts/4741/4741100/4741100.jpg'
+          do
+            echo "$u"
+            curl -L -A 'Mozilla/5.0' -sS -o /dev/null -w 'HTTP=%{http_code} TYPE=%{content_type} SIZE=%{size_download}\n' "$u"
+          done
+
           echo '===== yandere default explicit ====='
           probe yandere_explicit 'https://yande.re/post.json?limit=2&page=1&tags=rating%3Ae'
 
