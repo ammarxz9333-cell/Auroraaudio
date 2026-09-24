@@ -275,7 +275,7 @@ class AgeGate extends StatelessWidget {
                   Text('PixVault', style: Theme.of(context).textTheme.headlineLarge),
                   const SizedBox(height: 14),
                   const Text(
-                    'This viewer is for adults only. It can display mature artwork from Pixiv, Rule34Vault, Gelbooru, Danbooru, yande.re and Konachan. Searches and tags that explicitly indicate minors are blocked.',
+                    'This viewer is for adults only. Verified sources in this build are Rule34Vault/XYZ, yande.re and Pixiv. Searches and tags that explicitly indicate minors are blocked.',
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 28),
@@ -491,15 +491,10 @@ class PixivRepo {
 }
 
 class R34Repo {
-  static const root = 'https://rule34vault.com';
-  static const cdn = 'https://r34xyz.b-cdn.net';
+  static const root = 'https://rule34.xyz';
+  static const cdn = 'https://rule34xyz.b-cdn.net';
   static const ua =
       'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36';
-
-  String fileUrl(String id, bool video) {
-    final n = int.tryParse(id) ?? 0;
-    return '$cdn/posts/${n ~/ 1000}/$id/$id.${video ? 'mp4' : 'jpg'}';
-  }
 
   List<String> parseTags(dynamic raw) {
     if (raw is! List) return const [];
@@ -509,20 +504,113 @@ class R34Repo {
     }).where((e) => e.isNotEmpty).toList();
   }
 
+  String _canonicalTag(String tag) {
+    final value = tag.trim().toLowerCase();
+    const aliases = <String, String>{
+      'futa': 'futanari',
+      'trans': 'transgender',
+    };
+    return aliases[value] ?? tag.trim();
+  }
+
+  List<String> _queryTags(String query) => query
+      .split(RegExp(r'[,|]+'))
+      .map((e) => _canonicalTag(e))
+      .where((e) => e.isNotEmpty)
+      .toList();
+
+  Future<Map<String, dynamic>> _detailMap(String id) async {
+    final r = await http.get(
+      Uri.parse('$root/api/v2/post/$id'),
+      headers: {
+        'User-Agent': ua,
+        'Accept': 'application/json',
+        'Referer': '$root/',
+      },
+    );
+    if (r.statusCode != 200) {
+      throw Exception('Rule34Vault detail HTTP ${r.statusCode}');
+    }
+    return Map<String, dynamic>.from(
+      jsonDecode(utf8.decode(r.bodyBytes)) as Map,
+    );
+  }
+
+  String _fileUrl(Map<String, dynamic> m) {
+    final id = int.tryParse('${m['id'] ?? ''}') ?? 0;
+    if (id <= 0) return '';
+
+    final rawFiles = m['files'];
+    if (rawFiles is! Map || rawFiles.isEmpty) return '';
+
+    final files = rawFiles.map(
+      (key, value) => MapEntry(key.toString(), value),
+    );
+
+    const preferred = <String>['100', '101', '102', '10'];
+    String? fmt;
+    for (final candidate in preferred) {
+      if (files.containsKey(candidate)) {
+        fmt = candidate;
+        break;
+      }
+    }
+    fmt ??= files.keys.first;
+
+    final extension = switch (fmt) {
+      '100' => 'mov.mp4',
+      '101' => 'mov720.mp4',
+      '102' => 'mov480.mp4',
+      _ => 'pic.jpg',
+    };
+
+    final location = files[fmt];
+    var useCdn = true;
+    if (location is List && location.isNotEmpty) {
+      useCdn = location.first == 1 || location.first == true;
+    }
+
+    final base = useCdn ? cdn : root;
+    return '$base/posts/${id ~/ 1000}/$id/$id.$extension';
+  }
+
+  Artwork _artwork(Map<String, dynamic> m) {
+    final id = '${m['id'] ?? ''}';
+    final tags = parseTags(m['tags']);
+    final file = _fileUrl(m);
+    final lower = file.toLowerCase();
+    final video =
+        lower.endsWith('.mp4') ||
+        lower.endsWith('.webm') ||
+        lower.endsWith('.m4v');
+
+    return Artwork(
+      source: SourceType.rule34vault,
+      id: id,
+      title: tags.isNotEmpty ? tags.take(4).join(' · ') : 'Post #$id',
+      userName: '${m['uploader'] is Map ? ((m['uploader'] as Map)['displayName'] ?? (m['uploader'] as Map)['userName'] ?? '') : ''}',
+      previewUrl: video ? '' : file,
+      mediaUrl: file,
+      isVideo: video,
+      tags: tags,
+      pageUrls: video || file.isEmpty ? const [] : [file],
+      sourceUrl: '$root/post/$id',
+    );
+  }
+
   Future<List<Artwork>> list(String query, int page) async {
     if (Safety.blockedQuery(query)) throw Exception('BLOCKED_QUERY');
-    final tags = query
-        .split(RegExp(r'[,|]+'))
-        .map((e) => e.trim().replaceAll('_', ' '))
-        .where((e) => e.isNotEmpty)
-        .toList();
 
+    final tags = _queryTags(query);
     final body = {
       'includeTags': tags,
       'CountTotal': false,
-      'Skip': (page - 1) * 60,
-      'take': 60,
+      'IncludeLinks': true,
+      'OrderBy': 0,
+      'Skip': (page - 1) * 18,
+      'take': 18,
     };
+
     final r = await http.post(
       Uri.parse('$root/api/v2/post/search/root'),
       headers: {
@@ -536,58 +624,42 @@ class R34Repo {
     if (r.statusCode != 200) {
       throw Exception('Rule34Vault HTTP ${r.statusCode}');
     }
+
     final j = jsonDecode(utf8.decode(r.bodyBytes));
-    final rows = j is Map && j['items'] is List ? j['items'] as List : const [];
-    return rows.map((e) {
-      final m = Map<String, dynamic>.from(e as Map);
-      final id = '${m['id'] ?? ''}';
-      final video = m['type'] != 0;
-      final tags = parseTags(m['tags']);
-      return Artwork(
-        source: SourceType.rule34vault,
-        id: id,
-        title: tags.isNotEmpty ? tags.take(3).join(' · ') : 'Post #$id',
-        userName: m['uploader'] is Map
-            ? '${(m['uploader'] as Map)['displayName'] ?? (m['uploader'] as Map)['userName'] ?? ''}'
-            : '',
-        previewUrl: video ? '' : fileUrl(id, false),
-        mediaUrl: fileUrl(id, video),
-        isVideo: video,
-        tags: tags,
-        pageUrls: video ? const [] : [fileUrl(id, false)],
-        sourceUrl: '$root/post/$id',
-      );
-    }).where((a) {
-      if (a.id.isEmpty) return false;
-      if (a.tags.isEmpty) return false;
-      return !Safety.blockedArtwork(a);
-    }).toList();
+    final rows = j is Map && j['items'] is List
+        ? j['items'] as List
+        : const [];
+
+    // Search results no longer contain tags. Fetch details before exposing a
+    // card so the mandatory minor-content filter can inspect the real tags.
+    final detailed = await Future.wait(
+      rows.map((raw) async {
+        if (raw is! Map) return null;
+        final id = '${raw['id'] ?? ''}';
+        if (id.isEmpty) return null;
+        try {
+          final full = await _detailMap(id);
+          final item = _artwork(full);
+          if (item.tags.isEmpty || Safety.blockedArtwork(item)) return null;
+          return item;
+        } catch (_) {
+          return null;
+        }
+      }),
+    );
+
+    return detailed.whereType<Artwork>().toList();
   }
 
   Future<Artwork> details(Artwork a) async {
-    final r = await http.get(
-      Uri.parse('$root/api/v2/post/${a.id}'),
-      headers: {'User-Agent': ua, 'Accept': 'application/json'},
-    );
-    if (r.statusCode != 200) throw Exception('Rule34Vault HTTP ${r.statusCode}');
-    final m = Map<String, dynamic>.from(
-      jsonDecode(utf8.decode(r.bodyBytes)) as Map,
-    );
-    final tags = parseTags(m['tags']);
-    final enriched = a.copyWith(
-      userName: m['uploader'] is Map
-          ? '${(m['uploader'] as Map)['displayName'] ?? (m['uploader'] as Map)['userName'] ?? a.userName}'
-          : a.userName,
-      tags: tags,
-      title: tags.isNotEmpty ? tags.take(4).join(' · ') : a.title,
-    );
-    if (tags.isEmpty || Safety.blockedArtwork(enriched)) {
+    final m = await _detailMap(a.id);
+    final enriched = _artwork(m);
+    if (enriched.tags.isEmpty || Safety.blockedArtwork(enriched)) {
       throw Exception('BLOCKED_CONTENT');
     }
     return enriched;
   }
 }
-
 
 List<String> similarityTags(List<String> tags) {
   const ignored = <String>{
@@ -632,7 +704,7 @@ Map<String, String> mediaHeaders(Artwork a) {
         'Referer': 'https://www.pixiv.net/',
       };
     case SourceType.rule34vault:
-      return {'User-Agent': R34Repo.ua, 'Referer': 'https://rule34vault.com/'};
+      return {'User-Agent': R34Repo.ua, 'Referer': 'https://rule34.xyz/'};
     case SourceType.gelbooru:
       return {'User-Agent': ua, 'Referer': 'https://gelbooru.com/'};
     case SourceType.danbooru:
@@ -1102,7 +1174,12 @@ class _BrowsePageState extends State<BrowsePage> {
 
   @override
   Widget build(BuildContext context) {
-    final segments = SourceType.values
+    const visibleSources = <SourceType>[
+      SourceType.rule34vault,
+      SourceType.yandere,
+      SourceType.pixiv,
+    ];
+    final segments = visibleSources
         .map(
           (value) => ButtonSegment<SourceType>(
             value: value,
@@ -1854,9 +1931,9 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const ListTile(
             leading: Icon(Icons.info_outline),
-            title: Text('PixVault 0.2.0'),
+            title: Text('PixVault 0.2.1'),
             subtitle: Text(
-              'Personal multi-source viewer for Pixiv, Rule34Vault, Gelbooru, Danbooru, yande.re and Konachan. Not affiliated with these services.',
+              'Verified-source build: Rule34Vault/XYZ and yande.re work without credentials; Pixiv requires login. Sources currently blocked by API authentication or Cloudflare are hidden.',
             ),
           ),
         ],
