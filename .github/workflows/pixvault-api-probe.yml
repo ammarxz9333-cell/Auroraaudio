@@ -66,6 +66,23 @@ jobs:
           probe konachan 'https://konachan.com/post.json?limit=2&page=1&tags=futanari'
           probe pixiv 'https://www.pixiv.net/ranking.php?format=json&mode=daily_r18&content=illust&p=1'
 
+          echo '===== rule34.xyz search ====='
+          code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS             -H 'Content-Type: application/json' -H 'Accept: application/json'             -H 'Referer: https://rule34.xyz/'             -d '{"includeTags":["futanari"],"CountTotal":false,"IncludeLinks":true,"OrderBy":0,"Skip":0,"take":2}'             -o /tmp/r34xyz.txt -w '%{http_code}'             'https://rule34.xyz/api/v2/post/search/root')
+          echo "HTTP=$code"
+          wc -c /tmp/r34xyz.txt
+          head -c 1200 /tmp/r34xyz.txt
+          echo
+
+          echo '===== rule34.xyz detail ====='
+          code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS             -H 'Accept: application/json' -H 'Referer: https://rule34.xyz/'             -o /tmp/r34xyzdetail.txt -w '%{http_code}'             'https://rule34.xyz/api/v2/post/1317838')
+          echo "HTTP=$code"
+          wc -c /tmp/r34xyzdetail.txt
+          head -c 1200 /tmp/r34xyzdetail.txt
+          echo
+
+          echo '===== yandere default explicit ====='
+          probe yandere_explicit 'https://yande.re/post.json?limit=2&page=1&tags=rating%3Ae'
+
           echo '===== rule34vault ====='
           code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS             -H 'Content-Type: application/json' -H 'Accept: application/json'             -H 'Referer: https://rule34vault.com/'             -d '{"includeTags":["futanari"],"CountTotal":false,"Skip":0,"take":2}'             -o /tmp/r34.txt -w '%{http_code}'             'https://rule34vault.com/api/v2/post/search/root')
           echo "HTTP=$code"
