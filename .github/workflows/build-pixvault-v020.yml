@@ -80,6 +80,44 @@ jobs:
         working-directory: PixVault
         run: flutter analyze --no-fatal-infos
 
+      - name: Smoke-test verified source APIs
+        run: |
+          set -e
+          curl -fLsS -A 'Mozilla/5.0 (Linux; Android 16)' \
+            -H 'Content-Type: application/json' -H 'Accept: application/json' \
+            -H 'Referer: https://rule34.xyz/' \
+            -d '{"includeTags":["futanari"],"CountTotal":false,"IncludeLinks":true,"OrderBy":0,"Skip":0,"take":1}' \
+            'https://rule34.xyz/api/v2/post/search/root' \
+            -o /tmp/r34-search.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/r34-search.json'))
+          assert isinstance(data.get('items'), list) and data['items'], data
+          post_id=data['items'][0]['id']
+          print(post_id)
+          open('/tmp/r34-id.txt','w').write(str(post_id))
+          PY
+          POST_ID="$(cat /tmp/r34-id.txt)"
+          curl -fLsS -A 'Mozilla/5.0 (Linux; Android 16)' \
+            -H 'Accept: application/json' -H 'Referer: https://rule34.xyz/' \
+            "https://rule34.xyz/api/v2/post/$POST_ID" \
+            -o /tmp/r34-detail.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/r34-detail.json'))
+          assert data.get('tags'), data
+          assert data.get('files'), data
+          PY
+          curl -fLsS -A 'Mozilla/5.0 (Linux; Android 16)' \
+            'https://yande.re/post.json?limit=1&page=1&tags=futanari' \
+            -o /tmp/yandere.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/yandere.json'))
+          assert isinstance(data, list) and data, data
+          assert data[0].get('file_url') and data[0].get('tags')
+          PY
+
       - name: Build debug APK
         working-directory: PixVault
         run: flutter build apk --debug
