@@ -15,11 +15,72 @@ void main() async {
   runApp(const PixVaultApp());
 }
 
-enum SourceType { pixiv, rule34vault }
+enum SourceType {
+  pixiv,
+  rule34vault,
+  gelbooru,
+  danbooru,
+  yandere,
+  konachan,
+}
 
 extension SourceTypeX on SourceType {
-  String get label => this == SourceType.pixiv ? 'Pixiv' : 'Rule34Vault';
-  String get short => this == SourceType.pixiv ? 'PX' : 'R34';
+  String get label {
+    switch (this) {
+      case SourceType.pixiv:
+        return 'Pixiv';
+      case SourceType.rule34vault:
+        return 'Rule34Vault';
+      case SourceType.gelbooru:
+        return 'Gelbooru';
+      case SourceType.danbooru:
+        return 'Danbooru';
+      case SourceType.yandere:
+        return 'yande.re';
+      case SourceType.konachan:
+        return 'Konachan';
+    }
+  }
+
+  String get short {
+    switch (this) {
+      case SourceType.pixiv:
+        return 'PX';
+      case SourceType.rule34vault:
+        return 'R34';
+      case SourceType.gelbooru:
+        return 'GB';
+      case SourceType.danbooru:
+        return 'DB';
+      case SourceType.yandere:
+        return 'YD';
+      case SourceType.konachan:
+        return 'KC';
+    }
+  }
+
+  bool get isBooru =>
+      this == SourceType.gelbooru ||
+      this == SourceType.danbooru ||
+      this == SourceType.yandere ||
+      this == SourceType.konachan;
+
+  String get homeUrl {
+    switch (this) {
+      case SourceType.pixiv:
+        return 'https://www.pixiv.net/';
+      case SourceType.rule34vault:
+        return 'https://rule34vault.com/';
+      case SourceType.gelbooru:
+        return 'https://gelbooru.com/';
+      case SourceType.danbooru:
+        return 'https://danbooru.donmai.us/';
+      case SourceType.yandere:
+        return 'https://yande.re/';
+      case SourceType.konachan:
+        return 'https://konachan.com/';
+    }
+  }
 }
 
 class Artwork {
@@ -117,6 +178,9 @@ class Safety {
     'preteen',
     'teen',
     'cub',
+    'ロリ',
+    'ショタ',
+    '未成年',
   };
 
   static String norm(String s) =>
@@ -211,7 +275,7 @@ class AgeGate extends StatelessWidget {
                   Text('PixVault', style: Theme.of(context).textTheme.headlineLarge),
                   const SizedBox(height: 14),
                   const Text(
-                    'This viewer is for adults only. It can display mature artwork from Pixiv and Rule34Vault. Searches and tags that explicitly indicate minors are blocked.',
+                    'This viewer is for adults only. It can display mature artwork from Pixiv, Rule34Vault, Gelbooru, Danbooru, yande.re and Konachan. Searches and tags that explicitly indicate minors are blocked.',
                     textAlign: TextAlign.center,
                   ),
                   const SizedBox(height: 28),
@@ -383,6 +447,47 @@ class PixivRepo {
     if (Safety.blockedArtwork(enriched)) throw Exception('BLOCKED_CONTENT');
     return enriched;
   }
+
+  Future<List<Artwork>> recommendations(Artwork a) async {
+    final j = await _get(
+      Uri.parse(
+        'https://www.pixiv.net/ajax/illust/${a.id}/recommend/init?limit=40',
+      ),
+      referer: a.sourceUrl,
+    );
+    final body = j is Map ? j['body'] : null;
+    final rows = body is Map && body['illusts'] is List
+        ? body['illusts'] as List
+        : const [];
+    final out = <Artwork>[];
+    for (final raw in rows) {
+      if (raw is! Map) continue;
+      final m = Map<String, dynamic>.from(raw);
+      final id = '${m['id'] ?? ''}';
+      if (id.isEmpty || id == a.id) continue;
+      final tags = _tags(m['tags']);
+      final rawUrls = m['urls'];
+      final urls = rawUrls is Map
+          ? Map<String, dynamic>.from(rawUrls)
+          : <String, dynamic>{};
+      final preview =
+          '${m['url'] ?? urls['regular'] ?? urls['small'] ?? ''}';
+      final item = Artwork(
+        source: SourceType.pixiv,
+        id: id,
+        title: '${m['title'] ?? 'Pixiv artwork'}',
+        userName: '${m['userName'] ?? ''}',
+        previewUrl: preview,
+        mediaUrl: '${urls['original'] ?? urls['regular'] ?? ''}',
+        isVideo: m['illustType'] == 2,
+        tags: tags,
+        pageUrls: const [],
+        sourceUrl: 'https://www.pixiv.net/artworks/$id',
+      );
+      if (!Safety.blockedArtwork(item)) out.add(item);
+    }
+    return out;
+  }
 }
 
 class R34Repo {
@@ -483,6 +588,282 @@ class R34Repo {
   }
 }
 
+
+List<String> similarityTags(List<String> tags) {
+  const ignored = <String>{
+    'solo',
+    '1girl',
+    '1boy',
+    '2girls',
+    '2boys',
+    'multiple_girls',
+    'multiple_boys',
+    'looking_at_viewer',
+    'highres',
+    'absurdres',
+    'explicit',
+    'questionable',
+    'safe',
+    'rating:e',
+    'rating:q',
+    'rating:s',
+    'rating:explicit',
+  };
+  final out = <String>[];
+  for (final raw in tags) {
+    final tag = raw.trim();
+    if (tag.isEmpty) continue;
+    final lower = tag.toLowerCase();
+    if (ignored.contains(lower)) continue;
+    if (lower.startsWith('rating:')) continue;
+    if (Safety.blockedQuery(tag)) continue;
+    if (!out.contains(tag)) out.add(tag);
+  }
+  return out;
+}
+
+Map<String, String> mediaHeaders(Artwork a) {
+  const ua =
+      'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36';
+  switch (a.source) {
+    case SourceType.pixiv:
+      return {
+        'User-Agent': PixivRepo.ua,
+        'Referer': 'https://www.pixiv.net/',
+      };
+    case SourceType.rule34vault:
+      return {'User-Agent': R34Repo.ua, 'Referer': 'https://rule34vault.com/'};
+    case SourceType.gelbooru:
+      return {'User-Agent': ua, 'Referer': 'https://gelbooru.com/'};
+    case SourceType.danbooru:
+      return {'User-Agent': ua, 'Referer': 'https://danbooru.donmai.us/'};
+    case SourceType.yandere:
+      return {'User-Agent': ua, 'Referer': 'https://yande.re/'};
+    case SourceType.konachan:
+      return {'User-Agent': ua, 'Referer': 'https://konachan.com/'};
+  }
+}
+
+extension R34Similarity on R34Repo {
+  Future<List<Artwork>> similar(Artwork a) async {
+    final tags = similarityTags(a.tags);
+    if (tags.isEmpty) return const [];
+    final maxTags = tags.length > 3 ? 3 : tags.length;
+    for (var n = maxTags; n >= 1; n--) {
+      try {
+        final rows = await list(tags.take(n).join(','), 1);
+        final filtered = rows.where((e) => e.id != a.id).toList();
+        if (filtered.isNotEmpty) return filtered.take(40).toList();
+      } catch (_) {
+        // Try a broader tag set.
+      }
+    }
+    return const [];
+  }
+}
+
+class BooruRepo {
+  final SourceType source;
+  const BooruRepo(this.source);
+
+  static const ua =
+      'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36';
+
+  String get origin => source.homeUrl.substring(0, source.homeUrl.length - 1);
+
+  String _normaliseQuery(String query) {
+    final q = query
+        .trim()
+        .replaceAll(',', ' ')
+        .split(RegExp(r'\s+'))
+        .where((e) => e.isNotEmpty)
+        .join(' ');
+    if (q.isNotEmpty) return q;
+    return source == SourceType.danbooru ? 'rating:explicit' : 'rating:e';
+  }
+
+  String _url(String path) {
+    if (path.isEmpty || path == 'null') return '';
+    if (path.startsWith('//')) return 'https:$path';
+    if (path.startsWith('/')) return '$origin$path';
+    return path;
+  }
+
+  List<String> _tags(dynamic value) {
+    if (value is List) {
+      return value.map((e) => '$e').where((e) => e.isNotEmpty).toList();
+    }
+    return '$value'
+        .split(RegExp(r'\s+'))
+        .map((e) => e.trim())
+        .where((e) => e.isNotEmpty && e != 'null')
+        .toList();
+  }
+
+  Future<dynamic> _get(Uri uri) async {
+    final r = await http.get(
+      uri,
+      headers: {
+        'User-Agent': ua,
+        'Accept': 'application/json',
+        'Referer': source.homeUrl,
+      },
+    );
+    if (r.statusCode != 200) {
+      throw Exception('${source.label} HTTP ${r.statusCode}');
+    }
+    return jsonDecode(utf8.decode(r.bodyBytes));
+  }
+
+  Future<List<Artwork>> list(String query, int page) async {
+    if (Safety.blockedQuery(query)) throw Exception('BLOCKED_QUERY');
+    final tags = _normaliseQuery(query);
+    dynamic json;
+
+    switch (source) {
+      case SourceType.gelbooru:
+        json = await _get(
+          Uri.parse('https://gelbooru.com/index.php').replace(
+            queryParameters: {
+              'page': 'dapi',
+              's': 'post',
+              'q': 'index',
+              'json': '1',
+              'limit': '60',
+              'pid': '${page - 1}',
+              'tags': tags,
+            },
+          ),
+        );
+        break;
+      case SourceType.danbooru:
+        json = await _get(
+          Uri.parse('https://danbooru.donmai.us/posts.json').replace(
+            queryParameters: {
+              'limit': '60',
+              'page': '$page',
+              'tags': tags,
+            },
+          ),
+        );
+        break;
+      case SourceType.yandere:
+        json = await _get(
+          Uri.parse('https://yande.re/post.json').replace(
+            queryParameters: {
+              'limit': '60',
+              'page': '$page',
+              'tags': tags,
+            },
+          ),
+        );
+        break;
+      case SourceType.konachan:
+        json = await _get(
+          Uri.parse('https://konachan.com/post.json').replace(
+            queryParameters: {
+              'limit': '60',
+              'page': '$page',
+              'tags': tags,
+            },
+          ),
+        );
+        break;
+      default:
+        throw StateError('Unsupported booru source');
+    }
+
+    final rows = <dynamic>[];
+    if (json is List) {
+      rows.addAll(json);
+    } else if (json is Map && json['post'] is List) {
+      rows.addAll(json['post'] as List);
+    }
+
+    final out = <Artwork>[];
+    for (final raw in rows) {
+      if (raw is! Map) continue;
+      final m = Map<String, dynamic>.from(raw);
+      final id = '${m['id'] ?? ''}';
+      if (id.isEmpty) continue;
+
+      final tagList = source == SourceType.danbooru
+          ? _tags(m['tag_string'] ?? '')
+          : _tags(m['tags'] ?? '');
+
+      final file = _url(
+        '${m['file_url'] ?? m['large_file_url'] ?? m['sample_url'] ?? ''}',
+      );
+      final preview = _url(
+        '${m['preview_file_url'] ?? m['preview_url'] ?? m['sample_url'] ?? file}',
+      );
+      final lower = file.toLowerCase();
+      final isVideo =
+          lower.endsWith('.mp4') ||
+          lower.endsWith('.webm') ||
+          lower.endsWith('.m4v');
+
+      String sourceUrl;
+      switch (source) {
+        case SourceType.gelbooru:
+          sourceUrl =
+              'https://gelbooru.com/index.php?page=post&s=view&id=$id';
+          break;
+        case SourceType.danbooru:
+          sourceUrl = 'https://danbooru.donmai.us/posts/$id';
+          break;
+        case SourceType.yandere:
+          sourceUrl = 'https://yande.re/post/show/$id';
+          break;
+        case SourceType.konachan:
+          sourceUrl = 'https://konachan.com/post/show/$id';
+          break;
+        default:
+          sourceUrl = source.homeUrl;
+      }
+
+      final item = Artwork(
+        source: source,
+        id: id,
+        title: tagList.isNotEmpty
+            ? tagList.take(4).join(' · ')
+            : '${source.label} #$id',
+        userName:
+            '${m['uploader_name'] ?? m['author'] ?? m['owner'] ?? ''}',
+        previewUrl: preview,
+        mediaUrl: file,
+        isVideo: isVideo,
+        tags: tagList,
+        pageUrls: isVideo || file.isEmpty ? const [] : [file],
+        sourceUrl: sourceUrl,
+      );
+      if (!Safety.blockedArtwork(item)) out.add(item);
+    }
+    return out;
+  }
+
+  Future<Artwork> details(Artwork a) async {
+    if (Safety.blockedArtwork(a)) throw Exception('BLOCKED_CONTENT');
+    return a;
+  }
+
+  Future<List<Artwork>> similar(Artwork a) async {
+    final tags = similarityTags(a.tags);
+    if (tags.isEmpty) return const [];
+    final maxTags = tags.length > 3 ? 3 : tags.length;
+    for (var n = maxTags; n >= 1; n--) {
+      try {
+        final rows = await list(tags.take(n).join(' '), 1);
+        final filtered = rows.where((e) => e.id != a.id).toList();
+        if (filtered.isNotEmpty) return filtered.take(40).toList();
+      } catch (_) {
+        // Some boorus cap tag count; retry with fewer tags.
+      }
+    }
+    return const [];
+  }
+}
+
 class LocalStore {
   static Future<List<Artwork>> favorites() async {
     final p = await SharedPreferences.getInstance();
@@ -562,7 +943,7 @@ class DownloadService {
         Uri.parse(u),
         headers: a.source == SourceType.pixiv
             ? await pixiv.headers(referer: a.sourceUrl)
-            : {'User-Agent': R34Repo.ua},
+            : mediaHeaders(a),
       );
       if (r.statusCode != 200) throw Exception('Download HTTP ${r.statusCode}');
       var ext = Uri.parse(u).path.split('.').last.toLowerCase();
@@ -617,7 +998,14 @@ class _HomeShellState extends State<HomeShell> {
 }
 
 class BrowsePage extends StatefulWidget {
-  const BrowsePage({super.key});
+  final SourceType initialSource;
+  final String initialQuery;
+
+  const BrowsePage({
+    super.key,
+    this.initialSource = SourceType.rule34vault,
+    this.initialQuery = '',
+  });
 
   @override
   State<BrowsePage> createState() => _BrowsePageState();
@@ -627,7 +1015,7 @@ class _BrowsePageState extends State<BrowsePage> {
   final q = TextEditingController();
   final pixiv = PixivRepo();
   final r34 = R34Repo();
-  SourceType source = SourceType.rule34vault;
+  late SourceType source;
   List<Artwork> items = [];
   bool loading = false;
   String? error;
@@ -636,7 +1024,29 @@ class _BrowsePageState extends State<BrowsePage> {
   @override
   void initState() {
     super.initState();
+    source = widget.initialSource;
+    q.text = widget.initialQuery;
     Future.microtask(_search);
+  }
+
+  @override
+  void dispose() {
+    q.dispose();
+    super.dispose();
+  }
+
+  Future<List<Artwork>> _fetch(String query, int nextPage) {
+    switch (source) {
+      case SourceType.pixiv:
+        return pixiv.list(query, nextPage);
+      case SourceType.rule34vault:
+        return r34.list(query, nextPage);
+      case SourceType.gelbooru:
+      case SourceType.danbooru:
+      case SourceType.yandere:
+      case SourceType.konachan:
+        return BooruRepo(source).list(query, nextPage);
+    }
   }
 
   Future<void> _search({bool append = false}) async {
@@ -655,13 +1065,14 @@ class _BrowsePageState extends State<BrowsePage> {
       if (!append) page = 1;
     });
     try {
-      final next = source == SourceType.pixiv
-          ? await pixiv.list(query, page)
-          : await r34.list(query, page);
+      final next = await _fetch(query, page);
       if (!mounted) return;
       setState(() {
         if (append) {
-          items.addAll(next);
+          final known = items.map((e) => '${e.source.name}:${e.id}').toSet();
+          items.addAll(
+            next.where((e) => !known.contains('${e.source.name}:${e.id}')),
+          );
         } else {
           items = next;
         }
@@ -675,7 +1086,7 @@ class _BrowsePageState extends State<BrowsePage> {
             ? 'Pixiv R-18 requires login. Tap the account icon above.'
             : msg.contains('BLOCKED_QUERY')
                 ? 'This search term is blocked.'
-                : 'Could not load: $msg';
+                : 'Could not load from ${source.label}: $msg';
       });
     } finally {
       if (mounted) setState(() => loading = false);
@@ -689,12 +1100,17 @@ class _BrowsePageState extends State<BrowsePage> {
     if (source == SourceType.pixiv) _search();
   }
 
-  Map<String, String> _imageHeaders(Artwork a) => a.source == SourceType.pixiv
-      ? {'Referer': 'https://www.pixiv.net/', 'User-Agent': PixivRepo.ua}
-      : {'User-Agent': R34Repo.ua};
-
   @override
   Widget build(BuildContext context) {
+    final segments = SourceType.values
+        .map(
+          (value) => ButtonSegment<SourceType>(
+            value: value,
+            label: Text(value.label),
+          ),
+        )
+        .toList();
+
     return Scaffold(
       appBar: AppBar(
         title: const Text('PixVault'),
@@ -707,28 +1123,27 @@ class _BrowsePageState extends State<BrowsePage> {
             ),
         ],
         bottom: PreferredSize(
-          preferredSize: const Size.fromHeight(106),
+          preferredSize: const Size.fromHeight(112),
           child: Padding(
             padding: const EdgeInsets.fromLTRB(12, 0, 12, 10),
             child: Column(
               children: [
-                SegmentedButton<SourceType>(
-                  segments: const [
-                    ButtonSegment(value: SourceType.pixiv, label: Text('Pixiv')),
-                    ButtonSegment(
-                      value: SourceType.rule34vault,
-                      label: Text('Rule34Vault'),
-                    ),
-                  ],
-                  selected: {source},
-                  onSelectionChanged: (s) {
-                    setState(() {
-                      source = s.first;
-                      items = [];
-                      page = 1;
-                    });
-                    _search();
-                  },
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: SegmentedButton<SourceType>(
+                    showSelectedIcon: false,
+                    segments: segments,
+                    selected: {source},
+                    onSelectionChanged: (selection) {
+                      setState(() {
+                        source = selection.first;
+                        items = [];
+                        page = 1;
+                        error = null;
+                      });
+                      _search();
+                    },
+                  ),
                 ),
                 const SizedBox(height: 10),
                 TextField(
@@ -738,7 +1153,7 @@ class _BrowsePageState extends State<BrowsePage> {
                   decoration: InputDecoration(
                     hintText: source == SourceType.pixiv
                         ? 'Search Pixiv R-18 tags'
-                        : 'Search tags, comma separated',
+                        : 'Search tags on ${source.label}',
                     prefixIcon: const Icon(Icons.search),
                     suffixIcon: IconButton(
                       onPressed: () => _search(),
@@ -797,7 +1212,9 @@ class _BrowsePageState extends State<BrowsePage> {
                     return InkWell(
                       borderRadius: BorderRadius.circular(14),
                       onTap: () => Navigator.of(context).push(
-                        MaterialPageRoute(builder: (_) => DetailPage(initial: a)),
+                        MaterialPageRoute(
+                          builder: (_) => DetailPage(initial: a),
+                        ),
                       ),
                       child: Card(
                         clipBehavior: Clip.antiAlias,
@@ -807,10 +1224,12 @@ class _BrowsePageState extends State<BrowsePage> {
                             if (!a.isVideo && a.previewUrl.isNotEmpty)
                               CachedNetworkImage(
                                 imageUrl: a.previewUrl,
-                                httpHeaders: _imageHeaders(a),
+                                httpHeaders: mediaHeaders(a),
                                 fit: BoxFit.cover,
                                 placeholder: (_, __) => const Center(
-                                  child: CircularProgressIndicator(strokeWidth: 2),
+                                  child: CircularProgressIndicator(
+                                    strokeWidth: 2,
+                                  ),
                                 ),
                                 errorWidget: (_, __, ___) => const Icon(
                                   Icons.broken_image_outlined,
@@ -821,7 +1240,10 @@ class _BrowsePageState extends State<BrowsePage> {
                               Container(
                                 color: const Color(0xff181d22),
                                 child: const Center(
-                                  child: Icon(Icons.play_circle_outline, size: 56),
+                                  child: Icon(
+                                    Icons.play_circle_outline,
+                                    size: 56,
+                                  ),
                                 ),
                               ),
                             Align(
@@ -833,7 +1255,10 @@ class _BrowsePageState extends State<BrowsePage> {
                                   gradient: LinearGradient(
                                     begin: Alignment.bottomCenter,
                                     end: Alignment.topCenter,
-                                    colors: [Color(0xdd000000), Color(0x00000000)],
+                                    colors: [
+                                      Color(0xdd000000),
+                                      Color(0x00000000),
+                                    ],
                                   ),
                                 ),
                                 child: Text(
@@ -912,6 +1337,8 @@ class _DetailPageState extends State<DetailPage> {
   bool favorite = false;
   String? error;
   VideoPlayerController? video;
+  List<Artwork> similar = [];
+  bool similarLoading = true;
 
   @override
   void initState() {
@@ -923,11 +1350,25 @@ class _DetailPageState extends State<DetailPage> {
   Future<void> _load() async {
     favorite = await LocalStore.isFavorite(a);
     try {
-      a = a.source == SourceType.pixiv
-          ? await PixivRepo().details(a)
-          : await R34Repo().details(a);
+      switch (a.source) {
+        case SourceType.pixiv:
+          a = await PixivRepo().details(a);
+          break;
+        case SourceType.rule34vault:
+          a = await R34Repo().details(a);
+          break;
+        case SourceType.gelbooru:
+        case SourceType.danbooru:
+        case SourceType.yandere:
+        case SourceType.konachan:
+          a = await BooruRepo(a.source).details(a);
+          break;
+      }
       if (a.isVideo && a.mediaUrl.isNotEmpty) {
-        video = VideoPlayerController.networkUrl(Uri.parse(a.mediaUrl));
+        video = VideoPlayerController.networkUrl(
+          Uri.parse(a.mediaUrl),
+          httpHeaders: mediaHeaders(a),
+        );
         await video!.initialize();
         await video!.setLooping(true);
       }
@@ -935,6 +1376,34 @@ class _DetailPageState extends State<DetailPage> {
       error = '$e';
     }
     if (mounted) setState(() => loading = false);
+    if (error == null) _loadSimilar();
+  }
+
+  Future<void> _loadSimilar() async {
+    try {
+      List<Artwork> rows;
+      switch (a.source) {
+        case SourceType.pixiv:
+          rows = await PixivRepo().recommendations(a);
+          break;
+        case SourceType.rule34vault:
+          rows = await R34Repo().similar(a);
+          break;
+        case SourceType.gelbooru:
+        case SourceType.danbooru:
+        case SourceType.yandere:
+        case SourceType.konachan:
+          rows = await BooruRepo(a.source).similar(a);
+          break;
+      }
+      if (!mounted) return;
+      setState(() {
+        similar = rows.where((e) => e.id != a.id).take(40).toList();
+        similarLoading = false;
+      });
+    } catch (_) {
+      if (mounted) setState(() => similarLoading = false);
+    }
   }
 
   @override
@@ -943,10 +1412,6 @@ class _DetailPageState extends State<DetailPage> {
     super.dispose();
   }
 
-  Map<String, String> headers() => a.source == SourceType.pixiv
-      ? {'Referer': 'https://www.pixiv.net/', 'User-Agent': PixivRepo.ua}
-      : {'User-Agent': R34Repo.ua};
-
   Future<void> _download() async {
     final messenger = ScaffoldMessenger.of(context);
     messenger.showSnackBar(const SnackBar(content: Text('Downloading…')));
@@ -954,12 +1419,75 @@ class _DetailPageState extends State<DetailPage> {
       final paths = await DownloadService.download(a);
       if (!mounted) return;
       messenger.showSnackBar(
-        SnackBar(content: Text('Saved ${paths.length} file(s) in PixVault folder')),
+        SnackBar(
+          content: Text('Saved ${paths.length} file(s) in PixVault folder'),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(SnackBar(content: Text('Download failed: $e')));
+      messenger.showSnackBar(
+        SnackBar(content: Text('Download failed: $e')),
+      );
     }
+  }
+
+  void _searchTag(String tag) {
+    if (Safety.blockedQuery(tag)) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => BrowsePage(
+          initialSource: a.source,
+          initialQuery: tag,
+        ),
+      ),
+    );
+  }
+
+  Widget _similarCard(Artwork item) {
+    return SizedBox(
+      width: 150,
+      child: Card(
+        clipBehavior: Clip.antiAlias,
+        child: InkWell(
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => DetailPage(initial: item),
+            ),
+          ),
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              if (!item.isVideo && item.previewUrl.isNotEmpty)
+                CachedNetworkImage(
+                  imageUrl: item.previewUrl,
+                  httpHeaders: mediaHeaders(item),
+                  fit: BoxFit.cover,
+                  errorWidget: (_, __, ___) =>
+                      const Icon(Icons.broken_image_outlined),
+                )
+              else
+                const Center(
+                  child: Icon(Icons.play_circle_outline, size: 48),
+                ),
+              Align(
+                alignment: Alignment.bottomCenter,
+                child: Container(
+                  width: double.infinity,
+                  padding: const EdgeInsets.all(7),
+                  color: Colors.black87,
+                  child: Text(
+                    item.title,
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   @override
@@ -967,6 +1495,7 @@ class _DetailPageState extends State<DetailPage> {
     final urls = a.pageUrls.isNotEmpty
         ? a.pageUrls
         : (a.mediaUrl.isNotEmpty ? [a.mediaUrl] : [a.previewUrl]);
+
     return Scaffold(
       appBar: AppBar(
         title: Text(a.source.label),
@@ -978,7 +1507,10 @@ class _DetailPageState extends State<DetailPage> {
             },
             icon: Icon(favorite ? Icons.favorite : Icons.favorite_border),
           ),
-          IconButton(onPressed: _download, icon: const Icon(Icons.download_outlined)),
+          IconButton(
+            onPressed: _download,
+            icon: const Icon(Icons.download_outlined),
+          ),
           IconButton(
             onPressed: () => launchUrl(
               Uri.parse(a.sourceUrl),
@@ -1017,7 +1549,9 @@ class _DetailPageState extends State<DetailPage> {
                               iconSize: 42,
                               onPressed: () {
                                 setState(() {
-                                  video!.value.isPlaying ? video!.pause() : video!.play();
+                                  video!.value.isPlaying
+                                      ? video!.pause()
+                                      : video!.play();
                                 });
                               },
                               icon: Icon(
@@ -1041,10 +1575,13 @@ class _DetailPageState extends State<DetailPage> {
                                   maxScale: 5,
                                   child: CachedNetworkImage(
                                     imageUrl: u,
-                                    httpHeaders: headers(),
+                                    httpHeaders: mediaHeaders(a),
                                     fit: BoxFit.contain,
                                     errorWidget: (_, __, ___) => const Center(
-                                      child: Icon(Icons.broken_image_outlined, size: 54),
+                                      child: Icon(
+                                        Icons.broken_image_outlined,
+                                        size: 54,
+                                      ),
                                     ),
                                   ),
                                 ),
@@ -1053,7 +1590,7 @@ class _DetailPageState extends State<DetailPage> {
                         ),
                       ),
                     Padding(
-                      padding: const EdgeInsets.all(16),
+                      padding: const EdgeInsets.fromLTRB(16, 16, 16, 4),
                       child: Text(
                         a.title,
                         style: Theme.of(context).textTheme.titleLarge,
@@ -1071,9 +1608,50 @@ class _DetailPageState extends State<DetailPage> {
                           spacing: 7,
                           runSpacing: 7,
                           children: a.tags
-                              .take(40)
-                              .map((t) => Chip(label: Text(t)))
+                              .take(60)
+                              .where((t) => !Safety.blockedQuery(t))
+                              .map(
+                                (t) => ActionChip(
+                                  avatar: const Icon(Icons.search, size: 16),
+                                  label: Text(t),
+                                  onPressed: () => _searchTag(t),
+                                ),
+                              )
                               .toList(),
+                        ),
+                      ),
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 6, 16, 8),
+                      child: Row(
+                        children: [
+                          Text(
+                            'Similar',
+                            style: Theme.of(context).textTheme.titleLarge,
+                          ),
+                          const Spacer(),
+                          if (similarLoading)
+                            const SizedBox(
+                              width: 20,
+                              height: 20,
+                              child: CircularProgressIndicator(strokeWidth: 2),
+                            ),
+                        ],
+                      ),
+                    ),
+                    if (!similarLoading && similar.isEmpty)
+                      const Padding(
+                        padding: EdgeInsets.fromLTRB(16, 4, 16, 18),
+                        child: Text('No similar posts found for these tags.'),
+                      )
+                    else if (similar.isNotEmpty)
+                      SizedBox(
+                        height: 230,
+                        child: ListView.separated(
+                          padding: const EdgeInsets.symmetric(horizontal: 10),
+                          scrollDirection: Axis.horizontal,
+                          itemCount: similar.length,
+                          separatorBuilder: (_, __) => const SizedBox(width: 4),
+                          itemBuilder: (_, i) => _similarCard(similar[i]),
                         ),
                       ),
                     const SizedBox(height: 40),
@@ -1154,9 +1732,7 @@ class _FavoritesPageState extends State<FavoritesPage> {
                   child: a.previewUrl.isNotEmpty
                       ? CachedNetworkImage(
                           imageUrl: a.previewUrl,
-                          httpHeaders: a.source == SourceType.pixiv
-                              ? {'Referer': 'https://www.pixiv.net/'}
-                              : const {},
+                          httpHeaders: mediaHeaders(a),
                           fit: BoxFit.cover,
                         )
                       : const Icon(Icons.play_circle_outline),
@@ -1278,9 +1854,9 @@ class _SettingsPageState extends State<SettingsPage> {
           ),
           const ListTile(
             leading: Icon(Icons.info_outline),
-            title: Text('PixVault 0.1.0'),
+            title: Text('PixVault 0.2.0'),
             subtitle: Text(
-              'Personal viewer for Pixiv and Rule34Vault. Not affiliated with either service.',
+              'Personal multi-source viewer for Pixiv, Rule34Vault, Gelbooru, Danbooru, yande.re and Konachan. Not affiliated with these services.',
             ),
           ),
         ],
