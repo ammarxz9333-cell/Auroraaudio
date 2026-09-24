@@ -1,0 +1,99 @@
+name: Build PixVault v0.2 APK
+
+on:
+  push:
+    branches:
+      - pixvault-v020-asian-sources
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Create Android app shell
+        run: |
+          flutter create --platforms=android --org app.pixvault --project-name pixvault PixVault
+          cp tools/pixvault_main.dart PixVault/lib/main.dart
+          rm -rf PixVault/test
+
+          python3 - <<'PY'
+          from pathlib import Path
+
+          p = Path('PixVault/pubspec.yaml')
+          s = p.read_text()
+          s = s.replace(
+              '  cupertino_icons: ^1.0.8\n',
+              '  cupertino_icons: ^1.0.8\n'
+              '  cached_network_image: ^3.4.1\n'
+              '  webview_flutter: ^4.14.1\n'
+              '  http: ^1.5.0\n'
+              '  path_provider: ^2.1.5\n'
+              '  shared_preferences: ^2.5.3\n'
+              '  url_launcher: ^6.3.2\n'
+              '  video_player: ^2.10.0\n'
+          )
+          p.write_text(s)
+
+          m = Path('PixVault/android/app/src/main/AndroidManifest.xml')
+          x = m.read_text()
+          if 'android.permission.INTERNET' not in x:
+              x = x.replace(
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                  '    <uses-permission android:name="android.permission.INTERNET"/>'
+              )
+          x = x.replace('android:label="pixvault"', 'android:label="PixVault"')
+          m.write_text(x)
+
+          g = Path('PixVault/android/app/build.gradle.kts')
+          x = g.read_text().replace(
+              'applicationId = "app.pixvault.pixvault"',
+              'applicationId = "app.pixvault.viewer"'
+          )
+          g.write_text(x)
+          PY
+
+      - name: Resolve dependencies
+        working-directory: PixVault
+        run: flutter pub get
+
+      - name: Format
+        working-directory: PixVault
+        run: dart format lib/main.dart
+
+      - name: Analyze
+        working-directory: PixVault
+        run: flutter analyze --no-fatal-infos
+
+      - name: Build debug APK
+        working-directory: PixVault
+        run: flutter build apk --debug
+
+      - name: Package APK
+        run: |
+          mkdir -p out
+          cp PixVault/build/app/outputs/flutter-apk/app-debug.apk out/PixVault-v0.2.0-debug.apk
+          sha256sum out/PixVault-v0.2.0-debug.apk > out/SHA256SUMS.txt
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: PixVault-v0.2.0-debug-APK
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
