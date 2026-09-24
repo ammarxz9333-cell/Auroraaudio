@@ -1,0 +1,42 @@
+name: PixVault API Probe
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - pixvault-v020-asian-sources
+    paths:
+      - '.github/workflows/pixvault-api-probe.yml'
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Probe sources
+        shell: bash
+        run: |
+          set +e
+          probe() {
+            name="$1"
+            url="$2"
+            echo "===== $name ====="
+            code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS -o /tmp/body.txt -w '%{http_code}' "$url")
+            echo "HTTP=$code"
+            wc -c /tmp/body.txt
+            head -c 1200 /tmp/body.txt
+            echo
+          }
+
+          probe gelbooru 'https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=2&pid=0&tags=futanari'
+          probe danbooru 'https://danbooru.donmai.us/posts.json?limit=2&page=1&tags=futanari'
+          probe yandere 'https://yande.re/post.json?limit=2&page=1&tags=futanari'
+          probe konachan 'https://konachan.com/post.json?limit=2&page=1&tags=futanari'
+          probe pixiv 'https://www.pixiv.net/ranking.php?format=json&mode=daily_r18&content=illust&p=1'
+
+          echo '===== rule34vault ====='
+          code=$(curl -L -A 'Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/140 Mobile Safari/537.36' -sS             -H 'Content-Type: application/json' -H 'Accept: application/json'             -H 'Referer: https://rule34vault.com/'             -d '{"includeTags":["futanari"],"CountTotal":false,"Skip":0,"take":2}'             -o /tmp/r34.txt -w '%{http_code}'             'https://rule34vault.com/api/v2/post/search/root')
+          echo "HTTP=$code"
+          wc -c /tmp/r34.txt
+          head -c 1200 /tmp/r34.txt
+          echo
