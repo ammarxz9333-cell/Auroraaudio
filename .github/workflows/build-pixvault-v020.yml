@@ -1,4 +1,4 @@
-name: Build PixVault v0.2 APK
+name: Build PixVault v0.2.1 APK
 
 on:
   push:
@@ -87,13 +87,13 @@ jobs:
       - name: Package APK
         run: |
           mkdir -p out
-          cp PixVault/build/app/outputs/flutter-apk/app-debug.apk out/PixVault-v0.2.0-debug.apk
-          sha256sum out/PixVault-v0.2.0-debug.apk > out/SHA256SUMS.txt
+          cp PixVault/build/app/outputs/flutter-apk/app-debug.apk out/PixVault-v0.2.1-debug.apk
+          sha256sum out/PixVault-v0.2.1-debug.apk > out/SHA256SUMS.txt
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: PixVault-v0.2.0-debug-APK
+          name: PixVault-v0.2.1-debug-APK
           path: out/*
           if-no-files-found: error
           retention-days: 14
