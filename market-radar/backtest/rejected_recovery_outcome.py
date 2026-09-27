@@ -12,7 +12,9 @@ def evaluate_candidate(rows, candidate):
     plus10=False
     mfe=0.0
     mae=0.0
-    for r in rows[start:]:
+    # The candidate is identified from the close of rows[start]. Its own
+    # high/low cannot be counted as a later outcome.
+    for r in rows[start+1:]:
         hi=float(r["high"])
         lo=float(r["low"])
         mfe=max(mfe,(hi/ep-1)*100)

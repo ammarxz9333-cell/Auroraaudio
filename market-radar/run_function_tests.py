@@ -5,7 +5,7 @@ from pathlib import Path
 
 root = Path(__file__).resolve().parent
 count = 0
-for path in sorted(root.glob("test_*.py")):
+for path in sorted([*root.glob("test_*.py"), *(root / "backtest").glob("test_*.py")]):
     spec = importlib.util.spec_from_file_location(path.stem, path)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)

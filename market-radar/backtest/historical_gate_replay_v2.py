@@ -36,6 +36,42 @@ def yahoo_5m(ticker, start, end):
         out.append({"time":dt.datetime.fromtimestamp(ts,dt.timezone.utc),"ny":dt.datetime.fromtimestamp(ts,dt.timezone.utc).astimezone(NY),**vals})
     return out
 
+def forward_outcome(regular, signal_index, spread_pct, slippage_pct=0.1):
+    """A bar-close signal fills no earlier than the next bar's open.
+
+    Historical bid/ask and intrabar order are unavailable. Spread and slippage
+    are explicitly assumed costs; same-bar stop/target is unresolved.
+    """
+    if signal_index + 1 >= len(regular):
+        return None
+    fill_bar = regular[signal_index + 1]
+    raw_open = fill_bar.get("open")
+    if raw_open is None or float(raw_open) <= 0:
+        return None
+    entry = float(raw_open) * (1 + spread_pct / 200 + slippage_pct / 100)
+    outcome = None
+    outcome_time = None
+    mfe = 0.0
+    mae = 0.0
+    plus10 = False
+    for bar in regular[signal_index + 1:]:
+        hi, lo = float(bar["high"]), float(bar["low"])
+        mfe = max(mfe, (hi / entry - 1) * 100)
+        mae = min(mae, (lo / entry - 1) * 100)
+        plus10 = plus10 or hi >= entry * 1.10
+        if outcome is None:
+            hit_plus = hi >= entry * 1.05
+            hit_minus = lo <= entry * 0.95
+            outcome = ("ORDER_UNVERIFIED" if hit_plus and hit_minus else
+                       "PLUS5_FIRST" if hit_plus else "MINUS5_FIRST" if hit_minus else None)
+            if outcome:
+                outcome_time = bar["time"].isoformat()
+    return {"entry_time": fill_bar["time"].isoformat(),
+            "entry_price": round(entry, 6), "raw_next_open": float(raw_open),
+            "assumed_spread_pct": spread_pct, "assumed_slippage_pct": slippage_pct,
+            "outcome": outcome or "UNRESOLVED", "outcome_time": outcome_time,
+            "plus10_reached": plus10, "mfe_pct": round(mfe, 3), "mae_pct": round(mae, 3)}
+
 def replay_case(case, cache_dir=None):
     cutoff=dt.datetime.fromisoformat(case["cutoff"])
     event_ny=cutoff.astimezone(NY)
@@ -53,7 +89,7 @@ def replay_case(case, cache_dir=None):
             bars=yahoo_5m(case["ticker"],start,end)
             cache_path.parent.mkdir(parents=True,exist_ok=True)
             raw=[{**b,"time":b["time"].isoformat(),"ny":b["ny"].isoformat()} for b in bars]
-            cache_path.write_text(json.dumps(raw,separators=(",",":"),sort_keys=True)+"\\n")
+            cache_path.write_text(json.dumps(raw,separators=(",",":"),sort_keys=True)+"\n")
     else:
         bars=yahoo_5m(case["ticker"],start,end)
     normalized=[{**b,"time":b["time"].isoformat(),"ny":b["ny"].isoformat()} for b in bars]
@@ -97,45 +133,27 @@ def replay_case(case, cache_dir=None):
             if v2_scenarios[key] is None and pre_reprice is not None:
                 vg=entry_gate_v2(GateV2Input(normalized_decision(case["decision"]),row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread,above_open_pct=row["above_open_pct"],above_vwap_pct=row["above_vwap_pct"],price=float(b["close"]),gap_pct_abs=abs(row["gap_pct"])))
                 if vg["state"]=="BUYABLE_NOW":
-                    entry=float(b["close"]); p5=entry*1.05; p10=entry*1.10; m5=entry*0.95
-                    oc=None; p10h=False; mfe2=0.0; mae2=0.0
-                    for z in regular[idx:]:
-                        hi=float(z["high"]); lo=float(z["low"])
-                        mfe2=max(mfe2,(hi/entry-1)*100); mae2=min(mae2,(lo/entry-1)*100); p10h=p10h or hi>=p10
-                        hp=hi>=p5; hm=lo<=m5
-                        if oc is None and hp and hm: oc="ORDER_UNVERIFIED"
-                        elif oc is None and hp: oc="PLUS5_FIRST"
-                        elif oc is None and hm: oc="MINUS5_FIRST"
-                    v2_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":oc or "UNRESOLVED","plus10_reached":p10h,"mfe_pct":round(mfe2,3),"mae_pct":round(mae2,3)}
+                    result = forward_outcome(regular, idx, spread)
+                    if result:
+                        v2_scenarios[key] = {"first_buyable_time": (b["time"] + dt.timedelta(minutes=5)).isoformat(), **result}
             if spread_scenarios[key] is not None: continue
             if pre_reprice is None: continue
             g=entry_gate(GateInput(normalized_decision(case["decision"]),row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread))
             if g["state"]=="BUYABLE_NOW":
-                entry=float(b["close"]); plus5=entry*1.05; plus10=entry*1.10; minus5=entry*0.95
-                later=regular[idx:]
-                outcome=None; outcome_time=None; plus10_hit=False; mfe=0.0; mae=0.0
-                for z in later:
-                    hi=float(z["high"]); lo=float(z["low"])
-                    mfe=max(mfe,(hi/entry-1)*100); mae=min(mae,(lo/entry-1)*100)
-                    plus10_hit=plus10_hit or hi>=plus10
-                    p5=hi>=plus5; m5=lo<=minus5
-                    if outcome is None: outcome=("ORDER_UNVERIFIED" if p5 and m5 else "PLUS5_FIRST" if p5 else "MINUS5_FIRST" if m5 else None); outcome_time=(z["time"].isoformat() if outcome else None)
-                spread_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":outcome or "UNRESOLVED","outcome_time":outcome_time,"plus10_reached":plus10_hit,"mfe_pct":round(mfe,3),"mae_pct":round(mae,3)}
+                result = forward_outcome(regular, idx, spread)
+                if result:
+                    spread_scenarios[key] = {"first_buyable_time": (b["time"] + dt.timedelta(minutes=5)).isoformat(), **result}
 
     reclaim=None
     base_entry=spread_scenarios.get("0.5")
     if base_entry and base_entry.get("outcome")=="MINUS5_FIRST":
         reclaim=detect_reclaim(out,base_entry["first_buyable_time"],base_entry["entry_price"],base_entry.get("outcome_time"))
         if reclaim.get("state")=="RECLAIM_CANDIDATE":
-            ri=next((i for i,r in enumerate(out) if r["time_utc"]==reclaim["time_utc"]),None)
+            ri=next((i for i,r in enumerate(regular) if r["time"].isoformat()==reclaim["time_utc"]),None)
             if ri is not None:
-                ep2=reclaim["price"]; outcome2=None; p10h2=False; mfe3=0.0; mae3=0.0
-                for z in regular[ri:]:
-                    hi=float(z["high"]); lo=float(z["low"]); mfe3=max(mfe3,(hi/ep2-1)*100); mae3=min(mae3,(lo/ep2-1)*100); p10h2=p10h2 or hi>=ep2*1.10
-                    if outcome2 is None and hi>=ep2*1.05 and lo<=ep2*.95: outcome2="ORDER_UNVERIFIED"
-                    elif outcome2 is None and hi>=ep2*1.05: outcome2="PLUS5_FIRST"
-                    elif outcome2 is None and lo<=ep2*.95: outcome2="MINUS5_FIRST"
-                reclaim.update({"outcome":outcome2 or "UNRESOLVED","plus10_reached":p10h2,"mfe_pct":round(mfe3,3),"mae_pct":round(mae3,3)})
+                result = forward_outcome(regular, ri, 0.5)
+                reclaim["signal_known_at_utc"] = (regular[ri]["time"] + dt.timedelta(minutes=5)).isoformat()
+                reclaim.update(result or {"outcome": "NO_NEXT_BAR"})
     robust=all(spread_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0))
     firsts={v["first_buyable_time"] for v in spread_scenarios.values() if v}
     robust=robust and len(firsts)==1
@@ -143,7 +161,7 @@ def replay_case(case, cache_dir=None):
             "normalized_decision":normalized_decision(case["decision"]),"spread_scenarios":spread_scenarios,"spread_robust_buyable":robust,
             "v2_spread_scenarios":v2_scenarios,
             "v2_spread_robust_buyable": all(v2_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0)) and len({v["first_buyable_time"] for v in v2_scenarios.values() if v})==1,
-            "first_buyable_features": next((r for r in out if any(v and v["first_buyable_time"]==r["time_utc"] for v in spread_scenarios.values())),None),
+            "first_buyable_features": next((r for r in out if any(v and v["first_buyable_time"]==(dt.datetime.fromisoformat(r["time_utc"])+dt.timedelta(minutes=5)).isoformat() for v in spread_scenarios.values())),None),
             "reclaim_research":reclaim,"bars_sha256":bars_sha256,"bars_cache":str(cache_path) if cache_path else None,"note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
 
 def main():

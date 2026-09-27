@@ -1,0 +1,38 @@
+name: Market Radar Broad Historical Benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - codex/market-radar-pit
+    paths:
+      - "market-radar/backtest/broad_daily_benchmark.py"
+      - "market-radar/backtest/test_broad_daily_benchmark.py"
+      - ".github/workflows/market-radar-broad-benchmark.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: market-radar-broad-benchmark
+  cancel-in-progress: false
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Point-in-time and next-open regression tests
+        env:
+          PYTHONPATH: market-radar
+        run: python3 -m unittest market-radar/backtest/test_broad_daily_benchmark.py -v
+      - name: Broad daily price-volume benchmark
+        run: python3 market-radar/backtest/broad_daily_benchmark.py --out-dir /tmp/market-radar-benchmark --workers 5
+      - name: Preserve data coverage and cohort report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-radar-broad-report
+          path: /tmp/market-radar-benchmark/
+          retention-days: 30

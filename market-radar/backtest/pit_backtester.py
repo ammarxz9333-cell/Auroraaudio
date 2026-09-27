@@ -37,6 +37,9 @@ def freeze(snapshot,decision,reason):
     for e in snapshot.get("evidence",[]):
         if parse_ts(e["available_at"])>cutoff:
             raise ValueError(f"evidence after cutoff: {e.get('id','?')}")
+    market_time=snapshot.get("market",{}).get("bar_time_utc")
+    if market_time and parse_ts(market_time)>cutoff:
+        raise ValueError("market bar after cutoff")
     list(walk(snapshot))
     if decision not in ALLOWED_DECISIONS: raise ValueError("unknown decision")
     core={"schema_version":1,"ticker":snapshot["ticker"],"cutoff":snapshot["cutoff"],"snapshot":snapshot,"decision":decision,"reason":reason}
