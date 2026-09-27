@@ -32,7 +32,7 @@ jobs:
           cd market-radar && python3 -m unittest test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py
 
 
-      - name: Historical replay smoke test
+      - name: Historical replay smoke test (frozen batch)
         run: |
           python3 market-radar/backtest/historical_gate_replay.py \
             market-radar/backtest/frozen/pilot-20-freeze-b.json \
