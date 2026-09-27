@@ -421,7 +421,6 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         return
     TAPE_DIR.mkdir(parents=True, exist_ok=True)
     ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())
-    quote = yahoo_quote_bid_ask(ticker) or {}
     gate = evaluate_entry_gate(snapshot, score, threshold)
     row = {
         "captured_utc": now_utc().isoformat(),
@@ -444,12 +443,14 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "pre30m_move_pct": snapshot.get("pre30m_move_pct"),
         "post30m_move_pct": snapshot.get("post30m_move_pct"),
         "since_event_move_pct": snapshot.get("since_event_move_pct"),
-        "vwap": None,
-        "spread_pct": None,
-        "gate_data_complete": False,
-        "gate_state": "INSUFFICIENT_DATA",
-        "gate_reason": "VWAP/spread not available from current Yahoo 5m snapshot; no BUYABLE_NOW inference permitted."
+        "vwap": snapshot.get("vwap"),
+        "spread_pct": (gate.get("inputs") or {}).get("spread_pct"),
+        "gate_data_complete": gate.get("state") != "INSUFFICIENT_DATA",
+        "gate_state": gate.get("state"),
+        "gate_reason": gate.get("reason"),
+        "gate": gate
     }
+    track_live_outcome(snapshot, gate, rid)
     with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, separators=(",", ":")) + "\\n")
 
@@ -648,6 +649,7 @@ def main():
             score, tickers, hits = score_item(source, item, watchlist)
             market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
+            effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             for snap in valid_market:
                 persist_market_snapshot(snap, rid, source["name"], score, effective_threshold)
             if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
@@ -655,7 +657,6 @@ def main():
                 hits.append("market-confirmation")
             if valid_market and all(m.get("reaction") == "not-yet-reacted" for m in valid_market):
                 hits.append("market-not-yet-reacted")
-            effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             if score < effective_threshold:
                 continue
             if not bootstrapped:
