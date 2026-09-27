@@ -455,17 +455,22 @@ def yahoo_quote_bid_ask(ticker: str):
     except Exception:
         return None
 
+def market_data_is_fresh(snapshot: dict) -> bool:
+    try:
+        bar_time = dt.datetime.fromisoformat(snapshot["bar_time_utc"])
+        age = now_utc() - bar_time.astimezone(dt.timezone.utc)
+        return dt.timedelta(0) <= age <= dt.timedelta(minutes=15)
+    except (KeyError, TypeError, ValueError):
+        return False
+
 def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
     required = ("price","previous_close","regular_open","vwap","same_time_volume_ratio","holds_vwap","holds_open","bar_time_utc")
     session = snapshot.get("market_session")
     if session != "REGULAR":
         return {"state":"WAIT","reason":f"entry disabled outside regular session ({session or 'unknown'})"}
-    try:
-        bar_time = dt.datetime.fromisoformat(snapshot["bar_time_utc"])
-        age = now_utc() - bar_time.astimezone(dt.timezone.utc)
-    except (KeyError, TypeError, ValueError):
-        return {"state":"INSUFFICIENT_DATA","reason":"missing or invalid bar timestamp"}
-    if not dt.timedelta(0) <= age <= dt.timedelta(minutes=15):
+    if not snapshot.get("bar_time_utc"):
+        return {"state":"INSUFFICIENT_DATA","reason":"missing market bar timestamp"}
+    if not market_data_is_fresh(snapshot):
         return {"state":"WAIT","reason":"market bar is stale or from the future"}
     if any(snapshot.get(k) is None for k in required):
         return {"state":"INSUFFICIENT_DATA","reason":"missing required point-in-time tape field"}
@@ -719,7 +724,7 @@ def publish_live_entry(rid, ticker, gate, snapshot, watch):
 
 def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
-    reactions = [m.get("reaction") for m in (market_ctx or []) if not m.get("error")]
+    reactions = [m.get("reaction") for m in (market_ctx or []) if not m.get("error") and market_data_is_fresh(m)]
     if tickers and reactions and all(r == "not-yet-reacted" for r in reactions) and score >= 8:
         stage = "EARLY"
     elif any(r == "major-reprice" for r in reactions):
@@ -865,7 +870,7 @@ def main():
             # request for every low-score headline in a large public feed.
             market_ctx = (market_context_for_tickers(tickers, event_time=item.get("published"))
                           if tickers and score >= effective_threshold - 2 else [])
-            valid_market = [m for m in market_ctx if not m.get("error")]
+            valid_market = [m for m in market_ctx if not m.get("error") and market_data_is_fresh(m)]
             if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
                 score += 2
                 hits.append("market-confirmation")

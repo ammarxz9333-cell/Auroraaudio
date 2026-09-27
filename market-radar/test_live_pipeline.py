@@ -67,3 +67,12 @@ def test_buyable_entry_wakes_pr_reviewer():
     assert path.endswith("/story-ABC-entry.json")
     assert artifact["type"] == "ENTRY_CANDIDATE"
     assert artifact["gate"]["state"] == "BUYABLE_NOW"
+
+
+def test_old_market_bar_cannot_label_fresh_news_as_reacting():
+    old = {"ticker": "ABC", "reaction": "major-reprice", "bar_time_utc": "2026-09-25T20:00:00+00:00"}
+    item = {"title": "Acme news", "published": dt.datetime(2026, 9, 27, 21, 0, tzinfo=dt.timezone.utc)}
+    with patch.object(radar, "now_utc", return_value=dt.datetime(2026, 9, 27, 21, 5, tzinfo=dt.timezone.utc)):
+        with patch.object(radar, "github_api", return_value={"html_url": "https://example.org/issue"}) as api:
+            radar.create_issue({"name": "Official"}, item, 10, ["ABC"], [], "rid", [old])
+    assert "[MARKET-RADAR" in api.call_args.kwargs["payload"]["title"]
