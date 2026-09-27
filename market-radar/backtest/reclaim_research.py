@@ -11,6 +11,7 @@ def detect_reclaim(rows, first_entry_time, first_entry_price):
     """
     seen_entry=False; stopped=False
     ep=float(first_entry_price)
+    best=None
     for r in rows:
         if r["time_utc"]==first_entry_time: seen_entry=True
         if not seen_entry: continue
