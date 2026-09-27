@@ -1,0 +1,31 @@
+{
+  "by_score_band": {},
+  "by_source": {},
+  "by_source_class": {},
+  "by_stage": {},
+  "definition": {
+    "adverse_5pct_24h": "MAE <= -5% during first 24 elapsed hours",
+    "entry": "first available 5-minute bar at or after alert detection",
+    "high_confidence_tracking": "score >= 10; descriptive only until sample size is adequate",
+    "hit_10pct_48h": "MFE >= +10% during first 48 elapsed hours",
+    "hit_5pct_24h": "MFE >= +5% during first 24 elapsed hours"
+  },
+  "generated_utc": "2026-09-27T15:30:04.375690+00:00",
+  "high_confidence_score_10_plus": {
+    "adverse_5pct_24h_rate": null,
+    "avg_mae_24h_pct": null,
+    "avg_mfe_24h_pct": null,
+    "hit_5pct_24h_rate": null,
+    "mature_24h": 0
+  },
+  "overall": {
+    "adverse_5pct_24h_rate": null,
+    "avg_mae_24h_pct": null,
+    "avg_mfe_24h_pct": null,
+    "hit_10pct_48h_rate": null,
+    "hit_5pct_24h_rate": null,
+    "mature_24h": 0,
+    "mature_48h": 0,
+    "observations": 0
+  }
+}
