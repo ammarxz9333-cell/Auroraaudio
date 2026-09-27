@@ -33,3 +33,10 @@ def test_no_post_stop_bar_is_safe():
     r=m.detect_reclaim(rows,"09:35",100)
     assert r["state"]=="NO_RECLAIM"
     assert r["best_post_stop_candidate"] is None
+
+
+def test_exact_stop_time_anchors_reclaim_search():
+    rows=[row("09:35",100,100),row("09:40",101,100),row("09:45",102,101)]
+    r=m.detect_reclaim(rows,"09:35",100,"09:40")
+    assert r["state"]=="RECLAIM_CANDIDATE"
+    assert r["time_utc"]=="09:45"
