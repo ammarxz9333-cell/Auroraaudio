@@ -628,6 +628,22 @@ def main():
     alerts = []
     errors = []
     start = now_utc()
+    active_watches = state.get("active_watches", {})
+    # Re-evaluate prior high-quality candidates even when their source item is already seen.
+    for rid, watch in list(active_watches.items()):
+        try:
+            added = dt.datetime.fromisoformat(watch["added_utc"])
+        except Exception:
+            active_watches.pop(rid, None)
+            continue
+        if start - added > dt.timedelta(days=3):
+            active_watches.pop(rid, None)
+            continue
+        for ticker in watch.get("tickers", []):
+            snap = yahoo_market_snapshot(ticker)
+            if not snap or snap.get("error"):
+                continue
+            persist_market_snapshot(snap, rid, watch.get("source", "active-watch"), int(watch.get("score", THRESHOLD)), THRESHOLD)
 
     fetched = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
@@ -658,6 +674,13 @@ def main():
                 hits.append("market-confirmation")
             if valid_market and all(m.get("reaction") == "not-yet-reacted" for m in valid_market):
                 hits.append("market-not-yet-reacted")
+            if tickers and score >= effective_threshold:
+                active_watches[rid] = {
+                    "tickers": tickers,
+                    "score": score,
+                    "source": source["name"],
+                    "added_utc": start.isoformat(),
+                }
             if score < effective_threshold:
                 continue
             if not bootstrapped:
@@ -683,6 +706,7 @@ def main():
         "bootstrapped": True,
         "market_probe": market_probe,
         "seen": combined,
+        "active_watches": active_watches,
         "last_run_utc": now_utc().isoformat(),
         "last_alert_count": len(alerts),
         "last_error_count": len(errors),
