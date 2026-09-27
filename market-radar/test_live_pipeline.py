@@ -12,8 +12,10 @@ def test_alert_artifact_is_stable_and_retries_are_idempotent():
             "published": dt.datetime(2026, 9, 27, tzinfo=dt.timezone.utc)}
     def api(path, method="GET", payload=None):
         calls.append((path, method, payload))
-        if len(calls) == 2:
+        if method == "PUT" and len(calls) == 2:
             raise urllib.error.HTTPError(path, 422, "already exists", {}, None)
+        if method == "GET":
+            return {"path": path.split("?", 1)[0].removeprefix(f"/repos/{radar.REPO}/contents/")}
     with patch.object(radar, "github_api", side_effect=api):
         with patch.object(radar, "now_utc", return_value=dt.datetime(2026, 9, 27, 21, 0, tzinfo=dt.timezone.utc)):
             for _ in range(2):
@@ -32,6 +34,21 @@ def test_entry_gate_rejects_stale_regular_bar_without_asking_quote_service():
             result = radar.evaluate_entry_gate(snapshot, 10, 8)
     assert result["state"] == "WAIT"
     quote.assert_not_called()
+
+
+def test_alert_publish_does_not_hide_unrelated_validation_error():
+    item = {"title": "Acme merger", "url": "https://example.org/news", "published": None}
+    def api(path, method="GET", payload=None):
+        if method == "PUT":
+            raise urllib.error.HTTPError(path, 422, "invalid branch", {}, None)
+        return {}
+    with patch.object(radar, "github_api", side_effect=api):
+        try:
+            radar.publish_live_alert({"name": "Official"}, item, 10, ["ABC"], [], "rid", [], {})
+        except urllib.error.HTTPError:
+            pass
+        else:
+            raise AssertionError("unrelated validation error was hidden")
 
 
 def test_unlisted_explicit_symbol_and_institutional_holding_noise():

@@ -700,6 +700,9 @@ def publish_live_alert(source, item, score, tickers, hits, rid, market_ctx, info
         # immutable artifact and let the issue notification retry.
         if exc.code != 422:
             raise
+        existing = github_api(f"/repos/{REPO}/contents/{path}?ref=market-radar-live")
+        if existing.get("path") != path:
+            raise
     return path
 
 def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
