@@ -794,6 +794,19 @@ def main():
                                 corroborating.add(osrc.get("name","unknown")); break
             infoq["independent_corroboration_count"]=len(corroborating)
             infoq["independent_corroborators"]=sorted(corroborating)[:8]
+            primary_confirmed=False
+            for osrc,oitems in fetched:
+                if osrc.get("class")!="primary": continue
+                for oi in oitems:
+                    if set(match_watchlist(f"{oi.get('title','')} {oi.get('snippet','')}",watchlist)) & set(tickers):
+                        primary_confirmed=True; break
+                if primary_confirmed: break
+            infoq["primary_confirmation"]=primary_confirmed
+            rv=[m.get("same_time_volume_ratio") for m in valid_market if isinstance(m.get("same_time_volume_ratio"),(int,float))]
+            va=[m.get("volume_acceleration_15m") for m in valid_market if isinstance(m.get("volume_acceleration_15m"),(int,float))]
+            mo=[m.get("momentum_15m_pct") for m in valid_market if isinstance(m.get("momentum_15m_pct"),(int,float))]
+            infoq["market_confirmation"]={"rvol_confirmed":bool(rv and max(rv)>=2),"volume_acceleration_confirmed":bool(va and max(va)>=1.5),"momentum_confirmed":bool(mo and max(mo)>=2)}
+            infoq["propagation_stage"]="PRIMARY_CONFIRMED" if primary_confirmed else ("MULTI_SOURCE" if len(corroborating)>=2 else ("CORROBORATED" if corroborating else "UNCONFIRMED"))
             if tickers and score >= effective_threshold:
                 active_watches[rid] = {
                     "tickers": tickers,
