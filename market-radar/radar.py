@@ -7,7 +7,6 @@ Creates GitHub issues for high-scoring new public items and optionally Telegram 
 from __future__ import annotations
 
 import datetime as dt
-import base64
 import email.utils
 import hashlib
 import html
@@ -26,10 +25,14 @@ from html.parser import HTMLParser
 from pathlib import Path
 from statistics import median
 from zoneinfo import ZoneInfo
+from entry_gate import GateInput, entry_gate
+from live.outcome_tracker import new_trade, update_trade, load as load_trades, save as save_trades
 
 ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
 STATE_FILE = ROOT / "state.json"
+TAPE_DIR = ROOT / "live" / "tape"
+TRADES_FILE = ROOT / "live" / "trades.json"
 USER_AGENT = os.getenv("RADAR_USER_AGENT", "MarketRadar/1.0 public-source-monitor contact=github-actions")
 REPO = os.getenv("GITHUB_REPOSITORY", "")
 TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -39,7 +42,6 @@ BOOTSTRAP_ALERT_HOURS = int(os.getenv("RADAR_BOOTSTRAP_ALERT_HOURS", "8"))
 MAX_SEEN = int(os.getenv("RADAR_MAX_SEEN", "6000"))
 REQUEST_TIMEOUT = int(os.getenv("RADAR_REQUEST_TIMEOUT", "8"))
 MAX_WORKERS = int(os.getenv("RADAR_MAX_WORKERS", "12"))
-STATE_BRANCH = os.getenv("RADAR_STATE_BRANCH", "main-v2")
 DOMAIN_LOCKS = {"www.sec.gov": threading.Lock(), "www.reddit.com": threading.Lock()}
 DOMAIN_LAST = {}
 DOMAIN_MIN_INTERVAL = {"www.sec.gov": 0.40, "www.reddit.com": 1.25}
@@ -64,44 +66,11 @@ CATALYSTS = {
     "investigation": 3, "probe": 3, "permit": 2, "interconnection": 3,
     "procurement": 3, "award notice": 4, "material agreement": 4,
     "8-k": 2, "form 8-k": 2, "13d": 4, "13g": 2, "form 4": 1,
-    "initiates coverage": 2, "initiated coverage": 2, "starts coverage": 2,
-    "started coverage": 2, "starts at buy": 3, "started at buy": 3,
-    "upgrades to buy": 3, "upgraded to buy": 3, "upgrades to outperform": 3,
-    "price target": 1, "target price": 1,
-    "added to the s&p 500": 5, "added to s&p 500": 5, "join the s&p 500": 5,
-    "joins the s&p 500": 5, "index inclusion": 4, "index rebalancing": 3,
-    "cmmc level 2": 4, "cybersecurity maturity model certification": 4,
-    "certification": 2, "certified": 2,
-    "commercial operations": 4, "commercial operation": 4,
-    "commercial production": 4, "starts production": 4, "production launch": 4,
-    "buyback": 3, "share repurchase": 3, "repurchase program": 3,
-    "uplisting": 2, "uplisted": 2,
-    "product launch": 2, "launches new": 2, "showcases": 1,
-    "takeover speculation": 3, "acquisition speculation": 3,
-    "strategic alternatives": 3,
 }
 
 NEGATIVE_NOISE = {
     "podcast": -1, "opinion": -1, "sponsored": -2, "advertisement": -3,
-    "technical analysis": -1, "watchlist": -1,
-}
-
-BULLISH_DIRECTION = {
-    "fda approves", "fda approved", "approval", "primary endpoint",
-    "contract award", "awarded contract", "government contract",
-    "raises guidance", "raised guidance", "strategic partnership",
-    "partnership", "supply agreement", "offtake", "hyperscaler",
-    "permit", "interconnection", "procurement", "award notice",
-    "definitive agreement", "merger", "acquisition", "takeover",
-    "tender offer", "going private",
-}
-
-BEARISH_DIRECTION = {
-    "complete response letter", "chapter 11", "bankruptcy",
-    "short report", "fraud", "subpoena", "recall",
-    "lowers guidance", "lowered guidance", "registered direct",
-    "public offering", "atm offering", "convertible", "warrant",
-    "dilution", "investigation", "probe",
+    "price target": -1, "technical analysis": -1, "watchlist": -1,
 }
 
 class LinkParser(HTMLParser):
@@ -278,7 +247,7 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
                 continue
             when_utc = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc)
             when_ny = when_utc.astimezone(NY)
-            bars.append({"ts":ts,"utc":when_utc,"ny":when_ny,"close":float(close),"volume":int(vol or 0)})
+            bars.append({"ts":ts,"utc":when_utc,"ny":when_ny,"open":float(opn) if opn is not None else None,"high":float(high) if high is not None else float(close),"low":float(low) if low is not None else float(close),"close":float(close),"volume":int(vol or 0)})
         if not bars:
             return None
 
@@ -342,7 +311,14 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
         prev_close = float(prev_close)
         change_pct = ((latest["close"] / prev_close) - 1.0) * 100.0 if prev_close else None
 
-        today_cum = sum(b["volume"] for b in by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= cutoff)
+        today_bars = [b for b in by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= cutoff]
+        today_cum = sum(b["volume"] for b in today_bars)
+        regular_open = today_bars[0]["open"] if today_bars else None
+        session_high = max((b["high"] for b in today_bars), default=None)
+        session_low = min((b["low"] for b in today_bars), default=None)
+        vwap_num = sum((((b["high"] + b["low"] + b["close"]) / 3.0) * b["volume"]) for b in today_bars if b["volume"] > 0)
+        vwap_den = sum(b["volume"] for b in today_bars if b["volume"] > 0)
+        session_vwap = (vwap_num / vwap_den) if vwap_den else None
         hist_cums = []
         for d, dbars in by_day.items():
             if d == today_key:
@@ -369,6 +345,12 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
             "change_pct": round(change_pct, 3) if change_pct is not None else None,
             "change_5m_pct": round(change_5m, 3) if change_5m is not None else None,
             "cum_volume": today_cum,
+            "regular_open": round(regular_open, 4) if regular_open is not None else None,
+            "session_high": round(session_high, 4) if session_high is not None else None,
+            "session_low": round(session_low, 4) if session_low is not None else None,
+            "vwap": round(session_vwap, 4) if session_vwap is not None else None,
+            "holds_vwap": (latest["close"] >= session_vwap) if session_vwap is not None else None,
+            "holds_open": (latest["close"] >= regular_open) if regular_open is not None else None,
             "same_time_volume_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
             "market_session": market_session,
             "reaction": reaction,
@@ -377,9 +359,116 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
             "post30m_move_pct": round(post30_move, 3) if post30_move is not None else None,
             "since_event_move_pct": round(since_event_move, 3) if since_event_move is not None else None,
             "bar_time_utc": latest["utc"].isoformat(),
+            "bar_high": round(latest["high"], 4),
+            "bar_low": round(latest["low"], 4),
         }
     except Exception as e:
         return {"ticker":ticker,"error":f"{type(e).__name__}: {e}"}
+
+def yahoo_quote_bid_ask(ticker: str):
+    """Best-effort Yahoo quote bid/ask. Endpoint may require cookie/crumb.
+    Failure is non-fatal and must never be replaced with an inferred spread.
+    """
+    try:
+        # Bootstrap Yahoo cookie, then obtain crumb for v7 quote.
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+        opener.addheaders = [("User-Agent", USER_AGENT), ("Accept", "application/json,text/plain,*/*")]
+        try:
+            opener.open("https://fc.yahoo.com", timeout=REQUEST_TIMEOUT).read(1)
+        except Exception:
+            pass
+        crumb = opener.open("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=REQUEST_TIMEOUT).read().decode("utf-8").strip()
+        url = "https://query1.finance.yahoo.com/v7/finance/quote?" + urllib.parse.urlencode({"symbols":ticker,"crumb":crumb})
+        data = json.loads(opener.open(url, timeout=REQUEST_TIMEOUT).read().decode("utf-8"))
+        rows = ((data.get("quoteResponse") or {}).get("result") or [])
+        if not rows:
+            return None
+        q = rows[0]
+        bid, ask = q.get("bid"), q.get("ask")
+        if not isinstance(bid,(int,float)) or not isinstance(ask,(int,float)) or bid <= 0 or ask <= 0 or ask < bid:
+            return None
+        mid = (bid + ask) / 2.0
+        return {"bid":float(bid),"ask":float(ask),"spread_pct":((ask-bid)/mid)*100.0 if mid else None,"quote_time":q.get("regularMarketTime")}
+    except Exception:
+        return None
+
+def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
+    required = ("price","previous_close","regular_open","vwap","same_time_volume_ratio","holds_vwap","holds_open","bar_time_utc")
+    if any(snapshot.get(k) is None for k in required):
+        return {"state":"INSUFFICIENT_DATA","reason":"missing required point-in-time tape field"}
+    quote = yahoo_quote_bid_ask(snapshot["ticker"])
+    if not quote or quote.get("spread_pct") is None:
+        return {"state":"INSUFFICIENT_DATA","reason":"point-in-time bid/ask unavailable"}
+    reaction = snapshot.get("reaction")
+    decision = "EARLY" if reaction == "not-yet-reacted" and score >= threshold else "WATCH"
+    price=float(snapshot["price"]); prev=float(snapshot["previous_close"]); opn=float(snapshot["regular_open"])
+    gap=((opn/prev)-1)*100 if prev else 0.0
+    bt=dt.datetime.fromisoformat(snapshot["bar_time_utc"]).astimezone(NY)
+    mins=max(0,(bt.hour*60+bt.minute)-(9*60+30))
+    pre=snapshot.get("pre30m_move_pct")
+    if pre is None and bt.hour*60+bt.minute < 9*60+30:
+        return {"state":"INSUFFICIENT_DATA","reason":"premarket repricing unavailable"}
+    gi=GateInput(decision=decision,gap_pct=gap,premarket_reprice_pct=float(pre or 0.0),rvol=float(snapshot["same_time_volume_ratio"]),holds_vwap=bool(snapshot["holds_vwap"]),holds_open=bool(snapshot["holds_open"]),minutes_since_open=mins,spread_pct=float(quote["spread_pct"]))
+    out=entry_gate(gi)
+    out.update({"decision":decision,"entry_price":price if out["state"]=="BUYABLE_NOW" else None,"entry_time_utc":snapshot["bar_time_utc"] if out["state"]=="BUYABLE_NOW" else None,"inputs":{"gap_pct":round(gap,3),"premarket_reprice_pct":float(pre or 0.0),"rvol":gi.rvol,"holds_vwap":gi.holds_vwap,"holds_open":gi.holds_open,"minutes_since_open":mins,"spread_pct":round(gi.spread_pct,4)}})
+    return out
+
+def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int, threshold: int):
+    """Append the exact point-in-time market snapshot used by the radar.
+    Missing fields stay null; never backfill them from later bars.
+    """
+    if not snapshot or snapshot.get("error") or not snapshot.get("ticker"):
+        return
+    TAPE_DIR.mkdir(parents=True, exist_ok=True)
+    ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())
+    gate = evaluate_entry_gate(snapshot, score, threshold)
+    row = {
+        "captured_utc": now_utc().isoformat(),
+        "radar_id": rid,
+        "source": source_name,
+        "score_at_capture": score,
+        "ticker": ticker,
+        "bar_time_utc": snapshot.get("bar_time_utc"),
+        "price": snapshot.get("price"),
+        "bar_high": snapshot.get("bar_high"),
+        "bar_low": snapshot.get("bar_low"),
+        "previous_close": snapshot.get("previous_close"),
+        "change_pct": snapshot.get("change_pct"),
+        "change_5m_pct": snapshot.get("change_5m_pct"),
+        "cum_volume": snapshot.get("cum_volume"),
+        "same_time_volume_ratio": snapshot.get("same_time_volume_ratio"),
+        "market_session": snapshot.get("market_session"),
+        "reaction": snapshot.get("reaction"),
+        "event_price": snapshot.get("event_price"),
+        "pre30m_move_pct": snapshot.get("pre30m_move_pct"),
+        "post30m_move_pct": snapshot.get("post30m_move_pct"),
+        "since_event_move_pct": snapshot.get("since_event_move_pct"),
+        "vwap": snapshot.get("vwap"),
+        "spread_pct": (gate.get("inputs") or {}).get("spread_pct"),
+        "gate_data_complete": gate.get("state") != "INSUFFICIENT_DATA",
+        "gate_state": gate.get("state"),
+        "gate_reason": gate.get("reason"),
+        "gate": gate
+    }
+    track_live_outcome(snapshot, gate, rid)
+    with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, separators=(",", ":")) + "\\n")
+
+def track_live_outcome(snapshot: dict, gate: dict, rid: str):
+    if not snapshot or not snapshot.get("ticker") or not snapshot.get("bar_time_utc"):
+        return
+    trades=load_trades(TRADES_FILE)
+    ticker=snapshot["ticker"].upper()
+    if gate.get("state")=="BUYABLE_NOW" and gate.get("entry_price") and gate.get("entry_time_utc"):
+        tid=f"{ticker}:{gate['entry_time_utc']}:{rid}"
+        if tid not in trades:
+            trades[tid]=new_trade(ticker,gate["entry_time_utc"],gate["entry_price"],rid)
+    for tid,t in list(trades.items()):
+        if t.get("ticker") != ticker: continue
+        if snapshot["bar_time_utc"] <= t["entry_time_utc"]: continue
+        if snapshot.get("bar_high") is None or snapshot.get("bar_low") is None: continue
+        update_trade(t,{"high":snapshot["bar_high"],"low":snapshot["bar_low"],"time_utc":snapshot["bar_time_utc"]})
+    save_trades(TRADES_FILE,trades)
 
 def market_context_for_tickers(tickers, event_time=None):
     out = []
@@ -389,79 +478,8 @@ def market_context_for_tickers(tickers, event_time=None):
             out.append(snap)
     return out
 
-
-def yahoo_momentum_candidates():
-    """Discover new US equities from Yahoo's public day-gainers screener.
-
-    This is intentionally an early-move fallback, not a late-chase scanner:
-    candidates are limited to roughly +3% to +8.5% on the day, then the normal
-    market-context layer checks 5-minute acceleration and same-time volume.
-    """
-    url = (
-        "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
-        "?count=100&scrIds=day_gainers"
-    )
-    try:
-        data = json.loads(fetch(url, headers={"Accept": "application/json"}).decode("utf-8"))
-        quotes = (((data.get("finance") or {}).get("result") or [{}])[0].get("quotes") or [])
-    except Exception:
-        return []
-
-    items = []
-    for q in quotes:
-        ticker = str(q.get("symbol") or "").upper().strip()
-        change = q.get("regularMarketChangePercent")
-        price = q.get("regularMarketPrice")
-        volume = q.get("regularMarketVolume")
-        avg_volume = q.get("averageDailyVolume3Month")
-        quote_type = str(q.get("quoteType") or "")
-        market = str(q.get("market") or "")
-
-        if not ticker or not isinstance(change, (int, float)):
-            continue
-        if quote_type and quote_type != "EQUITY":
-            continue
-        if market and market != "us_market":
-            continue
-        if change < 3.0 or change > 8.5:
-            continue
-        if not isinstance(price, (int, float)) or price < 1:
-            continue
-        if not isinstance(volume, (int, float)) or volume < 500000:
-            continue
-
-        crude_volume_ratio = None
-        if isinstance(avg_volume, (int, float)) and avg_volume > 0:
-            crude_volume_ratio = float(volume) / float(avg_volume)
-
-        title = "$" + ticker + " abnormal market momentum: " + f"{change:+.2f}% day move"
-        url_quote = "https://finance.yahoo.com/quote/" + urllib.parse.quote(ticker)
-        if crude_volume_ratio is not None:
-            snippet = (
-                "Ticker $" + ticker
-                + f"; price {float(price):.4f}; day move {float(change):+.2f}%; "
-                + f"volume {int(volume)}; 3m average daily volume {int(avg_volume)}; "
-                + f"crude volume/ADV {crude_volume_ratio:.2f}x."
-            )
-        else:
-            snippet = (
-                "Ticker $" + ticker
-                + f"; price {float(price):.4f}; day move {float(change):+.2f}%; "
-                + f"volume {int(volume)}."
-            )
-
-        items.append({
-            "title": title,
-            "url": url_quote,
-            "snippet": snippet,
-            "published": now_utc(),
-            "momentum_candidate": True,
-        })
-
-    return items[:40]
-
 def item_id(source_name: str, item: dict) -> str:
-    raw = source_name + "\n" + (item.get("url") or "") + "\n" + (item.get("title") or "")
+    raw = source_name + "\\n" + (item.get("url") or "") + "\\n" + (item.get("title") or "")
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
 
 def load_json(path: Path, fallback):
@@ -471,7 +489,7 @@ def load_json(path: Path, fallback):
         return fallback
 
 def save_state(state):
-    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
 
 def match_watchlist(text: str, watchlist: dict):
     low = text.lower()
@@ -484,49 +502,15 @@ def match_watchlist(text: str, watchlist: dict):
             found.append(ticker)
     return sorted(set(found))
 
-
-def extract_explicit_tickers(text: str):
-    """Extract high-confidence ticker syntax even when a symbol is not on the watchlist."""
-    found = set()
-
-    # Social/news convention: $CRWV, $RKLB, etc. A letter is required first,
-    # so dollar amounts such as $10 or $2.5B cannot be misread as tickers.
-    for match in re.finditer(r"(?<![A-Z0-9])\$([A-Z][A-Z0-9.-]{0,5})(?![A-Z0-9])", text):
-        found.add(match.group(1).upper())
-
-    # Common issuer/news syntax: NASDAQ: CRWV / NYSE: XYZ / AMEX: ABC.
-    for match in re.finditer(
-        r"\b(?:NASDAQ|NYSE|NYSEAMERICAN|AMEX|OTCQX|OTCQB)\s*[:\-]\s*([A-Z][A-Z0-9.-]{0,5})\b",
-        text,
-        re.I,
-    ):
-        found.add(match.group(1).upper())
-
-    return sorted(found)
-
 def phrase_match(text: str, phrase: str) -> bool:
     if len(phrase) <= 5 and " " not in phrase:
         return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text, re.I) is not None
     return phrase in text
 
-def infer_direction(text: str, hits=None):
-    low = text.lower()
-    bullish = sorted(p for p in BULLISH_DIRECTION if phrase_match(low, p))
-    bearish = sorted(p for p in BEARISH_DIRECTION if phrase_match(low, p))
-    if bullish and not bearish:
-        return "bullish", bullish, bearish
-    if bearish and not bullish:
-        return "bearish", bullish, bearish
-    if bullish and bearish:
-        return "mixed", bullish, bearish
-    return "ambiguous", bullish, bearish
-
 def score_item(source: dict, item: dict, watchlist: dict):
-    raw_text = f"{item.get('title','')} {item.get('snippet','')}"
-    text = raw_text.lower()
+    text = f"{item.get('title','')} {item.get('snippet','')}".lower()
     score = int(source.get("weight", 1))
     hits = []
-
     for phrase, pts in CATALYSTS.items():
         if phrase_match(text, phrase):
             score += pts
@@ -534,28 +518,15 @@ def score_item(source: dict, item: dict, watchlist: dict):
     for phrase, pts in NEGATIVE_NOISE.items():
         if phrase in text:
             score += pts
-
-    watchlist_tickers = match_watchlist(raw_text, watchlist)
-    explicit_tickers = extract_explicit_tickers(raw_text)
-    tickers = sorted(set(watchlist_tickers + explicit_tickers))
-
+    tickers = match_watchlist(f"{item.get('title','')} {item.get('snippet','')}", watchlist)
     if tickers:
         score += 4
-        hits.append("ticker-match")
-    if explicit_tickers:
-        hits.append("explicit-ticker")
-    if watchlist_tickers:
         hits.append("watchlist-match")
-
-    if source.get("class") in ("primary", "investigative", "scoop") and any(
-        k in text for k in ("exclusive", "sources say", "people familiar", "leak", "scoop")
-    ):
+    if source.get("class") in ("primary", "investigative", "scoop") and any(k in text for k in ("exclusive", "sources say", "people familiar", "leak", "scoop")):
         score += 2
         hits.append("source+early-language")
-
     if any(k in text for k in ("weekly roundup", "month in review", "top 10 stocks", "best stocks to buy")):
         score -= 3
-
     return max(score, 0), tickers, sorted(set(hits))
 
 def github_api(path: str, method="GET", payload=None):
@@ -574,139 +545,40 @@ def github_api(path: str, method="GET", payload=None):
         raw = resp.read()
         return json.loads(raw.decode("utf-8")) if raw else {}
 
-def persist_state_remote(state):
-    """Persist state with GitHub's contents API so unrelated workflow commits cannot race git push."""
-    if not TOKEN or not REPO:
-        return None
-
-    path = "/repos/" + REPO + "/contents/market-radar/state.json"
-    last_error = None
-
-    for attempt in range(3):
-        try:
-            remote = github_api(path + "?ref=" + urllib.parse.quote(STATE_BRANCH))
-            remote_state = {}
-            try:
-                encoded = remote.get("content") or ""
-                if encoded:
-                    remote_state = json.loads(
-                        base64.b64decode(encoded).decode("utf-8")
-                    )
-            except Exception:
-                remote_state = {}
-
-            merged = dict(remote_state)
-            merged.update(state)
-            merged_seen = list(dict.fromkeys(
-                list(remote_state.get("seen", [])) + list(state.get("seen", []))
-            ))
-            if len(merged_seen) > MAX_SEEN:
-                merged_seen = merged_seen[-MAX_SEEN:]
-            merged["seen"] = merged_seen
-
-            raw = json.dumps(merged, indent=2, sort_keys=True) + "\n"
-            payload = {
-                "message": "chore(market-radar): update scanner state",
-                "content": base64.b64encode(raw.encode("utf-8")).decode("ascii"),
-                "sha": remote.get("sha"),
-                "branch": STATE_BRANCH,
-            }
-            result = github_api(path, method="PUT", payload=payload)
-            return ((result.get("commit") or {}).get("sha"))
-        except Exception as exc:
-            last_error = exc
-            time.sleep(0.75 * (attempt + 1))
-
-    raise RuntimeError(f"remote state persistence failed after retries: {last_error}")
-
-
-def classify_stage(score, tickers, market_ctx=None):
-    reactions = [m.get("reaction") for m in (market_ctx or []) if not m.get("error")]
-    if tickers and reactions and all(r == "not-yet-reacted" for r in reactions) and score >= 8:
-        return "EARLY"
-    if any(r == "major-reprice" for r in reactions):
-        return "MAJOR-REPRICE"
-    if any(r == "reacting" for r in reactions):
-        return "REACTING"
-    return "RADAR"
-
-def push_live_pr_alert(source, item, score, tickers, hits, rid, market_ctx=None):
-    """Commit one alert JSON file to the persistent market-radar-live PR branch.
-    A commit update to that open PR can be used as a ChatGPT Work event trigger.
-    """
-    stage = classify_stage(score, tickers, market_ctx)
-    direction, bullish_reasons, bearish_reasons = infer_direction(
-        f"{item.get('title','')} {item.get('snippet','')}", hits
-    )
-    published = item.get("published")
-    payload_obj = {
-        "radar_id": rid,
-        "stage": stage,
-        "score": score,
-        "direction": direction,
-        "bullish_reasons": bullish_reasons,
-        "bearish_reasons": bearish_reasons,
-        "detected_utc": now_utc().isoformat(),
-        "published_utc": published.isoformat() if isinstance(published, dt.datetime) else None,
-        "source": source.get("name"),
-        "source_class": source.get("class"),
-        "tickers": tickers,
-        "signals": sorted(set(hits)),
-        "headline": item.get("title", ""),
-        "url": item.get("url", ""),
-        "snippet": item.get("snippet", "")[:1800],
-        "market_context": market_ctx or [],
-    }
-    raw = json.dumps(payload_obj, indent=2, ensure_ascii=False) + "\n"
-    stamp = now_utc().strftime("%Y%m%dT%H%M%SZ")
-    path = f"market-radar/live/alerts/{stamp}-{rid}.json"
-    ticker_text = ",".join(tickers) if tickers else "NEW-CANDIDATE"
-    message = f"[MARKET-{stage}] {ticker_text} {direction} score={score} {item.get('title','')}"[:240]
-    gh_payload = {
-        "message": message,
-        "content": base64.b64encode(raw.encode("utf-8")).decode("ascii"),
-        "branch": "market-radar-live",
-    }
-    result = github_api(f"/repos/{REPO}/contents/{path}", method="PUT", payload=gh_payload)
-    return {
-        "stage": stage,
-        "path": path,
-        "commit_sha": ((result.get("commit") or {}).get("sha")),
-        "content_url": ((result.get("content") or {}).get("html_url")),
-    }
-
 def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
-    stage = classify_stage(score, tickers, market_ctx)
-    direction, bullish_reasons, bearish_reasons = infer_direction(
-        f"{item.get('title','')} {item.get('snippet','')}", hits
-    )
+    reactions = [m.get("reaction") for m in (market_ctx or []) if not m.get("error")]
+    if tickers and reactions and all(r == "not-yet-reacted" for r in reactions) and score >= 8:
+        stage = "EARLY"
+    elif any(r == "major-reprice" for r in reactions):
+        stage = "MAJOR-REPRICE"
+    elif any(r == "reacting" for r in reactions):
+        stage = "REACTING"
+    else:
+        stage = "RADAR"
     title_text = item.get("title", "Untitled")
     title = f"[MARKET-{stage} {score}] {tick} — {title_text}"[:240]
     published = item.get("published")
     pubtxt = published.isoformat() if isinstance(published, dt.datetime) else "unknown/not supplied by source"
     body = (
-        f"<!-- radar-id:{rid} -->\n"
-        f"## First-public-source alert\n\n"
-        f"- **Score:** {score}\n"
-        f"- **Direction:** {direction}\n"
-        f"- **Bullish reasons:** {', '.join(bullish_reasons) if bullish_reasons else 'none detected'}\n"
-        f"- **Bearish reasons:** {', '.join(bearish_reasons) if bearish_reasons else 'none detected'}\n"
-        f"- **Source:** {source['name']}\n"
-        f"- **Source class:** {source.get('class','other')}\n"
-        f"- **Published timestamp:** {pubtxt}\n"
-        f"- **Detected UTC:** {now_utc().isoformat()}\n"
-        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\n"
-        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\n"
-        f"- **Original/public URL:** {item.get('url','')}\n\n"
-        + ("### Live market reaction\n" + "\n".join(
+        f"<!-- radar-id:{rid} -->\\n"
+        f"## First-public-source alert\\n\\n"
+        f"- **Score:** {score}\\n"
+        f"- **Source:** {source['name']}\\n"
+        f"- **Source class:** {source.get('class','other')}\\n"
+        f"- **Published timestamp:** {pubtxt}\\n"
+        f"- **Detected UTC:** {now_utc().isoformat()}\\n"
+        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\\n"
+        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\\n"
+        f"- **Original/public URL:** {item.get('url','')}\\n\\n"
+        + ("### Live market reaction\\n" + "\\n".join(
             f"- **{m.get('ticker')}**: price {m.get('price','?')} | day {m.get('change_pct','?')}% | last 5m {m.get('change_5m_pct','?')}% | volume vs same-time {m.get('same_time_volume_ratio','?')}x | pre-news 30m {m.get('pre30m_move_pct','?')}% | first 30m after news {m.get('post30m_move_pct','?')}% | since news {m.get('since_event_move_pct','?')}% | session {m.get('market_session','?')} | **{m.get('reaction','?')}** | bar {m.get('bar_time_utc','?')}"
             if not m.get("error") else f"- **{m.get('ticker')}**: market-data error — {m.get('error')}"
             for m in (market_ctx or [])
-        ) + "\n\n" if market_ctx else "")
-        + f"### Headline\n{item.get('title','')}\n\n"
-        f"### Public snippet\n{item.get('snippet','')[:1600] or '(none)'}\n\n"
-        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\n"
+        ) + "\\n\\n" if market_ctx else "")
+        + f"### Headline\\n{item.get('title','')}\\n\\n"
+        f"### Public snippet\\n{item.get('snippet','')[:1600] or '(none)'}\\n\\n"
+        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\\n"
     )
     payload = {"title": title, "body": body}
     if OWNER:
@@ -756,18 +628,24 @@ def main():
     alerts = []
     errors = []
     start = now_utc()
+    active_watches = state.get("active_watches", {})
+    # Re-evaluate prior high-quality candidates even when their source item is already seen.
+    for rid, watch in list(active_watches.items()):
+        try:
+            added = dt.datetime.fromisoformat(watch["added_utc"])
+        except Exception:
+            active_watches.pop(rid, None)
+            continue
+        if start - added > dt.timedelta(days=3):
+            active_watches.pop(rid, None)
+            continue
+        for ticker in watch.get("tickers", []):
+            snap = yahoo_market_snapshot(ticker)
+            if not snap or snap.get("error"):
+                continue
+            persist_market_snapshot(snap, rid, watch.get("source", "active-watch"), int(watch.get("score", THRESHOLD)), THRESHOLD)
 
     fetched = []
-
-    momentum_items = yahoo_momentum_candidates()
-    if momentum_items:
-        fetched.append(({
-            "name": "Yahoo early momentum discovery",
-            "class": "momentum",
-            "weight": 4,
-            "type": "market",
-        }, momentum_items))
-
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = {pool.submit(source_items, source): source for source in sources}
         for future in as_completed(futures):
@@ -783,41 +661,28 @@ def main():
             rid = item_id(source["name"], item)
             if rid in old_seen:
                 continue
-
             new_seen.append(rid)
             score, tickers, hits = score_item(source, item, watchlist)
-            market_ctx = market_context_for_tickers(
-                tickers, event_time=item.get("published")
-            ) if tickers else []
+            effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
+            market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
-
-            if item.get("momentum_candidate"):
-                strong_momentum = [
-                    m for m in valid_market
-                    if (
-                        (m.get("same_time_volume_ratio") is not None and m.get("same_time_volume_ratio") >= 1.8)
-                        or abs(m.get("change_5m_pct") or 0) >= 1.0
-                    )
-                ]
-                if not strong_momentum:
-                    continue
-                hits.append("price-volume-momentum")
-                score += 2
-
-            if any(m.get("reaction") in ("reacting", "major-reprice") for m in valid_market):
+            effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
+            for snap in valid_market:
+                persist_market_snapshot(snap, rid, source["name"], score, effective_threshold)
+            if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
                 score += 2
                 hits.append("market-confirmation")
             if valid_market and all(m.get("reaction") == "not-yet-reacted" for m in valid_market):
                 hits.append("market-not-yet-reacted")
-
-            effective_threshold = (
-                THRESHOLD
-                if tickers
-                else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
-            )
+            if tickers and score >= effective_threshold:
+                active_watches[rid] = {
+                    "tickers": tickers,
+                    "score": score,
+                    "source": source["name"],
+                    "added_utc": start.isoformat(),
+                }
             if score < effective_threshold:
                 continue
-
             if not bootstrapped:
                 published = item.get("published")
                 if not isinstance(published, dt.datetime):
@@ -825,71 +690,38 @@ def main():
                 age = start - published
                 if age.total_seconds() < 0 or age > dt.timedelta(hours=BOOTSTRAP_ALERT_HOURS):
                     continue
-
-            live_result = None
             try:
-                live_result = push_live_pr_alert(
-                    source, item, score, tickers, hits, rid, market_ctx=market_ctx
-                )
-            except Exception as e:
-                errors.append(f"live-pr {rid}: {type(e).__name__}: {e}")
-
-            try:
-                url = create_issue(
-                    source, item, score, tickers, hits, rid, market_ctx=market_ctx
-                )
-                alerts.append(
-                    (source["name"], item.get("title", ""), score, tickers, url)
-                )
-                stage = (
-                    (live_result or {}).get("stage")
-                    or classify_stage(score, tickers, market_ctx)
-                )
-                direction, _, _ = infer_direction(
-                    f"{item.get('title','')} {item.get('snippet','')}", hits
-                )
-                ticker_text = " ".join("$" + x for x in tickers) or "NEW-CANDIDATE"
-                telegram_alert(
-                    f"MARKET {stage} {score} {direction} {ticker_text}\n"
-                    f"{item.get('title','')}\n"
-                    f"{source['name']}\n"
-                    f"{item.get('url','')}\n"
-                    f"Issue: {url}"
-                )
+                url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
+                alerts.append((source["name"], item.get("title", ""), score, tickers, url))
+                ticker_text = " ".join("$" + x for x in tickers) or "NEW"
+                telegram_alert(f"MARKET RADAR {score} {ticker_text}\\n{item.get('title','')}\\n{source['name']}\\n{item.get('url','')}\\nIssue: {url}")
             except Exception as e:
                 errors.append(f"issue {rid}: {type(e).__name__}: {e}")
 
     combined = list(dict.fromkeys(list(old_seen) + new_seen))
     if len(combined) > MAX_SEEN:
         combined = combined[-MAX_SEEN:]
-
     market_probe = yahoo_market_snapshot("CRWV")
     state.update({
         "bootstrapped": True,
         "market_probe": market_probe,
         "seen": combined,
+        "active_watches": active_watches,
         "last_run_utc": now_utc().isoformat(),
         "last_alert_count": len(alerts),
         "last_error_count": len(errors),
         "last_errors": errors[:30],
     })
     save_state(state)
-    try:
-        state_commit = persist_state_remote(state)
-    except Exception as e:
-        errors.append(f"state-persist: {type(e).__name__}: {e}")
-        state_commit = None
 
     print(json.dumps({
         "sources": len(sources),
         "new_items": len(new_seen),
         "alerts": len(alerts),
-        "state_commit": state_commit,
         "errors": errors[:20],
     }, indent=2))
-    for source_name, title, score, tickers, url in alerts:
-        print(f"ALERT {score} {tickers} {source_name}: {title} -> {url}")
-
+    for s, title, score, tickers, url in alerts:
+        print(f"ALERT {score} {tickers} {s}: {title} -> {url}")
 
 if __name__ == "__main__":
     main()
