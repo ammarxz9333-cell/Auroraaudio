@@ -12,7 +12,7 @@ def main():
         cache=case.get("bars_cache")
         if not cand or not cache or not Path(cache).exists():
             continue
-        raw=json.loads(Path(cache).read_text())
+        txt=Path(cache).read_text().strip(); txt=txt[:-2] if txt.endswith("\\n") else txt; raw=json.loads(txt)
         regular=[]
         for b in raw:
             ny=b["ny"]
