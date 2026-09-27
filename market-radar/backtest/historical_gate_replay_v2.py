@@ -11,6 +11,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 from entry_gate import GateInput, entry_gate
 from entry_gate_v2 import GateV2Input, entry_gate_v2
+from backtest.reclaim_research import detect_reclaim
 
 NY=ZoneInfo("America/New_York")
 DECISION_NORMALIZATION={
@@ -89,7 +90,7 @@ def replay_case(case, cache_dir=None):
              "vwap":vwap,"open_price":reg_open,
              "above_vwap_pct":((float(b["close"])/vwap)-1)*100 if vwap else None,
              "above_open_pct":((float(b["close"])/reg_open)-1)*100,
-             "bar_close_location":((float(b["close"])-float(b["low"]))/(float(b["high"])-float(b["low"]))) if float(b["high"])>float(b["low"]) else 0.5}
+             "bar_close_location":((float(b["close"])-float(b["low"]))/(float(b["high"])-float(b["low"]))) if float(b["high"])>float(b["low"]) else 0.5,"low":float(b["low"]),"high":float(b["high"])}
         out.append(row)
         for spread in (0.5,1.0,2.0,3.0):
             key=str(spread)
@@ -123,6 +124,20 @@ def replay_case(case, cache_dir=None):
                     elif outcome is None and m5: outcome="MINUS5_FIRST"
                 spread_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":outcome or "UNRESOLVED","plus10_reached":plus10_hit,"mfe_pct":round(mfe,3),"mae_pct":round(mae,3)}
 
+    reclaim=None
+    base_entry=spread_scenarios.get("0.5")
+    if base_entry and base_entry.get("outcome")=="MINUS5_FIRST":
+        reclaim=detect_reclaim(out,base_entry["first_buyable_time"],base_entry["entry_price"])
+        if reclaim.get("state")=="RECLAIM_CANDIDATE":
+            ri=next((i for i,r in enumerate(out) if r["time_utc"]==reclaim["time_utc"]),None)
+            if ri is not None:
+                ep2=reclaim["price"]; outcome2=None; p10h2=False; mfe3=0.0; mae3=0.0
+                for z in regular[ri:]:
+                    hi=float(z["high"]); lo=float(z["low"]); mfe3=max(mfe3,(hi/ep2-1)*100); mae3=min(mae3,(lo/ep2-1)*100); p10h2=p10h2 or hi>=ep2*1.10
+                    if outcome2 is None and hi>=ep2*1.05 and lo<=ep2*.95: outcome2="ORDER_UNVERIFIED"
+                    elif outcome2 is None and hi>=ep2*1.05: outcome2="PLUS5_FIRST"
+                    elif outcome2 is None and lo<=ep2*.95: outcome2="MINUS5_FIRST"
+                reclaim.update({"outcome":outcome2 or "UNRESOLVED","plus10_reached":p10h2,"mfe_pct":round(mfe3,3),"mae_pct":round(mae3,3)})
     robust=all(spread_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0))
     firsts={v["first_buyable_time"] for v in spread_scenarios.values() if v}
     robust=robust and len(firsts)==1
@@ -131,7 +146,7 @@ def replay_case(case, cache_dir=None):
             "v2_spread_scenarios":v2_scenarios,
             "v2_spread_robust_buyable": all(v2_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0)) and len({v["first_buyable_time"] for v in v2_scenarios.values() if v})==1,
             "first_buyable_features": next((r for r in out if any(v and v["first_buyable_time"]==r["time_utc"] for v in spread_scenarios.values())),None),
-            "bars_sha256":bars_sha256,"bars_cache":str(cache_path) if cache_path else None,"note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
+            "reclaim_research":reclaim,"bars_sha256":bars_sha256,"bars_cache":str(cache_path) if cache_path else None,"note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
 
 def main():
     import argparse
