@@ -1,6 +1,6 @@
 # Market Radar
 
-A free first-public-source market monitor that runs every 5 minutes on GitHub Actions and opens a GitHub Issue when a new public item scores as potentially market-moving.
+A free first-public-source market monitor that runs every 5 minutes on GitHub Actions, scores potentially market-moving information, and creates persistent artifacts for human/LLM review.
 
 ## What it watches
 
@@ -17,36 +17,93 @@ A free first-public-source market monitor that runs every 5 minutes on GitHub Ac
 
 The scanner uses only lawfully public/free material. It does not authenticate into private systems or download underlying hacked/stolen dumps.
 
-## How alerts work
+## Alert pipeline
 
 Every new item gets a score from:
 
 1. source quality / originality,
 2. catalyst language (M&A, FDA, contracts, guidance, financing, dilution, etc.),
-3. whether a tracked ticker/company is mentioned,
-4. early-information language such as exclusive, people familiar, scoop, leak,
-5. noise penalties.
+3. ticker/company identification,
+4. early-information language such as exclusive, people familiar, scoop or leak,
+5. market reaction and same-time volume when a ticker is known,
+6. noise penalties.
 
-Default alert threshold is **8**. A qualifying event opens an Issue and assigns it to the repository owner, which makes GitHub the zero-cost notification channel.
+Ticker identification is not limited to the static watchlist. The scanner also extracts explicit symbols such as `$CRWV`, `NASDAQ: RKLB`, `NYSE: XYZ`, etc.
+
+Default alert threshold is **8** for identified tickers. Unidentified/social candidates require a higher threshold to reduce noise.
+
+For every qualifying alert the scanner can:
+
+- commit an append-only JSON artifact to `market-radar-live:market-radar/live/alerts/`,
+- create a GitHub Issue with source/timestamp/score/market context,
+- optionally send Telegram,
+- update PR **#229 Market Radar Live Alerts**, whose commit activity is used by the ChatGPT Work live-review trigger.
 
 The first run bootstraps existing items and only alerts items published within the previous 8 hours, preventing a flood of old stories.
 
+## Market-reaction context
+
+When a ticker is known, the scanner samples free Yahoo Finance 5-minute bars and records:
+
+- current price and previous close,
+- day % change,
+- latest 5-minute move,
+- cumulative volume relative to recent same-time sessions,
+- 30-minute move before the event,
+- first 30-minute move after the event,
+- move since the event,
+- session classification and reaction stage.
+
+Stages include `EARLY`, `RADAR`, `REACTING` and `MAJOR-REPRICE`.
+
+## Learning loop
+
+`market-radar/evaluate.py` reads real alert artifacts from the persistent live branch and evaluates them without changing the original signal.
+
+The daily learning workflow records:
+
+- +5m, +30m, +1h, +24h and +48h returns,
+- first and second regular-session closes,
+- MFE and MAE over 24h and 48h,
+- +5% follow-through within 24h,
+- +10% follow-through within 48h,
+- adverse -5% excursion within 24h,
+- calibration by score band, stage, source class and source.
+
+Outputs:
+
+- `market-radar/learning/outcomes.json`
+- `market-radar/learning/metrics.json`
+
+The learning job runs after the U.S. session on weekdays and can also be dispatched manually. Metrics are descriptive; the system must accumulate adequate out-of-sample observations before score/threshold changes are justified.
+
 ## Optional Telegram alerts
 
-The system already works without Telegram. For immediate phone alerts through Telegram, add repository Actions secrets:
+The system works without Telegram. For phone alerts through Telegram, add repository Actions secrets:
 
-- TELEGRAM_BOT_TOKEN
-- TELEGRAM_CHAT_ID
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
 
-If the secrets are absent, Telegram is simply skipped.
+If the secrets are absent, Telegram is skipped.
 
 ## Files
 
-- radar.py — fetch, parse, score, deduplicate and alert.
-- sources.json — monitored sources and ticker/company aliases.
-- state.json — hashes of seen public items, updated by the workflow.
-- .github/workflows/market-radar.yml — five-minute scheduler.
+- `radar.py` — fetch, parse, identify, score, deduplicate, enrich and alert.
+- `evaluate.py` — outcome measurement and calibration.
+- `sources.json` — monitored sources and tracked ticker/company aliases.
+- `state.json` — hashes of seen public items and scanner health.
+- `learning/outcomes.json` — point-in-time signal outcomes.
+- `learning/metrics.json` — aggregate calibration/performance metrics.
+- `.github/workflows/market-radar.yml` — five-minute scanner plus syntax validation.
+- `.github/workflows/market-radar-learning.yml` — daily learning loop.
+- persistent branch `market-radar-live` / PR #229 — append-only live alert feed.
 
-## Important operational detail
+## Research discipline
 
-GitHub documents a minimum scheduled-workflow interval of 5 minutes. Scheduled workflows can occasionally be delayed during heavy platform load, so this is a fast free monitor, not a guaranteed low-latency trading feed.
+The objective is high precision, not maximum alert count. No trade is a valid outcome when the signal is weak, late or already repriced.
+
+Do not claim a fixed success rate until it is measured on a sufficiently large out-of-sample sample. Model changes should be walk-forward tested, documented and reversible; avoid future leakage and retrospective cherry-picking.
+
+## Operational detail
+
+GitHub documents a minimum scheduled-workflow interval of 5 minutes. Scheduled runs can occasionally be delayed during platform load, so this is a fast free monitor, not a guaranteed low-latency market-data feed.
