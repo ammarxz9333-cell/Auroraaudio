@@ -25,12 +25,12 @@ jobs:
 
       - name: Run first-public-source scanner
         env:
-          GITHUB_TOKEN: \${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RADAR_SCORE_THRESHOLD: "8"
           RADAR_BOOTSTRAP_ALERT_HOURS: "8"
-          RADAR_USER_AGENT: "Ammar-Market-Radar/1.0 contact=\${{ github.repository_owner }}@users.noreply.github.com"
-          TELEGRAM_BOT_TOKEN: \${{ secrets.TELEGRAM_BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: \${{ secrets.TELEGRAM_CHAT_ID }}
+          RADAR_USER_AGENT: "Ammar-Market-Radar/1.0 contact=${{ github.repository_owner }}@users.noreply.github.com"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 market-radar/radar.py
 
       - name: Persist radar state
