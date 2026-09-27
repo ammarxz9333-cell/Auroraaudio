@@ -28,8 +28,8 @@ jobs:
           fetch-depth: 1
       - name: Validate Market Radar Python
         run: |
-          python3 -m py_compile market-radar/radar.py market-radar/entry_gate.py market-radar/entry_gate_v2.py market-radar/live/outcome_tracker.py market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/build_pit_dataset.py market-radar/backtest/pit_backtester.py market-radar/backtest/make_cohort_split.py market-radar/backtest/export_pit_candidates.py market-radar/backtest/make_cohort_split.py
-          cd market-radar && python3 -m unittest test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py test_information_quality.py test_entry_gate_v2.py
+          python3 -m py_compile market-radar/radar.py market-radar/entry_gate.py market-radar/entry_gate_v2.py market-radar/live/outcome_tracker.py market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/build_pit_dataset.py market-radar/backtest/pit_backtester.py market-radar/backtest/make_cohort_split.py market-radar/backtest/export_pit_candidates.py market-radar/backtest/reclaim_research.py market-radar/backtest/test_reclaim_research.py market-radar/backtest/make_cohort_split.py
+          cd market-radar && python3 -m unittest test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py test_information_quality.py test_entry_gate_v2.py backtest/test_reclaim_research.py
 
 
       - name: PIT leakage guard
