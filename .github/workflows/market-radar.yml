@@ -28,7 +28,7 @@ jobs:
           fetch-depth: 1
       - name: Validate Market Radar Python
         run: |
-          python3 -m py_compile market-radar/radar.py market-radar/entry_gate.py market-radar/live/outcome_tracker.py market-radar/backtest/historical_gate_replay_v2.py
+          python3 -m py_compile market-radar/radar.py market-radar/entry_gate.py market-radar/live/outcome_tracker.py market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/export_pit_candidates.py market-radar/backtest/make_cohort_split.py
           cd market-radar && python3 -m unittest test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py
 
 
@@ -64,6 +64,12 @@ jobs:
         env:
           PYTHONPATH: market-radar
         run: python3 market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/oos/frozen/entry-gate-v1-b1.json market-radar/backtest/oos/frozen/entry-gate-v1-b2.json --out /tmp/oos-replay.json && python3 -c 'import json; d=json.load(open("/tmp/oos-replay.json")); print(json.dumps([{"ticker":x["ticker"],"decision":x.get("normalized_decision"),"v1":x.get("spread_scenarios",{}).get("0.5"),"v2":x.get("v2_spread_scenarios",{}).get("0.5")} for x in d["cases"]],indent=2))'
+
+      - name: Export growing PIT candidate corpus
+        run: |
+          python3 market-radar/backtest/export_pit_candidates.py market-radar/live/tape --out /tmp/pit-candidates.jsonl
+          python3 market-radar/backtest/build_pit_dataset.py /tmp/pit-candidates.jsonl /tmp/pit-dataset.json
+          python3 market-radar/backtest/make_cohort_split.py /tmp/pit-dataset.json --out-dir /tmp/pit-splits
 
       - name: Run first-public-source scanner
         env:
