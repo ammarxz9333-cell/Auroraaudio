@@ -91,7 +91,6 @@ def replay_case(case):
                         if oc is None and hp and hm: oc="ORDER_UNVERIFIED"
                         elif oc is None and hp: oc="PLUS5_FIRST"
                         elif oc is None and hm: oc="MINUS5_FIRST"
-                        if oc: break
                     v2_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":oc or "UNRESOLVED","plus10_reached":p10h,"mfe_pct":round(mfe2,3),"mae_pct":round(mae2,3)}
             if spread_scenarios[key] is not None: continue
             if pre_reprice is None: continue
@@ -108,7 +107,6 @@ def replay_case(case):
                     if outcome is None and p5 and m5: outcome="ORDER_UNVERIFIED"
                     elif outcome is None and p5: outcome="PLUS5_FIRST"
                     elif outcome is None and m5: outcome="MINUS5_FIRST"
-                    if outcome: break
                 spread_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":outcome or "UNRESOLVED","plus10_reached":plus10_hit,"mfe_pct":round(mfe,3),"mae_pct":round(mae,3)}
 
     robust=all(spread_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0))
