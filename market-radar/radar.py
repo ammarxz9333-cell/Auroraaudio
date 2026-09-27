@@ -372,7 +372,7 @@ def match_watchlist(text: str, watchlist: dict):
     low = text.lower()
     found = []
     for ticker, aliases in watchlist.items():
-        if re.search(rf"(?<![A-Z0-9])\\$?{re.escape(ticker)}(?![A-Z0-9])", text, re.I):
+        if re.search(rf"(?<![A-Z0-9])\$?{re.escape(ticker)}(?![A-Z0-9])", text, re.I):
             found.append(ticker)
             continue
         if any(alias.lower() in low for alias in aliases if len(alias) >= 4):
@@ -386,12 +386,12 @@ def extract_explicit_tickers(text: str):
 
     # Social/news convention: $CRWV, $RKLB, etc. A letter is required first,
     # so dollar amounts such as $10 or $2.5B cannot be misread as tickers.
-    for match in re.finditer(r"(?<![A-Z0-9])\\$([A-Z][A-Z0-9.-]{0,5})(?![A-Z0-9])", text):
+    for match in re.finditer(r"(?<![A-Z0-9])\$([A-Z][A-Z0-9.-]{0,5})(?![A-Z0-9])", text):
         found.add(match.group(1).upper())
 
     # Common issuer/news syntax: NASDAQ: CRWV / NYSE: XYZ / AMEX: ABC.
     for match in re.finditer(
-        r"\\b(?:NASDAQ|NYSE|NYSEAMERICAN|AMEX|OTCQX|OTCQB)\\s*[:\\-]\\s*([A-Z][A-Z0-9.-]{0,5})\\b",
+        r"\b(?:NASDAQ|NYSE|NYSEAMERICAN|AMEX|OTCQX|OTCQB)\s*[:\-]\s*([A-Z][A-Z0-9.-]{0,5})\b",
         text,
         re.I,
     ):
