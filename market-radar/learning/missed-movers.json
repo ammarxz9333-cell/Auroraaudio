@@ -1,0 +1,108 @@
+{
+  "days": {
+    "2026-09-27": {
+      "criteria": {
+        "alert_lookback_hours": 72,
+        "min_gain_pct": 8.0,
+        "min_price": 1.0,
+        "min_volume": 500000,
+        "source": "Yahoo Finance predefined day_gainers public endpoint"
+      },
+      "errors": [],
+      "generated_utc": "2026-09-27T15:35:29.902653+00:00",
+      "movers": [
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 1042584,
+          "change_pct": 11.328,
+          "exchange": "NasdaqGS",
+          "market_cap": 2978557184,
+          "matching_alerts": [],
+          "missed": true,
+          "name": "People Incorporated",
+          "price": 40.0,
+          "ticker": "PPLI",
+          "volume": 3093055,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 6599417,
+          "change_pct": 10.645,
+          "exchange": "NasdaqCM",
+          "market_cap": 3957955840,
+          "matching_alerts": [],
+          "missed": true,
+          "name": "Almonty Industries Inc.",
+          "price": 13.72,
+          "ticker": "ALM",
+          "volume": 11512843,
+          "watchlist_member": true
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 3229409,
+          "change_pct": 9.999,
+          "exchange": "NasdaqGS",
+          "market_cap": 8510648832,
+          "matching_alerts": [],
+          "missed": true,
+          "name": "MaxLinear, Inc",
+          "price": 93.84,
+          "ticker": "MXL",
+          "volume": 4282233,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 836953,
+          "change_pct": 9.285,
+          "exchange": "NasdaqGS",
+          "market_cap": 3031533056,
+          "matching_alerts": [],
+          "missed": true,
+          "name": "Veeco Instruments Inc.",
+          "price": 49.67,
+          "ticker": "VECO",
+          "volume": 916687,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 4951187,
+          "change_pct": 9.267,
+          "exchange": "NasdaqGS",
+          "market_cap": 10037782528,
+          "matching_alerts": [],
+          "missed": true,
+          "name": "Viavi Solutions Inc.",
+          "price": 40.68,
+          "ticker": "VIAV",
+          "volume": 8405179,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 15654893,
+          "change_pct": 8.269,
+          "exchange": "NYSE",
+          "market_cap": 85030051840,
+          "matching_alerts": [],
+          "missed": true,
+          "name": "Bloom Energy Corporation",
+          "price": 288.7,
+          "ticker": "BE",
+          "volume": 17303729,
+          "watchlist_member": false
+        }
+      ],
+      "summary": {
+        "captured_by_recent_alert": 0,
+        "eligible_movers": 6,
+        "missed": 6,
+        "missed_watchlist_members": 1,
+        "recall_pct": 0.0
+      }
+    }
+  }
+}
