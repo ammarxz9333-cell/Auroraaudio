@@ -64,6 +64,47 @@ def github_json(path: str):
     return request_json("https://api.github.com" + path)
 
 
+def github_put(path: str, payload: dict):
+    url = "https://api.github.com" + path
+    body = json.dumps(payload).encode("utf-8")
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if TOKEN:
+        headers["Authorization"] = f"Bearer {TOKEN}"
+    req = urllib.request.Request(url, data=body, method="PUT", headers=headers)
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def persist_remote_json(path: str, value, branch="main-v2"):
+    if not TOKEN:
+        return None
+    owner, repo = REPO.split("/", 1)
+    api_path = f"/repos/{owner}/{repo}/contents/{urllib.parse.quote(path, safe='/')}"
+    last_error = None
+    for attempt in range(3):
+        try:
+            current = github_json(api_path + "?ref=" + urllib.parse.quote(branch, safe=""))
+            raw = json.dumps(value, indent=2, sort_keys=True) + "\n"
+            payload = {
+                "message": "chore(market-radar): refresh missed-mover audit",
+                "content": base64.b64encode(raw.encode("utf-8")).decode("ascii"),
+                "sha": current.get("sha"),
+                "branch": branch,
+            }
+            result = github_put(api_path, payload)
+            return ((result.get("commit") or {}).get("sha"))
+        except Exception as exc:
+            last_error = exc
+            import time
+            time.sleep(0.75 * (attempt + 1))
+    raise RuntimeError(f"remote persistence failed: {last_error}")
+
+
 def parse_utc(value):
     if not value:
         return None
@@ -276,7 +317,17 @@ def main():
         days.pop(key, None)
 
     save_json(OUT_FILE, history)
-    print(json.dumps(days[today]["summary"], indent=2))
+    remote_commit = None
+    try:
+        remote_commit = persist_remote_json(
+            "market-radar/learning/missed-movers.json", history
+        )
+    except Exception as exc:
+        errors.append(f"remote-persist: {type(exc).__name__}: {exc}")
+    print(json.dumps({
+        **days[today]["summary"],
+        "remote_commit": remote_commit,
+    }, indent=2))
     if errors:
         print(json.dumps({"errors": errors[:20]}, indent=2))
 
