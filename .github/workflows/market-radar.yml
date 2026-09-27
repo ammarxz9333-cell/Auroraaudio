@@ -30,6 +30,7 @@ jobs:
         run: |
           python3 -m py_compile market-radar/radar.py market-radar/provenance.py market-radar/research_market.py market-radar/entry_gate.py market-radar/entry_gate_v2.py market-radar/live/outcome_tracker.py market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/build_pit_dataset.py market-radar/backtest/pit_backtester.py market-radar/backtest/make_cohort_split.py market-radar/backtest/export_pit_candidates.py market-radar/backtest/reclaim_research.py market-radar/backtest/test_reclaim_research.py market-radar/backtest/test_rejected_recovery_outcome.py market-radar/backtest/make_cohort_split.py
           cd market-radar && python3 -m unittest test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py test_information_quality.py test_provenance.py test_research_market.py test_entry_gate_v2.py backtest/test_reclaim_research.py backtest/test_rejected_recovery_outcome.py
+          python3 run_function_tests.py
 
 
       - name: PIT leakage guard
@@ -51,6 +52,7 @@ jobs:
           PY
 
       - name: Historical replay smoke test (frozen batch)
+        if: github.event_name != 'schedule'
         env:
           PYTHONPATH: market-radar
         run: (python3 market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/frozen/pilot-20-freeze-a.json market-radar/backtest/frozen/pilot-20-freeze-b.json market-radar/backtest/frozen/pilot-20-freeze-c.json market-radar/backtest/frozen/pilot-20-freeze-d.json market-radar/backtest/frozen/pilot-20-freeze-e.json --cache-dir /tmp/market-radar-bars --out /tmp/replay-results.json || (sleep 5 && python3 market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/frozen/pilot-20-freeze-a.json market-radar/backtest/frozen/pilot-20-freeze-b.json market-radar/backtest/frozen/pilot-20-freeze-c.json market-radar/backtest/frozen/pilot-20-freeze-d.json market-radar/backtest/frozen/pilot-20-freeze-e.json --cache-dir /tmp/market-radar-bars --out /tmp/replay-results.json)) && python3 -c 'import json; d=json.load(open("/tmp/replay-results.json")); print(json.dumps({"cases":len(d["cases"]),"robust":[{"ticker":x["ticker"],"features":x.get("first_buyable_features"),"scenarios":x.get("spread_scenarios",{}),"v2_robust":x.get("v2_spread_robust_buyable"),"v2":x.get("v2_spread_scenarios",{})} for x in d["cases"] if x.get("spread_robust_buyable")]},indent=2))'
@@ -58,6 +60,7 @@ jobs:
 
 
       - name: Validate threshold timestamps
+        if: github.event_name != 'schedule'
         run: |
           python3 - <<'PY'
           import json
@@ -72,6 +75,7 @@ jobs:
           PY
 
       - name: Reclaim research summary
+        if: github.event_name != 'schedule'
         run: |
           python3 - <<'PY'
           import json
@@ -81,21 +85,25 @@ jobs:
           PY
 
       - name: Rejected recovery counterfactuals
+        if: github.event_name != 'schedule'
         env:
           PYTHONPATH: market-radar/backtest
         run: python3 market-radar/backtest/report_rejected_recoveries.py /tmp/replay-results.json
 
       - name: Gate v1-v2 pilot summary
+        if: github.event_name != 'schedule'
         env:
           PYTHONPATH: market-radar
         run: python3 -c 'import json; d=json.load(open("/tmp/replay-results.json"))["cases"]; key=lambda x,v:(x.get(v+"_spread_scenarios") if v=="v2" else x.get("spread_scenarios",{})).get("0.5"); summarize=lambda v:{"entries":sum(key(x,v)!=None for x in d),"plus5_first":sum((key(x,v) or {}).get("outcome")=="PLUS5_FIRST" for x in d),"minus5_first":sum((key(x,v) or {}).get("outcome")=="MINUS5_FIRST" for x in d),"order_unverified":sum((key(x,v) or {}).get("outcome")=="ORDER_UNVERIFIED" for x in d),"unresolved":sum((key(x,v) or {}).get("outcome")=="UNRESOLVED" for x in d),"plus10_reached":sum(bool((key(x,v) or {}).get("plus10_reached")) for x in d)}; print(json.dumps({"v1":summarize("v1"),"v2":summarize("v2"),"entries":[{"ticker":x["ticker"],"v1":key(x,"v1"),"v2":key(x,"v2")} for x in d if key(x,"v1") or key(x,"v2")]},indent=2))'
 
       - name: OOS historical replay diagnostics
+        if: github.event_name != 'schedule'
         env:
           PYTHONPATH: market-radar
         run: python3 market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/oos/frozen/entry-gate-v1-b1.json market-radar/backtest/oos/frozen/entry-gate-v1-b2.json --cache-dir /tmp/market-radar-bars --out /tmp/oos-replay.json && python3 -c 'import json; d=json.load(open("/tmp/oos-replay.json")); print(json.dumps([{"ticker":x["ticker"],"decision":x.get("normalized_decision"),"v1":x.get("spread_scenarios",{}).get("0.5"),"v2":x.get("v2_spread_scenarios",{}).get("0.5")} for x in d["cases"]],indent=2))'
 
       - name: Run first-public-source scanner
+        if: github.ref == 'refs/heads/main-v2'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RADAR_SCORE_THRESHOLD: "8"
@@ -106,12 +114,14 @@ jobs:
         run: python3 market-radar/radar.py
 
       - name: Export growing PIT candidate corpus
+        if: github.ref == 'refs/heads/main-v2' && github.event_name != 'schedule'
         run: |
           python3 market-radar/backtest/export_pit_candidates.py market-radar/live/tape --out /tmp/pit-candidates.jsonl
           python3 market-radar/backtest/build_pit_dataset.py /tmp/pit-candidates.jsonl /tmp/pit-dataset.json
           python3 market-radar/backtest/make_cohort_split.py /tmp/pit-dataset.json --out-dir /tmp/pit-splits
 
       - name: Persist radar state
+        if: github.ref == 'refs/heads/main-v2'
         shell: bash
         run: |
           git add market-radar/state.json market-radar/live/trades.json market-radar/live/tape/ 2>/dev/null || true

@@ -4,6 +4,13 @@
 >
 > **Maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge.
 
+### Market Radar repair (2026-09-27)
+
+- Scanner syntax and legacy replay syntax repaired; the scheduled five-minute job runs syntax and unit gates, while historical replay is reserved for push/manual runs within the existing four-minute job budget.
+- The scanner appends an immutable, idempotent news JSON alert to `market-radar-live` for PR #229 before creating its Issue. The first confirmed entry on an active watch appends its own review artifact. On failed publishing the item remains eligible for retry. No alert is a verified buy recommendation.
+- Entry decisions reject stale market bars; the fast scanner records provenance research metadata and defers slow FINRA daily-volume requests. Explicit `$TICKER` and exchange notation can identify names outside the watchlist.
+- Function-style tests now execute in CI through `market-radar/run_function_tests.py`. Until fresh CI and forward observations confirm the pipeline, do not claim live detection precision or a success rate. The latest stored learning metrics still have zero matured observations.
+
 Last updated: **2026-09-17**
 
 ### Binaural software continuation
