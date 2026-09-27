@@ -1,7 +1,7 @@
 {
   "schema_version": 1,
   "name": "validation-v2-100",
-  "status": "UNSCORED_UNFROZEN",
+  "status": "FEATURE_CONTRACT_LOCKED",
   "target_count": 100,
   "selection": {
     "positive_event_cases": 50,
@@ -11,21 +11,97 @@
     "market_regime_required": true
   },
   "required_snapshot_fields": [
-    "ticker","cutoff","evidence","market","features","market_regime"
+    "ticker",
+    "cutoff",
+    "evidence",
+    "market",
+    "features",
+    "market_regime"
   ],
   "market_regime": [
-    "SPY_return_at_cutoff","QQQ_return_at_cutoff","sector_return_at_cutoff",
-    "relative_strength_vs_SPY","relative_strength_vs_QQQ"
+    "SPY_return_at_cutoff",
+    "QQQ_return_at_cutoff",
+    "sector_return_at_cutoff",
+    "relative_strength_vs_SPY",
+    "relative_strength_vs_QQQ"
   ],
-  "evaluation_horizons": ["next_regular_close","3_regular_closes","5_regular_closes"],
+  "evaluation_horizons": [
+    "next_regular_close",
+    "3_regular_closes",
+    "5_regular_closes"
+  ],
   "metrics": [
-    "coverage_pct","directional_accuracy_pct","bullish_precision_pct",
-    "false_positive_rate","miss_rate","late_rate","mean_return_after_alert_pct"
+    "coverage_pct",
+    "directional_accuracy_pct",
+    "bullish_precision_pct",
+    "false_positive_rate",
+    "miss_rate",
+    "late_rate",
+    "mean_return_after_alert_pct"
   ],
   "anti_leakage": {
     "future_returns_in_snapshot": false,
     "outcome_fields_in_snapshot": false,
     "decision_lock_before_reveal": true,
     "rule_changes_during_batch": false
-  }
+  },
+  "snapshot_feature_contract": {
+    "catalyst": [
+      "family",
+      "direction_semantic",
+      "novelty",
+      "magnitude",
+      "source_quality"
+    ],
+    "expectations": [
+      "pre_event_runup_pct",
+      "distance_from_20d_high_pct",
+      "consensus_expectation_context",
+      "priced_in_risk"
+    ],
+    "financing": [
+      "offering_discount_pct",
+      "estimated_dilution_pct",
+      "warrant_overhang",
+      "use_of_proceeds",
+      "runway_context"
+    ],
+    "tape": [
+      "price_at_cutoff",
+      "change_pct",
+      "rvol",
+      "gap_pct",
+      "close_location_if_available",
+      "vwap_state_if_available"
+    ],
+    "regime": [
+      "SPY_return_at_cutoff",
+      "QQQ_return_at_cutoff",
+      "sector_return_at_cutoff",
+      "relative_strength_vs_SPY",
+      "relative_strength_vs_QQQ"
+    ]
+  },
+  "control_examples": [
+    {
+      "ticker": "LGVN",
+      "role": "semantic-control",
+      "reason": "Apparently positive Phase 2b/topline wording but severe negative market repricing; tests whether classifier reads efficacy/statistical substance rather than positive vocabulary."
+    },
+    {
+      "ticker": "CLDX",
+      "role": "expectations-control",
+      "reason": "Phase 3 met endpoints yet tape reversed materially; tests priced-in expectations and sell-the-news logic."
+    },
+    {
+      "ticker": "XENE",
+      "role": "negative-clinical-control",
+      "reason": "Enrollment pause is directionally negative despite generic clinical-trial vocabulary."
+    },
+    {
+      "ticker": "GRAL",
+      "role": "late-binary-control",
+      "reason": "Constructive FDA setup after a large pre-event run tests late/priced-in classification."
+    }
+  ]
 }
