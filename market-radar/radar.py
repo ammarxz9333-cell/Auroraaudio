@@ -29,6 +29,7 @@ from zoneinfo import ZoneInfo
 ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
 STATE_FILE = ROOT / "state.json"
+TAPE_DIR = ROOT / "live" / "tape"
 USER_AGENT = os.getenv("RADAR_USER_AGENT", "MarketRadar/1.0 public-source-monitor contact=github-actions")
 REPO = os.getenv("GITHUB_REPOSITORY", "")
 TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -346,6 +347,42 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
     except Exception as e:
         return {"ticker":ticker,"error":f"{type(e).__name__}: {e}"}
 
+def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int):
+    """Append the exact point-in-time market snapshot used by the radar.
+    Missing fields stay null; never backfill them from later bars.
+    """
+    if not snapshot or snapshot.get("error") or not snapshot.get("ticker"):
+        return
+    TAPE_DIR.mkdir(parents=True, exist_ok=True)
+    ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())
+    row = {
+        "captured_utc": now_utc().isoformat(),
+        "radar_id": rid,
+        "source": source_name,
+        "score_at_capture": score,
+        "ticker": ticker,
+        "bar_time_utc": snapshot.get("bar_time_utc"),
+        "price": snapshot.get("price"),
+        "previous_close": snapshot.get("previous_close"),
+        "change_pct": snapshot.get("change_pct"),
+        "change_5m_pct": snapshot.get("change_5m_pct"),
+        "cum_volume": snapshot.get("cum_volume"),
+        "same_time_volume_ratio": snapshot.get("same_time_volume_ratio"),
+        "market_session": snapshot.get("market_session"),
+        "reaction": snapshot.get("reaction"),
+        "event_price": snapshot.get("event_price"),
+        "pre30m_move_pct": snapshot.get("pre30m_move_pct"),
+        "post30m_move_pct": snapshot.get("post30m_move_pct"),
+        "since_event_move_pct": snapshot.get("since_event_move_pct"),
+        "vwap": None,
+        "spread_pct": None,
+        "gate_data_complete": False,
+        "gate_state": "INSUFFICIENT_DATA",
+        "gate_reason": "VWAP/spread not available from current Yahoo 5m snapshot; no BUYABLE_NOW inference permitted."
+    }
+    with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, separators=(",", ":")) + "\n")
+
 def market_context_for_tickers(tickers, event_time=None):
     out = []
     for ticker in tickers[:4]:
@@ -525,6 +562,8 @@ def main():
             score, tickers, hits = score_item(source, item, watchlist)
             market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
+            for snap in valid_market:
+                persist_market_snapshot(snap, rid, source["name"], score)
             if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
                 score += 2
                 hits.append("market-confirmation")
