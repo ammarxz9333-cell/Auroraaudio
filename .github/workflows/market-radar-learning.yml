@@ -38,7 +38,7 @@ jobs:
       - name: Persist learning metrics
         shell: bash
         run: |
-          if git diff --quiet -- market-radar/learning/; then
+          if [ -z "$(git status --porcelain -- market-radar/learning/)" ]; then
             exit 0
           fi
           git config user.name "market-radar-learner"
