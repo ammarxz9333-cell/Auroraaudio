@@ -612,6 +612,15 @@ def score_item(source: dict, item: dict, watchlist: dict):
         score -= 3
     return max(score, 0), tickers, sorted(set(hits))
 
+def information_quality(source: dict, item: dict):
+    """Point-in-time provenance features. Research metadata only; does not alter Gate v1."""
+    cls=source.get("class","other")
+    base={"primary":5,"scoop":4,"investigative":4,"industry":3,"leaker":2,"social":1}.get(cls,2)
+    text=f"{item.get('title','')} {item.get('snippet','')}".lower()
+    rumor=any(x in text for x in ("rumor","reportedly","sources say","people familiar","according to people","leak","leaked","scoop"))
+    official=cls=="primary"
+    return {"source_class":cls,"source_quality":base,"rumor_language":rumor,"official_source":official}
+
 def github_api(path: str, method="GET", payload=None):
     if not TOKEN or not REPO:
         raise RuntimeError("GITHUB_TOKEN/GITHUB_REPOSITORY unavailable")
@@ -761,7 +770,7 @@ def main():
             if rid in old_seen:
                 continue
             new_seen.append(rid)
-            score, tickers, hits = score_item(source, item, watchlist)
+            score, tickers, hits = score_item(source, item, watchlist)\n            infoq = information_quality(source, item)
             effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
@@ -778,7 +787,7 @@ def main():
                     "score": score,
                     "source": source["name"],
                     "added_utc": start.isoformat(),
-                    "event_time_utc": item["published"].isoformat() if isinstance(item.get("published"), dt.datetime) else None,
+                    "event_time_utc": item["published"].isoformat() if isinstance(item.get("published"), dt.datetime) else None,\n                    "information_quality": infoq,
                 }
             if score < effective_threshold:
                 continue
