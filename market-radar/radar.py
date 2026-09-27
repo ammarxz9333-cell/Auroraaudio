@@ -563,18 +563,28 @@ def main():
             rid = item_id(source["name"], item)
             if rid in old_seen:
                 continue
+
             new_seen.append(rid)
             score, tickers, hits = score_item(source, item, watchlist)
-            market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
+            market_ctx = market_context_for_tickers(
+                tickers, event_time=item.get("published")
+            ) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
-            if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
+
+            if any(m.get("reaction") in ("reacting", "major-reprice") for m in valid_market):
                 score += 2
                 hits.append("market-confirmation")
             if valid_market and all(m.get("reaction") == "not-yet-reacted" for m in valid_market):
                 hits.append("market-not-yet-reacted")
-            effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
+
+            effective_threshold = (
+                THRESHOLD
+                if tickers
+                else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
+            )
             if score < effective_threshold:
                 continue
+
             if not bootstrapped:
                 published = item.get("published")
                 if not isinstance(published, dt.datetime):
@@ -582,49 +592,41 @@ def main():
                 age = start - published
                 if age.total_seconds() < 0 or age > dt.timedelta(hours=BOOTSTRAP_ALERT_HOURS):
                     continue
+
             live_result = None
             try:
-                live_result = push_live_pr_alert(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
+                live_result = push_live_pr_alert(
+                    source, item, score, tickers, hits, rid, market_ctx=market_ctx
+                )
             except Exception as e:
                 errors.append(f"live-pr {rid}: {type(e).__name__}: {e}")
+
             try:
-                url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
-                alerts.append((source["name"], item.get("title", ""), score, tickers, url))
-                stage = (live_result or {}).get("stage") or classify_stage(score, tickers, market_ctx)
-                telegram_alert(f"MARKET {stage} {score} {' '.join('
-    combined = list(dict.fromkeys(list(old_seen) + new_seen))
-    if len(combined) > MAX_SEEN:
-        combined = combined[-MAX_SEEN:]
-    market_probe = yahoo_market_snapshot("CRWV")
-    state.update({
-        "bootstrapped": True,
-        "market_probe": market_probe,
-        "seen": combined,
-        "last_run_utc": now_utc().isoformat(),
-        "last_alert_count": len(alerts),
-        "last_error_count": len(errors),
-        "last_errors": errors[:30],
-    })
-    save_state(state)
-
-    print(json.dumps({
-        "sources": len(sources),
-        "new_items": len(new_seen),
-        "alerts": len(alerts),
-        "errors": errors[:20],
-    }, indent=2))
-    for s, title, score, tickers, url in alerts:
-        print(f"ALERT {score} {tickers} {s}: {title} -> {url}")
-
-if __name__ == "__main__":
-    main()
-+x for x in tickers) or 'NEW'}\n{item.get('title','')}\n{source['name']}\n{item.get('url','')}\nIssue: {url}")
+                url = create_issue(
+                    source, item, score, tickers, hits, rid, market_ctx=market_ctx
+                )
+                alerts.append(
+                    (source["name"], item.get("title", ""), score, tickers, url)
+                )
+                stage = (
+                    (live_result or {}).get("stage")
+                    or classify_stage(score, tickers, market_ctx)
+                )
+                ticker_text = " ".join("$" + x for x in tickers) or "NEW-CANDIDATE"
+                telegram_alert(
+                    f"MARKET {stage} {score} {ticker_text}\n"
+                    f"{item.get('title','')}\n"
+                    f"{source['name']}\n"
+                    f"{item.get('url','')}\n"
+                    f"Issue: {url}"
+                )
             except Exception as e:
                 errors.append(f"issue {rid}: {type(e).__name__}: {e}")
 
     combined = list(dict.fromkeys(list(old_seen) + new_seen))
     if len(combined) > MAX_SEEN:
         combined = combined[-MAX_SEEN:]
+
     market_probe = yahoo_market_snapshot("CRWV")
     state.update({
         "bootstrapped": True,
@@ -643,8 +645,9 @@ if __name__ == "__main__":
         "alerts": len(alerts),
         "errors": errors[:20],
     }, indent=2))
-    for s, title, score, tickers, url in alerts:
-        print(f"ALERT {score} {tickers} {s}: {title} -> {url}")
+    for source_name, title, score, tickers, url in alerts:
+        print(f"ALERT {score} {tickers} {source_name}: {title} -> {url}")
+
 
 if __name__ == "__main__":
     main()
