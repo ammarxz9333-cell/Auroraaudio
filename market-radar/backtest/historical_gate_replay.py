@@ -38,7 +38,8 @@ def replay_case(case):
     regular=[b for b in today if dt.time(9,30)<=b["ny"].time()<dt.time(16,0)]
     pre=[b for b in today if b["ny"].time()<dt.time(9,30)]
     prior=[b for b in bars if b["ny"].date()<day and dt.time(9,30)<=b["ny"].time()<dt.time(16,0)]
-    prior_days=sorted({b["ny"].date() for b in prior})[-5:]\n    if not regular or not prior: return {**case,"replay_state":"INSUFFICIENT_DATA","reason":"missing bars/prior close"}
+    prior_days=sorted({b["ny"].date() for b in prior})[-5:]
+    if not regular or not prior: return {**case,"replay_state":"INSUFFICIENT_DATA","reason":"missing bars/prior close"}
     prior_day=max(b["ny"].date() for b in prior); prev=[b for b in prior if b["ny"].date()==prior_day]
     prev_close=float(prev[-1]["close"]); reg_open=float(regular[0]["open"] or regular[0]["close"])
     pre_reprice=((float(pre[-1]["close"])/prev_close)-1)*100 if pre else None

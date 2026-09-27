@@ -1,0 +1,42 @@
+import datetime as dt
+import json
+import urllib.error
+from unittest.mock import patch
+
+import radar
+
+
+def test_alert_artifact_is_stable_and_retries_are_idempotent():
+    calls = []
+    item = {"title": "Acme merger", "url": "https://example.org/news",
+            "published": dt.datetime(2026, 9, 27, tzinfo=dt.timezone.utc)}
+    def api(path, method="GET", payload=None):
+        calls.append((path, method, payload))
+        if len(calls) == 2:
+            raise urllib.error.HTTPError(path, 422, "already exists", {}, None)
+    with patch.object(radar, "github_api", side_effect=api):
+        with patch.object(radar, "now_utc", return_value=dt.datetime(2026, 9, 27, 21, 0, tzinfo=dt.timezone.utc)):
+            for _ in range(2):
+                path = radar.publish_live_alert({"name": "Official", "class": "primary"},
+                    item, 10, ["ABC"], ["merger"], "fixed-id", [], {})
+    assert path.endswith("/fixed-id.json")
+    assert calls[0][2]["branch"] == "market-radar-live"
+    assert json.loads(__import__("base64").b64decode(calls[0][2]["content"]))["review_status"].startswith("UNREVIEWED")
+
+
+def test_entry_gate_rejects_stale_regular_bar_without_asking_quote_service():
+    snapshot = {"ticker": "ABC", "market_session": "REGULAR",
+                "bar_time_utc": "2026-09-25T20:00:00+00:00"}
+    with patch.object(radar, "now_utc", return_value=dt.datetime(2026, 9, 27, 21, 0, tzinfo=dt.timezone.utc)):
+        with patch.object(radar, "yahoo_quote_bid_ask") as quote:
+            result = radar.evaluate_entry_gate(snapshot, 10, 8)
+    assert result["state"] == "WAIT"
+    quote.assert_not_called()
+
+
+def test_unlisted_explicit_symbol_and_institutional_holding_noise():
+    assert radar.match_watchlist("NASDAQ: MXL and $VIAV", {}) == ["MXL", "VIAV"]
+    item = {"title": "232,020 Shares of BTGO $BTGO Acquired by State Street Corp", "snippet": ""}
+    score, tickers, _ = radar.score_item({"weight": 2, "class": "industry"}, item, {})
+    assert tickers == ["BTGO"]
+    assert score < radar.THRESHOLD

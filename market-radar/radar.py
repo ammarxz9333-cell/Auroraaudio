@@ -7,6 +7,7 @@ Creates GitHub issues for high-scoring new public items and optionally Telegram 
 from __future__ import annotations
 
 import datetime as dt
+import base64
 import email.utils
 import hashlib
 import html
@@ -19,6 +20,7 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import urllib.parse
+import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
@@ -67,11 +69,16 @@ CATALYSTS = {
     "investigation": 3, "probe": 3, "permit": 2, "interconnection": 3,
     "procurement": 3, "award notice": 4, "material agreement": 4,
     "8-k": 2, "form 8-k": 2, "13d": 4, "13g": 2, "form 4": 1,
+    "initiates coverage": 3, "upgrades": 3, "raised its price target": 2,
+    "certification": 3, "commercial operation": 4, "commercial production": 4,
+    "index inclusion": 4, "added to the index": 4, "rebalance": 2,
 }
 
 NEGATIVE_NOISE = {
     "podcast": -1, "opinion": -1, "sponsored": -2, "advertisement": -3,
     "price target": -1, "technical analysis": -1, "watchlist": -1,
+    "shares acquired by": -5, "shares purchased by": -5,
+    "stock position": -4, "holdings in": -4, "quarterly 13f": -4,
 }
 
 class LinkParser(HTMLParser):
@@ -453,6 +460,13 @@ def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
     session = snapshot.get("market_session")
     if session != "REGULAR":
         return {"state":"WAIT","reason":f"entry disabled outside regular session ({session or 'unknown'})"}
+    try:
+        bar_time = dt.datetime.fromisoformat(snapshot["bar_time_utc"])
+        age = now_utc() - bar_time.astimezone(dt.timezone.utc)
+    except (KeyError, TypeError, ValueError):
+        return {"state":"INSUFFICIENT_DATA","reason":"missing or invalid bar timestamp"}
+    if not dt.timedelta(0) <= age <= dt.timedelta(minutes=15):
+        return {"state":"WAIT","reason":"market bar is stale or from the future"}
     if any(snapshot.get(k) is None for k in required):
         return {"state":"INSUFFICIENT_DATA","reason":"missing required point-in-time tape field"}
     quote = yahoo_quote_bid_ask(snapshot["ticker"])
@@ -524,6 +538,8 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "catalyst_qualified": catalyst_qualified,
         "gate": gate
     }
+    if research_context is not None:
+        row["research_context"] = research_context
     track_live_outcome(snapshot, gate, rid)
     with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, separators=(",", ":")) + "\n")
@@ -600,7 +616,12 @@ def match_watchlist(text: str, watchlist: dict):
             continue
         if any(alias.lower() in low for alias in aliases if len(alias) >= 4):
             found.append(ticker)
-    return sorted(set(found))
+    # Explicit exchange/symbol notation can reveal names outside the watchlist.
+    for match in re.finditer(r"(?<![\w])\$([A-Z]{2,5})(?![\w])|\b(?:NASDAQ|NYSE|AMEX)\s*:\s*([A-Z]{2,5})\b", text):
+        symbol = match.group(1) or match.group(2)
+        if symbol not in {"USD", "ETF", "CEO", "FDA", "SEC"}:
+            found.append(symbol)
+    return sorted(set(found))[:4]
 
 def phrase_match(text: str, phrase: str) -> bool:
     if len(phrase) <= 5 and " " not in phrase:
@@ -654,6 +675,33 @@ def github_api(path: str, method="GET", payload=None):
         raw = resp.read()
         return json.loads(raw.decode("utf-8")) if raw else {}
 
+def publish_live_alert(source, item, score, tickers, hits, rid, market_ctx, infoq):
+    """Append one review artifact to the persistent PR branch, idempotently."""
+    published = item.get("published")
+    detected = now_utc()
+    path = f"market-radar/live/alerts/{rid}.json"
+    artifact = {
+        "radar_id": rid, "detected_utc": detected.isoformat(),
+        "published_utc": published.isoformat() if isinstance(published, dt.datetime) else None,
+        "source": source["name"], "source_class": source.get("class"),
+        "headline": item.get("title"), "url": item.get("url"),
+        "score": score, "tickers": tickers, "signals": hits,
+        "information_quality": infoq, "market_context": market_ctx,
+        "review_status": "UNREVIEWED; not a trade recommendation",
+    }
+    content = base64.b64encode((json.dumps(artifact, indent=2, sort_keys=True) + "\n").encode()).decode()
+    try:
+        github_api(f"/repos/{REPO}/contents/{path}", method="PUT", payload={
+            "message": f"alert(market-radar): {rid}", "content": content,
+            "branch": "market-radar-live",
+        })
+    except urllib.error.HTTPError as exc:
+        # GitHub refuses a second create at the same path. Keep the original
+        # immutable artifact and let the issue notification retry.
+        if exc.code != 422:
+            raise
+    return path
+
 def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
     reactions = [m.get("reaction") for m in (market_ctx or []) if not m.get("error")]
@@ -670,24 +718,24 @@ def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     published = item.get("published")
     pubtxt = published.isoformat() if isinstance(published, dt.datetime) else "unknown/not supplied by source"
     body = (
-        f"<!-- radar-id:{rid} -->\\n"
-        f"## First-public-source alert\\n\\n"
-        f"- **Score:** {score}\\n"
-        f"- **Source:** {source['name']}\\n"
-        f"- **Source class:** {source.get('class','other')}\\n"
-        f"- **Published timestamp:** {pubtxt}\\n"
-        f"- **Detected UTC:** {now_utc().isoformat()}\\n"
-        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\\n"
-        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\\n"
-        f"- **Original/public URL:** {item.get('url','')}\\n\\n"
-        + ("### Live market reaction\\n" + "\\n".join(
+        f"<!-- radar-id:{rid} -->\n"
+        f"## First-public-source alert\n\n"
+        f"- **Score:** {score}\n"
+        f"- **Source:** {source['name']}\n"
+        f"- **Source class:** {source.get('class','other')}\n"
+        f"- **Published timestamp:** {pubtxt}\n"
+        f"- **Detected UTC:** {now_utc().isoformat()}\n"
+        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\n"
+        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\n"
+        f"- **Original/public URL:** {item.get('url','')}\n\n"
+        + ("### Live market reaction\n" + "\n".join(
             f"- **{m.get('ticker')}**: price {m.get('price','?')} | day {m.get('change_pct','?')}% | last 5m {m.get('change_5m_pct','?')}% | volume vs same-time {m.get('same_time_volume_ratio','?')}x | pre-news 30m {m.get('pre30m_move_pct','?')}% | first 30m after news {m.get('post30m_move_pct','?')}% | since news {m.get('since_event_move_pct','?')}% | session {m.get('market_session','?')} | **{m.get('reaction','?')}** | bar {m.get('bar_time_utc','?')}"
             if not m.get("error") else f"- **{m.get('ticker')}**: market-data error — {m.get('error')}"
             for m in (market_ctx or [])
-        ) + "\\n\\n" if market_ctx else "")
-        + f"### Headline\\n{item.get('title','')}\\n\\n"
-        f"### Public snippet\\n{item.get('snippet','')[:1600] or '(none)'}\\n\\n"
-        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\\n"
+        ) + "\n\n" if market_ctx else "")
+        + f"### Headline\n{item.get('title','')}\n\n"
+        f"### Public snippet\n{item.get('snippet','')[:1600] or '(none)'}\n\n"
+        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\n"
     )
     payload = {"title": title, "body": body}
     if OWNER:
@@ -786,7 +834,10 @@ def main():
             rid = item_id(source["name"], item)
             if rid in old_seen:
                 continue
-            new_seen.append(rid)
+            published = item.get("published")
+            if not isinstance(published, dt.datetime) or not dt.timedelta(0) <= start - published <= dt.timedelta(hours=BOOTSTRAP_ALERT_HOURS):
+                new_seen.append(rid)
+                continue
             score, tickers, hits = score_item(source, item, watchlist)
             infoq = information_quality(source, item)
             effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
@@ -797,7 +848,17 @@ def main():
                 hits.append("market-confirmation")
             if valid_market and all(m.get("reaction") == "not-yet-reacted" for m in valid_market):
                 hits.append("market-not-yet-reacted")
-            prov=provenance(source,item,tickers,fetched,watchlist,match_watchlist,CATALYSTS,now_utc)\n            infoq.update(prov)\n            infoq["rumor_only"]=bool(infoq.get("rumor_language") and not infoq.get("primary_confirmation"))\n            rv=[m.get("same_time_volume_ratio") for m in valid_market if isinstance(m.get("same_time_volume_ratio"),(int,float))]\n            va=[m.get("volume_acceleration_15m") for m in valid_market if isinstance(m.get("volume_acceleration_15m"),(int,float))]\n            mo=[m.get("momentum_15m_pct") for m in valid_market if isinstance(m.get("momentum_15m_pct"),(int,float))]\n            infoq["market_confirmation"]={"rvol_confirmed":bool(rv and max(rv)>=2),"volume_acceleration_confirmed":bool(va and max(va)>=1.5),"momentum_confirmed":bool(mo and max(mo)>=2)}\n            infoq["propagation_stage"]="PRIMARY_CONFIRMED" if infoq.get("primary_confirmation") else ("MULTI_SOURCE" if infoq.get("independent_corroboration_count",0)>=2 else ("CORROBORATED" if infoq.get("independent_corroboration_count",0) else "UNCONFIRMED"))\n            infoq["finra_short_sale_volume"]={t:finra_short_sale_volume(t) for t in tickers}
+            prov = provenance(source, item, tickers, fetched, watchlist, match_watchlist, CATALYSTS, now_utc)
+            infoq.update(prov)
+            infoq["rumor_only"] = bool(infoq.get("rumor_language") and not infoq.get("primary_confirmation"))
+            rv = [m.get("same_time_volume_ratio") for m in valid_market if isinstance(m.get("same_time_volume_ratio"), (int, float))]
+            va = [m.get("volume_acceleration_15m") for m in valid_market if isinstance(m.get("volume_acceleration_15m"), (int, float))]
+            mo = [m.get("momentum_15m_pct") for m in valid_market if isinstance(m.get("momentum_15m_pct"), (int, float))]
+            infoq["market_confirmation"] = {"rvol_confirmed": bool(rv and max(rv) >= 2), "volume_acceleration_confirmed": bool(va and max(va) >= 1.5), "momentum_confirmed": bool(mo and max(mo) >= 2)}
+            infoq["propagation_stage"] = "PRIMARY_CONFIRMED" if infoq.get("primary_confirmation") else ("MULTI_SOURCE" if infoq.get("independent_corroboration_count", 0) >= 2 else ("CORROBORATED" if infoq.get("independent_corroboration_count", 0) else "UNCONFIRMED"))
+            # FINRA's daily report is useful for later review, but an API call per
+            # news item can exhaust the four-minute scheduled scan.
+            infoq["finra_short_sale_volume"] = "not queried in latency-critical scan"
             for snap in valid_market:
                 persist_market_snapshot(snap, rid, source["name"], score, effective_threshold, research_context=infoq)
             if tickers and score >= effective_threshold:
@@ -810,21 +871,17 @@ def main():
                     "information_quality": infoq,
                 }
             if score < effective_threshold:
+                new_seen.append(rid)
                 continue
-            if not bootstrapped:
-                published = item.get("published")
-                if not isinstance(published, dt.datetime):
-                    continue
-                age = start - published
-                if age.total_seconds() < 0 or age > dt.timedelta(hours=BOOTSTRAP_ALERT_HOURS):
-                    continue
             try:
+                publish_live_alert(source, item, score, tickers, hits, rid, market_ctx, infoq)
                 url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
+                new_seen.append(rid)
                 alerts.append((source["name"], item.get("title", ""), score, tickers, url))
                 ticker_text = " ".join("$" + x for x in tickers) or "NEW"
-                telegram_alert(f"MARKET RADAR {score} {ticker_text}\\n{item.get('title','')}\\n{source['name']}\\n{item.get('url','')}\\nIssue: {url}")
+                telegram_alert(f"MARKET RADAR {score} {ticker_text}\n{item.get('title','')}\n{source['name']}\n{item.get('url','')}\nIssue: {url}")
             except Exception as e:
-                errors.append(f"issue {rid}: {type(e).__name__}: {e}")
+                errors.append(f"alert {rid}: {type(e).__name__}: {e}")
 
     combined = list(dict.fromkeys(list(old_seen) + new_seen))
     if len(combined) > MAX_SEEN:

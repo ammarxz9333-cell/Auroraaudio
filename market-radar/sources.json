@@ -363,6 +363,34 @@
       "weight": 1,
       "url": "https://www.reddit.com/r/pennystocks/new/.rss",
       "fallback_query": "site:reddit.com/r/pennystocks (catalyst OR contract OR FDA OR acquisition OR offering) when:1d"
+    },
+    {
+      "name": "WSJ public M&A coverage",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 3,
+      "query": "site:wsj.com (merger OR acquisition OR takeover OR deal OR sale) when:1d"
+    },
+    {
+      "name": "Analyst initiations and upgrades",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 2,
+      "query": "(initiates coverage OR upgraded OR upgrade OR raises price target) (NASDAQ OR NYSE OR shares) when:1d"
+    },
+    {
+      "name": "Company certification and production milestones",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 2,
+      "query": "(certification OR commercial production OR commercial operation OR production ramp) (NASDAQ OR NYSE OR stock) when:1d"
+    },
+    {
+      "name": "Index additions and passive flows",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 2,
+      "query": "(added to index OR index inclusion OR rebalance OR index reconstitution) (NASDAQ OR NYSE OR stock) when:1d"
     }
   ]
 }

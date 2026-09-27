@@ -40,6 +40,9 @@ For every qualifying alert the scanner can:
 - update PR **#229 Market Radar Live Alerts**, whose commit activity is used by the ChatGPT Work live-review trigger.
 
 The first run bootstraps existing items and only alerts items published within the previous 8 hours, preventing a flood of old stories.
+Subsequent runs apply the same freshness bound. Sources without a usable publication time are not sent as time-sensitive alerts.
+
+The append-only PR artifact uses the stable radar ID as its filename. A retry cannot create a second artifact for the same story; the Issue notification can be retried if its creation failed. Artifacts are unreviewed candidates, not entry signals.
 
 ## Market-reaction context
 
@@ -76,6 +79,8 @@ Outputs:
 - `market-radar/learning/metrics.json`
 
 The learning job runs after the U.S. session on weekdays and can also be dispatched manually. Metrics are descriptive; the system must accumulate adequate out-of-sample observations before score/threshold changes are justified.
+
+The scheduled scanner performs syntax and functional checks before fetching sources. Historical replay runs on code pushes and manual dispatch, not on every five-minute scheduled scan. The live gate requires a current market bar and a real bid/ask quote; absent data results in WAIT or INSUFFICIENT_DATA.
 
 ## Optional Telegram alerts
 

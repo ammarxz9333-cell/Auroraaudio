@@ -15,6 +15,7 @@ def related(sig_a, sig_b):
 def provenance(source,item,tickers,fetched,watchlist,match_watchlist,catalysts,now_utc):
     sig=catalyst_signature(item,catalysts)
     cp=item.get("published")
+    detected=now_utc()
     own=source_identity(source,item)
     corroborators={}
     primary=[]
@@ -28,6 +29,8 @@ def provenance(source,item,tickers,fetched,watchlist,match_watchlist,catalysts,n
             osig=catalyst_signature(oi,catalysts)
             if not related(sig,osig): continue
             op=oi.get("published")
+            if op is None or op > detected:
+                continue
             if cp is not None and op is not None:
                 delta=abs((op-cp).total_seconds())
                 if delta>21600: continue
@@ -37,4 +40,4 @@ def provenance(source,item,tickers,fetched,watchlist,match_watchlist,catalysts,n
                 primary.append(oid)
     def velocity(sec):
         return sum(1 for x in ages if x<=sec)
-    return {"catalyst_signature":sig,"source_identity":own,"independent_corroboration_count":len(corroborators),"independent_corroborators":sorted(corroborators.values())[:8],"primary_confirmation":bool(primary),"rumor_only":False,"first_seen_utc":now_utc().isoformat(),"source_velocity":{"30m":velocity(1800),"2h":velocity(7200),"6h":len(corroborators)}}
+    return {"catalyst_signature":sig,"source_identity":own,"independent_corroboration_count":len(corroborators),"independent_corroborators":sorted(corroborators.values())[:8],"primary_confirmation":bool(primary),"rumor_only":False,"detected_utc":detected.isoformat(),"source_velocity":{"30m":velocity(1800),"2h":velocity(7200),"6h":len(corroborators)}}
