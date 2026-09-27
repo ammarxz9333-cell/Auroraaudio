@@ -1,0 +1,42 @@
+{
+  "radar_id": "006a11e22e1a4aa7f5ce",
+  "stage": "REACTING",
+  "score": 12,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:40:08.207519+00:00",
+  "published_utc": "2026-09-27T15:39:51.813690+00:00",
+  "source": "Yahoo early momentum discovery",
+  "source_class": "momentum",
+  "tickers": [
+    "HUM"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "price-volume-momentum",
+    "ticker-match"
+  ],
+  "headline": "$HUM abnormal market momentum: +4.63% day move",
+  "url": "https://finance.yahoo.com/quote/HUM",
+  "snippet": "Ticker $HUM; price 397.9300; day move +4.63%; volume 1938342; 3m average daily volume 1219006; crude volume/ADV 1.59x.",
+  "market_context": [
+    {
+      "ticker": "HUM",
+      "price": 397.93,
+      "previous_close": 379.96,
+      "change_pct": 4.729,
+      "change_5m_pct": 0.0,
+      "cum_volume": 1702221,
+      "same_time_volume_ratio": 2.61,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 397.93,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T22:12:32+00:00"
+    }
+  ]
+}
