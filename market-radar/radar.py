@@ -216,7 +216,7 @@ def google_news_url(query: str) -> str:
 
 NY = ZoneInfo("America/New_York")
 
-def yahoo_market_snapshot(ticker: str):
+def yahoo_market_snapshot(ticker: str, event_time=None):
     """Free/no-key intraday snapshot from Yahoo Finance chart endpoint.
     Returns None if unavailable. Uses 5m bars over 5d including pre/post market.
     """
@@ -253,6 +253,24 @@ def yahoo_market_snapshot(ticker: str):
         change_5m = None
         if len(last_two) == 2 and last_two[0]["close"]:
             change_5m = ((last_two[1]["close"] / last_two[0]["close"]) - 1.0) * 100.0
+
+        event_price = None
+        pre30_move = None
+        post30_move = None
+        since_event_move = None
+        if isinstance(event_time, dt.datetime):
+            et = event_time.astimezone(dt.timezone.utc)
+            before = [b for b in bars if b["utc"] <= et]
+            if before:
+                event_price = before[-1]["close"]
+                pre30 = [b for b in bars if b["utc"] <= et - dt.timedelta(minutes=30)]
+                if pre30 and pre30[-1]["close"]:
+                    pre30_move = ((event_price / pre30[-1]["close"]) - 1.0) * 100.0
+                post30 = [b for b in bars if et <= b["utc"] <= et + dt.timedelta(minutes=30)]
+                if post30 and event_price:
+                    post30_move = ((post30[-1]["close"] / event_price) - 1.0) * 100.0
+                if event_price:
+                    since_event_move = ((latest["close"] / event_price) - 1.0) * 100.0
 
         ny_now = latest["ny"]
         mins_now = ny_now.hour * 60 + ny_now.minute
@@ -319,15 +337,19 @@ def yahoo_market_snapshot(ticker: str):
             "same_time_volume_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
             "market_session": market_session,
             "reaction": reaction,
+            "event_price": round(event_price, 4) if event_price is not None else None,
+            "pre30m_move_pct": round(pre30_move, 3) if pre30_move is not None else None,
+            "post30m_move_pct": round(post30_move, 3) if post30_move is not None else None,
+            "since_event_move_pct": round(since_event_move, 3) if since_event_move is not None else None,
             "bar_time_utc": latest["utc"].isoformat(),
         }
     except Exception as e:
         return {"ticker":ticker,"error":f"{type(e).__name__}: {e}"}
 
-def market_context_for_tickers(tickers):
+def market_context_for_tickers(tickers, event_time=None):
     out = []
     for ticker in tickers[:4]:
-        snap = yahoo_market_snapshot(ticker)
+        snap = yahoo_market_snapshot(ticker, event_time=event_time)
         if snap:
             out.append(snap)
     return out
@@ -417,7 +439,7 @@ def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
         f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\n"
         f"- **Original/public URL:** {item.get('url','')}\n\n"
         + ("### Live market reaction\n" + "\n".join(
-            f"- **{m.get('ticker')}**: price {m.get('price','?')} | day {m.get('change_pct','?')}% | last 5m {m.get('change_5m_pct','?')}% | same-time volume {m.get('same_time_volume_ratio','?')}x | session {m.get('market_session','?')} | **{m.get('reaction','?')}** | bar {m.get('bar_time_utc','?')}"
+            f"- **{m.get('ticker')}**: price {m.get('price','?')} | day {m.get('change_pct','?')}% | last 5m {m.get('change_5m_pct','?')}% | volume vs same-time {m.get('same_time_volume_ratio','?')}x | pre-news 30m {m.get('pre30m_move_pct','?')}% | first 30m after news {m.get('post30m_move_pct','?')}% | since news {m.get('since_event_move_pct','?')}% | session {m.get('market_session','?')} | **{m.get('reaction','?')}** | bar {m.get('bar_time_utc','?')}"
             if not m.get("error") else f"- **{m.get('ticker')}**: market-data error — {m.get('error')}"
             for m in (market_ctx or [])
         ) + "\n\n" if market_ctx else "")
@@ -492,7 +514,7 @@ def main():
                 continue
             new_seen.append(rid)
             score, tickers, hits = score_item(source, item, watchlist)
-            market_ctx = market_context_for_tickers(tickers) if tickers else []
+            market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
             if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
                 score += 2
