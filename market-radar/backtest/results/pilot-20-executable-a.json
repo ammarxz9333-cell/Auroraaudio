@@ -1,0 +1,65 @@
+{
+  "schema_version": 1,
+  "batch": "pilot-20-executable-a",
+  "status": "PARTIAL_EXECUTABLE_AUDIT",
+  "cases": [
+    {
+      "ticker": "CHPT",
+      "decision": "WATCH",
+      "entry_basis": "next regular open after post-close alert",
+      "entry": 6.9,
+      "high": 9.35,
+      "close": 9.08,
+      "next_close": 9.89,
+      "mfe_pct": 35.51,
+      "close_return_pct": 31.59,
+      "next_close_return_pct": 43.33,
+      "verified": true
+    },
+    {
+      "ticker": "FLNA",
+      "decision": "WATCH",
+      "entry_basis": "regular open after premarket alert",
+      "entry": 0.9848,
+      "high": 1.3,
+      "low": 0.9011,
+      "close": 1.03,
+      "next_close": 0.8701,
+      "mfe_pct": 32.01,
+      "mae_pct": -8.5,
+      "close_return_pct": 4.59,
+      "next_close_return_pct": -11.65,
+      "verified": true
+    },
+    {
+      "ticker": "XENE",
+      "decision": "BEARISH_AVOID",
+      "entry_basis": "regular open after prior post-close alert",
+      "entry": 44.02,
+      "high": 44.85,
+      "low": 39.08,
+      "close": 39.75,
+      "close_return_pct": -9.7,
+      "verified": true
+    },
+    {
+      "ticker": "GLND",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "entry_basis": "regular open after premarket alert",
+      "entry": 3.22,
+      "high": 5.64,
+      "low": 3.19,
+      "close": 5.35,
+      "mfe_pct": 75.16,
+      "mae_pct": -0.93,
+      "close_return_pct": 66.15,
+      "verified": true
+    }
+  ],
+  "preliminary": {
+    "bullish_verified": 3,
+    "bullish_close_positive": "3/3",
+    "bullish_reached_plus_5pct_intraday": "3/3",
+    "caution": "Tiny partial sample; not a win-rate estimate. FLNA shows strong MFE but poor multi-day hold."
+  }
+}
