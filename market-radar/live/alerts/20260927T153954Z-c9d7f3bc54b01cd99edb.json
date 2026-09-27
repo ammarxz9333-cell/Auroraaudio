@@ -1,0 +1,42 @@
+{
+  "radar_id": "c9d7f3bc54b01cd99edb",
+  "stage": "REACTING",
+  "score": 12,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:39:54.638365+00:00",
+  "published_utc": "2026-09-27T15:39:51.813546+00:00",
+  "source": "Yahoo early momentum discovery",
+  "source_class": "momentum",
+  "tickers": [
+    "FIGS"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "price-volume-momentum",
+    "ticker-match"
+  ],
+  "headline": "$FIGS abnormal market momentum: +7.45% day move",
+  "url": "https://finance.yahoo.com/quote/FIGS",
+  "snippet": "Ticker $FIGS; price 13.4200; day move +7.45%; volume 4407248; 3m average daily volume 2940865; crude volume/ADV 1.50x.",
+  "market_context": [
+    {
+      "ticker": "FIGS",
+      "price": 13.4387,
+      "previous_close": 12.5,
+      "change_pct": 7.51,
+      "change_5m_pct": 0.0,
+      "cum_volume": 4068067,
+      "same_time_volume_ratio": 2.41,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 13.4387,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T22:06:29+00:00"
+    }
+  ]
+}
