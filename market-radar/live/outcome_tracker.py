@@ -12,7 +12,9 @@ def new_trade(ticker, entry_time_utc, entry_price, radar_id):
       "last_processed_bar_utc":None}
 
 def update_trade(t, bar):
-    if t.get("last_processed_bar_utc") == bar.get("time_utc"):
+    last = t.get("last_processed_bar_utc")
+    current = bar.get("time_utc")
+    if last and current and current <= last:
         return t
     first = t.get("first_threshold")
     if first in ("MINUS5_FIRST", "ORDER_UNVERIFIED"):
