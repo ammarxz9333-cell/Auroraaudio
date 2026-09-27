@@ -35,7 +35,7 @@ jobs:
       - name: Historical replay smoke test (frozen batch)
         env:
           PYTHONPATH: market-radar
-        run: python3 market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/frozen/pilot-20-freeze-b.json market-radar/backtest/frozen/pilot-20-freeze-c.json market-radar/backtest/frozen/pilot-20-freeze-d.json --out /tmp/replay-results.json && python3 -c 'import json; d=json.load(open("/tmp/replay-results.json")); print(json.dumps({"cases":len(d["cases"]),"robust_buyable":[x["ticker"] for x in d["cases"] if x.get("spread_robust_buyable")]},indent=2))'
+        run: python3 market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/frozen/pilot-20-freeze-b.json market-radar/backtest/frozen/pilot-20-freeze-c.json market-radar/backtest/frozen/pilot-20-freeze-d.json --out /tmp/replay-results.json && python3 -c 'import json; d=json.load(open("/tmp/replay-results.json")); print(json.dumps({"cases":len(d["cases"]),"robust":[{"ticker":x["ticker"],"scenarios":x.get("spread_scenarios",{})} for x in d["cases"] if x.get("spread_robust_buyable")]},indent=2))'
 
       - name: Run first-public-source scanner
         env:
