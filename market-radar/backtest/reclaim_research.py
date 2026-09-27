@@ -29,7 +29,16 @@ def detect_reclaim(rows, first_entry_time, first_entry_price, stop_time=None):
             float(ao if ao is not None else 999)<=8,
             float(av if av is not None else 999)<=6,
         ))
-        candidate={"time_utc":r["time_utc"],"price":float(r["price"]),"conditions_met":quality,
+        blockers=[]
+        if not r.get("holds_open"): blockers.append("BELOW_OPEN")
+        if not r.get("holds_vwap"): blockers.append("BELOW_VWAP")
+        if float(r.get("rvol") or 0)<2: blockers.append("LOW_RVOL")
+        if float(ao if ao is not None else 999)>8: blockers.append("OPEN_EXTENSION")
+        if float(av if av is not None else 999)>6: blockers.append("VWAP_EXTENSION")
+        recovery_type=("VWAP_RECLAIM_PENDING" if blockers==["BELOW_VWAP"] else
+                       "EXTENSION_BREAKOUT" if blockers==["OPEN_EXTENSION"] else
+                       "MIXED_RECOVERY" if blockers else "FULL_RECLAIM")
+        candidate={"time_utc":r["time_utc"],"price":float(r["price"]),"conditions_met":quality,"blockers":blockers,"recovery_type":recovery_type,
                    "holds_open":bool(r.get("holds_open")),"holds_vwap":bool(r.get("holds_vwap")),
                    "rvol":r.get("rvol"),"above_open_pct":ao,"above_vwap_pct":av}
         if best is None or quality>best["conditions_met"]:
