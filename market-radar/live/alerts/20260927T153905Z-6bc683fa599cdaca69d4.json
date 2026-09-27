@@ -1,0 +1,42 @@
+{
+  "radar_id": "6bc683fa599cdaca69d4",
+  "stage": "REACTING",
+  "score": 9,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:39:05.436810+00:00",
+  "published_utc": "2026-09-27T06:38:20+00:00",
+  "source": "Analyst initiations and upgrades",
+  "source_class": "secondary",
+  "tickers": [
+    "KDP"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "price target",
+    "ticker-match"
+  ],
+  "headline": "Keurig Dr Pepper, Inc (NASDAQ:KDP) Stock Has Consensus Price Target of $35.00 - MarketBeat",
+  "url": "https://news.google.com/rss/articles/CBMi0gFBVV95cUxNZzJtZ011NWoxQnhLR0ZXaXl0V3dvNmhveGhTRUp3X3VfQUtZYTFwYU1CRF9rZm5SaWxEX3dHUW5YMEd1dy0ya21vdlNuYjdYc01CNENsaDhzZHA1Z2J6YWxHTlpINTZ4eXRaTnlTcGE3WFYweWtEZm5qbDFjR2VBc3N6WVpmaWZmX1Jxb0U1T0s4em8wc1FWajAwWEhmMGFvZ25YczJIQ3JjZDI0dlVZV0VTV0s2Qi00SFIxMUItdjljUHJWRDFXRlpOU3N0MFlTWXc?oc=5",
+  "snippet": "Keurig Dr Pepper, Inc (NASDAQ:KDP) Stock Has Consensus Price Target of $35.00 MarketBeat",
+  "market_context": [
+    {
+      "ticker": "KDP",
+      "price": 31.9938,
+      "previous_close": 30.89,
+      "change_pct": 3.573,
+      "change_5m_pct": 0.0,
+      "cum_volume": 6537250,
+      "same_time_volume_ratio": 1.0,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 31.9938,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:58:14+00:00"
+    }
+  ]
+}
