@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "name": "validation-v2-100",
+  "status": "UNSCORED_UNFROZEN",
+  "target_count": 100,
+  "selection": {
+    "positive_event_cases": 50,
+    "negative_or_control_cases": 50,
+    "period": "September 2026",
+    "rule": "Candidate membership may be sourced from historical mover leaderboards, but mover magnitude and forward-return columns are selection-only and must never enter classifier snapshots.",
+    "market_regime_required": true
+  },
+  "required_snapshot_fields": [
+    "ticker","cutoff","evidence","market","features","market_regime"
+  ],
+  "market_regime": [
+    "SPY_return_at_cutoff","QQQ_return_at_cutoff","sector_return_at_cutoff",
+    "relative_strength_vs_SPY","relative_strength_vs_QQQ"
+  ],
+  "evaluation_horizons": ["next_regular_close","3_regular_closes","5_regular_closes"],
+  "metrics": [
+    "coverage_pct","directional_accuracy_pct","bullish_precision_pct",
+    "false_positive_rate","miss_rate","late_rate","mean_return_after_alert_pct"
+  ],
+  "anti_leakage": {
+    "future_returns_in_snapshot": false,
+    "outcome_fields_in_snapshot": false,
+    "decision_lock_before_reveal": true,
+    "rule_changes_during_batch": false
+  }
+}
