@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "status": "validation-v1",
+  "methodology": {
+    "type": "point-in-time reconstruction",
+    "warning": "Historical source pages can expose later outcomes. These cases are held out from the 50-case training set, but this file must not be represented as a perfectly blinded validation set.",
+    "next_step": "Build frozen timestamped snapshots containing only fields available at cutoff, run classifier, persist prediction hash, then reveal outcome."
+  },
+  "held_out_cases": [
+    {
+      "ticker": "VICR",
+      "cutoff": "2026-09-16T16:00:00-04:00",
+      "public_at_cutoff": "License of VPD architecture to a leading AI OEM",
+      "frozen_decision": "WATCH",
+      "reason": "Material AI/OEM validation, but economics and customer identity not disclosed; needs tape confirmation."
+    },
+    {
+      "ticker": "AVEX",
+      "cutoff": "2026-09-16T09:30:00-04:00",
+      "public_at_cutoff": "Selected for up to $92.2M three-year SkyRange hypersonic-testing support contract",
+      "frozen_decision": "WATCH",
+      "reason": "Primary-source defense award is material; 'up to' value and revenue timing require price/volume confirmation."
+    },
+    {
+      "ticker": "PMEC",
+      "cutoff": "2026-09-17T08:45:00-04:00",
+      "public_at_cutoff": "Three-year integrated facilities contract valued about US$5.78M",
+      "frozen_decision": "WATCH_LOW_CONFIDENCE",
+      "reason": "Real multi-year award but contract size must be normalized to issuer revenue/market cap and liquidity."
+    },
+    {
+      "ticker": "HFFG",
+      "cutoff": "2026-09-18T16:05:00-04:00",
+      "public_at_cutoff": "Termination of ATM program that had capacity up to $100M",
+      "frozen_decision": "NO_TRADE",
+      "reason": "Removes dilution capacity but also removes financing flexibility; direction ambiguous without tape confirmation."
+    },
+    {
+      "ticker": "XENE",
+      "cutoff": "2026-09-18T09:30:00-04:00",
+      "public_at_cutoff": "Voluntary pause of new enrollment in Phase 3 depression studies",
+      "frozen_decision": "BEARISH_AVOID",
+      "reason": "Clinical execution setback is directionally negative and high materiality."
+    },
+    {
+      "ticker": "CRWV",
+      "cutoff": "2026-09-18T16:05:00-04:00",
+      "public_at_cutoff": "Upsized $3.7B convertible notes offering",
+      "frozen_decision": "WATCH_FINANCING_RISK",
+      "reason": "Large financing supports capex but creates leverage/convertible overhang; not automatically bearish or bullish."
+    },
+    {
+      "ticker": "BRR",
+      "cutoff": "2026-09-18T16:05:00-04:00",
+      "public_at_cutoff": "Addition to Russell 2000 and Russell 3000",
+      "frozen_decision": "WATCH_FLOW",
+      "reason": "Potential passive-flow catalyst; requires effective-date and pre-positioning analysis."
+    },
+    {
+      "ticker": "AMRX",
+      "cutoff": "2026-09-18T16:01:00-04:00",
+      "public_at_cutoff": "FDA approval and launch of lanreotide injection",
+      "frozen_decision": "WATCH",
+      "reason": "Approval plus launch is positive, but commercial materiality and expectations need normalization."
+    },
+    {
+      "ticker": "INSM",
+      "cutoff": "2026-09-21T07:00:00-04:00",
+      "public_at_cutoff": "FDA Priority Review for ARIKAYCE sNDA; PDUFA Jan 28 2027",
+      "frozen_decision": "WATCH_LOW_URGENCY",
+      "reason": "Positive regulatory de-risking but no immediate approval; long-dated PDUFA lowers urgency."
+    },
+    {
+      "ticker": "APOG",
+      "cutoff": "2026-09-18T16:05:00-04:00",
+      "public_at_cutoff": "Completed acquisition of GroGlass",
+      "frozen_decision": "NO_TRADE",
+      "reason": "Completion event may already be anticipated; require new economics/synergy surprise or tape confirmation."
+    }
+  ]
+}
