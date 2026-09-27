@@ -1,0 +1,41 @@
+{
+  "radar_id": "e780fc4c0452521af163",
+  "stage": "REACTING",
+  "score": 8,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:39:07.197497+00:00",
+  "published_utc": "2026-09-26T17:57:50+00:00",
+  "source": "Analyst initiations and upgrades",
+  "source_class": "secondary",
+  "tickers": [
+    "RR"
+  ],
+  "signals": [
+    "market-confirmation",
+    "ticker-match",
+    "watchlist-match"
+  ],
+  "headline": "Why Did SMR, RR, FAC Stocks Plummet To 52-Week Lows? - Stocktwits",
+  "url": "https://news.google.com/rss/articles/CBMiswFBVV95cUxPRVI2Q1lNMkZvMG9VWFNtLURMaENoUklWblVORzluMkozTDRIdFc0TnlDbHR1QWxLQWU4a2FQVEVVZC11aEtjeWxkZzJkNnhUQ1RNbFpMUzE2MTdqdVFFaGNnTTJMLUNXTXpJTjB0M29TTkVHYVU0aklvQWJweng1VktsUFRCS252SXM4aVZ1UFZOQnpjVGN4OFd6Z1hhRTROLXB4c2liS0pLYWVlNTk4VzdCTQ?oc=5",
+  "snippet": "Why Did SMR, RR, FAC Stocks Plummet To 52-Week Lows? Stocktwits",
+  "market_context": [
+    {
+      "ticker": "RR",
+      "price": 1.699,
+      "previous_close": 1.645,
+      "change_pct": 3.283,
+      "change_5m_pct": 0.0,
+      "cum_volume": 2767500,
+      "same_time_volume_ratio": 0.66,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 1.699,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:57:39+00:00"
+    }
+  ]
+}
