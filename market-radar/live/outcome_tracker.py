@@ -8,9 +8,12 @@ def new_trade(ticker, entry_time_utc, entry_price, radar_id):
     return {"trade_id":f"{ticker}:{entry_time_utc}:{radar_id}","ticker":ticker,
       "entry_time_utc":entry_time_utc,"entry_price":float(entry_price),
       "plus5":False,"plus10":False,"minus5":False,"first_threshold":None,
-      "resolved_time_utc":None,"max_price":float(entry_price),"min_price":float(entry_price)}
+      "resolved_time_utc":None,"max_price":float(entry_price),"min_price":float(entry_price),
+      "last_processed_bar_utc":None}
 
 def update_trade(t, bar):
+    if t.get("last_processed_bar_utc") == bar.get("time_utc"):
+        return t
     first = t.get("first_threshold")
     if first in ("MINUS5_FIRST", "ORDER_UNVERIFIED"):
         return t
@@ -36,6 +39,7 @@ def update_trade(t, bar):
             t["resolved_time_utc"] = bar["time_utc"]
     t["mfe_pct"] = round((t["max_price"] / ep - 1) * 100, 3)
     t["mae_pct"] = round((t["min_price"] / ep - 1) * 100, 3)
+    t["last_processed_bar_utc"] = bar.get("time_utc")
     return t
 
 def load(path):
