@@ -1,0 +1,9 @@
+{
+  "type": "chatgpt-work-trigger-test",
+  "stage": "TEST",
+  "score": 0,
+  "detected_utc": "2026-09-27T15:15:00Z",
+  "source": "synthetic-test",
+  "headline": "Synthetic webhook test for PR #229",
+  "note": "This is NOT a market signal. It exists only to verify that commit updates on PR #229 trigger ChatGPT Work."
+}
