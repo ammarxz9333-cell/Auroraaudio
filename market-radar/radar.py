@@ -341,6 +341,22 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
                 hist_cums.append(cum)
         vol_ratio = (today_cum / median(hist_cums)) if today_cum > 0 and hist_cums else None
 
+        # Research features: record them point-in-time; do not alter the live gate yet.
+        recent = today_bars[-3:]
+        prior_recent = today_bars[-6:-3] if len(today_bars) >= 6 else []
+        recent_vol = sum(b["volume"] for b in recent)
+        prior_recent_vol = sum(b["volume"] for b in prior_recent)
+        volume_acceleration = (recent_vol / prior_recent_vol) if prior_recent_vol > 0 else None
+        opening_range = today_bars[:3]
+        opening_range_high = max((b["high"] for b in opening_range), default=None)
+        opening_range_low = min((b["low"] for b in opening_range), default=None)
+        above_open_pct = ((latest["close"]/regular_open)-1)*100 if regular_open else None
+        above_vwap_pct = ((latest["close"]/session_vwap)-1)*100 if session_vwap else None
+        from_session_high_pct = ((latest["close"]/session_high)-1)*100 if session_high else None
+        holds_opening_range_high = (latest["close"] >= opening_range_high) if opening_range_high is not None else None
+        ret_15m = ((today_bars[-1]["close"]/today_bars[-4]["close"])-1)*100 if len(today_bars) >= 4 and today_bars[-4]["close"] else None
+        ret_30m = ((today_bars[-1]["close"]/today_bars[-7]["close"])-1)*100 if len(today_bars) >= 7 and today_bars[-7]["close"] else None
+
         abs_change = abs(change_pct or 0)
         if abs_change >= 10 or (vol_ratio is not None and vol_ratio >= 4):
             reaction = "major-reprice"
@@ -365,6 +381,15 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
             "holds_vwap": (latest["close"] >= session_vwap) if session_vwap is not None else None,
             "holds_open": (latest["close"] >= regular_open) if regular_open is not None else None,
             "same_time_volume_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
+            "volume_acceleration_15m": round(volume_acceleration, 3) if volume_acceleration is not None else None,
+            "opening_range_high": round(opening_range_high, 4) if opening_range_high is not None else None,
+            "opening_range_low": round(opening_range_low, 4) if opening_range_low is not None else None,
+            "holds_opening_range_high": holds_opening_range_high,
+            "above_open_pct": round(above_open_pct, 3) if above_open_pct is not None else None,
+            "above_vwap_pct": round(above_vwap_pct, 3) if above_vwap_pct is not None else None,
+            "from_session_high_pct": round(from_session_high_pct, 3) if from_session_high_pct is not None else None,
+            "momentum_15m_pct": round(ret_15m, 3) if ret_15m is not None else None,
+            "momentum_30m_pct": round(ret_30m, 3) if ret_30m is not None else None,
             "market_session": market_session,
             "reaction": reaction,
             "event_price": round(event_price, 4) if event_price is not None else None,
