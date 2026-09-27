@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "batch": "pilot-20-freeze-a",
+  "status": "FROZEN_PRE_OUTCOME",
+  "note": "Decisions below use only catalyst semantics/timing described in primary or contemporaneous sources. Outcome figures are deliberately omitted.",
+  "cases": [
+    {
+      "ticker": "ALMS",
+      "cutoff": "2026-09-01T07:31:00-04:00",
+      "decision": "BEARISH_AVOID",
+      "reason": "Phase 2b failed primary and secondary endpoints in overall population; subgroup signal does not reverse primary-trial failure.",
+      "source": "company release 07:30 ET"
+    },
+    {
+      "ticker": "XENE",
+      "cutoff": "2026-09-17T16:05:00-04:00",
+      "decision": "BEARISH_AVOID",
+      "reason": "Voluntary pause of new psychiatry enrollment after neuropsychiatric adverse events; epilepsy NDA is positive but does not neutralize new safety/execution risk.",
+      "source": "company release"
+    },
+    {
+      "ticker": "CMPX",
+      "cutoff": "2026-09-22T08:31:00-04:00",
+      "decision": "BEARISH_AVOID",
+      "reason": "FDA recommended survival-benefit trial before BLA, materially extending regulatory path despite company's disagreement and positive prior efficacy data.",
+      "source": "company IR 08:30 ET"
+    },
+    {
+      "ticker": "FLNA",
+      "cutoff": "2026-09-22T08:01:00-04:00",
+      "decision": "WATCH",
+      "reason": "FDA lifted full clinical hold, enabling planned Phase 2a; material regulatory de-risking but still early-stage clinical development.",
+      "source": "SEC 8-K/company release 08:00 ET"
+    }
+  ]
+}
