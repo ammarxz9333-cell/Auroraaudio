@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "batch": "pilot-intraday-order-a",
+  "cases": [
+    {
+      "ticker": "FLNA",
+      "status": "INTRADAY_CONFIRMATION_FOUND",
+      "cutoff": "2026-09-22T08:01:00-04:00",
+      "observations": [
+        "09:31 ET support test",
+        "09:36 ET early high",
+        "contemporaneous entry zone 0.98-1.02",
+        "confirmation required: 2+ consecutive 1m/5m closes plus reversal/volume surge"
+      ],
+      "implication": "Do not score from raw open. Entry Gate should activate only after confirmation; subsequent target path must be measured from confirmed timestamp/price."
+    },
+    {
+      "ticker": "DLXY",
+      "status": "ORDER_UNVERIFIED",
+      "observations": [
+        "contemporaneous watchlist cited ~0.95-1.02, breakout/VWAP reclaim, hold 1.04",
+        "daily open 1.02, low 0.6517, high 4.45"
+      ],
+      "implication": "Evidence supports a real-time setup but does not establish whether -5% or +5% from a specific confirmed entry occurred first."
+    }
+  ],
+  "rule_reaffirmed": "No inferred threshold ordering from daily OHLC."
+}
