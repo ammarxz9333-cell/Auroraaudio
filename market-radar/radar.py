@@ -451,8 +451,7 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "gate_reason": "VWAP/spread not available from current Yahoo 5m snapshot; no BUYABLE_NOW inference permitted."
     }
     with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, separators=(",", ":")) + "
-")
+        fh.write(json.dumps(row, separators=(",", ":")) + "\\n")
 
 def track_live_outcome(snapshot: dict, gate: dict, rid: str):
     if not snapshot or not snapshot.get("ticker") or not snapshot.get("bar_time_utc"):
