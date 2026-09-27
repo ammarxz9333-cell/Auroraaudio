@@ -12,6 +12,12 @@ from zoneinfo import ZoneInfo
 from entry_gate import GateInput, entry_gate
 
 NY=ZoneInfo("America/New_York")
+DECISION_NORMALIZATION={
+    "WATCH_CONTINUATION":"WATCH","WATCH_CONTINUATION_HIGH":"WATCH",
+    "WATCH_FINANCING":"WATCH_LOW_CONFIDENCE","WATCH_REGULATORY_HIGH":"WATCH",
+    "WATCH_BINARY_UPCOMING":"NO_TRADE","NO_NEW_EVENT":"NO_TRADE"
+}
+def normalized_decision(x): return DECISION_NORMALIZATION.get(x,x)
 UA="Ammar-Market-Radar-Replay/1.0"
 
 def yahoo_5m(ticker, start, end):
@@ -70,7 +76,7 @@ def replay_case(case):
             key=str(spread)
             if spread_scenarios[key] is not None: continue
             if pre_reprice is None: continue
-            g=entry_gate(GateInput(case["decision"],row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread))
+            g=entry_gate(GateInput(normalized_decision(case["decision"]),row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread))
             if g["state"]=="BUYABLE_NOW":
                 entry=float(b["close"]); plus5=entry*1.05; plus10=entry*1.10; minus5=entry*0.95
                 later=regular[idx:]
@@ -90,7 +96,7 @@ def replay_case(case):
     firsts={v["first_buyable_time"] for v in spread_scenarios.values() if v}
     robust=robust and len(firsts)==1
     return {**case,"replay_state":"PRICE_VOLUME_RECONSTRUCTED","session_date":str(day),"bars_evaluated":len(out),"first_bar":out[0] if out else None,
-            "spread_scenarios":spread_scenarios,"spread_robust_buyable":robust,
+            "normalized_decision":normalized_decision(case["decision"]),"spread_scenarios":spread_scenarios,"spread_robust_buyable":robust,
             "note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
 
 def main():
