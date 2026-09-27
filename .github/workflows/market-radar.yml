@@ -103,6 +103,7 @@ jobs:
         run: python3 market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/oos/frozen/entry-gate-v1-b1.json market-radar/backtest/oos/frozen/entry-gate-v1-b2.json --cache-dir /tmp/market-radar-bars --out /tmp/oos-replay.json && python3 -c 'import json; d=json.load(open("/tmp/oos-replay.json")); print(json.dumps([{"ticker":x["ticker"],"decision":x.get("normalized_decision"),"v1":x.get("spread_scenarios",{}).get("0.5"),"v2":x.get("v2_spread_scenarios",{}).get("0.5")} for x in d["cases"]],indent=2))'
 
       - name: Run first-public-source scanner
+        if: github.ref == 'refs/heads/main-v2'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           RADAR_SCORE_THRESHOLD: "8"
@@ -113,13 +114,14 @@ jobs:
         run: python3 market-radar/radar.py
 
       - name: Export growing PIT candidate corpus
-        if: github.event_name != 'schedule'
+        if: github.ref == 'refs/heads/main-v2' && github.event_name != 'schedule'
         run: |
           python3 market-radar/backtest/export_pit_candidates.py market-radar/live/tape --out /tmp/pit-candidates.jsonl
           python3 market-radar/backtest/build_pit_dataset.py /tmp/pit-candidates.jsonl /tmp/pit-dataset.json
           python3 market-radar/backtest/make_cohort_split.py /tmp/pit-dataset.json --out-dir /tmp/pit-splits
 
       - name: Persist radar state
+        if: github.ref == 'refs/heads/main-v2'
         shell: bash
         run: |
           git add market-radar/state.json market-radar/live/trades.json market-radar/live/tape/ 2>/dev/null || true
