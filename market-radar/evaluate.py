@@ -235,6 +235,7 @@ def evaluate_observation(meta, ticker, bars, spy_bars=None, qqq_bars=None):
         "published_utc": meta.get("published_utc"),
         "stage": meta.get("stage"),
         "score": meta.get("score"),
+        "direction": meta.get("direction"),
         "source": meta.get("source"),
         "source_class": meta.get("source_class"),
         "signals": meta.get("signals") or [],
@@ -364,6 +365,7 @@ def build_metrics(rows):
         },
         "by_score_band": breakdown(rows, score_band),
         "by_stage": breakdown(rows, lambda x: x.get("stage")),
+        "by_direction": breakdown(rows, lambda x: x.get("direction")),
         "by_source_class": breakdown(rows, lambda x: x.get("source_class")),
         "by_source": breakdown(rows, lambda x: x.get("source")),
     }
