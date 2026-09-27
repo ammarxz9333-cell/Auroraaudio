@@ -363,6 +363,48 @@
       "weight": 1,
       "url": "https://www.reddit.com/r/pennystocks/new/.rss",
       "fallback_query": "site:reddit.com/r/pennystocks (catalyst OR contract OR FDA OR acquisition OR offering) when:1d"
+    },
+    {
+      "name": "S&P DJI index changes",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 5,
+      "query": "site:spglobal.com/spdji (added OR addition OR join OR inclusion OR rebalance OR constituent) (S&P 500 OR S&P MidCap OR S&P SmallCap) when:2d"
+    },
+    {
+      "name": "Analyst initiations and upgrades",
+      "type": "google_news",
+      "class": "secondary",
+      "weight": 2,
+      "query": "(\"initiates coverage\" OR \"initiated coverage\" OR \"starts at Buy\" OR \"upgrades to Buy\" OR \"upgrades to Outperform\" OR \"price target\") stock when:1d"
+    },
+    {
+      "name": "Company certification and production milestones",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 3,
+      "query": "stock (certification OR \"CMMC Level 2\" OR \"commercial operations\" OR \"commercial production\" OR \"starts production\" OR buyback OR \"share repurchase\") when:1d"
+    },
+    {
+      "name": "BusinessWire material company catalysts",
+      "type": "google_news",
+      "class": "secondary",
+      "weight": 2,
+      "query": "site:businesswire.com (contract OR certification OR \"commercial operations\" OR \"commercial production\" OR acquisition OR partnership OR buyback OR \"share repurchase\") when:1d"
+    },
+    {
+      "name": "GlobeNewswire material company catalysts",
+      "type": "google_news",
+      "class": "secondary",
+      "weight": 2,
+      "query": "site:globenewswire.com (contract OR certification OR \"commercial operations\" OR \"commercial production\" OR acquisition OR partnership OR buyback OR \"share repurchase\") when:1d"
+    },
+    {
+      "name": "PR Newswire material company catalysts",
+      "type": "google_news",
+      "class": "secondary",
+      "weight": 2,
+      "query": "site:prnewswire.com (contract OR certification OR \"commercial operations\" OR \"commercial production\" OR acquisition OR partnership OR buyback OR \"share repurchase\") when:1d"
     }
   ]
 }
