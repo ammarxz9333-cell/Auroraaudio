@@ -473,7 +473,7 @@ def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
     out.update({"decision":decision,"entry_price":price if out["state"]=="BUYABLE_NOW" else None,"entry_time_utc":snapshot["bar_time_utc"] if out["state"]=="BUYABLE_NOW" else None,"inputs":{"gap_pct":round(gap,3),"premarket_reprice_pct":float(pre or 0.0),"rvol":gi.rvol,"holds_vwap":gi.holds_vwap,"holds_open":gi.holds_open,"minutes_since_open":mins,"spread_pct":round(gi.spread_pct,4)}})
     return out
 
-def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int, threshold: int):
+def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int, threshold: int, research_context=None):
     """Append the exact point-in-time market snapshot used by the radar.
     Missing fields stay null; never backfill them from later bars.
     """
