@@ -25,6 +25,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from statistics import median
 from zoneinfo import ZoneInfo
+from entry_gate import GateInput, entry_gate
 
 ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
@@ -381,14 +382,35 @@ def yahoo_quote_bid_ask(ticker: str):
     except Exception:
         return None
 
-def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int):
+def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
+    required = ("price","previous_close","regular_open","vwap","same_time_volume_ratio","holds_vwap","holds_open","bar_time_utc")
+    if any(snapshot.get(k) is None for k in required):
+        return {"state":"INSUFFICIENT_DATA","reason":"missing required point-in-time tape field"}
+    quote = yahoo_quote_bid_ask(snapshot["ticker"])
+    if not quote or quote.get("spread_pct") is None:
+        return {"state":"INSUFFICIENT_DATA","reason":"point-in-time bid/ask unavailable"}
+    reaction = snapshot.get("reaction")
+    decision = "EARLY" if reaction == "not-yet-reacted" and score >= threshold else "WATCH"
+    price=float(snapshot["price"]); prev=float(snapshot["previous_close"]); opn=float(snapshot["regular_open"])
+    gap=((opn/prev)-1)*100 if prev else 0.0
+    bt=dt.datetime.fromisoformat(snapshot["bar_time_utc"]).astimezone(NY)
+    mins=max(0,(bt.hour*60+bt.minute)-(9*60+30))
+    pre=snapshot.get("pre30m_move_pct")
+    if pre is None and bt.hour*60+bt.minute < 9*60+30:
+        return {"state":"INSUFFICIENT_DATA","reason":"premarket repricing unavailable"}
+    gi=GateInput(decision=decision,gap_pct=gap,premarket_reprice_pct=float(pre or 0.0),rvol=float(snapshot["same_time_volume_ratio"]),holds_vwap=bool(snapshot["holds_vwap"]),holds_open=bool(snapshot["holds_open"]),minutes_since_open=mins,spread_pct=float(quote["spread_pct"]))
+    out=entry_gate(gi)
+    out.update({"decision":decision,"entry_price":price if out["state"]=="BUYABLE_NOW" else None,"entry_time_utc":snapshot["bar_time_utc"] if out["state"]=="BUYABLE_NOW" else None,"inputs":{"gap_pct":round(gap,3),"premarket_reprice_pct":float(pre or 0.0),"rvol":gi.rvol,"holds_vwap":gi.holds_vwap,"holds_open":gi.holds_open,"minutes_since_open":mins,"spread_pct":round(gi.spread_pct,4)}})
+    return out
+
+def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int, threshold: int):
     """Append the exact point-in-time market snapshot used by the radar.
     Missing fields stay null; never backfill them from later bars.
     """
     if not snapshot or snapshot.get("error") or not snapshot.get("ticker"):
         return
     TAPE_DIR.mkdir(parents=True, exist_ok=True)
-    ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())\n    quote = yahoo_quote_bid_ask(ticker) or {}
+    ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())\n    quote = yahoo_quote_bid_ask(ticker) or {}\n    gate = evaluate_entry_gate(snapshot, score, threshold)
     row = {
         "captured_utc": now_utc().isoformat(),
         "radar_id": rid,
@@ -597,7 +619,7 @@ def main():
             market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
             for snap in valid_market:
-                persist_market_snapshot(snap, rid, source["name"], score)
+                persist_market_snapshot(snap, rid, source["name"], score, effective_threshold)
             if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
                 score += 2
                 hits.append("market-confirmation")
