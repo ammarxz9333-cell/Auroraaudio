@@ -36,7 +36,7 @@ def yahoo_5m(ticker, start, end):
         out.append({"time":dt.datetime.fromtimestamp(ts,dt.timezone.utc),"ny":dt.datetime.fromtimestamp(ts,dt.timezone.utc).astimezone(NY),**vals})
     return out
 
-def first_threshold(outcome, outcome_time, p5, m5, time_iso):\n    if outcome is not None: return outcome, outcome_time\n    if p5 and m5: return "ORDER_UNVERIFIED", time_iso\n    if p5: return "PLUS5_FIRST", time_iso\n    if m5: return "MINUS5_FIRST", time_iso\n    return None, None\n\ndef replay_case(case, cache_dir=None):
+def replay_case(case, cache_dir=None):
     cutoff=dt.datetime.fromisoformat(case["cutoff"])
     event_ny=cutoff.astimezone(NY)
     day=event_ny.date() + (dt.timedelta(days=1) if event_ny.time() >= dt.time(16,0) else dt.timedelta(0))
@@ -119,7 +119,7 @@ def first_threshold(outcome, outcome_time, p5, m5, time_iso):\n    if outcome is
                     mfe=max(mfe,(hi/entry-1)*100); mae=min(mae,(lo/entry-1)*100)
                     plus10_hit=plus10_hit or hi>=plus10
                     p5=hi>=plus5; m5=lo<=minus5
-                    outcome,outcome_time=first_threshold(outcome,outcome_time,p5,m5,z["time"].isoformat())
+                    if outcome is None: outcome=("ORDER_UNVERIFIED" if p5 and m5 else "PLUS5_FIRST" if p5 else "MINUS5_FIRST" if m5 else None); outcome_time=(z["time"].isoformat() if outcome else None)
                 spread_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":outcome or "UNRESOLVED","outcome_time":outcome_time,"plus10_reached":plus10_hit,"mfe_pct":round(mfe,3),"mae_pct":round(mae,3)}
 
     reclaim=None
