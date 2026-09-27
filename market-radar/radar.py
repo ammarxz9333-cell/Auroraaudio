@@ -64,11 +64,26 @@ CATALYSTS = {
     "investigation": 3, "probe": 3, "permit": 2, "interconnection": 3,
     "procurement": 3, "award notice": 4, "material agreement": 4,
     "8-k": 2, "form 8-k": 2, "13d": 4, "13g": 2, "form 4": 1,
+    "initiates coverage": 2, "initiated coverage": 2, "starts coverage": 2,
+    "started coverage": 2, "starts at buy": 3, "started at buy": 3,
+    "upgrades to buy": 3, "upgraded to buy": 3, "upgrades to outperform": 3,
+    "price target": 1, "target price": 1,
+    "added to the s&p 500": 5, "added to s&p 500": 5, "join the s&p 500": 5,
+    "joins the s&p 500": 5, "index inclusion": 4, "index rebalancing": 3,
+    "cmmc level 2": 4, "cybersecurity maturity model certification": 4,
+    "certification": 2, "certified": 2,
+    "commercial operations": 4, "commercial operation": 4,
+    "commercial production": 4, "starts production": 4, "production launch": 4,
+    "buyback": 3, "share repurchase": 3, "repurchase program": 3,
+    "uplisting": 2, "uplisted": 2,
+    "product launch": 2, "launches new": 2, "showcases": 1,
+    "takeover speculation": 3, "acquisition speculation": 3,
+    "strategic alternatives": 3,
 }
 
 NEGATIVE_NOISE = {
     "podcast": -1, "opinion": -1, "sponsored": -2, "advertisement": -3,
-    "price target": -1, "technical analysis": -1, "watchlist": -1,
+    "technical analysis": -1, "watchlist": -1,
 }
 
 BULLISH_DIRECTION = {
