@@ -317,6 +317,13 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
         prev_close = float(prev_close)
         change_pct = ((latest["close"] / prev_close) - 1.0) * 100.0 if prev_close else None
 
+        # Session-level premarket repricing is independent of the catalyst timestamp.
+        # This prevents missing event-relative data from being interpreted as a 0% premarket move.
+        today_premarket = [b for b in bars if b["ny"].date().isoformat() == today_key and (b["ny"].hour * 60 + b["ny"].minute) < reg_start]
+        session_premarket_reprice = None
+        if today_premarket and prev_close:
+            session_premarket_reprice = ((today_premarket[-1]["close"] / prev_close) - 1.0) * 100.0
+
         today_bars = [b for b in by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= cutoff]
         today_cum = sum(b["volume"] for b in today_bars)
         regular_open = today_bars[0]["open"] if today_bars else None
@@ -362,6 +369,7 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
             "reaction": reaction,
             "event_price": round(event_price, 4) if event_price is not None else None,
             "pre30m_move_pct": round(pre30_move, 3) if pre30_move is not None else None,
+            "premarket_reprice_pct": round(session_premarket_reprice, 3) if session_premarket_reprice is not None else None,
             "post30m_move_pct": round(post30_move, 3) if post30_move is not None else None,
             "since_event_move_pct": round(since_event_move, 3) if since_event_move is not None else None,
             "bar_time_utc": latest["utc"].isoformat(),
@@ -411,8 +419,10 @@ def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
     gap=((opn/prev)-1)*100 if prev else 0.0
     bt=dt.datetime.fromisoformat(snapshot["bar_time_utc"]).astimezone(NY)
     mins=max(0,(bt.hour*60+bt.minute)-(9*60+30))
-    pre=snapshot.get("pre30m_move_pct")
-    if pre is None and bt.hour*60+bt.minute < 9*60+30:
+    pre=snapshot.get("premarket_reprice_pct")
+    if pre is None:
+        pre=snapshot.get("pre30m_move_pct")
+    if pre is None:
         return {"state":"INSUFFICIENT_DATA","reason":"premarket repricing unavailable"}
     gi=GateInput(decision=decision,gap_pct=gap,premarket_reprice_pct=float(pre or 0.0),rvol=float(snapshot["same_time_volume_ratio"]),holds_vwap=bool(snapshot["holds_vwap"]),holds_open=bool(snapshot["holds_open"]),minutes_since_open=mins,spread_pct=float(quote["spread_pct"]))
     out=entry_gate(gi)
