@@ -26,3 +26,10 @@ def test_no_reclaim_exposes_best_candidate_diagnostics():
     assert r["state"]=="NO_RECLAIM"
     assert r["best_post_stop_candidate"]["conditions_met"]==4
     assert r["best_post_stop_candidate"]["above_open_pct"]==9
+
+
+def test_no_post_stop_bar_is_safe():
+    rows=[row("09:35",100,100),row("09:40",94,94,ho=False,hv=False)]
+    r=m.detect_reclaim(rows,"09:35",100)
+    assert r["state"]=="NO_RECLAIM"
+    assert r["best_post_stop_candidate"] is None
