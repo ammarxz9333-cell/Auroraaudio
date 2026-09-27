@@ -54,12 +54,43 @@
       "mae_pct": -0.93,
       "close_return_pct": 66.15,
       "verified": true
+    },
+    {
+      "ticker": "VICR",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "entry_basis": "next regular open after post-close alert",
+      "entry": 206.55,
+      "high": 219.015,
+      "close": 216.39,
+      "next_close": 222.72,
+      "mfe_pct": 6.04,
+      "close_return_pct": 4.76,
+      "next_close_return_pct": 7.83,
+      "verified": true
+    },
+    {
+      "ticker": "WOR",
+      "decision": "WATCH",
+      "entry_basis": "next regular open after post-close earnings alert",
+      "entry": 67.11,
+      "high": 67.535,
+      "low": 56.74,
+      "close": 59.7,
+      "mfe_pct": 0.63,
+      "mae_pct": -15.45,
+      "close_return_pct": -11.04,
+      "verified": true,
+      "classification": "GAP_REJECTION_NO_ENTRY_IF_CONFIRMATION_REQUIRED"
     }
   ],
   "preliminary": {
     "bullish_verified": 3,
     "bullish_close_positive": "3/3",
     "bullish_reached_plus_5pct_intraday": "3/3",
-    "caution": "Tiny partial sample; not a win-rate estimate. FLNA shows strong MFE but poor multi-day hold."
+    "caution": "Tiny partial sample; not a win-rate estimate. FLNA shows strong MFE but poor multi-day hold.",
+    "verified_bullish_total": 5,
+    "reached_plus_5pct_intraday": "4/5",
+    "positive_at_close": "4/5",
+    "note": "WOR demonstrates why post-gap price acceptance must gate entry; VICR retained executable upside after alert."
   }
 }
