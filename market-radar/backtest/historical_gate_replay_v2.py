@@ -70,7 +70,11 @@ def replay_case(case):
         row={"time_utc":b["time"].isoformat(),"price":float(b["close"]),"gap_pct":((reg_open/prev_close)-1)*100,
              "premarket_reprice_pct":pre_reprice,"holds_open":float(b["close"])>=reg_open,
              "holds_vwap":vwap is not None and float(b["close"])>=vwap,"minutes_since_open":mins,
-             "cum_volume":cv,"rvol":rvol}
+             "cum_volume":cv,"rvol":rvol,
+             "vwap":vwap,"open_price":reg_open,
+             "above_vwap_pct":((float(b["close"])/vwap)-1)*100 if vwap else None,
+             "above_open_pct":((float(b["close"])/reg_open)-1)*100,
+             "bar_close_location":((float(b["close"])-float(b["low"]))/(float(b["high"])-float(b["low"]))) if float(b["high"])>float(b["low"]) else 0.5}
         out.append(row)
         for spread in (0.5,1.0,2.0,3.0):
             key=str(spread)
@@ -97,6 +101,7 @@ def replay_case(case):
     robust=robust and len(firsts)==1
     return {**case,"replay_state":"PRICE_VOLUME_RECONSTRUCTED","session_date":str(day),"bars_evaluated":len(out),"first_bar":out[0] if out else None,
             "normalized_decision":normalized_decision(case["decision"]),"spread_scenarios":spread_scenarios,"spread_robust_buyable":robust,
+            "first_buyable_features": next((r for r in out if any(v and v["first_buyable_time"]==r["time_utc"] for v in spread_scenarios.values())),None),
             "note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
 
 def main():
