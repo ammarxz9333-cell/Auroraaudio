@@ -9,7 +9,42 @@
         "source": "Yahoo Finance predefined day_gainers public endpoint"
       },
       "errors": [],
-      "generated_utc": "2026-09-27T15:35:29.902653+00:00",
+      "generated_utc": "2026-09-27T15:41:27.700161+00:00",
+      "investigation_protocol": {
+        "required_output": "For every mover: earliest clue, full catalyst/rumor timeline, pre-move features, why missed, machine-detectable pattern, false-positive tradeoff, and proposed reversible model/source change.",
+        "required_root_cause_labels": [
+          "source-coverage-gap",
+          "ticker-entity-extraction",
+          "catalyst-vocabulary-gap",
+          "score-threshold",
+          "watchlist-bias",
+          "source-latency",
+          "market-data-latency",
+          "deduplication",
+          "direction-classification",
+          "market-reaction-filter",
+          "sector-sympathy-not-modeled",
+          "analyst-action-not-modeled",
+          "index-flow-not-modeled",
+          "rumor-not-modeled",
+          "price-volume-momentum-not-modeled",
+          "genuinely-unpredictable"
+        ],
+        "research_domains": [
+          "SEC filings/exhibits and company IR",
+          "customer/supplier/partner releases",
+          "government contracts, procurement, permits and regulatory records",
+          "analyst initiations/upgrades/downgrades and target changes",
+          "index additions/rebalances and ETF/passive-flow effects",
+          "earnings, guidance, balance sheet, dilution, ATM/S-3/424B5 and buybacks",
+          "insider/Form 4 and 13D/13G ownership changes",
+          "short interest, float, borrow and options positioning when public",
+          "sector/peer/sympathy moves and commodity/macro exposures",
+          "public rumors, alleged leaks, Reddit, Stocktwits and X with provenance labels",
+          "intraday price/volume/VWAP/relative-strength structure before acceleration"
+        ],
+        "timeline": "Reconstruct several trading days before the move through the move itself using point-in-time public timestamps."
+      },
       "movers": [
         {
           "alerted_within_lookback": false,
