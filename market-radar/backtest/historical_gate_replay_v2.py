@@ -136,7 +136,7 @@ def replay_case(case, cache_dir=None):
                     elif outcome2 is None and hi>=ep2*1.05: outcome2="PLUS5_FIRST"
                     elif outcome2 is None and lo<=ep2*.95: outcome2="MINUS5_FIRST"
                 reclaim.update({"outcome":outcome2 or "UNRESOLVED","plus10_reached":p10h2,"mfe_pct":round(mfe3,3),"mae_pct":round(mae3,3)})
-    robust=all(spread_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0))
+    if reclaim and reclaim.get("state")=="NO_RECLAIM" and reclaim.get("best_post_stop_candidate"): bpc=reclaim["best_post_stop_candidate"]; ri=next((i for i,r in enumerate(out) if r["time_utc"]==bpc["time_utc"]),None); ep=float(bpc["price"]); seq=(regular[ri:] if ri is not None else []); oc=None; p10=False; mfe=0.0; mae=0.0;\n    robust=all(spread_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0))
     firsts={v["first_buyable_time"] for v in spread_scenarios.values() if v}
     robust=robust and len(firsts)==1
     return {**case,"replay_state":"PRICE_VOLUME_RECONSTRUCTED","session_date":str(day),"bars_evaluated":len(out),"first_bar":out[0] if out else None,
