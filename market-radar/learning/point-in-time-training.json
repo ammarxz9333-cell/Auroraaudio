@@ -77,6 +77,162 @@
       "family": "regulatory-briefing",
       "label": "late_binary_risk",
       "lesson": "Constructive FDA briefing documents can reprice shares before the panel; after a large move classify as binary/late rather than early."
+    },
+    {
+      "ticker": "FLNA",
+      "family": "fda-clinical-hold-lift",
+      "label": "binary_positive_reprice",
+      "lesson": "FDA hold removal is directional and material; alert immediately, but after a large gap/reprice do not call it early."
+    },
+    {
+      "ticker": "CMPX",
+      "family": "fda-feedback-negative",
+      "label": "bearish_avoid",
+      "lesson": "Regulatory update language can conceal a materially negative FDA requirement; semantic direction must override generic FDA keyword scores."
+    },
+    {
+      "ticker": "PAYX",
+      "family": "earnings-beat-rejected",
+      "label": "bearish_reaction",
+      "lesson": "Headline beats are insufficient when guidance/margins or expectations disappoint; negative tape reaction is material evidence."
+    },
+    {
+      "ticker": "CTAS",
+      "family": "earnings-beat-rejected",
+      "label": "weak_false_positive",
+      "lesson": "Double beat can still sell off; require expectation/guidance context and price acceptance."
+    },
+    {
+      "ticker": "GIS",
+      "family": "earnings-beat-muted",
+      "label": "no_trade",
+      "lesson": "A beat with only muted reaction should not be promoted merely by headline numbers."
+    },
+    {
+      "ticker": "DKS",
+      "family": "insider-open-market-buy",
+      "label": "developing_watch",
+      "lesson": "Weight insider buying by role, dollar value, stake change and proximity to lows; open-market CFO purchase near $1M is stronger than routine small buys."
+    },
+    {
+      "ticker": "GME",
+      "family": "insider-open-market-buy",
+      "label": "developing_watch",
+      "lesson": "Large repeated chairman open-market purchases can be a meaningful signal, but price/volume confirmation remains required."
+    },
+    {
+      "ticker": "OPTX",
+      "family": "defense-contract",
+      "label": "reacting_watch",
+      "lesson": "Strategic defense/Space Force orders deserve high catalyst quality; if already on a multi-day run, downgrade for chase risk."
+    },
+    {
+      "ticker": "CIEN",
+      "family": "analyst-upgrade-ai-infrastructure",
+      "label": "developing_watch",
+      "lesson": "Upgrade plus major target reset plus sector narrative can be underabsorbed when day-one move is modest."
+    },
+    {
+      "ticker": "ALVO",
+      "family": "double-upgrade-regulatory",
+      "label": "developing_watch",
+      "lesson": "Double upgrade plus 100% target reset and upcoming regulatory cluster is stronger than a standalone target note."
+    },
+    {
+      "ticker": "GRAL",
+      "family": "fda-briefing-documents",
+      "label": "binary_late_risk",
+      "lesson": "Constructive FDA briefing documents are highly material, but a 30%+ immediate reprice converts the state to binary/late."
+    },
+    {
+      "ticker": "SRRK",
+      "family": "fda-approval",
+      "label": "reacting_watch",
+      "lesson": "Approval before PDUFA with broad label is strong; distinguish unexpected timing/label surprise from already-priced approval."
+    },
+    {
+      "ticker": "RARE",
+      "family": "fda-approval-balance-sheet",
+      "label": "developing_watch",
+      "lesson": "FDA approval plus monetizable priority-review vouchers can improve balance sheet even after prior trial failure; evaluate net catalyst stack."
+    },
+    {
+      "ticker": "MGLD",
+      "family": "definitive-acquisition",
+      "label": "late_arbitrage",
+      "lesson": "Definitive acquisition is high certainty but a ~95% opening gap leaves little momentum edge; classify as late/arb."
+    },
+    {
+      "ticker": "GLND",
+      "family": "partnership-intraday-acceleration",
+      "label": "high_momentum_event",
+      "lesson": "Modest opening gap plus extreme RVOL and strong close location after a fresh partnership is a price-volume acceleration family."
+    },
+    {
+      "ticker": "AIFF",
+      "family": "strategic-partnership",
+      "label": "late_chase_risk",
+      "lesson": "Fresh partnership can reprice microcaps violently; a 40%+ opening gap requires chase-risk controls."
+    },
+    {
+      "ticker": "CHPT",
+      "family": "earnings-gap-and-hold",
+      "label": "gap_hold",
+      "lesson": "Large earnings gap can remain strong when volume is extraordinary and price holds near session highs; gap size alone is not sufficient to reject."
+    },
+    {
+      "ticker": "PAAI",
+      "family": "contract-intraday-explosion",
+      "label": "extreme_momentum",
+      "lesson": "Small opening gap followed by extreme intraday repricing is detectable by acceleration/RVOL, but risk controls must react as move becomes parabolic."
+    },
+    {
+      "ticker": "PRTH",
+      "family": "take-private",
+      "label": "late_arbitrage",
+      "lesson": "Take-private definitive agreement often gaps directly near consideration value; alert event but do not treat as early upside setup."
+    },
+    {
+      "ticker": "ALMS",
+      "family": "clinical-trial-failure",
+      "label": "bearish_avoid",
+      "lesson": "Negative trial readout is directional and should dominate generic clinical-trial catalyst points."
+    },
+    {
+      "ticker": "PLAY",
+      "family": "earnings-negative-reaction",
+      "label": "bearish_avoid",
+      "lesson": "Weak post-earnings price acceptance near session low is bearish evidence even when headline parsing is ambiguous."
+    },
+    {
+      "ticker": "DVLT",
+      "family": "promotional-contract-rejection",
+      "label": "weak_false_positive",
+      "lesson": "Large headline contract/purchase-order claims that the tape rejects require credibility and economics checks rather than automatic bullish scoring."
+    },
+    {
+      "ticker": "RZLV",
+      "family": "revenue-growth-rejected",
+      "label": "weak_false_positive",
+      "lesson": "Huge reported growth can still be rejected; quality, expectations and financing context matter."
+    },
+    {
+      "ticker": "BMEA",
+      "family": "public-offering",
+      "label": "dilution_risk",
+      "lesson": "Proposed common/pre-funded-warrant offering is financing overhang until terms and market absorption are known."
+    },
+    {
+      "ticker": "GCTK",
+      "family": "registered-direct-prefunded",
+      "label": "bearish_avoid",
+      "lesson": "Registered direct plus large pre-funded warrant component should trigger dilution direction classifier."
+    },
+    {
+      "ticker": "HCWB",
+      "family": "private-placement-warrants",
+      "label": "dilution_risk",
+      "lesson": "Pre-funded and common warrants create dilution/overhang even when sold to an existing institutional investor."
     }
   ],
   "learned_rules": [
@@ -86,5 +242,10 @@
     "Create a dedicated analyst-action family: upgrade/initiation plus unusually large target revision.",
     "Treat large premarket gaps and extreme one-day moves as chase-risk states, not automatically high-conviction entries.",
     "Use market reaction as confirmation, not as a requirement that deletes an otherwise valid underabsorbed catalyst."
-  ]
+  ],
+  "summary": {
+    "case_count": 38,
+    "last_expansion_utc": "2026-09-27",
+    "note": "Mixed positive, negative, late/chase, dilution, no-trade and false-positive point-in-time cases."
+  }
 }
