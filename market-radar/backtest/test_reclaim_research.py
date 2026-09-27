@@ -40,3 +40,16 @@ def test_exact_stop_time_anchors_reclaim_search():
     r=m.detect_reclaim(rows,"09:35",100,"09:40")
     assert r["state"]=="RECLAIM_CANDIDATE"
     assert r["time_utc"]=="09:45"
+
+
+def test_classifies_vwap_pending():
+    rows=[row("09:35",100,100),row("09:40",94,94,ho=False,hv=False),row("10:00",101,99,hv=False)]
+    r=m.detect_reclaim(rows,"09:35",100,"09:40")
+    b=r["best_post_stop_candidate"]
+    assert b["blockers"]==["BELOW_VWAP"]
+    assert b["recovery_type"]=="VWAP_RECLAIM_PENDING"
+
+def test_classifies_extension_breakout():
+    rows=[row("09:35",100,100),row("09:40",94,94,ho=False,hv=False),row("10:00",120,118,ao=20,av=2)]
+    r=m.detect_reclaim(rows,"09:35",100,"09:40")
+    assert r["best_post_stop_candidate"]["recovery_type"]=="EXTENSION_BREAKOUT"
