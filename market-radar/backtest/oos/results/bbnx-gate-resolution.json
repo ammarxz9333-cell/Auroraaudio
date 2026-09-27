@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "ticker": "BBNX",
+  "gate_version": "2ff99b2e5963195efedce88830a5a4795f6066a6",
+  "frozen_decision": "WATCH_FINANCING_RISK",
+  "evidence": [
+    {
+      "time": "09:29:59 ET",
+      "price": 18.75,
+      "session": "premarket",
+      "change_pct": -2.648,
+      "volume": 54634
+    },
+    {
+      "time": "14:07 ET",
+      "price": 21.09,
+      "session": "regular",
+      "change_pct": 9.7,
+      "context": "contemporaneous news page reported shares higher after Baird/Truist analyst actions"
+    }
+  ],
+  "daily": {
+    "open": 18.61,
+    "low": 18.4,
+    "high": 22.22,
+    "close": 22.18,
+    "volume": 7193454
+  },
+  "classification": "QUALIFIED_BUT_TIMESTAMP_UNRESOLVED",
+  "scoring": "EXCLUDED_FROM_BUYABLE_PRECISION_UNTIL_FIRST_GATE_TIMESTAMP_VERIFIED",
+  "reason": "Evidence proves strong intraday acceptance but public sources retrieved do not establish the first 5/15-minute timestamp satisfying all frozen gate fields."
+}
