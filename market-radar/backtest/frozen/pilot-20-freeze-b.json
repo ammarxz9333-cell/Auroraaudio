@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "batch": "pilot-20-freeze-b",
+  "status": "FROZEN_PRE_OUTCOME",
+  "cases": [
+    {
+      "ticker": "LEU",
+      "cutoff": "2026-09-09T16:05:00-04:00",
+      "decision": "BEARISH_AVOID",
+      "reason": "$500M underwritten equity/pre-funded warrant offering plus up to 6.99M common warrants creates substantial immediate and contingent dilution/overhang; proceeds broadly general-purpose.",
+      "evidence": [
+        "Centrus pricing release 2026-09-09",
+        "SEC exhibit"
+      ]
+    },
+    {
+      "ticker": "GCTK",
+      "cutoff": "2026-09-24T16:05:00-04:00",
+      "decision": "BEARISH_AVOID",
+      "reason": "$3.1M best-efforts public offering dominated by pre-funded warrants (1.35M vs 0.169M common shares) at $2.039/$2.04; financing/dilution dominates.",
+      "evidence": [
+        "SEC 8-K and Exhibit 99.1"
+      ]
+    },
+    {
+      "ticker": "WOR",
+      "cutoff": "2026-09-22T16:21:00-04:00",
+      "decision": "WATCH",
+      "reason": "Adjusted EPS and revenue above consensus, 7% organic growth, EBITDA +10%, FCF nearly doubled, plus ongoing repurchases; strong stacked fundamental catalyst but entry requires post-release price acceptance.",
+      "evidence": [
+        "company Q1 FY27 release",
+        "SEC 8-K accepted 16:20 ET"
+      ]
+    },
+    {
+      "ticker": "CHPT",
+      "cutoff": "2026-09-02T16:05:00-04:00",
+      "decision": "WATCH",
+      "reason": "Revenue +18% YoY above guidance, record non-GAAP gross margin and sharply improved adjusted EBITDA loss; credible earnings inflection but still loss-making, so require tape confirmation.",
+      "evidence": [
+        "company Q2 FY27 release"
+      ]
+    }
+  ]
+}
