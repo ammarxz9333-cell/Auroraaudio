@@ -24,4 +24,4 @@ def detect_reclaim(rows, first_entry_time, first_entry_price):
             return {"state":"RECLAIM_CANDIDATE","time_utc":r["time_utc"],"price":float(r["price"]),
                     "rvol":r.get("rvol"),"above_open_pct":r.get("above_open_pct"),
                     "above_vwap_pct":r.get("above_vwap_pct")}
-    return {"state":"NO_RECLAIM"}
+    return {"state":"NO_RECLAIM","best_post_stop_candidate":best}
