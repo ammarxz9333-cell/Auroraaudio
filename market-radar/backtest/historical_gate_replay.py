@@ -38,7 +38,7 @@ def replay_case(case):
     regular=[b for b in today if dt.time(9,30)<=b["ny"].time()<dt.time(16,0)]
     pre=[b for b in today if b["ny"].time()<dt.time(9,30)]
     prior=[b for b in bars if b["ny"].date()<day and dt.time(9,30)<=b["ny"].time()<dt.time(16,0)]
-    if not regular or not prior: return {**case,"replay_state":"INSUFFICIENT_DATA","reason":"missing bars/prior close"}
+    prior_days=sorted({b["ny"].date() for b in prior})[-5:]\n    if not regular or not prior: return {**case,"replay_state":"INSUFFICIENT_DATA","reason":"missing bars/prior close"}
     prior_day=max(b["ny"].date() for b in prior); prev=[b for b in prior if b["ny"].date()==prior_day]
     prev_close=float(prev[-1]["close"]); reg_open=float(regular[0]["open"] or regular[0]["close"])
     pre_reprice=((float(pre[-1]["close"])/prev_close)-1)*100 if pre else None
@@ -56,7 +56,7 @@ def replay_case(case):
                     "holds_vwap":vwap is not None and float(b["close"])>=vwap,"minutes_since_open":mins,
                     "cum_volume":cv})
     return {**case,"replay_state":"PRICE_VOLUME_RECONSTRUCTED","bars_evaluated":len(out),"first_bar":out[0] if out else None,
-            "note":"Historical bid/ask spread and same-time baseline RVOL are not inferable from this single-session OHLCV pull; no BUYABLE classification is fabricated."}
+            "note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions. Historical bid/ask spread remains unavailable; no BUYABLE classification is fabricated without an explicit spread policy."}
 
 def main():
     import argparse
