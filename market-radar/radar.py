@@ -485,7 +485,7 @@ def market_context_for_tickers(tickers, event_time=None):
     return out
 
 def item_id(source_name: str, item: dict) -> str:
-    raw = source_name + "\\n" + (item.get("url") or "") + "\\n" + (item.get("title") or "")
+    raw = source_name + "\n" + (item.get("url") or "") + "\n" + (item.get("title") or "")
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
 
 def load_json(path: Path, fallback):
@@ -495,7 +495,7 @@ def load_json(path: Path, fallback):
         return fallback
 
 def save_state(state):
-    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 def match_watchlist(text: str, watchlist: dict):
     low = text.lower()
