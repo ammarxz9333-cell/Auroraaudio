@@ -30,7 +30,9 @@ def yahoo_5m(ticker, start, end):
 
 def replay_case(case):
     cutoff=dt.datetime.fromisoformat(case["cutoff"])
-    day=cutoff.astimezone(NY).date()
+    event_ny=cutoff.astimezone(NY)
+    day=event_ny.date() + (dt.timedelta(days=1) if event_ny.time() >= dt.time(16,0) else dt.timedelta(0))
+    while day.weekday() >= 5: day += dt.timedelta(days=1)
     start=dt.datetime.combine(day-dt.timedelta(days=7),dt.time(0),NY)
     end=dt.datetime.combine(day+dt.timedelta(days=2),dt.time(0),NY)
     bars=yahoo_5m(case["ticker"],start,end)
@@ -44,21 +46,52 @@ def replay_case(case):
     prior_day=max(b["ny"].date() for b in prior); prev=[b for b in prior if b["ny"].date()==prior_day]
     prev_close=float(prev[-1]["close"]); reg_open=float(regular[0]["open"] or regular[0]["close"])
     pre_reprice=((float(pre[-1]["close"])/prev_close)-1)*100 if pre else None
-    cum_pv=0.0; cum_v=0.0; out=[]
+    out=[]; spread_scenarios={str(s):None for s in (0.5,1.0,2.0,3.0)}
     for idx,b in enumerate(regular):
-        if b["time"] < cutoff.astimezone(dt.timezone.utc): continue
+        if event_ny.date()==day and b["time"] < cutoff.astimezone(dt.timezone.utc): continue
         vol=float(b["volume"] or 0); typical=(float(b["high"])+float(b["low"])+float(b["close"]))/3
         # VWAP must include all regular bars through this timestamp.
         hist=regular[:idx+1]; cv=sum(float(x["volume"] or 0) for x in hist)
         cpv=sum(((float(x["high"])+float(x["low"])+float(x["close"]))/3)*float(x["volume"] or 0) for x in hist)
         vwap=cpv/cv if cv else None
         mins=max(0,int((b["ny"]-dt.datetime.combine(day,dt.time(9,30),NY)).total_seconds()/60))
-        out.append({"time_utc":b["time"].isoformat(),"price":float(b["close"]),"gap_pct":((reg_open/prev_close)-1)*100,
-                    "premarket_reprice_pct":pre_reprice,"holds_open":float(b["close"])>=reg_open,
-                    "holds_vwap":vwap is not None and float(b["close"])>=vwap,"minutes_since_open":mins,
-                    "cum_volume":cv})
-    return {**case,"replay_state":"PRICE_VOLUME_RECONSTRUCTED","bars_evaluated":len(out),"first_bar":out[0] if out else None,
-            "note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions. Historical bid/ask spread remains unavailable; no BUYABLE classification is fabricated without an explicit spread policy."}
+        prior_cums=[]
+        for pd in prior_days:
+            pbs=[x for x in prior if x["ny"].date()==pd and x["ny"].time()<=b["ny"].time()]
+            if pbs: prior_cums.append(sum(float(x["volume"] or 0) for x in pbs))
+        med=sorted(prior_cums)[len(prior_cums)//2] if prior_cums else 0
+        rvol=(cv/med) if med>0 else 0.0
+        row={"time_utc":b["time"].isoformat(),"price":float(b["close"]),"gap_pct":((reg_open/prev_close)-1)*100,
+             "premarket_reprice_pct":pre_reprice,"holds_open":float(b["close"])>=reg_open,
+             "holds_vwap":vwap is not None and float(b["close"])>=vwap,"minutes_since_open":mins,
+             "cum_volume":cv,"rvol":rvol}
+        out.append(row)
+        for spread in (0.5,1.0,2.0,3.0):
+            key=str(spread)
+            if spread_scenarios[key] is not None: continue
+            if pre_reprice is None: continue
+            g=entry_gate(GateInput(case["decision"],row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread))
+            if g["state"]=="BUYABLE_NOW":
+                entry=float(b["close"]); plus5=entry*1.05; plus10=entry*1.10; minus5=entry*0.95
+                later=regular[idx:]
+                outcome=None; plus10_hit=False; mfe=0.0; mae=0.0
+                for z in later:
+                    hi=float(z["high"]); lo=float(z["low"])
+                    mfe=max(mfe,(hi/entry-1)*100); mae=min(mae,(lo/entry-1)*100)
+                    plus10_hit=plus10_hit or hi>=plus10
+                    p5=hi>=plus5; m5=lo<=minus5
+                    if outcome is None and p5 and m5: outcome="ORDER_UNVERIFIED"
+                    elif outcome is None and p5: outcome="PLUS5_FIRST"
+                    elif outcome is None and m5: outcome="MINUS5_FIRST"
+                    if outcome: break
+                spread_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":outcome or "UNRESOLVED","plus10_reached":plus10_hit,"mfe_pct":round(mfe,3),"mae_pct":round(mae,3)}
+
+    robust=all(spread_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0))
+    firsts={v["first_buyable_time"] for v in spread_scenarios.values() if v}
+    robust=robust and len(firsts)==1
+    return {**case,"replay_state":"PRICE_VOLUME_RECONSTRUCTED","session_date":str(day),"bars_evaluated":len(out),"first_bar":out[0] if out else None,
+            "spread_scenarios":spread_scenarios,"spread_robust_buyable":robust,
+            "note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
 
 def main():
     import argparse
