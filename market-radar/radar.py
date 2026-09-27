@@ -14,6 +14,7 @@ import json
 import os
 import re
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -30,7 +31,8 @@ OWNER = REPO.split("/", 1)[0] if "/" in REPO else ""
 THRESHOLD = int(os.getenv("RADAR_SCORE_THRESHOLD", "8"))
 BOOTSTRAP_ALERT_HOURS = int(os.getenv("RADAR_BOOTSTRAP_ALERT_HOURS", "8"))
 MAX_SEEN = int(os.getenv("RADAR_MAX_SEEN", "6000"))
-REQUEST_TIMEOUT = int(os.getenv("RADAR_REQUEST_TIMEOUT", "18"))
+REQUEST_TIMEOUT = int(os.getenv("RADAR_REQUEST_TIMEOUT", "8"))
+MAX_WORKERS = int(os.getenv("RADAR_MAX_WORKERS", "12"))
 
 CATALYSTS = {
     "definitive agreement": 5, "merger": 5, "acquisition": 5, "takeover": 5,
@@ -309,12 +311,18 @@ def main():
     errors = []
     start = now_utc()
 
-    for source in sources:
-        try:
-            items = source_items(source)
-        except Exception as e:
-            errors.append(f"{source.get('name')}: {type(e).__name__}: {e}")
-            continue
+    fetched = []
+    with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
+        futures = {pool.submit(source_items, source): source for source in sources}
+        for future in as_completed(futures):
+            source = futures[future]
+            try:
+                items = future.result()
+                fetched.append((source, items))
+            except Exception as e:
+                errors.append(f"{source.get('name')}: {type(e).__name__}: {e}")
+
+    for source, items in fetched:
         for item in items:
             rid = item_id(source["name"], item)
             if rid in old_seen:
