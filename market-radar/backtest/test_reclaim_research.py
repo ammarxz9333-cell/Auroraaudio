@@ -18,3 +18,11 @@ def test_detects_post_stop_reclaim():
 def test_rejects_chased_reclaim():
     rows=[row("09:35",100,100),row("09:40",94,94,ho=False,hv=False),row("10:00",120,118,ao=12)]
     assert m.detect_reclaim(rows,"09:35",100)["state"]=="NO_RECLAIM"
+
+
+def test_no_reclaim_exposes_best_candidate_diagnostics():
+    rows=[row("09:35",100,100),row("09:40",94,94,ho=False,hv=False),row("10:00",109,107,ao=9,av=4)]
+    r=m.detect_reclaim(rows,"09:35",100)
+    assert r["state"]=="NO_RECLAIM"
+    assert r["best_post_stop_candidate"]["conditions_met"]==4
+    assert r["best_post_stop_candidate"]["above_open_pct"]==9
