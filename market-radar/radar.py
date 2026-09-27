@@ -70,6 +70,24 @@ NEGATIVE_NOISE = {
     "price target": -1, "technical analysis": -1, "watchlist": -1,
 }
 
+BULLISH_DIRECTION = {
+    "fda approves", "fda approved", "approval", "primary endpoint",
+    "contract award", "awarded contract", "government contract",
+    "raises guidance", "raised guidance", "strategic partnership",
+    "partnership", "supply agreement", "offtake", "hyperscaler",
+    "permit", "interconnection", "procurement", "award notice",
+    "definitive agreement", "merger", "acquisition", "takeover",
+    "tender offer", "going private",
+}
+
+BEARISH_DIRECTION = {
+    "complete response letter", "chapter 11", "bankruptcy",
+    "short report", "fraud", "subpoena", "recall",
+    "lowers guidance", "lowered guidance", "registered direct",
+    "public offering", "atm offering", "convertible", "warrant",
+    "dilution", "investigation", "probe",
+}
+
 class LinkParser(HTMLParser):
     def __init__(self):
         super().__init__()
@@ -404,6 +422,18 @@ def phrase_match(text: str, phrase: str) -> bool:
         return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text, re.I) is not None
     return phrase in text
 
+def infer_direction(text: str, hits=None):
+    low = text.lower()
+    bullish = sorted(p for p in BULLISH_DIRECTION if phrase_match(low, p))
+    bearish = sorted(p for p in BEARISH_DIRECTION if phrase_match(low, p))
+    if bullish and not bearish:
+        return "bullish", bullish, bearish
+    if bearish and not bullish:
+        return "bearish", bullish, bearish
+    if bullish and bearish:
+        return "mixed", bullish, bearish
+    return "ambiguous", bullish, bearish
+
 def score_item(source: dict, item: dict, watchlist: dict):
     raw_text = f"{item.get('title','')} {item.get('snippet','')}"
     text = raw_text.lower()
@@ -472,11 +502,17 @@ def push_live_pr_alert(source, item, score, tickers, hits, rid, market_ctx=None)
     A commit update to that open PR can be used as a ChatGPT Work event trigger.
     """
     stage = classify_stage(score, tickers, market_ctx)
+    direction, bullish_reasons, bearish_reasons = infer_direction(
+        f"{item.get('title','')} {item.get('snippet','')}", hits
+    )
     published = item.get("published")
     payload_obj = {
         "radar_id": rid,
         "stage": stage,
         "score": score,
+        "direction": direction,
+        "bullish_reasons": bullish_reasons,
+        "bearish_reasons": bearish_reasons,
         "detected_utc": now_utc().isoformat(),
         "published_utc": published.isoformat() if isinstance(published, dt.datetime) else None,
         "source": source.get("name"),
@@ -492,7 +528,7 @@ def push_live_pr_alert(source, item, score, tickers, hits, rid, market_ctx=None)
     stamp = now_utc().strftime("%Y%m%dT%H%M%SZ")
     path = f"market-radar/live/alerts/{stamp}-{rid}.json"
     ticker_text = ",".join(tickers) if tickers else "NEW-CANDIDATE"
-    message = f"[MARKET-{stage}] {ticker_text} score={score} {item.get('title','')}"[:240]
+    message = f"[MARKET-{stage}] {ticker_text} {direction} score={score} {item.get('title','')}"[:240]
     gh_payload = {
         "message": message,
         "content": base64.b64encode(raw.encode("utf-8")).decode("ascii"),
@@ -509,6 +545,9 @@ def push_live_pr_alert(source, item, score, tickers, hits, rid, market_ctx=None)
 def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
     stage = classify_stage(score, tickers, market_ctx)
+    direction, bullish_reasons, bearish_reasons = infer_direction(
+        f"{item.get('title','')} {item.get('snippet','')}", hits
+    )
     title_text = item.get("title", "Untitled")
     title = f"[MARKET-{stage} {score}] {tick} — {title_text}"[:240]
     published = item.get("published")
@@ -517,6 +556,9 @@ def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
         f"<!-- radar-id:{rid} -->\n"
         f"## First-public-source alert\n\n"
         f"- **Score:** {score}\n"
+        f"- **Direction:** {direction}\n"
+        f"- **Bullish reasons:** {', '.join(bullish_reasons) if bullish_reasons else 'none detected'}\n"
+        f"- **Bearish reasons:** {', '.join(bearish_reasons) if bearish_reasons else 'none detected'}\n"
         f"- **Source:** {source['name']}\n"
         f"- **Source class:** {source.get('class','other')}\n"
         f"- **Published timestamp:** {pubtxt}\n"
@@ -647,9 +689,12 @@ def main():
                     (live_result or {}).get("stage")
                     or classify_stage(score, tickers, market_ctx)
                 )
+                direction, _, _ = infer_direction(
+                    f"{item.get('title','')} {item.get('snippet','')}", hits
+                )
                 ticker_text = " ".join("$" + x for x in tickers) or "NEW-CANDIDATE"
                 telegram_alert(
-                    f"MARKET {stage} {score} {ticker_text}\n"
+                    f"MARKET {stage} {score} {direction} {ticker_text}\n"
                     f"{item.get('title','')}\n"
                     f"{source['name']}\n"
                     f"{item.get('url','')}\n"
