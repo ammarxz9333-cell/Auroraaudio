@@ -1,0 +1,42 @@
+{
+  "radar_id": "cd4b736554f2042a1007",
+  "stage": "REACTING",
+  "score": 12,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:40:06.424238+00:00",
+  "published_utc": "2026-09-27T15:39:51.813686+00:00",
+  "source": "Yahoo early momentum discovery",
+  "source_class": "momentum",
+  "tickers": [
+    "PYPL"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "price-volume-momentum",
+    "ticker-match"
+  ],
+  "headline": "$PYPL abnormal market momentum: +4.64% day move",
+  "url": "https://finance.yahoo.com/quote/PYPL",
+  "snippet": "Ticker $PYPL; price 55.0400; day move +4.64%; volume 20326878; 3m average daily volume 14705131; crude volume/ADV 1.38x.",
+  "market_context": [
+    {
+      "ticker": "PYPL",
+      "price": 55.2662,
+      "previous_close": 52.6,
+      "change_pct": 5.069,
+      "change_5m_pct": 0.0,
+      "cum_volume": 16178679,
+      "same_time_volume_ratio": 2.01,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 55.2662,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:59:49+00:00"
+    }
+  ]
+}
