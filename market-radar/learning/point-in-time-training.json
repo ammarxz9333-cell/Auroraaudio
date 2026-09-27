@@ -233,6 +233,78 @@
       "family": "private-placement-warrants",
       "label": "dilution_risk",
       "lesson": "Pre-funded and common warrants create dilution/overhang even when sold to an existing institutional investor."
+    },
+    {
+      "ticker": "TCRT",
+      "family": "registered-direct-prefunded",
+      "label": "bearish_avoid",
+      "lesson": "Registered direct common stock plus pre-funded warrants is directional dilution/overhang; extreme volume on the selloff confirms repricing, not bullish momentum."
+    },
+    {
+      "ticker": "QCOM",
+      "family": "hyperscaler-ai-partnership",
+      "label": "event_reprice",
+      "lesson": "Prior management hints about an unnamed hyperscaler can justify watch status, but the counterparty identity and deal magnitude cannot be backfilled before the public announcement."
+    },
+    {
+      "ticker": "RDVT",
+      "family": "estimate-revision-momentum",
+      "label": "developing_watch",
+      "lesson": "Consensus estimate revisions plus rank/momentum lists are secondary evidence; require independent price-volume confirmation and a primary catalyst where possible."
+    },
+    {
+      "ticker": "HRTG",
+      "family": "estimate-revision",
+      "label": "developing_watch",
+      "lesson": "Large upward earnings-estimate revision can seed a watchlist but is not sufficient alone for high conviction."
+    },
+    {
+      "ticker": "BMY",
+      "family": "estimate-revision-largecap",
+      "label": "no_trade_without_confirmation",
+      "lesson": "Rank upgrades and estimate revisions in liquid large caps should receive lower urgency unless accompanied by a fresh material catalyst or abnormal tape."
+    },
+    {
+      "ticker": "ARCT",
+      "family": "analyst-upgrade",
+      "label": "developing_watch",
+      "lesson": "A fresh Neutral-to-Buy upgrade is a valid analyst-action event; magnitude of target reset and tape response determine urgency."
+    },
+    {
+      "ticker": "ARES",
+      "family": "analyst-initiation",
+      "label": "developing_watch",
+      "lesson": "Initiation at Overweight is weaker than an upgrade after new information unless target implication and market reaction are unusually large."
+    },
+    {
+      "ticker": "LHSW",
+      "family": "unit-offering-multiple-warrants",
+      "label": "strong_dilution_risk",
+      "lesson": "Unit offering containing one share plus multiple warrants is an especially severe dilution structure and should trigger strong negative direction classification."
+    },
+    {
+      "ticker": "ACN",
+      "family": "ai-strategic-partnership",
+      "label": "developing_watch",
+      "lesson": "Large strategic AI partnership can be material even with modest initial move; assess economics, duration and incremental revenue rather than narrative alone."
+    },
+    {
+      "ticker": "SNDK",
+      "family": "analyst-rating-momentum",
+      "label": "reacting_watch",
+      "lesson": "Favorable analyst action can trigger meaningful same-day movement; after a material move downgrade early status and look for continuation structure."
+    },
+    {
+      "ticker": "SHOP",
+      "family": "ai-product-collaboration",
+      "label": "reacting_watch",
+      "lesson": "Product collaboration plus immediate 7%+ repricing is material but no longer pristine early entry; retain only for continuation confirmation."
+    },
+    {
+      "ticker": "ONON",
+      "family": "financial-targets-buyback",
+      "label": "fundamental_reprice",
+      "lesson": "New financial targets plus buyback form a stacked fundamental catalyst; measure whether guidance delta versus expectations justifies the gap."
     }
   ],
   "learned_rules": [
@@ -244,8 +316,8 @@
     "Use market reaction as confirmation, not as a requirement that deletes an otherwise valid underabsorbed catalyst."
   ],
   "summary": {
-    "case_count": 38,
+    "case_count": 50,
     "last_expansion_utc": "2026-09-27",
-    "note": "Mixed positive, negative, late/chase, dilution, no-trade and false-positive point-in-time cases."
+    "note": "Reached 50 mixed point-in-time training cases spanning positive, negative, late/chase, dilution, analyst, regulatory, earnings and no-trade controls."
   }
 }
