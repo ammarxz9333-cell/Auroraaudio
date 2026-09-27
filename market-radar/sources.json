@@ -1,35 +1,105 @@
 {
   "watchlist": {
-    "CRWV": ["CoreWeave"],
-    "AESI": ["Atlas Energy Solutions", "Atlas Energy"],
-    "NRGV": ["Energy Vault"],
-    "CRMD": ["CorMedix"],
-    "OUST": ["Ouster"],
-    "RR": ["Richtech Robotics", "Richtech"],
-    "ASTS": ["AST SpaceMobile", "AST Space Mobile"],
-    "RKLB": ["Rocket Lab"],
-    "AEHR": ["Aehr Test Systems", "Aehr"],
-    "ONDS": ["Ondas"],
-    "IRD": ["Opus Genetics"],
-    "INO": ["Inovio"],
-    "UMAC": ["Unusual Machines"],
-    "KOPN": ["Kopin"],
-    "LCTX": ["Lineage Cell Therapeutics"],
-    "NBIS": ["Nebius"],
-    "GLND": ["Greenland Energy Company", "Greenland Energy"],
-    "ALM": ["Almonty Industries", "Almonty"],
-    "MIRM": ["Mirum Pharmaceuticals", "Mirum"],
-    "NBTX": ["Nanobiotix"],
-    "SRRK": ["Scholar Rock"],
-    "LASE": ["Laser Photonics"],
-    "FLNC": ["Fluence Energy"],
-    "LUNR": ["Intuitive Machines"],
-    "JOBY": ["Joby Aviation"],
-    "ACHR": ["Archer Aviation"],
-    "QBTS": ["D-Wave Quantum", "D Wave Quantum"],
-    "RGTI": ["Rigetti Computing", "Rigetti"],
-    "IONQ": ["IonQ"],
-    "SOUN": ["SoundHound AI", "SoundHound"]
+    "CRWV": [
+      "CoreWeave"
+    ],
+    "AESI": [
+      "Atlas Energy Solutions",
+      "Atlas Energy"
+    ],
+    "NRGV": [
+      "Energy Vault"
+    ],
+    "CRMD": [
+      "CorMedix"
+    ],
+    "OUST": [
+      "Ouster"
+    ],
+    "RR": [
+      "Richtech Robotics",
+      "Richtech"
+    ],
+    "ASTS": [
+      "AST SpaceMobile",
+      "AST Space Mobile"
+    ],
+    "RKLB": [
+      "Rocket Lab"
+    ],
+    "AEHR": [
+      "Aehr Test Systems",
+      "Aehr"
+    ],
+    "ONDS": [
+      "Ondas"
+    ],
+    "IRD": [
+      "Opus Genetics"
+    ],
+    "INO": [
+      "Inovio"
+    ],
+    "UMAC": [
+      "Unusual Machines"
+    ],
+    "KOPN": [
+      "Kopin"
+    ],
+    "LCTX": [
+      "Lineage Cell Therapeutics"
+    ],
+    "NBIS": [
+      "Nebius"
+    ],
+    "GLND": [
+      "Greenland Energy Company",
+      "Greenland Energy"
+    ],
+    "ALM": [
+      "Almonty Industries",
+      "Almonty"
+    ],
+    "MIRM": [
+      "Mirum Pharmaceuticals",
+      "Mirum"
+    ],
+    "NBTX": [
+      "Nanobiotix"
+    ],
+    "SRRK": [
+      "Scholar Rock"
+    ],
+    "LASE": [
+      "Laser Photonics"
+    ],
+    "FLNC": [
+      "Fluence Energy"
+    ],
+    "LUNR": [
+      "Intuitive Machines"
+    ],
+    "JOBY": [
+      "Joby Aviation"
+    ],
+    "ACHR": [
+      "Archer Aviation"
+    ],
+    "QBTS": [
+      "D-Wave Quantum",
+      "D Wave Quantum"
+    ],
+    "RGTI": [
+      "Rigetti Computing",
+      "Rigetti"
+    ],
+    "IONQ": [
+      "IonQ"
+    ],
+    "SOUN": [
+      "SoundHound AI",
+      "SoundHound"
+    ]
   },
   "sources": [
     {
@@ -37,50 +107,55 @@
       "type": "atom",
       "class": "primary",
       "weight": 5,
-      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-k&owner=include&count=100&output=atom"
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-k&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"8-K\" when:1d"
     },
     {
       "name": "SEC S-3 current filings",
       "type": "atom",
       "class": "primary",
       "weight": 5,
-      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=s-3&owner=include&count=100&output=atom"
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=s-3&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"S-3\" when:1d"
     },
     {
       "name": "SEC 424B5 current filings",
       "type": "atom",
       "class": "primary",
       "weight": 5,
-      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=424b5&owner=include&count=100&output=atom"
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=424b5&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"424B5\" when:1d"
     },
     {
       "name": "SEC Schedule 13D current filings",
       "type": "atom",
       "class": "primary",
       "weight": 5,
-      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=sc%2013d&owner=include&count=100&output=atom"
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=sc%2013d&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"13D\" when:1d"
     },
     {
       "name": "SEC Schedule 13G current filings",
       "type": "atom",
       "class": "primary",
       "weight": 4,
-      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=sc%2013g&owner=include&count=100&output=atom"
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=sc%2013g&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"13G\" when:1d"
     },
     {
       "name": "SEC Form 4 current filings",
       "type": "atom",
       "class": "primary",
       "weight": 3,
-      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&owner=include&count=100&output=atom"
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"Form 4\" when:1d"
     },
     {
       "name": "U.S. Department of Defense contracts",
-      "type": "html_links",
+      "type": "google_news",
       "class": "primary",
       "weight": 5,
-      "url": "https://www.defense.gov/News/Contracts/",
-      "allow_regex": "/News/Contracts/Contract/Article/"
+      "query": "site:defense.gov/News/Contracts/ (contract OR award) when:1d"
     },
     {
       "name": "FDA news and regulatory signals",
@@ -262,28 +337,32 @@
       "type": "rss",
       "class": "social",
       "weight": 1,
-      "url": "https://www.reddit.com/r/stocks/new/.rss"
+      "url": "https://www.reddit.com/r/stocks/new/.rss",
+      "fallback_query": "site:reddit.com/r/stocks (DD OR catalyst OR earnings OR acquisition OR FDA OR contract) when:1d"
     },
     {
       "name": "Reddit ShortSqueeze new",
       "type": "rss",
       "class": "social",
       "weight": 1,
-      "url": "https://www.reddit.com/r/Shortsqueeze/new/.rss"
+      "url": "https://www.reddit.com/r/Shortsqueeze/new/.rss",
+      "fallback_query": "site:reddit.com/r/Shortsqueeze (short OR squeeze OR catalyst OR float) when:1d"
     },
     {
       "name": "Reddit Biotechplays new",
       "type": "rss",
       "class": "social",
       "weight": 2,
-      "url": "https://www.reddit.com/r/Biotechplays/new/.rss"
+      "url": "https://www.reddit.com/r/Biotechplays/new/.rss",
+      "fallback_query": "site:reddit.com/r/Biotechplays (FDA OR PDUFA OR phase OR trial OR catalyst) when:1d"
     },
     {
       "name": "Reddit pennystocks new",
       "type": "rss",
       "class": "social",
       "weight": 1,
-      "url": "https://www.reddit.com/r/pennystocks/new/.rss"
+      "url": "https://www.reddit.com/r/pennystocks/new/.rss",
+      "fallback_query": "site:reddit.com/r/pennystocks (catalyst OR contract OR FDA OR acquisition OR offering) when:1d"
     }
   ]
 }
