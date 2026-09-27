@@ -1,10 +1,6 @@
 name: Market Radar
 
 on:
-  push:
-    paths:
-      - "market-radar/**"
-      - ".github/workflows/market-radar.yml"
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
