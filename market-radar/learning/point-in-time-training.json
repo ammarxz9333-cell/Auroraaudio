@@ -1,0 +1,90 @@
+{
+  "schema_version": 1,
+  "methodology": {
+    "mode": "point-in-time",
+    "rule": "Only information public at or before cutoff may be used for the simulated decision. Outcome is revealed only after decision is frozen.",
+    "purpose": "Training examples for catalyst persistence, continuation, chase avoidance, and dilution filters. Not a claim of predictive accuracy."
+  },
+  "cases": [
+    {
+      "ticker": "ALM",
+      "family": "commercial-production-milestone",
+      "label": "developing_watch",
+      "lesson": "Persist a high-quality primary catalyst for several sessions even if immediate price confirmation is weak; rescan for later validation plus volume."
+    },
+    {
+      "ticker": "VIAV",
+      "family": "certification-commercial-validation",
+      "label": "developing_watch",
+      "lesson": "Certification can be an underabsorbed catalyst; do not require a same-minute price spike."
+    },
+    {
+      "ticker": "VECO",
+      "family": "analyst-upgrade-continuation",
+      "label": "developing_watch",
+      "lesson": "Material upgrade/target change can produce multi-day continuation; retain on watchlist after day one."
+    },
+    {
+      "ticker": "PPLI",
+      "family": "m_and_a_report",
+      "label": "event_driven_late_risk",
+      "lesson": "A post-close M&A report may already reprice after-hours; alert quickly but distinguish discovery after publication from prediction before publication."
+    },
+    {
+      "ticker": "WOR",
+      "family": "earnings-beat-buyback",
+      "label": "gap_hold_only",
+      "lesson": "Strong earnings can be valid while a large premarket gap makes a fresh entry late; require gap-and-hold confirmation."
+    },
+    {
+      "ticker": "ARHS",
+      "family": "analyst-upgrade-continuation",
+      "label": "developing_watch",
+      "lesson": "Do not expire analyst catalysts after one session; continuation and pullback/reclaim patterns matter."
+    },
+    {
+      "ticker": "GCTK",
+      "family": "equity-offering",
+      "label": "bearish_avoid",
+      "lesson": "New shares/pre-funded warrants/public offerings require dilution penalty and should not score as bullish merely because catalyst keywords are strong."
+    },
+    {
+      "ticker": "AEMD",
+      "family": "extreme-momentum",
+      "label": "late_chase_avoid",
+      "lesson": "After an extraordinary one-session repricing, default to late/chase risk unless a new independent catalyst appears."
+    },
+    {
+      "ticker": "LEU",
+      "family": "equity-and-warrant-offering",
+      "label": "bearish_avoid",
+      "lesson": "Large offering plus warrants is a dilution/overhang pattern; high RVOL confirms repricing but does not make it bullish."
+    },
+    {
+      "ticker": "GLATF",
+      "family": "unit-offering-with-warrants",
+      "label": "bearish_avoid",
+      "lesson": "Unit offerings with warrants should receive strong negative direction classification."
+    },
+    {
+      "ticker": "HUM",
+      "family": "analyst-upgrade-target-reset",
+      "label": "analyst_validation",
+      "lesson": "Upgrade plus a large target increase deserves positive analyst-action scoring; generic 'price target' noise penalty must not suppress it."
+    },
+    {
+      "ticker": "GRAL",
+      "family": "regulatory-briefing",
+      "label": "late_binary_risk",
+      "lesson": "Constructive FDA briefing documents can reprice shares before the panel; after a large move classify as binary/late rather than early."
+    }
+  ],
+  "learned_rules": [
+    "Separate catalyst importance from direction.",
+    "Persist high-quality catalysts for 3-5 trading sessions and rescore when price/volume confirmation arrives.",
+    "Penalize common-stock offerings, pre-funded warrants, ATM/S-3/424B5 overhang and convertibles unless context clearly offsets dilution.",
+    "Create a dedicated analyst-action family: upgrade/initiation plus unusually large target revision.",
+    "Treat large premarket gaps and extreme one-day moves as chase-risk states, not automatically high-conviction entries.",
+    "Use market reaction as confirmation, not as a requirement that deletes an otherwise valid underabsorbed catalyst."
+  ]
+}
