@@ -2,7 +2,7 @@
 """End-to-end semantics test: frozen gate entry -> persistent trade -> later bars."""
 import tempfile, unittest
 from pathlib import Path
-from outcome_tracker import new_trade, update_trade, load, save
+from live.outcome_tracker import new_trade, update_trade, load, save
 
 class Integration(unittest.TestCase):
     def test_buyable_created_once_and_only_future_bars_count(self):
