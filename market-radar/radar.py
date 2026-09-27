@@ -39,6 +39,7 @@ BOOTSTRAP_ALERT_HOURS = int(os.getenv("RADAR_BOOTSTRAP_ALERT_HOURS", "8"))
 MAX_SEEN = int(os.getenv("RADAR_MAX_SEEN", "6000"))
 REQUEST_TIMEOUT = int(os.getenv("RADAR_REQUEST_TIMEOUT", "8"))
 MAX_WORKERS = int(os.getenv("RADAR_MAX_WORKERS", "12"))
+STATE_BRANCH = os.getenv("RADAR_STATE_BRANCH", "main-v2")
 DOMAIN_LOCKS = {"www.sec.gov": threading.Lock(), "www.reddit.com": threading.Lock()}
 DOMAIN_LAST = {}
 DOMAIN_MIN_INTERVAL = {"www.sec.gov": 0.40, "www.reddit.com": 1.25}
@@ -487,6 +488,52 @@ def github_api(path: str, method="GET", payload=None):
         raw = resp.read()
         return json.loads(raw.decode("utf-8")) if raw else {}
 
+def persist_state_remote(state):
+    """Persist state with GitHub's contents API so unrelated workflow commits cannot race git push."""
+    if not TOKEN or not REPO:
+        return None
+
+    path = "/repos/" + REPO + "/contents/market-radar/state.json"
+    last_error = None
+
+    for attempt in range(3):
+        try:
+            remote = github_api(path + "?ref=" + urllib.parse.quote(STATE_BRANCH))
+            remote_state = {}
+            try:
+                encoded = remote.get("content") or ""
+                if encoded:
+                    remote_state = json.loads(
+                        base64.b64decode(encoded).decode("utf-8")
+                    )
+            except Exception:
+                remote_state = {}
+
+            merged = dict(remote_state)
+            merged.update(state)
+            merged_seen = list(dict.fromkeys(
+                list(remote_state.get("seen", [])) + list(state.get("seen", []))
+            ))
+            if len(merged_seen) > MAX_SEEN:
+                merged_seen = merged_seen[-MAX_SEEN:]
+            merged["seen"] = merged_seen
+
+            raw = json.dumps(merged, indent=2, sort_keys=True) + "\n"
+            payload = {
+                "message": "chore(market-radar): update scanner state",
+                "content": base64.b64encode(raw.encode("utf-8")).decode("ascii"),
+                "sha": remote.get("sha"),
+                "branch": STATE_BRANCH,
+            }
+            result = github_api(path, method="PUT", payload=payload)
+            return ((result.get("commit") or {}).get("sha"))
+        except Exception as exc:
+            last_error = exc
+            time.sleep(0.75 * (attempt + 1))
+
+    raise RuntimeError(f"remote state persistence failed after retries: {last_error}")
+
+
 def classify_stage(score, tickers, market_ctx=None):
     reactions = [m.get("reaction") for m in (market_ctx or []) if not m.get("error")]
     if tickers and reactions and all(r == "not-yet-reacted" for r in reactions) and score >= 8:
@@ -718,11 +765,17 @@ def main():
         "last_errors": errors[:30],
     })
     save_state(state)
+    try:
+        state_commit = persist_state_remote(state)
+    except Exception as e:
+        errors.append(f"state-persist: {type(e).__name__}: {e}")
+        state_commit = None
 
     print(json.dumps({
         "sources": len(sources),
         "new_items": len(new_seen),
         "alerts": len(alerts),
+        "state_commit": state_commit,
         "errors": errors[:20],
     }, indent=2))
     for source_name, title, score, tickers, url in alerts:
