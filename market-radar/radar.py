@@ -428,6 +428,9 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
     TAPE_DIR.mkdir(parents=True, exist_ok=True)
     ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())
     gate = evaluate_entry_gate(snapshot, score, threshold)
+    catalyst_qualified = score >= threshold
+    if not catalyst_qualified:
+        gate = {**gate, "state": "NO_ENTRY", "reason": "catalyst score below effective threshold"}
     row = {
         "captured_utc": now_utc().isoformat(),
         "radar_id": rid,
@@ -454,11 +457,12 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "gate_data_complete": gate.get("state") != "INSUFFICIENT_DATA",
         "gate_state": gate.get("state"),
         "gate_reason": gate.get("reason"),
+        "catalyst_qualified": catalyst_qualified,
         "gate": gate
     }
     track_live_outcome(snapshot, gate, rid)
     with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, separators=(",", ":")) + "\\n")
+        fh.write(json.dumps(row, separators=(",", ":")) + "\n")
 
 def track_live_outcome(snapshot: dict, gate: dict, rid: str):
     if not snapshot or not snapshot.get("ticker") or not snapshot.get("bar_time_utc"):
