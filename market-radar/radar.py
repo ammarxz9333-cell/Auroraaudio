@@ -354,6 +354,33 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
     except Exception as e:
         return {"ticker":ticker,"error":f"{type(e).__name__}: {e}"}
 
+def yahoo_quote_bid_ask(ticker: str):
+    """Best-effort Yahoo quote bid/ask. Endpoint may require cookie/crumb.
+    Failure is non-fatal and must never be replaced with an inferred spread.
+    """
+    try:
+        # Bootstrap Yahoo cookie, then obtain crumb for v7 quote.
+        opener = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
+        opener.addheaders = [("User-Agent", USER_AGENT), ("Accept", "application/json,text/plain,*/*")]
+        try:
+            opener.open("https://fc.yahoo.com", timeout=REQUEST_TIMEOUT).read(1)
+        except Exception:
+            pass
+        crumb = opener.open("https://query1.finance.yahoo.com/v1/test/getcrumb", timeout=REQUEST_TIMEOUT).read().decode("utf-8").strip()
+        url = "https://query1.finance.yahoo.com/v7/finance/quote?" + urllib.parse.urlencode({"symbols":ticker,"crumb":crumb})
+        data = json.loads(opener.open(url, timeout=REQUEST_TIMEOUT).read().decode("utf-8"))
+        rows = ((data.get("quoteResponse") or {}).get("result") or [])
+        if not rows:
+            return None
+        q = rows[0]
+        bid, ask = q.get("bid"), q.get("ask")
+        if not isinstance(bid,(int,float)) or not isinstance(ask,(int,float)) or bid <= 0 or ask <= 0 or ask < bid:
+            return None
+        mid = (bid + ask) / 2.0
+        return {"bid":float(bid),"ask":float(ask),"spread_pct":((ask-bid)/mid)*100.0 if mid else None,"quote_time":q.get("regularMarketTime")}
+    except Exception:
+        return None
+
 def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int):
     """Append the exact point-in-time market snapshot used by the radar.
     Missing fields stay null; never backfill them from later bars.
@@ -361,7 +388,7 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
     if not snapshot or snapshot.get("error") or not snapshot.get("ticker"):
         return
     TAPE_DIR.mkdir(parents=True, exist_ok=True)
-    ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())
+    ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())\n    quote = yahoo_quote_bid_ask(ticker) or {}
     row = {
         "captured_utc": now_utc().isoformat(),
         "radar_id": rid,
