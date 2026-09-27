@@ -166,7 +166,20 @@ def rounded(value):
     return round(value, 4) if isinstance(value, (int, float)) else value
 
 
-def evaluate_observation(meta, ticker, bars):
+def benchmark_returns(bench_bars, detected, horizon_minutes):
+    if not bench_bars:
+        return {}
+    entry = first_bar_at_or_after(bench_bars, detected)
+    if not entry:
+        return {}
+    out = {}
+    for label, minutes in horizon_minutes:
+        bar = first_bar_at_or_after(bench_bars, detected + dt.timedelta(minutes=minutes))
+        out[label] = rounded(pct(entry["close"], bar["close"])) if bar else None
+    return out
+
+
+def evaluate_observation(meta, ticker, bars, spy_bars=None, qqq_bars=None):
     detected = parse_utc(meta.get("detected_utc"))
     if not detected or not bars:
         return None
@@ -176,13 +189,35 @@ def evaluate_observation(meta, ticker, bars):
         return None
 
     entry_price = entry["close"]
+    horizon_minutes = (
+        ("5m", 5),
+        ("30m", 30),
+        ("1h", 60),
+        ("24h", 1440),
+        ("48h", 2880),
+        ("3d", 4320),
+        ("5d", 7200),
+        ("10d", 14400),
+    )
+    spy_returns = benchmark_returns(spy_bars or [], detected, horizon_minutes)
+    qqq_returns = benchmark_returns(qqq_bars or [], detected, horizon_minutes)
+
     horizons = {}
-    for label, minutes in (("5m", 5), ("30m", 30), ("1h", 60), ("24h", 1440), ("48h", 2880)):
+    for label, minutes in horizon_minutes:
         target = detected + dt.timedelta(minutes=minutes)
         bar = first_bar_at_or_after(bars, target)
+        stock_return = pct(entry_price, bar["close"]) if bar else None
+        spy_return = spy_returns.get(label)
+        qqq_return = qqq_returns.get(label)
         horizons[label] = {
             "price": rounded(bar["close"]) if bar else None,
-            "return_pct": rounded(pct(entry_price, bar["close"])) if bar else None,
+            "return_pct": rounded(stock_return),
+            "spy_return_pct": rounded(spy_return),
+            "qqq_return_pct": rounded(qqq_return),
+            "alpha_vs_spy_pct": rounded(stock_return - spy_return)
+            if stock_return is not None and spy_return is not None else None,
+            "alpha_vs_qqq_pct": rounded(stock_return - qqq_return)
+            if stock_return is not None and qqq_return is not None else None,
             "bar_utc": bar["ts"].isoformat() if bar else None,
         }
 
@@ -226,6 +261,9 @@ def evaluate_observation(meta, ticker, bars):
         "mae_48h_pct": rounded(mae_48h),
         "mature_24h": age_hours >= 24,
         "mature_48h": age_hours >= 48,
+        "mature_3d": age_hours >= 72,
+        "mature_5d": age_hours >= 120,
+        "mature_10d": age_hours >= 240,
         "evaluated_utc": now_utc().isoformat(),
     }
 
@@ -277,7 +315,16 @@ def score_band(row):
 def build_metrics(rows):
     mature24 = [r for r in rows if r.get("mature_24h")]
     mature48 = [r for r in rows if r.get("mature_48h")]
+    mature3d = [r for r in rows if r.get("mature_3d")]
+    mature5d = [r for r in rows if r.get("mature_5d")]
+    mature10d = [r for r in rows if r.get("mature_10d")]
     high24 = [r for r in mature24 if float(r.get("score") or 0) >= 10]
+
+    def horizon_mean(sample, horizon, field):
+        return safe_mean([
+            ((r.get("horizons") or {}).get(horizon) or {}).get(field)
+            for r in sample
+        ])
 
     return {
         "generated_utc": now_utc().isoformat(),
@@ -287,6 +334,7 @@ def build_metrics(rows):
             "hit_10pct_48h": "MFE >= +10% during first 48 elapsed hours",
             "adverse_5pct_24h": "MAE <= -5% during first 24 elapsed hours",
             "high_confidence_tracking": "score >= 10; descriptive only until sample size is adequate",
+            "relative_strength": "stock forward return minus SPY/QQQ return over the same timestamp-aligned horizon",
         },
         "overall": {
             "observations": len(rows),
@@ -297,6 +345,15 @@ def build_metrics(rows):
             "adverse_5pct_24h_rate": rate(mature24, lambda x: (x.get("mae_24h_pct") or 999) <= -5),
             "avg_mfe_24h_pct": safe_mean([x.get("mfe_24h_pct") for x in mature24]),
             "avg_mae_24h_pct": safe_mean([x.get("mae_24h_pct") for x in mature24]),
+            "avg_24h_return_pct": horizon_mean(mature24, "24h", "return_pct"),
+            "avg_24h_alpha_vs_spy_pct": horizon_mean(mature24, "24h", "alpha_vs_spy_pct"),
+            "avg_24h_alpha_vs_qqq_pct": horizon_mean(mature24, "24h", "alpha_vs_qqq_pct"),
+            "avg_3d_return_pct": horizon_mean(mature3d, "3d", "return_pct"),
+            "avg_3d_alpha_vs_spy_pct": horizon_mean(mature3d, "3d", "alpha_vs_spy_pct"),
+            "avg_5d_return_pct": horizon_mean(mature5d, "5d", "return_pct"),
+            "avg_5d_alpha_vs_spy_pct": horizon_mean(mature5d, "5d", "alpha_vs_spy_pct"),
+            "avg_10d_return_pct": horizon_mean(mature10d, "10d", "return_pct"),
+            "avg_10d_alpha_vs_spy_pct": horizon_mean(mature10d, "10d", "alpha_vs_spy_pct"),
         },
         "high_confidence_score_10_plus": {
             "mature_24h": len(high24),
@@ -346,6 +403,14 @@ def main():
                 alerts.append(meta)
 
     ticker_cache = {}
+    benchmark_cache = {}
+    for benchmark in ("SPY", "QQQ"):
+        try:
+            benchmark_cache[benchmark] = yahoo_bars(benchmark)
+        except Exception as exc:
+            print(f"benchmark-data-error {benchmark}: {type(exc).__name__}: {exc}")
+            benchmark_cache[benchmark] = []
+
     for meta in alerts:
         for ticker in meta.get("tickers") or []:
             if ticker not in ticker_cache:
@@ -355,7 +420,13 @@ def main():
                     print(f"market-data-error {ticker}: {type(exc).__name__}: {exc}")
                     ticker_cache[ticker] = []
 
-            row = evaluate_observation(meta, ticker, ticker_cache[ticker])
+            row = evaluate_observation(
+                meta,
+                ticker,
+                ticker_cache[ticker],
+                spy_bars=benchmark_cache.get("SPY"),
+                qqq_bars=benchmark_cache.get("QQQ"),
+            )
             if row:
                 rows_by_key[f"{row['radar_id']}::{ticker}"] = row
 
@@ -375,6 +446,7 @@ def main():
         "alert_files_seen": len(alert_paths),
         "observations": len(rows),
         "tickers_refreshed": len(ticker_cache),
+        "benchmarks_refreshed": sorted(benchmark_cache),
     }, indent=2))
 
 
