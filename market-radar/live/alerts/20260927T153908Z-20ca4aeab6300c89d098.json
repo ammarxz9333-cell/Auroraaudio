@@ -1,0 +1,42 @@
+{
+  "radar_id": "20ca4aeab6300c89d098",
+  "stage": "EARLY",
+  "score": 9,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:39:08.858036+00:00",
+  "published_utc": "2026-09-26T15:46:06+00:00",
+  "source": "Company certification and production milestones",
+  "source_class": "industry",
+  "tickers": [
+    "JOBY"
+  ],
+  "signals": [
+    "certification",
+    "market-not-yet-reacted",
+    "ticker-match",
+    "watchlist-match"
+  ],
+  "headline": "Joby Aviation stock could double to $12 in 2027 amid key certification and revenue milestones. - Pluang",
+  "url": "https://news.google.com/rss/articles/CBMigAFBVV95cUxOcThJaklzWjZaN2xrWkNNTFFQMG0wZW9LWC1JWVJROFVlS3RJWmdlWGpjNHR5dzlBcGdDa1NzV3JJY2ZuV1ZYVVZaTlVyN2VjT3o5NURnT01YajdkTDFZNkwwcVJYclROYnRQWHNES2N2QVlaWldwaUxlWHhrNWxKWg?oc=5",
+  "snippet": "Joby Aviation stock could double to $12 in 2027 amid key certification and revenue milestones. Pluang",
+  "market_context": [
+    {
+      "ticker": "JOBY",
+      "price": 6.31,
+      "previous_close": 6.3,
+      "change_pct": 0.159,
+      "change_5m_pct": 0.0,
+      "cum_volume": 18798217,
+      "same_time_volume_ratio": 0.99,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "not-yet-reacted",
+      "event_price": 6.31,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:58:46+00:00"
+    }
+  ]
+}
