@@ -1,0 +1,41 @@
+{
+  "radar_id": "f31918c9bd9480cd2ee6",
+  "stage": "REACTING",
+  "score": 9,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:40:12.552440+00:00",
+  "published_utc": "2026-09-27T07:36:56+00:00",
+  "source": "Company certification and production milestones",
+  "source_class": "industry",
+  "tickers": [
+    "BTGO"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "ticker-match"
+  ],
+  "headline": "232,020 Shares of BTGO $BTGO Acquired by State Street Corp - MarketBeat",
+  "url": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxPdVI4aGsyb3NrOVBDSmZ3NTZ6Yzk2YW1PQTg1WnlBYVlRNEtZNVpPOUZZU0Yyd1ZmTmpYaFoyRm1iOG82MjRKdVJWalB3Sy1TX014d01ESE1CRnVhSHlTdzNrTjhLVWpvdjVHa1ZVMEFnRkFoRE1BV25tYnE4a2ZlQ2lqRkc1TnFVc1pMUnBNdjY1aUhNN3ljM2Q5U2g0MS04T2VUR3k5TXlmQkVSZ3Jlb1RoQ3R4amlw?oc=5",
+  "snippet": "232,020 Shares of BTGO $BTGO Acquired by State Street Corp MarketBeat",
+  "market_context": [
+    {
+      "ticker": "BTGO",
+      "price": 7.4906,
+      "previous_close": 7.96,
+      "change_pct": -5.897,
+      "change_5m_pct": 0.0,
+      "cum_volume": 1346002,
+      "same_time_volume_ratio": 1.03,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 7.4906,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:56:08+00:00"
+    }
+  ]
+}
