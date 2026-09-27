@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "purpose": "Audit post-alert return validity for pilot-20",
+  "rules": {
+    "premarket_or_preopen_cutoff": "Use first regular-session tradable/open price unless reliable timestamped extended-hours price is available.",
+    "intraday_cutoff": "Requires timestamped intraday bar at or immediately after cutoff; daily return is invalid.",
+    "postclose_cutoff": "Use next tradable extended-hours price only if reliable timestamped data exists; otherwise next regular open.",
+    "no_intraday_source": "Mark UNVERIFIED_POST_ALERT; never substitute full-day return."
+  },
+  "audited_examples": [
+    {
+      "ticker": "GLND",
+      "cutoff": "2026-09-24T08:01:00-04:00",
+      "status": "PARTIALLY_VERIFIED",
+      "regular_open": 3.215,
+      "close": 5.35,
+      "open_to_close_pct": 66.41,
+      "note": "Pre-open decision; regular open is a conservative executable proxy. Stock already had substantial prior momentum."
+    },
+    {
+      "ticker": "PAAI",
+      "cutoff": "2026-09-17T11:01:00-04:00",
+      "status": "UNVERIFIED_POST_ALERT",
+      "day_open": 0.9395,
+      "day_close": 3.34,
+      "full_day_change_pct": 271.15,
+      "note": "Intraday cutoff. Full-day move cannot be credited because exact 11:01 price is not yet verified."
+    },
+    {
+      "ticker": "DLXY",
+      "cutoff": "2026-09-16T08:01:00-04:00",
+      "status": "NEEDS_FIRST_REGULAR_OPEN_AUDIT",
+      "note": "Premarket source shows major repricing before regular open; must not credit pre-cutoff/premarket move to alert."
+    }
+  ],
+  "conclusion": "94.44% remains only event-session directional alignment, not trade win rate. Strategy performance will be computed solely from verified executable post-alert prices."
+}
