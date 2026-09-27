@@ -64,6 +64,47 @@ def github_json(path: str):
     return request_json("https://api.github.com" + path)
 
 
+def github_put(path: str, payload: dict):
+    url = "https://api.github.com" + path
+    body = json.dumps(payload).encode("utf-8")
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/vnd.github+json",
+        "Content-Type": "application/json",
+        "X-GitHub-Api-Version": "2022-11-28",
+    }
+    if TOKEN:
+        headers["Authorization"] = f"Bearer {TOKEN}"
+    req = urllib.request.Request(url, data=body, method="PUT", headers=headers)
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.loads(resp.read().decode("utf-8"))
+
+
+def persist_remote_json(path: str, value, branch="main-v2"):
+    if not TOKEN:
+        return None
+    owner, repo = REPO.split("/", 1)
+    api_path = f"/repos/{owner}/{repo}/contents/{urllib.parse.quote(path, safe='/')}"
+    last_error = None
+    for attempt in range(3):
+        try:
+            current = github_json(api_path + "?ref=" + urllib.parse.quote(branch, safe=""))
+            raw = json.dumps(value, indent=2, sort_keys=True) + "\n"
+            payload = {
+                "message": "chore(market-radar): refresh learning metrics",
+                "content": base64.b64encode(raw.encode("utf-8")).decode("ascii"),
+                "sha": current.get("sha"),
+                "branch": branch,
+            }
+            result = github_put(api_path, payload)
+            return ((result.get("commit") or {}).get("sha"))
+        except Exception as exc:
+            last_error = exc
+            import time
+            time.sleep(0.75 * (attempt + 1))
+    raise RuntimeError(f"remote persistence failed: {last_error}")
+
+
 def list_alert_paths():
     owner, repo = REPO.split("/", 1)
     quoted_ref = urllib.parse.quote("market-radar-live", safe="")
@@ -436,19 +477,31 @@ def main():
         rows_by_key.values(),
         key=lambda r: (r.get("detected_utc", ""), r.get("radar_id", ""), r.get("ticker", "")),
     )
-    save_json(
-        OUTCOMES_FILE,
-        {
-            "updated_utc": now_utc().isoformat(),
-            "observations": rows,
-        },
-    )
-    save_json(METRICS_FILE, build_metrics(rows))
+    outcomes_obj = {
+        "updated_utc": now_utc().isoformat(),
+        "observations": rows,
+    }
+    metrics_obj = build_metrics(rows)
+    save_json(OUTCOMES_FILE, outcomes_obj)
+    save_json(METRICS_FILE, metrics_obj)
+
+    remote_commits = {}
+    try:
+        remote_commits["outcomes"] = persist_remote_json(
+            "market-radar/learning/outcomes.json", outcomes_obj
+        )
+        remote_commits["metrics"] = persist_remote_json(
+            "market-radar/learning/metrics.json", metrics_obj
+        )
+    except Exception as exc:
+        remote_commits["error"] = f"{type(exc).__name__}: {exc}"
+
     print(json.dumps({
         "alert_files_seen": len(alert_paths),
         "observations": len(rows),
         "tickers_refreshed": len(ticker_cache),
         "benchmarks_refreshed": sorted(benchmark_cache),
+        "remote_commits": remote_commits,
     }, indent=2))
 
 
