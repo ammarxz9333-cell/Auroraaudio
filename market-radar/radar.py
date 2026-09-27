@@ -248,11 +248,6 @@ def yahoo_market_snapshot(ticker: str):
             return None
 
         latest = bars[-1]
-        prev_close = meta.get("chartPreviousClose") or meta.get("previousClose")
-        if prev_close is None:
-            prev_close = bars[0]["close"]
-        prev_close = float(prev_close)
-        change_pct = ((latest["close"] / prev_close) - 1.0) * 100.0 if prev_close else None
 
         last_two = bars[-2:] if len(bars) >= 2 else bars
         change_5m = None
@@ -279,6 +274,21 @@ def yahoo_market_snapshot(ticker: str):
                 by_day.setdefault(b["ny"].date().isoformat(), []).append(b)
 
         today_key = ny_now.date().isoformat()
+        day_keys = sorted(by_day.keys())
+        prev_close = None
+        if today_key in by_day:
+            prior_days = [d for d in day_keys if d < today_key]
+            if prior_days:
+                prev_close = by_day[prior_days[-1]][-1]["close"]
+        elif day_keys:
+            prev_close = by_day[day_keys[-1]][-1]["close"]
+        if prev_close is None:
+            prev_close = meta.get("regularMarketPreviousClose") or meta.get("previousClose") or meta.get("chartPreviousClose")
+        if prev_close is None:
+            prev_close = bars[0]["close"]
+        prev_close = float(prev_close)
+        change_pct = ((latest["close"] / prev_close) - 1.0) * 100.0 if prev_close else None
+
         today_cum = sum(b["volume"] for b in by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= cutoff)
         hist_cums = []
         for d, dbars in by_day.items():
