@@ -1,0 +1,138 @@
+{
+  "schema_version": 1,
+  "batch": "pilot-20-reveal-daily-v1",
+  "status": "REVEALED_DAILY_DIRECTION_ONLY",
+  "warning": "Daily session returns are NOT post-alert returns for intraday cutoffs. Do not use this file to claim strategy return or capture percentage.",
+  "directional_summary": {
+    "directional_cases": 18,
+    "aligned": 17,
+    "misaligned": 1,
+    "alignment_pct": 94.44,
+    "bearish_avoid_aligned": "8/8",
+    "watch_aligned": "9/10",
+    "no_trade_cases": 2
+  },
+  "outcomes": [
+    {
+      "ticker": "ALMS",
+      "decision": "BEARISH_AVOID",
+      "event_session_change_pct": -56.58,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "XENE",
+      "decision": "BEARISH_AVOID",
+      "event_session_change_pct": -30.69,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "CMPX",
+      "decision": "BEARISH_AVOID",
+      "event_session_change_pct": -31.87,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "FLNA",
+      "decision": "WATCH",
+      "event_session_change_pct": 39.28,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "LEU",
+      "decision": "BEARISH_AVOID",
+      "event_session_change_pct": -8.61,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "GCTK",
+      "decision": "BEARISH_AVOID",
+      "event_session_change_pct": -29.65,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "WOR",
+      "decision": "WATCH",
+      "event_session_change_pct": 1.29,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "CHPT",
+      "decision": "WATCH",
+      "event_session_change_pct": 74.95,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "AVEX",
+      "decision": "WATCH",
+      "event_session_change_pct": 0.25,
+      "grade": "aligned_weak"
+    },
+    {
+      "ticker": "SRRK",
+      "decision": "WATCH",
+      "event_session_change_pct": -6.42,
+      "grade": "misaligned"
+    },
+    {
+      "ticker": "GLND",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "event_session_change_pct": 83.85,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "VICR",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "event_session_change_pct": 17.66,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "PAAI",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "event_session_change_pct": 271.15,
+      "grade": "aligned_but_intraday_leak_in_daily_return"
+    },
+    {
+      "ticker": "BENF",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "event_session_change_pct": 438.73,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "RARE",
+      "decision": "BEARISH_AVOID",
+      "event_session_change_pct": -44.03,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "CLLS",
+      "decision": "BEARISH_AVOID",
+      "event_session_change_pct": -40.97,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "DLXY",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "event_session_change_pct": 451.81,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "GLATF",
+      "decision": "BEARISH_AVOID",
+      "event_session_change_pct": -16.21,
+      "grade": "aligned"
+    },
+    {
+      "ticker": "PAYX",
+      "decision": "NO_TRADE",
+      "event_session_change_pct": -8.77,
+      "grade": "neutral"
+    },
+    {
+      "ticker": "CTAS",
+      "decision": "NO_TRADE",
+      "event_session_change_pct": -3.44,
+      "grade": "neutral"
+    }
+  ],
+  "next_required_step": "Reconstruct exact cutoff price (or first tradable price after alert) for each intraday case, then calculate post-alert 30m/close/+1/+3/+5 returns and MFE/MAE. Only those metrics may be called strategy performance."
+}
