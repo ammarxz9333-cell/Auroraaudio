@@ -7,6 +7,7 @@ Creates GitHub issues for high-scoring new public items and optionally Telegram 
 from __future__ import annotations
 
 import datetime as dt
+import base64
 import email.utils
 import hashlib
 import html
@@ -421,17 +422,58 @@ def github_api(path: str, method="GET", payload=None):
         raw = resp.read()
         return json.loads(raw.decode("utf-8")) if raw else {}
 
-def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
-    tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
+def classify_stage(score, tickers, market_ctx=None):
     reactions = [m.get("reaction") for m in (market_ctx or []) if not m.get("error")]
     if tickers and reactions and all(r == "not-yet-reacted" for r in reactions) and score >= 8:
-        stage = "EARLY"
-    elif any(r == "major-reprice" for r in reactions):
-        stage = "MAJOR-REPRICE"
-    elif any(r == "reacting" for r in reactions):
-        stage = "REACTING"
-    else:
-        stage = "RADAR"
+        return "EARLY"
+    if any(r == "major-reprice" for r in reactions):
+        return "MAJOR-REPRICE"
+    if any(r == "reacting" for r in reactions):
+        return "REACTING"
+    return "RADAR"
+
+def push_live_pr_alert(source, item, score, tickers, hits, rid, market_ctx=None):
+    """Commit one alert JSON file to the persistent market-radar-live PR branch.
+    A commit update to that open PR can be used as a ChatGPT Work event trigger.
+    """
+    stage = classify_stage(score, tickers, market_ctx)
+    published = item.get("published")
+    payload_obj = {
+        "radar_id": rid,
+        "stage": stage,
+        "score": score,
+        "detected_utc": now_utc().isoformat(),
+        "published_utc": published.isoformat() if isinstance(published, dt.datetime) else None,
+        "source": source.get("name"),
+        "source_class": source.get("class"),
+        "tickers": tickers,
+        "signals": sorted(set(hits)),
+        "headline": item.get("title", ""),
+        "url": item.get("url", ""),
+        "snippet": item.get("snippet", "")[:1800],
+        "market_context": market_ctx or [],
+    }
+    raw = json.dumps(payload_obj, indent=2, ensure_ascii=False) + "\n"
+    stamp = now_utc().strftime("%Y%m%dT%H%M%SZ")
+    path = f"market-radar/live/alerts/{stamp}-{rid}.json"
+    ticker_text = ",".join(tickers) if tickers else "NEW-CANDIDATE"
+    message = f"[MARKET-{stage}] {ticker_text} score={score} {item.get('title','')}"[:240]
+    gh_payload = {
+        "message": message,
+        "content": base64.b64encode(raw.encode("utf-8")).decode("ascii"),
+        "branch": "market-radar-live",
+    }
+    result = github_api(f"/repos/{REPO}/contents/{path}", method="PUT", payload=gh_payload)
+    return {
+        "stage": stage,
+        "path": path,
+        "commit_sha": ((result.get("commit") or {}).get("sha")),
+        "content_url": ((result.get("content") or {}).get("html_url")),
+    }
+
+def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
+    tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
+    stage = classify_stage(score, tickers, market_ctx)
     title_text = item.get("title", "Untitled")
     title = f"[MARKET-{stage} {score}] {tick} — {title_text}"[:240]
     published = item.get("published")
@@ -540,10 +582,43 @@ def main():
                 age = start - published
                 if age.total_seconds() < 0 or age > dt.timedelta(hours=BOOTSTRAP_ALERT_HOURS):
                     continue
+            live_result = None
+            try:
+                live_result = push_live_pr_alert(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
+            except Exception as e:
+                errors.append(f"live-pr {rid}: {type(e).__name__}: {e}")
             try:
                 url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
                 alerts.append((source["name"], item.get("title", ""), score, tickers, url))
-                telegram_alert(f"MARKET RADAR {score} {' '.join('$'+x for x in tickers) or 'NEW'}\n{item.get('title','')}\n{source['name']}\n{item.get('url','')}\nIssue: {url}")
+                stage = (live_result or {}).get("stage") or classify_stage(score, tickers, market_ctx)
+                telegram_alert(f"MARKET {stage} {score} {' '.join('
+    combined = list(dict.fromkeys(list(old_seen) + new_seen))
+    if len(combined) > MAX_SEEN:
+        combined = combined[-MAX_SEEN:]
+    market_probe = yahoo_market_snapshot("CRWV")
+    state.update({
+        "bootstrapped": True,
+        "market_probe": market_probe,
+        "seen": combined,
+        "last_run_utc": now_utc().isoformat(),
+        "last_alert_count": len(alerts),
+        "last_error_count": len(errors),
+        "last_errors": errors[:30],
+    })
+    save_state(state)
+
+    print(json.dumps({
+        "sources": len(sources),
+        "new_items": len(new_seen),
+        "alerts": len(alerts),
+        "errors": errors[:20],
+    }, indent=2))
+    for s, title, score, tickers, url in alerts:
+        print(f"ALERT {score} {tickers} {s}: {title} -> {url}")
+
+if __name__ == "__main__":
+    main()
++x for x in tickers) or 'NEW'}\n{item.get('title','')}\n{source['name']}\n{item.get('url','')}\nIssue: {url}")
             except Exception as e:
                 errors.append(f"issue {rid}: {type(e).__name__}: {e}")
 
