@@ -25,7 +25,8 @@ from html.parser import HTMLParser
 from pathlib import Path
 from statistics import median
 from zoneinfo import ZoneInfo
-from entry_gate import GateInput, entry_gate\nfrom provenance import provenance
+from entry_gate import GateInput, entry_gate
+from provenance import provenance
 from live.outcome_tracker import new_trade, update_trade, load as load_trades, save as save_trades, live_metrics
 
 ROOT = Path(__file__).resolve().parent
