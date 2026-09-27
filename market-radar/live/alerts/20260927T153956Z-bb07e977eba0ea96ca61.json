@@ -1,0 +1,42 @@
+{
+  "radar_id": "bb07e977eba0ea96ca61",
+  "stage": "REACTING",
+  "score": 12,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:39:56.670919+00:00",
+  "published_utc": "2026-09-27T15:39:51.813590+00:00",
+  "source": "Yahoo early momentum discovery",
+  "source_class": "momentum",
+  "tickers": [
+    "AAON"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "price-volume-momentum",
+    "ticker-match"
+  ],
+  "headline": "$AAON abnormal market momentum: +5.73% day move",
+  "url": "https://finance.yahoo.com/quote/AAON",
+  "snippet": "Ticker $AAON; price 89.1000; day move +5.73%; volume 1947098; 3m average daily volume 1161526; crude volume/ADV 1.68x.",
+  "market_context": [
+    {
+      "ticker": "AAON",
+      "price": 88.19,
+      "previous_close": 84.28,
+      "change_pct": 4.639,
+      "change_5m_pct": 0.0,
+      "cum_volume": 1758865,
+      "same_time_volume_ratio": 1.94,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 88.19,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:44:39+00:00"
+    }
+  ]
+}
