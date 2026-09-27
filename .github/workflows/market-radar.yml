@@ -32,6 +32,24 @@ jobs:
           cd market-radar && python3 -m unittest test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py
 
 
+      - name: PIT leakage guard
+        run: |
+          python3 -m py_compile market-radar/backtest/build_pit_dataset.py market-radar/backtest/pit_backtester.py
+          python3 - <<'PY'
+          import importlib.util
+          p="market-radar/backtest/pit_backtester.py"
+          s=importlib.util.spec_from_file_location("pit",p)
+          m=importlib.util.module_from_spec(s); s.loader.exec_module(m)
+          snap={"ticker":"TEST","cutoff":"2026-09-01T12:00:00+00:00","evidence":[{"id":"x","available_at":"2026-09-01T11:59:00+00:00"}],"market":{},"features":{}}
+          r=m.freeze(snap,"WATCH","test"); assert m.verify(r)
+          try:
+              m.freeze({**snap,"future_return_pct":5},"WATCH","test")
+              raise AssertionError("future leakage accepted")
+          except ValueError:
+              pass
+          print("PIT leakage guard OK")
+          PY
+
       - name: Historical replay smoke test (frozen batch)
         env:
           PYTHONPATH: market-radar
