@@ -781,6 +781,18 @@ def main():
                 hits.append("market-confirmation")
             if valid_market and all(m.get("reaction") == "not-yet-reacted" for m in valid_market):
                 hits.append("market-not-yet-reacted")
+            corroborating=set()
+            if tickers:
+                for osrc,oitems in fetched:
+                    if osrc.get("name")==source.get("name"): continue
+                    for oi in oitems:
+                        ots=match_watchlist(f"{oi.get('title','')} {oi.get('snippet','')}",watchlist)
+                        if set(ots)&set(tickers):
+                            op,cp=oi.get("published"),item.get("published")
+                            if not isinstance(op,dt.datetime) or not isinstance(cp,dt.datetime) or abs((op-cp).total_seconds()) <= 21600:
+                                corroborating.add(osrc.get("name","unknown")); break
+            infoq["independent_corroboration_count"]=len(corroborating)
+            infoq["independent_corroborators"]=sorted(corroborating)[:8]
             if tickers and score >= effective_threshold:
                 active_watches[rid] = {
                     "tickers": tickers,
