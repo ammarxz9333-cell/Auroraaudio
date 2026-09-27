@@ -1,0 +1,79 @@
+{
+  "detected_utc": "2026-09-27T22:06:56.168664+00:00",
+  "headline": "Almonty Rallies 11% as Stifel Backs Tungsten Supply Story, Goldman Stays on the Sidelines - AD HOC NEWS",
+  "information_quality": {
+    "catalyst_signature": [],
+    "detected_utc": "2026-09-27T22:06:56.151528+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": true
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": false,
+    "rumor_only": false,
+    "source_class": "industry",
+    "source_identity": "news.google.com",
+    "source_quality": 3,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [
+    {
+      "above_open_pct": 8.34,
+      "above_vwap_pct": 1.379,
+      "bar_high": 13.9,
+      "bar_low": 13.9,
+      "bar_time_utc": "2026-09-25T23:58:28+00:00",
+      "change_5m_pct": 0.0,
+      "change_pct": 12.187,
+      "cum_volume": 10856644,
+      "event_price": 13.9,
+      "from_session_high_pct": -1.208,
+      "holds_open": true,
+      "holds_opening_range_high": true,
+      "holds_vwap": true,
+      "market_session": "AFTER/CLOSED",
+      "momentum_15m_pct": -1.259,
+      "momentum_30m_pct": -1.081,
+      "opening_range_high": 13.5204,
+      "opening_range_low": 12.77,
+      "post30m_move_pct": null,
+      "pre30m_move_pct": 0.0,
+      "premarket_reprice_pct": 3.471,
+      "previous_close": 12.39,
+      "price": 13.9,
+      "reaction": "major-reprice",
+      "regular_open": 12.83,
+      "same_time_volume_ratio": 1.9,
+      "session_high": 14.07,
+      "session_low": 12.77,
+      "since_event_move_pct": 0.0,
+      "ticker": "ALM",
+      "volume_acceleration_15m": 5.168,
+      "vwap": 13.7109
+    }
+  ],
+  "published_utc": "2026-09-27T14:10:54+00:00",
+  "radar_id": "de483676333cfecc8c17",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 8,
+  "signals": [
+    "watchlist-match",
+    "market-confirmation"
+  ],
+  "source": "Analyst initiations and upgrades",
+  "source_class": "industry",
+  "tickers": [
+    "ALM"
+  ],
+  "url": "https://news.google.com/rss/articles/CBMi3AFBVV95cUxQLW0tdW1OMTcyNlJaRnV1c2pDcC1BMFNKenVSWFZyTTlicUtOQlFnejZNbWVXdG16bTRNeDYzMDdlSXRraXhwckxTeUNaTTNGX2Q3VGNQQ21PeFlwRGF5WEI0d1p5TEdWdlpJSGRtQl9nTXFYWTZlNWhsNDdfMnVPR0NrZmJWWmMzYjdYLVowRUFWMlVSSENtQkRIVFBiMmRLaDRZQXhPd2ZhMFZsb1ozTDN1RzJPRWphR214Y0ZvX3dvRmZIb3kzdzYtQ3ZZSXEwZ21JejZObDdVN2gw?oc=5"
+}
