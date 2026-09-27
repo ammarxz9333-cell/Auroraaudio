@@ -685,8 +685,14 @@ def main():
         if start - added > dt.timedelta(days=3):
             active_watches.pop(rid, None)
             continue
+        event_time = None
+        if watch.get("event_time_utc"):
+            try:
+                event_time = dt.datetime.fromisoformat(watch["event_time_utc"])
+            except Exception:
+                event_time = None
         for ticker in watch.get("tickers", []):
-            snap = yahoo_market_snapshot(ticker)
+            snap = yahoo_market_snapshot(ticker, event_time=event_time)
             if not snap or snap.get("error"):
                 continue
             persist_market_snapshot(snap, rid, watch.get("source", "active-watch"), int(watch.get("score", THRESHOLD)), THRESHOLD)
@@ -725,6 +731,7 @@ def main():
                     "score": score,
                     "source": source["name"],
                     "added_utc": start.isoformat(),
+                    "event_time_utc": item["published"].isoformat() if isinstance(item.get("published"), dt.datetime) else None,
                 }
             if score < effective_threshold:
                 continue
