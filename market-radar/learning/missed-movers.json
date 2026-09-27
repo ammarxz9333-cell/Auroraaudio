@@ -9,7 +9,7 @@
         "source": "Yahoo Finance predefined day_gainers public endpoint"
       },
       "errors": [],
-      "generated_utc": "2026-09-27T15:41:27.700161+00:00",
+      "generated_utc": "2026-09-27T15:41:39.893761+00:00",
       "investigation_protocol": {
         "required_output": "For every mover: earliest clue, full catalyst/rumor timeline, pre-move features, why missed, machine-detectable pattern, false-positive tradeoff, and proposed reversible model/source change.",
         "required_root_cause_labels": [
