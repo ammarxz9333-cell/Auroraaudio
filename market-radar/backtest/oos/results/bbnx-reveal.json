@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "batch": "entry-gate-v1-oos-bbnx-reveal",
+  "ticker": "BBNX",
+  "frozen_decision": "WATCH_FINANCING_RISK",
+  "cutoff": "2026-09-16T09:30:00-04:00",
+  "observed": {
+    "previous_close": 19.23,
+    "premarket_last": 18.75,
+    "premarket_volume": 54634,
+    "regular_open": 18.61,
+    "regular_low": 18.4,
+    "regular_high": 22.22,
+    "regular_close": 22.18,
+    "regular_volume": 7189063,
+    "avg_volume_30d": 1124867,
+    "volume_multiple_vs_30d": 6.39,
+    "mfe_from_open_pct": 19.4,
+    "mae_from_open_pct": -1.13,
+    "close_from_open_pct": 19.18
+  },
+  "outcome": "CATALYST_ACCEPTED_STRONGLY",
+  "gate_scoring_status": "ENTRY_TIMESTAMP_NOT_YET_VERIFIED",
+  "note": "Daily path proves +10% opportunity existed from the open without a -5% session excursion. It does not by itself prove the exact first timestamp at which v1 gate requirements (RVOL, VWAP/open hold, >=5 min if applicable) became satisfied."
+}
