@@ -1,0 +1,43 @@
+{
+  "radar_id": "78d617dc3e7360fb561e",
+  "stage": "EARLY",
+  "score": 9,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:39:03.422160+00:00",
+  "published_utc": "2026-09-27T06:56:25+00:00",
+  "source": "Analyst initiations and upgrades",
+  "source_class": "secondary",
+  "tickers": [
+    "CDP"
+  ],
+  "signals": [
+    "defense",
+    "explicit-ticker",
+    "market-not-yet-reacted",
+    "price target",
+    "ticker-match"
+  ],
+  "headline": "COPT Defense Properties (NYSE:CDP) Stock Has Average Price Target of $37.38 - MarketBeat",
+  "url": "https://news.google.com/rss/articles/CBMi0AFBVV95cUxQOVJ3Nms5TjQ0bEluQnlneEhBdTNTTG1DdDlCbWd5UkgteTl5a3FCVlR1VHdwRGpITGRoVnRwNkUxWjZnNUFfRmw3Q3hQdlNFRHdONm9KcGJ2emg5eF9MT2QycTczVlVadGZCNmc0T1d0QkpzQWZmR0MzdWMyQXVYMDROTUt2MW1TaE8wYThUTFB6V252RHhIeG9XUl9RT25QajRJZzZzZzlKLXNvRmtMZHFuanJmdzZsbVRja0xhYnhtYUJZSW5wSWppalRtRFZn?oc=5",
+  "snippet": "COPT Defense Properties (NYSE:CDP) Stock Has Average Price Target of $37.38 MarketBeat",
+  "market_context": [
+    {
+      "ticker": "CDP",
+      "price": 33.88,
+      "previous_close": 33.79,
+      "change_pct": 0.266,
+      "change_5m_pct": 0.0,
+      "cum_volume": 489439,
+      "same_time_volume_ratio": 0.97,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "not-yet-reacted",
+      "event_price": 33.88,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T21:22:23+00:00"
+    }
+  ]
+}
