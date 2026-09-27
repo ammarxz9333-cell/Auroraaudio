@@ -6,7 +6,7 @@ Spread is not reconstructed from OHLCV; cases requiring historical bid/ask
 remain INSUFFICIENT_DATA rather than receiving an invented spread.
 """
 from __future__ import annotations
-import datetime as dt, json, urllib.parse, urllib.request
+import datetime as dt, json, urllib.parse, urllib.request, hashlib
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from entry_gate import GateInput, entry_gate
@@ -35,14 +35,28 @@ def yahoo_5m(ticker, start, end):
         out.append({"time":dt.datetime.fromtimestamp(ts,dt.timezone.utc),"ny":dt.datetime.fromtimestamp(ts,dt.timezone.utc).astimezone(NY),**vals})
     return out
 
-def replay_case(case):
+def replay_case(case, cache_dir=None):
     cutoff=dt.datetime.fromisoformat(case["cutoff"])
     event_ny=cutoff.astimezone(NY)
     day=event_ny.date() + (dt.timedelta(days=1) if event_ny.time() >= dt.time(16,0) else dt.timedelta(0))
     while day.weekday() >= 5: day += dt.timedelta(days=1)
     start=dt.datetime.combine(day-dt.timedelta(days=7),dt.time(0),NY)
     end=dt.datetime.combine(day+dt.timedelta(days=2),dt.time(0),NY)
-    bars=yahoo_5m(case["ticker"],start,end)
+    cache_path=None
+    if cache_dir:
+        cache_path=Path(cache_dir)/f"{case['ticker']}-{day}.json"
+        if cache_path.exists():
+            raw=json.loads(cache_path.read_text())
+            bars=[{**b,"time":dt.datetime.fromisoformat(b["time"]),"ny":dt.datetime.fromisoformat(b["ny"])} for b in raw]
+        else:
+            bars=yahoo_5m(case["ticker"],start,end)
+            cache_path.parent.mkdir(parents=True,exist_ok=True)
+            raw=[{**b,"time":b["time"].isoformat(),"ny":b["ny"].isoformat()} for b in bars]
+            cache_path.write_text(json.dumps(raw,separators=(",",":"),sort_keys=True)+"\\n")
+    else:
+        bars=yahoo_5m(case["ticker"],start,end)
+    normalized=[{**b,"time":b["time"].isoformat(),"ny":b["ny"].isoformat()} for b in bars]
+    bars_sha256=hashlib.sha256(json.dumps(normalized,separators=(",",":"),sort_keys=True).encode()).hexdigest()
     today=[b for b in bars if b["ny"].date()==day]
     regular=[b for b in today if dt.time(9,30)<=b["ny"].time()<dt.time(16,0)]
     pre=[b for b in today if b["ny"].time()<dt.time(9,30)]
@@ -117,14 +131,14 @@ def replay_case(case):
             "v2_spread_scenarios":v2_scenarios,
             "v2_spread_robust_buyable": all(v2_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0)) and len({v["first_buyable_time"] for v in v2_scenarios.values() if v})==1,
             "first_buyable_features": next((r for r in out if any(v and v["first_buyable_time"]==r["time_utc"] for v in spread_scenarios.values())),None),
-            "note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
+            "bars_sha256":bars_sha256,"bars_cache":str(cache_path) if cache_path else None,"note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
 
 def main():
     import argparse
-    ap=argparse.ArgumentParser(); ap.add_argument("files",nargs="+"); ap.add_argument("--out",default="replay-results.json"); args=ap.parse_args()
+    ap=argparse.ArgumentParser(); ap.add_argument("files",nargs="+"); ap.add_argument("--out",default="replay-results.json"); ap.add_argument("--cache-dir"); args=ap.parse_args()
     cases=[]
     for f in args.files: cases += json.loads(Path(f).read_text())["cases"]
-    res=[replay_case(c) for c in cases]
+    res=[replay_case(c,args.cache_dir) for c in cases]
     Path(args.out).write_text(json.dumps({"schema_version":1,"cases":res},indent=2)+"\n")
     print(json.dumps({"cases":len(res),"reconstructed":sum(x["replay_state"]=="PRICE_VOLUME_RECONSTRUCTED" for x in res),"insufficient":sum(x["replay_state"]!="PRICE_VOLUME_RECONSTRUCTED" for x in res)},indent=2))
 if __name__=="__main__": main()
