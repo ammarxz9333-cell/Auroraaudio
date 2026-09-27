@@ -2,7 +2,7 @@
 """Research-only second-acceptance detector. Never changes live Gate v1."""
 from __future__ import annotations
 
-def detect_reclaim(rows, first_entry_time, first_entry_price):
+def detect_reclaim(rows, first_entry_time, first_entry_price, stop_time=None):
     """Find first post-stop reclaim with VWAP+open acceptance and renewed participation.
 
     Requires the initial entry to have experienced -5% first. A reclaim candidate
@@ -13,11 +13,11 @@ def detect_reclaim(rows, first_entry_time, first_entry_price):
     ep=float(first_entry_price)
     best=None
     for r in rows:
-        if r["time_utc"]==first_entry_time: seen_entry=True
+        if r["time_utc"]==first_entry_time: seen_entry=True\n        if stop_time and r["time_utc"]>=stop_time: stopped=True
         if not seen_entry: continue
         lo=r.get("low")
         if lo is not None and float(lo)<=ep*.95: stopped=True
-        if not stopped or r["time_utc"]<=first_entry_time: continue
+        if not stopped or r["time_utc"]<=first_entry_time or (stop_time and r["time_utc"]<=stop_time): continue
         if (r.get("holds_open") and r.get("holds_vwap") and
             float(r.get("rvol") or 0)>=2 and
             float(r.get("above_open_pct") or 999)<=8 and
