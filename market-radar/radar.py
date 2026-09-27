@@ -389,6 +389,77 @@ def market_context_for_tickers(tickers, event_time=None):
             out.append(snap)
     return out
 
+
+def yahoo_momentum_candidates():
+    """Discover new US equities from Yahoo's public day-gainers screener.
+
+    This is intentionally an early-move fallback, not a late-chase scanner:
+    candidates are limited to roughly +3% to +8.5% on the day, then the normal
+    market-context layer checks 5-minute acceleration and same-time volume.
+    """
+    url = (
+        "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
+        "?count=100&scrIds=day_gainers"
+    )
+    try:
+        data = json.loads(fetch(url, headers={"Accept": "application/json"}).decode("utf-8"))
+        quotes = (((data.get("finance") or {}).get("result") or [{}])[0].get("quotes") or [])
+    except Exception:
+        return []
+
+    items = []
+    for q in quotes:
+        ticker = str(q.get("symbol") or "").upper().strip()
+        change = q.get("regularMarketChangePercent")
+        price = q.get("regularMarketPrice")
+        volume = q.get("regularMarketVolume")
+        avg_volume = q.get("averageDailyVolume3Month")
+        quote_type = str(q.get("quoteType") or "")
+        market = str(q.get("market") or "")
+
+        if not ticker or not isinstance(change, (int, float)):
+            continue
+        if quote_type and quote_type != "EQUITY":
+            continue
+        if market and market != "us_market":
+            continue
+        if change < 3.0 or change > 8.5:
+            continue
+        if not isinstance(price, (int, float)) or price < 1:
+            continue
+        if not isinstance(volume, (int, float)) or volume < 500000:
+            continue
+
+        crude_volume_ratio = None
+        if isinstance(avg_volume, (int, float)) and avg_volume > 0:
+            crude_volume_ratio = float(volume) / float(avg_volume)
+
+        title = "$" + ticker + " abnormal market momentum: " + f"{change:+.2f}% day move"
+        url_quote = "https://finance.yahoo.com/quote/" + urllib.parse.quote(ticker)
+        if crude_volume_ratio is not None:
+            snippet = (
+                "Ticker $" + ticker
+                + f"; price {float(price):.4f}; day move {float(change):+.2f}%; "
+                + f"volume {int(volume)}; 3m average daily volume {int(avg_volume)}; "
+                + f"crude volume/ADV {crude_volume_ratio:.2f}x."
+            )
+        else:
+            snippet = (
+                "Ticker $" + ticker
+                + f"; price {float(price):.4f}; day move {float(change):+.2f}%; "
+                + f"volume {int(volume)}."
+            )
+
+        items.append({
+            "title": title,
+            "url": url_quote,
+            "snippet": snippet,
+            "published": now_utc(),
+            "momentum_candidate": True,
+        })
+
+    return items[:40]
+
 def item_id(source_name: str, item: dict) -> str:
     raw = source_name + "\n" + (item.get("url") or "") + "\n" + (item.get("title") or "")
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
@@ -687,6 +758,16 @@ def main():
     start = now_utc()
 
     fetched = []
+
+    momentum_items = yahoo_momentum_candidates()
+    if momentum_items:
+        fetched.append(({
+            "name": "Yahoo early momentum discovery",
+            "class": "momentum",
+            "weight": 4,
+            "type": "market",
+        }, momentum_items))
+
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = {pool.submit(source_items, source): source for source in sources}
         for future in as_completed(futures):
@@ -709,6 +790,19 @@ def main():
                 tickers, event_time=item.get("published")
             ) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
+
+            if item.get("momentum_candidate"):
+                strong_momentum = [
+                    m for m in valid_market
+                    if (
+                        (m.get("same_time_volume_ratio") is not None and m.get("same_time_volume_ratio") >= 1.8)
+                        or abs(m.get("change_5m_pct") or 0) >= 1.0
+                    )
+                ]
+                if not strong_momentum:
+                    continue
+                hits.append("price-volume-momentum")
+                score += 2
 
             if any(m.get("reaction") in ("reacting", "major-reprice") for m in valid_market):
                 score += 2
