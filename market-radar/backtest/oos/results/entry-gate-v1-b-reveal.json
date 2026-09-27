@@ -1,0 +1,116 @@
+{
+  "schema_version": 1,
+  "batch": "entry-gate-v1-oos-b-reveal",
+  "status": "DAILY_PATH_REVEALED",
+  "cases": [
+    {
+      "ticker": "FPS",
+      "frozen": "WATCH_CONTINUATION_HIGH",
+      "open": 33.14,
+      "high": 36.13,
+      "low": 33,
+      "close": 34.84,
+      "mfe_pct": 9.02,
+      "mae_pct": -0.42,
+      "path": "PLUS5_AVAILABLE_WITHOUT_MINUS5_SESSION_EXCURSION",
+      "gate_timestamp": "UNRESOLVED"
+    },
+    {
+      "ticker": "GRAL",
+      "frozen": "WATCH_REGULATORY_HIGH",
+      "open": 93.74,
+      "high": 111.5,
+      "low": 92,
+      "close": 107.97,
+      "mfe_pct": 18.95,
+      "mae_pct": -1.86,
+      "path": "PLUS10_AVAILABLE_WITHOUT_MINUS5_SESSION_EXCURSION",
+      "gate_timestamp": "UNRESOLVED"
+    },
+    {
+      "ticker": "ASND",
+      "frozen": "WATCH_CONTINUATION",
+      "open": 239.7,
+      "high": 249.01,
+      "low": 237.23,
+      "close": 247.69,
+      "mfe_pct": 3.88,
+      "mae_pct": -1.03,
+      "path": "NO_PLUS5_FROM_OPEN"
+    },
+    {
+      "ticker": "SYY",
+      "frozen": "WATCH_FINANCING",
+      "open": 79.73,
+      "high": 80.14,
+      "low": 78.37,
+      "close": 78.71,
+      "mfe_pct": 0.51,
+      "mae_pct": -1.71,
+      "path": "NO_PLUS5_FROM_OPEN"
+    },
+    {
+      "ticker": "UTHR",
+      "frozen": "NO_NEW_EVENT",
+      "open": 500.62,
+      "high": 505.78,
+      "low": 497.67,
+      "close": 498.48,
+      "mfe_pct": 1.03,
+      "mae_pct": -0.59,
+      "path": "CORRECT_ABSTENTION"
+    },
+    {
+      "ticker": "ARCT",
+      "frozen": "WATCH_BINARY_UPCOMING",
+      "open": 16.69,
+      "high": 17.75,
+      "low": 15.92,
+      "close": 16.03,
+      "mfe_pct": 6.35,
+      "mae_pct": -4.61,
+      "path": "PLUS5_AND_NEAR_MINUS5_ORDER_UNRESOLVED"
+    },
+    {
+      "ticker": "MNOV",
+      "frozen": "WATCH_BINARY_UPCOMING",
+      "open": 3.2,
+      "high": 3.615,
+      "low": 2.72,
+      "close": 3.32,
+      "mfe_pct": 12.97,
+      "mae_pct": -15,
+      "path": "PLUS10_AND_MINUS5_ORDER_UNRESOLVED"
+    },
+    {
+      "ticker": "LLYVA",
+      "frozen": "NO_NEW_EVENT",
+      "open": 96.16,
+      "high": 97.92,
+      "low": 94.53,
+      "close": 95.43,
+      "mfe_pct": 1.83,
+      "mae_pct": -1.7,
+      "path": "CORRECT_ABSTENTION"
+    }
+  ],
+  "summary": {
+    "clear_plus5_opportunities": [
+      "FPS",
+      "GRAL"
+    ],
+    "watch_but_no_plus5": [
+      "ASND",
+      "SYY"
+    ],
+    "correct_no_new_event_abstentions": [
+      "UTHR",
+      "LLYVA"
+    ],
+    "order_unresolved": [
+      "ARCT",
+      "MNOV"
+    ]
+  },
+  "note": "No case is counted as BUYABLE_NOW precision until the first timestamp satisfying frozen gate fields is independently verified."
+}
