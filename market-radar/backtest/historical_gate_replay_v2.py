@@ -10,6 +10,7 @@ import datetime as dt, json, urllib.parse, urllib.request
 from pathlib import Path
 from zoneinfo import ZoneInfo
 from entry_gate import GateInput, entry_gate
+from entry_gate_v2 import GateV2Input, entry_gate_v2
 
 NY=ZoneInfo("America/New_York")
 DECISION_NORMALIZATION={
@@ -52,7 +53,7 @@ def replay_case(case):
     prior_day=max(b["ny"].date() for b in prior); prev=[b for b in prior if b["ny"].date()==prior_day]
     prev_close=float(prev[-1]["close"]); reg_open=float(regular[0]["open"] or regular[0]["close"])
     pre_reprice=((float(pre[-1]["close"])/prev_close)-1)*100 if pre else None
-    out=[]; spread_scenarios={str(s):None for s in (0.5,1.0,2.0,3.0)}
+    out=[]; spread_scenarios={str(s):None for s in (0.5,1.0,2.0,3.0)}; v2_scenarios={str(s):None for s in (0.5,1.0,2.0,3.0)}
     for idx,b in enumerate(regular):
         if event_ny.date()==day and b["time"] < cutoff.astimezone(dt.timezone.utc): continue
         vol=float(b["volume"] or 0); typical=(float(b["high"])+float(b["low"])+float(b["close"]))/3
@@ -78,6 +79,20 @@ def replay_case(case):
         out.append(row)
         for spread in (0.5,1.0,2.0,3.0):
             key=str(spread)
+            if v2_scenarios[key] is None and pre_reprice is not None:
+                vg=entry_gate_v2(GateV2Input(normalized_decision(case["decision"]),row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread,above_open_pct=row["above_open_pct"],above_vwap_pct=row["above_vwap_pct"]))
+                if vg["state"]=="BUYABLE_NOW":
+                    entry=float(b["close"]); p5=entry*1.05; p10=entry*1.10; m5=entry*0.95
+                    oc=None; p10h=False; mfe2=0.0; mae2=0.0
+                    for z in regular[idx:]:
+                        hi=float(z["high"]); lo=float(z["low"])
+                        mfe2=max(mfe2,(hi/entry-1)*100); mae2=min(mae2,(lo/entry-1)*100); p10h=p10h or hi>=p10
+                        hp=hi>=p5; hm=lo<=m5
+                        if oc is None and hp and hm: oc="ORDER_UNVERIFIED"
+                        elif oc is None and hp: oc="PLUS5_FIRST"
+                        elif oc is None and hm: oc="MINUS5_FIRST"
+                        if oc: break
+                    v2_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":oc or "UNRESOLVED","plus10_reached":p10h,"mfe_pct":round(mfe2,3),"mae_pct":round(mae2,3)}
             if spread_scenarios[key] is not None: continue
             if pre_reprice is None: continue
             g=entry_gate(GateInput(normalized_decision(case["decision"]),row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread))
@@ -101,6 +116,8 @@ def replay_case(case):
     robust=robust and len(firsts)==1
     return {**case,"replay_state":"PRICE_VOLUME_RECONSTRUCTED","session_date":str(day),"bars_evaluated":len(out),"first_bar":out[0] if out else None,
             "normalized_decision":normalized_decision(case["decision"]),"spread_scenarios":spread_scenarios,"spread_robust_buyable":robust,
+            "v2_spread_scenarios":v2_scenarios,
+            "v2_spread_robust_buyable": all(v2_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0)) and len({v["first_buyable_time"] for v in v2_scenarios.values() if v})==1,
             "first_buyable_features": next((r for r in out if any(v and v["first_buyable_time"]==r["time_utc"] for v in spread_scenarios.values())),None),
             "note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
 
