@@ -4,6 +4,13 @@ on:
   schedule:
     - cron: "*/5 * * * *"
   workflow_dispatch:
+  push:
+    branches:
+      - main-v2
+    paths:
+      - "market-radar/radar.py"
+      - "market-radar/sources.json"
+      - ".github/workflows/market-radar.yml"
 
 permissions:
   contents: write
@@ -22,6 +29,9 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 1
+
+      - name: Validate scanner syntax
+        run: python3 -m py_compile market-radar/radar.py
 
       - name: Run first-public-source scanner
         env:
