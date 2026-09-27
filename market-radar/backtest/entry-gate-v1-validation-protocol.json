@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "gate_version": "entry_gate.py@2ff99b2e5963195efedce88830a5a4795f6066a6",
+  "status": "FROZEN_FOR_OUT_OF_SAMPLE_VALIDATION",
+  "thresholds_locked": true,
+  "evaluation": {
+    "positive_opportunity": "First executable post-alert path reaches +5% before -5% adverse excursion.",
+    "strong_opportunity": "Reaches +10% before -5% adverse excursion.",
+    "late": "At first executable price, most catalyst repricing is already consumed or gate returns LATE.",
+    "failed_entry": "BUYABLE_NOW then -5% adverse excursion occurs before +5% favorable excursion.",
+    "insufficient_data": "Required point-in-time tape fields cannot be verified; excluded from gate precision denominator."
+  },
+  "required_gate_fields": [
+    "gap_pct",
+    "premarket_reprice_pct",
+    "rvol",
+    "holds_vwap",
+    "holds_open",
+    "minutes_since_open",
+    "spread_pct"
+  ],
+  "metrics": [
+    "coverage_pct",
+    "buyable_precision_plus5",
+    "buyable_precision_plus10",
+    "false_entry_rate",
+    "late_rejection_rate",
+    "avoid_precision",
+    "median_mfe",
+    "median_mae"
+  ],
+  "anti_overfit": "No threshold or rule edits until the 100-case batch has been fully scored. Proposed changes go to v2 only after v1 results are frozen."
+}
