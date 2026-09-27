@@ -35,14 +35,3 @@ jobs:
           RADAR_USER_AGENT: "Ammar-Market-Radar-Learner/1.0 contact=${{ github.repository_owner }}@users.noreply.github.com"
         run: python3 market-radar/evaluate.py
 
-      - name: Persist learning metrics
-        shell: bash
-        run: |
-          if [ -z "$(git status --porcelain -- market-radar/learning/)" ]; then
-            exit 0
-          fi
-          git config user.name "market-radar-learner"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add market-radar/learning/
-          git commit -m "chore(market-radar): refresh outcome metrics"
-          git push
