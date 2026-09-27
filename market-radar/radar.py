@@ -25,7 +25,7 @@ from html.parser import HTMLParser
 from pathlib import Path
 from statistics import median
 from zoneinfo import ZoneInfo
-from entry_gate import GateInput, entry_gate
+from entry_gate import GateInput, entry_gate\nfrom provenance import provenance
 from live.outcome_tracker import new_trade, update_trade, load as load_trades, save as save_trades, live_metrics
 
 ROOT = Path(__file__).resolve().parent
@@ -796,32 +796,7 @@ def main():
                 hits.append("market-confirmation")
             if valid_market and all(m.get("reaction") == "not-yet-reacted" for m in valid_market):
                 hits.append("market-not-yet-reacted")
-            corroborating=set()
-            if tickers:
-                for osrc,oitems in fetched:
-                    if osrc.get("name")==source.get("name"): continue
-                    for oi in oitems:
-                        ots=match_watchlist(f"{oi.get('title','')} {oi.get('snippet','')}",watchlist)
-                        if set(ots)&set(tickers):
-                            op,cp=oi.get("published"),item.get("published")
-                            if not isinstance(op,dt.datetime) or not isinstance(cp,dt.datetime) or abs((op-cp).total_seconds()) <= 21600:
-                                corroborating.add(osrc.get("name","unknown")); break
-            infoq["independent_corroboration_count"]=len(corroborating)
-            infoq["independent_corroborators"]=sorted(corroborating)[:8]
-            primary_confirmed=False
-            for osrc,oitems in fetched:
-                if osrc.get("class")!="primary": continue
-                for oi in oitems:
-                    if set(match_watchlist(f"{oi.get('title','')} {oi.get('snippet','')}",watchlist)) & set(tickers):
-                        primary_confirmed=True; break
-                if primary_confirmed: break
-            infoq["primary_confirmation"]=primary_confirmed
-            rv=[m.get("same_time_volume_ratio") for m in valid_market if isinstance(m.get("same_time_volume_ratio"),(int,float))]
-            va=[m.get("volume_acceleration_15m") for m in valid_market if isinstance(m.get("volume_acceleration_15m"),(int,float))]
-            mo=[m.get("momentum_15m_pct") for m in valid_market if isinstance(m.get("momentum_15m_pct"),(int,float))]
-            infoq["market_confirmation"]={"rvol_confirmed":bool(rv and max(rv)>=2),"volume_acceleration_confirmed":bool(va and max(va)>=1.5),"momentum_confirmed":bool(mo and max(mo)>=2)}
-            infoq["propagation_stage"]="PRIMARY_CONFIRMED" if primary_confirmed else ("MULTI_SOURCE" if len(corroborating)>=2 else ("CORROBORATED" if corroborating else "UNCONFIRMED"))
-            infoq["finra_short_sale_volume"]={t:finra_short_sale_volume(t) for t in tickers}
+            prov=provenance(source,item,tickers,fetched,watchlist,match_watchlist,CATALYSTS,now_utc)\n            infoq.update(prov)\n            infoq["rumor_only"]=bool(infoq.get("rumor_language") and not infoq.get("primary_confirmation"))\n            rv=[m.get("same_time_volume_ratio") for m in valid_market if isinstance(m.get("same_time_volume_ratio"),(int,float))]\n            va=[m.get("volume_acceleration_15m") for m in valid_market if isinstance(m.get("volume_acceleration_15m"),(int,float))]\n            mo=[m.get("momentum_15m_pct") for m in valid_market if isinstance(m.get("momentum_15m_pct"),(int,float))]\n            infoq["market_confirmation"]={"rvol_confirmed":bool(rv and max(rv)>=2),"volume_acceleration_confirmed":bool(va and max(va)>=1.5),"momentum_confirmed":bool(mo and max(mo)>=2)}\n            infoq["propagation_stage"]="PRIMARY_CONFIRMED" if infoq.get("primary_confirmation") else ("MULTI_SOURCE" if infoq.get("independent_corroboration_count",0)>=2 else ("CORROBORATED" if infoq.get("independent_corroboration_count",0) else "UNCONFIRMED"))\n            infoq["finra_short_sale_volume"]={t:finra_short_sale_volume(t) for t in tickers}
             for snap in valid_market:
                 persist_market_snapshot(snap, rid, source["name"], score, effective_threshold, research_context=infoq)
             if tickers and score >= effective_threshold:
