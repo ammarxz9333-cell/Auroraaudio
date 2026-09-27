@@ -113,7 +113,7 @@ def replay_case(case, cache_dir=None):
             if g["state"]=="BUYABLE_NOW":
                 entry=float(b["close"]); plus5=entry*1.05; plus10=entry*1.10; minus5=entry*0.95
                 later=regular[idx:]
-                outcome=None; plus10_hit=False; mfe=0.0; mae=0.0
+                outcome=None; outcome_time=None; plus10_hit=False; mfe=0.0; mae=0.0
                 for z in later:
                     hi=float(z["high"]); lo=float(z["low"])
                     mfe=max(mfe,(hi/entry-1)*100); mae=min(mae,(lo/entry-1)*100)
@@ -122,12 +122,12 @@ def replay_case(case, cache_dir=None):
                     if outcome is None and p5 and m5: outcome="ORDER_UNVERIFIED"
                     elif outcome is None and p5: outcome="PLUS5_FIRST"
                     elif outcome is None and m5: outcome="MINUS5_FIRST"
-                spread_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":outcome or "UNRESOLVED","plus10_reached":plus10_hit,"mfe_pct":round(mfe,3),"mae_pct":round(mae,3)}
+                spread_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":outcome or "UNRESOLVED","outcome_time":outcome_time,"plus10_reached":plus10_hit,"mfe_pct":round(mfe,3),"mae_pct":round(mae,3)}
 
     reclaim=None
     base_entry=spread_scenarios.get("0.5")
     if base_entry and base_entry.get("outcome")=="MINUS5_FIRST":
-        reclaim=detect_reclaim(out,base_entry["first_buyable_time"],base_entry["entry_price"])
+        reclaim=detect_reclaim(out,base_entry["first_buyable_time"],base_entry["entry_price"],base_entry.get("outcome_time"))
         if reclaim.get("state")=="RECLAIM_CANDIDATE":
             ri=next((i for i,r in enumerate(out) if r["time_utc"]==reclaim["time_utc"]),None)
             if ri is not None:
