@@ -1,0 +1,52 @@
+{
+  "schema_version": 1,
+  "batch": "entry-gate-v1-oos-reveal-a2",
+  "cases": [
+    {
+      "ticker": "TLYS",
+      "frozen_decision": "NO_TRADE",
+      "open": 4.35,
+      "high": 4.4,
+      "low": 4.2,
+      "close": 4.26,
+      "mfe_from_open_pct": 1.15,
+      "assessment": "CORRECT_ABSTENTION"
+    },
+    {
+      "ticker": "CRWV",
+      "frozen_decision": "NO_TRADE",
+      "open": 79.83,
+      "high": 81.74,
+      "low": 79.16,
+      "close": 81.36,
+      "mfe_from_open_pct": 2.39,
+      "assessment": "CORRECT_ABSTENTION"
+    },
+    {
+      "ticker": "TCRT",
+      "frozen_decision": "NO_TRADE",
+      "open": 1.41,
+      "high": 1.42,
+      "low": 1.28,
+      "close": 1.28,
+      "mfe_from_open_pct": 0.71,
+      "assessment": "CORRECT_ABSTENTION"
+    },
+    {
+      "ticker": "CLDI",
+      "frozen_decision": "NO_TRADE",
+      "open": 1.21,
+      "high": 1.22,
+      "low": 1.17,
+      "close": 1.17,
+      "mfe_from_open_pct": 0.83,
+      "assessment": "CORRECT_ABSTENTION"
+    }
+  ],
+  "summary": {
+    "revealed": 4,
+    "correct_abstentions": 4,
+    "missed_plus5_from_open": 0
+  },
+  "note": "All four had <5% session high relative to open, so daily OHLC is sufficient to prove no +5% open-based opportunity."
+}
