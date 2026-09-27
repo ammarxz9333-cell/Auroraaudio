@@ -57,3 +57,13 @@ def test_unlisted_explicit_symbol_and_institutional_holding_noise():
     score, tickers, _ = radar.score_item({"weight": 2, "class": "industry"}, item, {})
     assert tickers == ["BTGO"]
     assert score < radar.THRESHOLD
+
+
+def test_buyable_entry_wakes_pr_reviewer():
+    with patch.object(radar, "append_live_artifact") as publish:
+        radar.publish_live_entry("story", "ABC", {"state": "BUYABLE_NOW"},
+            {"bar_time_utc": "2026-09-28T14:00:00+00:00"}, {"source": "Official", "score": 12})
+    path, artifact = publish.call_args.args
+    assert path.endswith("/story-ABC-entry.json")
+    assert artifact["type"] == "ENTRY_CANDIDATE"
+    assert artifact["gate"]["state"] == "BUYABLE_NOW"

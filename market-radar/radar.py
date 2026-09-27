@@ -675,24 +675,12 @@ def github_api(path: str, method="GET", payload=None):
         raw = resp.read()
         return json.loads(raw.decode("utf-8")) if raw else {}
 
-def publish_live_alert(source, item, score, tickers, hits, rid, market_ctx, infoq):
-    """Append one review artifact to the persistent PR branch, idempotently."""
-    published = item.get("published")
-    detected = now_utc()
-    path = f"market-radar/live/alerts/{rid}.json"
-    artifact = {
-        "radar_id": rid, "detected_utc": detected.isoformat(),
-        "published_utc": published.isoformat() if isinstance(published, dt.datetime) else None,
-        "source": source["name"], "source_class": source.get("class"),
-        "headline": item.get("title"), "url": item.get("url"),
-        "score": score, "tickers": tickers, "signals": hits,
-        "information_quality": infoq, "market_context": market_ctx,
-        "review_status": "UNREVIEWED; not a trade recommendation",
-    }
+def append_live_artifact(path, artifact):
+    """Create an immutable PR artifact; confirm an existing file on retry."""
     content = base64.b64encode((json.dumps(artifact, indent=2, sort_keys=True) + "\n").encode()).decode()
     try:
         github_api(f"/repos/{REPO}/contents/{path}", method="PUT", payload={
-            "message": f"alert(market-radar): {rid}", "content": content,
+            "message": f"alert(market-radar): {path.rsplit('/', 1)[-1]}", "content": content,
             "branch": "market-radar-live",
         })
     except urllib.error.HTTPError as exc:
@@ -704,6 +692,30 @@ def publish_live_alert(source, item, score, tickers, hits, rid, market_ctx, info
         if existing.get("path") != path:
             raise
     return path
+
+def publish_live_alert(source, item, score, tickers, hits, rid, market_ctx, infoq):
+    """Append one news candidate for ChatGPT Work review."""
+    published = item.get("published")
+    artifact = {
+        "type": "NEWS_CANDIDATE", "radar_id": rid, "detected_utc": now_utc().isoformat(),
+        "published_utc": published.isoformat() if isinstance(published, dt.datetime) else None,
+        "source": source["name"], "source_class": source.get("class"),
+        "headline": item.get("title"), "url": item.get("url"),
+        "score": score, "tickers": tickers, "signals": hits,
+        "information_quality": infoq, "market_context": market_ctx,
+        "review_status": "UNREVIEWED; not a trade recommendation",
+    }
+    return append_live_artifact(f"market-radar/live/alerts/{rid}.json", artifact)
+
+def publish_live_entry(rid, ticker, gate, snapshot, watch):
+    """Wake the PR reviewer for the first confirmed entry on an active watch."""
+    return append_live_artifact(f"market-radar/live/alerts/{rid}-{ticker}-entry.json", {
+        "type": "ENTRY_CANDIDATE", "radar_id": rid, "ticker": ticker,
+        "detected_utc": now_utc().isoformat(), "bar_time_utc": snapshot.get("bar_time_utc"),
+        "source": watch.get("source"), "score": watch.get("score"),
+        "gate": gate, "market_context": snapshot,
+        "review_status": "UNREVIEWED; not a trade recommendation",
+    })
 
 def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
@@ -813,6 +825,11 @@ def main():
             gate = persist_market_snapshot(snap, rid, watch.get("source", "active-watch"), int(watch.get("score", THRESHOLD)), THRESHOLD)
             alerted = watch.setdefault("buyable_alerted_tickers", [])
             if gate and gate.get("state") == "BUYABLE_NOW" and ticker not in alerted:
+                try:
+                    publish_live_entry(rid, ticker, gate, snap, watch)
+                except Exception as exc:
+                    errors.append(f"entry alert {rid}/{ticker}: {type(exc).__name__}: {exc}")
+                    continue
                 telegram_alert(
                     f"MARKET RADAR BUYABLE_NOW ${ticker}\n"
                     f"Entry: {gate.get('entry_price')}\n"

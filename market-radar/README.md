@@ -42,7 +42,7 @@ For every qualifying alert the scanner can:
 The first run bootstraps existing items and only alerts items published within the previous 8 hours, preventing a flood of old stories.
 Subsequent runs apply the same freshness bound. Sources without a usable publication time are not sent as time-sensitive alerts.
 
-The append-only PR artifact uses the stable radar ID as its filename. A retry cannot create a second artifact for the same story; the Issue notification can be retried if its creation failed. Artifacts are unreviewed candidates, not entry signals.
+News artifacts use the stable radar ID as their filename. The first confirmed entry on a watched ticker also appends a separate `-entry.json` artifact to wake the PR reviewer. A retry cannot create a second artifact for the same event; the Issue notification can be retried if its creation failed. Artifacts are unreviewed candidates, not trade recommendations.
 
 ## Market-reaction context
 
