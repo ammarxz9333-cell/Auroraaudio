@@ -26,11 +26,13 @@ from pathlib import Path
 from statistics import median
 from zoneinfo import ZoneInfo
 from entry_gate import GateInput, entry_gate
+from live.outcome_tracker import new_trade, update_trade, load as load_trades, save as save_trades
 
 ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
 STATE_FILE = ROOT / "state.json"
 TAPE_DIR = ROOT / "live" / "tape"
+TRADES_FILE = ROOT / "live" / "trades.json"
 USER_AGENT = os.getenv("RADAR_USER_AGENT", "MarketRadar/1.0 public-source-monitor contact=github-actions")
 REPO = os.getenv("GITHUB_REPOSITORY", "")
 TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -350,7 +352,7 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
             "pre30m_move_pct": round(pre30_move, 3) if pre30_move is not None else None,
             "post30m_move_pct": round(post30_move, 3) if post30_move is not None else None,
             "since_event_move_pct": round(since_event_move, 3) if since_event_move is not None else None,
-            "bar_time_utc": latest["utc"].isoformat(),
+            "bar_time_utc": latest["utc"].isoformat(),\n            "bar_high": round(latest["high"], 4),\n            "bar_low": round(latest["low"], 4),
         }
     except Exception as e:
         return {"ticker":ticker,"error":f"{type(e).__name__}: {e}"}
@@ -418,7 +420,7 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "score_at_capture": score,
         "ticker": ticker,
         "bar_time_utc": snapshot.get("bar_time_utc"),
-        "price": snapshot.get("price"),
+        "price": snapshot.get("price"),\n        "bar_high": snapshot.get("bar_high"),\n        "bar_low": snapshot.get("bar_low"),
         "previous_close": snapshot.get("previous_close"),
         "change_pct": snapshot.get("change_pct"),
         "change_5m_pct": snapshot.get("change_5m_pct"),
@@ -438,6 +440,22 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
     }
     with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, separators=(",", ":")) + "\n")
+
+def track_live_outcome(snapshot: dict, gate: dict, rid: str):
+    if not snapshot or not snapshot.get("ticker") or not snapshot.get("bar_time_utc"):
+        return
+    trades=load_trades(TRADES_FILE)
+    ticker=snapshot["ticker"].upper()
+    if gate.get("state")=="BUYABLE_NOW" and gate.get("entry_price") and gate.get("entry_time_utc"):
+        tid=f"{ticker}:{gate['entry_time_utc']}:{rid}"
+        if tid not in trades:
+            trades[tid]=new_trade(ticker,gate["entry_time_utc"],gate["entry_price"],rid)
+    for tid,t in list(trades.items()):
+        if t.get("ticker") != ticker: continue
+        if snapshot["bar_time_utc"] <= t["entry_time_utc"]: continue
+        if snapshot.get("bar_high") is None or snapshot.get("bar_low") is None: continue
+        update_trade(t,{"high":snapshot["bar_high"],"low":snapshot["bar_low"],"time_utc":snapshot["bar_time_utc"]})
+    save_trades(TRADES_FILE,trades)
 
 def market_context_for_tickers(tickers, event_time=None):
     out = []
