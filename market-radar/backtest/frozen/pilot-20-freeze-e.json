@@ -1,0 +1,46 @@
+{
+  "schema_version": 1,
+  "batch": "pilot-20-freeze-e",
+  "status": "FROZEN_PRE_OUTCOME",
+  "cases": [
+    {
+      "ticker": "DLXY",
+      "cutoff": "2026-09-16T08:01:00-04:00",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "reason": "Non-binding LOI for up to 48% of an operating Kazakhstan oil/gas asset could transform company scale, but transaction structure, valuation, financing and closing are unresolved; high optionality with very high execution risk.",
+      "evidence": [
+        "company release 08:00 ET",
+        "contemporaneous publication"
+      ]
+    },
+    {
+      "ticker": "GLATF",
+      "cutoff": "2026-09-23T09:44:00-04:00",
+      "decision": "BEARISH_AVOID",
+      "reason": "C$50M unit offering at C$0.50 includes one common share plus one-half 36-month warrant per unit and up to 15% over-allotment; substantial immediate dilution and warrant overhang.",
+      "evidence": [
+        "Global Atomic offering pricing release 09:43 ET"
+      ]
+    },
+    {
+      "ticker": "PAYX",
+      "cutoff": "2026-09-23T08:31:00-04:00",
+      "decision": "NO_TRADE",
+      "reason": "EPS modestly beat consensus while revenue was approximately in line; absent a clear guidance surprise or abnormal tape confirmation, headline beat alone is insufficient.",
+      "evidence": [
+        "Paychex Q1 FY27 release 08:30 ET",
+        "contemporaneous consensus data"
+      ]
+    },
+    {
+      "ticker": "CTAS",
+      "cutoff": "2026-09-23T08:31:00-04:00",
+      "decision": "NO_TRADE",
+      "reason": "EPS and revenue beat consensus with solid YoY growth, but magnitude is modest relative to a premium valuation; without guidance/expectation reset or tape acceptance, do not promote from earnings headline alone.",
+      "evidence": [
+        "Cintas Q1 FY27 earnings",
+        "contemporaneous consensus data"
+      ]
+    }
+  ]
+}
