@@ -1,17 +1,33 @@
 #!/usr/bin/env python3
-"""Create deterministic, leakage-safe cohort manifests for Market Radar research.
-
-This tool does not label outcomes and does not tune a gate. It partitions
-pre-cutoff candidate snapshots deterministically so development and validation
-cannot silently exchange cases.
-"""
+"""Chronological cohorts with an embargo around model-selection boundaries."""
 from __future__ import annotations
-import argparse, hashlib, json
+import argparse, datetime as dt, json
 from pathlib import Path
 
-def bucket(ticker: str, cutoff: str) -> int:
-    h=hashlib.sha256(f"{ticker.upper()}|{cutoff}".encode()).hexdigest()
-    return int(h[:8],16)%100
+def chronological_split(rows, train_pct=60, validation_pct=20, embargo_days=7):
+    if not 0 < train_pct < 100 or not 0 <= validation_pct < 100 or train_pct + validation_pct >= 100:
+        raise ValueError("leave positive development and final-test partitions")
+    days = sorted({dt.datetime.fromisoformat(r["cutoff"].replace("Z", "+00:00")).date() for r in rows})
+    if not days:
+        return {k: [] for k in ("development", "validation", "final_test")}, {}
+    first_boundary = days[max(0, int(len(days) * train_pct / 100) - 1)]
+    second_boundary = days[max(0, int(len(days) * (train_pct + validation_pct) / 100) - 1)]
+    embargo = dt.timedelta(days=embargo_days)
+    parts = {k: [] for k in ("development", "validation", "final_test")}
+    for row in sorted(rows, key=lambda r: (r["cutoff"], r["ticker"])):
+        day = dt.datetime.fromisoformat(row["cutoff"].replace("Z", "+00:00")).date()
+        if day <= first_boundary:
+            part = "development"
+        elif day <= first_boundary + embargo:
+            continue
+        elif day <= second_boundary:
+            part = "validation"
+        elif day <= second_boundary + embargo:
+            continue
+        else:
+            part = "final_test"
+        parts[part].append({"ticker": row["ticker"], "cutoff": row["cutoff"]})
+    return parts, {"development_end": str(first_boundary), "validation_end": str(second_boundary), "embargo_calendar_days": embargo_days}
 
 def main():
     ap=argparse.ArgumentParser()
@@ -19,17 +35,14 @@ def main():
     ap.add_argument("--out-dir",required=True)
     ap.add_argument("--train-pct",type=int,default=60)
     ap.add_argument("--validation-pct",type=int,default=20)
+    ap.add_argument("--embargo-days",type=int,default=7)
     a=ap.parse_args()
-    if a.train_pct+a.validation_pct>=100: raise SystemExit("leave a positive final-test partition")
+    if a.embargo_days < 0: raise SystemExit("embargo must be nonnegative")
     d=json.loads(Path(a.dataset).read_text())
     rows=d.get("snapshots",[])
-    parts={"development":[],"validation":[],"final_test":[]}
-    for r in rows:
-        b=bucket(r["ticker"],r["cutoff"])
-        k="development" if b<a.train_pct else "validation" if b<a.train_pct+a.validation_pct else "final_test"
-        parts[k].append({"ticker":r["ticker"],"cutoff":r["cutoff"]})
+    parts,boundaries=chronological_split(rows,a.train_pct,a.validation_pct,a.embargo_days)
     out=Path(a.out_dir); out.mkdir(parents=True,exist_ok=True)
     for k,v in parts.items():
-        (out/f"{k}.json").write_text(json.dumps({"schema_version":1,"partition":k,"count":len(v),"cases":v},indent=2)+"\n")
-    print(json.dumps({k:len(v) for k,v in parts.items()}))
+        (out/f"{k}.json").write_text(json.dumps({"schema_version":2,"partition":k,"boundaries":boundaries,"count":len(v),"cases":v},indent=2)+"\n")
+    print(json.dumps({"counts":{k:len(v) for k,v in parts.items()},"boundaries":boundaries,"adequate_for_model_selection":all(parts.values())}))
 if __name__=="__main__": main()

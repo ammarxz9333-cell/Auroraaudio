@@ -9,6 +9,7 @@ def detect_reclaim(rows, first_entry_time, first_entry_price, stop_time=None):
     ep=float(first_entry_price)
     best=None
     for r in rows:
+        stopped_before_bar = stopped
         if r["time_utc"]==first_entry_time:
             seen_entry=True
         if stop_time and r["time_utc"]>=stop_time:
@@ -18,7 +19,9 @@ def detect_reclaim(rows, first_entry_time, first_entry_price, stop_time=None):
         lo=r.get("low")
         if lo is not None and float(lo)<=ep*.95:
             stopped=True
-        if not stopped or r["time_utc"]<=first_entry_time or (stop_time and r["time_utc"]<=stop_time):
+        # The same bar that first breaches the stop cannot simultaneously be
+        # treated as an observed post-stop recovery.
+        if not stopped_before_bar or r["time_utc"]<=first_entry_time or (stop_time and r["time_utc"]<=stop_time):
             continue
         ao=r.get("above_open_pct")
         av=r.get("above_vwap_pct")

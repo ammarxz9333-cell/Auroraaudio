@@ -13,7 +13,7 @@ def test_plus5_first():
     assert r["outcome_time"]=="t1"
 
 def test_minus5_first_but_later_plus10():
-    rows=[{"time_utc":"t0","high":101,"low":94},{"time_utc":"t1","high":111,"low":96}]
+    rows=[{"time_utc":"t0","high":101,"low":94},{"time_utc":"t1","high":101,"low":94},{"time_utc":"t2","high":111,"low":96}]
     r=m.evaluate_candidate(rows,{"time_utc":"t0","price":100})
     assert r["outcome"]=="MINUS5_FIRST"
     assert r["plus10_reached"] is True
@@ -21,6 +21,11 @@ def test_minus5_first_but_later_plus10():
     assert r["mae_pct"]==-6.0
 
 def test_same_bar_is_unverified():
-    rows=[{"time_utc":"t0","high":106,"low":94}]
+    rows=[{"time_utc":"t0","high":106,"low":94},{"time_utc":"t1","high":106,"low":94}]
     r=m.evaluate_candidate(rows,{"time_utc":"t0","price":100})
     assert r["outcome"]=="ORDER_UNVERIFIED"
+
+def test_signal_bar_extreme_is_not_a_trade_result():
+    rows=[{"time_utc":"t0","high":120,"low":80},{"time_utc":"t1","high":101,"low":99}]
+    r=m.evaluate_candidate(rows,{"time_utc":"t0","price":100})
+    assert r["outcome"]=="UNRESOLVED"

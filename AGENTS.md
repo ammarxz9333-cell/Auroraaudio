@@ -4,6 +4,13 @@
 >
 > **Maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge.
 
+### Market Radar historical research (2026-09-28)
+
+- The 5-minute historical replay now treats the completed signal bar as information and executes at the next bar's open, under explicit spread/slippage assumptions. It cannot count a target or stop on the signal bar. Reclaim counterfactuals also wait for a later bar.
+- Tape exports use actual `captured_utc` as the point-in-time cutoff, exclude stale bars and future-looking post-event fields, and freeze rejects market bars later than cutoff.
+- Cohorts are chronological with a seven-calendar-day embargo. `backtest/broad_daily_benchmark.py` samples current-listed Nasdaq/NYSE/NYSE American common shares without conditioning on outcomes, includes losing/control days, and publishes a separate price-only report with coverage, uncertainty, missed-winner blockers and false positives. It is subject to survivorship bias and cannot establish a catalyst's cause.
+- The broad benchmark has an isolated workflow/artifact; historical effectiveness remains unproven until a successful data run with adequate coverage and a genuinely untouched final cohort is inspected. See `market-radar/backtest/README.md`.
+
 ### Market Radar repair (2026-09-27)
 
 - Scanner syntax and legacy replay syntax repaired; the scheduled five-minute job runs syntax and unit gates, while historical replay is reserved for push/manual runs within the existing four-minute job budget.
