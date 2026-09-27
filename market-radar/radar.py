@@ -26,7 +26,7 @@ from pathlib import Path
 from statistics import median
 from zoneinfo import ZoneInfo
 from entry_gate import GateInput, entry_gate
-from live.outcome_tracker import new_trade, update_trade, load as load_trades, save as save_trades
+from live.outcome_tracker import new_trade, update_trade, load as load_trades, save as save_trades, live_metrics
 
 ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
@@ -767,9 +767,11 @@ def main():
     if len(combined) > MAX_SEEN:
         combined = combined[-MAX_SEEN:]
     market_probe = yahoo_market_snapshot("CRWV")
+    metrics = live_metrics(load_trades(TRADES_FILE))
     state.update({
         "bootstrapped": True,
         "market_probe": market_probe,
+        "live_metrics": metrics,
         "seen": combined,
         "active_watches": active_watches,
         "last_run_utc": now_utc().isoformat(),
@@ -783,6 +785,7 @@ def main():
         "sources": len(sources),
         "new_items": len(new_seen),
         "alerts": len(alerts),
+        "live_metrics": metrics,
         "errors": errors[:20],
     }, indent=2))
     for s, title, score, tickers, url in alerts:
