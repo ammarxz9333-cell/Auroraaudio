@@ -1,0 +1,92 @@
+{
+  "schema_version": 1,
+  "name": "entry-gate-v1-oos-batch-a",
+  "gate_version": "2ff99b2e5963195efedce88830a5a4795f6066a6",
+  "status": "CANDIDATES_LOCKED_OUT_OF_SAMPLE",
+  "excluded_training_pilot": [
+    "ALMS",
+    "XENE",
+    "CMPX",
+    "FLNA",
+    "LEU",
+    "GCTK",
+    "WOR",
+    "CHPT",
+    "AVEX",
+    "SRRK",
+    "GLND",
+    "VICR",
+    "PAAI",
+    "BENF",
+    "RARE",
+    "CLLS",
+    "DLXY",
+    "GLATF",
+    "PAYX",
+    "CTAS"
+  ],
+  "cases": [
+    {
+      "ticker": "AREC",
+      "session": "2026-09-16",
+      "selection_bucket": "positive-universe"
+    },
+    {
+      "ticker": "BBNX",
+      "session": "2026-09-16",
+      "selection_bucket": "positive-universe"
+    },
+    {
+      "ticker": "QURE",
+      "session": "2026-09-18",
+      "selection_bucket": "positive-universe"
+    },
+    {
+      "ticker": "DRUG",
+      "session": "2026-09-18",
+      "selection_bucket": "positive-universe"
+    },
+    {
+      "ticker": "INBS",
+      "session": "2026-09-21",
+      "selection_bucket": "positive-universe"
+    },
+    {
+      "ticker": "RNAC",
+      "session": "2026-09-18",
+      "selection_bucket": "positive-universe"
+    },
+    {
+      "ticker": "IPCX",
+      "session": "2026-09-23",
+      "selection_bucket": "negative-control-universe"
+    },
+    {
+      "ticker": "HFFG",
+      "session": "2026-09-21",
+      "selection_bucket": "negative-control-universe"
+    },
+    {
+      "ticker": "TLYS",
+      "session": "2026-09-17",
+      "selection_bucket": "negative-control-universe"
+    },
+    {
+      "ticker": "TCRT",
+      "session": "2026-09-16",
+      "selection_bucket": "negative-control-universe"
+    },
+    {
+      "ticker": "CRWV",
+      "session": "2026-09-18",
+      "selection_bucket": "negative-control-universe"
+    },
+    {
+      "ticker": "CLDI",
+      "session": "2026-09-15",
+      "selection_bucket": "negative-control-universe"
+    }
+  ],
+  "anti_leakage": "selection_bucket and historical move are candidate-selection metadata and must not be passed to catalyst classifier or entry gate.",
+  "next_step": "Reconstruct pre-outcome catalyst snapshots, freeze decisions, then collect gate fields at first eligible timestamp and reveal path ordering."
+}
