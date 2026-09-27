@@ -248,7 +248,7 @@ def github_api(path: str, method="GET", payload=None):
         return json.loads(raw.decode("utf-8")) if raw else {}
 
 def create_issue(source, item, score, tickers, hits, rid):
-    tick = " ".join(f"\${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
+    tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
     title_text = item.get("title", "Untitled")
     title = f"[MARKET-RADAR {score}] {tick} — {title_text}"[:240]
     published = item.get("published")
