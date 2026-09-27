@@ -80,7 +80,7 @@ def replay_case(case):
         for spread in (0.5,1.0,2.0,3.0):
             key=str(spread)
             if v2_scenarios[key] is None and pre_reprice is not None:
-                vg=entry_gate_v2(GateV2Input(normalized_decision(case["decision"]),row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread,above_open_pct=row["above_open_pct"],above_vwap_pct=row["above_vwap_pct"]))
+                vg=entry_gate_v2(GateV2Input(normalized_decision(case["decision"]),row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread,above_open_pct=row["above_open_pct"],above_vwap_pct=row["above_vwap_pct"],price=float(b["close"]),gap_pct_abs=abs(row["gap_pct"])))
                 if vg["state"]=="BUYABLE_NOW":
                     entry=float(b["close"]); p5=entry*1.05; p10=entry*1.10; m5=entry*0.95
                     oc=None; p10h=False; mfe2=0.0; mae2=0.0
