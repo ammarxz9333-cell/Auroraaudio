@@ -278,17 +278,17 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
         if mins_now < reg_start:
             market_session = "PRE"
             cutoff = reg_start
-        elif mins_now <= reg_end:
+        elif mins_now < reg_end:
             market_session = "REGULAR"
             cutoff = mins_now
         else:
             market_session = "AFTER/CLOSED"
-            cutoff = reg_end
+            cutoff = reg_end - 1
 
         by_day = {}
         for b in bars:
             m = b["ny"].hour * 60 + b["ny"].minute
-            if reg_start <= m <= reg_end:
+            if reg_start <= m < reg_end:
                 by_day.setdefault(b["ny"].date().isoformat(), []).append(b)
 
         today_key = ny_now.date().isoformat()
