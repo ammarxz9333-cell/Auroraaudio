@@ -45,11 +45,11 @@ jobs:
       - name: Persist radar state
         shell: bash
         run: |
-          if git diff --quiet -- market-radar/state.json; then
+          git add market-radar/state.json market-radar/live/trades.json market-radar/live/tape/ 2>/dev/null || true
+          if git diff --cached --quiet; then
             exit 0
           fi
           git config user.name "market-radar-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add market-radar/state.json
-          git commit -m "chore(market-radar): update scanner state"
+          git commit -m "chore(market-radar): persist live radar state [skip ci]"
           git push
