@@ -1,0 +1,41 @@
+{
+  "radar_id": "169a51b8c584c4843266",
+  "stage": "REACTING",
+  "score": 9,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:39:10.660768+00:00",
+  "published_utc": "2026-09-27T07:19:07+00:00",
+  "source": "Company certification and production milestones",
+  "source_class": "industry",
+  "tickers": [
+    "THRM"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "ticker-match"
+  ],
+  "headline": "Bank of America Corp DE Buys 292,767 Shares of Gentherm Inc $THRM - MarketBeat",
+  "url": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxQZFZLbm9YN19uWHQ0LUxMTHFTR2dDT09vN2xyVVprd0lnN1R6Q19qdUJWR0N4OEU2cklOVlVwaXFrZUpMOUhkWTk1QWg2b0VDRVZlOFgtcEdWSjcwd1F6VVE5dEJqQjdyOXBTaVhLZngwQ003aTBnSUZ6LUxDSS1BUGJlU21lRHZ5TlFYdFRqSTFBa0RPckxaZEZqT3k4TWFCNkRDZmlIVkNGeElINTN5UndiM1N3bGFqODU0cGY2TGJUZw?oc=5",
+  "snippet": "Bank of America Corp DE Buys 292,767 Shares of Gentherm Inc $THRM MarketBeat",
+  "market_context": [
+    {
+      "ticker": "THRM",
+      "price": 35.21,
+      "previous_close": 33.87,
+      "change_pct": 3.956,
+      "change_5m_pct": 0.0,
+      "cum_volume": 750911,
+      "same_time_volume_ratio": 1.8,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 35.21,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:30:04+00:00"
+    }
+  ]
+}
