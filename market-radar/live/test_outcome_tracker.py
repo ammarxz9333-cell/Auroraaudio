@@ -1,5 +1,5 @@
 import unittest
-from outcome_tracker import new_trade, update_trade
+from live.outcome_tracker import new_trade, update_trade
 class T(unittest.TestCase):
  def test_plus5_first(self):
   x=new_trade("X","t",100,"r"); update_trade(x,{"high":106,"low":98,"time_utc":"b"})
