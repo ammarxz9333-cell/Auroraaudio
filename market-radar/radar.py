@@ -476,6 +476,7 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
     track_live_outcome(snapshot, gate, rid)
     with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, separators=(",", ":")) + "\n")
+    return gate
 
 def track_live_outcome(snapshot: dict, gate: dict, rid: str):
     if not snapshot or not snapshot.get("ticker") or not snapshot.get("bar_time_utc"):
@@ -698,7 +699,16 @@ def main():
             snap = yahoo_market_snapshot(ticker, event_time=event_time)
             if not snap or snap.get("error"):
                 continue
-            persist_market_snapshot(snap, rid, watch.get("source", "active-watch"), int(watch.get("score", THRESHOLD)), THRESHOLD)
+            gate = persist_market_snapshot(snap, rid, watch.get("source", "active-watch"), int(watch.get("score", THRESHOLD)), THRESHOLD)
+            alerted = watch.setdefault("buyable_alerted_tickers", [])
+            if gate and gate.get("state") == "BUYABLE_NOW" and ticker not in alerted:
+                telegram_alert(
+                    f"MARKET RADAR BUYABLE_NOW ${ticker}\n"
+                    f"Entry: {gate.get('entry_price')}\n"
+                    f"Reason: {gate.get('reason')}\n"
+                    f"Source: {watch.get('source', 'active-watch')}"
+                )
+                alerted.append(ticker)
 
     fetched = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
