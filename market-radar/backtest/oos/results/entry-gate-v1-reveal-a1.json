@@ -1,0 +1,74 @@
+{
+  "schema_version": 1,
+  "batch": "entry-gate-v1-oos-reveal-a1",
+  "status": "PARTIAL_REVEAL",
+  "cases": [
+    {
+      "ticker": "AREC",
+      "frozen_decision": "NO_TRADE",
+      "open": 2.06,
+      "high": 2.07,
+      "low": 1.94,
+      "close": 1.95,
+      "plus5_from_open": false,
+      "assessment": "CORRECT_ABSTENTION"
+    },
+    {
+      "ticker": "QURE",
+      "frozen_decision": "NO_TRADE",
+      "open": 44.4,
+      "high": 44.52,
+      "low": 43.56,
+      "close": 44,
+      "plus5_from_open": false,
+      "assessment": "CORRECT_ABSTENTION"
+    },
+    {
+      "ticker": "DRUG",
+      "frozen_decision": "NO_TRADE",
+      "open": 61.31,
+      "high": 62.11,
+      "low": 60.48,
+      "close": 60.98,
+      "plus5_from_open": false,
+      "assessment": "CORRECT_ABSTENTION"
+    },
+    {
+      "ticker": "RNAC",
+      "frozen_decision": "NO_TRADE",
+      "open": 7.88,
+      "high": 8.26,
+      "low": 7.66,
+      "close": 8.03,
+      "plus5_from_open": false,
+      "assessment": "CORRECT_ABSTENTION"
+    },
+    {
+      "ticker": "INBS",
+      "frozen_decision": "NO_TRADE_FINANCING_OVERHANG",
+      "open": 1.95,
+      "high": 1.958,
+      "low": 1.79,
+      "close": 1.81,
+      "plus5_from_open": false,
+      "assessment": "CORRECT_ABSTENTION"
+    },
+    {
+      "ticker": "HFFG",
+      "frozen_decision": "NO_TRADE",
+      "open": 1.53,
+      "high": 1.565,
+      "low": 1.47,
+      "close": 1.51,
+      "plus5_from_open": false,
+      "assessment": "CORRECT_ABSTENTION"
+    }
+  ],
+  "summary": {
+    "revealed": 6,
+    "correct_abstentions": 6,
+    "buyable_signals": 0,
+    "missed_plus5_from_open": 0
+  },
+  "caveat": "Daily OHLC can establish that +5% was never available from the open in these cases. This does not yet measure intraday tape-trigger opportunities occurring after the open."
+}
