@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "gate_version": "2ff99b2e5963195efedce88830a5a4795f6066a6",
+  "status": "TIMESTAMP_VERIFIED_PARTIAL",
+  "cases": [
+    {
+      "ticker": "CHPT",
+      "timestamp": "2026-09-03T10:10:00-04:00",
+      "price": 7.81,
+      "evidence": {
+        "five_min_move_pct": 6.2,
+        "one_min_move_pct": 2.2,
+        "near_intraday_high": true
+      },
+      "later_hod": 9.35,
+      "mfe_from_timestamp_pct": 19.72,
+      "classification": "BUYABLE_NOW_CONFIRMED_PLUS10",
+      "note": "Public contemporaneous scanner timestamp provides executable confirmation after the earnings catalyst."
+    },
+    {
+      "ticker": "GLND",
+      "timestamp": "2026-09-24T09:29:00-04:00",
+      "price": 3.22,
+      "evidence": {
+        "premarket_vwap": 3.07,
+        "premarket_volume": 4600000,
+        "above_vwap_pct": 4.9
+      },
+      "regular_low": 3.19,
+      "regular_high": 5.64,
+      "mfe_from_reference_pct": 75.16,
+      "mae_from_reference_pct": -0.93,
+      "classification": "BUYABLE_NOW_CONFIRMED_PLUS10"
+    }
+  ],
+  "caveat": "These are validation cases from the original pilot universe, not new out-of-sample cases. They validate timestamp mechanics, not final gate precision."
+}
