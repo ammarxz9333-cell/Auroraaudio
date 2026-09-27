@@ -476,6 +476,31 @@ def track_live_outcome(snapshot: dict, gate: dict, rid: str):
         update_trade(t,{"high":snapshot["bar_high"],"low":snapshot["bar_low"],"time_utc":snapshot["bar_time_utc"]})
     save_trades(TRADES_FILE,trades)
 
+def refresh_active_trades():
+    """Update existing BUYABLE trades independently of news/watch lifetime."""
+    trades = load_trades(TRADES_FILE)
+    if not trades:
+        return
+    tickers = sorted({str(t.get("ticker", "")).upper() for t in trades.values() if t.get("ticker")})
+    changed = False
+    for ticker in tickers:
+        snapshot = yahoo_market_snapshot(ticker)
+        if not snapshot or snapshot.get("error") or not snapshot.get("bar_time_utc"):
+            continue
+        if snapshot.get("bar_high") is None or snapshot.get("bar_low") is None:
+            continue
+        for t in trades.values():
+            if str(t.get("ticker", "")).upper() != ticker:
+                continue
+            if snapshot["bar_time_utc"] <= t.get("entry_time_utc", ""):
+                continue
+            before = json.dumps(t, sort_keys=True)
+            update_trade(t, {"high": snapshot["bar_high"], "low": snapshot["bar_low"], "time_utc": snapshot["bar_time_utc"]})
+            if json.dumps(t, sort_keys=True) != before:
+                changed = True
+    if changed:
+        save_trades(TRADES_FILE, trades)
+
 def market_context_for_tickers(tickers, event_time=None):
     out = []
     for ticker in tickers[:4]:
@@ -635,6 +660,7 @@ def main():
     errors = []
     start = now_utc()
     active_watches = state.get("active_watches", {})
+    refresh_active_trades()
     # Re-evaluate prior high-quality candidates even when their source item is already seen.
     for rid, watch in list(active_watches.items()):
         try:
@@ -672,7 +698,6 @@ def main():
             effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
-            effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             for snap in valid_market:
                 persist_market_snapshot(snap, rid, source["name"], score, effective_threshold)
             if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
