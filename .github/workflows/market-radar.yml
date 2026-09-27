@@ -37,6 +37,11 @@ jobs:
           PYTHONPATH: market-radar
         run: python3 market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/frozen/pilot-20-freeze-b.json market-radar/backtest/frozen/pilot-20-freeze-c.json market-radar/backtest/frozen/pilot-20-freeze-d.json --out /tmp/replay-results.json && python3 -c 'import json; d=json.load(open("/tmp/replay-results.json")); print(json.dumps({"cases":len(d["cases"]),"robust":[{"ticker":x["ticker"],"scenarios":x.get("spread_scenarios",{})} for x in d["cases"] if x.get("spread_robust_buyable")]},indent=2))'
 
+      - name: OOS historical replay diagnostics
+        env:
+          PYTHONPATH: market-radar
+        run: python3 market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/oos/frozen/entry-gate-v1-b1.json market-radar/backtest/oos/frozen/entry-gate-v1-b2.json --out /tmp/oos-replay.json && python3 -c 'import json; d=json.load(open("/tmp/oos-replay.json")); print(json.dumps([{"ticker":x["ticker"],"decision":x.get("normalized_decision"),"robust":x.get("spread_robust_buyable"),"scenarios":x.get("spread_scenarios",{})} for x in d["cases"]],indent=2))'
+
       - name: Run first-public-source scanner
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
