@@ -1,0 +1,36 @@
+{
+  "schema_version": 1,
+  "name": "path-order-validation",
+  "rule": "OHLC alone cannot determine whether +5% or -5% occurred first when both thresholds were touched. Such cases are ORDER_UNVERIFIED until timestamped intraday bars establish sequence.",
+  "states": [
+    "WIN_PLUS5_FIRST",
+    "WIN_PLUS10_FIRST",
+    "LOSS_MINUS5_FIRST",
+    "ORDER_UNVERIFIED",
+    "NEITHER_THRESHOLD",
+    "INSUFFICIENT_DATA"
+  ],
+  "examples": {
+    "DLXY": {
+      "entry_proxy": 1.02,
+      "session_low": 0.6517,
+      "session_high": 4.45,
+      "status": "ORDER_UNVERIFIED",
+      "reason": "Both -5% and +5% thresholds were crossed; daily OHLC does not establish which came first."
+    },
+    "GLND": {
+      "entry_proxy": 3.22,
+      "session_low": 3.19,
+      "session_high": 5.64,
+      "status": "WIN_PLUS10_FIRST",
+      "reason": "Session low never reached -5% from entry while high exceeded +10%, so ordering ambiguity cannot change the result."
+    },
+    "FLNA": {
+      "entry_proxy": 0.9848,
+      "session_low": 0.9011,
+      "session_high": 1.30,
+      "status": "ORDER_UNVERIFIED",
+      "reason": "Both adverse -5% and favorable +10% thresholds occurred within the session; intraday ordering required."
+    }
+  }
+}
