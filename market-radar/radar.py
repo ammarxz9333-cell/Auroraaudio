@@ -791,8 +791,6 @@ def main():
             effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
-            for snap in valid_market:
-                persist_market_snapshot(snap, rid, source["name"], score, effective_threshold)
             if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
                 score += 2
                 hits.append("market-confirmation")
@@ -824,6 +822,8 @@ def main():
             infoq["market_confirmation"]={"rvol_confirmed":bool(rv and max(rv)>=2),"volume_acceleration_confirmed":bool(va and max(va)>=1.5),"momentum_confirmed":bool(mo and max(mo)>=2)}
             infoq["propagation_stage"]="PRIMARY_CONFIRMED" if primary_confirmed else ("MULTI_SOURCE" if len(corroborating)>=2 else ("CORROBORATED" if corroborating else "UNCONFIRMED"))
             infoq["finra_short_sale_volume"]={t:finra_short_sale_volume(t) for t in tickers}
+            for snap in valid_market:
+                persist_market_snapshot(snap, rid, source["name"], score, effective_threshold, research_context=infoq)
             if tickers and score >= effective_threshold:
                 active_watches[rid] = {
                     "tickers": tickers,
