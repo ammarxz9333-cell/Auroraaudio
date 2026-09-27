@@ -119,7 +119,7 @@ def replay_case(case, cache_dir=None):
                     mfe=max(mfe,(hi/entry-1)*100); mae=min(mae,(lo/entry-1)*100)
                     plus10_hit=plus10_hit or hi>=plus10
                     p5=hi>=plus5; m5=lo<=minus5
-                    if outcome is None and p5 and m5: outcome="ORDER_UNVERIFIED"; outcome_time=z["time"].isoformat()\n                    elif outcome is None and p5: outcome="PLUS5_FIRST"; outcome_time=z["time"].isoformat()\n                    elif outcome is None and m5: outcome="MINUS5_FIRST"; outcome_time=z["time"].isoformat()
+                    if outcome is None and p5 and m5: outcome="ORDER_UNVERIFIED"; outcome_time=z["time"].isoformat()
                 spread_scenarios[key]={"first_buyable_time":b["time"].isoformat(),"entry_price":entry,"outcome":outcome or "UNRESOLVED","outcome_time":outcome_time,"plus10_reached":plus10_hit,"mfe_pct":round(mfe,3),"mae_pct":round(mae,3)}
 
     reclaim=None
