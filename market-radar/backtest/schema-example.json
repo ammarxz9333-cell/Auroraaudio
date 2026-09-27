@@ -1,0 +1,16 @@
+{
+  "snapshot": {
+    "ticker": "XYZ",
+    "cutoff": "2026-09-18T16:00:00-04:00",
+    "evidence": [
+      {"id":"primary-1","available_at":"2026-09-18T15:45:00-04:00","source_class":"primary","text":"Only facts public by cutoff"}
+    ],
+    "market": {"price": 10.0, "change_pct": 1.2, "rvol": 1.4},
+    "features": {"catalyst_family":"example","dilution_risk":false}
+  },
+  "outcome": {
+    "measured_at": "2026-09-21T16:00:00-04:00",
+    "return_pct": 8.5,
+    "horizon": "next_regular_close"
+  }
+}
