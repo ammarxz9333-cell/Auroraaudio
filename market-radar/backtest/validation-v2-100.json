@@ -103,5 +103,132 @@
       "role": "late-binary-control",
       "reason": "Constructive FDA setup after a large pre-event run tests late/priced-in classification."
     }
-  ]
+  ],
+  "pilot_batch_20": {
+    "status": "CANDIDATES_SELECTED_AWAITING_SOURCE_SNAPSHOTS",
+    "selection_locked": true,
+    "cases": [
+      {
+        "ticker": "DLXY",
+        "side": "gainer",
+        "session": "2026-09-16",
+        "family": "contract-partnership"
+      },
+      {
+        "ticker": "BENF",
+        "side": "gainer",
+        "session": "2026-09-23",
+        "family": "corporate-restructuring"
+      },
+      {
+        "ticker": "PAAI",
+        "side": "gainer",
+        "session": "2026-09",
+        "family": "contract-momentum"
+      },
+      {
+        "ticker": "GLND",
+        "side": "gainer",
+        "session": "2026-09",
+        "family": "partnership-momentum"
+      },
+      {
+        "ticker": "CHPT",
+        "side": "gainer",
+        "session": "2026-09",
+        "family": "earnings"
+      },
+      {
+        "ticker": "FLNA",
+        "side": "gainer",
+        "session": "2026-09-22",
+        "family": "regulatory-clinical-hold-lift"
+      },
+      {
+        "ticker": "VICR",
+        "side": "gainer",
+        "session": "2026-09",
+        "family": "ai-oem-license"
+      },
+      {
+        "ticker": "AVEX",
+        "side": "gainer",
+        "session": "2026-09",
+        "family": "defense-contract"
+      },
+      {
+        "ticker": "SRRK",
+        "side": "gainer",
+        "session": "2026-09",
+        "family": "fda-approval"
+      },
+      {
+        "ticker": "WOR",
+        "side": "gainer",
+        "session": "2026-09",
+        "family": "earnings-buyback"
+      },
+      {
+        "ticker": "ALMS",
+        "side": "loser",
+        "session": "2026-09-01",
+        "family": "clinical-trial"
+      },
+      {
+        "ticker": "XENE",
+        "side": "loser",
+        "session": "2026-09-18",
+        "family": "clinical-pause"
+      },
+      {
+        "ticker": "CMPX",
+        "side": "loser",
+        "session": "2026-09-22",
+        "family": "fda-negative-feedback"
+      },
+      {
+        "ticker": "RARE",
+        "side": "loser",
+        "session": "2026-09",
+        "family": "biotech-event"
+      },
+      {
+        "ticker": "CLLS",
+        "side": "loser",
+        "session": "2026-09",
+        "family": "biotech-event"
+      },
+      {
+        "ticker": "GCTK",
+        "side": "loser",
+        "session": "2026-09",
+        "family": "offering"
+      },
+      {
+        "ticker": "LEU",
+        "side": "loser",
+        "session": "2026-09",
+        "family": "offering-warrants"
+      },
+      {
+        "ticker": "GLATF",
+        "side": "loser",
+        "session": "2026-09",
+        "family": "unit-offering"
+      },
+      {
+        "ticker": "PAYX",
+        "side": "loser",
+        "session": "2026-09",
+        "family": "earnings-rejection"
+      },
+      {
+        "ticker": "CTAS",
+        "side": "loser",
+        "session": "2026-09",
+        "family": "earnings-rejection"
+      }
+    ],
+    "note": "Side is selection metadata only and MUST NOT be present in classifier snapshot input. Each case still requires independent pre-cutoff source reconstruction and freeze before outcome reveal."
+  }
 }
