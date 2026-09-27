@@ -1,0 +1,42 @@
+{
+  "radar_id": "cb19fa65cd1182edcfe4",
+  "stage": "REACTING",
+  "score": 12,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:40:10.277841+00:00",
+  "published_utc": "2026-09-27T15:39:51.813791+00:00",
+  "source": "Yahoo early momentum discovery",
+  "source_class": "momentum",
+  "tickers": [
+    "DDOG"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "price-volume-momentum",
+    "ticker-match"
+  ],
+  "headline": "$DDOG abnormal market momentum: +4.36% day move",
+  "url": "https://finance.yahoo.com/quote/DDOG",
+  "snippet": "Ticker $DDOG; price 268.1300; day move +4.36%; volume 4439022; 3m average daily volume 4338946; crude volume/ADV 1.02x.",
+  "market_context": [
+    {
+      "ticker": "DDOG",
+      "price": 267.38,
+      "previous_close": 256.92,
+      "change_pct": 4.071,
+      "change_5m_pct": 0.0,
+      "cum_volume": 4377454,
+      "same_time_volume_ratio": 1.95,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 267.38,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:59:23+00:00"
+    }
+  ]
+}
