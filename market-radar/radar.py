@@ -244,7 +244,7 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
                 continue
             when_utc = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc)
             when_ny = when_utc.astimezone(NY)
-            bars.append({"ts":ts,"utc":when_utc,"ny":when_ny,"close":float(close),"volume":int(vol or 0)})
+            bars.append({"ts":ts,"utc":when_utc,"ny":when_ny,"open":float(opn) if opn is not None else None,"high":float(high) if high is not None else float(close),"low":float(low) if low is not None else float(close),"close":float(close),"volume":int(vol or 0)})
         if not bars:
             return None
 
@@ -308,7 +308,14 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
         prev_close = float(prev_close)
         change_pct = ((latest["close"] / prev_close) - 1.0) * 100.0 if prev_close else None
 
-        today_cum = sum(b["volume"] for b in by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= cutoff)
+        today_bars = [b for b in by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= cutoff]
+        today_cum = sum(b["volume"] for b in today_bars)
+        regular_open = today_bars[0]["open"] if today_bars else None
+        session_high = max((b["high"] for b in today_bars), default=None)
+        session_low = min((b["low"] for b in today_bars), default=None)
+        vwap_num = sum((((b["high"] + b["low"] + b["close"]) / 3.0) * b["volume"]) for b in today_bars if b["volume"] > 0)
+        vwap_den = sum(b["volume"] for b in today_bars if b["volume"] > 0)
+        session_vwap = (vwap_num / vwap_den) if vwap_den else None
         hist_cums = []
         for d, dbars in by_day.items():
             if d == today_key:
@@ -334,7 +341,7 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
             "previous_close": round(prev_close, 4),
             "change_pct": round(change_pct, 3) if change_pct is not None else None,
             "change_5m_pct": round(change_5m, 3) if change_5m is not None else None,
-            "cum_volume": today_cum,
+            "cum_volume": today_cum,\n            "regular_open": round(regular_open, 4) if regular_open is not None else None,\n            "session_high": round(session_high, 4) if session_high is not None else None,\n            "session_low": round(session_low, 4) if session_low is not None else None,\n            "vwap": round(session_vwap, 4) if session_vwap is not None else None,\n            "holds_vwap": (latest["close"] >= session_vwap) if session_vwap is not None else None,\n            "holds_open": (latest["close"] >= regular_open) if regular_open is not None else None,
             "same_time_volume_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
             "market_session": market_session,
             "reaction": reaction,
