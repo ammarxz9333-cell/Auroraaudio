@@ -372,12 +372,32 @@ def match_watchlist(text: str, watchlist: dict):
     low = text.lower()
     found = []
     for ticker, aliases in watchlist.items():
-        if re.search(rf"(?<![A-Z0-9])\$?{re.escape(ticker)}(?![A-Z0-9])", text, re.I):
+        if re.search(rf"(?<![A-Z0-9])\\$?{re.escape(ticker)}(?![A-Z0-9])", text, re.I):
             found.append(ticker)
             continue
         if any(alias.lower() in low for alias in aliases if len(alias) >= 4):
             found.append(ticker)
     return sorted(set(found))
+
+
+def extract_explicit_tickers(text: str):
+    """Extract high-confidence ticker syntax even when a symbol is not on the watchlist."""
+    found = set()
+
+    # Social/news convention: $CRWV, $RKLB, etc. A letter is required first,
+    # so dollar amounts such as $10 or $2.5B cannot be misread as tickers.
+    for match in re.finditer(r"(?<![A-Z0-9])\\$([A-Z][A-Z0-9.-]{0,5})(?![A-Z0-9])", text):
+        found.add(match.group(1).upper())
+
+    # Common issuer/news syntax: NASDAQ: CRWV / NYSE: XYZ / AMEX: ABC.
+    for match in re.finditer(
+        r"\\b(?:NASDAQ|NYSE|NYSEAMERICAN|AMEX|OTCQX|OTCQB)\\s*[:\\-]\\s*([A-Z][A-Z0-9.-]{0,5})\\b",
+        text,
+        re.I,
+    ):
+        found.add(match.group(1).upper())
+
+    return sorted(found)
 
 def phrase_match(text: str, phrase: str) -> bool:
     if len(phrase) <= 5 and " " not in phrase:
@@ -385,9 +405,11 @@ def phrase_match(text: str, phrase: str) -> bool:
     return phrase in text
 
 def score_item(source: dict, item: dict, watchlist: dict):
-    text = f"{item.get('title','')} {item.get('snippet','')}".lower()
+    raw_text = f"{item.get('title','')} {item.get('snippet','')}"
+    text = raw_text.lower()
     score = int(source.get("weight", 1))
     hits = []
+
     for phrase, pts in CATALYSTS.items():
         if phrase_match(text, phrase):
             score += pts
@@ -395,15 +417,28 @@ def score_item(source: dict, item: dict, watchlist: dict):
     for phrase, pts in NEGATIVE_NOISE.items():
         if phrase in text:
             score += pts
-    tickers = match_watchlist(f"{item.get('title','')} {item.get('snippet','')}", watchlist)
+
+    watchlist_tickers = match_watchlist(raw_text, watchlist)
+    explicit_tickers = extract_explicit_tickers(raw_text)
+    tickers = sorted(set(watchlist_tickers + explicit_tickers))
+
     if tickers:
         score += 4
+        hits.append("ticker-match")
+    if explicit_tickers:
+        hits.append("explicit-ticker")
+    if watchlist_tickers:
         hits.append("watchlist-match")
-    if source.get("class") in ("primary", "investigative", "scoop") and any(k in text for k in ("exclusive", "sources say", "people familiar", "leak", "scoop")):
+
+    if source.get("class") in ("primary", "investigative", "scoop") and any(
+        k in text for k in ("exclusive", "sources say", "people familiar", "leak", "scoop")
+    ):
         score += 2
         hits.append("source+early-language")
+
     if any(k in text for k in ("weekly roundup", "month in review", "top 10 stocks", "best stocks to buy")):
         score -= 3
+
     return max(score, 0), tickers, sorted(set(hits))
 
 def github_api(path: str, method="GET", payload=None):
