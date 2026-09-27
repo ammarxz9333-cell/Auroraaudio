@@ -668,7 +668,8 @@ def main():
             try:
                 url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
                 alerts.append((source["name"], item.get("title", ""), score, tickers, url))
-                telegram_alert(f"MARKET RADAR {score} {' '.join('
+                ticker_text = " ".join("$" + x for x in tickers) or "NEW"
+                telegram_alert(f"MARKET RADAR {score} {ticker_text}\\n{item.get('title','')}\\n{source['name']}\\n{item.get('url','')}\\nIssue: {url}")
             except Exception as e:
                 errors.append(f"issue {rid}: {type(e).__name__}: {e}")
 
