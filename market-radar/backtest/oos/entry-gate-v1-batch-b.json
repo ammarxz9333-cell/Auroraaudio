@@ -1,0 +1,56 @@
+{
+  "schema_version": 1,
+  "name": "entry-gate-v1-oos-batch-b-prospective-source",
+  "gate_version": "2ff99b2e5963195efedce88830a5a4795f6066a6",
+  "status": "CANDIDATES_LOCKED_BEFORE_CLASSIFICATION",
+  "selection_method": "Candidate names must come from timestamped pre-session/in-session public screens or known catalyst calendars, not from end-of-day winner rankings.",
+  "cases": [
+    {
+      "ticker": "ASND",
+      "source_time": "2026-09-16T07:32:00-04:00",
+      "source_type": "pre-session abnormal-volume screen"
+    },
+    {
+      "ticker": "SYY",
+      "source_time": "2026-09-16T07:32:00-04:00",
+      "source_type": "pre-session abnormal-volume screen"
+    },
+    {
+      "ticker": "FPS",
+      "source_time": "2026-09-16T07:32:00-04:00",
+      "source_type": "pre-session abnormal-volume screen"
+    },
+    {
+      "ticker": "LLYVA",
+      "source_time": "2026-09-16T07:32:00-04:00",
+      "source_type": "pre-session abnormal-volume screen"
+    },
+    {
+      "ticker": "UTHR",
+      "source_time": "2026-09-16T07:32:00-04:00",
+      "source_type": "pre-session abnormal-volume screen"
+    },
+    {
+      "ticker": "ARCT",
+      "source_time": "2026-09-18T10:32:00-04:00",
+      "source_type": "timestamped catalyst watch"
+    },
+    {
+      "ticker": "MNOV",
+      "source_time": "2026-09-18T10:32:00-04:00",
+      "source_type": "timestamped catalyst watch"
+    },
+    {
+      "ticker": "GRAL",
+      "source_time": "2026-09-21T07:00:00-04:00",
+      "source_type": "fresh FDA briefing-document event"
+    }
+  ],
+  "anti_leakage": [
+    "Do not use end-of-day percentage move in classification.",
+    "Do not use news published after source_time.",
+    "Freeze catalyst decision before outcome reveal.",
+    "Entry Gate v1 thresholds remain unchanged."
+  ],
+  "objective": "Measure discovery plus entry quality, not merely rejection accuracy."
+}
