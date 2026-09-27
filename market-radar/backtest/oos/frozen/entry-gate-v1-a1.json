@@ -1,0 +1,27 @@
+{
+  "schema_version": 1,
+  "batch": "entry-gate-v1-oos-freeze-a1",
+  "status": "FROZEN_PRE_OUTCOME",
+  "gate_version": "2ff99b2e5963195efedce88830a5a4795f6066a6",
+  "cases": [
+    {
+      "ticker": "BBNX",
+      "cutoff": "2026-09-16T09:30:00-04:00",
+      "decision": "WATCH_FINANCING_RISK",
+      "reason": "Recent FDA clearance and analyst target resets are positive context, while a newly priced $150M common/pre-funded offering adds dilution. Mixed catalyst stack; direction must be decided by tape acceptance, not offering keyword alone."
+    },
+    {
+      "ticker": "QURE",
+      "cutoff": "2026-09-18T09:30:00-04:00",
+      "decision": "NO_TRADE",
+      "reason": "No fresh company catalyst identified for Sep 18; major BLA submission was public since Sep 2. Without a new event or sufficiently abnormal tape trigger, do not manufacture an alert."
+    },
+    {
+      "ticker": "DRUG",
+      "cutoff": "2026-09-18T09:30:00-04:00",
+      "decision": "NO_TRADE",
+      "reason": "Company IR shows no fresh Sep 18 release; latest listed company news was Sep 4 conference participation. A mover without a fresh attributable catalyst should require independent price-volume trigger before alerting."
+    }
+  ],
+  "anti_leakage": "Historical move magnitude was not used in these decisions."
+}
