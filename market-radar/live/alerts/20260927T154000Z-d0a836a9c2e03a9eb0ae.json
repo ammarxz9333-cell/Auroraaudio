@@ -1,0 +1,42 @@
+{
+  "radar_id": "d0a836a9c2e03a9eb0ae",
+  "stage": "REACTING",
+  "score": 12,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:40:00.108138+00:00",
+  "published_utc": "2026-09-27T15:39:51.813614+00:00",
+  "source": "Yahoo early momentum discovery",
+  "source_class": "momentum",
+  "tickers": [
+    "FLY"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "price-volume-momentum",
+    "ticker-match"
+  ],
+  "headline": "$FLY abnormal market momentum: +5.50% day move",
+  "url": "https://finance.yahoo.com/quote/FLY",
+  "snippet": "Ticker $FLY; price 24.3600; day move +5.50%; volume 5285172; 3m average daily volume 3268768; crude volume/ADV 1.62x.",
+  "market_context": [
+    {
+      "ticker": "FLY",
+      "price": 24.4,
+      "previous_close": 23.1,
+      "change_pct": 5.628,
+      "change_5m_pct": 0.0,
+      "cum_volume": 5000029,
+      "same_time_volume_ratio": 2.07,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 24.4,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:58:19+00:00"
+    }
+  ]
+}
