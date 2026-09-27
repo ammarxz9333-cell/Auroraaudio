@@ -668,11 +668,37 @@ def main():
             try:
                 url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
                 alerts.append((source["name"], item.get("title", ""), score, tickers, url))
-                telegram_alert(f"MARKET RADAR {score} {' '.join('$'+x for x in tickers) or 'NEW'}
-{item.get('title','')}
-{source['name']}
-{item.get('url','')}
-Issue: {url}")
+                telegram_alert(f"MARKET RADAR {score} {' '.join('
+            except Exception as e:
+                errors.append(f"issue {rid}: {type(e).__name__}: {e}")
+
+    combined = list(dict.fromkeys(list(old_seen) + new_seen))
+    if len(combined) > MAX_SEEN:
+        combined = combined[-MAX_SEEN:]
+    market_probe = yahoo_market_snapshot("CRWV")
+    state.update({
+        "bootstrapped": True,
+        "market_probe": market_probe,
+        "seen": combined,
+        "last_run_utc": now_utc().isoformat(),
+        "last_alert_count": len(alerts),
+        "last_error_count": len(errors),
+        "last_errors": errors[:30],
+    })
+    save_state(state)
+
+    print(json.dumps({
+        "sources": len(sources),
+        "new_items": len(new_seen),
+        "alerts": len(alerts),
+        "errors": errors[:20],
+    }, indent=2))
+    for s, title, score, tickers, url in alerts:
+        print(f"ALERT {score} {tickers} {s}: {title} -> {url}")
+
+if __name__ == "__main__":
+    main()
++x for x in tickers) or 'NEW'}\\n{item.get('title','')}\\n{source['name']}\\n{item.get('url','')}\\nIssue: {url}")
             except Exception as e:
                 errors.append(f"issue {rid}: {type(e).__name__}: {e}")
 
