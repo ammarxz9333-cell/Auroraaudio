@@ -404,6 +404,22 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
     except Exception as e:
         return {"ticker":ticker,"error":f"{type(e).__name__}: {e}"}
 
+def finra_short_sale_volume(ticker: str):
+    """Official FINRA Reg SHO daily short-sale volume; NOT short interest."""
+    try:
+        payload=json.dumps({"limit":20,"fields":["tradeReportDate","securitiesInformationProcessorSymbolIdentifier","shortParQuantity","shortExemptParQuantity","totalParQuantity"],"compareFilters":[{"compareType":"equal","fieldName":"securitiesInformationProcessorSymbolIdentifier","fieldValue":ticker.upper()}]}).encode("utf-8")
+        req=urllib.request.Request("https://api.finra.org/data/group/otcMarket/name/regShoDaily",data=payload,method="POST",headers={"User-Agent":USER_AGENT,"Accept":"application/json","Content-Type":"application/json"})
+        rows=json.loads(urllib.request.urlopen(req,timeout=REQUEST_TIMEOUT).read().decode("utf-8"))
+        if not rows: return None
+        bydate={}
+        for r in rows:
+            d=r.get("tradeReportDate"); total=float(r.get("totalParQuantity") or 0); short=float(r.get("shortParQuantity") or 0); exempt=float(r.get("shortExemptParQuantity") or 0)
+            x=bydate.setdefault(d,{"total":0.0,"short":0.0,"exempt":0.0}); x["total"]+=total; x["short"]+=short; x["exempt"]+=exempt
+        d=sorted(bydate)[-1]; x=bydate[d]
+        return {"trade_date":d,"short_sale_volume":int(x["short"]),"short_exempt_volume":int(x["exempt"]),"finra_reported_volume":int(x["total"]),"short_sale_volume_pct":round(100*x["short"]/x["total"],3) if x["total"] else None,"is_short_interest":False,"source":"FINRA_REG_SHO_DAILY"}
+    except Exception as e:
+        return {"error":f"{type(e).__name__}: {e}","source":"FINRA_REG_SHO_DAILY"}
+
 def yahoo_quote_bid_ask(ticker: str):
     """Best-effort Yahoo quote bid/ask. Endpoint may require cookie/crumb.
     Failure is non-fatal and must never be replaced with an inferred spread.
