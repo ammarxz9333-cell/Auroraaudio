@@ -1,0 +1,5 @@
+{
+  "type": "webhook-path-test",
+  "created_utc": "2026-09-27T15:10:00Z",
+  "note": "Synthetic file to verify that alert commits update the persistent PR. Not a market signal."
+}
