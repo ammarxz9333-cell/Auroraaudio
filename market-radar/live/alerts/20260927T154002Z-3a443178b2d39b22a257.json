@@ -1,0 +1,42 @@
+{
+  "radar_id": "3a443178b2d39b22a257",
+  "stage": "REACTING",
+  "score": 12,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:40:02.262750+00:00",
+  "published_utc": "2026-09-27T15:39:51.813636+00:00",
+  "source": "Yahoo early momentum discovery",
+  "source_class": "momentum",
+  "tickers": [
+    "PRGO"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "price-volume-momentum",
+    "ticker-match"
+  ],
+  "headline": "$PRGO abnormal market momentum: +5.04% day move",
+  "url": "https://finance.yahoo.com/quote/PRGO",
+  "snippet": "Ticker $PRGO; price 15.4200; day move +5.04%; volume 4274740; 3m average daily volume 2959744; crude volume/ADV 1.44x.",
+  "market_context": [
+    {
+      "ticker": "PRGO",
+      "price": 15.3,
+      "previous_close": 14.68,
+      "change_pct": 4.223,
+      "change_5m_pct": 0.0,
+      "cum_volume": 3514285,
+      "same_time_volume_ratio": 2.26,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 15.3,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:55:43+00:00"
+    }
+  ]
+}
