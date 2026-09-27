@@ -209,12 +209,17 @@ def match_watchlist(text: str, watchlist: dict):
             found.append(ticker)
     return sorted(set(found))
 
+def phrase_match(text: str, phrase: str) -> bool:
+    if len(phrase) <= 5 and " " not in phrase:
+        return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text, re.I) is not None
+    return phrase in text
+
 def score_item(source: dict, item: dict, watchlist: dict):
     text = f"{item.get('title','')} {item.get('snippet','')}".lower()
     score = int(source.get("weight", 1))
     hits = []
     for phrase, pts in CATALYSTS.items():
-        if phrase in text:
+        if phrase_match(text, phrase):
             score += pts
             hits.append(phrase)
     for phrase, pts in NEGATIVE_NOISE.items():
@@ -329,7 +334,8 @@ def main():
                 continue
             new_seen.append(rid)
             score, tickers, hits = score_item(source, item, watchlist)
-            if score < THRESHOLD:
+            effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
+            if score < effective_threshold:
                 continue
             if not bootstrapped:
                 published = item.get("published")
@@ -354,6 +360,7 @@ def main():
         "last_run_utc": now_utc().isoformat(),
         "last_alert_count": len(alerts),
         "last_error_count": len(errors),
+        "last_errors": errors[:30],
     })
     save_state(state)
 
