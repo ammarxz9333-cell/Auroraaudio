@@ -80,7 +80,7 @@ jobs:
           print(json.dumps({"reclaims":rows},indent=2))
           PY
 
-      - name: Gate v1-v2 pilot summary
+      - name: Rejected recovery counterfactuals\n        env:\n          PYTHONPATH: market-radar/backtest\n        run: python3 market-radar/backtest/report_rejected_recoveries.py /tmp/replay-results.json\n\n      - name: Gate v1-v2 pilot summary
         env:
           PYTHONPATH: market-radar
         run: python3 -c 'import json; d=json.load(open("/tmp/replay-results.json"))["cases"]; key=lambda x,v:(x.get(v+"_spread_scenarios") if v=="v2" else x.get("spread_scenarios",{})).get("0.5"); summarize=lambda v:{"entries":sum(key(x,v)!=None for x in d),"plus5_first":sum((key(x,v) or {}).get("outcome")=="PLUS5_FIRST" for x in d),"minus5_first":sum((key(x,v) or {}).get("outcome")=="MINUS5_FIRST" for x in d),"order_unverified":sum((key(x,v) or {}).get("outcome")=="ORDER_UNVERIFIED" for x in d),"unresolved":sum((key(x,v) or {}).get("outcome")=="UNRESOLVED" for x in d),"plus10_reached":sum(bool((key(x,v) or {}).get("plus10_reached")) for x in d)}; print(json.dumps({"v1":summarize("v1"),"v2":summarize("v2"),"entries":[{"ticker":x["ticker"],"v1":key(x,"v1"),"v2":key(x,"v2")} for x in d if key(x,"v1") or key(x,"v2")]},indent=2))'
