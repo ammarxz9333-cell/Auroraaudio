@@ -423,8 +423,17 @@ def github_api(path: str, method="GET", payload=None):
 
 def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
+    reactions = [m.get("reaction") for m in (market_ctx or []) if not m.get("error")]
+    if tickers and reactions and all(r == "not-yet-reacted" for r in reactions) and score >= 8:
+        stage = "EARLY"
+    elif any(r == "major-reprice" for r in reactions):
+        stage = "MAJOR-REPRICE"
+    elif any(r == "reacting" for r in reactions):
+        stage = "REACTING"
+    else:
+        stage = "RADAR"
     title_text = item.get("title", "Untitled")
-    title = f"[MARKET-RADAR {score}] {tick} — {title_text}"[:240]
+    title = f"[MARKET-{stage} {score}] {tick} — {title_text}"[:240]
     published = item.get("published")
     pubtxt = published.isoformat() if isinstance(published, dt.datetime) else "unknown/not supplied by source"
     body = (
