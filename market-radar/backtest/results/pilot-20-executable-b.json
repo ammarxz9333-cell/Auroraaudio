@@ -1,0 +1,51 @@
+{
+  "schema_version": 1,
+  "batch": "pilot-20-executable-b",
+  "status": "PARTIAL_EXECUTABLE_AUDIT",
+  "cases": [
+    {
+      "ticker": "BENF",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "cutoff": "2026-09-23T07:31:00-04:00",
+      "premarket_0905": 1.95,
+      "premarket_change_pct": 262.2,
+      "regular_open": 2.92,
+      "high": 3.15,
+      "close": 2.9,
+      "mfe_from_open_pct": 7.88,
+      "close_from_open_pct": -0.68,
+      "classification": "LATE_AT_REGULAR_OPEN",
+      "note": "Most repricing occurred premarket; do not credit +438.73% full-day move."
+    },
+    {
+      "ticker": "DLXY",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "cutoff": "2026-09-16T08:01:00-04:00",
+      "regular_open": 1.02,
+      "high": 4.45,
+      "low": 0.6517,
+      "close": 2.29,
+      "next_close": 0.8448,
+      "mfe_from_open_pct": 336.27,
+      "mae_from_open_pct": -36.11,
+      "close_from_open_pct": 124.51,
+      "next_close_from_open_pct": -17.18,
+      "classification": "EARLY_EXECUTABLE_BUT_EXTREME_VOLATILITY"
+    },
+    {
+      "ticker": "PAAI",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "cutoff": "2026-09-17T11:01:00-04:00",
+      "day_open": 0.9395,
+      "high": 3.47,
+      "close": 3.3399,
+      "classification": "UNVERIFIED_POST_ALERT",
+      "note": "Exact 11:01 executable price not found; full-day +271% cannot be credited."
+    }
+  ],
+  "lessons": [
+    "Premarket repricing must be measured before recommending a regular-session entry.",
+    "A correct catalyst alert can still be late and have poor risk/reward at the first executable price.",
+    "Parabolic microcap alerts need profit-protection/trailing logic because next-session reversals can erase gains."
+  ]
+}
