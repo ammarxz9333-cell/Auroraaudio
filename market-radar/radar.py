@@ -823,6 +823,7 @@ def main():
             mo=[m.get("momentum_15m_pct") for m in valid_market if isinstance(m.get("momentum_15m_pct"),(int,float))]
             infoq["market_confirmation"]={"rvol_confirmed":bool(rv and max(rv)>=2),"volume_acceleration_confirmed":bool(va and max(va)>=1.5),"momentum_confirmed":bool(mo and max(mo)>=2)}
             infoq["propagation_stage"]="PRIMARY_CONFIRMED" if primary_confirmed else ("MULTI_SOURCE" if len(corroborating)>=2 else ("CORROBORATED" if corroborating else "UNCONFIRMED"))
+            infoq["finra_short_sale_volume"]={t:finra_short_sale_volume(t) for t in tickers}
             if tickers and score >= effective_threshold:
                 active_watches[rid] = {
                     "tickers": tickers,
