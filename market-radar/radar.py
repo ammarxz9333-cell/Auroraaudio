@@ -841,7 +841,10 @@ def main():
             score, tickers, hits = score_item(source, item, watchlist)
             infoq = information_quality(source, item)
             effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
-            market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
+            # Market confirmation can add at most two points. Avoid a Yahoo
+            # request for every low-score headline in a large public feed.
+            market_ctx = (market_context_for_tickers(tickers, event_time=item.get("published"))
+                          if tickers and score >= effective_threshold - 2 else [])
             valid_market = [m for m in market_ctx if not m.get("error")]
             if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
                 score += 2
