@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "batch": "entry-gate-v1-oos-freeze-a2",
+  "status": "FROZEN_PRE_OUTCOME",
+  "cases": [
+    {
+      "ticker": "INBS",
+      "cutoff": "2026-09-21T09:30:00-04:00",
+      "decision": "NO_TRADE_FINANCING_OVERHANG",
+      "reason": "No fresh Sep 21 company catalyst identified. FDA 510(k) submission was Sep 9; selling-stockholder registration appeared Sep 15. Do not recycle old FDA catalyst as fresh."
+    },
+    {
+      "ticker": "RNAC",
+      "cutoff": "2026-09-18T09:30:00-04:00",
+      "decision": "NO_TRADE",
+      "reason": "No fresh Sep 18 company catalyst identified in contemporaneous news search; require independent abnormal tape trigger."
+    },
+    {
+      "ticker": "AREC",
+      "cutoff": "2026-09-16T09:30:00-04:00",
+      "decision": "NO_TRADE",
+      "reason": "No fresh Sep 16 company release identified on company news feed; require independent abnormal tape trigger."
+    },
+    {
+      "ticker": "HFFG",
+      "cutoff": "2026-09-21T09:30:00-04:00",
+      "decision": "NO_TRADE",
+      "reason": "No fresh catalyst identified. Do not infer bearish/bullish direction from retrospective daily move."
+    },
+    {
+      "ticker": "TLYS",
+      "cutoff": "2026-09-17T09:30:00-04:00",
+      "decision": "NO_TRADE",
+      "reason": "No fresh event identified for cutoff; prior volatility alone is insufficient."
+    },
+    {
+      "ticker": "TCRT",
+      "cutoff": "2026-09-16T09:30:00-04:00",
+      "decision": "NO_TRADE",
+      "reason": "No qualifying fresh catalyst verified by cutoff. Later patent-related news must not leak backward."
+    },
+    {
+      "ticker": "CLDI",
+      "cutoff": "2026-09-15T09:30:00-04:00",
+      "decision": "NO_TRADE",
+      "reason": "No fresh qualifying catalyst identified at cutoff. Sep 17 registered direct offering is future information and excluded."
+    }
+  ],
+  "invalid_candidate": {
+    "ticker": "IPCX",
+    "reason": "Ticker ceased trading after Aug 14 business-combination close; invalid Sep 23 candidate. Replace before scoring batch."
+  },
+  "anti_leakage": "No post-cutoff event may be used to classify a prior cutoff."
+}
