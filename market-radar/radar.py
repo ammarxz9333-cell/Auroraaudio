@@ -831,8 +831,8 @@ def main():
                     errors.append(f"entry alert {rid}/{ticker}: {type(exc).__name__}: {exc}")
                     continue
                 telegram_alert(
-                    f"MARKET RADAR BUYABLE_NOW ${ticker}\n"
-                    f"Entry: {gate.get('entry_price')}\n"
+                    f"MARKET RADAR ENTRY CANDIDATE ${ticker} — manual review required\n"
+                    f"Observed price: {gate.get('entry_price')}\n"
                     f"Reason: {gate.get('reason')}\n"
                     f"Source: {watch.get('source', 'active-watch')}"
                 )
