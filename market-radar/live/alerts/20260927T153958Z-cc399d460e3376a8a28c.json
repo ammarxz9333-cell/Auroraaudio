@@ -1,0 +1,42 @@
+{
+  "radar_id": "cc399d460e3376a8a28c",
+  "stage": "REACTING",
+  "score": 12,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:39:58.366051+00:00",
+  "published_utc": "2026-09-27T15:39:51.813595+00:00",
+  "source": "Yahoo early momentum discovery",
+  "source_class": "momentum",
+  "tickers": [
+    "BIRK"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "price-volume-momentum",
+    "ticker-match"
+  ],
+  "headline": "$BIRK abnormal market momentum: +5.69% day move",
+  "url": "https://finance.yahoo.com/quote/BIRK",
+  "snippet": "Ticker $BIRK; price 33.6000; day move +5.69%; volume 3688222; 3m average daily volume 2273331; crude volume/ADV 1.62x.",
+  "market_context": [
+    {
+      "ticker": "BIRK",
+      "price": 33.737,
+      "previous_close": 31.79,
+      "change_pct": 6.125,
+      "change_5m_pct": 0.0,
+      "cum_volume": 3326425,
+      "same_time_volume_ratio": 2.09,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 33.737,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:21:21+00:00"
+    }
+  ]
+}
