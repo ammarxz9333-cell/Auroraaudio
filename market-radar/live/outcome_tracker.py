@@ -11,22 +11,31 @@ def new_trade(ticker, entry_time_utc, entry_price, radar_id):
       "resolved_time_utc":None,"max_price":float(entry_price),"min_price":float(entry_price)}
 
 def update_trade(t, bar):
-    if t.get("first_threshold") in ("PLUS5_FIRST","MINUS5_FIRST","ORDER_UNVERIFIED"):
-        # Still allow +10 milestone after a +5 win, but never rewrite first threshold.
-        if t["first_threshold"] != "PLUS5_FIRST": return t
-    ep=float(t["entry_price"]); hi=float(bar["high"]); lo=float(bar["low"])
-    t["max_price"]=max(float(t.get("max_price",ep)),hi)
-    t["min_price"]=min(float(t.get("min_price",ep)),lo)
-    hit5=hi >= ep*1.05; hit10=hi >= ep*1.10; hitm5=lo <= ep*0.95
-    t["plus5"]=bool(t.get("plus5") or hit5); t["plus10"]=bool(t.get("plus10") or hit10)
-    if t.get("first_threshold") is None:\n        t["minus5"]=bool(t.get("minus5") or hitm5)
-    if t.get("first_threshold") is None:
-        if hit5 and hitm5: t["first_threshold"]="ORDER_UNVERIFIED"
-        elif hit5: t["first_threshold"]="PLUS5_FIRST"
-        elif hitm5: t["first_threshold"]="MINUS5_FIRST"
-        if t["first_threshold"]: t["resolved_time_utc"]=bar["time_utc"]
-    t["mfe_pct"]=round((t["max_price"]/ep-1)*100,3)
-    t["mae_pct"]=round((t["min_price"]/ep-1)*100,3)
+    first = t.get("first_threshold")
+    if first in ("MINUS5_FIRST", "ORDER_UNVERIFIED"):
+        return t
+    ep = float(t["entry_price"])
+    hi = float(bar["high"])
+    lo = float(bar["low"])
+    t["max_price"] = max(float(t.get("max_price", ep)), hi)
+    t["min_price"] = min(float(t.get("min_price", ep)), lo)
+    hit5 = hi >= ep * 1.05
+    hit10 = hi >= ep * 1.10
+    hitm5 = lo <= ep * 0.95
+    t["plus5"] = bool(t.get("plus5") or hit5)
+    t["plus10"] = bool(t.get("plus10") or hit10)
+    if first is None:
+        t["minus5"] = bool(t.get("minus5") or hitm5)
+        if hit5 and hitm5:
+            t["first_threshold"] = "ORDER_UNVERIFIED"
+        elif hit5:
+            t["first_threshold"] = "PLUS5_FIRST"
+        elif hitm5:
+            t["first_threshold"] = "MINUS5_FIRST"
+        if t.get("first_threshold"):
+            t["resolved_time_utc"] = bar["time_utc"]
+    t["mfe_pct"] = round((t["max_price"] / ep - 1) * 100, 3)
+    t["mae_pct"] = round((t["min_price"] / ep - 1) * 100, 3)
     return t
 
 def load(path):
