@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "purpose": "Prevent simplistic dilution overfitting during PIT validation.",
+  "offering_features": [
+    "discount_or_premium_to_preannouncement_price",
+    "gross_proceeds_relative_to_market_cap",
+    "new_common_share_dilution_pct",
+    "prefunded_and_warrant_overhang_pct",
+    "use_of_proceeds",
+    "named_institutional_participation",
+    "runway_before_and_after",
+    "offering_is_acquisition_financing",
+    "price_volume_acceptance_after_publication"
+  ],
+  "rule": "Offering is a catalyst family, not a direction. Direction must be inferred from terms, issuer context, and point-in-time tape.",
+  "examples": {
+    "AXGN": "large primary offering largely intended to fund an announced acquisition",
+    "CLDI": "small registered direct for working capital/general corporate purposes",
+    "BBNX": "historical counterexample where the offering-news session rose materially"
+  }
+}
