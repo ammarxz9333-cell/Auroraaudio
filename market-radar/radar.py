@@ -408,6 +408,9 @@ def yahoo_quote_bid_ask(ticker: str):
 
 def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
     required = ("price","previous_close","regular_open","vwap","same_time_volume_ratio","holds_vwap","holds_open","bar_time_utc")
+    session = snapshot.get("market_session")
+    if session != "REGULAR":
+        return {"state":"WAIT","reason":f"entry disabled outside regular session ({session or 'unknown'})"}
     if any(snapshot.get(k) is None for k in required):
         return {"state":"INSUFFICIENT_DATA","reason":"missing required point-in-time tape field"}
     quote = yahoo_quote_bid_ask(snapshot["ticker"])
