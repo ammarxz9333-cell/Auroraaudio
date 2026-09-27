@@ -32,6 +32,15 @@ jobs:
           cd market-radar && python3 -m unittest test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py
 
 
+      - name: Historical replay smoke test
+        run: |
+          python3 market-radar/backtest/historical_gate_replay.py \
+            market-radar/backtest/frozen/pilot-20-freeze-b.json \
+            market-radar/backtest/frozen/pilot-20-freeze-c.json \
+            market-radar/backtest/frozen/pilot-20-freeze-d.json \
+            --out /tmp/replay-results.json
+          python3 -c 'import json; d=json.load(open("/tmp/replay-results.json")); print(json.dumps({"cases":len(d["cases"]),"robust_buyable":[x["ticker"] for x in d["cases"] if x.get("spread_robust_buyable")]},indent=2))'
+
       - name: Run first-public-source scanner
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
