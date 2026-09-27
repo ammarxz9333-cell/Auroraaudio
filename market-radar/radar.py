@@ -800,7 +800,8 @@ def main():
                     "score": score,
                     "source": source["name"],
                     "added_utc": start.isoformat(),
-                    "event_time_utc": item["published"].isoformat() if isinstance(item.get("published"), dt.datetime) else None,\n                    "information_quality": infoq,
+                    "event_time_utc": item["published"].isoformat() if isinstance(item.get("published"), dt.datetime) else None,
+                    "information_quality": infoq,
                 }
             if score < effective_threshold:
                 continue
