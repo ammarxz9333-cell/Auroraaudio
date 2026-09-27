@@ -344,7 +344,13 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
             "previous_close": round(prev_close, 4),
             "change_pct": round(change_pct, 3) if change_pct is not None else None,
             "change_5m_pct": round(change_5m, 3) if change_5m is not None else None,
-            "cum_volume": today_cum,\n            "regular_open": round(regular_open, 4) if regular_open is not None else None,\n            "session_high": round(session_high, 4) if session_high is not None else None,\n            "session_low": round(session_low, 4) if session_low is not None else None,\n            "vwap": round(session_vwap, 4) if session_vwap is not None else None,\n            "holds_vwap": (latest["close"] >= session_vwap) if session_vwap is not None else None,\n            "holds_open": (latest["close"] >= regular_open) if regular_open is not None else None,
+            "cum_volume": today_cum,
+            "regular_open": round(regular_open, 4) if regular_open is not None else None,
+            "session_high": round(session_high, 4) if session_high is not None else None,
+            "session_low": round(session_low, 4) if session_low is not None else None,
+            "vwap": round(session_vwap, 4) if session_vwap is not None else None,
+            "holds_vwap": (latest["close"] >= session_vwap) if session_vwap is not None else None,
+            "holds_open": (latest["close"] >= regular_open) if regular_open is not None else None,
             "same_time_volume_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
             "market_session": market_session,
             "reaction": reaction,
@@ -352,7 +358,9 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
             "pre30m_move_pct": round(pre30_move, 3) if pre30_move is not None else None,
             "post30m_move_pct": round(post30_move, 3) if post30_move is not None else None,
             "since_event_move_pct": round(since_event_move, 3) if since_event_move is not None else None,
-            "bar_time_utc": latest["utc"].isoformat(),\n            "bar_high": round(latest["high"], 4),\n            "bar_low": round(latest["low"], 4),
+            "bar_time_utc": latest["utc"].isoformat(),
+            "bar_high": round(latest["high"], 4),
+            "bar_low": round(latest["low"], 4),
         }
     except Exception as e:
         return {"ticker":ticker,"error":f"{type(e).__name__}: {e}"}
@@ -412,7 +420,9 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
     if not snapshot or snapshot.get("error") or not snapshot.get("ticker"):
         return
     TAPE_DIR.mkdir(parents=True, exist_ok=True)
-    ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())\n    quote = yahoo_quote_bid_ask(ticker) or {}\n    gate = evaluate_entry_gate(snapshot, score, threshold)
+    ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())
+    quote = yahoo_quote_bid_ask(ticker) or {}
+    gate = evaluate_entry_gate(snapshot, score, threshold)
     row = {
         "captured_utc": now_utc().isoformat(),
         "radar_id": rid,
@@ -420,7 +430,9 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "score_at_capture": score,
         "ticker": ticker,
         "bar_time_utc": snapshot.get("bar_time_utc"),
-        "price": snapshot.get("price"),\n        "bar_high": snapshot.get("bar_high"),\n        "bar_low": snapshot.get("bar_low"),
+        "price": snapshot.get("price"),
+        "bar_high": snapshot.get("bar_high"),
+        "bar_low": snapshot.get("bar_low"),
         "previous_close": snapshot.get("previous_close"),
         "change_pct": snapshot.get("change_pct"),
         "change_5m_pct": snapshot.get("change_5m_pct"),
@@ -439,7 +451,8 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "gate_reason": "VWAP/spread not available from current Yahoo 5m snapshot; no BUYABLE_NOW inference permitted."
     }
     with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, separators=(",", ":")) + "\n")
+        fh.write(json.dumps(row, separators=(",", ":")) + "
+")
 
 def track_live_outcome(snapshot: dict, gate: dict, rid: str):
     if not snapshot or not snapshot.get("ticker") or not snapshot.get("bar_time_utc"):
@@ -466,7 +479,9 @@ def market_context_for_tickers(tickers, event_time=None):
     return out
 
 def item_id(source_name: str, item: dict) -> str:
-    raw = source_name + "\n" + (item.get("url") or "") + "\n" + (item.get("title") or "")
+    raw = source_name + "
+" + (item.get("url") or "") + "
+" + (item.get("title") or "")
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
 
 def load_json(path: Path, fallback):
@@ -476,7 +491,8 @@ def load_json(path: Path, fallback):
         return fallback
 
 def save_state(state):
-    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "
+", encoding="utf-8")
 
 def match_watchlist(text: str, watchlist: dict):
     low = text.lower()
@@ -548,24 +564,47 @@ def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     published = item.get("published")
     pubtxt = published.isoformat() if isinstance(published, dt.datetime) else "unknown/not supplied by source"
     body = (
-        f"<!-- radar-id:{rid} -->\n"
-        f"## First-public-source alert\n\n"
-        f"- **Score:** {score}\n"
-        f"- **Source:** {source['name']}\n"
-        f"- **Source class:** {source.get('class','other')}\n"
-        f"- **Published timestamp:** {pubtxt}\n"
-        f"- **Detected UTC:** {now_utc().isoformat()}\n"
-        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\n"
-        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\n"
-        f"- **Original/public URL:** {item.get('url','')}\n\n"
-        + ("### Live market reaction\n" + "\n".join(
+        f"<!-- radar-id:{rid} -->
+"
+        f"## First-public-source alert
+
+"
+        f"- **Score:** {score}
+"
+        f"- **Source:** {source['name']}
+"
+        f"- **Source class:** {source.get('class','other')}
+"
+        f"- **Published timestamp:** {pubtxt}
+"
+        f"- **Detected UTC:** {now_utc().isoformat()}
+"
+        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}
+"
+        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}
+"
+        f"- **Original/public URL:** {item.get('url','')}
+
+"
+        + ("### Live market reaction
+" + "
+".join(
             f"- **{m.get('ticker')}**: price {m.get('price','?')} | day {m.get('change_pct','?')}% | last 5m {m.get('change_5m_pct','?')}% | volume vs same-time {m.get('same_time_volume_ratio','?')}x | pre-news 30m {m.get('pre30m_move_pct','?')}% | first 30m after news {m.get('post30m_move_pct','?')}% | since news {m.get('since_event_move_pct','?')}% | session {m.get('market_session','?')} | **{m.get('reaction','?')}** | bar {m.get('bar_time_utc','?')}"
             if not m.get("error") else f"- **{m.get('ticker')}**: market-data error — {m.get('error')}"
             for m in (market_ctx or [])
-        ) + "\n\n" if market_ctx else "")
-        + f"### Headline\n{item.get('title','')}\n\n"
-        f"### Public snippet\n{item.get('snippet','')[:1600] or '(none)'}\n\n"
-        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\n"
+        ) + "
+
+" if market_ctx else "")
+        + f"### Headline
+{item.get('title','')}
+
+"
+        f"### Public snippet
+{item.get('snippet','')[:1600] or '(none)'}
+
+"
+        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.
+"
     )
     payload = {"title": title, "body": body}
     if OWNER:
@@ -656,7 +695,11 @@ def main():
             try:
                 url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
                 alerts.append((source["name"], item.get("title", ""), score, tickers, url))
-                telegram_alert(f"MARKET RADAR {score} {' '.join('$'+x for x in tickers) or 'NEW'}\n{item.get('title','')}\n{source['name']}\n{item.get('url','')}\nIssue: {url}")
+                telegram_alert(f"MARKET RADAR {score} {' '.join('$'+x for x in tickers) or 'NEW'}
+{item.get('title','')}
+{source['name']}
+{item.get('url','')}
+Issue: {url}")
             except Exception as e:
                 errors.append(f"issue {rid}: {type(e).__name__}: {e}")
 
