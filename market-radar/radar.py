@@ -560,47 +560,24 @@ def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     published = item.get("published")
     pubtxt = published.isoformat() if isinstance(published, dt.datetime) else "unknown/not supplied by source"
     body = (
-        f"<!-- radar-id:{rid} -->
-"
-        f"## First-public-source alert
-
-"
-        f"- **Score:** {score}
-"
-        f"- **Source:** {source['name']}
-"
-        f"- **Source class:** {source.get('class','other')}
-"
-        f"- **Published timestamp:** {pubtxt}
-"
-        f"- **Detected UTC:** {now_utc().isoformat()}
-"
-        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}
-"
-        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}
-"
-        f"- **Original/public URL:** {item.get('url','')}
-
-"
-        + ("### Live market reaction
-" + "
-".join(
+        f"<!-- radar-id:{rid} -->\\n"
+        f"## First-public-source alert\\n\\n"
+        f"- **Score:** {score}\\n"
+        f"- **Source:** {source['name']}\\n"
+        f"- **Source class:** {source.get('class','other')}\\n"
+        f"- **Published timestamp:** {pubtxt}\\n"
+        f"- **Detected UTC:** {now_utc().isoformat()}\\n"
+        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\\n"
+        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\\n"
+        f"- **Original/public URL:** {item.get('url','')}\\n\\n"
+        + ("### Live market reaction\\n" + "\\n".join(
             f"- **{m.get('ticker')}**: price {m.get('price','?')} | day {m.get('change_pct','?')}% | last 5m {m.get('change_5m_pct','?')}% | volume vs same-time {m.get('same_time_volume_ratio','?')}x | pre-news 30m {m.get('pre30m_move_pct','?')}% | first 30m after news {m.get('post30m_move_pct','?')}% | since news {m.get('since_event_move_pct','?')}% | session {m.get('market_session','?')} | **{m.get('reaction','?')}** | bar {m.get('bar_time_utc','?')}"
             if not m.get("error") else f"- **{m.get('ticker')}**: market-data error — {m.get('error')}"
             for m in (market_ctx or [])
-        ) + "
-
-" if market_ctx else "")
-        + f"### Headline
-{item.get('title','')}
-
-"
-        f"### Public snippet
-{item.get('snippet','')[:1600] or '(none)'}
-
-"
-        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.
-"
+        ) + "\\n\\n" if market_ctx else "")
+        + f"### Headline\\n{item.get('title','')}\\n\\n"
+        f"### Public snippet\\n{item.get('snippet','')[:1600] or '(none)'}\\n\\n"
+        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\\n"
     )
     payload = {"title": title, "body": body}
     if OWNER:
