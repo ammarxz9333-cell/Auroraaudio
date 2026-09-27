@@ -14,6 +14,9 @@ import json
 import os
 import re
 import sys
+import gzip
+import threading
+import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import urllib.parse
 import urllib.request
@@ -33,6 +36,9 @@ BOOTSTRAP_ALERT_HOURS = int(os.getenv("RADAR_BOOTSTRAP_ALERT_HOURS", "8"))
 MAX_SEEN = int(os.getenv("RADAR_MAX_SEEN", "6000"))
 REQUEST_TIMEOUT = int(os.getenv("RADAR_REQUEST_TIMEOUT", "8"))
 MAX_WORKERS = int(os.getenv("RADAR_MAX_WORKERS", "12"))
+DOMAIN_LOCKS = {"www.sec.gov": threading.Lock(), "www.reddit.com": threading.Lock()}
+DOMAIN_LAST = {}
+DOMAIN_MIN_INTERVAL = {"www.sec.gov": 0.40, "www.reddit.com": 1.25}
 
 CATALYSTS = {
     "definitive agreement": 5, "merger": 5, "acquisition": 5, "takeover": 5,
@@ -86,9 +92,29 @@ def now_utc():
     return dt.datetime.now(dt.timezone.utc)
 
 def fetch(url: str, headers: dict | None = None) -> bytes:
-    h = {"User-Agent": USER_AGENT, "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html;q=0.9,*/*;q=0.5"}
+    h = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/rss+xml, application/atom+xml, application/xml, text/xml, text/html;q=0.9,*/*;q=0.5",
+    }
+    host = urllib.parse.urlparse(url).netloc.lower()
+    if host == "www.sec.gov":
+        h["Accept-Encoding"] = "gzip, deflate"
     if headers:
         h.update(headers)
+    lock = DOMAIN_LOCKS.get(host)
+    if lock:
+        with lock:
+            min_gap = DOMAIN_MIN_INTERVAL.get(host, 0)
+            elapsed = time.monotonic() - DOMAIN_LAST.get(host, 0)
+            if elapsed < min_gap:
+                time.sleep(min_gap - elapsed)
+            req = urllib.request.Request(url, headers=h)
+            with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
+                raw = resp.read()
+                DOMAIN_LAST[host] = time.monotonic()
+                if resp.headers.get("Content-Encoding", "").lower() == "gzip":
+                    return gzip.decompress(raw)
+                return raw
     req = urllib.request.Request(url, headers=h)
     with urllib.request.urlopen(req, timeout=REQUEST_TIMEOUT) as resp:
         return resp.read()
@@ -296,13 +322,19 @@ def telegram_alert(text: str):
 def source_items(source):
     kind = source.get("type", "rss")
     url = source.get("url", "")
-    if kind == "google_news":
-        return parse_feed(fetch(google_news_url(source["query"])), source)
-    if kind in ("rss", "atom"):
-        return parse_feed(fetch(url), source)
-    if kind == "html_links":
-        return parse_html_links(fetch(url), source)
-    return []
+    try:
+        if kind == "google_news":
+            return parse_feed(fetch(google_news_url(source["query"])), source)
+        if kind in ("rss", "atom"):
+            return parse_feed(fetch(url), source)
+        if kind == "html_links":
+            return parse_html_links(fetch(url), source)
+        return []
+    except Exception:
+        fallback = source.get("fallback_query")
+        if fallback:
+            return parse_feed(fetch(google_news_url(fallback)), source)
+        raise
 
 def main():
     cfg = load_json(SOURCES_FILE, {})
