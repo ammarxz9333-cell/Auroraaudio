@@ -23,6 +23,8 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
 from pathlib import Path
+from statistics import median
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
@@ -211,6 +213,115 @@ def parse_html_links(data: bytes, source: dict):
 def google_news_url(query: str) -> str:
     return "https://news.google.com/rss/search?" + urllib.parse.urlencode({"q": query, "hl": "en-US", "gl": "US", "ceid": "US:en"})
 
+
+NY = ZoneInfo("America/New_York")
+
+def yahoo_market_snapshot(ticker: str):
+    """Free/no-key intraday snapshot from Yahoo Finance chart endpoint.
+    Returns None if unavailable. Uses 5m bars over 5d including pre/post market.
+    """
+    url = (
+        "https://query1.finance.yahoo.com/v8/finance/chart/"
+        + urllib.parse.quote(ticker)
+        + "?interval=5m&range=5d&includePrePost=true&events=div%2Csplits"
+    )
+    try:
+        data = json.loads(fetch(url, headers={"Accept":"application/json"}).decode("utf-8", errors="ignore"))
+        result = ((data.get("chart") or {}).get("result") or [None])[0]
+        if not result:
+            return None
+        meta = result.get("meta") or {}
+        stamps = result.get("timestamp") or []
+        quote = (((result.get("indicators") or {}).get("quote") or [{}])[0]) or {}
+        closes = quote.get("close") or []
+        volumes = quote.get("volume") or []
+        bars = []
+        for i, ts in enumerate(stamps):
+            close = closes[i] if i < len(closes) else None
+            vol = volumes[i] if i < len(volumes) else None
+            if close is None:
+                continue
+            when_utc = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc)
+            when_ny = when_utc.astimezone(NY)
+            bars.append({"ts":ts,"utc":when_utc,"ny":when_ny,"close":float(close),"volume":int(vol or 0)})
+        if not bars:
+            return None
+
+        latest = bars[-1]
+        prev_close = meta.get("chartPreviousClose") or meta.get("previousClose")
+        if prev_close is None:
+            prev_close = bars[0]["close"]
+        prev_close = float(prev_close)
+        change_pct = ((latest["close"] / prev_close) - 1.0) * 100.0 if prev_close else None
+
+        last_two = bars[-2:] if len(bars) >= 2 else bars
+        change_5m = None
+        if len(last_two) == 2 and last_two[0]["close"]:
+            change_5m = ((last_two[1]["close"] / last_two[0]["close"]) - 1.0) * 100.0
+
+        ny_now = latest["ny"]
+        mins_now = ny_now.hour * 60 + ny_now.minute
+        reg_start, reg_end = 9*60+30, 16*60
+        if mins_now < reg_start:
+            market_session = "PRE"
+            cutoff = reg_start
+        elif mins_now <= reg_end:
+            market_session = "REGULAR"
+            cutoff = mins_now
+        else:
+            market_session = "AFTER/CLOSED"
+            cutoff = reg_end
+
+        by_day = {}
+        for b in bars:
+            m = b["ny"].hour * 60 + b["ny"].minute
+            if reg_start <= m <= reg_end:
+                by_day.setdefault(b["ny"].date().isoformat(), []).append(b)
+
+        today_key = ny_now.date().isoformat()
+        today_cum = sum(b["volume"] for b in by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= cutoff)
+        hist_cums = []
+        for d, dbars in by_day.items():
+            if d == today_key:
+                continue
+            cum = sum(b["volume"] for b in dbars if (b["ny"].hour*60+b["ny"].minute) <= cutoff)
+            if cum > 0:
+                hist_cums.append(cum)
+        vol_ratio = (today_cum / median(hist_cums)) if today_cum > 0 and hist_cums else None
+
+        abs_change = abs(change_pct or 0)
+        if abs_change >= 10 or (vol_ratio is not None and vol_ratio >= 4):
+            reaction = "major-reprice"
+        elif abs_change >= 3 or (vol_ratio is not None and vol_ratio >= 2):
+            reaction = "reacting"
+        elif abs_change < 2 and (vol_ratio is None or vol_ratio < 1.25):
+            reaction = "not-yet-reacted"
+        else:
+            reaction = "mixed/early"
+
+        return {
+            "ticker": ticker,
+            "price": round(latest["close"], 4),
+            "previous_close": round(prev_close, 4),
+            "change_pct": round(change_pct, 3) if change_pct is not None else None,
+            "change_5m_pct": round(change_5m, 3) if change_5m is not None else None,
+            "cum_volume": today_cum,
+            "same_time_volume_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
+            "market_session": market_session,
+            "reaction": reaction,
+            "bar_time_utc": latest["utc"].isoformat(),
+        }
+    except Exception as e:
+        return {"ticker":ticker,"error":f"{type(e).__name__}: {e}"}
+
+def market_context_for_tickers(tickers):
+    out = []
+    for ticker in tickers[:4]:
+        snap = yahoo_market_snapshot(ticker)
+        if snap:
+            out.append(snap)
+    return out
+
 def item_id(source_name: str, item: dict) -> str:
     raw = source_name + "\n" + (item.get("url") or "") + "\n" + (item.get("title") or "")
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
@@ -278,7 +389,7 @@ def github_api(path: str, method="GET", payload=None):
         raw = resp.read()
         return json.loads(raw.decode("utf-8")) if raw else {}
 
-def create_issue(source, item, score, tickers, hits, rid):
+def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
     title_text = item.get("title", "Untitled")
     title = f"[MARKET-RADAR {score}] {tick} — {title_text}"[:240]
@@ -295,7 +406,12 @@ def create_issue(source, item, score, tickers, hits, rid):
         f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\n"
         f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\n"
         f"- **Original/public URL:** {item.get('url','')}\n\n"
-        f"### Headline\n{item.get('title','')}\n\n"
+        + ("### Live market reaction\n" + "\n".join(
+            f"- **{m.get('ticker')}**: price {m.get('price','?')} | day {m.get('change_pct','?')}% | last 5m {m.get('change_5m_pct','?')}% | same-time volume {m.get('same_time_volume_ratio','?')}x | session {m.get('market_session','?')} | **{m.get('reaction','?')}** | bar {m.get('bar_time_utc','?')}"
+            if not m.get("error") else f"- **{m.get('ticker')}**: market-data error — {m.get('error')}"
+            for m in (market_ctx or [])
+        ) + "\n\n" if market_ctx else "")
+        + f"### Headline\n{item.get('title','')}\n\n"
         f"### Public snippet\n{item.get('snippet','')[:1600] or '(none)'}\n\n"
         f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\n"
     )
@@ -366,6 +482,13 @@ def main():
                 continue
             new_seen.append(rid)
             score, tickers, hits = score_item(source, item, watchlist)
+            market_ctx = market_context_for_tickers(tickers) if tickers else []
+            valid_market = [m for m in market_ctx if not m.get("error")]
+            if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
+                score += 2
+                hits.append("market-confirmation")
+            if valid_market and all(m.get("reaction") == "not-yet-reacted" for m in valid_market):
+                hits.append("market-not-yet-reacted")
             effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             if score < effective_threshold:
                 continue
@@ -377,7 +500,7 @@ def main():
                 if age.total_seconds() < 0 or age > dt.timedelta(hours=BOOTSTRAP_ALERT_HOURS):
                     continue
             try:
-                url = create_issue(source, item, score, tickers, hits, rid)
+                url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
                 alerts.append((source["name"], item.get("title", ""), score, tickers, url))
                 telegram_alert(f"MARKET RADAR {score} {' '.join('$'+x for x in tickers) or 'NEW'}\n{item.get('title','')}\n{source['name']}\n{item.get('url','')}\nIssue: {url}")
             except Exception as e:
@@ -386,8 +509,10 @@ def main():
     combined = list(dict.fromkeys(list(old_seen) + new_seen))
     if len(combined) > MAX_SEEN:
         combined = combined[-MAX_SEEN:]
+    market_probe = yahoo_market_snapshot("CRWV")
     state.update({
         "bootstrapped": True,
+        "market_probe": market_probe,
         "seen": combined,
         "last_run_utc": now_utc().isoformat(),
         "last_alert_count": len(alerts),
