@@ -43,14 +43,3 @@ jobs:
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
         run: python3 market-radar/radar.py
 
-      - name: Persist radar state
-        shell: bash
-        run: |
-          if git diff --quiet -- market-radar/state.json; then
-            exit 0
-          fi
-          git config user.name "market-radar-bot"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add market-radar/state.json
-          git commit -m "chore(market-radar): update scanner state"
-          git push
