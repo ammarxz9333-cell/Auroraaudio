@@ -1,0 +1,42 @@
+{
+  "radar_id": "7a984d384c31b8c1f331",
+  "stage": "REACTING",
+  "score": 12,
+  "direction": "ambiguous",
+  "bullish_reasons": [],
+  "bearish_reasons": [],
+  "detected_utc": "2026-09-27T15:40:04.129561+00:00",
+  "published_utc": "2026-09-27T15:39:51.813658+00:00",
+  "source": "Yahoo early momentum discovery",
+  "source_class": "momentum",
+  "tickers": [
+    "CVS"
+  ],
+  "signals": [
+    "explicit-ticker",
+    "market-confirmation",
+    "price-volume-momentum",
+    "ticker-match"
+  ],
+  "headline": "$CVS abnormal market momentum: +4.80% day move",
+  "url": "https://finance.yahoo.com/quote/CVS",
+  "snippet": "Ticker $CVS; price 89.1300; day move +4.80%; volume 15762746; 3m average daily volume 7569555; crude volume/ADV 2.08x.",
+  "market_context": [
+    {
+      "ticker": "CVS",
+      "price": 89.24,
+      "previous_close": 85.05,
+      "change_pct": 4.927,
+      "change_5m_pct": 0.0,
+      "cum_volume": 12500179,
+      "same_time_volume_ratio": 2.2,
+      "market_session": "AFTER/CLOSED",
+      "reaction": "reacting",
+      "event_price": 89.24,
+      "pre30m_move_pct": 0.0,
+      "post30m_move_pct": null,
+      "since_event_move_pct": 0.0,
+      "bar_time_utc": "2026-09-25T23:37:15+00:00"
+    }
+  ]
+}
