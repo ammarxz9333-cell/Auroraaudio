@@ -1,0 +1,46 @@
+{
+  "detected_utc": "2026-09-28T23:56:21.930867+00:00",
+  "headline": "PEOPLES BANCORP INC. RECEIVES REGULATORY APPROVALS OF ITS MERGER WITH CITIZENS NATIONAL CORPORATION \u2013 Company Announcement - FT.com - Financial Times",
+  "information_quality": {
+    "catalyst_signature": [
+      "approval",
+      "merger"
+    ],
+    "detected_utc": "2026-09-28T23:56:21.894704+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": false,
+    "rumor_only": false,
+    "source_class": "scoop",
+    "source_identity": "news.google.com",
+    "source_quality": 4,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [],
+  "published_utc": "2026-09-28T20:10:00+00:00",
+  "radar_id": "17eae2aefeeb041e43f6",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 12,
+  "signals": [
+    "approval",
+    "merger"
+  ],
+  "source": "Financial Times Alphaville / M&A",
+  "source_class": "scoop",
+  "tickers": [],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMimAFBVV95cUxPLUV2UWs2dTQzYXNBUUdUWkFIbFlCaThnaTNBRkxmQlB0dk41dVd4Q0ZYRjFLWXNPMlBsYkdUNVpjU0ZYOW5SOVlwenB4QVpjbl95dUhoSl80eHcxYXI4SUZHQVlxYkNVT0tmNTZjbTJKek5ON2t4RkxpSHBaX1NLSWU3dWJNTTB5aFJ3S2pVOXc1TjdMb0w4bw?oc=5"
+}
