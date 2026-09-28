@@ -102,6 +102,7 @@ If the secrets are absent, Telegram is skipped.
 - `.github/workflows/market-radar.yml` — five-minute scanner plus syntax validation.
 - `.github/workflows/market-radar-learning.yml` — daily learning loop.
 - persistent branch `market-radar-live` / PR #229 — append-only live alert feed.
+- `live/candidates/` — immutable first-seen ticker headlines, including below-threshold candidates, for prospective research.
 
 ## Research discipline
 

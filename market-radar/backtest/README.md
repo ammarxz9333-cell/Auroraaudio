@@ -18,3 +18,9 @@ The target is whether +5% or -5% is touched first within five subsequent daily b
 - Threshold changes must be proposed from development data, checked once on validation and then evaluated on untouched final data. A small or weak final cohort must be reported as inconclusive. The live gate is never changed just because a historical pilot looks favorable.
 
 The SEC provides public submissions history and filing data for a future timestamped catalyst join: [EDGAR APIs](https://www.sec.gov/search-filings/edgar-application-programming-interfaces). Availability must use dissemination/acceptance timing, not just a filing date.
+
+## Prospective catalyst corpus
+
+The live scanner now saves a first-seen, immutable JSON file in `live/candidates/` for each fresh ticker-matched headline, including items below the alert threshold. It records the publication time claimed by the feed, actual scan/capture time, URL, source, ticker, score, threshold and matched vocabulary; later returns never overwrite it. A news item without a usable publication timestamp remains ineligible. These files are the denominator for future news-scanner precision and missed-opportunity analysis. They do not prove the headline caused a move, and collection begins only after deployment.
+
+The Yahoo day-gainers audit has no timestamp for when a stock first crossed its gain threshold. It therefore reports recent alert **overlap**, not advance-warning recall. A genuine recall estimate needs all eligible stocks plus timestamped first-crossing events and the frozen candidates above.
