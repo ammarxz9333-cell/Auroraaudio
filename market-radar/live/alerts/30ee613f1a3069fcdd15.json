@@ -1,0 +1,45 @@
+{
+  "detected_utc": "2026-09-28T19:36:23.889829+00:00",
+  "headline": "Saudi Aramco considering discounts for Oman STS crude to counter high freight rates, sources say - Reuters",
+  "information_quality": {
+    "catalyst_signature": [
+      "sources say"
+    ],
+    "detected_utc": "2026-09-28T19:36:23.870552+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": true,
+    "rumor_only": true,
+    "source_class": "scoop",
+    "source_identity": "news.google.com",
+    "source_quality": 4,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [],
+  "published_utc": "2026-09-28T13:45:26+00:00",
+  "radar_id": "30ee613f1a3069fcdd15",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 11,
+  "signals": [
+    "source+early-language",
+    "sources say"
+  ],
+  "source": "Reuters M&A / transactional",
+  "source_class": "scoop",
+  "tickers": [],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMixwFBVV95cUxQYXp6ZHpWZDhSTHRFM0JsM2ktZXdHQTRucFRQVFVCZFlIdjdpR1VpNVRObXhkQkxsRUpHYkgxTDFxOVNkWUJubE9VQk1OSnhhTFJ4TjRvUG8tNWtoVEpKTlFFcDhwT0Nlb2JVbmpHN0ExaUdrWEF5NFBsYnZLcnJxaGc4NVp2SUUtQ0hhMW5pbEFndEdqM3dXWDNXcTJ4bVRlTmlqTkpMNGlVSUNyT01OLWhPbVNfNExTNVhsS214Sjc0Q3FpQ0o4?oc=5"
+}
