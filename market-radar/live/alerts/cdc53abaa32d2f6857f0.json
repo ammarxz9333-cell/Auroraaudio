@@ -1,0 +1,45 @@
+{
+  "detected_utc": "2026-09-28T19:36:30.533127+00:00",
+  "headline": "UAE and Kuwait boost naphtha exports to Asia, sidestepping Hormuz, sources say - Reuters",
+  "information_quality": {
+    "catalyst_signature": [
+      "sources say"
+    ],
+    "detected_utc": "2026-09-28T19:36:30.514382+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": true,
+    "rumor_only": true,
+    "source_class": "scoop",
+    "source_identity": "news.google.com",
+    "source_quality": 4,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [],
+  "published_utc": "2026-09-28T14:08:29+00:00",
+  "radar_id": "cdc53abaa32d2f6857f0",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 11,
+  "signals": [
+    "source+early-language",
+    "sources say"
+  ],
+  "source": "Reuters M&A / transactional",
+  "source_class": "scoop",
+  "tickers": [],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMivgFBVV95cUxNYUczVXFNcWZvTUVtRVBjZ2dlUVdDNWhKb3hQZFNkZGVFZnFjMFlzdUl0S2dwMWFfMHlMaFMyNmcwUFNtME9Lc1lHaDZSdENlTzZaRm5qVThmNGE0VTg0ck01bnAxX1Yta0dxWDdLZmxJSjRZWFlmS0IzUkswUHdkR2E5MGR2LUh0a3JDdTlTUHRPVGJWeXZMZ25wMEdBZXU0dm9LM3ZnR2ZQOFAxR2Qxb040eV9VVktpRjByX2ZR?oc=5"
+}
