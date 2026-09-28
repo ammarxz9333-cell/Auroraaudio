@@ -1,0 +1,45 @@
+{
+  "detected_utc": "2026-09-28T19:36:26.145989+00:00",
+  "headline": "Evonik rejects BASF offer as too low, sources say - Reuters",
+  "information_quality": {
+    "catalyst_signature": [
+      "sources say"
+    ],
+    "detected_utc": "2026-09-28T19:36:26.127962+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": true,
+    "rumor_only": true,
+    "source_class": "scoop",
+    "source_identity": "news.google.com",
+    "source_quality": 4,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [],
+  "published_utc": "2026-09-28T14:05:43+00:00",
+  "radar_id": "e9adc2ad9d2b3906713c",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 11,
+  "signals": [
+    "source+early-language",
+    "sources say"
+  ],
+  "source": "Reuters M&A / transactional",
+  "source_class": "scoop",
+  "tickers": [],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMiowFBVV95cUxNRmlzcnJUTVJWc0QzYktIamJQQnN0eWVCclh6NEhWX2ExMmNHOFVJMFZ0N2lFSTNVTERYcWpBTldfSmU2SlZSNVg4S25KV0VwS1JYNFVKTlE0YVRURVE3YmpVMGhhUnB4aFFYWVJ5RTBhWG1PQWZvUXExUGpJMFg1ZDFvbEZrcGFnNERqSTJRRDIwS21iTE5kcjh0TlpGZHhoQ1dB?oc=5"
+}
