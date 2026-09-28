@@ -231,7 +231,7 @@ def google_news_url(query: str) -> str:
 
 NY = ZoneInfo("America/New_York")
 
-def yahoo_market_snapshot(ticker: str, event_time=None):
+def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=False):
     """Free/no-key intraday snapshot from Yahoo Finance chart endpoint.
     Returns None if unavailable. Uses 5m bars over 5d including pre/post market.
     """
@@ -355,7 +355,7 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
         else:
             reaction = "mixed/early"
 
-        return {
+        snapshot = {
             "ticker": ticker,
             "price": round(latest["close"], 4),
             "previous_close": round(prev_close, 4),
@@ -379,6 +379,12 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
             "bar_high": round(latest["high"], 4),
             "bar_low": round(latest["low"], 4),
         }
+        if include_outcome_bars:
+            snapshot["_outcome_bars"] = [
+                {"time_utc": b["utc"].isoformat(), "high": b["high"], "low": b["low"]}
+                for day in sorted(by_day) for b in by_day[day]
+            ]
+        return snapshot
     except Exception as e:
         return {"ticker":ticker,"error":f"{type(e).__name__}: {e}"}
 
@@ -480,17 +486,22 @@ def track_live_outcome(snapshot: dict, gate: dict, rid: str):
         tid=f"{ticker}:{gate['entry_time_utc']}:{rid}"
         if tid not in trades:
             trades[tid]=new_trade(ticker,gate["entry_time_utc"],gate["entry_price"],rid)
+    outcome_bars = snapshot.get("_outcome_bars") or [
+        {"time_utc": snapshot["bar_time_utc"], "high": snapshot.get("bar_high"), "low": snapshot.get("bar_low")}
+    ]
     for tid,t in list(trades.items()):
         if t.get("ticker") != ticker: continue
-        if snapshot["bar_time_utc"] <= t["entry_time_utc"]: continue
-        if snapshot.get("bar_high") is None or snapshot.get("bar_low") is None: continue
-        update_trade(t,{"high":snapshot["bar_high"],"low":snapshot["bar_low"],"time_utc":snapshot["bar_time_utc"]})
+        for bar in outcome_bars:
+            if bar["time_utc"] <= t["entry_time_utc"]: continue
+            if t.get("last_processed_bar_utc") and bar["time_utc"] <= t["last_processed_bar_utc"]: continue
+            if bar.get("high") is None or bar.get("low") is None: continue
+            update_trade(t,bar)
     save_trades(TRADES_FILE,trades)
 
 def market_context_for_tickers(tickers, event_time=None):
     out = []
     for ticker in tickers[:4]:
-        snap = yahoo_market_snapshot(ticker, event_time=event_time)
+        snap = yahoo_market_snapshot(ticker, event_time=event_time, include_outcome_bars=True)
         if snap:
             out.append(snap)
     return out
@@ -646,6 +657,7 @@ def main():
     errors = []
     start = now_utc()
     active_watches = state.get("active_watches", {})
+    watched_tickers = set()
     # Re-evaluate prior high-quality candidates even when their source item is already seen.
     for rid, watch in list(active_watches.items()):
         try:
@@ -657,10 +669,23 @@ def main():
             active_watches.pop(rid, None)
             continue
         for ticker in watch.get("tickers", []):
-            snap = yahoo_market_snapshot(ticker)
+            watched_tickers.add(ticker)
+            snap = yahoo_market_snapshot(ticker, include_outcome_bars=True)
             if not snap or snap.get("error"):
                 continue
             persist_market_snapshot(snap, rid, watch.get("source", "active-watch"), int(watch.get("score", THRESHOLD)), THRESHOLD)
+
+    # Continue outcome capture after the three-day candidate watch expires.
+    open_trades = load_trades(TRADES_FILE)
+    pending = {
+        t["ticker"] for t in open_trades.values()
+        if t.get("first_threshold") is None or
+        (t.get("first_threshold") == "PLUS5_FIRST" and not t.get("plus10"))
+    }
+    for ticker in pending - watched_tickers:
+        snap = yahoo_market_snapshot(ticker, include_outcome_bars=True)
+        if snap and not snap.get("error"):
+            track_live_outcome(snap, {"state": "NO_ENTRY"}, "outcome-followup")
 
     fetched = []
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
