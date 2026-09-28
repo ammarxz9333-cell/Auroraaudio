@@ -1,0 +1,80 @@
+{
+  "detected_utc": "2026-09-28T23:56:26.279869+00:00",
+  "headline": "Almonty Clears Final Regulatory Hurdle at Sangdong as Analysts Split on What Comes Next - AD HOC NEWS",
+  "information_quality": {
+    "catalyst_signature": [],
+    "detected_utc": "2026-09-28T23:56:26.257514+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": true
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": false,
+    "rumor_only": false,
+    "source_class": "industry",
+    "source_identity": "news.google.com",
+    "source_quality": 3,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [
+    {
+      "above_open_pct": 0.227,
+      "above_vwap_pct": -0.366,
+      "bar_high": 13.24,
+      "bar_low": 13.24,
+      "bar_time_utc": "2026-09-28T23:44:43+00:00",
+      "change_5m_pct": -0.226,
+      "change_pct": -3.499,
+      "cum_volume": 4220410,
+      "event_price": 13.245,
+      "from_session_high_pct": -2.754,
+      "holds_open": true,
+      "holds_opening_range_high": false,
+      "holds_vwap": false,
+      "market_session": "AFTER/CLOSED",
+      "momentum_15m_pct": -0.862,
+      "momentum_30m_pct": -1.417,
+      "opening_range_high": 13.3,
+      "opening_range_low": 13.02,
+      "post30m_move_pct": 0.944,
+      "pre30m_move_pct": -1.267,
+      "premarket_reprice_pct": -3.863,
+      "previous_close": 13.72,
+      "price": 13.24,
+      "reaction": "reacting",
+      "regular_open": 13.21,
+      "same_time_volume_ratio": 0.7,
+      "session_high": 13.615,
+      "session_low": 13.02,
+      "since_event_move_pct": -0.038,
+      "ticker": "ALM",
+      "volume_acceleration_15m": 3.039,
+      "vwap": 13.2887
+    }
+  ],
+  "published_utc": "2026-09-28T19:50:26+00:00",
+  "radar_id": "31c65c71a94c1de4e801",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 8,
+  "signals": [
+    "watchlist-match",
+    "market-confirmation"
+  ],
+  "source": "Company certification and production milestones",
+  "source_class": "industry",
+  "tickers": [
+    "ALM"
+  ],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMi2wFBVV95cUxQRXpQT1VqSjI0ZUlIMGM0aGs4a3B2cFBHQ3d4ekVleV9wcHBkZHhZR3ZhbkNtYmZKa2tVYnNaNGV4Ml95S0lUWHNRakdlS1g3SmNCS1RUSHN1RDZmM3AzTVRweFI4am1GcW9IWnNXS2pZQ0hqLWhnVll5bzZvbkc5QmthUHJmX0ZoS1M1N2JSNTJqNXNiM0hxVU1lZGVnZWpIZTlHRkRJMTFMOW5ycGtLUVdPQXloQ2FuTkxqREo3ZXRldFFTSm1IVjRGemVCMC1fWF9YRFZRbS1HWlU?oc=5"
+}
