@@ -131,7 +131,12 @@ def replay_case(case, cache_dir=None):
         out.append(row)
         for spread in (0.5,1.0,2.0,3.0):
             key=str(spread)
-            if v3_scenarios[key] is None and pre_reprice is not None:\n                v3g=entry_gate_v3(GateV3Input(normalized_decision(case["decision"]),row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread,above_open_pct=row["above_open_pct"],above_vwap_pct=row["above_vwap_pct"],price=float(b["close"]),gap_pct_abs=abs(row["gap_pct"]),catalyst_decision=case["decision"]))\n                if v3g["state"]=="BUYABLE_NOW":\n                    v3r=forward_outcome(regular,idx,spread)\n                    if v3r: v3_scenarios[key]={"first_buyable_time":(b["time"]+dt.timedelta(minutes=5)).isoformat(),**v3r}\n            if v2_scenarios[key] is None and pre_reprice is not None:
+            if v3_scenarios[key] is None and pre_reprice is not None:
+                v3g=entry_gate_v3(GateV3Input(normalized_decision(case["decision"]),row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread,above_open_pct=row["above_open_pct"],above_vwap_pct=row["above_vwap_pct"],price=float(b["close"]),gap_pct_abs=abs(row["gap_pct"]),catalyst_decision=case["decision"]))
+                if v3g["state"]=="BUYABLE_NOW":
+                    v3r=forward_outcome(regular,idx,spread)
+                    if v3r: v3_scenarios[key]={"first_buyable_time":(b["time"]+dt.timedelta(minutes=5)).isoformat(),**v3r}
+            if v2_scenarios[key] is None and pre_reprice is not None:
                 vg=entry_gate_v2(GateV2Input(normalized_decision(case["decision"]),row["gap_pct"],pre_reprice,rvol,row["holds_vwap"],row["holds_open"],mins,spread,above_open_pct=row["above_open_pct"],above_vwap_pct=row["above_vwap_pct"],price=float(b["close"]),gap_pct_abs=abs(row["gap_pct"])))
                 if vg["state"]=="BUYABLE_NOW":
                     result = forward_outcome(regular, idx, spread)
