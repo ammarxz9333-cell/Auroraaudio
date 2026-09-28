@@ -237,10 +237,16 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
         meta = result.get("meta") or {}
         stamps = result.get("timestamp") or []
         quote = (((result.get("indicators") or {}).get("quote") or [{}])[0]) or {}
+        opens = quote.get("open") or []
+        highs = quote.get("high") or []
+        lows = quote.get("low") or []
         closes = quote.get("close") or []
         volumes = quote.get("volume") or []
         bars = []
         for i, ts in enumerate(stamps):
+            opn = opens[i] if i < len(opens) else None
+            high = highs[i] if i < len(highs) else None
+            low = lows[i] if i < len(lows) else None
             close = closes[i] if i < len(closes) else None
             vol = volumes[i] if i < len(volumes) else None
             if close is None:
