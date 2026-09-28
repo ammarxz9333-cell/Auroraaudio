@@ -6,6 +6,8 @@
 
 ### Market Radar historical research (2026-09-28)
 
+- The 175/180-symbol broad benchmark completed with 40,952 eligible symbol-days. The untouched final selected set had 4 +5%-first, 8 -5%-first and 1 unresolved among 13, so the price/volume rule is not promoted to a buy alert. PR #250 is merged; main Market Radar CI passed.
+- The scanner now freezes every fresh ticker-matched source item at first capture, including below-threshold items, in `market-radar/live/candidates/` for prospective catalyst review. The day-gainers audit reports recent-alert overlap and leaves advance-warning recall unknown because its feed lacks a first-move timestamp.
 - The 5-minute historical replay now treats the completed signal bar as information and executes at the next bar's open, under explicit spread/slippage assumptions. It cannot count a target or stop on the signal bar. Reclaim counterfactuals also wait for a later bar.
 - Tape exports use actual `captured_utc` as the point-in-time cutoff, exclude stale bars and future-looking post-event fields, and freeze rejects market bars later than cutoff.
 - Cohorts are chronological with a seven-calendar-day embargo. `backtest/broad_daily_benchmark.py` samples current-listed Nasdaq/NYSE/NYSE American common shares without conditioning on outcomes, includes losing/control days, and publishes a separate price-only report with coverage, uncertainty, missed-winner blockers and false positives. It is subject to survivorship bias and cannot establish a catalyst's cause.

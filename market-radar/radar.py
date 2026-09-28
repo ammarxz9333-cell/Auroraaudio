@@ -35,6 +35,7 @@ ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
 STATE_FILE = ROOT / "state.json"
 TAPE_DIR = ROOT / "live" / "tape"
+CANDIDATE_DIR = ROOT / "live" / "candidates"
 TRADES_FILE = ROOT / "live" / "trades.json"
 USER_AGENT = os.getenv("RADAR_USER_AGENT", "MarketRadar/1.0 public-source-monitor contact=github-actions")
 REPO = os.getenv("GITHUB_REPOSITORY", "")
@@ -712,6 +713,47 @@ def publish_live_alert(source, item, score, tickers, hits, rid, market_ctx, info
     }
     return append_live_artifact(f"market-radar/live/alerts/{rid}.json", artifact)
 
+def freeze_scanned_candidate(source, item, score, tickers, hits, rid, threshold, captured_utc):
+    """Preserve what a ticker-matched item said when first scanned, even below threshold.
+
+    One immutable file per radar ID makes retries harmless. This is research
+    evidence, not an alert and not a claim that a later mover was predicted.
+    """
+    if not tickers:
+        return None
+    published = item.get("published")
+    if not isinstance(published, dt.datetime) or published.tzinfo is None:
+        raise ValueError("candidate requires a timezone-aware publication time")
+    if captured_utc.tzinfo is None or published > captured_utc:
+        raise ValueError("candidate publication cannot follow capture")
+    CANDIDATE_DIR.mkdir(parents=True, exist_ok=True)
+    path = CANDIDATE_DIR / f"{rid}.json"
+    if path.exists():
+        return path
+    record = {
+        "schema_version": 1,
+        "radar_id": rid,
+        "captured_utc": captured_utc.isoformat(),
+        "published_utc": published.isoformat(),
+        "source": source.get("name"),
+        "source_class": source.get("class"),
+        "headline": item.get("title"),
+        "url": item.get("url"),
+        "tickers": sorted(set(tickers)),
+        "score_at_capture": score,
+        "threshold_at_capture": threshold,
+        "signals_at_capture": list(hits),
+        "alert_eligible_at_capture": score >= threshold,
+        "outcome": None,
+    }
+    try:
+        with path.open("x", encoding="utf-8") as fh:
+            json.dump(record, fh, sort_keys=True, separators=(",", ":"))
+            fh.write("\n")
+    except FileExistsError:
+        pass
+    return path
+
 def publish_live_entry(rid, ticker, gate, snapshot, watch):
     """Wake the PR reviewer for the first confirmed entry on an active watch."""
     return append_live_artifact(f"market-radar/live/alerts/{rid}-{ticker}-entry.json", {
@@ -876,6 +918,14 @@ def main():
                 hits.append("market-confirmation")
             if valid_market and all(m.get("reaction") == "not-yet-reacted" for m in valid_market):
                 hits.append("market-not-yet-reacted")
+            try:
+                freeze_scanned_candidate(source, item, score, tickers, hits, rid,
+                                         effective_threshold, now_utc())
+            except (OSError, ValueError) as exc:
+                # Keep the item eligible for the next scan instead of marking
+                # it seen without an immutable record.
+                errors.append(f"candidate freeze {rid}: {type(exc).__name__}: {exc}")
+                continue
             prov = provenance(source, item, tickers, fetched, watchlist, match_watchlist, CATALYSTS, now_utc)
             infoq.update(prov)
             infoq["rumor_only"] = bool(infoq.get("rumor_language") and not infoq.get("primary_confirmation"))

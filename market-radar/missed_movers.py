@@ -227,6 +227,18 @@ def yahoo_day_gainers():
     return sorted(out, key=lambda x: x["change_pct"], reverse=True)[:MAX_MOVERS]
 
 
+def summarize_overlap(rows):
+    without_alert = [x for x in rows if not x["alerted_within_lookback"]]
+    return {
+        "eligible_movers": len(rows),
+        "recent_alert_overlap": len(rows) - len(without_alert),
+        "no_recent_alert": len(without_alert),
+        "no_recent_alert_watchlist_members": sum(1 for x in without_alert if x["watchlist_member"]),
+        # The screener supplies no timestamp for the first crossing of +8%.
+        "advance_warning_recall_pct": None,
+    }
+
+
 def main():
     cfg = load_json(SOURCES_FILE, {})
     watchlist = set((cfg.get("watchlist") or {}).keys())
@@ -248,11 +260,8 @@ def main():
             "watchlist_member": ticker in watchlist,
             "alerted_within_lookback": bool(matching),
             "matching_alerts": matching,
-            "missed": not bool(matching),
+            "no_recent_alert": not bool(matching),
         })
-
-    missed = [x for x in rows if x["missed"]]
-    captured = [x for x in rows if not x["missed"]]
 
     today = now_utc().date().isoformat()
     history = load_json(OUT_FILE, {"days": {}})
@@ -301,13 +310,8 @@ def main():
             "alert_lookback_hours": ALERT_LOOKBACK_HOURS,
             "source": "Yahoo Finance predefined day_gainers public endpoint",
         },
-        "summary": {
-            "eligible_movers": len(rows),
-            "captured_by_recent_alert": len(captured),
-            "missed": len(missed),
-            "recall_pct": round(100.0 * len(captured) / len(rows), 2) if rows else None,
-            "missed_watchlist_members": sum(1 for x in missed if x["watchlist_member"]),
-        },
+        "timing_limit": "The day-gainers endpoint supplies a current quote, not the first time the move crossed the threshold. A recent alert can have arrived after the move. Overlap is not advance-warning recall.",
+        "summary": summarize_overlap(rows),
         "movers": rows,
         "errors": errors[:50],
     }
