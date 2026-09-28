@@ -1,3 +1,4 @@
+import datetime as dt
 import json
 import unittest
 from unittest.mock import patch
@@ -35,6 +36,15 @@ class YahooMarketSnapshotTest(unittest.TestCase):
         self.assertEqual(snapshot["session_high"], 22.0)
         self.assertEqual(snapshot["session_low"], 19.0)
         self.assertEqual(snapshot["cum_volume"], 500)
+
+    def test_alert_freshness_rejects_old_and_undated_items(self):
+        utc = dt.timezone.utc
+        monday = dt.datetime(2026, 9, 28, 13, 0, tzinfo=utc)
+        friday_after_close = dt.datetime(2026, 9, 25, 20, 30, tzinfo=utc)
+        prior_monday = dt.datetime(2026, 9, 21, 13, 0, tzinfo=utc)
+        self.assertTrue(radar.fresh_for_alert(friday_after_close, monday))
+        self.assertFalse(radar.fresh_for_alert(prior_monday, monday))
+        self.assertFalse(radar.fresh_for_alert(None, monday))
 
 
 if __name__ == "__main__":
