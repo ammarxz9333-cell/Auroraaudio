@@ -123,6 +123,18 @@ jobs:
           python3 market-radar/backtest/build_pit_dataset.py /tmp/pit-candidates.jsonl /tmp/pit-dataset.json
           python3 market-radar/backtest/make_cohort_split.py /tmp/pit-dataset.json --out-dir /tmp/pit-splits
 
+      - name: Preserve historical replay evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: market-radar-replay-${{ github.run_id }}
+          path: |
+            /tmp/market-radar-bars
+            /tmp/weekly-blind.json
+            /tmp/oos-historical.json
+          if-no-files-found: ignore
+          retention-days: 90
+
       - name: Persist radar state
         if: github.ref == 'refs/heads/main-v2'
         shell: bash
