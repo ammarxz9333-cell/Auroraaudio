@@ -1,0 +1,80 @@
+{
+  "detected_utc": "2026-09-28T19:36:21.682696+00:00",
+  "headline": "greenland energy company - SEC.gov - SEC.gov",
+  "information_quality": {
+    "catalyst_signature": [],
+    "detected_utc": "2026-09-28T19:36:21.416192+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": true,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": false,
+    "rumor_only": false,
+    "source_class": "primary",
+    "source_identity": "news.google.com",
+    "source_quality": 5,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [
+    {
+      "above_open_pct": -12.612,
+      "above_vwap_pct": -8.878,
+      "bar_high": 4.49,
+      "bar_low": 4.49,
+      "bar_time_utc": "2026-09-28T19:36:19+00:00",
+      "change_5m_pct": 0.0,
+      "change_pct": -18.805,
+      "cum_volume": 25371167,
+      "event_price": 5.0667,
+      "from_session_high_pct": -21.297,
+      "holds_open": false,
+      "holds_opening_range_high": false,
+      "holds_vwap": false,
+      "market_session": "REGULAR",
+      "momentum_15m_pct": -0.111,
+      "momentum_30m_pct": -2.605,
+      "opening_range_high": 5.705,
+      "opening_range_low": 5.1,
+      "post30m_move_pct": 3.026,
+      "pre30m_move_pct": 1.741,
+      "premarket_reprice_pct": -7.412,
+      "previous_close": 5.5299,
+      "price": 4.49,
+      "reaction": "major-reprice",
+      "regular_open": 5.138,
+      "same_time_volume_ratio": 0.27,
+      "session_high": 5.705,
+      "session_low": 4.23,
+      "since_event_move_pct": -11.382,
+      "ticker": "GLND",
+      "volume_acceleration_15m": 0.211,
+      "vwap": 4.9274
+    }
+  ],
+  "published_utc": "2026-09-28T13:12:52+00:00",
+  "radar_id": "2bf3f2f293fb41e696a9",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 11,
+  "signals": [
+    "watchlist-match",
+    "market-confirmation"
+  ],
+  "source": "SEC 8-K current filings",
+  "source_class": "primary",
+  "tickers": [
+    "GLND"
+  ],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMilwFBVV95cUxPT1BpYWtpS08yN082bUxkU0NxZUdTcEVvaXRIMXJzWnppTG9fY01LajJ5LWJoUDJkSWVLeEZhN1RNa0F5dm9QWG1WWkVJODZmRmhUT3JvdTNpVVc0WFlKc3RycDE2TjNSUlNIZENlaHcxNmhjWEJ4ak5jMlNseWVxU1VVNEhLQ0luMHpHbFAwY3dmMUJFVlZr?oc=5"
+}
