@@ -1,7 +1,9 @@
 import datetime as dt
 import json
+import tempfile
 import unittest
 from unittest.mock import patch
+from pathlib import Path
 
 import radar
 
@@ -45,6 +47,30 @@ class YahooMarketSnapshotTest(unittest.TestCase):
         self.assertTrue(radar.fresh_for_alert(friday_after_close, monday))
         self.assertFalse(radar.fresh_for_alert(prior_monday, monday))
         self.assertFalse(radar.fresh_for_alert(None, monday))
+
+    def test_outcome_replay_preserves_threshold_order_between_scans(self):
+        with tempfile.TemporaryDirectory() as directory:
+            with patch.object(radar, "TRADES_FILE", Path(directory) / "trades.json"):
+                entry = "2026-09-28T14:00:00+00:00"
+                gate = {"state": "BUYABLE_NOW", "entry_time_utc": entry, "entry_price": 100}
+                snapshot = {
+                    "ticker": "TEST", "bar_time_utc": entry,
+                    "bar_high": 100, "bar_low": 100,
+                }
+                radar.track_live_outcome(snapshot, gate, "rid")
+                snapshot.update({
+                    "bar_time_utc": "2026-09-28T14:15:00+00:00",
+                    "bar_high": 101, "bar_low": 90,
+                    "_outcome_bars": [
+                        {"time_utc": "2026-09-28T14:05:00+00:00", "high": 104, "low": 98},
+                        {"time_utc": "2026-09-28T14:10:00+00:00", "high": 106, "low": 97},
+                        {"time_utc": "2026-09-28T14:15:00+00:00", "high": 101, "low": 90},
+                    ],
+                })
+                radar.track_live_outcome(snapshot, {"state": "NO_ENTRY"}, "followup")
+                trade = next(iter(radar.load_trades(radar.TRADES_FILE).values()))
+                self.assertEqual(trade["first_threshold"], "PLUS5_FIRST")
+                self.assertEqual(trade["resolved_time_utc"], "2026-09-28T14:10:00+00:00")
 
 
 if __name__ == "__main__":
