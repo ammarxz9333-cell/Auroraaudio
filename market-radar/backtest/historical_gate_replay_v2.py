@@ -105,7 +105,7 @@ def replay_case(case, cache_dir=None):
     prior_day=max(b["ny"].date() for b in prior); prev=[b for b in prior if b["ny"].date()==prior_day]
     prev_close=float(prev[-1]["close"]); reg_open=float(regular[0]["open"] or regular[0]["close"])
     pre_reprice=((float(pre[-1]["close"])/prev_close)-1)*100 if pre else None
-    out=[]; spread_scenarios={str(s):None for s in (0.5,1.0,2.0,3.0)}; v2_scenarios={str(s):None for s in (0.5,1.0,2.0,3.0)}; v3_scenarios={str(s):None for s in (0.5,1.0,2.0,3.0)}
+    out=[]; spread_scenarios={str(s):None for s in (0.5,1.0,2.0,3.0)}; v2_scenarios={str(s):None for s in (0.5,1.0,2.0,3.0)}; v3_scenarios={str(s):None for s in (0.5,1.0,2.0,3.0)}; v3_near_miss=[]
     for idx,b in enumerate(regular):
         if event_ny.date()==day and b["time"] < cutoff.astimezone(dt.timezone.utc): continue
         vol=float(b["volume"] or 0); typical=(float(b["high"])+float(b["low"])+float(b["close"]))/3
@@ -129,6 +129,19 @@ def replay_case(case, cache_dir=None):
              "above_open_pct":((float(b["close"])/reg_open)-1)*100,
              "bar_close_location":((float(b["close"])-float(b["low"]))/(float(b["high"])-float(b["low"]))) if float(b["high"])>float(b["low"]) else 0.5,"low":float(b["low"]),"high":float(b["high"])}
         out.append(row)
+        # Research-only v3 near-miss diagnostics. This does not alter gate decisions.
+        if pre_reprice is not None:
+            blockers=[]
+            risky=case["decision"] in {"BEARISH_AVOID","WATCH_LOW_CONFIDENCE","WATCH_FINANCING"}
+            if risky and float(b["close"]) < 2 and abs(row["gap_pct"]) >= 20: blockers.append("EXTREME_MICROCAP")
+            if risky and mins < 10: blockers.append("TOO_EARLY")
+            if risky and rvol < 2: blockers.append("RVOL_LT_2")
+            if risky and not row["holds_open"]: blockers.append("BELOW_OPEN")
+            if risky and not row["holds_vwap"]: blockers.append("BELOW_VWAP")
+            if risky and row["above_open_pct"] > 8: blockers.append("OPEN_EXTENSION")
+            if risky and row["above_vwap_pct"] is not None and row["above_vwap_pct"] > 6: blockers.append("VWAP_EXTENSION")
+            if risky:
+                v3_near_miss.append({"blocker_count":len(blockers),"blockers":blockers,**row,"bar_index":idx})
         for spread in (0.5,1.0,2.0,3.0):
             key=str(spread)
             if v3_scenarios[key] is None and pre_reprice is not None:
@@ -168,7 +181,7 @@ def replay_case(case, cache_dir=None):
             "v2_spread_scenarios":v2_scenarios,"v3_spread_scenarios":v3_scenarios,
             "v2_spread_robust_buyable": all(v2_scenarios[str(s)] is not None for s in (0.5,1.0,2.0,3.0)) and len({v["first_buyable_time"] for v in v2_scenarios.values() if v})==1,
             "first_buyable_features": next((r for r in out if any(v and v["first_buyable_time"]==(dt.datetime.fromisoformat(r["time_utc"])+dt.timedelta(minutes=5)).isoformat() for v in spread_scenarios.values())),None),
-            "reclaim_research":reclaim,"bars_sha256":bars_sha256,"bars_cache":str(cache_path) if cache_path else None,"note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
+            "v3_near_miss": (lambda z: ({**z, "counterfactual_outcome": forward_outcome(regular,z["bar_index"],0.5)} if z else None))(min(v3_near_miss,key=lambda z:(z["blocker_count"],z["minutes_since_open"])) if v3_near_miss else None),"reclaim_research":reclaim,"bars_sha256":bars_sha256,"bars_cache":str(cache_path) if cache_path else None,"note":"Same-time cumulative RVOL reconstructed from up to five prior regular sessions; historical spread tested as sensitivity scenarios."}
 
 def main():
     import argparse
