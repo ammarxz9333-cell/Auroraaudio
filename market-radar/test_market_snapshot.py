@@ -72,6 +72,14 @@ class YahooMarketSnapshotTest(unittest.TestCase):
                 self.assertEqual(trade["first_threshold"], "PLUS5_FIRST")
                 self.assertEqual(trade["resolved_time_utc"], "2026-09-28T14:10:00+00:00")
 
+    def test_sec_issuer_cik_resolves_without_watchlist_guess(self):
+        mapping_payload = {"0": {"cik_str": 1901279, "ticker": "NYAX", "title": "Nayax Ltd."}}
+        with patch.object(radar, "fetch", return_value=json.dumps(mapping_payload).encode()):
+            mapping = radar.sec_company_tickers()
+        item = {"url": "https://www.sec.gov/Archives/edgar/data/1901279/000197640826000865/x.htm"}
+        self.assertEqual(radar.sec_issuer_tickers({"name": "SEC Form 4 current filings"}, item, mapping), ["NYAX"])
+        self.assertEqual(radar.sec_issuer_tickers({"name": "SEC Schedule 13D current filings"}, item, mapping), [])
+
 
 if __name__ == "__main__":
     unittest.main()
