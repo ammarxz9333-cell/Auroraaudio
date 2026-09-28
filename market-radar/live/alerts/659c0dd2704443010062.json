@@ -1,0 +1,83 @@
+{
+  "detected_utc": "2026-09-28T19:36:48.722749+00:00",
+  "headline": "Bank of America Initiates Coverage on IonQ (IONQ) with Buy Ratin - gurufocus.com",
+  "information_quality": {
+    "catalyst_signature": [
+      "initiates coverage"
+    ],
+    "detected_utc": "2026-09-28T19:36:48.437287+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": false,
+    "rumor_only": false,
+    "source_class": "industry",
+    "source_identity": "news.google.com",
+    "source_quality": 3,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [
+    {
+      "above_open_pct": -0.055,
+      "above_vwap_pct": -2.142,
+      "bar_high": 45.615,
+      "bar_low": 45.615,
+      "bar_time_utc": "2026-09-28T19:36:44+00:00",
+      "change_5m_pct": 0.011,
+      "change_pct": 0.253,
+      "cum_volume": 29821518,
+      "event_price": 45.26,
+      "from_session_high_pct": -4.79,
+      "holds_open": false,
+      "holds_opening_range_high": false,
+      "holds_vwap": false,
+      "market_session": "REGULAR",
+      "momentum_15m_pct": -0.23,
+      "momentum_30m_pct": -0.697,
+      "opening_range_high": 47.77,
+      "opening_range_low": 45.5,
+      "post30m_move_pct": 0.265,
+      "pre30m_move_pct": 0.333,
+      "premarket_reprice_pct": -0.637,
+      "previous_close": 45.5,
+      "price": 45.615,
+      "reaction": "not-yet-reacted",
+      "regular_open": 45.64,
+      "same_time_volume_ratio": 0.98,
+      "session_high": 47.91,
+      "session_low": 45.5,
+      "since_event_move_pct": 0.784,
+      "ticker": "IONQ",
+      "volume_acceleration_15m": 0.646,
+      "vwap": 46.6134
+    }
+  ],
+  "published_utc": "2026-09-28T12:04:31+00:00",
+  "radar_id": "659c0dd2704443010062",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 9,
+  "signals": [
+    "initiates coverage",
+    "watchlist-match",
+    "market-not-yet-reacted"
+  ],
+  "source": "Analyst initiations and upgrades",
+  "source_class": "industry",
+  "tickers": [
+    "IONQ"
+  ],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxPQUNjeE5GaHlrY045MVNLbnZVQUVPX0pRUnN1OUw5WV9zbXgzZFlUZXNfX3U5RjNBaWRSRlpsczNaTnpjd29odDdEaFF4UjRVdXdPTjBVMks4X0owTGVLbnhOU0lUTkkwZEFGR25LREs5VXVEb1VoVXBYRzRrcWYzZlM2ZVV2RkhlZ2ZOMk83T0lvVnowWmNLdWI3OVpaaGItMjU0V3JwNTEwMG5md0RDYjc1bUZ2NE94R2hweU5LYWpUdw?oc=5"
+}
