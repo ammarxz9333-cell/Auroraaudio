@@ -1,0 +1,46 @@
+{
+  "detected_utc": "2026-09-28T07:58:24.969297+00:00",
+  "headline": "Watch What Europe\u2019s Data Center Energy Labels Mean for Hyperscalers - Bloomberg",
+  "information_quality": {
+    "catalyst_signature": [
+      "data center",
+      "hyperscaler"
+    ],
+    "detected_utc": "2026-09-28T07:58:24.929520+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": false,
+    "rumor_only": false,
+    "source_class": "scoop",
+    "source_identity": "news.google.com",
+    "source_quality": 4,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [],
+  "published_utc": "2026-09-28T00:00:00+00:00",
+  "radar_id": "1a1e7df2790e7bb2634e",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 12,
+  "signals": [
+    "data center",
+    "hyperscaler"
+  ],
+  "source": "Bloomberg Deals / Scoops",
+  "source_class": "scoop",
+  "tickers": [],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMinAFBVV95cUxNNnJKNlVCWVQ0Z19fR2N5YjFGbGZDRzBJY1JyRURyOG1PZGdzV0s5VUxVRkw4dWszRm9WYUlCd1FvYmUtRUNwMUNKUEN6YVdBcUQ2aC0wbE9Wc3lyN0ItWjFJUXI3cjhvb0xhNmVFN3doRWhVZ3EyNEtZRlh3U1JKVTlkQWJHcTlPM3dNQUpEMVNtWjBDUlFrODY1cDg?oc=5"
+}
