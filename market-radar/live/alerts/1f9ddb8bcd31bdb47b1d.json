@@ -1,0 +1,83 @@
+{
+  "detected_utc": "2026-09-28T19:36:45.859805+00:00",
+  "headline": "Seaport Research Partners Initiates Coverage on Jack Henry & Associates (NASDAQ:JKHY) - marketbeat.com",
+  "information_quality": {
+    "catalyst_signature": [
+      "initiates coverage"
+    ],
+    "detected_utc": "2026-09-28T19:36:45.604689+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": false,
+    "rumor_only": false,
+    "source_class": "industry",
+    "source_identity": "news.google.com",
+    "source_quality": 3,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [
+    {
+      "above_open_pct": 0.285,
+      "above_vwap_pct": 0.298,
+      "bar_high": 147.91,
+      "bar_low": 147.91,
+      "bar_time_utc": "2026-09-28T19:35:50+00:00",
+      "change_5m_pct": 0.027,
+      "change_pct": 0.068,
+      "cum_volume": 583432,
+      "event_price": 148.29,
+      "from_session_high_pct": -0.505,
+      "holds_open": true,
+      "holds_opening_range_high": false,
+      "holds_vwap": true,
+      "market_session": "REGULAR",
+      "momentum_15m_pct": 0.007,
+      "momentum_30m_pct": 0.034,
+      "opening_range_high": 148.66,
+      "opening_range_low": 146.185,
+      "post30m_move_pct": 1.828,
+      "pre30m_move_pct": 0.0,
+      "premarket_reprice_pct": -1.211,
+      "previous_close": 147.81,
+      "price": 147.91,
+      "reaction": "not-yet-reacted",
+      "regular_open": 147.49,
+      "same_time_volume_ratio": 1.1,
+      "session_high": 148.66,
+      "session_low": 146.185,
+      "since_event_move_pct": -0.256,
+      "ticker": "JKHY",
+      "volume_acceleration_15m": 0.573,
+      "vwap": 147.471
+    }
+  ],
+  "published_utc": "2026-09-28T12:09:09+00:00",
+  "radar_id": "1f9ddb8bcd31bdb47b1d",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 9,
+  "signals": [
+    "initiates coverage",
+    "watchlist-match",
+    "market-not-yet-reacted"
+  ],
+  "source": "Analyst initiations and upgrades",
+  "source_class": "industry",
+  "tickers": [
+    "JKHY"
+  ],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMi2wFBVV95cUxOektXX1huTzJ6elpPZ1lqQ1k5eVJ1M1hBX2pNVjJLa0tyQ0o4UHU2ZGdXUW1wRjJkUDYzX242WlpnbHYtY0lVV0g2eFRObl9EZzNmaldHNzd0LVFfZC03c1pldXRldU9OY0wzMnhuaEQ4T0N0QnJtdWxRMDZZRThxajVrUDlFQS1pcGtCdjdQejlRcko0dTkxWS00VUhOZkhfTW8tMUFYbFQ2LXFlVHpONTQwb2poYlNoTXozX0pFY0FFNEl6ZzdNdk02UE02QWJEc3d3TTRBbWFqRnc?oc=5"
+}
