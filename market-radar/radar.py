@@ -97,6 +97,17 @@ class LinkParser(HTMLParser):
 def now_utc():
     return dt.datetime.now(dt.timezone.utc)
 
+def fresh_for_alert(published, detected):
+    """Reject undated and stale items from actionable notifications."""
+    if not isinstance(published, dt.datetime) or published.tzinfo is None:
+        return False
+    age = detected - published.astimezone(dt.timezone.utc)
+    if age < dt.timedelta(0):
+        return False
+    # Friday/Saturday releases may remain actionable at Monday's open.
+    limit = dt.timedelta(hours=72) if published.weekday() in (4, 5) else dt.timedelta(hours=24)
+    return age <= limit
+
 def fetch(url: str, headers: dict | None = None) -> bytes:
     h = {
         "User-Agent": USER_AGENT,
@@ -688,6 +699,8 @@ def main():
                     "added_utc": start.isoformat(),
                 }
             if score < effective_threshold:
+                continue
+            if not fresh_for_alert(item.get("published"), start):
                 continue
             if not bootstrapped:
                 published = item.get("published")
