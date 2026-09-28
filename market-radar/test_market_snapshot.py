@@ -80,6 +80,27 @@ class YahooMarketSnapshotTest(unittest.TestCase):
         self.assertEqual(radar.sec_issuer_tickers({"name": "SEC Form 4 current filings"}, item, mapping), ["NYAX"])
         self.assertEqual(radar.sec_issuer_tickers({"name": "SEC Schedule 13D current filings"}, item, mapping), [])
 
+    def test_entry_uses_observation_time_and_fresh_ask(self):
+        observed = dt.datetime(2026, 9, 28, 14, 10, tzinfo=dt.timezone.utc)
+        snapshot = {"ticker": "TEST", "price": 100, "previous_close": 99,
+                    "regular_open": 99, "vwap": 99, "same_time_volume_ratio": 3,
+                    "holds_vwap": True, "holds_open": True, "reaction": "reacting",
+                    "pre30m_move_pct": 0, "market_session": "REGULAR",
+                    "bar_time_utc": "2026-09-28T14:05:00+00:00"}
+        quote = {"bid": 100.1, "ask": 100.2, "spread_pct": 0.1,
+                 "quote_time": int(observed.timestamp()) - 30}
+        with patch.object(radar, "now_utc", return_value=observed), \
+             patch.object(radar, "yahoo_quote_bid_ask", return_value=quote):
+            gate = radar.evaluate_entry_gate(snapshot, 9, 8)
+            self.assertEqual(gate["state"], "BUYABLE_NOW")
+            self.assertEqual(gate["entry_price"], 100.2)
+            self.assertEqual(gate["entry_time_utc"], observed.isoformat())
+            snapshot["market_session"] = "AFTER/CLOSED"
+            self.assertEqual(radar.evaluate_entry_gate(snapshot, 9, 8)["state"], "NO_ENTRY")
+            snapshot["market_session"] = "REGULAR"
+            snapshot["bar_time_utc"] = "2026-09-25T20:00:00+00:00"
+            self.assertEqual(radar.evaluate_entry_gate(snapshot, 9, 8)["state"], "INSUFFICIENT_DATA")
+
 
 if __name__ == "__main__":
     unittest.main()
