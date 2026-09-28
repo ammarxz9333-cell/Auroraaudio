@@ -419,9 +419,18 @@ def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
     required = ("price","previous_close","regular_open","vwap","same_time_volume_ratio","holds_vwap","holds_open","bar_time_utc")
     if any(snapshot.get(k) is None for k in required):
         return {"state":"INSUFFICIENT_DATA","reason":"missing required point-in-time tape field"}
+    observed_at = now_utc()
+    bar_at = dt.datetime.fromisoformat(snapshot["bar_time_utc"])
+    if snapshot.get("market_session") != "REGULAR":
+        return {"state":"NO_ENTRY","reason":"regular market session required"}
+    if bar_at.tzinfo is None or not dt.timedelta(0) <= observed_at - bar_at <= dt.timedelta(minutes=10):
+        return {"state":"INSUFFICIENT_DATA","reason":"market bar is stale or in the future"}
     quote = yahoo_quote_bid_ask(snapshot["ticker"])
     if not quote or quote.get("spread_pct") is None:
         return {"state":"INSUFFICIENT_DATA","reason":"point-in-time bid/ask unavailable"}
+    quote_time = quote.get("quote_time")
+    if not isinstance(quote_time, (int, float)) or not dt.timedelta(0) <= observed_at - dt.datetime.fromtimestamp(quote_time, dt.timezone.utc) <= dt.timedelta(minutes=2):
+        return {"state":"INSUFFICIENT_DATA","reason":"bid/ask timestamp unavailable or stale"}
     reaction = snapshot.get("reaction")
     decision = "EARLY" if reaction == "not-yet-reacted" and score >= threshold else "WATCH"
     price=float(snapshot["price"]); prev=float(snapshot["previous_close"]); opn=float(snapshot["regular_open"])
@@ -433,7 +442,7 @@ def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
         return {"state":"INSUFFICIENT_DATA","reason":"premarket repricing unavailable"}
     gi=GateInput(decision=decision,gap_pct=gap,premarket_reprice_pct=float(pre or 0.0),rvol=float(snapshot["same_time_volume_ratio"]),holds_vwap=bool(snapshot["holds_vwap"]),holds_open=bool(snapshot["holds_open"]),minutes_since_open=mins,spread_pct=float(quote["spread_pct"]))
     out=entry_gate(gi)
-    out.update({"decision":decision,"entry_price":price if out["state"]=="BUYABLE_NOW" else None,"entry_time_utc":snapshot["bar_time_utc"] if out["state"]=="BUYABLE_NOW" else None,"inputs":{"gap_pct":round(gap,3),"premarket_reprice_pct":float(pre or 0.0),"rvol":gi.rvol,"holds_vwap":gi.holds_vwap,"holds_open":gi.holds_open,"minutes_since_open":mins,"spread_pct":round(gi.spread_pct,4)}})
+    out.update({"decision":decision,"entry_price":quote["ask"] if out["state"]=="BUYABLE_NOW" else None,"entry_time_utc":observed_at.isoformat() if out["state"]=="BUYABLE_NOW" else None,"inputs":{"gap_pct":round(gap,3),"premarket_reprice_pct":float(pre or 0.0),"rvol":gi.rvol,"holds_vwap":gi.holds_vwap,"holds_open":gi.holds_open,"minutes_since_open":mins,"spread_pct":round(gi.spread_pct,4),"quote_time_utc":dt.datetime.fromtimestamp(quote_time,dt.timezone.utc).isoformat()}})
     return out
 
 def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int, threshold: int):
