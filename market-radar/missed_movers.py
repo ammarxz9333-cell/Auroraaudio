@@ -14,6 +14,7 @@ import os
 import urllib.parse
 import urllib.request
 from pathlib import Path
+from zoneinfo import ZoneInfo
 
 ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
@@ -21,6 +22,7 @@ OUT_FILE = ROOT / "learning" / "missed-movers.json"
 REPO = os.getenv("GITHUB_REPOSITORY", "ammarxz9333-cell/Auroraaudio")
 TOKEN = os.getenv("GITHUB_TOKEN", "")
 USER_AGENT = os.getenv("RADAR_USER_AGENT", "Ammar-Market-Radar-MissedMover/1.0")
+NY = ZoneInfo("America/New_York")
 MIN_GAIN_PCT = float(os.getenv("RADAR_MISSED_MIN_GAIN_PCT", "8"))
 MIN_PRICE = float(os.getenv("RADAR_MISSED_MIN_PRICE", "1"))
 MIN_VOLUME = int(os.getenv("RADAR_MISSED_MIN_VOLUME", "500000"))
@@ -30,6 +32,11 @@ ALERT_LOOKBACK_HOURS = int(os.getenv("RADAR_MISSED_ALERT_LOOKBACK_HOURS", "72"))
 
 def now_utc():
     return dt.datetime.now(dt.timezone.utc)
+
+
+def audit_ready(at_utc):
+    local = at_utc.astimezone(NY)
+    return local.weekday() < 5 and (local.hour, local.minute) >= (16, 15)
 
 
 def load_json(path: Path, fallback):
@@ -181,16 +188,26 @@ def recent_alerts_by_ticker():
     return by_ticker, errors
 
 
-def yahoo_day_gainers():
+def yahoo_day_gainers(expected_market_date):
     url = (
         "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved"
         "?count=100&scrIds=day_gainers"
     )
     data = request_json(url)
     quotes = (((data.get("finance") or {}).get("result") or [{}])[0].get("quotes") or [])
+    if not quotes:
+        raise ValueError("day-gainers feed returned no quotes")
     out = []
+    dated = 0
 
     for q in quotes:
+        stamp = q.get("regularMarketTime")
+        if not isinstance(stamp, (int, float)) or stamp <= 0:
+            continue
+        quote_time = dt.datetime.fromtimestamp(stamp, tz=dt.timezone.utc)
+        if quote_time.astimezone(NY).date() != expected_market_date:
+            continue
+        dated += 1
         symbol = str(q.get("symbol") or "").upper().strip()
         change = q.get("regularMarketChangePercent")
         price = q.get("regularMarketPrice")
@@ -222,8 +239,11 @@ def yahoo_day_gainers():
             if isinstance(q.get("averageDailyVolume3Month"), (int, float)) else None,
             "market_cap": int(q["marketCap"])
             if isinstance(q.get("marketCap"), (int, float)) else None,
+            "quote_time_utc": quote_time.isoformat(),
         })
 
+    if not dated:
+        raise ValueError(f"no screener quote dated {expected_market_date} New York time")
     return sorted(out, key=lambda x: x["change_pct"], reverse=True)[:MAX_MOVERS]
 
 
@@ -240,16 +260,28 @@ def summarize_overlap(rows):
 
 
 def main():
+    observed = now_utc()
+    market_date = observed.astimezone(NY).date().isoformat()
+    if not audit_ready(observed):
+        # A push/manual run before the US close must not relabel Friday's quote
+        # as Monday's mover. Also remove a premature same-day audit from an
+        # earlier version of this workflow, if one exists.
+        history = load_json(OUT_FILE, {"days": {}})
+        if history.get("days", {}).pop(market_date, None) is not None:
+            save_json(OUT_FILE, history)
+            persist_remote_json("market-radar/learning/missed-movers.json", history)
+        print(json.dumps({"status": "SKIPPED_BEFORE_US_CLOSE", "market_date": market_date}))
+        return
     cfg = load_json(SOURCES_FILE, {})
     watchlist = set((cfg.get("watchlist") or {}).keys())
     alerts_by_ticker, alert_errors = recent_alerts_by_ticker()
     errors = list(alert_errors)
 
     try:
-        movers = yahoo_day_gainers()
+        movers = yahoo_day_gainers(observed.astimezone(NY).date())
     except Exception as exc:
-        movers = []
-        errors.append(f"day-gainers: {type(exc).__name__}: {exc}")
+        print(json.dumps({"status": "SOURCE_UNAVAILABLE", "error": f"{type(exc).__name__}: {exc}"}))
+        return
 
     rows = []
     for mover in movers:
@@ -263,7 +295,7 @@ def main():
             "no_recent_alert": not bool(matching),
         })
 
-    today = now_utc().date().isoformat()
+    today = market_date
     history = load_json(OUT_FILE, {"days": {}})
     days = history.setdefault("days", {})
     days[today] = {
