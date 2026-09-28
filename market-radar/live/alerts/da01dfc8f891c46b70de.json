@@ -1,0 +1,45 @@
+{
+  "detected_utc": "2026-09-28T08:40:06.299117+00:00",
+  "headline": "India's SP Group eyes dollar-rupee debt route for fresh funding, sources say - Reuters",
+  "information_quality": {
+    "catalyst_signature": [
+      "sources say"
+    ],
+    "detected_utc": "2026-09-28T08:40:06.283256+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": true,
+    "rumor_only": true,
+    "source_class": "scoop",
+    "source_identity": "news.google.com",
+    "source_quality": 4,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [],
+  "published_utc": "2026-09-28T08:05:03+00:00",
+  "radar_id": "da01dfc8f891c46b70de",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 11,
+  "signals": [
+    "source+early-language",
+    "sources say"
+  ],
+  "source": "Reuters M&A / transactional",
+  "source_class": "scoop",
+  "tickers": [],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMiugFBVV95cUxPNFFfWXdRaEtTYnlRZlRTeW44eGEzZmYtbnlNdXNPOFR0N3g4bHJIOTVvLTNjS0lpZkZMR1JwTkoxN00xbGd0MkdReV81UUJpOU9Od2l3akwtNld0T0RKQmhWS2w5Y3NIWHpYS2pfNXpBSHJEdnUybjNVQVllY25JSzMybGJIbk9GaHJaM2lyLXgtNmxydThrNFhHWVhzT0VEWEN1bVhoZW5idTh4bTRxSTBINlpLMTdvNnc?oc=5"
+}
