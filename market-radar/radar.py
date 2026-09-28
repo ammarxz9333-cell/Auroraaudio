@@ -530,6 +530,33 @@ def match_watchlist(text: str, watchlist: dict):
             found.append(ticker)
     return sorted(set(found))
 
+def sec_company_tickers():
+    """Current SEC issuer CIK mapping for live discovery, never historical PIT replay."""
+    try:
+        raw = json.loads(fetch("https://www.sec.gov/files/company_tickers.json").decode("utf-8"))
+    except Exception:
+        return {}
+    mapping = {}
+    for row in raw.values():
+        try:
+            cik = str(int(row["cik_str"]))
+            ticker = str(row["ticker"]).upper()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if re.fullmatch(r"[A-Z0-9.\-]{1,10}", ticker):
+            mapping.setdefault(cik, set()).add(ticker)
+    return mapping
+
+def sec_issuer_tickers(source: dict, item: dict, cik_map: dict):
+    name = source.get("name", "")
+    # Ownership filings can be filed under the reporting owner, not the issuer.
+    if not name.startswith("SEC ") or "13D" in name or "13G" in name:
+        return []
+    match = re.search(r"/Archives/edgar/data/(\d+)/", item.get("url", ""), re.I)
+    if not match:
+        return []
+    return sorted(cik_map.get(str(int(match.group(1))), ()))[:4]
+
 def phrase_match(text: str, phrase: str) -> bool:
     if len(phrase) <= 5 and " " not in phrase:
         return re.search(rf"(?<![a-z0-9]){re.escape(phrase)}(?![a-z0-9])", text, re.I) is not None
@@ -688,6 +715,7 @@ def main():
             track_live_outcome(snap, {"state": "NO_ENTRY"}, "outcome-followup")
 
     fetched = []
+    cik_map = sec_company_tickers()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = {pool.submit(source_items, source): source for source in sources}
         for future in as_completed(futures):
@@ -707,6 +735,10 @@ def main():
             if not fresh_for_alert(item.get("published"), start):
                 continue
             score, tickers, hits = score_item(source, item, watchlist)
+            issuer_tickers = sec_issuer_tickers(source, item, cik_map)
+            if issuer_tickers:
+                tickers = sorted(set(tickers + issuer_tickers))
+                hits.append("sec-issuer-cik-match")
             effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
