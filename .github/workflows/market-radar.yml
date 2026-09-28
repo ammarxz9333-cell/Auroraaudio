@@ -28,8 +28,8 @@ jobs:
           fetch-depth: 1
       - name: Validate Market Radar Python
         run: |
-          python3 -m py_compile market-radar/radar.py market-radar/missed_movers.py market-radar/provenance.py market-radar/research_market.py market-radar/entry_gate.py market-radar/entry_gate_v2.py market-radar/entry_gate_v3.py market-radar/live/outcome_tracker.py market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/build_pit_dataset.py market-radar/backtest/pit_backtester.py market-radar/backtest/make_cohort_split.py market-radar/backtest/export_pit_candidates.py market-radar/backtest/reclaim_research.py market-radar/backtest/rejected_recovery_outcome.py market-radar/backtest/broad_daily_benchmark.py
-          cd market-radar && python3 -m unittest test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py test_information_quality.py test_provenance.py test_research_market.py test_entry_gate_v2.py test_entry_gate_v3.py backtest/test_reclaim_research.py backtest/test_rejected_recovery_outcome.py backtest/test_broad_daily_benchmark.py backtest/test_pit_export.py
+          python3 -m py_compile market-radar/radar.py market-radar/missed_movers.py market-radar/provenance.py market-radar/research_market.py market-radar/entry_gate.py market-radar/entry_gate_v2.py market-radar/entry_gate_v3.py market-radar/entry_gate_v31.py market-radar/live/outcome_tracker.py market-radar/backtest/historical_gate_replay_v2.py market-radar/backtest/build_pit_dataset.py market-radar/backtest/pit_backtester.py market-radar/backtest/make_cohort_split.py market-radar/backtest/export_pit_candidates.py market-radar/backtest/reclaim_research.py market-radar/backtest/rejected_recovery_outcome.py market-radar/backtest/broad_daily_benchmark.py
+          cd market-radar && python3 -m unittest test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py test_information_quality.py test_provenance.py test_research_market.py test_entry_gate_v2.py test_entry_gate_v3.py test_entry_gate_v31.py backtest/test_reclaim_research.py backtest/test_rejected_recovery_outcome.py backtest/test_broad_daily_benchmark.py backtest/test_pit_export.py
           python3 run_function_tests.py
 
 
@@ -134,5 +134,26 @@ jobs:
           git config user.name "market-radar-bot"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git commit -m "chore(market-radar): persist live radar state [skip ci]"
-          git pull --rebase origin main-v2
-          git push origin HEAD:main-v2
+          # A push can land while this run is executing. Retry by preserving this run's
+          # generated state, rebasing onto the newest main-v2, then restoring generated
+          # files. This avoids the previous rebase conflict in state/tape files.
+          mkdir -p /tmp/radar-generated
+          cp -a market-radar/state.json market-radar/live/trades.json /tmp/radar-generated/ 2>/dev/null || true
+          cp -a market-radar/live/tape /tmp/radar-generated/tape 2>/dev/null || true
+          cp -a market-radar/live/candidates /tmp/radar-generated/candidates 2>/dev/null || true
+          for attempt in 1 2 3; do
+            if git push origin HEAD:main-v2; then exit 0; fi
+            git fetch origin main-v2
+            git reset --hard origin/main-v2
+            cp -a /tmp/radar-generated/state.json market-radar/state.json 2>/dev/null || true
+            cp -a /tmp/radar-generated/trades.json market-radar/live/trades.json 2>/dev/null || true
+            rm -rf market-radar/live/tape market-radar/live/candidates
+            cp -a /tmp/radar-generated/tape market-radar/live/tape 2>/dev/null || true
+            cp -a /tmp/radar-generated/candidates market-radar/live/candidates 2>/dev/null || true
+            git add market-radar/state.json market-radar/live/trades.json market-radar/live/tape/ market-radar/live/candidates/ 2>/dev/null || true
+            git diff --cached --quiet && exit 0
+            git commit -m "chore(market-radar): persist live radar state retry [skip ci]"
+            sleep $((attempt * 2))
+          done
+          echo "Failed to persist radar state after 3 serialized retries" >&2
+          exit 1
