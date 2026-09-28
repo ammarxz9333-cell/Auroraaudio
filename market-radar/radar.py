@@ -679,6 +679,8 @@ def main():
             if rid in old_seen:
                 continue
             new_seen.append(rid)
+            if not fresh_for_alert(item.get("published"), start):
+                continue
             score, tickers, hits = score_item(source, item, watchlist)
             effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
@@ -699,8 +701,6 @@ def main():
                     "added_utc": start.isoformat(),
                 }
             if score < effective_threshold:
-                continue
-            if not fresh_for_alert(item.get("published"), start):
                 continue
             if not bootstrapped:
                 published = item.get("published")
