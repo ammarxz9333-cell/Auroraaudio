@@ -1,0 +1,47 @@
+{
+  "detected_utc": "2026-09-28T19:36:32.956420+00:00",
+  "headline": "Exclusive: LiveRamp Expands OpenAI Partnership to Let Brands Target ChatGPT Ads - The Information",
+  "information_quality": {
+    "catalyst_signature": [
+      "exclusive",
+      "partnership"
+    ],
+    "detected_utc": "2026-09-28T19:36:32.937868+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": false,
+    "rumor_only": false,
+    "source_class": "scoop",
+    "source_identity": "news.google.com",
+    "source_quality": 4,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [],
+  "published_utc": "2026-09-28T14:01:16+00:00",
+  "radar_id": "318b0e71896a427d60e4",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 11,
+  "signals": [
+    "exclusive",
+    "partnership",
+    "source+early-language"
+  ],
+  "source": "The Information",
+  "source_class": "scoop",
+  "tickers": [],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMitwFBVV95cUxObGcxSXl6RGVRQjl6UTJXN056OHE0UVJJQU5acVZjeFc2QWtiY1hBdUdNWUozTmo0TnY4U01vOU80Umw2eF9Jakx0RFV3eHVXYkh1SFdtN0gyVVZ0X2tCelVTSTZfU3pMd3p6YVNwX1FtdUtLMmVtLU1fU3BCTUF0VzhhQ0RBbHg4OU1ibmFaVW5CYm9xY3pEX2JEa2JLRXNiMnppZ05hTEhjZTdxS0NjR2xqSU9ldDQ?oc=5"
+}
