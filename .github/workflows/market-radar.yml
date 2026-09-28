@@ -29,7 +29,7 @@ jobs:
       - name: Validate Market Radar Python
         run: |
           python3 -m py_compile market-radar/radar.py market-radar/entry_gate.py market-radar/live/outcome_tracker.py
-          cd market-radar && python3 -m unittest test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py
+          cd market-radar && python3 -m unittest test_market_snapshot.py test_entry_gate.py live/test_outcome_tracker.py live/test_end_to_end.py
 
 
       - name: Run first-public-source scanner
