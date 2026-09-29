@@ -1,0 +1,47 @@
+{
+  "detected_utc": "2026-09-29T05:33:07.094415+00:00",
+  "headline": "Ex-White House election official leaves DOJ probe of Trump foes, sources say - Reuters",
+  "information_quality": {
+    "catalyst_signature": [
+      "probe",
+      "sources say"
+    ],
+    "detected_utc": "2026-09-29T05:33:07.073775+00:00",
+    "finra_short_sale_volume": "not queried in latency-critical scan",
+    "independent_corroboration_count": 0,
+    "independent_corroborators": [],
+    "market_confirmation": {
+      "momentum_confirmed": false,
+      "rvol_confirmed": false,
+      "volume_acceleration_confirmed": false
+    },
+    "official_source": false,
+    "primary_confirmation": false,
+    "propagation_stage": "UNCONFIRMED",
+    "rumor_language": true,
+    "rumor_only": true,
+    "source_class": "scoop",
+    "source_identity": "news.google.com",
+    "source_quality": 4,
+    "source_velocity": {
+      "2h": 0,
+      "30m": 0,
+      "6h": 0
+    }
+  },
+  "market_context": [],
+  "published_utc": "2026-09-29T01:38:00+00:00",
+  "radar_id": "2a0e30fefc5fcb3973e0",
+  "review_status": "UNREVIEWED; not a trade recommendation",
+  "score": 14,
+  "signals": [
+    "probe",
+    "source+early-language",
+    "sources say"
+  ],
+  "source": "Reuters M&A / transactional",
+  "source_class": "scoop",
+  "tickers": [],
+  "type": "NEWS_CANDIDATE",
+  "url": "https://news.google.com/rss/articles/CBMiuAFBVV95cUxQNkdBZzZuU0dmWVRyX1RLTm1IQTYwTFZGX2FHYjB1T2ZjYzM2TW9sSmFDTWpnWjFhTEt4Uk1yNUEya3FaUmp1eGNLbUlWODAwbGFaZGJadGpmcEI5SDJYZnVxdVlvNlRDS3NPQnRDby1iVXY5UEtGNF9ZamdQODlhQVFKWExxT2hWUmNTa2JBWnpicjVlc2ZJZnVmU0ZuVmpSLUdNRl9XampZcUlvc3RldWZ0N0NMVUZp?oc=5"
+}
