@@ -138,6 +138,137 @@
         "missed_watchlist_members": 1,
         "recall_pct": 0.0
       }
+    },
+    "2026-09-28": {
+      "criteria": {
+        "alert_lookback_hours": 72,
+        "min_gain_pct": 8.0,
+        "min_price": 1.0,
+        "min_volume": 500000,
+        "source": "Yahoo Finance predefined day_gainers public endpoint"
+      },
+      "errors": [],
+      "generated_utc": "2026-09-29T00:30:42.335488+00:00",
+      "investigation_protocol": {
+        "required_output": "For every mover: earliest clue, full catalyst/rumor timeline, pre-move features, why missed, machine-detectable pattern, false-positive tradeoff, and proposed reversible model/source change.",
+        "required_root_cause_labels": [
+          "source-coverage-gap",
+          "ticker-entity-extraction",
+          "catalyst-vocabulary-gap",
+          "score-threshold",
+          "watchlist-bias",
+          "source-latency",
+          "market-data-latency",
+          "deduplication",
+          "direction-classification",
+          "market-reaction-filter",
+          "sector-sympathy-not-modeled",
+          "analyst-action-not-modeled",
+          "index-flow-not-modeled",
+          "rumor-not-modeled",
+          "price-volume-momentum-not-modeled",
+          "genuinely-unpredictable"
+        ],
+        "research_domains": [
+          "SEC filings/exhibits and company IR",
+          "customer/supplier/partner releases",
+          "government contracts, procurement, permits and regulatory records",
+          "analyst initiations/upgrades/downgrades and target changes",
+          "index additions/rebalances and ETF/passive-flow effects",
+          "earnings, guidance, balance sheet, dilution, ATM/S-3/424B5 and buybacks",
+          "insider/Form 4 and 13D/13G ownership changes",
+          "short interest, float, borrow and options positioning when public",
+          "sector/peer/sympathy moves and commodity/macro exposures",
+          "public rumors, alleged leaks, Reddit, Stocktwits and X with provenance labels",
+          "intraday price/volume/VWAP/relative-strength structure before acceleration"
+        ],
+        "timeline": "Reconstruct several trading days before the move through the move itself using point-in-time public timestamps."
+      },
+      "movers": [
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 701082,
+          "change_pct": 177.96,
+          "exchange": "NasdaqGM",
+          "market_cap": 5651422720,
+          "matching_alerts": [],
+          "name": "Kodiak Sciences Inc",
+          "no_recent_alert": true,
+          "price": 89.92,
+          "quote_time_utc": "2026-09-28T20:00:01+00:00",
+          "ticker": "KOD",
+          "volume": 38398805,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 250857,
+          "change_pct": 16.786,
+          "exchange": "NasdaqGM",
+          "market_cap": 7937052160,
+          "matching_alerts": [],
+          "name": "Maase Inc.",
+          "no_recent_alert": true,
+          "price": 17.95,
+          "quote_time_utc": "2026-09-28T20:00:01+00:00",
+          "ticker": "MAAS",
+          "volume": 647812,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 6966638,
+          "change_pct": 9.606,
+          "exchange": "NasdaqGS",
+          "market_cap": 4510739456,
+          "matching_alerts": [],
+          "name": "AbCellera Biologics Inc.",
+          "no_recent_alert": true,
+          "price": 13.92,
+          "quote_time_utc": "2026-09-28T20:00:01+00:00",
+          "ticker": "ABCL",
+          "volume": 7772249,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 207095,
+          "change_pct": 9.087,
+          "exchange": "NYSE",
+          "market_cap": 4255825408,
+          "matching_alerts": [],
+          "name": "Corporacion America Airports SA",
+          "no_recent_alert": true,
+          "price": 26.05,
+          "quote_time_utc": "2026-09-28T20:00:03+00:00",
+          "ticker": "CAAP",
+          "volume": 1068920,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 495169,
+          "change_pct": 8.067,
+          "exchange": "NYSE",
+          "market_cap": 4416253952,
+          "matching_alerts": [],
+          "name": "Howard Hughes Holdings Inc.",
+          "no_recent_alert": true,
+          "price": 73.95,
+          "quote_time_utc": "2026-09-28T20:00:03+00:00",
+          "ticker": "HHH",
+          "volume": 1887444,
+          "watchlist_member": false
+        }
+      ],
+      "summary": {
+        "advance_warning_recall_pct": null,
+        "eligible_movers": 5,
+        "no_recent_alert": 5,
+        "no_recent_alert_watchlist_members": 0,
+        "recent_alert_overlap": 0
+      },
+      "timing_limit": "The day-gainers endpoint supplies a current quote, not the first time the move crossed the threshold. A recent alert can have arrived after the move. Overlap is not advance-warning recall."
     }
   }
 }
