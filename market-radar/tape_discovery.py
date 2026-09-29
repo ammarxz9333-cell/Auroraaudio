@@ -10,7 +10,7 @@ import json, math, re
 
 NASDAQ_URL = (
     "https://api.nasdaq.com/api/screener/stocks"
-    "?tableonly=true&limit=5000&download=true"
+    "?tableonly=true&limit=1000&download=true"
 )
 SOURCE_URL = "https://www.nasdaq.com/market-activity/stocks/screener"
 
@@ -23,7 +23,7 @@ def _num(v):
     try: return float(x)
     except ValueError: return None
 
-def discover_candidates(fetch, limit=50):
+def discover_candidates(fetch, limit=30):
     """Cheap broad-universe pass; expensive 5m snapshots run only on shortlist."""
     raw=json.loads(fetch(NASDAQ_URL, headers={
         "Accept":"application/json,text/plain,*/*",
