@@ -840,6 +840,10 @@ def main():
                 }
             if score < effective_threshold:
                 continue
+            # Generic news without a resolved tradable US-equity ticker is useful
+            # for indexing/learning, but it must not page the user as a stock setup.
+            if not tickers:
+                continue
             if not bootstrapped:
                 published = item.get("published")
                 if not isinstance(published, dt.datetime):
