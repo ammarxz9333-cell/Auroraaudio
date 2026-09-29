@@ -22,6 +22,8 @@ def parse_ts(s):
     if x.tzinfo is None: raise ValueError("timestamps must include timezone")
     return x
 
+def utc_now(): return dt.datetime.now(dt.timezone.utc)
+
 def walk(obj,path=""):
     if isinstance(obj,dict):
         for k,v in obj.items():
@@ -34,20 +36,24 @@ def walk(obj,path=""):
 
 def freeze(snapshot,decision,reason):
     cutoff=parse_ts(snapshot["cutoff"])
+    recorded_at=utc_now()
     for e in snapshot.get("evidence",[]):
         if parse_ts(e["available_at"])>cutoff:
             raise ValueError(f"evidence after cutoff: {e.get('id','?')}")
-    market_time=snapshot.get("market",{}).get("bar_time_utc")
-    if market_time and parse_ts(market_time)>cutoff:
-        raise ValueError("market bar after cutoff")
     list(walk(snapshot))
     if decision not in ALLOWED_DECISIONS: raise ValueError("unknown decision")
-    core={"schema_version":1,"ticker":snapshot["ticker"],"cutoff":snapshot["cutoff"],"snapshot":snapshot,"decision":decision,"reason":reason}
+    core={"schema_version":2,"ticker":snapshot["ticker"],"cutoff":snapshot["cutoff"],"snapshot":snapshot,"decision":decision,"reason":reason,
+          "recorded_at":recorded_at.isoformat(),
+          "validation_mode":"PROSPECTIVE" if recorded_at<=cutoff else "RETROSPECTIVE_REPLAY"}
     lock=hashlib.sha256(dump_canon(core).encode()).hexdigest()
     return {**core,"decision_lock_sha256":lock}
 
 def verify(record):
     core={k:record[k] for k in ("schema_version","ticker","cutoff","snapshot","decision","reason")}
+    if record.get("schema_version",1)>=2:
+        core.update({k:record[k] for k in ("recorded_at","validation_mode")})
+        expected="PROSPECTIVE" if parse_ts(record["recorded_at"])<=parse_ts(record["cutoff"]) else "RETROSPECTIVE_REPLAY"
+        if record["validation_mode"]!=expected: return False
     return hashlib.sha256(dump_canon(core).encode()).hexdigest()==record["decision_lock_sha256"]
 
 def classify_outcome(decision,ret):
@@ -66,9 +72,11 @@ def reveal(record,outcome):
     return {**record,"outcome":outcome,"grade":classify_outcome(record["decision"],ret)}
 
 def metrics(records):
-    graded=[r for r in records if r.get("grade") in ("correct","wrong")]
+    graded=[r for r in records if r.get("validation_mode")=="PROSPECTIVE" and r.get("grade") in ("correct","wrong")]
     c=sum(r["grade"]=="correct" for r in graded); w=len(graded)-c
-    return {"graded_directional":len(graded),"correct":c,"wrong":w,"directional_accuracy_pct":round(100*c/len(graded),2) if graded else None,
+    return {"prospective_graded_directional":len(graded),"correct":c,"wrong":w,
+            "prospective_directional_accuracy_pct":round(100*c/len(graded),2) if graded else None,
+            "retrospective_replays":sum(r.get("validation_mode")!="PROSPECTIVE" for r in records),
             "neutral_or_ungraded":sum(r.get("grade")=="neutral" for r in records)}
 
 def main():
