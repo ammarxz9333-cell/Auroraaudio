@@ -19,7 +19,7 @@ def _num(v):
         return float(v)
     if not isinstance(v,str):
         return None
-    x=re.sub(r"[^0-9+\\-.]","",v)
+    x=re.sub(r"[^0-9+.\\-]","",v)
     try: return float(x)
     except ValueError: return None
 
