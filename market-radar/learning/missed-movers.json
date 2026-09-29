@@ -269,6 +269,137 @@
         "recent_alert_overlap": 0
       },
       "timing_limit": "The day-gainers endpoint supplies a current quote, not the first time the move crossed the threshold. A recent alert can have arrived after the move. Overlap is not advance-warning recall."
+    },
+    "2026-09-29": {
+      "criteria": {
+        "alert_lookback_hours": 72,
+        "min_gain_pct": 8.0,
+        "min_price": 1.0,
+        "min_volume": 500000,
+        "source": "Yahoo Finance predefined day_gainers public endpoint"
+      },
+      "errors": [],
+      "generated_utc": "2026-09-29T23:56:22.869559+00:00",
+      "investigation_protocol": {
+        "required_output": "For every mover: earliest clue, full catalyst/rumor timeline, pre-move features, why missed, machine-detectable pattern, false-positive tradeoff, and proposed reversible model/source change.",
+        "required_root_cause_labels": [
+          "source-coverage-gap",
+          "ticker-entity-extraction",
+          "catalyst-vocabulary-gap",
+          "score-threshold",
+          "watchlist-bias",
+          "source-latency",
+          "market-data-latency",
+          "deduplication",
+          "direction-classification",
+          "market-reaction-filter",
+          "sector-sympathy-not-modeled",
+          "analyst-action-not-modeled",
+          "index-flow-not-modeled",
+          "rumor-not-modeled",
+          "price-volume-momentum-not-modeled",
+          "genuinely-unpredictable"
+        ],
+        "research_domains": [
+          "SEC filings/exhibits and company IR",
+          "customer/supplier/partner releases",
+          "government contracts, procurement, permits and regulatory records",
+          "analyst initiations/upgrades/downgrades and target changes",
+          "index additions/rebalances and ETF/passive-flow effects",
+          "earnings, guidance, balance sheet, dilution, ATM/S-3/424B5 and buybacks",
+          "insider/Form 4 and 13D/13G ownership changes",
+          "short interest, float, borrow and options positioning when public",
+          "sector/peer/sympathy moves and commodity/macro exposures",
+          "public rumors, alleged leaks, Reddit, Stocktwits and X with provenance labels",
+          "intraday price/volume/VWAP/relative-strength structure before acceleration"
+        ],
+        "timeline": "Reconstruct several trading days before the move through the move itself using point-in-time public timestamps."
+      },
+      "movers": [
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 16595700,
+          "change_pct": 31.483,
+          "exchange": "NasdaqGM",
+          "market_cap": 6545437184,
+          "matching_alerts": [],
+          "name": "Iovance Biotherapeutics, Inc.",
+          "no_recent_alert": true,
+          "price": 14.45,
+          "quote_time_utc": "2026-09-29T20:00:01+00:00",
+          "ticker": "IOVA",
+          "volume": 78030223,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 19653290,
+          "change_pct": 13.415,
+          "exchange": "NYSE",
+          "market_cap": 34391891968,
+          "matching_alerts": [],
+          "name": "Carnival Corporation Ltd.",
+          "no_recent_alert": true,
+          "price": 25.11,
+          "quote_time_utc": "2026-09-29T20:00:02+00:00",
+          "ticker": "CCL",
+          "volume": 75324198,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 2741192,
+          "change_pct": 11.395,
+          "exchange": "NYSE",
+          "market_cap": 3395513088,
+          "matching_alerts": [],
+          "name": "Warby Parker Inc.",
+          "no_recent_alert": true,
+          "price": 27.47,
+          "quote_time_utc": "2026-09-29T20:00:02+00:00",
+          "ticker": "WRBY",
+          "volume": 5197594,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 15623577,
+          "change_pct": 10.796,
+          "exchange": "NYSE",
+          "market_cap": 85781094400,
+          "matching_alerts": [],
+          "name": "Bloom Energy Corporation",
+          "no_recent_alert": true,
+          "price": 291.25,
+          "quote_time_utc": "2026-09-29T20:00:03+00:00",
+          "ticker": "BE",
+          "volume": 23633242,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 2504796,
+          "change_pct": 9.701,
+          "exchange": "NasdaqGS",
+          "market_cap": 3681698304,
+          "matching_alerts": [],
+          "name": "Magnite, Inc.",
+          "no_recent_alert": true,
+          "price": 25.67,
+          "quote_time_utc": "2026-09-29T20:00:01+00:00",
+          "ticker": "MGNI",
+          "volume": 4134308,
+          "watchlist_member": false
+        }
+      ],
+      "summary": {
+        "advance_warning_recall_pct": null,
+        "eligible_movers": 5,
+        "no_recent_alert": 5,
+        "no_recent_alert_watchlist_members": 0,
+        "recent_alert_overlap": 0
+      },
+      "timing_limit": "The day-gainers endpoint supplies a current quote, not the first time the move crossed the threshold. A recent alert can have arrived after the move. Overlap is not advance-warning recall."
     }
   }
 }
