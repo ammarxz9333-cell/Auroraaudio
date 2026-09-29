@@ -7,7 +7,6 @@ Creates GitHub issues for high-scoring new public items and optionally Telegram 
 from __future__ import annotations
 
 import datetime as dt
-import base64
 import email.utils
 import hashlib
 import html
@@ -20,7 +19,6 @@ import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 import urllib.parse
-import urllib.error
 import urllib.request
 import xml.etree.ElementTree as ET
 from html.parser import HTMLParser
@@ -28,14 +26,13 @@ from pathlib import Path
 from statistics import median
 from zoneinfo import ZoneInfo
 from entry_gate import GateInput, entry_gate
-from provenance import provenance
-from live.outcome_tracker import new_trade, update_trade, load as load_trades, save as save_trades, live_metrics
+from live.outcome_tracker import new_trade, update_trade, load as load_trades, save as save_trades
+from tape_discovery import discover_candidates, tape_signal
 
 ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
 STATE_FILE = ROOT / "state.json"
 TAPE_DIR = ROOT / "live" / "tape"
-CANDIDATE_DIR = ROOT / "live" / "candidates"
 TRADES_FILE = ROOT / "live" / "trades.json"
 USER_AGENT = os.getenv("RADAR_USER_AGENT", "MarketRadar/1.0 public-source-monitor contact=github-actions")
 REPO = os.getenv("GITHUB_REPOSITORY", "")
@@ -70,16 +67,11 @@ CATALYSTS = {
     "investigation": 3, "probe": 3, "permit": 2, "interconnection": 3,
     "procurement": 3, "award notice": 4, "material agreement": 4,
     "8-k": 2, "form 8-k": 2, "13d": 4, "13g": 2, "form 4": 1,
-    "initiates coverage": 3, "upgrades": 3, "raised its price target": 2,
-    "certification": 3, "commercial operation": 4, "commercial production": 4,
-    "index inclusion": 4, "added to the index": 4, "rebalance": 2,
 }
 
 NEGATIVE_NOISE = {
     "podcast": -1, "opinion": -1, "sponsored": -2, "advertisement": -3,
     "price target": -1, "technical analysis": -1, "watchlist": -1,
-    "shares acquired by": -5, "shares purchased by": -5,
-    "stock position": -4, "holdings in": -4, "quarterly 13f": -4,
 }
 
 class LinkParser(HTMLParser):
@@ -105,6 +97,17 @@ class LinkParser(HTMLParser):
 
 def now_utc():
     return dt.datetime.now(dt.timezone.utc)
+
+def fresh_for_alert(published, detected):
+    """Reject undated and stale items from actionable notifications."""
+    if not isinstance(published, dt.datetime) or published.tzinfo is None:
+        return False
+    age = detected - published.astimezone(dt.timezone.utc)
+    if age < dt.timedelta(0):
+        return False
+    # Friday/Saturday releases may remain actionable at Monday's open.
+    limit = dt.timedelta(hours=72) if published.weekday() in (4, 5) else dt.timedelta(hours=24)
+    return age <= limit
 
 def fetch(url: str, headers: dict | None = None) -> bytes:
     h = {
@@ -229,7 +232,7 @@ def google_news_url(query: str) -> str:
 
 NY = ZoneInfo("America/New_York")
 
-def yahoo_market_snapshot(ticker: str, event_time=None):
+def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=False):
     """Free/no-key intraday snapshot from Yahoo Finance chart endpoint.
     Returns None if unavailable. Uses 5m bars over 5d including pre/post market.
     """
@@ -268,10 +271,17 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
 
         latest = bars[-1]
 
-        last_two = bars[-2:] if len(bars) >= 2 else bars
-        change_5m = None
-        if len(last_two) == 2 and last_two[0]["close"]:
-            change_5m = ((last_two[1]["close"] / last_two[0]["close"]) - 1.0) * 100.0
+        def trailing_move(nbars):
+            if len(bars) < nbars + 1 or not bars[-nbars-1]["close"]:
+                return None
+            # Require a contiguous-ish window; do not bridge overnight/session gaps.
+            if bars[-1]["utc"] - bars[-nbars-1]["utc"] > dt.timedelta(minutes=5*nbars + 7):
+                return None
+            return ((bars[-1]["close"] / bars[-nbars-1]["close"]) - 1.0) * 100.0
+
+        change_5m = trailing_move(1)
+        change_15m = trailing_move(3)
+        change_30m = trailing_move(6)
 
         event_price = None
         pre30_move = None
@@ -326,45 +336,43 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
         prev_close = float(prev_close)
         change_pct = ((latest["close"] / prev_close) - 1.0) * 100.0 if prev_close else None
 
-        # Session-level premarket repricing is independent of the catalyst timestamp.
-        # This prevents missing event-relative data from being interpreted as a 0% premarket move.
-        today_premarket = [b for b in bars if b["ny"].date().isoformat() == today_key and (b["ny"].hour * 60 + b["ny"].minute) < reg_start]
-        session_premarket_reprice = None
-        if today_premarket and prev_close:
-            session_premarket_reprice = ((today_premarket[-1]["close"] / prev_close) - 1.0) * 100.0
-
         today_bars = [b for b in by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= cutoff]
-        today_cum = sum(b["volume"] for b in today_bars)
         regular_open = today_bars[0]["open"] if today_bars else None
         session_high = max((b["high"] for b in today_bars), default=None)
         session_low = min((b["low"] for b in today_bars), default=None)
         vwap_num = sum((((b["high"] + b["low"] + b["close"]) / 3.0) * b["volume"]) for b in today_bars if b["volume"] > 0)
         vwap_den = sum(b["volume"] for b in today_bars if b["volume"] > 0)
         session_vwap = (vwap_num / vwap_den) if vwap_den else None
-        hist_cums = []
-        for d, dbars in by_day.items():
-            if d == today_key:
-                continue
-            cum = sum(b["volume"] for b in dbars if (b["ny"].hour*60+b["ny"].minute) <= cutoff)
-            if cum > 0:
-                hist_cums.append(cum)
-        vol_ratio = (today_cum / median(hist_cums)) if today_cum > 0 and hist_cums else None
 
-        # Research features: record them point-in-time; do not alter the live gate yet.
-        recent = today_bars[-3:]
-        prior_recent = today_bars[-6:-3] if len(today_bars) >= 6 else []
-        recent_vol = sum(b["volume"] for b in recent)
-        prior_recent_vol = sum(b["volume"] for b in prior_recent)
-        volume_acceleration = (recent_vol / prior_recent_vol) if prior_recent_vol > 0 else None
-        opening_range = today_bars[:3]
-        opening_range_high = max((b["high"] for b in opening_range), default=None)
-        opening_range_low = min((b["low"] for b in opening_range), default=None)
-        above_open_pct = ((latest["close"]/regular_open)-1)*100 if regular_open else None
-        above_vwap_pct = ((latest["close"]/session_vwap)-1)*100 if session_vwap else None
-        from_session_high_pct = ((latest["close"]/session_high)-1)*100 if session_high else None
-        holds_opening_range_high = (latest["close"] >= opening_range_high) if opening_range_high is not None else None
-        ret_15m = ((today_bars[-1]["close"]/today_bars[-4]["close"])-1)*100 if len(today_bars) >= 4 and today_bars[-4]["close"] else None
-        ret_30m = ((today_bars[-1]["close"]/today_bars[-7]["close"])-1)*100 if len(today_bars) >= 7 and today_bars[-7]["close"] else None
+        # Same-clock RVOL must work before 09:30 too. During PRE compare
+        # 04:00->current clock with the same premarket slice on prior days.
+        if market_session == "PRE":
+            pre_start = 4 * 60
+            clock_cutoff = mins_now
+            ext_by_day = {}
+            for b in bars:
+                m = b["ny"].hour * 60 + b["ny"].minute
+                if pre_start <= m < reg_start:
+                    ext_by_day.setdefault(b["ny"].date().isoformat(), []).append(b)
+            sample_today = [b for b in ext_by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= clock_cutoff]
+            today_cum = sum(b["volume"] for b in sample_today)
+            hist_cums = []
+            for d, dbars in ext_by_day.items():
+                if d == today_key:
+                    continue
+                cum = sum(b["volume"] for b in dbars if (b["ny"].hour*60+b["ny"].minute) <= clock_cutoff)
+                if cum > 0:
+                    hist_cums.append(cum)
+        else:
+            today_cum = sum(b["volume"] for b in today_bars)
+            hist_cums = []
+            for d, dbars in by_day.items():
+                if d == today_key:
+                    continue
+                cum = sum(b["volume"] for b in dbars if (b["ny"].hour*60+b["ny"].minute) <= cutoff)
+                if cum > 0:
+                    hist_cums.append(cum)
+        vol_ratio = (today_cum / median(hist_cums)) if today_cum > 0 and hist_cums else None
 
         abs_change = abs(change_pct or 0)
         if abs_change >= 10 or (vol_ratio is not None and vol_ratio >= 4):
@@ -376,12 +384,14 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
         else:
             reaction = "mixed/early"
 
-        return {
+        snapshot = {
             "ticker": ticker,
             "price": round(latest["close"], 4),
             "previous_close": round(prev_close, 4),
             "change_pct": round(change_pct, 3) if change_pct is not None else None,
             "change_5m_pct": round(change_5m, 3) if change_5m is not None else None,
+            "change_15m_pct": round(change_15m, 3) if change_15m is not None else None,
+            "change_30m_pct": round(change_30m, 3) if change_30m is not None else None,
             "cum_volume": today_cum,
             "regular_open": round(regular_open, 4) if regular_open is not None else None,
             "session_high": round(session_high, 4) if session_high is not None else None,
@@ -390,44 +400,24 @@ def yahoo_market_snapshot(ticker: str, event_time=None):
             "holds_vwap": (latest["close"] >= session_vwap) if session_vwap is not None else None,
             "holds_open": (latest["close"] >= regular_open) if regular_open is not None else None,
             "same_time_volume_ratio": round(vol_ratio, 2) if vol_ratio is not None else None,
-            "volume_acceleration_15m": round(volume_acceleration, 3) if volume_acceleration is not None else None,
-            "opening_range_high": round(opening_range_high, 4) if opening_range_high is not None else None,
-            "opening_range_low": round(opening_range_low, 4) if opening_range_low is not None else None,
-            "holds_opening_range_high": holds_opening_range_high,
-            "above_open_pct": round(above_open_pct, 3) if above_open_pct is not None else None,
-            "above_vwap_pct": round(above_vwap_pct, 3) if above_vwap_pct is not None else None,
-            "from_session_high_pct": round(from_session_high_pct, 3) if from_session_high_pct is not None else None,
-            "momentum_15m_pct": round(ret_15m, 3) if ret_15m is not None else None,
-            "momentum_30m_pct": round(ret_30m, 3) if ret_30m is not None else None,
             "market_session": market_session,
             "reaction": reaction,
             "event_price": round(event_price, 4) if event_price is not None else None,
             "pre30m_move_pct": round(pre30_move, 3) if pre30_move is not None else None,
-            "premarket_reprice_pct": round(session_premarket_reprice, 3) if session_premarket_reprice is not None else None,
             "post30m_move_pct": round(post30_move, 3) if post30_move is not None else None,
             "since_event_move_pct": round(since_event_move, 3) if since_event_move is not None else None,
             "bar_time_utc": latest["utc"].isoformat(),
             "bar_high": round(latest["high"], 4),
             "bar_low": round(latest["low"], 4),
         }
+        if include_outcome_bars:
+            snapshot["_outcome_bars"] = [
+                {"time_utc": b["utc"].isoformat(), "high": b["high"], "low": b["low"]}
+                for day in sorted(by_day) for b in by_day[day]
+            ]
+        return snapshot
     except Exception as e:
         return {"ticker":ticker,"error":f"{type(e).__name__}: {e}"}
-
-def finra_short_sale_volume(ticker: str):
-    """Official FINRA Reg SHO daily short-sale volume; NOT short interest."""
-    try:
-        payload=json.dumps({"limit":20,"fields":["tradeReportDate","securitiesInformationProcessorSymbolIdentifier","shortParQuantity","shortExemptParQuantity","totalParQuantity"],"compareFilters":[{"compareType":"equal","fieldName":"securitiesInformationProcessorSymbolIdentifier","fieldValue":ticker.upper()}]}).encode("utf-8")
-        req=urllib.request.Request("https://api.finra.org/data/group/otcMarket/name/regShoDaily",data=payload,method="POST",headers={"User-Agent":USER_AGENT,"Accept":"application/json","Content-Type":"application/json"})
-        rows=json.loads(urllib.request.urlopen(req,timeout=REQUEST_TIMEOUT).read().decode("utf-8"))
-        if not rows: return None
-        bydate={}
-        for r in rows:
-            d=r.get("tradeReportDate"); total=float(r.get("totalParQuantity") or 0); short=float(r.get("shortParQuantity") or 0); exempt=float(r.get("shortExemptParQuantity") or 0)
-            x=bydate.setdefault(d,{"total":0.0,"short":0.0,"exempt":0.0}); x["total"]+=total; x["short"]+=short; x["exempt"]+=exempt
-        d=sorted(bydate)[-1]; x=bydate[d]
-        return {"trade_date":d,"short_sale_volume":int(x["short"]),"short_exempt_volume":int(x["exempt"]),"finra_reported_volume":int(x["total"]),"short_sale_volume_pct":round(100*x["short"]/x["total"],3) if x["total"] else None,"is_short_interest":False,"source":"FINRA_REG_SHO_DAILY"}
-    except Exception as e:
-        return {"error":f"{type(e).__name__}: {e}","source":"FINRA_REG_SHO_DAILY"}
 
 def yahoo_quote_bid_ask(ticker: str):
     """Best-effort Yahoo quote bid/ask. Endpoint may require cookie/crumb.
@@ -456,45 +446,37 @@ def yahoo_quote_bid_ask(ticker: str):
     except Exception:
         return None
 
-def market_data_is_fresh(snapshot: dict) -> bool:
-    try:
-        bar_time = dt.datetime.fromisoformat(snapshot["bar_time_utc"])
-        age = now_utc() - bar_time.astimezone(dt.timezone.utc)
-        return dt.timedelta(0) <= age <= dt.timedelta(minutes=15)
-    except (KeyError, TypeError, ValueError):
-        return False
-
 def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
     required = ("price","previous_close","regular_open","vwap","same_time_volume_ratio","holds_vwap","holds_open","bar_time_utc")
-    session = snapshot.get("market_session")
-    if session != "REGULAR":
-        return {"state":"WAIT","reason":f"entry disabled outside regular session ({session or 'unknown'})"}
-    if not snapshot.get("bar_time_utc"):
-        return {"state":"INSUFFICIENT_DATA","reason":"missing market bar timestamp"}
-    if not market_data_is_fresh(snapshot):
-        return {"state":"WAIT","reason":"market bar is stale or from the future"}
     if any(snapshot.get(k) is None for k in required):
         return {"state":"INSUFFICIENT_DATA","reason":"missing required point-in-time tape field"}
+    observed_at = now_utc()
+    bar_at = dt.datetime.fromisoformat(snapshot["bar_time_utc"])
+    if snapshot.get("market_session") != "REGULAR":
+        return {"state":"NO_ENTRY","reason":"regular market session required"}
+    if bar_at.tzinfo is None or not dt.timedelta(0) <= observed_at - bar_at <= dt.timedelta(minutes=10):
+        return {"state":"INSUFFICIENT_DATA","reason":"market bar is stale or in the future"}
     quote = yahoo_quote_bid_ask(snapshot["ticker"])
     if not quote or quote.get("spread_pct") is None:
         return {"state":"INSUFFICIENT_DATA","reason":"point-in-time bid/ask unavailable"}
+    quote_time = quote.get("quote_time")
+    if not isinstance(quote_time, (int, float)) or not dt.timedelta(0) <= observed_at - dt.datetime.fromtimestamp(quote_time, dt.timezone.utc) <= dt.timedelta(minutes=2):
+        return {"state":"INSUFFICIENT_DATA","reason":"bid/ask timestamp unavailable or stale"}
     reaction = snapshot.get("reaction")
     decision = "EARLY" if reaction == "not-yet-reacted" and score >= threshold else "WATCH"
     price=float(snapshot["price"]); prev=float(snapshot["previous_close"]); opn=float(snapshot["regular_open"])
     gap=((opn/prev)-1)*100 if prev else 0.0
     bt=dt.datetime.fromisoformat(snapshot["bar_time_utc"]).astimezone(NY)
     mins=max(0,(bt.hour*60+bt.minute)-(9*60+30))
-    pre=snapshot.get("premarket_reprice_pct")
-    if pre is None:
-        pre=snapshot.get("pre30m_move_pct")
-    if pre is None:
+    pre=snapshot.get("pre30m_move_pct")
+    if pre is None and bt.hour*60+bt.minute < 9*60+30:
         return {"state":"INSUFFICIENT_DATA","reason":"premarket repricing unavailable"}
     gi=GateInput(decision=decision,gap_pct=gap,premarket_reprice_pct=float(pre or 0.0),rvol=float(snapshot["same_time_volume_ratio"]),holds_vwap=bool(snapshot["holds_vwap"]),holds_open=bool(snapshot["holds_open"]),minutes_since_open=mins,spread_pct=float(quote["spread_pct"]))
     out=entry_gate(gi)
-    out.update({"decision":decision,"entry_price":price if out["state"]=="BUYABLE_NOW" else None,"entry_time_utc":snapshot["bar_time_utc"] if out["state"]=="BUYABLE_NOW" else None,"inputs":{"gap_pct":round(gap,3),"premarket_reprice_pct":float(pre or 0.0),"rvol":gi.rvol,"holds_vwap":gi.holds_vwap,"holds_open":gi.holds_open,"minutes_since_open":mins,"spread_pct":round(gi.spread_pct,4)}})
+    out.update({"decision":decision,"entry_price":quote["ask"] if out["state"]=="BUYABLE_NOW" else None,"entry_time_utc":observed_at.isoformat() if out["state"]=="BUYABLE_NOW" else None,"inputs":{"gap_pct":round(gap,3),"premarket_reprice_pct":float(pre or 0.0),"rvol":gi.rvol,"holds_vwap":gi.holds_vwap,"holds_open":gi.holds_open,"minutes_since_open":mins,"spread_pct":round(gi.spread_pct,4),"quote_time_utc":dt.datetime.fromtimestamp(quote_time,dt.timezone.utc).isoformat()}})
     return out
 
-def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int, threshold: int, research_context=None):
+def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int, threshold: int):
     """Append the exact point-in-time market snapshot used by the radar.
     Missing fields stay null; never backfill them from later bars.
     """
@@ -503,9 +485,6 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
     TAPE_DIR.mkdir(parents=True, exist_ok=True)
     ticker = re.sub(r"[^A-Z0-9._-]", "_", snapshot["ticker"].upper())
     gate = evaluate_entry_gate(snapshot, score, threshold)
-    catalyst_qualified = score >= threshold
-    if not catalyst_qualified:
-        gate = {**gate, "state": "NO_ENTRY", "reason": "catalyst score below effective threshold"}
     row = {
         "captured_utc": now_utc().isoformat(),
         "radar_id": rid,
@@ -519,17 +498,10 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "previous_close": snapshot.get("previous_close"),
         "change_pct": snapshot.get("change_pct"),
         "change_5m_pct": snapshot.get("change_5m_pct"),
+        "change_15m_pct": snapshot.get("change_15m_pct"),
+        "change_30m_pct": snapshot.get("change_30m_pct"),
         "cum_volume": snapshot.get("cum_volume"),
         "same_time_volume_ratio": snapshot.get("same_time_volume_ratio"),
-        "volume_acceleration_15m": snapshot.get("volume_acceleration_15m"),
-        "opening_range_high": snapshot.get("opening_range_high"),
-        "opening_range_low": snapshot.get("opening_range_low"),
-        "holds_opening_range_high": snapshot.get("holds_opening_range_high"),
-        "above_open_pct": snapshot.get("above_open_pct"),
-        "above_vwap_pct": snapshot.get("above_vwap_pct"),
-        "from_session_high_pct": snapshot.get("from_session_high_pct"),
-        "momentum_15m_pct": snapshot.get("momentum_15m_pct"),
-        "momentum_30m_pct": snapshot.get("momentum_30m_pct"),
         "market_session": snapshot.get("market_session"),
         "reaction": snapshot.get("reaction"),
         "event_price": snapshot.get("event_price"),
@@ -541,15 +513,11 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "gate_data_complete": gate.get("state") != "INSUFFICIENT_DATA",
         "gate_state": gate.get("state"),
         "gate_reason": gate.get("reason"),
-        "catalyst_qualified": catalyst_qualified,
         "gate": gate
     }
-    if research_context is not None:
-        row["research_context"] = research_context
     track_live_outcome(snapshot, gate, rid)
     with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, separators=(",", ":")) + "\n")
-    return gate
+        fh.write(json.dumps(row, separators=(",", ":")) + "\\n")
 
 def track_live_outcome(snapshot: dict, gate: dict, rid: str):
     if not snapshot or not snapshot.get("ticker") or not snapshot.get("bar_time_utc"):
@@ -560,48 +528,28 @@ def track_live_outcome(snapshot: dict, gate: dict, rid: str):
         tid=f"{ticker}:{gate['entry_time_utc']}:{rid}"
         if tid not in trades:
             trades[tid]=new_trade(ticker,gate["entry_time_utc"],gate["entry_price"],rid)
+    outcome_bars = snapshot.get("_outcome_bars") or [
+        {"time_utc": snapshot["bar_time_utc"], "high": snapshot.get("bar_high"), "low": snapshot.get("bar_low")}
+    ]
     for tid,t in list(trades.items()):
         if t.get("ticker") != ticker: continue
-        if snapshot["bar_time_utc"] <= t["entry_time_utc"]: continue
-        if snapshot.get("bar_high") is None or snapshot.get("bar_low") is None: continue
-        update_trade(t,{"high":snapshot["bar_high"],"low":snapshot["bar_low"],"time_utc":snapshot["bar_time_utc"]})
+        for bar in outcome_bars:
+            if bar["time_utc"] <= t["entry_time_utc"]: continue
+            if t.get("last_processed_bar_utc") and bar["time_utc"] <= t["last_processed_bar_utc"]: continue
+            if bar.get("high") is None or bar.get("low") is None: continue
+            update_trade(t,bar)
     save_trades(TRADES_FILE,trades)
-
-def refresh_active_trades():
-    """Update existing BUYABLE trades independently of news/watch lifetime."""
-    trades = load_trades(TRADES_FILE)
-    if not trades:
-        return
-    tickers = sorted({str(t.get("ticker", "")).upper() for t in trades.values() if t.get("ticker")})
-    changed = False
-    for ticker in tickers:
-        snapshot = yahoo_market_snapshot(ticker)
-        if not snapshot or snapshot.get("error") or not snapshot.get("bar_time_utc"):
-            continue
-        if snapshot.get("bar_high") is None or snapshot.get("bar_low") is None:
-            continue
-        for t in trades.values():
-            if str(t.get("ticker", "")).upper() != ticker:
-                continue
-            if snapshot["bar_time_utc"] <= t.get("entry_time_utc", ""):
-                continue
-            before = json.dumps(t, sort_keys=True)
-            update_trade(t, {"high": snapshot["bar_high"], "low": snapshot["bar_low"], "time_utc": snapshot["bar_time_utc"]})
-            if json.dumps(t, sort_keys=True) != before:
-                changed = True
-    if changed:
-        save_trades(TRADES_FILE, trades)
 
 def market_context_for_tickers(tickers, event_time=None):
     out = []
     for ticker in tickers[:4]:
-        snap = yahoo_market_snapshot(ticker, event_time=event_time)
+        snap = yahoo_market_snapshot(ticker, event_time=event_time, include_outcome_bars=True)
         if snap:
             out.append(snap)
     return out
 
 def item_id(source_name: str, item: dict) -> str:
-    raw = source_name + "\n" + (item.get("url") or "") + "\n" + (item.get("title") or "")
+    raw = source_name + "\\n" + (item.get("url") or "") + "\\n" + (item.get("title") or "")
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
 
 def load_json(path: Path, fallback):
@@ -611,7 +559,7 @@ def load_json(path: Path, fallback):
         return fallback
 
 def save_state(state):
-    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
 
 def match_watchlist(text: str, watchlist: dict):
     low = text.lower()
@@ -622,12 +570,34 @@ def match_watchlist(text: str, watchlist: dict):
             continue
         if any(alias.lower() in low for alias in aliases if len(alias) >= 4):
             found.append(ticker)
-    # Explicit exchange/symbol notation can reveal names outside the watchlist.
-    for match in re.finditer(r"(?<![\w])\$([A-Z]{2,5})(?![\w])|\b(?:NASDAQ|NYSE|AMEX)\s*:\s*([A-Z]{2,5})\b", text):
-        symbol = match.group(1) or match.group(2)
-        if symbol not in {"USD", "ETF", "CEO", "FDA", "SEC"}:
-            found.append(symbol)
-    return sorted(set(found))[:4]
+    return sorted(set(found))
+
+def sec_company_tickers():
+    """Current SEC issuer CIK mapping for live discovery, never historical PIT replay."""
+    try:
+        raw = json.loads(fetch("https://www.sec.gov/files/company_tickers.json").decode("utf-8"))
+    except Exception:
+        return {}
+    mapping = {}
+    for row in raw.values():
+        try:
+            cik = str(int(row["cik_str"]))
+            ticker = str(row["ticker"]).upper()
+        except (KeyError, TypeError, ValueError):
+            continue
+        if re.fullmatch(r"[A-Z0-9.\-]{1,10}", ticker):
+            mapping.setdefault(cik, set()).add(ticker)
+    return mapping
+
+def sec_issuer_tickers(source: dict, item: dict, cik_map: dict):
+    name = source.get("name", "")
+    # Ownership filings can be filed under the reporting owner, not the issuer.
+    if not name.startswith("SEC ") or "13D" in name or "13G" in name:
+        return []
+    match = re.search(r"/Archives/edgar/data/(\d+)/", item.get("url", ""), re.I)
+    if not match:
+        return []
+    return sorted(cik_map.get(str(int(match.group(1))), ()))[:4]
 
 def phrase_match(text: str, phrase: str) -> bool:
     if len(phrase) <= 5 and " " not in phrase:
@@ -656,15 +626,6 @@ def score_item(source: dict, item: dict, watchlist: dict):
         score -= 3
     return max(score, 0), tickers, sorted(set(hits))
 
-def information_quality(source: dict, item: dict):
-    """Point-in-time provenance features. Research metadata only; does not alter Gate v1."""
-    cls=source.get("class","other")
-    base={"primary":5,"scoop":4,"investigative":4,"industry":3,"leaker":2,"social":1}.get(cls,2)
-    text=f"{item.get('title','')} {item.get('snippet','')}".lower()
-    rumor=any(x in text for x in ("rumor","reportedly","sources say","people familiar","according to people","leak","leaked","scoop"))
-    official=cls=="primary"
-    return {"source_class":cls,"source_quality":base,"rumor_language":rumor,"official_source":official}
-
 def github_api(path: str, method="GET", payload=None):
     if not TOKEN or not REPO:
         raise RuntimeError("GITHUB_TOKEN/GITHUB_REPOSITORY unavailable")
@@ -681,92 +642,9 @@ def github_api(path: str, method="GET", payload=None):
         raw = resp.read()
         return json.loads(raw.decode("utf-8")) if raw else {}
 
-def append_live_artifact(path, artifact):
-    """Create an immutable PR artifact; confirm an existing file on retry."""
-    content = base64.b64encode((json.dumps(artifact, indent=2, sort_keys=True) + "\n").encode()).decode()
-    try:
-        github_api(f"/repos/{REPO}/contents/{path}", method="PUT", payload={
-            "message": f"alert(market-radar): {path.rsplit('/', 1)[-1]}", "content": content,
-            "branch": "market-radar-live",
-        })
-    except urllib.error.HTTPError as exc:
-        # GitHub refuses a second create at the same path. Keep the original
-        # immutable artifact and let the issue notification retry.
-        if exc.code != 422:
-            raise
-        existing = github_api(f"/repos/{REPO}/contents/{path}?ref=market-radar-live")
-        if existing.get("path") != path:
-            raise
-    return path
-
-def publish_live_alert(source, item, score, tickers, hits, rid, market_ctx, infoq):
-    """Append one news candidate for ChatGPT Work review."""
-    published = item.get("published")
-    artifact = {
-        "type": "NEWS_CANDIDATE", "radar_id": rid, "detected_utc": now_utc().isoformat(),
-        "published_utc": published.isoformat() if isinstance(published, dt.datetime) else None,
-        "source": source["name"], "source_class": source.get("class"),
-        "headline": item.get("title"), "url": item.get("url"),
-        "score": score, "tickers": tickers, "signals": hits,
-        "information_quality": infoq, "market_context": market_ctx,
-        "review_status": "UNREVIEWED; not a trade recommendation",
-    }
-    return append_live_artifact(f"market-radar/live/alerts/{rid}.json", artifact)
-
-def freeze_scanned_candidate(source, item, score, tickers, hits, rid, threshold, captured_utc):
-    """Preserve what a ticker-matched item said when first scanned, even below threshold.
-
-    One immutable file per radar ID makes retries harmless. This is research
-    evidence, not an alert and not a claim that a later mover was predicted.
-    """
-    if not tickers:
-        return None
-    published = item.get("published")
-    if not isinstance(published, dt.datetime) or published.tzinfo is None:
-        raise ValueError("candidate requires a timezone-aware publication time")
-    if captured_utc.tzinfo is None or published > captured_utc:
-        raise ValueError("candidate publication cannot follow capture")
-    CANDIDATE_DIR.mkdir(parents=True, exist_ok=True)
-    path = CANDIDATE_DIR / f"{rid}.json"
-    if path.exists():
-        return path
-    record = {
-        "schema_version": 1,
-        "radar_id": rid,
-        "captured_utc": captured_utc.isoformat(),
-        "published_utc": published.isoformat(),
-        "source": source.get("name"),
-        "source_class": source.get("class"),
-        "headline": item.get("title"),
-        "url": item.get("url"),
-        "tickers": sorted(set(tickers)),
-        "score_at_capture": score,
-        "threshold_at_capture": threshold,
-        "signals_at_capture": list(hits),
-        "alert_eligible_at_capture": score >= threshold,
-        "outcome": None,
-    }
-    try:
-        with path.open("x", encoding="utf-8") as fh:
-            json.dump(record, fh, sort_keys=True, separators=(",", ":"))
-            fh.write("\n")
-    except FileExistsError:
-        pass
-    return path
-
-def publish_live_entry(rid, ticker, gate, snapshot, watch):
-    """Wake the PR reviewer for the first confirmed entry on an active watch."""
-    return append_live_artifact(f"market-radar/live/alerts/{rid}-{ticker}-entry.json", {
-        "type": "ENTRY_CANDIDATE", "radar_id": rid, "ticker": ticker,
-        "detected_utc": now_utc().isoformat(), "bar_time_utc": snapshot.get("bar_time_utc"),
-        "source": watch.get("source"), "score": watch.get("score"),
-        "gate": gate, "market_context": snapshot,
-        "review_status": "UNREVIEWED; not a trade recommendation",
-    })
-
 def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     tick = " ".join(f"${t}" for t in tickers) if tickers else "NEW-CANDIDATE"
-    reactions = [m.get("reaction") for m in (market_ctx or []) if not m.get("error") and market_data_is_fresh(m)]
+    reactions = [m.get("reaction") for m in (market_ctx or []) if not m.get("error")]
     if tickers and reactions and all(r == "not-yet-reacted" for r in reactions) and score >= 8:
         stage = "EARLY"
     elif any(r == "major-reprice" for r in reactions):
@@ -780,24 +658,24 @@ def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     published = item.get("published")
     pubtxt = published.isoformat() if isinstance(published, dt.datetime) else "unknown/not supplied by source"
     body = (
-        f"<!-- radar-id:{rid} -->\n"
-        f"## First-public-source alert\n\n"
-        f"- **Score:** {score}\n"
-        f"- **Source:** {source['name']}\n"
-        f"- **Source class:** {source.get('class','other')}\n"
-        f"- **Published timestamp:** {pubtxt}\n"
-        f"- **Detected UTC:** {now_utc().isoformat()}\n"
-        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\n"
-        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\n"
-        f"- **Original/public URL:** {item.get('url','')}\n\n"
-        + ("### Live market reaction\n" + "\n".join(
+        f"<!-- radar-id:{rid} -->\\n"
+        f"## First-public-source alert\\n\\n"
+        f"- **Score:** {score}\\n"
+        f"- **Source:** {source['name']}\\n"
+        f"- **Source class:** {source.get('class','other')}\\n"
+        f"- **Published timestamp:** {pubtxt}\\n"
+        f"- **Detected UTC:** {now_utc().isoformat()}\\n"
+        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\\n"
+        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\\n"
+        f"- **Original/public URL:** {item.get('url','')}\\n\\n"
+        + ("### Live market reaction\\n" + "\\n".join(
             f"- **{m.get('ticker')}**: price {m.get('price','?')} | day {m.get('change_pct','?')}% | last 5m {m.get('change_5m_pct','?')}% | volume vs same-time {m.get('same_time_volume_ratio','?')}x | pre-news 30m {m.get('pre30m_move_pct','?')}% | first 30m after news {m.get('post30m_move_pct','?')}% | since news {m.get('since_event_move_pct','?')}% | session {m.get('market_session','?')} | **{m.get('reaction','?')}** | bar {m.get('bar_time_utc','?')}"
             if not m.get("error") else f"- **{m.get('ticker')}**: market-data error — {m.get('error')}"
             for m in (market_ctx or [])
-        ) + "\n\n" if market_ctx else "")
-        + f"### Headline\n{item.get('title','')}\n\n"
-        f"### Public snippet\n{item.get('snippet','')[:1600] or '(none)'}\n\n"
-        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\n"
+        ) + "\\n\\n" if market_ctx else "")
+        + f"### Headline\\n{item.get('title','')}\\n\\n"
+        f"### Public snippet\\n{item.get('snippet','')[:1600] or '(none)'}\\n\\n"
+        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\\n"
     )
     payload = {"title": title, "body": body}
     if OWNER:
@@ -848,7 +726,7 @@ def main():
     errors = []
     start = now_utc()
     active_watches = state.get("active_watches", {})
-    refresh_active_trades()
+    watched_tickers = set()
     # Re-evaluate prior high-quality candidates even when their source item is already seen.
     for rid, watch in list(active_watches.items()):
         try:
@@ -859,33 +737,66 @@ def main():
         if start - added > dt.timedelta(days=3):
             active_watches.pop(rid, None)
             continue
-        event_time = None
-        if watch.get("event_time_utc"):
-            try:
-                event_time = dt.datetime.fromisoformat(watch["event_time_utc"])
-            except Exception:
-                event_time = None
         for ticker in watch.get("tickers", []):
-            snap = yahoo_market_snapshot(ticker, event_time=event_time)
+            watched_tickers.add(ticker)
+            snap = yahoo_market_snapshot(ticker, include_outcome_bars=True)
             if not snap or snap.get("error"):
                 continue
-            gate = persist_market_snapshot(snap, rid, watch.get("source", "active-watch"), int(watch.get("score", THRESHOLD)), THRESHOLD)
-            alerted = watch.setdefault("buyable_alerted_tickers", [])
-            if gate and gate.get("state") == "BUYABLE_NOW" and ticker not in alerted:
-                try:
-                    publish_live_entry(rid, ticker, gate, snap, watch)
-                except Exception as exc:
-                    errors.append(f"entry alert {rid}/{ticker}: {type(exc).__name__}: {exc}")
-                    continue
-                telegram_alert(
-                    f"MARKET RADAR ENTRY CANDIDATE ${ticker} — manual review required\n"
-                    f"Observed price: {gate.get('entry_price')}\n"
-                    f"Reason: {gate.get('reason')}\n"
-                    f"Source: {watch.get('source', 'active-watch')}"
-                )
-                alerted.append(ticker)
+            persist_market_snapshot(snap, rid, watch.get("source", "active-watch"), int(watch.get("score", THRESHOLD)), THRESHOLD)
+
+    # Continue outcome capture after the three-day candidate watch expires.
+    open_trades = load_trades(TRADES_FILE)
+    pending = {
+        t["ticker"] for t in open_trades.values()
+        if t.get("first_threshold") is None or
+        (t.get("first_threshold") == "PLUS5_FIRST" and not t.get("plus10"))
+    }
+    for ticker in pending - watched_tickers:
+        snap = yahoo_market_snapshot(ticker, include_outcome_bars=True)
+        if snap and not snap.get("error"):
+            track_live_outcome(snap, {"state": "NO_ENTRY"}, "outcome-followup")
+
+    # Tape-first discovery: price/volume may reveal a developing setup before
+    # mainstream/news feeds identify the catalyst. Discovery != entry.
+    tape_alerts = state.get("tape_alerts", {})
+    try:
+        candidates = discover_candidates(fetch, limit=int(os.getenv("RADAR_TAPE_CANDIDATES", "50")))
+        for cand in candidates:
+            ticker = cand["ticker"]
+            snap = yahoo_market_snapshot(ticker, include_outcome_bars=True)
+            if not snap or snap.get("error"):
+                continue
+            sig = tape_signal(snap)
+            if not sig["qualifies"]:
+                continue
+            key = f"tape:{ticker}"
+            prior = tape_alerts.get(key, {})
+            try:
+                prior_at = dt.datetime.fromisoformat(prior.get("alerted_utc", ""))
+            except Exception:
+                prior_at = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+            # Re-alert only after cooldown or a meaningful score upgrade.
+            if start - prior_at < dt.timedelta(minutes=45) and sig["score"] <= int(prior.get("score", 0)) + 1:
+                persist_market_snapshot(snap, key, "TAPE-FIRST", sig["score"], THRESHOLD)
+                continue
+            item = {
+                "title": f"{ticker} abnormal tape before/without confirmed fresh catalyst",
+                "url": cand.get("source_url", ""),
+                "snippet": sig["summary"] + " | Catalyst provenance: not yet established; investigate SEC/IR/regulatory/government sources immediately.",
+                "published": start,
+            }
+            source = {"name":"TAPE-FIRST public market screen","class":"market-data","weight":0}
+            rid = hashlib.sha256((key + start.strftime("%Y-%m-%dT%H:%M")).encode()).hexdigest()[:20]
+            persist_market_snapshot(snap, rid, source["name"], sig["score"], THRESHOLD)
+            url = create_issue(source, item, sig["score"], [ticker], sig["hits"], rid, market_ctx=[snap])
+            alerts.append((source["name"], item["title"], sig["score"], [ticker], url))
+            tape_alerts[key] = {"alerted_utc": start.isoformat(), "score": sig["score"], "session": snap.get("market_session")}
+            telegram_alert(f"MARKET RADAR TAPE-FIRST {sig['score']} ${ticker}\n{sig['summary']}\nCatalyst not yet confirmed — investigate immediately.\nIssue: {url}")
+    except Exception as e:
+        errors.append(f"tape-first: {type(e).__name__}: {e}")
 
     fetched = []
+    cik_map = sec_company_tickers()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
         futures = {pool.submit(source_items, source): source for source in sources}
         for future in as_completed(futures):
@@ -901,77 +812,59 @@ def main():
             rid = item_id(source["name"], item)
             if rid in old_seen:
                 continue
-            published = item.get("published")
-            if not isinstance(published, dt.datetime) or not dt.timedelta(0) <= start - published <= dt.timedelta(hours=BOOTSTRAP_ALERT_HOURS):
-                new_seen.append(rid)
+            new_seen.append(rid)
+            if not fresh_for_alert(item.get("published"), start):
                 continue
             score, tickers, hits = score_item(source, item, watchlist)
-            infoq = information_quality(source, item)
+            issuer_tickers = sec_issuer_tickers(source, item, cik_map)
+            if issuer_tickers:
+                tickers = sorted(set(tickers + issuer_tickers))
+                hits.append("sec-issuer-cik-match")
             effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
-            # Market confirmation can add at most two points. Avoid a Yahoo
-            # request for every low-score headline in a large public feed.
-            market_ctx = (market_context_for_tickers(tickers, event_time=item.get("published"))
-                          if tickers and score >= effective_threshold - 2 else [])
-            valid_market = [m for m in market_ctx if not m.get("error") and market_data_is_fresh(m)]
+            market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
+            valid_market = [m for m in market_ctx if not m.get("error")]
+            effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
+            for snap in valid_market:
+                persist_market_snapshot(snap, rid, source["name"], score, effective_threshold)
             if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
                 score += 2
                 hits.append("market-confirmation")
             if valid_market and all(m.get("reaction") == "not-yet-reacted" for m in valid_market):
                 hits.append("market-not-yet-reacted")
-            try:
-                freeze_scanned_candidate(source, item, score, tickers, hits, rid,
-                                         effective_threshold, now_utc())
-            except (OSError, ValueError) as exc:
-                # Keep the item eligible for the next scan instead of marking
-                # it seen without an immutable record.
-                errors.append(f"candidate freeze {rid}: {type(exc).__name__}: {exc}")
-                continue
-            prov = provenance(source, item, tickers, fetched, watchlist, match_watchlist, CATALYSTS, now_utc)
-            infoq.update(prov)
-            infoq["rumor_only"] = bool(infoq.get("rumor_language") and not infoq.get("primary_confirmation"))
-            rv = [m.get("same_time_volume_ratio") for m in valid_market if isinstance(m.get("same_time_volume_ratio"), (int, float))]
-            va = [m.get("volume_acceleration_15m") for m in valid_market if isinstance(m.get("volume_acceleration_15m"), (int, float))]
-            mo = [m.get("momentum_15m_pct") for m in valid_market if isinstance(m.get("momentum_15m_pct"), (int, float))]
-            infoq["market_confirmation"] = {"rvol_confirmed": bool(rv and max(rv) >= 2), "volume_acceleration_confirmed": bool(va and max(va) >= 1.5), "momentum_confirmed": bool(mo and max(mo) >= 2)}
-            infoq["propagation_stage"] = "PRIMARY_CONFIRMED" if infoq.get("primary_confirmation") else ("MULTI_SOURCE" if infoq.get("independent_corroboration_count", 0) >= 2 else ("CORROBORATED" if infoq.get("independent_corroboration_count", 0) else "UNCONFIRMED"))
-            # FINRA's daily report is useful for later review, but an API call per
-            # news item can exhaust the four-minute scheduled scan.
-            infoq["finra_short_sale_volume"] = "not queried in latency-critical scan"
-            for snap in valid_market:
-                persist_market_snapshot(snap, rid, source["name"], score, effective_threshold, research_context=infoq)
             if tickers and score >= effective_threshold:
                 active_watches[rid] = {
                     "tickers": tickers,
                     "score": score,
                     "source": source["name"],
                     "added_utc": start.isoformat(),
-                    "event_time_utc": item["published"].isoformat() if isinstance(item.get("published"), dt.datetime) else None,
-                    "information_quality": infoq,
                 }
             if score < effective_threshold:
-                new_seen.append(rid)
                 continue
+            if not bootstrapped:
+                published = item.get("published")
+                if not isinstance(published, dt.datetime):
+                    continue
+                age = start - published
+                if age.total_seconds() < 0 or age > dt.timedelta(hours=BOOTSTRAP_ALERT_HOURS):
+                    continue
             try:
-                publish_live_alert(source, item, score, tickers, hits, rid, market_ctx, infoq)
                 url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
-                new_seen.append(rid)
                 alerts.append((source["name"], item.get("title", ""), score, tickers, url))
                 ticker_text = " ".join("$" + x for x in tickers) or "NEW"
-                telegram_alert(f"MARKET RADAR {score} {ticker_text}\n{item.get('title','')}\n{source['name']}\n{item.get('url','')}\nIssue: {url}")
+                telegram_alert(f"MARKET RADAR {score} {ticker_text}\\n{item.get('title','')}\\n{source['name']}\\n{item.get('url','')}\\nIssue: {url}")
             except Exception as e:
-                errors.append(f"alert {rid}: {type(e).__name__}: {e}")
+                errors.append(f"issue {rid}: {type(e).__name__}: {e}")
 
     combined = list(dict.fromkeys(list(old_seen) + new_seen))
     if len(combined) > MAX_SEEN:
         combined = combined[-MAX_SEEN:]
     market_probe = yahoo_market_snapshot("CRWV")
-    metrics = live_metrics(load_trades(TRADES_FILE))
     state.update({
         "bootstrapped": True,
         "market_probe": market_probe,
-        "live_metrics": metrics,
         "seen": combined,
         "active_watches": active_watches,
+        "tape_alerts": tape_alerts,
         "last_run_utc": now_utc().isoformat(),
         "last_alert_count": len(alerts),
         "last_error_count": len(errors),
@@ -983,7 +876,6 @@ def main():
         "sources": len(sources),
         "new_items": len(new_seen),
         "alerts": len(alerts),
-        "live_metrics": metrics,
         "errors": errors[:20],
     }, indent=2))
     for s, title, score, tickers, url in alerts:
