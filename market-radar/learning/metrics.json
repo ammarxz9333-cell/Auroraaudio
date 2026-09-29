@@ -1,9 +1,142 @@
 {
-  "by_direction": {},
-  "by_score_band": {},
-  "by_source": {},
-  "by_source_class": {},
-  "by_stage": {},
+  "by_direction": {
+    "ambiguous": {
+      "adverse_5pct_24h_rate": 26.67,
+      "avg_mae_24h_pct": -3.424,
+      "avg_mfe_24h_pct": 1.331,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 15,
+      "n": 15
+    },
+    "unknown": {
+      "adverse_5pct_24h_rate": 0.0,
+      "avg_mae_24h_pct": -3.821,
+      "avg_mfe_24h_pct": 0.0,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 2,
+      "n": 6
+    }
+  },
+  "by_score_band": {
+    "10-11": {
+      "adverse_5pct_24h_rate": null,
+      "avg_mae_24h_pct": null,
+      "avg_mfe_24h_pct": null,
+      "hit_5pct_24h_rate": null,
+      "mature_24h": 0,
+      "n": 1
+    },
+    "12-13": {
+      "adverse_5pct_24h_rate": 22.22,
+      "avg_mae_24h_pct": -3.26,
+      "avg_mfe_24h_pct": 1.71,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 9,
+      "n": 9
+    },
+    "8-9": {
+      "adverse_5pct_24h_rate": 25.0,
+      "avg_mae_24h_pct": -3.708,
+      "avg_mfe_24h_pct": 0.572,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 8,
+      "n": 11
+    }
+  },
+  "by_source": {
+    "Analyst initiations and upgrades": {
+      "adverse_5pct_24h_rate": 20.0,
+      "avg_mae_24h_pct": -3.55,
+      "avg_mfe_24h_pct": 0.45,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 5,
+      "n": 8
+    },
+    "Company certification and production milestones": {
+      "adverse_5pct_24h_rate": 33.33,
+      "avg_mae_24h_pct": -3.972,
+      "avg_mfe_24h_pct": 0.776,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 3,
+      "n": 3
+    },
+    "SEC 8-K current filings": {
+      "adverse_5pct_24h_rate": null,
+      "avg_mae_24h_pct": null,
+      "avg_mfe_24h_pct": null,
+      "hit_5pct_24h_rate": null,
+      "mature_24h": 0,
+      "n": 1
+    },
+    "Yahoo early momentum discovery": {
+      "adverse_5pct_24h_rate": 22.22,
+      "avg_mae_24h_pct": -3.26,
+      "avg_mfe_24h_pct": 1.71,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 9,
+      "n": 9
+    }
+  },
+  "by_source_class": {
+    "industry": {
+      "adverse_5pct_24h_rate": 20.0,
+      "avg_mae_24h_pct": -3.912,
+      "avg_mfe_24h_pct": 0.466,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 5,
+      "n": 8
+    },
+    "momentum": {
+      "adverse_5pct_24h_rate": 22.22,
+      "avg_mae_24h_pct": -3.26,
+      "avg_mfe_24h_pct": 1.71,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 9,
+      "n": 9
+    },
+    "primary": {
+      "adverse_5pct_24h_rate": null,
+      "avg_mae_24h_pct": null,
+      "avg_mfe_24h_pct": null,
+      "hit_5pct_24h_rate": null,
+      "mature_24h": 0,
+      "n": 1
+    },
+    "secondary": {
+      "adverse_5pct_24h_rate": 33.33,
+      "avg_mae_24h_pct": -3.37,
+      "avg_mfe_24h_pct": 0.75,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 3,
+      "n": 3
+    }
+  },
+  "by_stage": {
+    "EARLY": {
+      "adverse_5pct_24h_rate": 0.0,
+      "avg_mae_24h_pct": -1.828,
+      "avg_mfe_24h_pct": 0.756,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 2,
+      "n": 2
+    },
+    "REACTING": {
+      "adverse_5pct_24h_rate": 30.77,
+      "avg_mae_24h_pct": -3.67,
+      "avg_mfe_24h_pct": 1.42,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 13,
+      "n": 13
+    },
+    "unknown": {
+      "adverse_5pct_24h_rate": 0.0,
+      "avg_mae_24h_pct": -3.821,
+      "avg_mfe_24h_pct": 0.0,
+      "hit_5pct_24h_rate": 0.0,
+      "mature_24h": 2,
+      "n": 6
+    }
+  },
   "definition": {
     "adverse_5pct_24h": "MAE <= -5% during first 24 elapsed hours",
     "entry": "first available 5-minute bar at or after alert detection",
@@ -12,31 +145,31 @@
     "hit_5pct_24h": "MFE >= +5% during first 24 elapsed hours",
     "relative_strength": "stock forward return minus SPY/QQQ return over the same timestamp-aligned horizon"
   },
-  "generated_utc": "2026-09-27T15:42:11.537995+00:00",
+  "generated_utc": "2026-09-29T01:53:41.234957+00:00",
   "high_confidence_score_10_plus": {
-    "adverse_5pct_24h_rate": null,
-    "avg_mae_24h_pct": null,
-    "avg_mfe_24h_pct": null,
-    "hit_5pct_24h_rate": null,
-    "mature_24h": 0
+    "adverse_5pct_24h_rate": 22.22,
+    "avg_mae_24h_pct": -3.26,
+    "avg_mfe_24h_pct": 1.71,
+    "hit_5pct_24h_rate": 0.0,
+    "mature_24h": 9
   },
   "overall": {
-    "adverse_5pct_24h_rate": null,
+    "adverse_5pct_24h_rate": 23.53,
     "avg_10d_alpha_vs_spy_pct": null,
     "avg_10d_return_pct": null,
-    "avg_24h_alpha_vs_qqq_pct": null,
-    "avg_24h_alpha_vs_spy_pct": null,
-    "avg_24h_return_pct": null,
+    "avg_24h_alpha_vs_qqq_pct": -1.122,
+    "avg_24h_alpha_vs_spy_pct": -1.124,
+    "avg_24h_return_pct": -1.515,
     "avg_3d_alpha_vs_spy_pct": null,
     "avg_3d_return_pct": null,
     "avg_5d_alpha_vs_spy_pct": null,
     "avg_5d_return_pct": null,
-    "avg_mae_24h_pct": null,
-    "avg_mfe_24h_pct": null,
+    "avg_mae_24h_pct": -3.471,
+    "avg_mfe_24h_pct": 1.175,
     "hit_10pct_48h_rate": null,
-    "hit_5pct_24h_rate": null,
-    "mature_24h": 0,
+    "hit_5pct_24h_rate": 0.0,
+    "mature_24h": 17,
     "mature_48h": 0,
-    "observations": 0
+    "observations": 21
   }
 }
