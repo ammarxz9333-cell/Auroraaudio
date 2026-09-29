@@ -27,6 +27,7 @@ from statistics import median
 from zoneinfo import ZoneInfo
 from entry_gate import GateInput, entry_gate
 from live.outcome_tracker import new_trade, update_trade, load as load_trades, save as save_trades
+from tape_discovery import discover_candidates, tape_signal
 
 ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
@@ -270,10 +271,17 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
 
         latest = bars[-1]
 
-        last_two = bars[-2:] if len(bars) >= 2 else bars
-        change_5m = None
-        if len(last_two) == 2 and last_two[0]["close"]:
-            change_5m = ((last_two[1]["close"] / last_two[0]["close"]) - 1.0) * 100.0
+        def trailing_move(nbars):
+            if len(bars) < nbars + 1 or not bars[-nbars-1]["close"]:
+                return None
+            # Require a contiguous-ish window; do not bridge overnight/session gaps.
+            if bars[-1]["utc"] - bars[-nbars-1]["utc"] > dt.timedelta(minutes=5*nbars + 7):
+                return None
+            return ((bars[-1]["close"] / bars[-nbars-1]["close"]) - 1.0) * 100.0
+
+        change_5m = trailing_move(1)
+        change_15m = trailing_move(3)
+        change_30m = trailing_move(6)
 
         event_price = None
         pre30_move = None
@@ -329,20 +337,41 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
         change_pct = ((latest["close"] / prev_close) - 1.0) * 100.0 if prev_close else None
 
         today_bars = [b for b in by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= cutoff]
-        today_cum = sum(b["volume"] for b in today_bars)
         regular_open = today_bars[0]["open"] if today_bars else None
         session_high = max((b["high"] for b in today_bars), default=None)
         session_low = min((b["low"] for b in today_bars), default=None)
         vwap_num = sum((((b["high"] + b["low"] + b["close"]) / 3.0) * b["volume"]) for b in today_bars if b["volume"] > 0)
         vwap_den = sum(b["volume"] for b in today_bars if b["volume"] > 0)
         session_vwap = (vwap_num / vwap_den) if vwap_den else None
-        hist_cums = []
-        for d, dbars in by_day.items():
-            if d == today_key:
-                continue
-            cum = sum(b["volume"] for b in dbars if (b["ny"].hour*60+b["ny"].minute) <= cutoff)
-            if cum > 0:
-                hist_cums.append(cum)
+
+        # Same-clock RVOL must work before 09:30 too. During PRE compare
+        # 04:00->current clock with the same premarket slice on prior days.
+        if market_session == "PRE":
+            pre_start = 4 * 60
+            clock_cutoff = mins_now
+            ext_by_day = {}
+            for b in bars:
+                m = b["ny"].hour * 60 + b["ny"].minute
+                if pre_start <= m < reg_start:
+                    ext_by_day.setdefault(b["ny"].date().isoformat(), []).append(b)
+            sample_today = [b for b in ext_by_day.get(today_key, []) if (b["ny"].hour*60+b["ny"].minute) <= clock_cutoff]
+            today_cum = sum(b["volume"] for b in sample_today)
+            hist_cums = []
+            for d, dbars in ext_by_day.items():
+                if d == today_key:
+                    continue
+                cum = sum(b["volume"] for b in dbars if (b["ny"].hour*60+b["ny"].minute) <= clock_cutoff)
+                if cum > 0:
+                    hist_cums.append(cum)
+        else:
+            today_cum = sum(b["volume"] for b in today_bars)
+            hist_cums = []
+            for d, dbars in by_day.items():
+                if d == today_key:
+                    continue
+                cum = sum(b["volume"] for b in dbars if (b["ny"].hour*60+b["ny"].minute) <= cutoff)
+                if cum > 0:
+                    hist_cums.append(cum)
         vol_ratio = (today_cum / median(hist_cums)) if today_cum > 0 and hist_cums else None
 
         abs_change = abs(change_pct or 0)
@@ -361,6 +390,8 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
             "previous_close": round(prev_close, 4),
             "change_pct": round(change_pct, 3) if change_pct is not None else None,
             "change_5m_pct": round(change_5m, 3) if change_5m is not None else None,
+            "change_15m_pct": round(change_15m, 3) if change_15m is not None else None,
+            "change_30m_pct": round(change_30m, 3) if change_30m is not None else None,
             "cum_volume": today_cum,
             "regular_open": round(regular_open, 4) if regular_open is not None else None,
             "session_high": round(session_high, 4) if session_high is not None else None,
@@ -467,6 +498,8 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "previous_close": snapshot.get("previous_close"),
         "change_pct": snapshot.get("change_pct"),
         "change_5m_pct": snapshot.get("change_5m_pct"),
+        "change_15m_pct": snapshot.get("change_15m_pct"),
+        "change_30m_pct": snapshot.get("change_30m_pct"),
         "cum_volume": snapshot.get("cum_volume"),
         "same_time_volume_ratio": snapshot.get("same_time_volume_ratio"),
         "market_session": snapshot.get("market_session"),
@@ -723,6 +756,45 @@ def main():
         if snap and not snap.get("error"):
             track_live_outcome(snap, {"state": "NO_ENTRY"}, "outcome-followup")
 
+    # Tape-first discovery: price/volume may reveal a developing setup before
+    # mainstream/news feeds identify the catalyst. Discovery != entry.
+    tape_alerts = state.get("tape_alerts", {})
+    try:
+        candidates = discover_candidates(fetch, limit=int(os.getenv("RADAR_TAPE_CANDIDATES", "50")))
+        for cand in candidates:
+            ticker = cand["ticker"]
+            snap = yahoo_market_snapshot(ticker, include_outcome_bars=True)
+            if not snap or snap.get("error"):
+                continue
+            sig = tape_signal(snap)
+            if not sig["qualifies"]:
+                continue
+            key = f"tape:{ticker}"
+            prior = tape_alerts.get(key, {})
+            try:
+                prior_at = dt.datetime.fromisoformat(prior.get("alerted_utc", ""))
+            except Exception:
+                prior_at = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
+            # Re-alert only after cooldown or a meaningful score upgrade.
+            if start - prior_at < dt.timedelta(minutes=45) and sig["score"] <= int(prior.get("score", 0)) + 1:
+                persist_market_snapshot(snap, key, "TAPE-FIRST", sig["score"], THRESHOLD)
+                continue
+            item = {
+                "title": f"{ticker} abnormal tape before/without confirmed fresh catalyst",
+                "url": cand.get("source_url", ""),
+                "snippet": sig["summary"] + " | Catalyst provenance: not yet established; investigate SEC/IR/regulatory/government sources immediately.",
+                "published": start,
+            }
+            source = {"name":"TAPE-FIRST public market screen","class":"market-data","weight":0}
+            rid = hashlib.sha256((key + start.strftime("%Y-%m-%dT%H:%M")).encode()).hexdigest()[:20]
+            persist_market_snapshot(snap, rid, source["name"], sig["score"], THRESHOLD)
+            url = create_issue(source, item, sig["score"], [ticker], sig["hits"], rid, market_ctx=[snap])
+            alerts.append((source["name"], item["title"], sig["score"], [ticker], url))
+            tape_alerts[key] = {"alerted_utc": start.isoformat(), "score": sig["score"], "session": snap.get("market_session")}
+            telegram_alert(f"MARKET RADAR TAPE-FIRST {sig['score']} ${ticker}\n{sig['summary']}\nCatalyst not yet confirmed — investigate immediately.\nIssue: {url}")
+    except Exception as e:
+        errors.append(f"tape-first: {type(e).__name__}: {e}")
+
     fetched = []
     cik_map = sec_company_tickers()
     with ThreadPoolExecutor(max_workers=MAX_WORKERS) as pool:
@@ -792,6 +864,7 @@ def main():
         "market_probe": market_probe,
         "seen": combined,
         "active_watches": active_watches,
+        "tape_alerts": tape_alerts,
         "last_run_utc": now_utc().isoformat(),
         "last_alert_count": len(alerts),
         "last_error_count": len(errors),
