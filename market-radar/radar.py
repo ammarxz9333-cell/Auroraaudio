@@ -28,12 +28,14 @@ from zoneinfo import ZoneInfo
 from entry_gate import GateInput, entry_gate
 from live.outcome_tracker import new_trade, update_trade, load as load_trades, save as save_trades
 from tape_discovery import discover_candidates, tape_signal
+from learning.missed_movers import load as load_missed_movers, save as save_missed_movers, update_case as update_missed_case
 
 ROOT = Path(__file__).resolve().parent
 SOURCES_FILE = ROOT / "sources.json"
 STATE_FILE = ROOT / "state.json"
 TAPE_DIR = ROOT / "live" / "tape"
 TRADES_FILE = ROOT / "live" / "trades.json"
+MISSED_MOVERS_FILE = ROOT / "learning" / "missed-movers.json"
 USER_AGENT = os.getenv("RADAR_USER_AGENT", "MarketRadar/1.0 public-source-monitor contact=github-actions")
 REPO = os.getenv("GITHUB_REPOSITORY", "")
 TOKEN = os.getenv("GITHUB_TOKEN", "")
@@ -775,6 +777,7 @@ def main():
     # Tape-first discovery: price/volume may reveal a developing setup before
     # mainstream/news feeds identify the catalyst. Discovery != entry.
     tape_alerts = state.get("tape_alerts", {})
+    missed_learning = load_missed_movers(MISSED_MOVERS_FILE)
     try:
         candidates = discover_candidates(fetch, limit=int(os.getenv("RADAR_TAPE_CANDIDATES", "50")))
         for cand in candidates:
@@ -783,6 +786,7 @@ def main():
             if not snap or snap.get("error"):
                 continue
             sig = tape_signal(snap)
+            update_missed_case(missed_learning, snap, sig["qualifies"], start.isoformat())
             if not sig["qualifies"]:
                 continue
             key = f"tape:{ticker}"
@@ -890,6 +894,7 @@ def main():
         "last_errors": errors[:30],
     })
     save_state(state)
+    save_missed_movers(MISSED_MOVERS_FILE, missed_learning)
 
     print(json.dumps({
         "sources": len(sources),
