@@ -787,10 +787,16 @@ def main():
     missed_learning = load_missed_movers(MISSED_MOVERS_FILE)
     try:
         candidates = discover_candidates(fetch, limit=int(os.getenv("RADAR_TAPE_CANDIDATES", "50")))
+        tape_candidate_errors = 0
         for cand in candidates:
             ticker = cand["ticker"]
-            snap = yahoo_market_snapshot(ticker, include_outcome_bars=True)
+            try:
+                snap = yahoo_market_snapshot(ticker, include_outcome_bars=True)
+            except Exception:
+                tape_candidate_errors += 1
+                continue
             if not snap or snap.get("error"):
+                tape_candidate_errors += 1
                 continue
             sig = tape_signal(snap)
             update_missed_case(missed_learning, snap, sig["qualifies"], start.isoformat())
