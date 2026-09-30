@@ -7,7 +7,7 @@
         "bar_utc": "2026-09-28T13:30:00+00:00",
         "price": 33.7975
       },
-      "evaluated_utc": "2026-09-29T01:53:38.767110+00:00",
+      "evaluated_utc": "2026-09-30T01:16:50.008410+00:00",
       "headline": "COPT Defense Properties (NYSE:CDP) Stock Has Average Price Target of $37.38 - MarketBeat",
       "horizons": {
         "10d": {
@@ -56,13 +56,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": 0.6767,
+          "alpha_vs_spy_pct": 1.1353,
+          "bar_utc": "2026-09-29T15:40:00+00:00",
+          "price": 33.99,
+          "qqq_return_pct": -0.1071,
+          "return_pct": 0.5696,
+          "spy_return_pct": -0.5657
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -88,10 +88,10 @@
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 0.7027,
-      "mfe_48h_pct": 0.7027,
+      "mfe_48h_pct": 1.7531,
       "published_utc": "2026-09-27T06:56:25+00:00",
       "radar_id": "78d617dc3e7360fb561e",
       "regular_close_1": {
@@ -100,9 +100,9 @@
         "return_pct": -0.111
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 34.29,
+        "return_pct": 1.4572
       },
       "score": 9,
       "signals": [
@@ -125,7 +125,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 31.79
       },
-      "evaluated_utc": "2026-09-29T01:53:38.874542+00:00",
+      "evaluated_utc": "2026-09-30T01:16:50.096402+00:00",
       "headline": "Keurig Dr Pepper, Inc (NASDAQ:KDP) Stock Has Consensus Price Target of $35.00 - MarketBeat",
       "horizons": {
         "10d": {
@@ -174,13 +174,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -2.7082,
+          "alpha_vs_spy_pct": -2.2496,
+          "bar_utc": "2026-09-29T15:40:00+00:00",
+          "price": 30.895,
+          "qqq_return_pct": -0.1071,
+          "return_pct": -2.8153,
+          "spy_return_pct": -0.5657
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -201,12 +201,12 @@
           "spy_return_pct": 0.0
         }
       },
-      "mae_24h_pct": -2.7996,
-      "mae_48h_pct": -2.7996,
+      "mae_24h_pct": -4.0226,
+      "mae_48h_pct": -4.0226,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 1.4281,
       "mfe_48h_pct": 1.4281,
@@ -218,9 +218,9 @@
         "return_pct": -0.9752
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 31.031,
+        "return_pct": -2.3875
       },
       "score": 9,
       "signals": [
@@ -242,7 +242,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 1.68
       },
-      "evaluated_utc": "2026-09-29T01:53:38.974448+00:00",
+      "evaluated_utc": "2026-09-30T01:16:50.304656+00:00",
       "headline": "Why Did SMR, RR, FAC Stocks Plummet To 52-Week Lows? - Stocktwits",
       "horizons": {
         "10d": {
@@ -291,13 +291,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -4.9524,
+          "alpha_vs_spy_pct": -4.4938,
+          "bar_utc": "2026-09-29T15:40:00+00:00",
+          "price": 1.595,
+          "qqq_return_pct": -0.1071,
+          "return_pct": -5.0595,
+          "spy_return_pct": -0.5657
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -319,11 +319,11 @@
         }
       },
       "mae_24h_pct": -6.5476,
-      "mae_48h_pct": -6.5476,
+      "mae_48h_pct": -6.8452,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 0.119,
       "mfe_48h_pct": 0.119,
@@ -335,9 +335,9 @@
         "return_pct": -6.25
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 1.595,
+        "return_pct": -5.0595
       },
       "score": 8,
       "signals": [
@@ -358,7 +358,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 6.22
       },
-      "evaluated_utc": "2026-09-29T01:53:39.124465+00:00",
+      "evaluated_utc": "2026-09-30T01:16:50.494085+00:00",
       "headline": "Joby Aviation stock could double to $12 in 2027 amid key certification and revenue milestones. - Pluang",
       "horizons": {
         "10d": {
@@ -407,13 +407,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -3.1887,
+          "alpha_vs_spy_pct": -2.7301,
+          "bar_utc": "2026-09-29T15:40:00+00:00",
+          "price": 6.015,
+          "qqq_return_pct": -0.1071,
+          "return_pct": -3.2958,
+          "spy_return_pct": -0.5657
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -435,11 +435,11 @@
         }
       },
       "mae_24h_pct": -2.8939,
-      "mae_48h_pct": -2.8939,
+      "mae_48h_pct": -4.1801,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 0.8103,
       "mfe_48h_pct": 0.8103,
@@ -451,9 +451,9 @@
         "return_pct": -1.8489
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 5.99,
+        "return_pct": -3.6978
       },
       "score": 9,
       "signals": [
@@ -475,7 +475,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 34.9
       },
-      "evaluated_utc": "2026-09-29T01:53:39.239685+00:00",
+      "evaluated_utc": "2026-09-30T01:16:50.613201+00:00",
       "headline": "Bank of America Corp DE Buys 292,767 Shares of Gentherm Inc $THRM - MarketBeat",
       "horizons": {
         "10d": {
@@ -524,13 +524,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -3.6465,
+          "alpha_vs_spy_pct": -3.1879,
+          "bar_utc": "2026-09-29T15:45:00+00:00",
+          "price": 33.59,
+          "qqq_return_pct": -0.1071,
+          "return_pct": -3.7536,
+          "spy_return_pct": -0.5657
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -552,11 +552,11 @@
         }
       },
       "mae_24h_pct": -3.9542,
-      "mae_48h_pct": -3.9542,
+      "mae_48h_pct": -4.8424,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 1.5186,
       "mfe_48h_pct": 1.5186,
@@ -568,9 +568,9 @@
         "return_pct": -3.639
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 33.9,
+        "return_pct": -2.8653
       },
       "score": 9,
       "signals": [
@@ -591,7 +591,7 @@
         "bar_utc": "2026-09-28T09:35:00+00:00",
         "price": 13.32
       },
-      "evaluated_utc": "2026-09-29T01:53:39.372160+00:00",
+      "evaluated_utc": "2026-09-30T01:16:50.756629+00:00",
       "headline": "$FIGS abnormal market momentum: +7.45% day move",
       "horizons": {
         "10d": {
@@ -640,13 +640,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": 3.4479,
+          "alpha_vs_spy_pct": 3.9065,
+          "bar_utc": "2026-09-29T15:40:00+00:00",
+          "price": 13.765,
+          "qqq_return_pct": -0.1071,
+          "return_pct": 3.3408,
+          "spy_return_pct": -0.5657
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -672,10 +672,10 @@
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 3.491,
-      "mfe_48h_pct": 3.491,
+      "mfe_48h_pct": 6.494,
       "published_utc": "2026-09-27T15:39:51.813546+00:00",
       "radar_id": "c9d7f3bc54b01cd99edb",
       "regular_close_1": {
@@ -684,9 +684,9 @@
         "return_pct": 2.1772
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 14.065,
+        "return_pct": 5.5931
       },
       "score": 12,
       "signals": [
@@ -708,7 +708,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 89.2035
       },
-      "evaluated_utc": "2026-09-29T01:53:39.479456+00:00",
+      "evaluated_utc": "2026-09-30T01:16:50.883701+00:00",
       "headline": "$AAON abnormal market momentum: +5.73% day move",
       "horizons": {
         "10d": {
@@ -757,13 +757,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -4.0839,
+          "alpha_vs_spy_pct": -3.6253,
+          "bar_utc": "2026-09-29T15:40:00+00:00",
+          "price": 85.465,
+          "qqq_return_pct": -0.1071,
+          "return_pct": -4.191,
+          "spy_return_pct": -0.5657
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -789,7 +789,7 @@
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 2.0868,
       "mfe_48h_pct": 2.0868,
@@ -801,9 +801,9 @@
         "return_pct": -4.2975
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 85.13,
+        "return_pct": -4.5665
       },
       "score": 12,
       "signals": [
@@ -825,7 +825,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 33.61
       },
-      "evaluated_utc": "2026-09-29T01:53:39.601765+00:00",
+      "evaluated_utc": "2026-09-30T01:16:51.005038+00:00",
       "headline": "$BIRK abnormal market momentum: +5.69% day move",
       "horizons": {
         "10d": {
@@ -874,13 +874,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -3.4038,
+          "alpha_vs_spy_pct": -2.9452,
+          "bar_utc": "2026-09-29T15:40:00+00:00",
+          "price": 32.43,
+          "qqq_return_pct": -0.1071,
+          "return_pct": -3.5109,
+          "spy_return_pct": -0.5657
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -902,11 +902,11 @@
         }
       },
       "mae_24h_pct": -1.9488,
-      "mae_48h_pct": -1.9488,
+      "mae_48h_pct": -4.0464,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 0.0,
       "mfe_48h_pct": 0.0,
@@ -918,9 +918,9 @@
         "return_pct": -1.9191
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 33.04,
+        "return_pct": -1.6959
       },
       "score": 12,
       "signals": [
@@ -942,7 +942,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 23.9955
       },
-      "evaluated_utc": "2026-09-29T01:53:39.766814+00:00",
+      "evaluated_utc": "2026-09-30T01:16:51.114767+00:00",
       "headline": "$FLY abnormal market momentum: +5.50% day move",
       "horizons": {
         "10d": {
@@ -991,13 +991,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -1.8986,
+          "alpha_vs_spy_pct": -1.3957,
+          "bar_utc": "2026-09-29T15:45:00+00:00",
+          "price": 23.53,
+          "qqq_return_pct": -0.0413,
+          "return_pct": -1.9399,
+          "spy_return_pct": -0.5442
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -1019,11 +1019,11 @@
         }
       },
       "mae_24h_pct": -1.1898,
-      "mae_48h_pct": -1.1898,
+      "mae_48h_pct": -5.6281,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 4.3321,
       "mfe_48h_pct": 4.3321,
@@ -1035,9 +1035,9 @@
         "return_pct": 0.5189
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 22.87,
+        "return_pct": -4.6905
       },
       "score": 12,
       "signals": [
@@ -1059,7 +1059,7 @@
         "bar_utc": "2026-09-28T12:35:00+00:00",
         "price": 15.28
       },
-      "evaluated_utc": "2026-09-29T01:53:39.909665+00:00",
+      "evaluated_utc": "2026-09-30T01:16:51.268818+00:00",
       "headline": "$PRGO abnormal market momentum: +5.04% day move",
       "horizons": {
         "10d": {
@@ -1108,13 +1108,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -2.0529,
+          "alpha_vs_spy_pct": -1.55,
+          "bar_utc": "2026-09-29T15:45:00+00:00",
+          "price": 14.96,
+          "qqq_return_pct": -0.0413,
+          "return_pct": -2.0942,
+          "spy_return_pct": -0.5442
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -1136,11 +1136,11 @@
         }
       },
       "mae_24h_pct": -2.356,
-      "mae_48h_pct": -2.356,
+      "mae_48h_pct": -2.8632,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 1.4398,
       "mfe_48h_pct": 1.4398,
@@ -1152,9 +1152,9 @@
         "return_pct": -1.2435
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 14.985,
+        "return_pct": -1.9306
       },
       "score": 12,
       "signals": [
@@ -1176,7 +1176,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 89.49
       },
-      "evaluated_utc": "2026-09-29T01:53:40.040700+00:00",
+      "evaluated_utc": "2026-09-30T01:16:51.374074+00:00",
       "headline": "$CVS abnormal market momentum: +4.80% day move",
       "horizons": {
         "10d": {
@@ -1225,13 +1225,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -2.8138,
+          "alpha_vs_spy_pct": -2.3109,
+          "bar_utc": "2026-09-29T15:45:00+00:00",
+          "price": 86.935,
+          "qqq_return_pct": -0.0413,
+          "return_pct": -2.8551,
+          "spy_return_pct": -0.5442
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -1253,11 +1253,11 @@
         }
       },
       "mae_24h_pct": -1.9444,
-      "mae_48h_pct": -1.9444,
+      "mae_48h_pct": -3.4417,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 0.4526,
       "mfe_48h_pct": 0.4526,
@@ -1269,9 +1269,9 @@
         "return_pct": -1.8438
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 87.1,
+        "return_pct": -2.6707
       },
       "score": 12,
       "signals": [
@@ -1293,7 +1293,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 55.19
       },
-      "evaluated_utc": "2026-09-29T01:53:40.189012+00:00",
+      "evaluated_utc": "2026-09-30T01:16:51.505719+00:00",
       "headline": "$PYPL abnormal market momentum: +4.64% day move",
       "horizons": {
         "10d": {
@@ -1342,13 +1342,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -2.5135,
+          "alpha_vs_spy_pct": -2.0106,
+          "bar_utc": "2026-09-29T15:45:00+00:00",
+          "price": 53.78,
+          "qqq_return_pct": -0.0413,
+          "return_pct": -2.5548,
+          "spy_return_pct": -0.5442
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -1374,7 +1374,7 @@
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 0.0,
       "mfe_48h_pct": 0.0,
@@ -1386,9 +1386,9 @@
         "return_pct": -1.6126
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 53.9,
+        "return_pct": -2.3374
       },
       "score": 12,
       "signals": [
@@ -1410,7 +1410,7 @@
         "bar_utc": "2026-09-28T09:45:00+00:00",
         "price": 399.99
       },
-      "evaluated_utc": "2026-09-29T01:53:40.335816+00:00",
+      "evaluated_utc": "2026-09-30T01:16:51.600610+00:00",
       "headline": "$HUM abnormal market momentum: +4.63% day move",
       "horizons": {
         "10d": {
@@ -1459,13 +1459,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -2.8038,
+          "alpha_vs_spy_pct": -2.3009,
+          "bar_utc": "2026-09-29T15:45:00+00:00",
+          "price": 388.61,
+          "qqq_return_pct": -0.0413,
+          "return_pct": -2.8451,
+          "spy_return_pct": -0.5442
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -1487,11 +1487,11 @@
         }
       },
       "mae_24h_pct": -2.5926,
-      "mae_48h_pct": -2.5926,
+      "mae_48h_pct": -3.5801,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 1.8425,
       "mfe_48h_pct": 1.8425,
@@ -1503,9 +1503,9 @@
         "return_pct": -2.5826
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 386.87,
+        "return_pct": -3.2801
       },
       "score": 12,
       "signals": [
@@ -1527,7 +1527,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 267.91
       },
-      "evaluated_utc": "2026-09-29T01:53:40.550965+00:00",
+      "evaluated_utc": "2026-09-30T01:16:51.820676+00:00",
       "headline": "$DDOG abnormal market momentum: +4.36% day move",
       "horizons": {
         "10d": {
@@ -1576,13 +1576,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -0.7724,
+          "alpha_vs_spy_pct": -0.2695,
+          "bar_utc": "2026-09-29T15:45:00+00:00",
+          "price": 265.73,
+          "qqq_return_pct": -0.0413,
+          "return_pct": -0.8137,
+          "spy_return_pct": -0.5442
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -1608,7 +1608,7 @@
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 1.7469,
       "mfe_48h_pct": 1.7469,
@@ -1620,9 +1620,9 @@
         "return_pct": 0.3061
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 268.69,
+        "return_pct": 0.2911
       },
       "score": 12,
       "signals": [
@@ -1644,7 +1644,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 7.5
       },
-      "evaluated_utc": "2026-09-29T01:53:40.807942+00:00",
+      "evaluated_utc": "2026-09-30T01:16:51.936053+00:00",
       "headline": "232,020 Shares of BTGO $BTGO Acquired by State Street Corp - MarketBeat",
       "horizons": {
         "10d": {
@@ -1693,13 +1693,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -2.892,
+          "alpha_vs_spy_pct": -2.3891,
+          "bar_utc": "2026-09-29T15:45:00+00:00",
+          "price": 7.28,
+          "qqq_return_pct": -0.0413,
+          "return_pct": -2.9333,
+          "spy_return_pct": -0.5442
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -1725,7 +1725,7 @@
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 0.0,
       "mfe_48h_pct": 0.0,
@@ -1737,9 +1737,9 @@
         "return_pct": -3.4667
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 7.28,
+        "return_pct": -2.9333
       },
       "score": 9,
       "signals": [
@@ -1760,7 +1760,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 13.61
       },
-      "evaluated_utc": "2026-09-29T01:53:38.557954+00:00",
+      "evaluated_utc": "2026-09-30T01:16:49.728481+00:00",
       "headline": "Almonty Rallies 11% as Stifel Backs Tungsten Supply Story, Goldman Stays on the Sidelines - ad-hoc-news.de",
       "horizons": {
         "10d": {
@@ -1809,13 +1809,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -2.9787,
+          "alpha_vs_spy_pct": -2.384,
+          "bar_utc": "2026-09-29T22:15:00+00:00",
+          "price": 13.24,
+          "qqq_return_pct": 0.2601,
+          "return_pct": -2.7186,
+          "spy_return_pct": -0.3346
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -1837,14 +1837,14 @@
         }
       },
       "mae_24h_pct": -3.8215,
-      "mae_48h_pct": -3.8215,
+      "mae_48h_pct": -6.1352,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 0.0,
-      "mfe_48h_pct": 0.0,
+      "mfe_48h_pct": 1.396,
       "published_utc": "2026-09-27T14:10:54+00:00",
       "radar_id": "030fcb73d6f39a3905a9",
       "regular_close_1": {
@@ -1853,9 +1853,9 @@
         "return_pct": -2.8655
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 13.195,
+        "return_pct": -3.0492
       },
       "score": 8,
       "signals": [
@@ -1875,7 +1875,7 @@
         "bar_utc": "2026-09-28T08:00:00+00:00",
         "price": 13.61
       },
-      "evaluated_utc": "2026-09-29T01:53:41.234918+00:00",
+      "evaluated_utc": "2026-09-30T01:16:52.345636+00:00",
       "headline": "Almonty Rallies 11% as Stifel Backs Tungsten Supply Story, Goldman Stays on the Sidelines - AD HOC NEWS",
       "horizons": {
         "10d": {
@@ -1924,13 +1924,13 @@
           "spy_return_pct": null
         },
         "48h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -2.9787,
+          "alpha_vs_spy_pct": -2.384,
+          "bar_utc": "2026-09-29T22:15:00+00:00",
+          "price": 13.24,
+          "qqq_return_pct": 0.2601,
+          "return_pct": -2.7186,
+          "spy_return_pct": -0.3346
         },
         "5d": {
           "alpha_vs_qqq_pct": null,
@@ -1952,14 +1952,14 @@
         }
       },
       "mae_24h_pct": -3.8215,
-      "mae_48h_pct": -3.8215,
+      "mae_48h_pct": -6.1352,
       "mature_10d": false,
       "mature_24h": true,
       "mature_3d": false,
-      "mature_48h": false,
+      "mature_48h": true,
       "mature_5d": false,
       "mfe_24h_pct": 0.0,
-      "mfe_48h_pct": 0.0,
+      "mfe_48h_pct": 1.396,
       "published_utc": "2026-09-27T14:10:54+00:00",
       "radar_id": "de483676333cfecc8c17",
       "regular_close_1": {
@@ -1968,9 +1968,9 @@
         "return_pct": -2.8655
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 13.195,
+        "return_pct": -3.0492
       },
       "score": 8,
       "signals": [
@@ -1990,7 +1990,7 @@
         "bar_utc": "2026-09-28T19:40:00+00:00",
         "price": 4.375
       },
-      "evaluated_utc": "2026-09-29T01:53:40.938579+00:00",
+      "evaluated_utc": "2026-09-30T01:16:52.064899+00:00",
       "headline": "greenland energy company - SEC.gov - SEC.gov",
       "horizons": {
         "10d": {
@@ -2012,13 +2012,13 @@
           "spy_return_pct": -0.0183
         },
         "24h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": 6.822,
+          "alpha_vs_spy_pct": 7.1488,
+          "bar_utc": "2026-09-29T19:40:00+00:00",
+          "price": 4.6801,
+          "qqq_return_pct": 0.1517,
+          "return_pct": 6.9737,
+          "spy_return_pct": -0.1751
         },
         "30m": {
           "alpha_vs_qqq_pct": -0.339,
@@ -2066,15 +2066,15 @@
           "spy_return_pct": -0.0209
         }
       },
-      "mae_24h_pct": -8.5691,
-      "mae_48h_pct": -8.5691,
+      "mae_24h_pct": -11.3143,
+      "mae_48h_pct": -11.3143,
       "mature_10d": false,
-      "mature_24h": false,
+      "mature_24h": true,
       "mature_3d": false,
       "mature_48h": false,
       "mature_5d": false,
-      "mfe_24h_pct": 2.1714,
-      "mfe_48h_pct": 2.1714,
+      "mfe_24h_pct": 13.4423,
+      "mfe_48h_pct": 13.4423,
       "published_utc": "2026-09-28T13:12:52+00:00",
       "radar_id": "2bf3f2f293fb41e696a9",
       "regular_close_1": {
@@ -2083,9 +2083,9 @@
         "return_pct": 2.1714
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 4.685,
+        "return_pct": 7.0857
       },
       "score": 11,
       "signals": [
@@ -2105,7 +2105,7 @@
         "bar_utc": "2026-09-28T19:40:00+00:00",
         "price": 47.105
       },
-      "evaluated_utc": "2026-09-29T01:53:41.086834+00:00",
+      "evaluated_utc": "2026-09-30T01:16:52.221679+00:00",
       "headline": "HSBC Initiates Coverage on Truist Financial (NYSE:TFC) - marketbeat.com",
       "horizons": {
         "10d": {
@@ -2127,13 +2127,13 @@
           "spy_return_pct": -0.0183
         },
         "24h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -1.5104,
+          "alpha_vs_spy_pct": -1.1836,
+          "bar_utc": "2026-09-29T19:40:00+00:00",
+          "price": 46.465,
+          "qqq_return_pct": 0.1517,
+          "return_pct": -1.3587,
+          "spy_return_pct": -0.1751
         },
         "30m": {
           "alpha_vs_qqq_pct": -0.0279,
@@ -2181,15 +2181,15 @@
           "spy_return_pct": -0.0209
         }
       },
-      "mae_24h_pct": -0.0955,
-      "mae_48h_pct": -0.0955,
+      "mae_24h_pct": -1.9212,
+      "mae_48h_pct": -1.9212,
       "mature_10d": false,
-      "mature_24h": false,
+      "mature_24h": true,
       "mature_3d": false,
       "mature_48h": false,
       "mature_5d": false,
-      "mfe_24h_pct": 0.0212,
-      "mfe_48h_pct": 0.0212,
+      "mfe_24h_pct": 0.4352,
+      "mfe_48h_pct": 0.4352,
       "published_utc": "2026-09-28T14:11:27+00:00",
       "radar_id": "3aea444bfcd781936dff",
       "regular_close_1": {
@@ -2198,9 +2198,9 @@
         "return_pct": -0.0106
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 46.46,
+        "return_pct": -1.3693
       },
       "score": 9,
       "signals": [
@@ -2221,7 +2221,7 @@
         "bar_utc": "2026-09-28T19:40:00+00:00",
         "price": 147.735
       },
-      "evaluated_utc": "2026-09-29T01:53:38.653746+00:00",
+      "evaluated_utc": "2026-09-30T01:16:49.863623+00:00",
       "headline": "Seaport Research Partners Initiates Coverage on Jack Henry & Associates (NASDAQ:JKHY) - marketbeat.com",
       "horizons": {
         "10d": {
@@ -2243,13 +2243,13 @@
           "spy_return_pct": -0.0183
         },
         "24h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -1.0215,
+          "alpha_vs_spy_pct": -0.6947,
+          "bar_utc": "2026-09-29T19:40:00+00:00",
+          "price": 146.45,
+          "qqq_return_pct": 0.1517,
+          "return_pct": -0.8698,
+          "spy_return_pct": -0.1751
         },
         "30m": {
           "alpha_vs_qqq_pct": 0.0614,
@@ -2297,10 +2297,10 @@
           "spy_return_pct": -0.0209
         }
       },
-      "mae_24h_pct": 0.0,
-      "mae_48h_pct": 0.0,
+      "mae_24h_pct": -1.9461,
+      "mae_48h_pct": -1.9461,
       "mature_10d": false,
-      "mature_24h": false,
+      "mature_24h": true,
       "mature_3d": false,
       "mature_48h": false,
       "mature_5d": false,
@@ -2314,9 +2314,9 @@
         "return_pct": 0.0237
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 146.22,
+        "return_pct": -1.0255
       },
       "score": 9,
       "signals": [
@@ -2337,7 +2337,7 @@
         "bar_utc": "2026-09-28T19:40:00+00:00",
         "price": 45.245
       },
-      "evaluated_utc": "2026-09-29T01:53:41.229808+00:00",
+      "evaluated_utc": "2026-09-30T01:16:52.340500+00:00",
       "headline": "Bank of America Initiates Coverage on IonQ (IONQ) with Buy Ratin - gurufocus.com",
       "horizons": {
         "10d": {
@@ -2359,13 +2359,13 @@
           "spy_return_pct": -0.0183
         },
         "24h": {
-          "alpha_vs_qqq_pct": null,
-          "alpha_vs_spy_pct": null,
-          "bar_utc": null,
-          "price": null,
-          "qqq_return_pct": null,
-          "return_pct": null,
-          "spy_return_pct": null
+          "alpha_vs_qqq_pct": -3.036,
+          "alpha_vs_spy_pct": -2.7092,
+          "bar_utc": "2026-09-29T19:40:00+00:00",
+          "price": 43.94,
+          "qqq_return_pct": 0.1517,
+          "return_pct": -2.8843,
+          "spy_return_pct": -0.1751
         },
         "30m": {
           "alpha_vs_qqq_pct": -1.3996,
@@ -2413,15 +2413,15 @@
           "spy_return_pct": -0.0209
         }
       },
-      "mae_24h_pct": -1.8013,
-      "mae_48h_pct": -1.8013,
+      "mae_24h_pct": -2.9285,
+      "mae_48h_pct": -3.1937,
       "mature_10d": false,
-      "mature_24h": false,
+      "mature_24h": true,
       "mature_3d": false,
       "mature_48h": false,
       "mature_5d": false,
-      "mfe_24h_pct": 0.0,
-      "mfe_48h_pct": 0.0,
+      "mfe_24h_pct": 0.7625,
+      "mfe_48h_pct": 0.7625,
       "published_utc": "2026-09-28T12:04:31+00:00",
       "radar_id": "659c0dd2704443010062",
       "regular_close_1": {
@@ -2430,9 +2430,9 @@
         "return_pct": -1.514
       },
       "regular_close_2": {
-        "bar_utc": null,
-        "price": null,
-        "return_pct": null
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 43.895,
+        "return_pct": -2.9838
       },
       "score": 9,
       "signals": [
@@ -2445,7 +2445,122 @@
       "stage": null,
       "ticker": "IONQ",
       "url": "https://news.google.com/rss/articles/CBMiwgFBVV95cUxPQUNjeE5GaHlrY045MVNLbnZVQUVPX0pRUnN1OUw5WV9zbXgzZFlUZXNfX3U5RjNBaWRSRlpsczNaTnpjd29odDdEaFF4UjRVdXdPTjBVMks4X0owTGVLbnhOU0lUTkkwZEFGR25LREs5VXVEb1VoVXBYRzRrcWYzZlM2ZVV2RkhlZ2ZOMk83T0lvVnowWmNLdWI3OVpaaGItMjU0V3JwNTEwMG5md0RDYjc1bUZ2NE94R2hweU5LYWpUdw?oc=5"
+    },
+    {
+      "detected_utc": "2026-09-28T23:56:26.279869+00:00",
+      "direction": null,
+      "entry": {
+        "bar_utc": "2026-09-29T08:00:00+00:00",
+        "price": 13.29
+      },
+      "evaluated_utc": "2026-09-30T01:16:52.070843+00:00",
+      "headline": "Almonty Clears Final Regulatory Hurdle at Sangdong as Analysts Split on What Comes Next - AD HOC NEWS",
+      "horizons": {
+        "10d": {
+          "alpha_vs_qqq_pct": null,
+          "alpha_vs_spy_pct": null,
+          "bar_utc": null,
+          "price": null,
+          "qqq_return_pct": null,
+          "return_pct": null,
+          "spy_return_pct": null
+        },
+        "1h": {
+          "alpha_vs_qqq_pct": 0.0,
+          "alpha_vs_spy_pct": 0.0,
+          "bar_utc": "2026-09-29T08:00:00+00:00",
+          "price": 13.29,
+          "qqq_return_pct": 0.0,
+          "return_pct": 0.0,
+          "spy_return_pct": 0.0
+        },
+        "24h": {
+          "alpha_vs_qqq_pct": null,
+          "alpha_vs_spy_pct": null,
+          "bar_utc": null,
+          "price": null,
+          "qqq_return_pct": 0.4178,
+          "return_pct": null,
+          "spy_return_pct": 0.0914
+        },
+        "30m": {
+          "alpha_vs_qqq_pct": 0.0,
+          "alpha_vs_spy_pct": 0.0,
+          "bar_utc": "2026-09-29T08:00:00+00:00",
+          "price": 13.29,
+          "qqq_return_pct": 0.0,
+          "return_pct": 0.0,
+          "spy_return_pct": 0.0
+        },
+        "3d": {
+          "alpha_vs_qqq_pct": null,
+          "alpha_vs_spy_pct": null,
+          "bar_utc": null,
+          "price": null,
+          "qqq_return_pct": null,
+          "return_pct": null,
+          "spy_return_pct": null
+        },
+        "48h": {
+          "alpha_vs_qqq_pct": null,
+          "alpha_vs_spy_pct": null,
+          "bar_utc": null,
+          "price": null,
+          "qqq_return_pct": null,
+          "return_pct": null,
+          "spy_return_pct": null
+        },
+        "5d": {
+          "alpha_vs_qqq_pct": null,
+          "alpha_vs_spy_pct": null,
+          "bar_utc": null,
+          "price": null,
+          "qqq_return_pct": null,
+          "return_pct": null,
+          "spy_return_pct": null
+        },
+        "5m": {
+          "alpha_vs_qqq_pct": 0.0,
+          "alpha_vs_spy_pct": 0.0,
+          "bar_utc": "2026-09-29T08:00:00+00:00",
+          "price": 13.29,
+          "qqq_return_pct": 0.0,
+          "return_pct": 0.0,
+          "spy_return_pct": 0.0
+        }
+      },
+      "mae_24h_pct": -3.8751,
+      "mae_48h_pct": -3.8751,
+      "mature_10d": false,
+      "mature_24h": true,
+      "mature_3d": false,
+      "mature_48h": false,
+      "mature_5d": false,
+      "mfe_24h_pct": 3.8375,
+      "mfe_48h_pct": 3.8375,
+      "published_utc": "2026-09-28T19:50:26+00:00",
+      "radar_id": "31c65c71a94c1de4e801",
+      "regular_close_1": {
+        "bar_utc": "2026-09-29T19:55:00+00:00",
+        "price": 13.195,
+        "return_pct": -0.7148
+      },
+      "regular_close_2": {
+        "bar_utc": null,
+        "price": null,
+        "return_pct": null
+      },
+      "score": 8,
+      "signals": [
+        "watchlist-match",
+        "market-confirmation"
+      ],
+      "source": "Company certification and production milestones",
+      "source_class": "industry",
+      "stage": null,
+      "ticker": "ALM",
+      "url": "https://news.google.com/rss/articles/CBMi2wFBVV95cUxQRXpQT1VqSjI0ZUlIMGM0aGs4a3B2cFBHQ3d4ekVleV9wcHBkZHhZR3ZhbkNtYmZKa2tVYnNaNGV4Ml95S0lUWHNRakdlS1g3SmNCS1RUSHN1RDZmM3AzTVRweFI4am1GcW9IWnNXS2pZQ0hqLWhnVll5bzZvbkc5QmthUHJmX0ZoS1M1N2JSNTJqNXNiM0hxVU1lZGVnZWpIZTlHRkRJMTFMOW5ycGtLUVdPQXloQ2FuTkxqREo3ZXRldFFTSm1IVjRGemVCMC1fWF9YRFZRbS1HWlU?oc=5"
     }
   ],
-  "updated_utc": "2026-09-29T01:53:41.234942+00:00"
+  "updated_utc": "2026-09-30T01:16:52.345663+00:00"
 }
