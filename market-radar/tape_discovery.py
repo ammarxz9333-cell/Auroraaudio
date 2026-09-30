@@ -42,7 +42,7 @@ def discover_candidates(fetch, limit=50):
         if price is None or pct is None or vol is None:
             continue
         # Exclude ultra-illiquid/sub-dollar noise in the broad pass.
-        if price < 0.75 or vol < 100000:
+        if price < 0.75 or vol < 5000:
             continue
         if cap is not None and cap > 0 and cap < 20_000_000:
             continue
