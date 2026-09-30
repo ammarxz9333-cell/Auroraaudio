@@ -101,6 +101,20 @@ class YahooMarketSnapshotTest(unittest.TestCase):
             snapshot["bar_time_utc"] = "2026-09-25T20:00:00+00:00"
             self.assertEqual(radar.evaluate_entry_gate(snapshot, 9, 8)["state"], "INSUFFICIENT_DATA")
 
+    def test_sec_mapping_is_available_before_noise_gate(self):
+        source={"name":"SEC Form 8-K current filings","class":"primary","weight":3}
+        item={"title":"Material agreement filed","snippet":"","url":"https://www.sec.gov/x","_issuer_tickers":["TEST"]}
+        score,tickers,hits=radar.score_item(source,item,{"TEST":["Test Corp"]})
+        self.assertGreaterEqual(score,3)
+        self.assertNotIn("noise:no-us-equity-map",hits)
+
+    def test_generic_unmapped_noise_is_suppressed(self):
+        source={"name":"Reuters","class":"scoop","weight":4}
+        item={"title":"Ex-White House election official leaves DOJ probe, sources say","snippet":"","url":"https://example.com"}
+        score,tickers,hits=radar.score_item(source,item,{})
+        self.assertEqual(score,0)
+        self.assertIn("noise:no-us-equity-map",hits)
+
 
 if __name__ == "__main__":
     unittest.main()
