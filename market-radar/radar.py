@@ -876,6 +876,11 @@ def main():
                 }
             if score < effective_threshold:
                 continue
+            # Actionable notifications require an identified US equity. Generic
+            # investigative/macro stories may remain source intelligence, but
+            # must not create user-facing MARKET issues without a ticker map.
+            if not tickers:
+                continue
             if not bootstrapped:
                 published = item.get("published")
                 if not isinstance(published, dt.datetime):
