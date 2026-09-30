@@ -550,8 +550,15 @@ def market_context_for_tickers(tickers, event_time=None):
             out.append(snap)
     return out
 
+def canonical_headline(title: str) -> str:
+    text=clean_text(title).lower()
+    text=re.sub(r"\\s+[-–—|]\\s+(reuters|sec\\.gov|financial times|ft\\.com|marketbeat|gurufocus).*?$","",text)
+    text=re.sub(r"[^a-z0-9$]+"," ",text)
+    return " ".join(text.split())[:220]
+
 def item_id(source_name: str, item: dict) -> str:
-    raw = source_name + "\\n" + (item.get("url") or "") + "\\n" + (item.get("title") or "")
+    headline=canonical_headline(item.get("title") or "")
+    raw = headline if headline else ((item.get("url") or "") + "\\n" + source_name)
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
 
 def load_json(path: Path, fallback):
