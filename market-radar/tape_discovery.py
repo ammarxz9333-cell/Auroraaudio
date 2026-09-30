@@ -13,6 +13,10 @@ NASDAQ_URL = (
     "?tableonly=true&limit=5000&download=true"
 )
 SOURCE_URL = "https://www.nasdaq.com/market-activity/stocks/screener"
+NASDAQ_FALLBACK_URL = (
+    "https://api.nasdaq.com/api/screener/stocks"
+    "?tableonly=true&limit=1000&download=true"
+)
 
 def _num(v):
     if isinstance(v, (int,float)):
@@ -35,8 +39,13 @@ def discover_candidates(fetch, limit=50):
         except (TimeoutError, OSError) as exc:
             last_error=exc
             if attempt < 2: time.sleep(0.4 * (attempt + 1))
+    coverage="full"
     if raw_bytes is None:
-        raise last_error or RuntimeError("NASDAQ screener unavailable")
+        # Do not lose tape discovery entirely because the 5k response is slow.
+        # A partial universe is explicitly labeled and is better than silently
+        # reporting no candidates.
+        raw_bytes=fetch(NASDAQ_FALLBACK_URL, headers=headers)
+        coverage="partial-1000"
     raw=json.loads(raw_bytes.decode("utf-8",errors="ignore"))
     rows=((((raw.get("data") or {}).get("rows")) or []))
     out=[]
@@ -70,7 +79,7 @@ def discover_candidates(fetch, limit=50):
         rank = move_component + liquidity_component + early_bonus
         out.append({"ticker":ticker,"price":price,"pctchange":pct,"volume":int(vol),
                     "dollar_volume":round(dollar_volume,2),"market_cap":cap,
-                    "rank":round(rank,3),"source_url":SOURCE_URL})
+                    "rank":round(rank,3),"source_url":SOURCE_URL,"coverage":coverage})
     out.sort(key=lambda x:x["rank"],reverse=True)
     return out[:max(1,int(limit))]
 
