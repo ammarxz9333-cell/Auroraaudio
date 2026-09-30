@@ -8,5 +8,5 @@
     "warning": "Recall uses only timestamped live observations; no future data may populate pre-alert features."
   },
   "schema_version": 2,
-  "updated_utc": "2026-09-30T20:04:29.841985+00:00"
+  "updated_utc": "2026-09-30T20:06:35.886770+00:00"
 }
