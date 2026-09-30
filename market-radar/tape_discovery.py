@@ -51,7 +51,7 @@ def discover_candidates(fetch, limit=50):
         # Keep a permissive liquid universe here; the expensive point-in-time
         # tape pass (same-time RVOL/acceleration/VWAP) is the actual filter.
         dollar_volume = price * vol
-        if dollar_volume < 250_000:
+        if dollar_volume < 100_000:
             continue
         # Rank early acceleration potential, not sheer company size/raw volume.
         # Cap both components so mega-caps cannot crowd out emerging movers.
