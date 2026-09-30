@@ -46,12 +46,22 @@ def discover_candidates(fetch, limit=50):
             continue
         if cap is not None and cap > 0 and cap < 20_000_000:
             continue
-        # Wide net: the point is not to wait for +10% before looking.
-        if abs(pct) < 1.5 and vol < 2_000_000:
+        # Discovery must happen BEFORE the move is obvious. Do not require a
+        # 1.5% move or 2M raw shares: that caused systematic early-mover misses.
+        # Keep a permissive liquid universe here; the expensive point-in-time
+        # tape pass (same-time RVOL/acceleration/VWAP) is the actual filter.
+        dollar_volume = price * vol
+        if dollar_volume < 250_000:
             continue
-        rank=abs(pct)*2.0 + min(12.0, math.log10(max(vol,1))*1.5)
+        # Rank early acceleration potential, not sheer company size/raw volume.
+        # Cap both components so mega-caps cannot crowd out emerging movers.
+        move_component = min(12.0, abs(pct) * 2.5)
+        liquidity_component = min(6.0, max(0.0, math.log10(max(dollar_volume,1)) - 5.0) * 2.0)
+        early_bonus = 2.0 if 0.25 <= abs(pct) < 3.0 else 0.0
+        rank = move_component + liquidity_component + early_bonus
         out.append({"ticker":ticker,"price":price,"pctchange":pct,"volume":int(vol),
-                    "market_cap":cap,"rank":round(rank,3),"source_url":SOURCE_URL})
+                    "dollar_volume":round(dollar_volume,2),"market_cap":cap,
+                    "rank":round(rank,3),"source_url":SOURCE_URL})
     out.sort(key=lambda x:x["rank"],reverse=True)
     return out[:max(1,int(limit))]
 
@@ -82,7 +92,17 @@ def tape_signal(s):
     # Premarket gets no fake VWAP credit; RVOL + acceleration must carry it.
     if sess=="PRE" and rvol >= 3 and (m5 >= 0.8 or m15 >= 2.0 or day >= 4):
         score+=2; hits.append("premarket-accumulation")
-    qualifies = score >= 8 and day > 0 and rvol >= 2
+    # Two paths: classic confirmed tape, or earlier accumulation. The latter
+    # deliberately catches +0.5..2% names before they become headline movers,
+    # but still requires abnormal same-clock participation and acceleration.
+    early_accumulation = (
+        0.25 <= day <= 8 and rvol >= 3 and
+        (m5 >= 0.5 or m15 >= 1.0 or m30 >= 1.5) and
+        (sess != "REGULAR" or hv is True)
+    )
+    qualifies = (score >= 8 and day > 0 and rvol >= 2) or early_accumulation
+    if early_accumulation and "early-accumulation" not in hits:
+        hits.append("early-accumulation")
     summary=(
         f"session={sess} day={day:.2f}% 5m={m5:.2f}% 15m={m15:.2f}% "
         f"30m={m30:.2f}% same-time-RVOL={rvol:.2f}x; "
