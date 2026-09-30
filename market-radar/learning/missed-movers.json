@@ -1,0 +1,12 @@
+{
+  "schema_version": 2,
+  "updated_utc": null,
+  "cases": [],
+  "metrics": {
+    "eligible_cases": 0,
+    "caught_early": 0,
+    "missed": 0,
+    "recall_pct": null,
+    "warning": "Recall starts empty and is populated only from timestamped live observations; historical future leakage is forbidden."
+  }
+}
