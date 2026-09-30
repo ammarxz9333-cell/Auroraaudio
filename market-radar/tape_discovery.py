@@ -13,9 +13,9 @@ NASDAQ_URL = (
     "?tableonly=true&limit=5000&download=true"
 )
 SOURCE_URL = "https://www.nasdaq.com/market-activity/stocks/screener"
-NASDAQ_FALLBACK_URL = (
-    "https://api.nasdaq.com/api/screener/stocks"
-    "?tableonly=true&limit=50&download=true"
+YAHOO_FALLBACK_URLS = (
+    "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=day_gainers&count=250",
+    "https://query1.finance.yahoo.com/v1/finance/screener/predefined/saved?scrIds=most_actives&count=250",
 )
 
 def _num(v):
@@ -40,14 +40,27 @@ def discover_candidates(fetch, limit=50):
             last_error=exc
             if attempt < 2: time.sleep(0.4 * (attempt + 1))
     coverage="full"
-    if raw_bytes is None:
-        # Do not lose tape discovery entirely because the 5k response is slow.
-        # A partial universe is explicitly labeled and is better than silently
-        # reporting no candidates.
-        raw_bytes=fetch(NASDAQ_FALLBACK_URL, headers=headers)
-        coverage="partial-50"
-    raw=json.loads(raw_bytes.decode("utf-8",errors="ignore"))
-    rows=((((raw.get("data") or {}).get("rows")) or []))
+    rows=[]
+    if raw_bytes is not None:
+        raw=json.loads(raw_bytes.decode("utf-8",errors="ignore"))
+        rows=((((raw.get("data") or {}).get("rows")) or []))
+    else:
+        # Independent public fallback so a Nasdaq outage cannot disable tape-first.
+        coverage="yahoo-gainers+active"
+        merged={}
+        for url in YAHOO_FALLBACK_URLS:
+            payload=json.loads(fetch(url, headers={"Accept":"application/json"}).decode("utf-8",errors="ignore"))
+            groups=((payload.get("finance") or {}).get("result") or [])
+            for q in ((groups[0].get("quotes") if groups else []) or []):
+                sym=str(q.get("symbol") or "").upper()
+                merged[sym]={
+                    "symbol":sym,
+                    "lastsale":q.get("regularMarketPrice"),
+                    "pctchange":q.get("regularMarketChangePercent"),
+                    "volume":q.get("regularMarketVolume"),
+                    "marketCap":q.get("marketCap"),
+                }
+        rows=list(merged.values())
     out=[]
     for r in rows:
         ticker=str(r.get("symbol") or "").upper().strip()
