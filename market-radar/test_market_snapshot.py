@@ -115,6 +115,11 @@ class YahooMarketSnapshotTest(unittest.TestCase):
         self.assertEqual(score,0)
         self.assertIn("noise:no-us-equity-map",hits)
 
+    def test_syndicated_headlines_deduplicate(self):
+        a={"title":"Company wins contract - Reuters","url":"https://a.example"}
+        b={"title":"Company wins contract — Financial Times","url":"https://b.example"}
+        self.assertEqual(radar.item_id("Reuters",a),radar.item_id("FT",b))
+
 
 if __name__ == "__main__":
     unittest.main()
