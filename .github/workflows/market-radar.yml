@@ -28,8 +28,8 @@ jobs:
           fetch-depth: 1
       - name: Validate Market Radar Python
         run: |
-          python3 -m py_compile market-radar/radar.py market-radar/entry_gate.py market-radar/tape_discovery.py market-radar/live/outcome_tracker.py
-          cd market-radar && python3 -m unittest test_market_snapshot.py test_entry_gate.py test_tape_discovery.py live/test_outcome_tracker.py live/test_end_to_end.py
+          python3 -m py_compile market-radar/radar.py market-radar/entry_gate.py market-radar/tape_discovery.py market-radar/live/outcome_tracker.py market-radar/learning/missed_movers.py
+          cd market-radar && python3 -m unittest test_market_snapshot.py test_entry_gate.py test_tape_discovery.py test_missed_movers.py live/test_outcome_tracker.py live/test_end_to_end.py
           python3 backtest/test_pit_backtester.py
 
 
@@ -46,7 +46,7 @@ jobs:
       - name: Persist radar state
         shell: bash
         run: |
-          git add market-radar/state.json market-radar/live/trades.json market-radar/live/tape/ 2>/dev/null || true
+          git add market-radar/state.json market-radar/live/trades.json market-radar/live/tape/ market-radar/learning/missed-movers.json 2>/dev/null || true
           if git diff --cached --quiet; then
             exit 0
           fi
