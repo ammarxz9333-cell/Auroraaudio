@@ -825,6 +825,11 @@ def main():
 
     for source, items in fetched:
         for item in items:
+            # Resolve SEC issuer before scoring so the noise gate knows this is
+            # a mapped US equity. Previously this happened after score_item().
+            issuer_tickers = sec_issuer_tickers(source, item, cik_map)
+            if issuer_tickers:
+                item["_issuer_tickers"] = issuer_tickers
             rid = item_id(source["name"], item)
             if rid in old_seen:
                 continue
@@ -832,14 +837,12 @@ def main():
             if not fresh_for_alert(item.get("published"), start):
                 continue
             score, tickers, hits = score_item(source, item, watchlist)
-            issuer_tickers = sec_issuer_tickers(source, item, cik_map)
             if issuer_tickers:
                 tickers = sorted(set(tickers + issuer_tickers))
                 hits.append("sec-issuer-cik-match")
             effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             market_ctx = market_context_for_tickers(tickers, event_time=item.get("published")) if tickers else []
             valid_market = [m for m in market_ctx if not m.get("error")]
-            effective_threshold = THRESHOLD if tickers else max(THRESHOLD, 13 if source.get("class") == "social" else 11)
             for snap in valid_market:
                 persist_market_snapshot(snap, rid, source["name"], score, effective_threshold)
             if any(m.get("reaction") in ("reacting","major-reprice") for m in valid_market):
