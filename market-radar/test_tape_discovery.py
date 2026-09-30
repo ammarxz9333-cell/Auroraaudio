@@ -10,6 +10,14 @@ class TapeDiscoveryTests(unittest.TestCase):
         self.assertTrue(out["qualifies"])
         self.assertIn("premarket-accumulation",out["hits"])
 
+    def test_early_accumulation_is_not_missed(self):
+        s={"change_pct":1.1,"change_5m_pct":0.6,"change_15m_pct":1.2,
+           "change_30m_pct":1.6,"same_time_volume_ratio":3.4,
+           "market_session":"REGULAR","holds_vwap":True,"holds_open":True}
+        out=tape_signal(s)
+        self.assertTrue(out["qualifies"])
+        self.assertIn("early-accumulation",out["hits"])
+
     def test_no_rvol_no_alert(self):
         s={"change_pct":7,"change_5m_pct":2,"change_15m_pct":4,
            "change_30m_pct":6,"same_time_volume_ratio":1.1,
@@ -32,5 +40,15 @@ class TapeDiscoveryTests(unittest.TestCase):
         def fake_fetch(url,headers=None): return json.dumps(payload).encode()
         rows=discover_candidates(fake_fetch,limit=10)
         self.assertEqual([x["ticker"] for x in rows],["AAA"])
+
+    def test_broad_screen_keeps_early_liquid_mover(self):
+        payload={"data":{"rows":[
+          {"symbol":"EARLY","lastsale":"$25","pctchange":"0.6%","volume":"50,000","marketCap":"900000000"},
+          {"symbol":"JUNK","lastsale":"$2","pctchange":"0.2%","volume":"50,000","marketCap":"900000000"}
+        ]}}
+        import json
+        def fake_fetch(url,headers=None): return json.dumps(payload).encode()
+        rows=discover_candidates(fake_fetch,limit=10)
+        self.assertIn("EARLY",[x["ticker"] for x in rows])
 
 if __name__=="__main__": unittest.main()
