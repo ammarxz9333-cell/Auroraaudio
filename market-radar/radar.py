@@ -552,7 +552,7 @@ def market_context_for_tickers(tickers, event_time=None):
 
 def canonical_headline(title: str) -> str:
     text=clean_text(title).lower()
-    text=re.sub(r"\\s+[-–—|]\\s+(reuters|sec\\.gov|financial times|ft\\.com|marketbeat|gurufocus).*?$","",text)
+    text=re.sub(r"\s+[-–—|]\s+(reuters|sec\.gov|financial times|ft\.com|marketbeat|gurufocus).*?$","",text)
     text=re.sub(r"[^a-z0-9$]+"," ",text)
     return " ".join(text.split())[:220]
 
