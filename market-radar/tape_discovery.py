@@ -6,7 +6,7 @@ catalyst is broadly indexed. A tape signal creates an investigation/watch,
 never a blind BUYABLE_NOW decision.
 """
 from __future__ import annotations
-import json, math, re
+import json, math, re, time
 
 NASDAQ_URL = (
     "https://api.nasdaq.com/api/screener/stocks"
@@ -25,10 +25,19 @@ def _num(v):
 
 def discover_candidates(fetch, limit=50):
     """Cheap broad-universe pass; expensive 5m snapshots run only on shortlist."""
-    raw=json.loads(fetch(NASDAQ_URL, headers={
-        "Accept":"application/json,text/plain,*/*",
-        "Referer":"https://www.nasdaq.com/",
-    }).decode("utf-8",errors="ignore"))
+    headers={"Accept":"application/json,text/plain,*/*","Referer":"https://www.nasdaq.com/"}
+    last_error=None
+    raw_bytes=None
+    for attempt in range(3):
+        try:
+            raw_bytes=fetch(NASDAQ_URL, headers=headers)
+            break
+        except (TimeoutError, OSError) as exc:
+            last_error=exc
+            if attempt < 2: time.sleep(0.4 * (attempt + 1))
+    if raw_bytes is None:
+        raise last_error or RuntimeError("NASDAQ screener unavailable")
+    raw=json.loads(raw_bytes.decode("utf-8",errors="ignore"))
     rows=((((raw.get("data") or {}).get("rows")) or []))
     out=[]
     for r in rows:
