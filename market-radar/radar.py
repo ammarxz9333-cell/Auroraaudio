@@ -809,7 +809,7 @@ def main():
             item = {
                 "title": f"{ticker} abnormal tape before/without confirmed fresh catalyst",
                 "url": cand.get("source_url", ""),
-                "snippet": sig["summary"] + " | Catalyst provenance: not yet established; investigate SEC/IR/regulatory/government sources immediately.",
+                "snippet": sig["summary"] + f" | Universe coverage: {cand.get('coverage','unknown')} | Catalyst provenance: not yet established; investigate SEC/IR/regulatory/government sources immediately.",
                 "published": start,
             }
             source = {"name":"TAPE-FIRST public market screen","class":"market-data","weight":0}
