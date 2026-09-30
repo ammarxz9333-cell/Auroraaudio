@@ -624,6 +624,22 @@ def score_item(source: dict, item: dict, watchlist: dict):
         hits.append("source+early-language")
     if any(k in text for k in ("weekly roundup", "month in review", "top 10 stocks", "best stocks to buy")):
         score -= 3
+
+    # Hard noise control: generic macro/political/crime/commodity stories and
+    # untickered M&A landing pages were generating [MARKET-*] issues despite
+    # having no actionable US-equity mapping. Preserve primary SEC/issuer items.
+    generic_noise = (
+        "white house", "election", "imf financing", "vat fraud", "crude freight",
+        "latest news and analysis", "initial public offering including exercise"
+    )
+    mapped_equity = bool(tickers) or bool(item.get("_issuer_tickers"))
+    if not mapped_equity and any(k in text for k in generic_noise):
+        score = 0
+        hits.append("noise:no-us-equity-map")
+    if not mapped_equity and source.get("class") not in ("primary", "scoop", "investigative"):
+        score = min(score, max(0, THRESHOLD - 1))
+        hits.append("unmapped-equity-cap")
+
     return max(score, 0), tickers, sorted(set(hits))
 
 def github_api(path: str, method="GET", payload=None):
