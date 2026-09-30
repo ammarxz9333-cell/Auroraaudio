@@ -34,7 +34,7 @@ class TapeDiscoveryTests(unittest.TestCase):
         payload={"data":{"rows":[
           {"symbol":"AAA","lastsale":"$10","pctchange":"4.2%","volume":"2,500,000","marketCap":"500000000"},
           {"symbol":"PENNY","lastsale":"$0.20","pctchange":"40%","volume":"9000000","marketCap":"10000000"},
-          {"symbol":"BBB","lastsale":"$20","pctchange":"1.0%","volume":"100,000","marketCap":"800000000"}
+          {"symbol":"BBB","lastsale":"$20","pctchange":"1.0%","volume":"5,000","marketCap":"800000000"}
         ]}}
         import json
         def fake_fetch(url,headers=None): return json.dumps(payload).encode()
