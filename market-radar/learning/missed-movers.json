@@ -400,6 +400,152 @@
         "recent_alert_overlap": 0
       },
       "timing_limit": "The day-gainers endpoint supplies a current quote, not the first time the move crossed the threshold. A recent alert can have arrived after the move. Overlap is not advance-warning recall."
+    },
+    "2026-09-30": {
+      "criteria": {
+        "alert_lookback_hours": 72,
+        "min_gain_pct": 8.0,
+        "min_price": 1.0,
+        "min_volume": 500000,
+        "source": "Yahoo Finance predefined day_gainers public endpoint"
+      },
+      "errors": [],
+      "generated_utc": "2026-10-01T00:09:15.201078+00:00",
+      "investigation_protocol": {
+        "required_output": "For every mover: earliest clue, full catalyst/rumor timeline, pre-move features, why missed, machine-detectable pattern, false-positive tradeoff, and proposed reversible model/source change.",
+        "required_root_cause_labels": [
+          "source-coverage-gap",
+          "ticker-entity-extraction",
+          "catalyst-vocabulary-gap",
+          "score-threshold",
+          "watchlist-bias",
+          "source-latency",
+          "market-data-latency",
+          "deduplication",
+          "direction-classification",
+          "market-reaction-filter",
+          "sector-sympathy-not-modeled",
+          "analyst-action-not-modeled",
+          "index-flow-not-modeled",
+          "rumor-not-modeled",
+          "price-volume-momentum-not-modeled",
+          "genuinely-unpredictable"
+        ],
+        "research_domains": [
+          "SEC filings/exhibits and company IR",
+          "customer/supplier/partner releases",
+          "government contracts, procurement, permits and regulatory records",
+          "analyst initiations/upgrades/downgrades and target changes",
+          "index additions/rebalances and ETF/passive-flow effects",
+          "earnings, guidance, balance sheet, dilution, ATM/S-3/424B5 and buybacks",
+          "insider/Form 4 and 13D/13G ownership changes",
+          "short interest, float, borrow and options positioning when public",
+          "sector/peer/sympathy moves and commodity/macro exposures",
+          "public rumors, alleged leaks, Reddit, Stocktwits and X with provenance labels",
+          "intraday price/volume/VWAP/relative-strength structure before acceleration"
+        ],
+        "timeline": "Reconstruct several trading days before the move through the move itself using point-in-time public timestamps."
+      },
+      "movers": [
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 552774,
+          "change_pct": 12.549,
+          "exchange": "NasdaqGS",
+          "market_cap": 23242037248,
+          "matching_alerts": [],
+          "name": "United Therapeutics Corporation",
+          "no_recent_alert": true,
+          "price": 541.89,
+          "quote_time_utc": "2026-09-30T20:00:00+00:00",
+          "ticker": "UTHR",
+          "volume": 3299585,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 228158,
+          "change_pct": 10.726,
+          "exchange": "NYSE",
+          "market_cap": 2733676800,
+          "matching_alerts": [],
+          "name": "Rogers Corporation",
+          "no_recent_alert": true,
+          "price": 152.99,
+          "quote_time_utc": "2026-09-30T20:00:02+00:00",
+          "ticker": "ROG",
+          "volume": 1091788,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 1298177,
+          "change_pct": 9.585,
+          "exchange": "NasdaqGS",
+          "market_cap": 11664205824,
+          "matching_alerts": [],
+          "name": "FormFactor, Inc.",
+          "no_recent_alert": true,
+          "price": 149.31,
+          "quote_time_utc": "2026-09-30T20:00:01+00:00",
+          "ticker": "FORM",
+          "volume": 2201869,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 374933,
+          "change_pct": 9.331,
+          "exchange": "NasdaqGS",
+          "market_cap": 2171187968,
+          "matching_alerts": [],
+          "name": "newcleo plc Ordinary Shares",
+          "no_recent_alert": true,
+          "price": 7.85,
+          "quote_time_utc": "2026-09-30T20:00:00+00:00",
+          "ticker": "NWCL",
+          "volume": 510690,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 7751453,
+          "change_pct": 9.012,
+          "exchange": "NYSE",
+          "market_cap": 7869062656,
+          "matching_alerts": [],
+          "name": "Zeta Global Holdings Corp.",
+          "no_recent_alert": true,
+          "price": 31.57,
+          "quote_time_utc": "2026-09-30T20:03:56+00:00",
+          "ticker": "ZETA",
+          "volume": 11155731,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 2515449,
+          "change_pct": 8.423,
+          "exchange": "NasdaqGS",
+          "market_cap": 2850969088,
+          "matching_alerts": [],
+          "name": "Braze, Inc.",
+          "no_recent_alert": true,
+          "price": 25.1,
+          "quote_time_utc": "2026-09-30T20:00:01+00:00",
+          "ticker": "BRZE",
+          "volume": 2882978,
+          "watchlist_member": false
+        }
+      ],
+      "summary": {
+        "advance_warning_recall_pct": null,
+        "eligible_movers": 6,
+        "no_recent_alert": 6,
+        "no_recent_alert_watchlist_members": 0,
+        "recent_alert_overlap": 0
+      },
+      "timing_limit": "The day-gainers endpoint supplies a current quote, not the first time the move crossed the threshold. A recent alert can have arrived after the move. Overlap is not advance-warning recall."
     }
   }
 }
