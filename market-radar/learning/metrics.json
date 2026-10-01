@@ -145,7 +145,7 @@
     "hit_5pct_24h": "MFE >= +5% during first 24 elapsed hours",
     "relative_strength": "stock forward return minus SPY/QQQ return over the same timestamp-aligned horizon"
   },
-  "generated_utc": "2026-09-30T01:16:52.345678+00:00",
+  "generated_utc": "2026-10-01T01:16:20.704981+00:00",
   "high_confidence_score_10_plus": {
     "adverse_5pct_24h_rate": 30.0,
     "avg_mae_24h_pct": -4.066,
@@ -157,19 +157,19 @@
     "adverse_5pct_24h_rate": 22.73,
     "avg_10d_alpha_vs_spy_pct": null,
     "avg_10d_return_pct": null,
-    "avg_24h_alpha_vs_qqq_pct": -0.849,
-    "avg_24h_alpha_vs_spy_pct": -0.788,
-    "avg_24h_return_pct": -1.138,
+    "avg_24h_alpha_vs_qqq_pct": -0.83,
+    "avg_24h_alpha_vs_spy_pct": -0.763,
+    "avg_24h_return_pct": -1.089,
     "avg_3d_alpha_vs_spy_pct": null,
     "avg_3d_return_pct": null,
     "avg_5d_alpha_vs_spy_pct": null,
     "avg_5d_return_pct": null,
     "avg_mae_24h_pct": -3.737,
     "avg_mfe_24h_pct": 1.799,
-    "hit_10pct_48h_rate": 0.0,
+    "hit_10pct_48h_rate": 4.55,
     "hit_5pct_24h_rate": 4.55,
     "mature_24h": 22,
-    "mature_48h": 17,
+    "mature_48h": 22,
     "observations": 22
   }
 }
