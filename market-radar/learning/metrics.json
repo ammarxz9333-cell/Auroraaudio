@@ -145,7 +145,7 @@
     "hit_5pct_24h": "MFE >= +5% during first 24 elapsed hours",
     "relative_strength": "stock forward return minus SPY/QQQ return over the same timestamp-aligned horizon"
   },
-  "generated_utc": "2026-10-01T01:16:20.704981+00:00",
+  "generated_utc": "2026-10-02T01:39:26.624576+00:00",
   "high_confidence_score_10_plus": {
     "adverse_5pct_24h_rate": 30.0,
     "avg_mae_24h_pct": -4.066,
