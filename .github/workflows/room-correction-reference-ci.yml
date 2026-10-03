@@ -6,6 +6,7 @@ on:
       - "config/room-correction-reference-v1.json"
       - "config/external-components-v1.json"
       - "validation/room-correction/**"
+      - "scripts/pi5/make-camilladsp-config.py"
       - "docs/room-correction-reference.md"
       - "THIRD_PARTY_LICENSES.md"
       - "AGENTS.md"
@@ -73,6 +74,24 @@ jobs:
           cargo generate-lockfile
           test -s Cargo.lock
           cargo test --locked --lib --no-default-features
+
+      - name: Build real CamillaDSP and validate Aurora 16-channel runtime config
+        run: |
+          cargo build --locked --release --no-default-features \
+            --manifest-path "$RUNNER_TEMP/camilladsp/Cargo.toml" \
+            --bin camilladsp
+          python3 scripts/pi5/make-camilladsp-config.py \
+            --output "$RUNNER_TEMP/aurora-camilladsp-16ch.yml" \
+            --device "hw:AuroraCi,0" \
+            --samplerate 48000 \
+            --channels 16 \
+            --chunksize 512 \
+            --queuelimit 2 \
+            --target-level 512 \
+            --adjust-period 3
+          "$RUNNER_TEMP/camilladsp/target/release/camilladsp" \
+            --check "$RUNNER_TEMP/aurora-camilladsp-16ch.yml"
+          echo "AURORA-CAMILLADSP-REAL-PARSER-PASS"
 
       - name: Emit Aurora room-correction reference evidence
         run: |

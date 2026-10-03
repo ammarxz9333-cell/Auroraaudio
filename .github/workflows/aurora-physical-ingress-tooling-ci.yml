@@ -4,7 +4,12 @@ on:
   pull_request:
     paths:
       - "validation/physical/**"
+      - "scripts/pi5/**"
+      - "platform/pi5/**"
+      - "config/layouts/omniphony-11.1.4-aurora.yaml"
+      - "config/external-components-v1.json"
       - "docs/physical-joc-validation-v1.md"
+      - "docs/pi5-earc-runtime.md"
       - "AGENTS.md"
       - ".github/workflows/aurora-physical-ingress-tooling-ci.yml"
   workflow_dispatch:
@@ -55,6 +60,15 @@ jobs:
 
       - name: Run continuous ALSA stream conversion self-tests
         run: python validation/physical/aurora_alsa_iec61937_stream.py self-test
+
+      - name: Install Pi5 overlay compiler
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install --yes device-tree-compiler
+
+      - name: Validate Pi5 eARC runtime contract
+        if: runner.os == 'Linux'
+        shell: bash
+        run: bash validation/physical/test-pi5-earc-runtime-contract.sh
 
       - name: Run GenAVB one-listener evidence correlator self-tests
         run: python validation/physical/aurora_genavb_single_listener_evidence.py self-test
