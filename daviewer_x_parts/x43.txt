@@ -1,0 +1,11 @@
+final class _Message extends StatelessWidget {
+  const _Message(this.text);
+  final String text;
+  @override Widget build(BuildContext context) => Padding(padding: const EdgeInsets.all(36), child: Center(child: Text(text, textAlign: TextAlign.center)));
+}
+
+String sourceName(ExternalSourceKind s) => switch (s) {
+  ExternalSourceKind.danbooru => 'Danbooru',
+  ExternalSourceKind.gelbooru => 'Gelbooru',
+  ExternalSourceKind.pixiv => 'Pixiv',
+};
