@@ -5,7 +5,16 @@ set -eu
 # reconstruction: stderr identifies this mode even if input contains Atmos.
 FFMPEG="${AURORA_FFMPEG_BIN:-/usr/bin/ffmpeg}"
 [ -x "$FFMPEG" ] || { echo "surround-upmix: FFmpeg unavailable" >&2; exit 1; }
-[ "$#" -eq 0 ] || { echo "usage: aurora-surround-upmix < IEC61937 > raw-f32" >&2; exit 2; }
+INPUT_FORMAT=spdif
+if [ "$#" -eq 2 ] && [ "$1" = "--input-format" ]; then
+    case "$2" in
+        spdif|truehd) INPUT_FORMAT="$2" ;;
+        *) echo "surround-upmix: unsupported input format" >&2; exit 2 ;;
+    esac
+elif [ "$#" -ne 0 ]; then
+    echo "usage: aurora-surround-upmix [--input-format spdif|truehd] < encoded > raw-f32" >&2
+    exit 2
+fi
 
 echo "aurora: decode_mode=surround-upmix objects_decoded=false heights=synthetic" >&2
 
@@ -16,6 +25,6 @@ GRAPH='[0:a:0]aformat=sample_fmts=fltp:sample_rates=48000:channel_layouts=7.1,as
 
 exec "$FFMPEG" -hide_banner -loglevel warning -nostdin \
     -threads 1 -probesize 32768 -analyzeduration 100000 \
-    -f spdif -i pipe:0 -filter_complex_threads 1 \
+    -f "$INPUT_FORMAT" -i pipe:0 -filter_complex_threads 1 \
     -filter_complex "$GRAPH" -map '[out]' -ar 48000 \
     -c:a pcm_f32le -flush_packets 1 -f f32le pipe:1

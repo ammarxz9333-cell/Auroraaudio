@@ -33,7 +33,15 @@ Each lane also records the FFmpeg build configuration, demuxers, muxers, decoder
 
 The reviewed run on 2026-09-14 passed all three lanes on the same bounded gate. This justifies moving Aurora's recorded FFmpeg maintenance baseline from 6.1.1 to exact-pinned 6.1.6. The successful 9.0.1 lane demonstrates that this specific external-process path also works against the reviewed stable major release, but Aurora does not adopt that major-version jump solely from this matrix.
 
-## Decision policy
+## Raw TrueHD channel-bed extension (2026-10-04)
+
+The existing worker accepts `--input-format truehd` for raw TrueHD, while no arguments retain IEC61937/SPDIF ingestion. The format allowlist rejects unknown values. This is an external channel-bed/upmix worker, not a `truehdd` Rust adapter or native Atmos/DAMF renderer.
+
+`validation/surround-upmix/test_truehd_bed.py` generates independent per-channel 24-bit signals, encodes them with FFmpeg's experimental TrueHD encoder and requires an exact lossless six-channel round trip. It then executes Aurora's worker and verifies unchanged eight-channel reference bed samples inside the twelve-channel output, active synthetic heights and rejection of invalid data/formats. No proprietary or protected capture is used. This self-generated fixture does not establish general TrueHD compatibility.
+
+The first local host run used FFmpeg 8.1.1 and passed 4800 frames with zero bed difference. Its binary version/hash are emitted in the JSON report. The existing exact-commit compatibility CI now runs this additional gate; earlier matrix PASS results above cover the original AC-3/E-AC-3 scope and do not retrospectively verify TrueHD. The accepted pin stays unchanged pending fresh evidence.
+
+## Baseline decision
 
 `config/external-components-v1.json` records FFmpeg 6.1.6 at commit `f1e3a2bf7a2f2cde936d1ed97f09a26853d20125` as the tested maintenance baseline.
 

@@ -4,6 +4,14 @@
 >
 > **Maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge.
 
+### Operational stack cleanup (2026-10-04)
+
+- Removed unused, status-only `aurora-decoder-truehdd` and `aurora-renderer-cavern` workspace crates. Research/license provenance remains metadata; neither is a selectable runtime backend.
+- Corrected the false TrueHD capability claim: no truehdd adapter or PCM24/presentation tests exist in this revision. Registry and generated README now report not-implemented/unsupported with no accepted evidence.
+- Existing FFmpeg worker now accepts explicitly selected raw `truehd` as well as default IEC61937 `spdif`. It decodes a channel bed and produces synthetic heights, never DAMF/Atmos objects. Existing VBAP/native libspatialaudio cover actual speaker rendering; adding Cavern is not required to retain that function.
+- `validation/surround-upmix/test_truehd_bed.py` executes generated 5.1 TrueHD -> lossless six-channel reference -> existing 12-channel worker, checks bed order/value preservation and rejects corrupt input/unknown formats. Local FFmpeg 8.1.1 lab run passed 4800 frames with zero bed error; it does not change the accepted 6.1.6 pin. Exact-pin CI runs this new gate before any broader promotion.
+- This removes two confirmed dead crates; it is not an assertion that every codec/transport/physical target is operational. Continuous TrueHD runtime integration, native Atmos object bindings, <=5 cm physical localization and physical wired/Wi-Fi acceptance remain open.
+
 ### Market Radar historical research (2026-09-28)
 
 - The 175/180-symbol broad benchmark completed with 40,952 eligible symbol-days. The untouched final selected set had 4 +5%-first, 8 -5%-first and 1 unresolved among 13, so the price/volume rule is not promoted to a buy alert. PR #250 is merged; main Market Radar CI passed.

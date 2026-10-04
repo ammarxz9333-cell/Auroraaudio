@@ -214,7 +214,7 @@ mod tests {
     fn generated_markdown_matches_current_non_production_truth() {
         let output = render_capabilities(CapabilityOutputFormat::Markdown).unwrap();
         assert!(output.contains("| `iamf` — IAMF rendered-PCM decoder | functional | functional | unsupported | ci-artifact | stereo | no |"));
-        assert!(output.contains("| `truehdd` — truehdd channel-PCM decoder | experimental | experimental | unsupported | software-tested | none | no |"));
+        assert!(output.contains("| `truehdd` — truehdd deferred integration | not-implemented | unsupported | unsupported | none | none | no |"));
         assert!(output.contains("| `loudspeaker-3d` — 3D VBAP loudspeaker renderer | experimental | functional | experimental | software-tested | 7.1.4 | no |"));
         assert!(!output.contains("| yes |"));
     }
