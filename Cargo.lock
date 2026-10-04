@@ -276,6 +276,8 @@ dependencies = [
  "aurora-core",
  "aurora-realtime-audio-api",
  "aurora-realtime-engine",
+ "aurora-renderer-api",
+ "aurora-renderer-basic",
  "aurora-runtime-materialization",
  "aurora-scene",
  "aurora-test-alloc",
