@@ -6,6 +6,12 @@
 
 ### Operational stack cleanup (2026-10-04)
 
+- Follow-up measured DSP optimization: identity calibration bypasses unused filtering/delay work, calibration history allocates only for nonzero delays, zero lip-sync skips reading its just-written frame while still retaining history for later delay requests, and the master target is calculated once per block. No adaptive clock, limiter, crossover, fade or mute policy changed.
+- Existing Criterion release benchmark before/after on this Windows GNU host showed estimated processing-time changes of -12.5% flat, -8.4% delayed/no-PEQ and -7.6% delayed/eight-band; 40 frames x 12 channels. The identity/no-delay calibration saves 230448 buffer bytes. These are local DSP microbenchmarks, not full-chain latency, target-device WCET or manufacturer comparisons; see `docs/output-dsp-fast-path.md`.
+- Added bitwise buffered-reference differentials over calibration wrap/reset and lip-sync history/crossfades, plus zero-allocation controls for identity/zero-delay paths. The worst-case eight-band/4800-frame test remains required.
+- Follow-up fmt/check/clippy/full locked workspace tests passed. Release twelve-role output self-test passed, and the optimized shared DSP processed all 3624960 frames of the existing 75.52-second moving-object PCM fixture with byte-identical output (SHA-256 `4e097140ea4afbaa632f324f8a9c2f02d4f80add821f2921e909bfe4d34a18e3`). This fixture replay does not re-prove physical/service ingress.
+- PR #320 initial head `f6ce642` passed all three exact-pin FFmpeg TrueHD gates with zero bed difference; fresh final-head/base synchronization and all Aurora CI remain required before merge.
+
 - Removed unused, status-only `aurora-decoder-truehdd` and `aurora-renderer-cavern` workspace crates. Research/license provenance remains metadata; neither is a selectable runtime backend.
 - Corrected the false TrueHD capability claim: no truehdd adapter or PCM24/presentation tests exist in this revision. Registry and generated README now report not-implemented/unsupported with no accepted evidence.
 - Existing FFmpeg worker now accepts explicitly selected raw `truehd` as well as default IEC61937 `spdif`. It decodes a channel bed and produces synthetic heights, never DAMF/Atmos objects. Existing VBAP/native libspatialaudio cover actual speaker rendering; adding Cavern is not required to retain that function.

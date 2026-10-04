@@ -77,6 +77,7 @@ pub struct SpeakerCalibration {
 const MAX_PEQ_BANDS: usize = 8;
 const CALIBRATION_DELAY_FRAMES: usize = 4_801;
 
+#[cfg_attr(test, derive(Clone))]
 struct PreparedCalibration {
     filters: [[Biquad; MAX_PEQ_BANDS]; CHANNELS],
     bands: [usize; CHANNELS],
@@ -84,6 +85,7 @@ struct PreparedCalibration {
     delays: [usize; CHANNELS],
     ring: Vec<f32>,
     write: usize,
+    identity: bool,
 }
 
 impl PreparedCalibration {
@@ -93,8 +95,9 @@ impl PreparedCalibration {
             bands: [0; CHANNELS],
             gains: [1.0; CHANNELS],
             delays: [0; CHANNELS],
-            ring: vec![0.0; CALIBRATION_DELAY_FRAMES * CHANNELS],
+            ring: Vec::new(),
             write: 0,
+            identity: true,
         }
     }
 
@@ -149,20 +152,40 @@ impl PreparedCalibration {
                 };
             }
         }
+        prepared.identity = prepared.bands.iter().all(|&bands| bands == 0)
+            && prepared.gains.iter().all(|&gain| gain == 1.0)
+            && prepared.delays.iter().all(|&delay| delay == 0);
+        if prepared.delays.iter().any(|&delay| delay != 0) {
+            prepared.ring = vec![0.0; CALIBRATION_DELAY_FRAMES * CHANNELS];
+        }
         Ok(prepared)
     }
 
     fn process_frame(&mut self, frame: &mut [f32]) {
+        if self.identity {
+            return;
+        }
         for (channel, sample) in frame.iter_mut().enumerate() {
             for filter in &mut self.filters[channel][..self.bands[channel]] {
                 *sample = filter.process(*sample);
             }
-            self.ring[self.write * CHANNELS + channel] = *sample * self.gains[channel];
-            let read = (self.write + CALIBRATION_DELAY_FRAMES - self.delays[channel])
-                % CALIBRATION_DELAY_FRAMES;
-            *sample = self.ring[read * CHANNELS + channel];
+            *sample *= self.gains[channel];
+            if !self.ring.is_empty() {
+                self.ring[self.write * CHANNELS + channel] = *sample;
+                let read = if self.write >= self.delays[channel] {
+                    self.write - self.delays[channel]
+                } else {
+                    self.write + CALIBRATION_DELAY_FRAMES - self.delays[channel]
+                };
+                *sample = self.ring[read * CHANNELS + channel];
+            }
         }
-        self.write = (self.write + 1) % CALIBRATION_DELAY_FRAMES;
+        if !self.ring.is_empty() {
+            self.write += 1;
+            if self.write == CALIBRATION_DELAY_FRAMES {
+                self.write = 0;
+            }
+        }
     }
 
     fn reset(&mut self) {
@@ -373,10 +396,16 @@ impl LipDelay {
         }
         let write_base = self.write_frame * CHANNELS;
         self.ring[write_base..write_base + CHANNELS].copy_from_slice(frame);
-        let read_frame =
-            (self.write_frame + LIPSYNC_RING_FRAMES - self.delay_frames) % LIPSYNC_RING_FRAMES;
-        let read_base = read_frame * CHANNELS;
-        frame.copy_from_slice(&self.ring[read_base..read_base + CHANNELS]);
+        // Keep writing history at zero delay: a later control request may need it.
+        if self.delay_frames != 0 {
+            let read_frame = if self.write_frame >= self.delay_frames {
+                self.write_frame - self.delay_frames
+            } else {
+                self.write_frame + LIPSYNC_RING_FRAMES - self.delay_frames
+            };
+            let read_base = read_frame * CHANNELS;
+            frame.copy_from_slice(&self.ring[read_base..read_base + CHANNELS]);
+        }
         if self.fade_remaining > 0 {
             let old_base = ((self.write_frame + LIPSYNC_RING_FRAMES - self.previous_delay)
                 % LIPSYNC_RING_FRAMES)
@@ -512,6 +541,11 @@ impl SpeakerPostProcessor {
             self.reset();
             return Err(OutputShapeError);
         }
+        let target = if self.muted || self.standby {
+            0.0
+        } else {
+            self.headroom_gain * self.user_gain
+        };
         for frame in block.chunks_exact_mut(CHANNELS) {
             for sample in frame.iter_mut() {
                 if !sample.is_finite() {
@@ -539,11 +573,6 @@ impl SpeakerPostProcessor {
             // postpone user mute or emit stored full-volume audio on standby.
             self.lip_delay.process_frame(frame);
 
-            let target = if self.muted || self.standby {
-                0.0
-            } else {
-                self.headroom_gain * self.user_gain
-            };
             self.smoothed_master_gain += (target - self.smoothed_master_gain) * self.gain_alpha;
             for sample in frame.iter_mut() {
                 *sample *= self.smoothed_master_gain;
@@ -575,6 +604,135 @@ mod tests {
     fn processor() -> SpeakerPostProcessor {
         SpeakerPostProcessor::new(OutputDspConfig::default()).unwrap()
     }
+    #[test]
+    fn calibration_fast_paths_match_buffered_reference_across_wrap_and_reset() {
+        for delayed in [false, true] {
+            let config = SpeakerCalibration {
+                schema_version: 1,
+                sample_rate: SAMPLE_RATE,
+                channels: aurora_core::StandardLayout::SevenOneFour
+                    .canonical_roles()
+                    .iter()
+                    .enumerate()
+                    .map(|(channel, role)| ChannelCalibration {
+                        role: role.clone(),
+                        trim_db: if channel == 4 { -3.0 } else { 0.0 },
+                        delay_frames: if delayed {
+                            [0, 1, 48, 4800][channel % 4]
+                        } else {
+                            0
+                        },
+                        invert_polarity: channel == 10,
+                        peq: if channel == 7 {
+                            vec![PeqBand {
+                                frequency_hz: 1000.0,
+                                q: 0.7,
+                                gain_db: -2.0,
+                            }]
+                        } else {
+                            vec![]
+                        },
+                    })
+                    .collect(),
+            };
+            let mut fast = PreparedCalibration::prepare(&config).unwrap();
+            assert_eq!(fast.ring.is_empty(), !delayed);
+            let mut reference = fast.clone();
+            reference.ring = vec![0.0; CALIBRATION_DELAY_FRAMES * CHANNELS];
+            for index in 0..11000 {
+                if index == 7000 {
+                    fast.reset();
+                    reference.reset();
+                }
+                let mut actual = [0.0; CHANNELS];
+                for (channel, sample) in actual.iter_mut().enumerate() {
+                    *sample = if index % 43 == 0 {
+                        -0.0
+                    } else {
+                        ((index * CHANNELS + channel) as f32 * 0.17).sin() * 0.1
+                    };
+                }
+                let mut expected = actual;
+                fast.process_frame(&mut actual);
+                for (channel, sample) in expected.iter_mut().enumerate() {
+                    for filter in &mut reference.filters[channel][..reference.bands[channel]] {
+                        *sample = filter.process(*sample);
+                    }
+                    reference.ring[reference.write * CHANNELS + channel] =
+                        *sample * reference.gains[channel];
+                    let read = (reference.write + CALIBRATION_DELAY_FRAMES
+                        - reference.delays[channel])
+                        % CALIBRATION_DELAY_FRAMES;
+                    *sample = reference.ring[read * CHANNELS + channel];
+                }
+                reference.write = (reference.write + 1) % CALIBRATION_DELAY_FRAMES;
+                assert_eq!(actual.map(f32::to_bits), expected.map(f32::to_bits));
+            }
+        }
+        let mut identity = PreparedCalibration::flat();
+        let mut frame = [-0.0; CHANNELS];
+        identity.process_frame(&mut frame);
+        assert!(identity.ring.is_empty());
+        assert_eq!(
+            frame.map(f32::to_bits),
+            [-0.0_f32; CHANNELS].map(f32::to_bits)
+        );
+    }
+
+    #[test]
+    fn lip_delay_fast_path_preserves_history_and_matches_original_crossfades() {
+        let mut fast = LipDelay::new(0).unwrap();
+        let mut reference = fast.clone();
+        for index in 0..50000 {
+            if let Some(delay) = match index {
+                1100 => Some(97),
+                1800 => Some(0),
+                27000 => Some(24000),
+                27100 => Some(23),
+                29000 => Some(0),
+                _ => None,
+            } {
+                fast.set_delay_frames(delay);
+                reference.set_delay_frames(delay);
+            }
+            if index == 33000 {
+                fast.reset();
+                reference.reset();
+            }
+            let mut actual = [0.0; CHANNELS];
+            for (channel, sample) in actual.iter_mut().enumerate() {
+                *sample = ((index * CHANNELS + channel) as f32 * 0.07).sin() * 0.1;
+            }
+            let mut expected = actual;
+            fast.process_frame(&mut actual);
+            if reference.fade_remaining == 0 && reference.requested_delay != reference.delay_frames
+            {
+                reference.previous_delay = reference.delay_frames;
+                reference.delay_frames = reference.requested_delay;
+                reference.fade_remaining = 240;
+            }
+            let base = reference.write_frame * CHANNELS;
+            reference.ring[base..base + CHANNELS].copy_from_slice(&expected);
+            let read = ((reference.write_frame + LIPSYNC_RING_FRAMES - reference.delay_frames)
+                % LIPSYNC_RING_FRAMES)
+                * CHANNELS;
+            expected.copy_from_slice(&reference.ring[read..read + CHANNELS]);
+            if reference.fade_remaining > 0 {
+                let old = ((reference.write_frame + LIPSYNC_RING_FRAMES
+                    - reference.previous_delay)
+                    % LIPSYNC_RING_FRAMES)
+                    * CHANNELS;
+                let alpha = 1.0 - reference.fade_remaining as f32 / 240.0;
+                for (channel, sample) in expected.iter_mut().enumerate() {
+                    *sample = reference.ring[old + channel] * (1.0 - alpha) + *sample * alpha;
+                }
+                reference.fade_remaining -= 1;
+            }
+            reference.write_frame = (reference.write_frame + 1) % LIPSYNC_RING_FRAMES;
+            assert_eq!(actual.map(f32::to_bits), expected.map(f32::to_bits));
+        }
+    }
+
     #[test]
     fn prepared_calibration_applies_exact_delay_and_peq_center_gain() {
         let mut config = SpeakerCalibration {

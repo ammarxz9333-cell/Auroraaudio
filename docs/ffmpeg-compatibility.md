@@ -39,7 +39,7 @@ The existing worker accepts `--input-format truehd` for raw TrueHD, while no arg
 
 `validation/surround-upmix/test_truehd_bed.py` generates independent per-channel 24-bit signals, encodes them with FFmpeg's experimental TrueHD encoder and requires an exact lossless six-channel round trip. It then executes Aurora's worker and verifies unchanged eight-channel reference bed samples inside the twelve-channel output, active synthetic heights and rejection of invalid data/formats. No proprietary or protected capture is used. This self-generated fixture does not establish general TrueHD compatibility.
 
-The first local host run used FFmpeg 8.1.1 and passed 4800 frames with zero bed difference. Its binary version/hash are emitted in the JSON report. The existing exact-commit compatibility CI now runs this additional gate; earlier matrix PASS results above cover the original AC-3/E-AC-3 scope and do not retrospectively verify TrueHD. The accepted pin stays unchanged pending fresh evidence.
+The first local host run used FFmpeg 8.1.1 and passed 4800 frames with zero bed difference. Its binary version/hash are emitted in the JSON report. The additional gate then passed all three exact commits on initial PR #320 head `f6ce642`, with lossless round-trip and zero bed difference in each lane ([run 37233684472](https://github.com/ammarxz9333-cell/Auroraaudio/actions/runs/37233684472)). Earlier matrix PASS results above cover the original AC-3/E-AC-3 scope and do not retrospectively verify TrueHD. The accepted pin stays unchanged; this bounded generated fixture does not prove general TrueHD/Atmos interoperability.
 
 ## Baseline decision
 
