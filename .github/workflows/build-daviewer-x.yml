@@ -60,7 +60,7 @@ jobs:
         run: |
           set -euo pipefail
           curl --fail --retry 3 --retry-delay 2 --max-time 20             -A 'DAViewer-X/0.1 Android'             'https://danbooru.donmai.us/posts.json?limit=1&tags=rating%3Ag'             | python3 -c "import json,sys; x=json.load(sys.stdin); assert isinstance(x,list)"
-          curl --fail --retry 3 --retry-delay 2 --max-time 20             -A 'DAViewer-X/0.1 Android'             'https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=1&tags=rating%3Ageneral'             | python3 -c "import json,sys; x=json.load(sys.stdin); assert isinstance(x,(list,dict))"
+          curl --fail --retry 3 --retry-delay 2 --max-time 20             -A 'DAViewer-X/0.1 Android'             'https://yande.re/post.json?limit=1&tags=rating%3As'             | python3 -c "import json,sys; x=json.load(sys.stdin); assert isinstance(x,list)"
       - name: Build debug APK
         run: gradle -p daviewerx_android :app:assembleDebug --no-daemon --stacktrace
       - name: Verify APK
