@@ -1,0 +1,22 @@
+    final sources = ref.watch(multiSourceRepositoryProvider).availableSources;
+    return Scaffold(
+      appBar: AppBar(title: const Text('DAViewer X'), actions: [
+        IconButton(icon: Icon(safe ? Icons.shield_outlined : Icons.shield_off_outlined),
+          onPressed: () { setState(() => safe = !safe); reload(); }),
+      ]),
+      body: RefreshIndicator(onRefresh: reload, child: ListView(
+        physics: const AlwaysScrollableScrollPhysics(), padding: const EdgeInsets.all(12), children: [
+          SegmentedButton<ArtSection>(segments: const [
+            ButtonSegment(value: ArtSection.browse, label: Text('Explore')),
+            ButtonSegment(value: ArtSection.savedItems, label: Text('Saved')),
+            ButtonSegment(value: ArtSection.followed, label: Text('Following')),
+          ], selected: {mode}, onSelectionChanged: (v) { setState(() => mode = v.first); reload(); }),
+          if (mode == ArtSection.browse) ...[
+            const SizedBox(height: 12),
+            SearchBar(controller: search, hintText: 'Search tags, character or artist',
+              leading: const Icon(Icons.search), onSubmitted: (_) => reload(),
+              trailing: [IconButton(icon: const Icon(Icons.arrow_forward), onPressed: reload)]),
+            const SizedBox(height: 8),
+            SingleChildScrollView(scrollDirection: Axis.horizontal, child: Row(children: [
+              ChoiceChip(label: const Text('All'), selected: source == null,
+                onSelected: (_) { setState(() => source = null); reload(); }),
