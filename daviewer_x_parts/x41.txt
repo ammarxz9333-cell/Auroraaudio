@@ -1,0 +1,8 @@
+  const ArtTile(this.artwork, {super.key});
+  final ExternalArtwork artwork;
+  @override
+  Widget build(BuildContext context) {
+    final ratio = artwork.width != null && artwork.height != null && artwork.height! > 0
+      ? (artwork.width! / artwork.height!).clamp(.55, 1.65).toDouble() : .72;
+    return Card(clipBehavior: Clip.antiAlias, child: InkWell(
+      onTap: () => context.push('/artsource/${artwork.source.name}/${artwork.id}'),
