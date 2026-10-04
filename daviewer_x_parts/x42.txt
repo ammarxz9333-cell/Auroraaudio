@@ -1,0 +1,11 @@
+      child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        AspectRatio(aspectRatio: ratio, child: Image.network(artwork.previewUri.toString(), fit: BoxFit.cover,
+          errorBuilder: (_, __, ___) => const Center(child: Icon(Icons.broken_image_outlined)))),
+        Padding(padding: const EdgeInsets.all(8), child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(artwork.title, maxLines: 2, overflow: TextOverflow.ellipsis),
+          Text('@${artwork.artist} · ${sourceName(artwork.source)}', maxLines: 1, overflow: TextOverflow.ellipsis),
+        ])),
+      ]),
+    ));
+  }
+}
