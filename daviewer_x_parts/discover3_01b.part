@@ -1,0 +1,29 @@
+    final pages = await Future.wait(active.map((x) async {
+      try { return await x.search(search.text, page: pageNumber, limit: 24, safeMode: safe); }
+      catch (_) { return const ExternalPage(items: <ExternalArtwork>[], hasMore: false); }
+    }));
+    final out = <ExternalArtwork>[];
+    var i = 0;
+    while (true) {
+      var added = false;
+      for (final p in pages) { if (i < p.items.length) { out.add(p.items[i]); added = true; } }
+      if (!added) break;
+      i++;
+    }
+    return out;
+  }
+
+  Future<void> more() async {
+    if (loading || mode != ArtSection.browse) return;
+    setState(() => loading = true);
+    try {
+      final n = page + 1;
+      final result = await query(pageNumber: n);
+      if (!mounted) return;
+      final seen = items.map((e) => e.key).toSet();
+      setState(() { page = n; items = [...items, ...result.where((e) => seen.add(e.key))]; });
+    } finally { if (mounted) setState(() => loading = false); }
+  }
+
+  @override
+  Widget build(BuildContext context) {
