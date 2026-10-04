@@ -2,7 +2,9 @@ name: Build DAViewer X APK
 
 on:
   push:
-    branches: [daviewer-x-apk-build]
+    branches:
+      - daviewer-x-apk-build
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -10,26 +12,71 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
+    env:
+      ANDROID_HOME: /usr/local/lib/android/sdk
+      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
     steps:
       - uses: actions/checkout@v4
-      - uses: subosito/flutter-action@v2
+      - uses: actions/setup-java@v4
         with:
-          flutter-version: '3.47.1'
-          channel: stable
-          cache: true
-      - name: Prepare DAViewer X
+          distribution: temurin
+          java-version: '17'
+      - name: Install Android SDK packages
         shell: bash
-        run: bash daviewer_x_build/prepare.sh
-      - name: Dependencies
-        working-directory: daviewer
-        run: flutter pub get
-      - name: Build debug APK
-        working-directory: daviewer
-        run: flutter build apk --debug
-      - name: Stage APK
         run: |
-          cp daviewer/build/app/outputs/flutter-apk/app-debug.apk DAViewer-X-v0.1-debug.apk
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
+          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.10.2'
+      - name: Decode DAViewer X sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p daviewerx_android/app/src/main/java/com/ammar/daviewerx
+          mkdir -p daviewerx_android/app/src/main/assets
+          base64 -d daviewerx_android/MainActivity.java.b64 > daviewerx_android/app/src/main/java/com/ammar/daviewerx/MainActivity.java
+          base64 -d daviewerx_android/index.html.b64 > daviewerx_android/app/src/main/assets/index.html
+          test -s daviewerx_android/app/src/main/java/com/ammar/daviewerx/MainActivity.java
+          test -s daviewerx_android/app/src/main/assets/index.html
+          grep -q 'class MainActivity' daviewerx_android/app/src/main/java/com/ammar/daviewerx/MainActivity.java
+          grep -q 'DAViewer X' daviewerx_android/app/src/main/assets/index.html
+      - name: Validate embedded JavaScript
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+          import re
+          html=Path('daviewerx_android/app/src/main/assets/index.html').read_text(encoding='utf-8')
+          scripts=re.findall(r'<script>(.*?)</script>', html, re.S)
+          if not scripts:
+              raise SystemExit('No embedded script found')
+          Path('/tmp/daviewerx.js').write_text('\n'.join(scripts), encoding='utf-8')
+          PY
+          node --check /tmp/daviewerx.js
+      - name: Live API smoke tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --retry 3 --retry-delay 2 --max-time 20             -A 'DAViewer-X/0.1 Android'             'https://danbooru.donmai.us/posts.json?limit=1&tags=rating%3Ag'             | python3 -c "import json,sys; x=json.load(sys.stdin); assert isinstance(x,list)"
+          curl --fail --retry 3 --retry-delay 2 --max-time 20             -A 'DAViewer-X/0.1 Android'             'https://gelbooru.com/index.php?page=dapi&s=post&q=index&json=1&limit=1&tags=rating%3Ageneral'             | python3 -c "import json,sys; x=json.load(sys.stdin); assert isinstance(x,(list,dict))"
+      - name: Build debug APK
+        run: gradle -p daviewerx_android :app:assembleDebug --no-daemon --stacktrace
+      - name: Verify APK
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK=daviewerx_android/app/build/outputs/apk/debug/app-debug.apk
+          test -s "$APK"
+          unzip -t "$APK" >/dev/null
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --verbose "$APK"
+          "$ANDROID_HOME/build-tools/35.0.0/aapt" dump badging "$APK" | grep -q "package: name='com.ammar.daviewerx'"
+          unzip -p "$APK" assets/index.html | grep -q 'DAViewer X'
+      - name: Prepare artifact
+        shell: bash
+        run: |
+          cp daviewerx_android/app/build/outputs/apk/debug/app-debug.apk DAViewer-X-v0.1-debug.apk
           sha256sum DAViewer-X-v0.1-debug.apk > DAViewer-X-v0.1-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
