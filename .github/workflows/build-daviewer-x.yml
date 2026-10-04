@@ -2,9 +2,7 @@ name: Build DAViewer X APK
 
 on:
   push:
-    branches:
-      - daviewer-x-apk-build
-  workflow_dispatch:
+    branches: [daviewer-x-apk-build]
 
 permissions:
   contents: read
@@ -12,43 +10,47 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      ANDROID_HOME: /usr/local/lib/android/sdk
-      ANDROID_SDK_ROOT: /usr/local/lib/android/sdk
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-java@v4
+      - uses: subosito/flutter-action@v2
         with:
-          distribution: temurin
-          java-version: '17'
-      - name: Install Android SDK packages
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+      - name: Prepare DAViewer X
         shell: bash
         run: |
-          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --licenses >/dev/null || true
-          "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" "platforms;android-35" "build-tools;35.0.0" "platform-tools"
-      - uses: gradle/actions/setup-gradle@v4
-        with:
-          gradle-version: '8.10.2'
-      - name: Decode DAViewer X sources
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p daviewerx_android/app/src/main/java/com/ammar/daviewerx
-          mkdir -p daviewerx_android/app/src/main/assets
-          base64 -d daviewerx_android/MainActivity.java.b64 > daviewerx_android/app/src/main/java/com/ammar/daviewerx/MainActivity.java
-          base64 -d daviewerx_android/index.html.b64 > daviewerx_android/app/src/main/assets/index.html
+          set -euxo pipefail
+          git clone https://github.com/redtidev1918/DAViewer.git daviewer
+          cd daviewer
+          git checkout dd851937a546d3578f8ab60600e3da8d5f97ee83
+          cd ..
+          unzip -q .build/DAViewer-X-v0.1-patch.zip -d .build/unpacked
+          cp -R .build/unpacked/daviewer_x_patch/lib/features/multisource daviewer/lib/features/
+          cp .build/unpacked/daviewer_x_patch/test/multisource_repository_test.dart daviewer/test/
+          cd daviewer
+          git apply ../.build/unpacked/daviewer_x_patch/daviewer_x_integration.patch
+      - name: Dependencies
+        working-directory: daviewer
+        run: flutter pub get
+      - name: Analyze
+        working-directory: daviewer
+        run: flutter analyze
+      - name: Test
+        working-directory: daviewer
+        run: flutter test test/multisource_repository_test.dart
       - name: Build debug APK
-        run: gradle -p daviewerx_android :app:assembleDebug --no-daemon --stacktrace
-      - name: Prepare artifact
-        shell: bash
+        working-directory: daviewer
+        run: flutter build apk --debug
+      - name: Stage APK
         run: |
-          cp daviewerx_android/app/build/outputs/apk/debug/app-debug.apk DAViewer-X-v0.1-debug.apk
-          sha256sum DAViewer-X-v0.1-debug.apk > DAViewer-X-v0.1-debug.sha256
+          cp daviewer/build/app/outputs/flutter-apk/app-debug.apk DAViewer-X-v0.1-debug.apk
+          sha256sum DAViewer-X-v0.1-debug.apk > DAViewer-X-v0.1-debug.apk.sha256
       - uses: actions/upload-artifact@v4
         with:
           name: DAViewer-X-v0.1-debug
           path: |
             DAViewer-X-v0.1-debug.apk
-            DAViewer-X-v0.1-debug.sha256
+            DAViewer-X-v0.1-debug.apk.sha256
           if-no-files-found: error
