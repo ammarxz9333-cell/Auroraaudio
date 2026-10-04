@@ -1,0 +1,157 @@
+name: Build DAViewer Ultra
+
+on:
+  push:
+    branches:
+      - app/daviewer-ultra-20261004
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Checkout Aurora patch carrier
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Flutter 3.47.1
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Fetch pinned DAViewer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/redtidev1918/DAViewer.git DAViewer
+          git -C DAViewer checkout dd851937a546d3578f8ab60600e3da8d5f97ee83
+          test "$(git -C DAViewer rev-parse HEAD)" = "dd851937a546d3578f8ab60600e3da8d5f97ee83"
+
+      - name: Apply Ultra patches
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp ci/daviewer_ultra/android_native_oauth_callback_source.dart             DAViewer/lib/core/auth/android_native_oauth_callback_source.dart
+          cp ci/daviewer_ultra/android_native_oauth_callback_source_test.dart             DAViewer/test/android_native_oauth_callback_source_test.dart
+          cp ci/daviewer_ultra/MainActivity.kt             DAViewer/android/app/src/main/kotlin/app/daviewer/MainActivity.kt
+          python3 ci/daviewer_ultra/apply_ultra.py
+          cd DAViewer
+          dart format lib test
+
+      - name: Verify patch scope
+        working-directory: DAViewer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          python3 - <<'PY'
+          import subprocess
+          allowed = {
+              "android/app/build.gradle.kts",
+              "android/app/src/main/AndroidManifest.xml",
+              "android/app/src/main/kotlin/app/daviewer/MainActivity.kt",
+              "lib/core/auth/android_native_oauth_callback_source.dart",
+              "lib/core/runtime/app_runtime.dart",
+              "lib/features/home/home_providers.dart",
+              "lib/features/web_login/web_login_screen.dart",
+              "pubspec.yaml",
+              "test/android_native_oauth_callback_source_test.dart",
+          }
+          out = subprocess.check_output(["git", "status", "--porcelain"], text=True)
+          changed = {line[3:].strip() for line in out.splitlines() if line.strip()}
+          unexpected = changed - allowed
+          if unexpected:
+              raise SystemExit(f"Unexpected files changed: {sorted(unexpected)}")
+          missing = {
+              "lib/core/auth/android_native_oauth_callback_source.dart",
+              "android/app/src/main/kotlin/app/daviewer/MainActivity.kt",
+              "lib/core/runtime/app_runtime.dart",
+              "lib/features/home/home_providers.dart",
+              "lib/features/web_login/web_login_screen.dart",
+          } - changed
+          if missing:
+              raise SystemExit(f"Expected Ultra changes missing: {sorted(missing)}")
+          print("Ultra patch scope OK:", sorted(changed))
+          PY
+
+      - name: Resolve dependencies
+        working-directory: DAViewer
+        shell: bash
+        run: |
+          set -euo pipefail
+          for attempt in 1 2 3 4 5; do
+            if flutter pub get; then exit 0; fi
+            echo "::warning::flutter pub get failed ($attempt/5), retrying"
+            sleep 12
+          done
+          exit 1
+
+      - name: Static analysis
+        working-directory: DAViewer
+        run: flutter analyze
+
+      - name: Format gate
+        working-directory: DAViewer
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Run complete DAViewer test suite
+        working-directory: DAViewer
+        run: flutter test
+
+      - name: Build optimized Android APK
+        working-directory: DAViewer
+        run: flutter build apk --release
+
+      - name: Verify Android callback contract and ABIs
+        shell: bash
+        run: |
+          set -euo pipefail
+          APK="DAViewer/build/app/outputs/flutter-apk/app-release.apk"
+          test -s "$APK"
+          ANALYZER="$ANDROID_HOME/cmdline-tools/latest/bin/apkanalyzer"
+          test -x "$ANALYZER"
+          "$ANALYZER" manifest print "$APK" > /tmp/daviewer-ultra-manifest.xml
+          grep -q 'android:scheme="dakit"' /tmp/daviewer-ultra-manifest.xml
+          grep -q 'android:host="oauth"' /tmp/daviewer-ultra-manifest.xml
+          grep -q 'android:path="/callback"' /tmp/daviewer-ultra-manifest.xml
+          grep -q 'flutter_deeplinking_enabled' /tmp/daviewer-ultra-manifest.xml
+          grep -A2 'flutter_deeplinking_enabled' /tmp/daviewer-ultra-manifest.xml | grep -q 'android:value="false"'
+          "$ANALYZER" files list "$APK" > /tmp/daviewer-ultra-files.txt
+          grep -q 'lib/arm64-v8a/libapp.so' /tmp/daviewer-ultra-files.txt
+          grep -q 'lib/armeabi-v7a/libapp.so' /tmp/daviewer-ultra-files.txt
+          grep -q 'lib/x86_64/libapp.so' /tmp/daviewer-ultra-files.txt
+          echo "OAuth callback manifest + universal ABIs verified"
+
+      - name: Package artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk             out/DAViewer-Ultra-v0.6.0-android.apk
+          sha256sum out/DAViewer-Ultra-v0.6.0-android.apk > out/SHA256SUMS.txt
+          cat > out/BUILD-INFO.txt <<'EOF'
+          DAViewer Ultra personal build
+          Upstream DAViewer commit: dd851937a546d3578f8ab60600e3da8d5f97ee83
+          Upstream release baseline: v0.5.7
+          Ultra version: 0.6.0+600
+          Android OAuth: external system browser
+          Android callback: native replay-safe warm/cold-start MethodChannel bridge
+          Home: RFY preferred; official browse/home fallback with mature_content=true; Daily fallback on initial-page failure
+          Search/download/mature-content behavior: upstream v0.5.7 regression fixes retained
+          Validation: flutter analyze + full flutter test + manifest callback checks + ABI checks
+          Signing: CI debug key used for this personal release-mode artifact
+          EOF
+
+      - name: Upload DAViewer Ultra APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-Ultra-v0.6.0-android
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
