@@ -1,0 +1,1 @@
+final y = await x.search(search.text, page: pageNumber, limit: 24, safeMode: safe);
