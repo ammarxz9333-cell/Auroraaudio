@@ -1,0 +1,37 @@
+name: Market Radar Learning
+
+on:
+  schedule:
+    - cron: "15 22 * * 1-5"
+  workflow_dispatch:
+  push:
+    branches:
+      - main-v2
+    paths:
+      - "market-radar/evaluate.py"
+      - ".github/workflows/market-radar-learning.yml"
+
+permissions:
+  contents: write
+
+concurrency:
+  group: market-radar-learning
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-slim
+    timeout-minutes: 6
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validate evaluator syntax
+        run: python3 -m py_compile market-radar/evaluate.py
+
+      - name: Evaluate alert outcomes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RADAR_USER_AGENT: "Ammar-Market-Radar-Learner/1.0 contact=${{ github.repository_owner }}@users.noreply.github.com"
+        run: python3 market-radar/evaluate.py
+

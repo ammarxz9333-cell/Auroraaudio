@@ -4,7 +4,24 @@
 >
 > **Maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge.
 
-Last updated: **2026-09-18**
+### Market Radar historical research (2026-09-28)
+
+- The 175/180-symbol broad benchmark completed with 40,952 eligible symbol-days. The untouched final selected set had 4 +5%-first, 8 -5%-first and 1 unresolved among 13, so the price/volume rule is not promoted to a buy alert. PR #250 is merged; main Market Radar CI passed.
+- The scanner now freezes every fresh ticker-matched source item at first capture, including below-threshold items, in `market-radar/live/candidates/` for prospective catalyst review. The day-gainers audit reports recent-alert overlap and leaves advance-warning recall unknown because its feed lacks a first-move timestamp.
+- The missed-mover audit rejects pre-close runs and quotes stamped for another New York market date; a premature same-day report must be removed instead of being mistaken for today's movers.
+- The 5-minute historical replay now treats the completed signal bar as information and executes at the next bar's open, under explicit spread/slippage assumptions. It cannot count a target or stop on the signal bar. Reclaim counterfactuals also wait for a later bar.
+- Tape exports use actual `captured_utc` as the point-in-time cutoff, exclude stale bars and future-looking post-event fields, and freeze rejects market bars later than cutoff.
+- Cohorts are chronological with a seven-calendar-day embargo. `backtest/broad_daily_benchmark.py` samples current-listed Nasdaq/NYSE/NYSE American common shares without conditioning on outcomes, includes losing/control days, and publishes a separate price-only report with coverage, uncertainty, missed-winner blockers and false positives. It is subject to survivorship bias and cannot establish a catalyst's cause.
+- The broad benchmark has an isolated workflow/artifact; historical effectiveness remains unproven until a successful data run with adequate coverage and a genuinely untouched final cohort is inspected. See `market-radar/backtest/README.md`.
+
+### Market Radar repair (2026-09-27)
+
+- Scanner syntax and legacy replay syntax repaired; the scheduled five-minute job runs syntax and unit gates, while historical replay is reserved for push/manual runs within the existing four-minute job budget.
+- The scanner appends an immutable, idempotent news JSON alert to `market-radar-live` for PR #229 before creating its Issue. The first confirmed entry on an active watch appends its own review artifact. On failed publishing the item remains eligible for retry. No alert is a verified buy recommendation.
+- Entry decisions reject stale market bars; the fast scanner records provenance research metadata and defers slow FINRA daily-volume requests. Explicit `$TICKER` and exchange notation can identify names outside the watchlist.
+- Function-style tests now execute in CI through `market-radar/run_function_tests.py`. Until fresh CI and forward observations confirm the pipeline, do not claim live detection precision or a success rate. The latest stored learning metrics still have zero matured observations.
+
+Last updated: **2026-10-04**
 
 ### Binaural software continuation
 

@@ -1,0 +1,56 @@
+name: Market Radar
+
+on:
+  push:
+    paths:
+      - "market-radar/**"
+      - ".github/workflows/market-radar.yml"
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  issues: write
+
+concurrency:
+  group: market-radar
+  cancel-in-progress: false
+
+jobs:
+  scan:
+    runs-on: ubuntu-slim
+    timeout-minutes: 4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+      - name: Validate Market Radar Python
+        run: |
+          python3 -m py_compile market-radar/radar.py market-radar/entry_gate.py market-radar/tape_discovery.py market-radar/live/outcome_tracker.py
+          cd market-radar && python3 -m unittest test_market_snapshot.py test_entry_gate.py test_tape_discovery.py live/test_outcome_tracker.py live/test_end_to_end.py
+          python3 backtest/test_pit_backtester.py
+
+
+      - name: Run first-public-source scanner
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RADAR_SCORE_THRESHOLD: "8"
+          RADAR_BOOTSTRAP_ALERT_HOURS: "8"
+          RADAR_USER_AGENT: "Ammar-Market-Radar/1.0 contact=${{ github.repository_owner }}@users.noreply.github.com"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 market-radar/radar.py
+
+      - name: Persist radar state
+        shell: bash
+        run: |
+          git add market-radar/state.json market-radar/live/trades.json market-radar/live/tape/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git config user.name "market-radar-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(market-radar): persist live radar state [skip ci]"
+          git push

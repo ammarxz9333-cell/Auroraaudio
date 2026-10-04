@@ -1,0 +1,396 @@
+{
+  "watchlist": {
+    "CRWV": [
+      "CoreWeave"
+    ],
+    "AESI": [
+      "Atlas Energy Solutions",
+      "Atlas Energy"
+    ],
+    "NRGV": [
+      "Energy Vault"
+    ],
+    "CRMD": [
+      "CorMedix"
+    ],
+    "OUST": [
+      "Ouster"
+    ],
+    "RR": [
+      "Richtech Robotics",
+      "Richtech"
+    ],
+    "ASTS": [
+      "AST SpaceMobile",
+      "AST Space Mobile"
+    ],
+    "RKLB": [
+      "Rocket Lab"
+    ],
+    "AEHR": [
+      "Aehr Test Systems",
+      "Aehr"
+    ],
+    "ONDS": [
+      "Ondas"
+    ],
+    "IRD": [
+      "Opus Genetics"
+    ],
+    "INO": [
+      "Inovio"
+    ],
+    "UMAC": [
+      "Unusual Machines"
+    ],
+    "KOPN": [
+      "Kopin"
+    ],
+    "LCTX": [
+      "Lineage Cell Therapeutics"
+    ],
+    "NBIS": [
+      "Nebius"
+    ],
+    "GLND": [
+      "Greenland Energy Company",
+      "Greenland Energy"
+    ],
+    "ALM": [
+      "Almonty Industries",
+      "Almonty"
+    ],
+    "MIRM": [
+      "Mirum Pharmaceuticals",
+      "Mirum"
+    ],
+    "NBTX": [
+      "Nanobiotix"
+    ],
+    "SRRK": [
+      "Scholar Rock"
+    ],
+    "LASE": [
+      "Laser Photonics"
+    ],
+    "FLNC": [
+      "Fluence Energy"
+    ],
+    "LUNR": [
+      "Intuitive Machines"
+    ],
+    "JOBY": [
+      "Joby Aviation"
+    ],
+    "ACHR": [
+      "Archer Aviation"
+    ],
+    "QBTS": [
+      "D-Wave Quantum",
+      "D Wave Quantum"
+    ],
+    "RGTI": [
+      "Rigetti Computing",
+      "Rigetti"
+    ],
+    "IONQ": [
+      "IonQ"
+    ],
+    "SOUN": [
+      "SoundHound AI",
+      "SoundHound"
+    ]
+  },
+  "sources": [
+    {
+      "name": "SEC 8-K current filings",
+      "type": "atom",
+      "class": "primary",
+      "weight": 5,
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=8-k&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"8-K\" when:1d"
+    },
+    {
+      "name": "SEC S-3 current filings",
+      "type": "atom",
+      "class": "primary",
+      "weight": 5,
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=s-3&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"S-3\" when:1d"
+    },
+    {
+      "name": "SEC 424B5 current filings",
+      "type": "atom",
+      "class": "primary",
+      "weight": 5,
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=424b5&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"424B5\" when:1d"
+    },
+    {
+      "name": "SEC Schedule 13D current filings",
+      "type": "atom",
+      "class": "primary",
+      "weight": 5,
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=sc%2013d&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"13D\" when:1d"
+    },
+    {
+      "name": "SEC Schedule 13G current filings",
+      "type": "atom",
+      "class": "primary",
+      "weight": 4,
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=sc%2013g&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"13G\" when:1d"
+    },
+    {
+      "name": "SEC Form 4 current filings",
+      "type": "atom",
+      "class": "primary",
+      "weight": 3,
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&type=4&owner=include&count=100&output=atom",
+      "fallback_query": "site:sec.gov/Archives/edgar/data \"Form 4\" when:1d"
+    },
+    {
+      "name": "U.S. Department of Defense contracts",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 5,
+      "query": "site:defense.gov/News/Contracts/ (contract OR award) when:1d"
+    },
+    {
+      "name": "FDA news and regulatory signals",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 5,
+      "query": "site:fda.gov (approval OR PDUFA OR advisory OR clinical OR recall OR safety OR drug OR device) when:1d"
+    },
+    {
+      "name": "USAspending public award coverage",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 4,
+      "query": "site:usaspending.gov (award OR contract OR recipient) when:1d"
+    },
+    {
+      "name": "SAM.gov public procurement coverage",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 4,
+      "query": "site:sam.gov (award OR solicitation OR contract OR procurement) when:1d"
+    },
+    {
+      "name": "FERC public filings and releases",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 4,
+      "query": "site:ferc.gov (order OR filing OR interconnection OR data center OR power) when:1d"
+    },
+    {
+      "name": "ICIJ",
+      "type": "rss",
+      "class": "investigative",
+      "weight": 4,
+      "url": "https://www.icij.org/feed/"
+    },
+    {
+      "name": "OCCRP",
+      "type": "google_news",
+      "class": "investigative",
+      "weight": 4,
+      "query": "site:occrp.org company OR corporation OR bank OR investor OR deal OR investigation when:2d"
+    },
+    {
+      "name": "WikiLeaks public-index coverage",
+      "type": "google_news",
+      "class": "investigative",
+      "weight": 3,
+      "query": "site:wikileaks.org company OR corporation OR contract OR bank OR deal when:7d"
+    },
+    {
+      "name": "DDoSecrets public-index coverage",
+      "type": "google_news",
+      "class": "investigative",
+      "weight": 3,
+      "query": "site:ddosecrets.com company OR corporation OR contract OR bank OR deal when:7d"
+    },
+    {
+      "name": "Reuters M&A / transactional",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 5,
+      "query": "site:reuters.com (exclusive OR acquisition OR merger OR takeover OR deal OR sources say OR people familiar) when:1d"
+    },
+    {
+      "name": "Bloomberg Deals / Scoops",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 5,
+      "query": "site:bloomberg.com (deal OR acquisition OR merger OR takeover OR exclusive OR people familiar) when:1d"
+    },
+    {
+      "name": "The Information",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 4,
+      "query": "site:theinformation.com (exclusive OR deal OR acquisition OR partnership OR supplier OR AI OR data center) when:2d"
+    },
+    {
+      "name": "Financial Times Alphaville / M&A",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 4,
+      "query": "site:ft.com (Alphaville OR merger OR acquisition OR takeover OR M&A OR deal) when:1d"
+    },
+    {
+      "name": "Semafor Business",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 4,
+      "query": "site:semafor.com business (exclusive OR scoop OR deal OR acquisition OR financing OR AI) when:2d"
+    },
+    {
+      "name": "Breaking Defense",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 4,
+      "query": "site:breakingdefense.com (exclusive OR contract OR award OR drone OR autonomous OR Pentagon) when:2d"
+    },
+    {
+      "name": "Utility Dive",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 3,
+      "query": "site:utilitydive.com (data center OR hyperscaler OR power OR contract OR interconnection) when:2d"
+    },
+    {
+      "name": "Data Center Dynamics",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 3,
+      "query": "site:datacenterdynamics.com (hyperscaler OR contract OR power OR campus OR AI) when:2d"
+    },
+    {
+      "name": "Muddy Waters / short-seller research",
+      "type": "google_news",
+      "class": "investigative",
+      "weight": 4,
+      "query": "(site:muddywatersresearch.com OR \"Muddy Waters\") (report OR short OR fraud OR company) when:2d"
+    },
+    {
+      "name": "Evan Blass / evleaks",
+      "type": "google_news",
+      "class": "leaker",
+      "weight": 3,
+      "query": "(\"Evan Blass\" OR evleaks) (leak OR leaked OR exclusive OR phone OR chip OR hardware) when:2d"
+    },
+    {
+      "name": "Steve H.McFly / OnLeaks",
+      "type": "google_news",
+      "class": "leaker",
+      "weight": 3,
+      "query": "(\"Steve H.McFly\" OR OnLeaks) (leak OR leaked OR exclusive OR phone OR hardware) when:2d"
+    },
+    {
+      "name": "Ice Universe",
+      "type": "google_news",
+      "class": "leaker",
+      "weight": 3,
+      "query": "(\"Ice Universe\" OR UniverseIce) (leak OR leaked OR Samsung OR chip OR hardware) when:2d"
+    },
+    {
+      "name": "Ming-Chi Kuo",
+      "type": "google_news",
+      "class": "leaker",
+      "weight": 4,
+      "query": "\"Ming-Chi Kuo\" (Apple OR Nvidia OR supplier OR shipment OR forecast OR chip OR headset) when:2d"
+    },
+    {
+      "name": "Digital Chat Station",
+      "type": "google_news",
+      "class": "leaker",
+      "weight": 3,
+      "query": "\"Digital Chat Station\" (leak OR leaked OR chip OR phone OR supplier) when:2d"
+    },
+    {
+      "name": "Insider Gaming / Tom Henderson",
+      "type": "rss",
+      "class": "leaker",
+      "weight": 3,
+      "url": "https://insider-gaming.com/feed/"
+    },
+    {
+      "name": "Jason Schreier",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 4,
+      "query": "\"Jason Schreier\" (exclusive OR delay OR game OR studio OR acquisition OR layoffs) when:2d"
+    },
+    {
+      "name": "Reddit WallStreetBets new",
+      "type": "rss",
+      "class": "social",
+      "weight": 1,
+      "url": "https://www.reddit.com/r/wallstreetbets/new/.rss"
+    },
+    {
+      "name": "Reddit Stocks new",
+      "type": "rss",
+      "class": "social",
+      "weight": 1,
+      "url": "https://www.reddit.com/r/stocks/new/.rss",
+      "fallback_query": "site:reddit.com/r/stocks (DD OR catalyst OR earnings OR acquisition OR FDA OR contract) when:1d"
+    },
+    {
+      "name": "Reddit ShortSqueeze new",
+      "type": "rss",
+      "class": "social",
+      "weight": 1,
+      "url": "https://www.reddit.com/r/Shortsqueeze/new/.rss",
+      "fallback_query": "site:reddit.com/r/Shortsqueeze (short OR squeeze OR catalyst OR float) when:1d"
+    },
+    {
+      "name": "Reddit Biotechplays new",
+      "type": "rss",
+      "class": "social",
+      "weight": 2,
+      "url": "https://www.reddit.com/r/Biotechplays/new/.rss",
+      "fallback_query": "site:reddit.com/r/Biotechplays (FDA OR PDUFA OR phase OR trial OR catalyst) when:1d"
+    },
+    {
+      "name": "Reddit pennystocks new",
+      "type": "rss",
+      "class": "social",
+      "weight": 1,
+      "url": "https://www.reddit.com/r/pennystocks/new/.rss",
+      "fallback_query": "site:reddit.com/r/pennystocks (catalyst OR contract OR FDA OR acquisition OR offering) when:1d"
+    },
+    {
+      "name": "WSJ public M&A coverage",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 3,
+      "query": "site:wsj.com (merger OR acquisition OR takeover OR deal OR sale) when:1d"
+    },
+    {
+      "name": "Analyst initiations and upgrades",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 2,
+      "query": "(initiates coverage OR upgraded OR upgrade OR raises price target) (NASDAQ OR NYSE OR shares) when:1d"
+    },
+    {
+      "name": "Company certification and production milestones",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 2,
+      "query": "(certification OR commercial production OR commercial operation OR production ramp) (NASDAQ OR NYSE OR stock) when:1d"
+    },
+    {
+      "name": "Index additions and passive flows",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 2,
+      "query": "(added to index OR index inclusion OR rebalance OR index reconstitution) (NASDAQ OR NYSE OR stock) when:1d"
+    }
+  ]
+}

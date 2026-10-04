@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "batch": "pilot-20-freeze-c",
+  "status": "FROZEN_PRE_OUTCOME",
+  "cases": [
+    {
+      "ticker": "AVEX",
+      "cutoff": "2026-09-16T09:31:00-04:00",
+      "decision": "WATCH",
+      "reason": "Fresh defense award up to $92.2M over three years is material versus company scale and strategically relevant, but 'up to' value is not equivalent to funded backlog; require tape/funding confirmation.",
+      "evidence": [
+        "AEVEX company release 2026-09-16"
+      ]
+    },
+    {
+      "ticker": "SRRK",
+      "cutoff": "2026-09-11T16:05:00-04:00",
+      "decision": "WATCH",
+      "reason": "FDA approval is commercially material with broad age >=2 label and launch underway, but approval was anticipated by Sep 30 and company had repeatedly guided that approval could occur at any time; priced-in risk prevents automatic EARLY classification.",
+      "evidence": [
+        "Scholar Rock approval release 2026-09-11",
+        "Scholar Rock Aug 7 regulatory update"
+      ]
+    },
+    {
+      "ticker": "GLND",
+      "cutoff": "2026-09-24T08:01:00-04:00",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "reason": "8-K disclosed a new material agreement, but contract economics and incremental cash-flow value are not sufficiently established at cutoff for high-conviction classification; microcap momentum requires tape confirmation.",
+      "evidence": [
+        "GLND 8-K accepted 2026-09-24 08:00 ET"
+      ]
+    },
+    {
+      "ticker": "VICR",
+      "cutoff": "2026-09-16T16:05:00-04:00",
+      "decision": "WATCH_LOW_CONFIDENCE",
+      "reason": "AI-OEM architecture licensing is strategically validating, but undisclosed customer identity and economics make magnitude uncertain; do not promote on AI vocabulary alone.",
+      "evidence": [
+        "contemporaneous company licensing announcement"
+      ]
+    }
+  ]
+}

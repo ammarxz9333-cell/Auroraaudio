@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "batch": "entry-gate-v1-oos-b-freeze-2",
+  "status": "FROZEN_PRE_OUTCOME",
+  "cases": [
+    {
+      "ticker": "FPS",
+      "cutoff": "2026-09-16T07:32:00-04:00",
+      "decision": "WATCH_CONTINUATION_HIGH",
+      "reason": "Fresh strong earnings/guidance context: EPS beat, 94% revenue growth, record $1.5B bookings and ~$3B backlog. Require entry-gate tape confirmation; do not chase solely on catalyst."
+    },
+    {
+      "ticker": "LLYVA",
+      "cutoff": "2026-09-16T07:32:00-04:00",
+      "decision": "NO_NEW_EVENT",
+      "reason": "No fresh qualifying company catalyst identified by cutoff; abnormal-volume screen alone is insufficient."
+    },
+    {
+      "ticker": "MNOV",
+      "cutoff": "2026-09-18T10:32:00-04:00",
+      "decision": "WATCH_BINARY_UPCOMING",
+      "reason": "Phase II data expected later in September, but no result was public at cutoff. Calendar risk/watch only, not BUYABLE from catalyst."
+    },
+    {
+      "ticker": "GRAL",
+      "cutoff": "2026-09-21T07:00:00-04:00",
+      "decision": "WATCH_REGULATORY_HIGH",
+      "reason": "FDA briefing materials were materially constructive on analytical performance, study design and primary safety while retaining substantive labeling/early-detection questions. High-value regulatory catalyst; require tape confirmation."
+    }
+  ],
+  "anti_leakage": "Decisions frozen without using end-of-day outcome."
+}

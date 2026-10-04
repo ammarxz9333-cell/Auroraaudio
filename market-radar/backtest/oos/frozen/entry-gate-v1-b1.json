@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "batch": "entry-gate-v1-oos-b-freeze-1",
+  "status": "FROZEN_PRE_OUTCOME",
+  "cases": [
+    {
+      "ticker": "ASND",
+      "cutoff": "2026-09-16T07:32:00-04:00",
+      "decision": "WATCH_CONTINUATION",
+      "reason": "Sep 14 $400M repurchase plus regained TransCon rights are material positive context, but two days old; require abnormal tape confirmation."
+    },
+    {
+      "ticker": "SYY",
+      "cutoff": "2026-09-16T07:32:00-04:00",
+      "decision": "WATCH_FINANCING",
+      "reason": "$1B common-stock offering priced at $81 to finance pending Jetro acquisition; evaluate price acceptance rather than treating financing as automatically bearish."
+    },
+    {
+      "ticker": "UTHR",
+      "cutoff": "2026-09-16T07:32:00-04:00",
+      "decision": "NO_NEW_EVENT",
+      "reason": "No fresh Sep 16 release identified; Sep 8 ASR and Sep 2 FDA acceptance are stale for a fresh-event alert."
+    },
+    {
+      "ticker": "ARCT",
+      "cutoff": "2026-09-18T10:32:00-04:00",
+      "decision": "WATCH_BINARY_UPCOMING",
+      "reason": "9:00 ET company release announced Sep 23 Phase 2 OTC data presentation; actual data not yet public at cutoff. Do not infer future results."
+    }
+  ],
+  "anti_leakage": "No outcome or post-cutoff release used."
+}
