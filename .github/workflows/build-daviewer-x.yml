@@ -1,0 +1,70 @@
+name: Build DAViewer X APK
+
+on:
+  push:
+    branches:
+      - daviewer-x-apk-build
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Checkout build assets
+        uses: actions/checkout@v4
+        with:
+          ref: daviewer-x-apk-build
+
+      - name: Checkout DAViewer
+        uses: actions/checkout@v4
+        with:
+          repository: redtidev1918/DAViewer
+          ref: main
+          path: daviewer
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.47.1
+          channel: stable
+          cache: true
+
+      - name: Apply DAViewer X patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf /tmp/daviewer-x
+          mkdir -p /tmp/daviewer-x
+          unzip -q ci/DAViewer-X-v0.1-patch.zip -d /tmp/daviewer-x
+          PATCH=/tmp/daviewer-x/daviewer_x_patch
+          cp -R "$PATCH/lib/features/multisource" daviewer/lib/features/
+          cp "$PATCH/test/multisource_repository_test.dart" daviewer/test/
+          cd daviewer
+          git apply "$PATCH/daviewer_x_integration.patch"
+
+      - name: Install dependencies
+        working-directory: daviewer
+        run: flutter pub get
+
+      - name: Build debug APK
+        working-directory: daviewer
+        run: flutter build apk --debug
+
+      - name: Rename APK
+        shell: bash
+        run: |
+          cp daviewer/build/app/outputs/flutter-apk/app-debug.apk DAViewer-X-v0.1-debug.apk
+          sha256sum DAViewer-X-v0.1-debug.apk > DAViewer-X-v0.1-debug.sha256
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-X-v0.1-debug
+          path: |
+            DAViewer-X-v0.1-debug.apk
+            DAViewer-X-v0.1-debug.sha256
+          if-no-files-found: error
