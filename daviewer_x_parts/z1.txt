@@ -1,0 +1,1 @@
+final y = await repo.followingFeed(lib.followedArtists, safeMode: safe);
