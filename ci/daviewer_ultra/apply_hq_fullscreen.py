@@ -151,18 +151,12 @@ p.write_text(
 
 replace_once(
     "lib/features/artwork/artwork_detail_screen.dart",
-    """            MediaViewer(
-              media: media,
-              additionalMedia: additionalMedia,
-              heroTag: 'artwork-${artwork.id}',
-""",
-    """            MediaViewer(
-              media: media,
-              additionalMedia: additionalMedia,
+    """              additionalMedia: additionalMedia,
+              heroTag:""",
+    """              additionalMedia: additionalMedia,
               originalMedia: originalResolution.valueOrNull?.asset,
               additionalOriginalMedia: additionalOriginals,
-              heroTag: 'artwork-${artwork.id}',
-""",
+              heroTag:""",
 )
 
 test = root / "test/media_viewer_test.dart"
