@@ -153,7 +153,7 @@ jobs:
           set -euo pipefail
           mkdir -p out
           cp DAViewer/build/app/outputs/flutter-apk/app-release.apk             out/DAViewer-Ultra-v0.6.1-android.apk
-          sha256sum out/DAViewer-Ultra-v0.6.0-android.apk > out/SHA256SUMS.txt
+          sha256sum out/DAViewer-Ultra-v0.6.1-android.apk > out/SHA256SUMS.txt
           cat > out/BUILD-INFO.txt <<'EOF'
           DAViewer Ultra personal build
           Upstream DAViewer commit: dd851937a546d3578f8ab60600e3da8d5f97ee83
