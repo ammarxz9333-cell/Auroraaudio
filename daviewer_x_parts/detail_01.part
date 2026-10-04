@@ -1,0 +1,25 @@
+      ),
+    );
+  }
+
+  Widget body(ExternalArtwork art) {
+    final lib = ref.watch(externalLibraryProvider);
+    final ctl = ref.read(externalLibraryProvider.notifier);
+    final saved = lib.saved.containsKey(art.key);
+    final following = ctl.isFollowing(art.source, art.artist);
+    final related = ref.watch(externalRelatedProvider((art.source, art.id, safe)));
+    final artists = ref.watch(externalArtistSuggestionsProvider((art.source, art.id, safe)));
+    return ListView(padding: const EdgeInsets.only(bottom: 30), children: [
+      Container(color: Colors.black, constraints: BoxConstraints(maxHeight: MediaQuery.sizeOf(context).height * .65, minHeight: 280),
+        alignment: Alignment.center, child: InteractiveViewer(maxScale: 5, child:
+          Image.network(art.previewUri.toString(), fit: BoxFit.contain,
+            errorBuilder: (_, __, ___) => const Icon(Icons.broken_image_outlined, color: Colors.white, size: 48)))),
+      Padding(padding: const EdgeInsets.all(16), child: Row(crossAxisAlignment: CrossAxisAlignment.start, children: [
+        Expanded(child: Column(crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Text(art.title, style: Theme.of(context).textTheme.titleLarge),
+          Text('@${art.artist} · ${sourceName(art.source)}'),
+        ])),
+        FilledButton.tonalIcon(onPressed: art.artist == 'unknown' ? null : () => ctl.toggleFollow(art.source, art.artist),
+          icon: Icon(following ? Icons.check : Icons.person_add_alt), label: Text(following ? 'Following' : 'Follow')),
+      ])),
+      Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: Wrap(spacing: 8, runSpacing: 8, children: [
