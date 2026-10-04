@@ -1,0 +1,9 @@
+      artists.when(loading: () => const Center(child: CircularProgressIndicator()), error: (_, __) => const SizedBox(), data: (list) =>
+        Wrap(spacing: 6, runSpacing: 6, children: list.map((x) {
+          final followed = lib.followedArtists.contains('${x.source.name}|${x.artist}');
+          return ActionChip(avatar: Icon(followed ? Icons.check : Icons.person_add_alt, size: 18),
+            label: Text('${x.artist} · ${sourceName(x.source)}'), onPressed: () => ctl.toggleFollow(x.source, x.artist));
+        }).toList())),
+    ]);
+  }
+
