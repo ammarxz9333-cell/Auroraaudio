@@ -45,6 +45,8 @@ jobs:
           cp ci/daviewer_ultra/android_native_oauth_callback_source_test.dart             DAViewer/test/android_native_oauth_callback_source_test.dart
           cp ci/daviewer_ultra/MainActivity.kt             DAViewer/android/app/src/main/kotlin/app/daviewer/MainActivity.kt
           python3 ci/daviewer_ultra/apply_ultra.py
+          python3 ci/daviewer_ultra/apply_hq_fullscreen.py
+          python3 ci/daviewer_ultra/apply_search_resilience.py
           cd DAViewer
           dart format lib test
 
@@ -64,8 +66,12 @@ jobs:
               "lib/core/runtime/app_runtime.dart",
               "lib/features/home/home_providers.dart",
               "lib/features/web_login/web_login_screen.dart",
+              "lib/features/artwork/media_viewer.dart",
+              "lib/features/artwork/artwork_detail_screen.dart",
+              "lib/features/search/search_providers.dart",
               "pubspec.yaml",
               "test/android_native_oauth_callback_source_test.dart",
+              "test/media_viewer_test.dart",
           }
           out = subprocess.check_output(["git", "status", "--porcelain"], text=True)
           changed = {line[3:].strip() for line in out.splitlines() if line.strip()}
@@ -78,6 +84,10 @@ jobs:
               "lib/core/runtime/app_runtime.dart",
               "lib/features/home/home_providers.dart",
               "lib/features/web_login/web_login_screen.dart",
+              "lib/features/artwork/media_viewer.dart",
+              "lib/features/artwork/artwork_detail_screen.dart",
+              "lib/features/search/search_providers.dart",
+              "test/media_viewer_test.dart",
           } - changed
           if missing:
               raise SystemExit(f"Expected Ultra changes missing: {sorted(missing)}")
@@ -147,7 +157,9 @@ jobs:
           Android OAuth: external system browser
           Android callback: native replay-safe warm/cold-start MethodChannel bridge
           Home: RFY preferred; official browse/home fallback with mature_content=true; Daily fallback on initial-page failure
-          Search/download/mature-content behavior: upstream v0.5.7 regression fixes retained
+          Fullscreen images: verified originals preferred over preview assets
+          Search: web search primary; mature-content official fallback; tag fallback when coarse search is empty
+          Download/mature-content behavior: upstream v0.5.7 regression fixes retained
           Validation: flutter analyze + full flutter test + manifest callback checks + ABI checks
           Signing: CI debug key used for this personal release-mode artifact
           EOF
