@@ -1,0 +1,36 @@
+import 'package:dakit_flutter/dakit_flutter.dart';
+import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
+import '../../../core/runtime/runtime_provider.dart';
+import '../discovery/external_library.dart';
+import '../discovery/multisource_providers.dart';
+import '../models/external_artwork.dart';
+import 'multisource_discover_screen.dart';
+
+final class ExternalArtworkDetailScreen extends ConsumerStatefulWidget {
+  const ExternalArtworkDetailScreen({required this.source, required this.postId, super.key});
+  final ExternalSourceKind source;
+  final String postId;
+  @override ConsumerState<ExternalArtworkDetailScreen> createState() => _DetailState();
+}
+
+final class _DetailState extends ConsumerState<ExternalArtworkDetailScreen> {
+  bool downloading = false, safe = true;
+  @override
+  Widget build(BuildContext context) {
+    final key = (widget.source, widget.postId);
+    final art = ref.watch(externalArtworkProvider(key));
+    return Scaffold(
+      appBar: AppBar(title: Text(art.valueOrNull?.title ?? 'Artwork'), actions: [
+        IconButton(icon: Icon(safe ? Icons.shield_outlined : Icons.shield_off_outlined),
+          onPressed: () => setState(() => safe = !safe)),
+        IconButton(icon: const Icon(Icons.open_in_new), onPressed: art.valueOrNull == null ? null :
+          () => launchUrl(art.valueOrNull!.pageUri, mode: LaunchMode.externalApplication)),
+      ]),
+      body: art.when(
+        loading: () => const Center(child: CircularProgressIndicator()),
+        error: (e, _) => Center(child: Text('$e')),
+        data: (a) => a == null ? const Center(child: Text('Artwork not found.')) : body(a),
