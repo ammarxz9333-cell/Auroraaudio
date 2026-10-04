@@ -1,0 +1,94 @@
+name: Build DAViewer Ultra Android APK
+
+on:
+  push:
+    branches:
+      - app/daviewer-ultra-20261004
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daviewer-ultra-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout carrier repository
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.2'
+          channel: stable
+          cache: true
+
+      - name: Fetch pinned DAViewer v0.5.7 source
+        run: |
+          git clone https://github.com/redtidev1918/DAViewer.git DAViewer
+          git -C DAViewer checkout 3b4d3af459c1dbd2f21ba686804027b9cbceda6e
+          git -C DAViewer status --short
+
+      - name: Apply DAViewer Ultra reliability patch
+        run: python3 ci/daviewer_ultra/apply_ultra.py
+
+      - name: Verify OAuth and fallback wiring
+        run: |
+          grep -q "useSystemBrowserOAuth = Platform.isAndroid" DAViewer/lib/core/runtime/app_runtime.dart
+          grep -q "const SystemUriLauncher()" DAViewer/lib/core/runtime/app_runtime.dart
+          grep -q "using official Discover fallback" DAViewer/lib/features/home/home_providers.dart
+          grep -q "Platform.isAndroid" DAViewer/lib/features/web_login/web_login_screen.dart
+          grep -q 'android:scheme="dakit"' DAViewer/android/app/src/main/AndroidManifest.xml
+          grep -q 'android:host="oauth"' DAViewer/android/app/src/main/AndroidManifest.xml
+          grep -q 'android:path="/callback"' DAViewer/android/app/src/main/AndroidManifest.xml
+
+      - name: Format patched Dart sources
+        working-directory: DAViewer
+        run: |
+          dart format             lib/core/runtime/app_runtime.dart             lib/features/web_login/web_login_screen.dart             lib/features/home/home_providers.dart
+
+      - name: Resolve dependencies
+        working-directory: DAViewer
+        run: flutter pub get
+
+      - name: Static analysis
+        working-directory: DAViewer
+        run: flutter analyze
+
+      - name: Full upstream test suite
+        working-directory: DAViewer
+        run: flutter test
+
+      - name: Build release-mode APK
+        working-directory: DAViewer
+        run: flutter build apk --release --build-name=0.6.0 --build-number=600
+
+      - name: Package and checksum
+        run: |
+          mkdir -p out
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk             out/DAViewer-Ultra-v0.6.0-android.apk
+          sha256sum out/DAViewer-Ultra-v0.6.0-android.apk > out/SHA256SUMS.txt
+          cat > out/BUILD-INFO.txt <<'EOF'
+          Product: DAViewer Ultra v0.6.0
+          Upstream: redtidev1918/DAViewer v0.5.7
+          Upstream commit: 3b4d3af459c1dbd2f21ba686804027b9cbceda6e
+          Android OAuth: system browser + dakit://oauth/callback
+          Home: website rfy when available; official browse/home fallback; Daily Deviations last fallback
+          Search: upstream web search + official fallback
+          Build gate: flutter analyze + full flutter test
+          Signing: CI debug key for installable personal test artifact
+          EOF
+
+      - name: Upload tested APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-Ultra-v0.6.0-Android
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
