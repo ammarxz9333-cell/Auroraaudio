@@ -1,0 +1,109 @@
+name: Build PixVault v0.3 APK
+
+on:
+  push:
+    branches:
+      - app/pixvault-v030-pro-20261004
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Create Android shell
+        run: |
+          flutter create --platforms=android --org app.pixvault --project-name pixvault PixVault
+          rm -rf PixVault/lib PixVault/test
+          cp -R apps/pixvault/lib PixVault/lib
+          cp -R apps/pixvault/test PixVault/test
+          cp apps/pixvault/pubspec.yaml PixVault/pubspec.yaml
+
+          python3 - <<'PY'
+          from pathlib import Path
+          m = Path('PixVault/android/app/src/main/AndroidManifest.xml')
+          x = m.read_text()
+          if 'android.permission.INTERNET' not in x:
+              x = x.replace(
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">',
+                  '<manifest xmlns:android="http://schemas.android.com/apk/res/android">\n'
+                  '    <uses-permission android:name="android.permission.INTERNET"/>'
+              )
+          x = x.replace('android:label="pixvault"', 'android:label="PixVault"')
+          m.write_text(x)
+
+          g = Path('PixVault/android/app/build.gradle.kts')
+          x = g.read_text().replace(
+              'applicationId = "app.pixvault.pixvault"',
+              'applicationId = "app.pixvault.viewer"'
+          )
+          g.write_text(x)
+          PY
+
+      - name: Resolve dependencies
+        working-directory: PixVault
+        run: flutter pub get
+
+      - name: Format
+        working-directory: PixVault
+        run: dart format lib test
+
+      - name: Analyze
+        working-directory: PixVault
+        run: flutter analyze --no-fatal-infos
+
+      - name: Test
+        working-directory: PixVault
+        run: flutter test
+
+      - name: Smoke-test verified source APIs
+        run: |
+          set -e
+          curl -fLsS -A 'Mozilla/5.0 (Linux; Android 16)'             -H 'Content-Type: application/json' -H 'Accept: application/json'             -H 'Referer: https://rule34.xyz/'             -d '{"includeTags":["landscape"],"CountTotal":false,"IncludeLinks":true,"OrderBy":0,"Skip":0,"take":1}'             'https://rule34.xyz/api/v2/post/search/root'             -o /tmp/r34-search.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/r34-search.json'))
+          assert isinstance(data.get('items'), list), data
+          PY
+          curl -fLsS -A 'Mozilla/5.0 (Linux; Android 16)'             'https://yande.re/post.json?limit=1&page=1&tags=landscape'             -o /tmp/yandere.json
+          python3 - <<'PY'
+          import json
+          data=json.load(open('/tmp/yandere.json'))
+          assert isinstance(data, list), data
+          PY
+
+      - name: Build APKs
+        working-directory: PixVault
+        run: |
+          flutter build apk --debug
+          flutter build apk --release
+
+      - name: Package artifacts
+        run: |
+          mkdir -p out
+          cp PixVault/build/app/outputs/flutter-apk/app-debug.apk out/PixVault-v0.3.0-debug.apk
+          cp PixVault/build/app/outputs/flutter-apk/app-release.apk out/PixVault-v0.3.0-release.apk
+          zip -qr out/PixVault-v0.3.0-source.zip apps/pixvault
+          sha256sum out/PixVault-v0.3.0-*.apk out/PixVault-v0.3.0-source.zip > out/SHA256SUMS.txt
+
+      - name: Upload APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: PixVault-v0.3.0-APK
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
