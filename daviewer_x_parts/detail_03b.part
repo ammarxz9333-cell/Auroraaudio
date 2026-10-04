@@ -1,0 +1,5 @@
+  Future<void> download(ExternalArtwork art) async {
+    final uri = art.originalUri ?? art.previewUri;
+    await launchUrl(uri, mode: LaunchMode.externalApplication);
+  }
+}
