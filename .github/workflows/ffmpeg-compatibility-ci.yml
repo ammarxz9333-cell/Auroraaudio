@@ -117,6 +117,7 @@ jobs:
             | tee ffmpeg-surround-test.txt
           grep -q "PASS: real E-AC-3 IEC61937 -> 7.1.4" ffmpeg-surround-test.txt
           grep -q "no JOC or hardware proof" ffmpeg-surround-test.txt
+          python3 validation/surround-upmix/test_truehd_bed.py | tee ffmpeg-truehd-bed-test.json
 
       - name: Capture bounded capability evidence
         shell: bash
@@ -134,6 +135,7 @@ jobs:
           "$FFMPEG" -hide_banner -decoders > output/ffmpeg-compatibility/decoders.txt 2>&1
           "$FFMPEG" -hide_banner -filters > output/ffmpeg-compatibility/filters.txt 2>&1
           cp ffmpeg-version.txt ffmpeg-surround-test.txt output/ffmpeg-compatibility/
+          cp ffmpeg-truehd-bed-test.json output/ffmpeg-compatibility/
           python3 - <<'PY'
           import hashlib, json, os, pathlib
           binary = pathlib.Path('ffmpeg-src/ffmpeg')

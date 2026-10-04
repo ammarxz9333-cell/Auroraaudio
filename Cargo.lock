@@ -166,14 +166,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "aurora-decoder-truehdd"
-version = "0.1.0"
-dependencies = [
- "aurora-core",
- "aurora-decoder-api",
-]
-
-[[package]]
 name = "aurora-diagnostics"
 version = "0.1.0"
 dependencies = [
@@ -316,14 +308,6 @@ dependencies = [
 
 [[package]]
 name = "aurora-renderer-basic"
-version = "0.1.0"
-dependencies = [
- "aurora-core",
- "aurora-renderer-api",
-]
-
-[[package]]
-name = "aurora-renderer-cavern"
 version = "0.1.0"
 dependencies = [
  "aurora-core",

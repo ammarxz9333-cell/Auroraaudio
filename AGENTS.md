@@ -4,6 +4,20 @@
 >
 > **Maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge.
 
+### Operational stack cleanup (2026-10-04)
+
+- Follow-up measured DSP optimization: identity calibration bypasses unused filtering/delay work, calibration history allocates only for nonzero delays, zero lip-sync skips reading its just-written frame while still retaining history for later delay requests, and the master target is calculated once per block. No adaptive clock, limiter, crossover, fade or mute policy changed.
+- Existing Criterion release benchmark before/after on this Windows GNU host showed estimated processing-time changes of -12.5% flat, -8.4% delayed/no-PEQ and -7.6% delayed/eight-band; 40 frames x 12 channels. The identity/no-delay calibration saves 230448 buffer bytes. These are local DSP microbenchmarks, not full-chain latency, target-device WCET or manufacturer comparisons; see `docs/output-dsp-fast-path.md`.
+- Added bitwise buffered-reference differentials over calibration wrap/reset and lip-sync history/crossfades, plus zero-allocation controls for identity/zero-delay paths. The worst-case eight-band/4800-frame test remains required.
+- Follow-up fmt/check/clippy/full locked workspace tests passed. Release twelve-role output self-test passed, and the optimized shared DSP processed all 3624960 frames of the existing 75.52-second moving-object PCM fixture with byte-identical output (SHA-256 `4e097140ea4afbaa632f324f8a9c2f02d4f80add821f2921e909bfe4d34a18e3`). This fixture replay does not re-prove physical/service ingress.
+- PR #320 initial head `f6ce642` passed all three exact-pin FFmpeg TrueHD gates with zero bed difference; fresh final-head/base synchronization and all Aurora CI remain required before merge.
+
+- Removed unused, status-only `aurora-decoder-truehdd` and `aurora-renderer-cavern` workspace crates. Research/license provenance remains metadata; neither is a selectable runtime backend.
+- Corrected the false TrueHD capability claim: no truehdd adapter or PCM24/presentation tests exist in this revision. Registry and generated README now report not-implemented/unsupported with no accepted evidence.
+- Existing FFmpeg worker now accepts explicitly selected raw `truehd` as well as default IEC61937 `spdif`. It decodes a channel bed and produces synthetic heights, never DAMF/Atmos objects. Existing VBAP/native libspatialaudio cover actual speaker rendering; adding Cavern is not required to retain that function.
+- `validation/surround-upmix/test_truehd_bed.py` executes generated 5.1 TrueHD -> lossless six-channel reference -> existing 12-channel worker, checks bed order/value preservation and rejects corrupt input/unknown formats. Local FFmpeg 8.1.1 lab run passed 4800 frames with zero bed error; it does not change the accepted 6.1.6 pin. Exact-pin CI runs this new gate before any broader promotion.
+- This removes two confirmed dead crates; it is not an assertion that every codec/transport/physical target is operational. Continuous TrueHD runtime integration, native Atmos object bindings, <=5 cm physical localization and physical wired/Wi-Fi acceptance remain open.
+
 ### Market Radar historical research (2026-09-28)
 
 - The 175/180-symbol broad benchmark completed with 40,952 eligible symbol-days. The untouched final selected set had 4 +5%-first, 8 -5%-first and 1 unresolved among 13, so the price/volume rule is not promoted to a buy alert. PR #250 is merged; main Market Radar CI passed.

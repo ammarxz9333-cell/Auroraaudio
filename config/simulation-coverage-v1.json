@@ -9,6 +9,17 @@
   },
   "capabilities": [
     {
+      "id": "ffmpeg-truehd-channel-bed-worker",
+      "status": "planned",
+      "evidence_class": "software_reference",
+      "evidence": [
+        "validation/surround-upmix/aurora-surround-upmix.sh",
+        "validation/surround-upmix/test_truehd_bed.py",
+        ".github/workflows/ffmpeg-compatibility-ci.yml"
+      ],
+      "truth_boundary": "Standalone generated 5.1 TrueHD lossless channel round-trip and real FFmpeg 12-channel bed/upmix worker with corrupt-input and unknown-format rejection. Local execution and exact-pin FFmpeg 6.1.1/6.1.6/9.0.1 CI passed at f6ce642; AuroraSim export remains pending. Does not implement native truehdd/DAMF object bindings, continuous Aurora runtime handoff, Netflix capture or physical output."
+    },
+    {
       "id": "simics-tv-audio-ingress",
       "status": "planned",
       "evidence_class": "virtual",

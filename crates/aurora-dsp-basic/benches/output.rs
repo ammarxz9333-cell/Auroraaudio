@@ -5,6 +5,14 @@ use aurora_dsp_basic::output::{
 use criterion::{black_box, criterion_group, criterion_main, Criterion};
 
 fn benchmark(c: &mut Criterion) {
+    let mut flat = SpeakerPostProcessor::new(OutputDspConfig::default()).unwrap();
+    c.bench_function("output_714_40_frames_flat", |b| {
+        b.iter(|| {
+            let mut audio = [0.1; 480];
+            flat.process_block(black_box(&mut audio)).unwrap();
+            black_box(audio);
+        });
+    });
     for bands in [0, 8] {
         let mut processor = SpeakerPostProcessor::new(OutputDspConfig::default()).unwrap();
         let config = SpeakerCalibration {

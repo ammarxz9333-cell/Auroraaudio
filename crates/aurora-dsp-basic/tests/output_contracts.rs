@@ -23,6 +23,28 @@ fn calibration() -> SpeakerCalibration {
 }
 
 #[test]
+fn flat_and_zero_delay_calibration_controls_allocate_nothing() {
+    for calibrated in [false, true] {
+        let mut post = SpeakerPostProcessor::new(OutputDspConfig::default()).unwrap();
+        if calibrated {
+            let mut config = calibration();
+            config.channels[2].trim_db = -3.0;
+            post.configure_calibration(&config).unwrap();
+        }
+        let mut block = [0.05; CHANNELS * 40];
+        let allocations = count_allocations(|| {
+            for index in 0..1200 {
+                post.set_lipsync_frames(if index < 700 { 0 } else { 48 });
+                post.process_block(&mut block).unwrap();
+            }
+            post.reset();
+        });
+        assert_eq!(allocations, 0);
+        assert!(block.iter().all(|sample| sample.is_finite()));
+    }
+}
+
+#[test]
 fn worst_case_calibrated_processing_and_controls_allocate_nothing() {
     let mut post = SpeakerPostProcessor::new(OutputDspConfig::default()).unwrap();
     let mut config = calibration();

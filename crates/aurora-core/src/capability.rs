@@ -397,27 +397,25 @@ pub fn canonical_capability_registry() -> CapabilityRegistry {
                 cue_limitations: vec![
                     "Inactive pending license and redistribution review".to_owned()
                 ],
-                evidence: vec!["Non-executable integration status boundary".to_owned()],
+                evidence: vec!["Research metadata only; no runtime crate or renderer".to_owned()],
             },
             CapabilityEntry {
                 id: "truehdd".to_owned(),
-                name: "truehdd channel-PCM decoder".to_owned(),
+                name: "truehdd deferred integration".to_owned(),
                 kind: CapabilityKind::Decoder,
-                implementation_status: ImplementationStatus::Experimental,
-                offline_support: SupportStatus::Experimental,
+                implementation_status: ImplementationStatus::NotImplemented,
+                offline_support: SupportStatus::Unsupported,
                 realtime_support: SupportStatus::Unsupported,
                 tested_layouts: vec![],
-                artifact_verification: ArtifactVerification::SoftwareTested,
+                artifact_verification: ArtifactVerification::None,
                 adapter_placeholder: false,
                 production_ready: false,
                 cue_limitations: vec![
-                    "Complete-file external-process decode only".to_owned(),
+                    "No executable truehdd adapter; use the external FFmpeg channel-bed path for supported inputs".to_owned(),
                     "DAMF/Atmos object presentation is not mapped into Aurora object bindings".to_owned(),
                     "External truehdd deployment and licensing require separate review".to_owned(),
                 ],
-                evidence: vec![
-                    "aurora-decoder-truehdd PCM24 import and presentation-selection tests".to_owned()
-                ],
+                evidence: vec![],
             },
             CapabilityEntry {
                 id: "loudspeaker-3d".to_owned(),
@@ -479,6 +477,25 @@ mod tests {
             StrDeserializer::<serde::de::value::Error>::new("invented-status"),
         );
         assert!(result.is_err());
+    }
+
+    #[test]
+    fn deferred_truehdd_has_no_execution_or_test_claim() {
+        let registry = canonical_capability_registry();
+        let entry = registry
+            .capabilities
+            .iter()
+            .find(|e| e.id == "truehdd")
+            .unwrap();
+        assert_eq!(
+            entry.implementation_status,
+            ImplementationStatus::NotImplemented
+        );
+        assert!(!entry.offline_support.is_supported());
+        assert!(!entry.realtime_support.is_supported());
+        assert_eq!(entry.artifact_verification, ArtifactVerification::None);
+        assert!(entry.tested_layouts.is_empty());
+        assert!(entry.evidence.is_empty());
     }
 
     #[test]
