@@ -16,7 +16,7 @@ def replace_once(path: str, old: str, new: str) -> None:
 replace_once(
     "pubspec.yaml",
     "version: 0.5.7+219",
-    "version: 0.6.0+600",
+    "version: 0.6.1+601",
 )
 replace_once(
     "android/app/src/main/AndroidManifest.xml",
