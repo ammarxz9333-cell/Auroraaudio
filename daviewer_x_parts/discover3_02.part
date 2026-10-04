@@ -1,7 +1,7 @@
     final sources = ref.watch(multiSourceRepositoryProvider).availableSources;
     return Scaffold(
       appBar: AppBar(title: const Text('DAViewer X'), actions: [
-        IconButton(icon: Icon(safe ? Icons.shield_outlined : Icons.shield_off_outlined),
+        IconButton(icon: Icon(safe ? Icons.shield_outlined : Icons.shield),
           onPressed: () { setState(() => safe = !safe); reload(); }),
       ]),
       body: RefreshIndicator(onRefresh: reload, child: ListView(
