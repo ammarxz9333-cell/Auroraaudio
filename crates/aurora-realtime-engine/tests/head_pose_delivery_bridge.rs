@@ -72,6 +72,13 @@ fn bounded_ingress_reanchor_drives_scheduler_without_resetting_media_time() {
         .unwrap();
     scheduler.release_committed(first_generation).unwrap();
 
+    // Releasing the control-owned candidate does not finish the audio crossfade.
+    // Drive the real renderer before attempting the later reconnect commit.
+    let mut output = [0.0; 16];
+    renderer.process(&[1.0; 8], &mut output).unwrap();
+    assert!(output.chunks_exact(2).all(|ears| ears == [1.0, 0.0]));
+    assert_eq!(renderer.generation(), first_generation);
+
     producer.try_push_disconnected().unwrap();
     let next_anchor = HeadPoseClockAnchor {
         source_timestamp_ns: 10_000,
@@ -106,6 +113,9 @@ fn bounded_ingress_reanchor_drives_scheduler_without_resetting_media_time() {
         .commit_at_boundary(&mut renderer, restarted.media_frame, 1)
         .unwrap();
     scheduler.release_committed(second_generation).unwrap();
+    renderer.process(&[1.0; 8], &mut output).unwrap();
+    assert!(output.chunks_exact(2).all(|ears| ears == [1.0, 0.0]));
+    assert_eq!(renderer.generation(), second_generation);
 }
 
 #[test]

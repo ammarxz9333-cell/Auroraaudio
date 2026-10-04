@@ -25,6 +25,20 @@ Last updated: **2026-10-04**
 
 ### Binaural software continuation
 
+- Repair continuation (2026-10-04): #217–#219 are merged. #222 contains the #221
+  fault/reconnect implementation; #220 is an alternate draft delivery model and must
+  not be independently merged on top without reconciling overlapping simulator APIs.
+- #222's five failed CI jobs all hit the bridge fixture's second filter commit with
+  `Renderer(TransitionBusy)`: the fixture never processed PCM after the first commit.
+  The corrected fixture processes the actual FIR renderer and checks exact stereo PCM
+  before/after reconnect. A scheduler regression retains busy-candidate rejection and
+  requires cancel/reprepare after a missed boundary. Production transition guards stay
+  enabled. Focused tests and full workspace fmt/check/clippy/tests (`--locked`, all
+  features/targets where applicable) passed on Windows GNU/Rust 1.99. Merge still requires
+  green final-head GitHub/domain gates; this is software evidence only.
+- The already validated local Windows GNU strict checksum correction is carried into
+  this repair branch; no power/continuity/allocation checks are removed.
+
 - #212 prepared FIR core, #213 bounded pose timeline, #214 zero-allocation proof and
   #216 world-to-head direction transforms are merged. #215 merged the isolated,
   exact-pinned SOFA/sofar FIR reference gate at `798ced82aa82c5638109fbbf6b166f4761eb81f4`.
@@ -232,14 +246,11 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Finish PR #217 only after all final-head CI is green; merge it into `main-v2` without inflating the physical/perceptual truth boundary.
-2. Finish draft PR #218: stable object identity, exact boundary scheduling and control-owned candidate lifetime remain fail-closed; merge only after #217 and its own required gates are green.
-3. Finish draft PR #219: keep tracker source-clock -> Aurora media-frame mapping explicit, bounded and transactional; merge only after lower stacked PRs and required CI are green.
-4. Finish draft PR #221: deterministic AuroraSim coverage for jitter, burst loss, reorder, duplicate, timestamp jump, stale hold and reconnect; explicit re-anchor resets mapper + scheduler pose epoch without resetting Aurora media time or filter generation.
-5. Finish draft PR #222: fixed-capacity adapter-thread -> control-thread tracker delivery, explicit overflow/disconnect/re-anchor semantics, one-event bounded polling and zero steady-state allocation. No device I/O or unbounded draining may enter the audio callback.
-6. After the stacked tracker PRs merge, keep real tracker SDK/Bluetooth/USB integration behind the #222 producer boundary and require physical timestamp/latency evidence before making hardware claims.
-7. Independently close the libspatialaudio prepared-plan/RenderScene geometry-binding gap; compare normalized directions with tolerance rather than raw meter coordinates, and keep all validation before native loading.
-8. Physical NXP/ESP listener, physical head tracker, DAC/eARC and acoustic acceptance remain separate later gates when the required hardware is actually present.
+1. Finish #222 with its inherited #221 simulator/epoch-reset work against current `main-v2`; repair and run fmt/check/clippy/tests plus tracker delivery, HRTF, allocation and SOFA reference gates on the final head before merge.
+2. Reconcile obsolete/overlapping #220/#221 drafts after the accepted combined implementation lands; do not merge alternate simulator APIs independently.
+3. Keep real tracker SDK/Bluetooth/USB integration behind the #222 producer boundary and require physical timestamp/latency evidence before making hardware claims.
+4. Prepared-plan/scene direction geometry is already bound in the libspatialaudio-v4 adapter; preserve its direction/distance distinction rather than reopening the historical gap.
+5. Physical NXP/ESP listener, head tracker, DAC/eARC and acoustic acceptance remain separate gates when required hardware is actually present.
 
 ## 7. Physical acceptance critical path — tracker #143
 

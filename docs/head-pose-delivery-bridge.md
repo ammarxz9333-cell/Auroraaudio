@@ -42,6 +42,13 @@ mapper history. Recovery requires an explicit re-anchor. When the control side e
 `Reanchored`, a binaural scheduler must also call `reset_pose_epoch` before accepting a
 tracker whose source sequence restarted.
 
+Releasing a committed scheduler candidate only releases control-owned storage. The
+renderer finishes its accepted filter crossfade by processing PCM on the audio thread;
+neither disconnect nor pose-epoch reset completes that transition. A new filter commit
+while the transition is active returns `TransitionBusy` and keeps the new candidate
+uncommitted. If its exact target boundary is missed, cancel and prepare a new candidate
+on control for a future boundary; never retry it at an arbitrary later media frame.
+
 If a disconnect marker was accepted but a following re-anchor could not be queued because
 the bridge was full, Aurora remains disconnected. The adapter can retry the re-anchor later;
 there is no inferred reconnect.

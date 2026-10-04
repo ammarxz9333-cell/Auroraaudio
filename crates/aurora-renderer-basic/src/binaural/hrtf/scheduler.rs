@@ -444,6 +444,49 @@ mod tests {
     }
 
     #[test]
+    fn busy_renderer_preserves_candidate_and_requires_rescheduling_after_missed_boundary() {
+        let mut scheduler = scheduler(10);
+        let mut renderer = renderer();
+        let first = scheduler.prepare_at(100, &objects()).unwrap();
+        scheduler.commit_at_boundary(&mut renderer, 100, 8).unwrap();
+        scheduler.release_committed(first).unwrap();
+
+        let blocked = scheduler.prepare_at(101, &objects()).unwrap();
+        let pending = scheduler.pending_status();
+        assert_eq!(
+            scheduler.commit_at_boundary(&mut renderer, 101, 1),
+            Err(SchedulerError::Renderer(Error::TransitionBusy))
+        );
+        assert_eq!(scheduler.pending_status(), pending);
+        assert_eq!(renderer.generation(), first);
+        assert_eq!(
+            scheduler.release_committed(blocked),
+            Err(SchedulerError::CandidateNotCommitted)
+        );
+
+        let mut output = [0.0; 16];
+        renderer.process(&[0.5; 16], &mut output).unwrap();
+        assert!(output.iter().all(|sample| sample.is_finite()));
+        assert_eq!(
+            scheduler.commit_at_boundary(&mut renderer, 108, 1),
+            Err(SchedulerError::BoundaryFrame {
+                expected: 101,
+                actual: 108,
+            })
+        );
+        // A missed target cannot be silently committed at a later audio boundary.
+        // Cancel/reprepare on control; filter generations continue monotonically.
+        scheduler.cancel_pending(blocked).unwrap();
+        let resumed = scheduler.prepare_at(108, &objects()).unwrap();
+        assert!(resumed > blocked);
+        scheduler.commit_at_boundary(&mut renderer, 108, 1).unwrap();
+        scheduler.release_committed(resumed).unwrap();
+        renderer.process(&[0.5; 16], &mut output).unwrap();
+        assert_eq!(renderer.generation(), resumed);
+        assert!(output.iter().all(|sample| sample.is_finite()));
+    }
+
+    #[test]
     fn stale_pose_fails_before_candidate_publication() {
         let mut scheduler = scheduler(2);
         assert_eq!(
