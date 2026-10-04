@@ -1,0 +1,11 @@
+        ArtSection.savedItems => lib.saved.values.toList(growable: false),
+        ArtSection.followed => await repo.followingFeed(lib.followedArtists, safeMode: safe),
+      };
+      if (mounted) setState(() => items = result);
+    } catch (e) { if (mounted) setState(() => error = '$e'); }
+    finally { if (mounted) setState(() => loading = false); }
+  }
+
+  Future<List<ExternalArtwork>> query({required int pageNumber}) async {
+    final all = ref.read(externalArtSourcesProvider);
+    final active = source == null ? all : all.where((x) => x.kind == source).toList();
