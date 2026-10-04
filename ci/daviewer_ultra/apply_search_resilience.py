@@ -167,5 +167,9 @@ if anchor not in s:
     raise SystemExit("search helper anchor changed")
 s = s.replace(anchor, helper + anchor, 1)
 
+unused_import = "import '../../core/data/data_access.dart';\n"
+if unused_import in s:
+    s = s.replace(unused_import, "", 1)
+
 p.write_text(s, encoding="utf-8")
 print("Search resilience patch applied")
