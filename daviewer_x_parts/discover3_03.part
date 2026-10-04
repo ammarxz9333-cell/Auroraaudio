@@ -1,0 +1,37 @@
+              for (final s in sources) Padding(padding: const EdgeInsets.only(left: 7), child:
+                ChoiceChip(label: Text(sourceName(s)), selected: source == s,
+                  onSelected: (_) { setState(() => source = s); reload(); })),
+            ])),
+          ],
+          const SizedBox(height: 12),
+          if (error != null) _Message(error!)
+          else if (items.isEmpty && loading) const Padding(padding: EdgeInsets.all(48), child: Center(child: CircularProgressIndicator()))
+          else if (items.isEmpty) const _Message('Nothing here yet.')
+          else _Gallery(items),
+          if (mode == ArtSection.browse && items.isNotEmpty) Padding(padding: const EdgeInsets.only(top: 10), child:
+            FilledButton.tonal(onPressed: loading ? null : more, child: Text(loading ? 'Loading…' : 'Load more'))),
+        ],
+      )),
+    );
+  }
+}
+
+final class _Gallery extends StatelessWidget {
+  const _Gallery(this.items);
+  final List<ExternalArtwork> items;
+  @override
+  Widget build(BuildContext context) {
+    final rows = <Widget>[];
+    for (var i = 0; i < items.length; i += 2) {
+      final a = items[i], b = i + 1 < items.length ? items[i + 1] : null;
+      rows.add(Padding(padding: const EdgeInsets.only(bottom: 10), child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start, children: [
+          Expanded(child: ArtTile(a)), const SizedBox(width: 10),
+          Expanded(child: b == null ? const SizedBox() : ArtTile(b)),
+        ])));
+    }
+    return Column(children: rows);
+  }
+}
+
+final class ArtTile extends StatelessWidget {
