@@ -1,0 +1,49 @@
+import 'dart:async';
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:go_router/go_router.dart';
+import '../discovery/external_library.dart';
+import '../discovery/multisource_providers.dart';
+import '../models/external_artwork.dart';
+
+enum ArtSection { browse, savedItems, followed }
+
+final class MultiSourceDiscoverScreen extends ConsumerStatefulWidget {
+  const MultiSourceDiscoverScreen({this.initialQuery = '', this.initialSource, super.key});
+  final String initialQuery;
+  final ExternalSourceKind? initialSource;
+  @override
+  ConsumerState<MultiSourceDiscoverScreen> createState() => _DiscoverState();
+}
+
+final class _DiscoverState extends ConsumerState<MultiSourceDiscoverScreen> {
+  late final TextEditingController search;
+  ArtSection mode = ArtSection.browse;
+  ExternalSourceKind? source;
+  bool safe = true, loading = false;
+  int page = 1;
+  String? error;
+  List<ExternalArtwork> items = const [];
+
+  @override
+  void initState() {
+    super.initState();
+    search = TextEditingController(text: widget.initialQuery);
+    source = widget.initialSource;
+    scheduleMicrotask(reload);
+  }
+
+  @override
+  void dispose() { search.dispose(); super.dispose(); }
+
+  Future<void> reload() async {
+    if (loading) return;
+    setState(() { loading = true; error = null; page = 1; });
+    try {
+      final repo = ref.read(multiSourceRepositoryProvider);
+      final lib = ref.read(externalLibraryProvider);
+      final result = switch (mode) {
+        ArtSection.browse => await repo.searchAcross(search.text, only: source, safeMode: safe),
+        ArtSection.savedItems => lib.saved.values.toList(growable: false),
+        ArtSection.followed => await repo.followingFeed(lib.followedArtists, safeMode: safe),
+      };
