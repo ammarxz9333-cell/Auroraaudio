@@ -38,6 +38,11 @@ Last updated: **2026-10-04**
   green final-head GitHub/domain gates; this is software evidence only.
 - The already validated local Windows GNU strict checksum correction is carried into
   this repair branch; no power/continuity/allocation checks are removed.
+- Market Radar's live `push` workflow is now scoped to `main-v2` and
+  `market-radar-live`: merging the canonical base into an audio feature branch had
+  launched the unrelated scanner/publishing job there. Schedule/manual behavior and
+  every Aurora validation workflow remain unchanged. The main snapshot's missing
+  `tape_signal` import is a separate Market Radar defect, not repaired in this audio PR.
 
 - #212 prepared FIR core, #213 bounded pose timeline, #214 zero-allocation proof and
   #216 world-to-head direction transforms are merged. #215 merged the isolated,
