@@ -2,6 +2,7 @@ from pathlib import Path
 
 root = Path("DAViewer")
 
+
 def replace_once(path: str, old: str, new: str) -> None:
     p = root / path
     text = p.read_text(encoding="utf-8")
@@ -10,16 +11,56 @@ def replace_once(path: str, old: str, new: str) -> None:
         raise SystemExit(f"{path}: expected exactly 1 match, got {count}")
     p.write_text(text.replace(old, new, 1), encoding="utf-8")
 
-# Brand this personal fork separately at the version level.
+
+# Personal build identity.
 replace_once(
     "pubspec.yaml",
     "version: 0.5.7+219",
     "version: 0.6.0+600",
 )
+replace_once(
+    "android/app/src/main/AndroidManifest.xml",
+    'android:label="DA Viewer"',
+    'android:label="DA Viewer Ultra"',
+)
 
-# Android: OAuth providers (especially Google) reject embedded WebViews.
-# Use the system browser + app-link callback on Android while preserving the
-# upstream single-WebView flow on desktop.
+# Android OAuth: use the real system browser. Google/social providers commonly
+# reject embedded WebViews. A native callback source buffers warm/cold-start
+# dakit://oauth/callback intents until Dart is actually listening.
+replace_once(
+    "lib/core/runtime/app_runtime.dart",
+    "import '../auth/webview_oauth_bridge.dart';\n",
+    "import '../auth/android_native_oauth_callback_source.dart';\n"
+    "import '../auth/webview_oauth_bridge.dart';\n",
+)
+replace_once(
+    "lib/core/runtime/app_runtime.dart",
+    "import '../diagnostics/app_logger.dart';\n",
+    "import '../diagnostics/app_logger.dart';\n"
+    "import '../network/desktop_uri_launcher.dart';\n",
+)
+replace_once(
+    "lib/core/runtime/app_runtime.dart",
+    """    this.webViewOAuthBridge,
+    this.webViewProxyManager,
+  });""",
+    """    this.webViewOAuthBridge,
+    this.webViewProxyManager,
+    this.androidNativeOAuthCallbackSource,
+  });""",
+)
+replace_once(
+    "lib/core/runtime/app_runtime.dart",
+    """  final WebViewOAuthBridge? webViewOAuthBridge;
+  final WebViewProxyManager? webViewProxyManager;
+
+  void Function()? _proxyListener;""",
+    """  final WebViewOAuthBridge? webViewOAuthBridge;
+  final WebViewProxyManager? webViewProxyManager;
+  final AndroidNativeOAuthCallbackSource? androidNativeOAuthCallbackSource;
+
+  void Function()? _proxyListener;""",
+)
 replace_once(
     "lib/core/runtime/app_runtime.dart",
     """    final webViewOAuthBridge = WebViewOAuthBridge();
@@ -34,10 +75,12 @@ replace_once(
     final webViewProxyManager = proxyController == null
         ? null
         : WebViewProxyManager(proxyController);
+    final androidNativeOAuthCallbackSource = useSystemBrowserOAuth
+        ? AndroidNativeOAuthCallbackSource()
+        : null;
     final oauth = DAKitOAuthClient(
 """,
 )
-
 replace_once(
     "lib/core/runtime/app_runtime.dart",
     """      launcher: webViewOAuthBridge,
@@ -47,20 +90,60 @@ replace_once(
       ),
 """,
     """      launcher: useSystemBrowserOAuth
-          ? const SystemUriLauncher()
+          ? const DesktopUriLauncher()
           : webViewOAuthBridge!,
       callbacks: useSystemBrowserOAuth
-          ? AppLinksCallbackUriSource()
+          ? androidNativeOAuthCallbackSource!
           : MergedCallbackUriSource(
               initial: AppLinksCallbackUriSource(),
               others: <CallbackUriSource>[webViewOAuthBridge!.callbacks],
             ),
 """,
 )
+replace_once(
+    "lib/core/runtime/app_runtime.dart",
+    """      webViewOAuthBridge: webViewOAuthBridge,
+      webViewProxyManager: webViewProxyManager,
+    );""",
+    """      webViewOAuthBridge: webViewOAuthBridge,
+      webViewProxyManager: webViewProxyManager,
+      androidNativeOAuthCallbackSource: androidNativeOAuthCallbackSource,
+    );""",
+)
+replace_once(
+    "lib/core/runtime/app_runtime.dart",
+    """    unawaited(webViewProxyManager?.dispose() ?? Future<void>.value());
+    unawaited(webViewOAuthBridge?.dispose() ?? Future<void>.value());
+  }""",
+    """    unawaited(webViewProxyManager?.dispose() ?? Future<void>.value());
+    unawaited(webViewOAuthBridge?.dispose() ?? Future<void>.value());
+    unawaited(
+      androidNativeOAuthCallbackSource?.dispose() ?? Future<void>.value(),
+    );
+  }""",
+)
 
-# System-browser OAuth cannot populate Android WebView cookies. Do not trap the
-# user on the login screen waiting for a web-session confirmation that belongs
-# to a different cookie jar. Web-only personalization remains optional.
+# Disable Flutter's built-in deep-link route handling on Android. The native
+# callback bridge owns dakit://oauth/callback and must not race go_router.
+replace_once(
+    "android/app/src/main/AndroidManifest.xml",
+    """            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />""",
+    """            <meta-data
+              android:name="io.flutter.embedding.android.NormalTheme"
+              android:resource="@style/NormalTheme"
+              />
+            <meta-data
+              android:name="flutter_deeplinking_enabled"
+              android:value="false" />""",
+)
+
+# On Android, browser OAuth cannot populate the embedded WebView cookie jar.
+# OAuth success is therefore sufficient to leave the login screen. Re-opening
+# the screen later can still establish an optional web session for RFY/private
+# website adapters.
 replace_once(
     "lib/features/web_login/web_login_screen.dart",
     """    // When OAuth finishes, close only after the deviantart home page reports
@@ -80,9 +163,9 @@ replace_once(
       }
     });
 """,
-    """    // Android OAuth completes in the system browser. Its cookies are
-    // intentionally isolated from this WebView, so OAuth success is enough to
-    // leave this screen. Desktop keeps upstream's unified WebView close gate.
+    """    // Android OAuth completes in the system browser. Browser cookies are
+    // isolated from this WebView, so OAuth success itself is the close gate.
+    // Desktop keeps upstream's unified WebView contract.
     ref.listen<AuthState>(authControllerProvider, (previous, next) {
       if (previous?.status != AuthStatus.signedIn &&
           next.status == AuthStatus.signedIn &&
@@ -103,6 +186,10 @@ replace_once(
 """,
 )
 
+# Resilient Home: prefer the real website RFY feed whenever a web session is
+# healthy; otherwise keep a valid OAuth user inside the app using the official
+# browse/home endpoint, with Daily Deviations as a last-resort first-page
+# fallback. mature_content=true is explicit on every official fallback page.
 home = root / "lib/features/home/home_providers.dart"
 text = home.read_text(encoding="utf-8")
 if "import '../../core/runtime/app_runtime.dart';" not in text:
@@ -236,11 +323,7 @@ marker = """/// Fetches one rfy page, or `null` when the web session is missing 
 /// request failed (the caller then refreshes the session and retries).
 Future<Page<Artwork>?> _tryFetchRfy(
 """
-helper = """/// OAuth-only fallback used when Android system-browser OAuth has no matching
-/// embedded WebView Cookie/CSRF session, or when the private rfy adapter is
-/// temporarily blocked. DeviantArt's official browse/home endpoint is a
-/// Discover feed, not the website's personalized rfy feed, so the fallback is
-/// intentionally labelled as resilience rather than equivalent personalization.
+helper = """/// Official OAuth fallback for Android browser sign-in or RFY outages.
 Future<Page<Artwork>> _fetchOfficialHomeFallback(
   AppRuntime runtime,
   PageRequest request,
@@ -278,7 +361,7 @@ Future<Page<Artwork>> _fetchOfficialHomeFallback(
             ),
           );
         } on Object {
-          // One malformed deviation must not blank the entire page.
+          // One malformed item must not blank the whole feed.
         }
       }
     }
@@ -320,9 +403,7 @@ if text.count(marker) != 1:
 text = text.replace(marker, helper + marker, 1)
 home.write_text(text, encoding="utf-8")
 
-# CI-only signing fallback: release-mode optimizations with the runner's debug
-# key. This keeps the artifact installable without storing a private signing
-# secret in the repository.
+# Release-mode optimizations with a CI-only installable signature.
 replace_once(
     "android/app/build.gradle.kts",
     """            signingConfig = if (keystorePropertiesFile.exists()) {
