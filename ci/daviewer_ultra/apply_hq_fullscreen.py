@@ -154,14 +154,14 @@ replace_once(
     """            MediaViewer(
               media: media,
               additionalMedia: additionalMedia,
-              heroTag: 'artwork-\${artwork.id}',
+              heroTag: 'artwork-${artwork.id}',
 """,
     """            MediaViewer(
               media: media,
               additionalMedia: additionalMedia,
               originalMedia: originalResolution.valueOrNull?.asset,
               additionalOriginalMedia: additionalOriginals,
-              heroTag: 'artwork-\${artwork.id}',
+              heroTag: 'artwork-${artwork.id}',
 """,
 )
 
