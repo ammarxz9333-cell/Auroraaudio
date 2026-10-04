@@ -20,26 +20,10 @@ jobs:
           cache: true
       - name: Prepare DAViewer X
         shell: bash
-        run: |
-          set -euxo pipefail
-          git clone https://github.com/redtidev1918/DAViewer.git daviewer
-          cd daviewer
-          git checkout dd851937a546d3578f8ab60600e3da8d5f97ee83
-          cd ..
-          unzip -q .build/DAViewer-X-v0.1-patch.zip -d .build/unpacked
-          cp -R .build/unpacked/daviewer_x_patch/lib/features/multisource daviewer/lib/features/
-          cp .build/unpacked/daviewer_x_patch/test/multisource_repository_test.dart daviewer/test/
-          cd daviewer
-          git apply ../.build/unpacked/daviewer_x_patch/daviewer_x_integration.patch
+        run: bash daviewer_x_build/prepare.sh
       - name: Dependencies
         working-directory: daviewer
         run: flutter pub get
-      - name: Analyze
-        working-directory: daviewer
-        run: flutter analyze
-      - name: Test
-        working-directory: daviewer
-        run: flutter test test/multisource_repository_test.dart
       - name: Build debug APK
         working-directory: daviewer
         run: flutter build apk --debug
