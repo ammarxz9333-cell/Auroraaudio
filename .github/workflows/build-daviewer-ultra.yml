@@ -47,6 +47,7 @@ jobs:
           python3 ci/daviewer_ultra/apply_ultra.py
           python3 ci/daviewer_ultra/apply_hq_fullscreen.py
           python3 ci/daviewer_ultra/apply_search_resilience.py
+          python3 ci/daviewer_ultra/apply_image_resilience.py
           cd DAViewer
           dart format lib test
 
@@ -69,9 +70,11 @@ jobs:
               "lib/features/artwork/media_viewer.dart",
               "lib/features/artwork/artwork_detail_screen.dart",
               "lib/features/search/search_providers.dart",
+              "lib/shared/widgets/artwork_card.dart",
               "pubspec.yaml",
               "test/android_native_oauth_callback_source_test.dart",
               "test/media_viewer_test.dart",
+              "test/artwork_card_layout_test.dart",
           }
           out = subprocess.check_output(["git", "status", "--porcelain"], text=True)
           changed = {line[3:].strip() for line in out.splitlines() if line.strip()}
@@ -87,7 +90,9 @@ jobs:
               "lib/features/artwork/media_viewer.dart",
               "lib/features/artwork/artwork_detail_screen.dart",
               "lib/features/search/search_providers.dart",
+              "lib/shared/widgets/artwork_card.dart",
               "test/media_viewer_test.dart",
+              "test/artwork_card_layout_test.dart",
           } - changed
           if missing:
               raise SystemExit(f"Expected Ultra changes missing: {sorted(missing)}")
@@ -147,17 +152,17 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk             out/DAViewer-Ultra-v0.6.0-android.apk
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk             out/DAViewer-Ultra-v0.6.1-android.apk
           sha256sum out/DAViewer-Ultra-v0.6.0-android.apk > out/SHA256SUMS.txt
           cat > out/BUILD-INFO.txt <<'EOF'
           DAViewer Ultra personal build
           Upstream DAViewer commit: dd851937a546d3578f8ab60600e3da8d5f97ee83
           Upstream release baseline: v0.5.7
-          Ultra version: 0.6.0+600
+          Ultra version: 0.6.1+601
           Android OAuth: external system browser
           Android callback: native replay-safe warm/cold-start MethodChannel bridge
           Home: RFY preferred; official browse/home fallback with mature_content=true; Daily fallback on initial-page failure
-          Fullscreen images: verified originals preferred over preview assets
+          Grid images: available previews preferred over gated content; Fullscreen images: verified originals preferred over preview assets
           Search: web search primary; mature-content official fallback; tag fallback when coarse search is empty
           Download/mature-content behavior: upstream v0.5.7 regression fixes retained
           Validation: flutter analyze + full flutter test + manifest callback checks + ABI checks
@@ -167,7 +172,7 @@ jobs:
       - name: Upload DAViewer Ultra APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-Ultra-v0.6.0-android
+          name: DAViewer-Ultra-v0.6.1-android
           path: out/*
           if-no-files-found: error
           retention-days: 14
