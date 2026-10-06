@@ -21,9 +21,28 @@
 - Entry decisions reject stale market bars; the fast scanner records provenance research metadata and defers slow FINRA daily-volume requests. Explicit `$TICKER` and exchange notation can identify names outside the watchlist.
 - Function-style tests now execute in CI through `market-radar/run_function_tests.py`. Until fresh CI and forward observations confirm the pipeline, do not claim live detection precision or a success rate. The latest stored learning metrics still have zero matured observations.
 
-Last updated: **2026-09-17**
+Last updated: **2026-10-04**
 
 ### Binaural software continuation
+
+- Repair continuation (2026-10-04): #217–#219 are merged. #222 contains the #221
+  fault/reconnect implementation; #220 is an alternate draft delivery model and must
+  not be independently merged on top without reconciling overlapping simulator APIs.
+- #222's five failed CI jobs all hit the bridge fixture's second filter commit with
+  `Renderer(TransitionBusy)`: the fixture never processed PCM after the first commit.
+  The corrected fixture processes the actual FIR renderer and checks exact stereo PCM
+  before/after reconnect. A scheduler regression retains busy-candidate rejection and
+  requires cancel/reprepare after a missed boundary. Production transition guards stay
+  enabled. Focused tests and full workspace fmt/check/clippy/tests (`--locked`, all
+  features/targets where applicable) passed on Windows GNU/Rust 1.99. Merge still requires
+  green final-head GitHub/domain gates; this is software evidence only.
+- The already validated local Windows GNU strict checksum correction is carried into
+  this repair branch; no power/continuity/allocation checks are removed.
+- Market Radar's live `push` workflow is now scoped to `main-v2` and
+  `market-radar-live`: merging the canonical base into an audio feature branch had
+  launched the unrelated scanner/publishing job there. Schedule/manual behavior and
+  every Aurora validation workflow remain unchanged. The main snapshot's missing
+  `tape_signal` import is a separate Market Radar defect, not repaired in this audio PR.
 
 - #212 prepared FIR core, #213 bounded pose timeline, #214 zero-allocation proof and
   #216 world-to-head direction transforms are merged. #215 merged the isolated,
@@ -37,14 +56,24 @@ Last updated: **2026-09-17**
   generations and an exact target media-frame boundary. Boundary commit only borrows the
   candidate; release/cancel is a separate control-thread operation so candidate storage
   is not dropped at the realtime boundary.
+- Draft PR #219 (`head-pose-clock-mapping-v1`) maps explicit tracker source-clock
+  timestamps onto Aurora logical media frames with bounded source gaps, delivery lag/lead,
+  transactional rejection and explicit reset/re-anchor semantics.
+- Draft PR #221 (`head-pose-delivery-sim-v1`) adds deterministic AuroraSim delivery traces
+  for healthy/jitter, burst loss, reorder, duplicate, timestamp jump, stale hold and reconnect.
+  Reconnect resets both the clock mapper and scheduler pose epoch while Aurora media time,
+  scheduler boundary history and filter generation continue.
+- Draft PR #222 (`head-pose-delivery-bridge-v1`) adds the remaining pre-hardware
+  tracker transport/control boundary: a fixed-capacity nonblocking adapter-thread queue for
+  raw samples, disconnect and explicit re-anchor events. Control code polls one event at a
+  time, maps it through #219, and resets the #218 pose epoch explicitly after re-anchor.
 - Validate #217 with `hrtf_preparation`, `prepared_binaural_allocation`, general CI and
-  `Prepared Binaural SOFA FIR Reference CI`. Validate #218 with its scheduler unit tests,
-  `head_pose_hrtf_scheduler_allocation`, general CI and the inherited binaural gates; see
-  `docs/head-pose-hrtf-preparation.md` and `docs/head-pose-hrtf-scheduler.md`.
-- Next software gap after #218: a hardware-neutral tracker delivery adapter that maps
-  device timestamps to Aurora logical media frames with bounded latency/jitter and feeds
-  this scheduler continuously, plus deterministic dropout/reorder/staleness simulation
-  and AuroraSim coverage. Physical tracker latency and perceptual HRTF quality remain unproven.
+  `Prepared Binaural SOFA FIR Reference CI`. Validate #218 with its scheduler/allocation
+  tests, #219 with clock-mapping/integration tests, #221 with the AuroraSim tracker profiles
+  plus `head_tracker_hrtf`, and #222 with bridge overflow/reconnect/zero-allocation tests.
+- After #222, the tracker software path is complete to the hardware-adapter boundary. A real
+  tracker backend/device SDK is intentionally deferred to physical hardware evidence; physical
+  tracker latency and perceptual HRTF quality remain unproven.
 
 ## 1. Source of truth and continuation rule
 
@@ -222,12 +251,11 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 
 Continue in this order unless the user explicitly changes priorities:
 
-1. Finish PR #217 only after all final-head CI is green; merge it into `main-v2` without inflating the physical/perceptual truth boundary.
-2. Finish draft PR #218: keep stable object identity + exact boundary scheduling + control-owned candidate lifetime fail-closed, make formatter/check/clippy/tests and binaural domain gates green, then retarget to `main-v2` after #217 merges and merge only when green.
-3. Add a hardware-neutral tracker delivery/clock-mapping adapter: map validated tracker timestamp/sequence/orientation into Aurora logical media frames with bounded queueing and explicit reset/discontinuity semantics; never perform device I/O or unbounded work in the audio callback.
-4. Add deterministic delivery simulation for jitter, burst loss, reorder, duplicate sequence, timestamp jump, stale hold and reconnect; export the declared capability into AuroraSim before upgrading continuous head-tracking coverage.
-5. Independently close the libspatialaudio prepared-plan/RenderScene geometry-binding gap; compare normalized directions with tolerance rather than raw meter coordinates, and keep all validation before native loading.
-6. Physical NXP/ESP listener, physical head tracker, DAC/eARC and acoustic acceptance remain separate later gates when the required hardware is actually present.
+1. Finish #222 with its inherited #221 simulator/epoch-reset work against current `main-v2`; repair and run fmt/check/clippy/tests plus tracker delivery, HRTF, allocation and SOFA reference gates on the final head before merge.
+2. Reconcile obsolete/overlapping #220/#221 drafts after the accepted combined implementation lands; do not merge alternate simulator APIs independently.
+3. Keep real tracker SDK/Bluetooth/USB integration behind the #222 producer boundary and require physical timestamp/latency evidence before making hardware claims.
+4. Prepared-plan/scene direction geometry is already bound in the libspatialaudio-v4 adapter; preserve its direction/distance distinction rather than reopening the historical gap.
+5. Physical NXP/ESP listener, head tracker, DAC/eARC and acoustic acceptance remain separate gates when required hardware is actually present.
 
 ## 7. Physical acceptance critical path — tracker #143
 

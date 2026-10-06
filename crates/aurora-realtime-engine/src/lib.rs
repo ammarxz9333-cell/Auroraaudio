@@ -5,6 +5,7 @@ mod device_state;
 mod drift;
 mod drift_controller;
 mod duplex;
+mod head_pose_delivery;
 mod latency;
 mod network_bridge;
 mod transport;
@@ -27,6 +28,11 @@ pub use duplex::{
     AdaptiveDuplexConsumer, AdaptiveDuplexFault, AdaptiveDuplexSnapshot, AdaptiveDuplexStatus,
     DuplexBridgeConfig, DuplexBridgeError, DuplexConsumer, DuplexFault, DuplexProducer,
     DuplexSnapshot, DuplexStatus,
+};
+pub use head_pose_delivery::{
+    create_head_pose_delivery_bridge, HeadPoseControlEvent, HeadPoseDeliveryControl,
+    HeadPoseDeliveryCreateError, HeadPoseIngressEvent, HeadPoseIngressProducer,
+    HeadPoseIngressPushError,
 };
 pub use latency::{
     estimate_repeated_latency, generate_measurement_sequence, LatencyEstimateError,

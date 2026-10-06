@@ -2,6 +2,9 @@ name: Market Radar
 
 on:
   push:
+    branches:
+      - main-v2
+      - market-radar-live
     paths:
       - "market-radar/**"
       - ".github/workflows/market-radar.yml"

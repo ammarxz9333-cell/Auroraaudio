@@ -120,6 +120,18 @@ impl HeadPoseHrtfScheduler {
         self.poses.commit(sample).map_err(SchedulerError::Pose)
     }
 
+    /// Clears tracker-pose history before an explicit mapper re-anchor/reconnect.
+    ///
+    /// Any prepared candidate must first be committed/released or cancelled on the control
+    /// thread. Filter generation and Aurora media-boundary history intentionally continue.
+    pub fn reset_pose_epoch(&mut self) -> Result<(), SchedulerError> {
+        if self.pending.is_some() {
+            return Err(SchedulerError::PendingCandidate);
+        }
+        self.poses.reset();
+        Ok(())
+    }
+
     /// Prepares one pose-selected filter snapshot for an exact future block boundary.
     ///
     /// This is a control-thread operation and may allocate. It is transactional: identity,
@@ -405,6 +417,73 @@ mod tests {
         scheduler.cancel_pending(generation).unwrap();
         let next = scheduler.prepare_at(101, &objects()).unwrap();
         assert_eq!(next, generation + 1);
+    }
+
+    #[test]
+    fn explicit_pose_epoch_reset_accepts_restarted_source_sequence() {
+        let mut scheduler = scheduler(10);
+        let generation = scheduler.prepare_at(100, &objects()).unwrap();
+        assert_eq!(
+            scheduler.reset_pose_epoch(),
+            Err(SchedulerError::PendingCandidate)
+        );
+        scheduler.cancel_pending(generation).unwrap();
+
+        scheduler.reset_pose_epoch().unwrap();
+        scheduler
+            .commit_pose(HeadPoseSample {
+                sequence: 1,
+                media_frame: 200,
+                orientation: UnitQuaternion::IDENTITY,
+            })
+            .unwrap();
+        let generation = scheduler.prepare_at(200, &objects()).unwrap();
+        let mut renderer = renderer();
+        scheduler.commit_at_boundary(&mut renderer, 200, 1).unwrap();
+        scheduler.release_committed(generation).unwrap();
+    }
+
+    #[test]
+    fn busy_renderer_preserves_candidate_and_requires_rescheduling_after_missed_boundary() {
+        let mut scheduler = scheduler(10);
+        let mut renderer = renderer();
+        let first = scheduler.prepare_at(100, &objects()).unwrap();
+        scheduler.commit_at_boundary(&mut renderer, 100, 8).unwrap();
+        scheduler.release_committed(first).unwrap();
+
+        let blocked = scheduler.prepare_at(101, &objects()).unwrap();
+        let pending = scheduler.pending_status();
+        assert_eq!(
+            scheduler.commit_at_boundary(&mut renderer, 101, 1),
+            Err(SchedulerError::Renderer(Error::TransitionBusy))
+        );
+        assert_eq!(scheduler.pending_status(), pending);
+        assert_eq!(renderer.generation(), first);
+        assert_eq!(
+            scheduler.release_committed(blocked),
+            Err(SchedulerError::CandidateNotCommitted)
+        );
+
+        let mut output = [0.0; 16];
+        renderer.process(&[0.5; 16], &mut output).unwrap();
+        assert!(output.iter().all(|sample| sample.is_finite()));
+        assert_eq!(
+            scheduler.commit_at_boundary(&mut renderer, 108, 1),
+            Err(SchedulerError::BoundaryFrame {
+                expected: 101,
+                actual: 108,
+            })
+        );
+        // A missed target cannot be silently committed at a later audio boundary.
+        // Cancel/reprepare on control; filter generations continue monotonically.
+        scheduler.cancel_pending(blocked).unwrap();
+        let resumed = scheduler.prepare_at(108, &objects()).unwrap();
+        assert!(resumed > blocked);
+        scheduler.commit_at_boundary(&mut renderer, 108, 1).unwrap();
+        scheduler.release_committed(resumed).unwrap();
+        renderer.process(&[0.5; 16], &mut output).unwrap();
+        assert_eq!(renderer.generation(), resumed);
+        assert!(output.iter().all(|sample| sample.is_finite()));
     }
 
     #[test]
