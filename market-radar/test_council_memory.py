@@ -31,3 +31,15 @@ def test_persistent_bad_agent_downweights():
         cm.STATE=Path(d)/"state.json"
         s=cm.rebuild_state(rows)
         assert s["agents"]["news"]["1w"]["weight"]<1.0
+
+
+def test_roundtrip_record_then_context():
+    with tempfile.TemporaryDirectory() as d:
+        cm.LEDGER=Path(d)/"ledger.json"; cm.STATE=Path(d)/"state.json"
+        row=cm.record(sample(.63))
+        saved=cm._load(cm.LEDGER,[])
+        assert len(saved)==1
+        assert saved[0]["id"]==row["id"]
+        ctx=cm.context()
+        assert ctx["agent_weights"]["price_chart"]["1w"]==1.0
+        assert ctx["agent_weights"]["news"]["3m"]==1.0
