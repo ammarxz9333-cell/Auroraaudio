@@ -48,6 +48,42 @@ def record(x):
     row=dict(x); row.setdefault("id",str(uuid.uuid4())); row.setdefault("created_utc",dt.datetime.now(dt.timezone.utc).isoformat())
     row.setdefault("outcomes",{}); rows.append(row); _save(LEDGER,rows); return row
 
+def yahoo_daily_close(ticker, target_date):
+    """Return first available Yahoo daily close on/after target_date."""
+    import urllib.parse, urllib.request
+    start=dt.datetime.combine(target_date,dt.time.min,tzinfo=dt.timezone.utc)
+    end=start+dt.timedelta(days=8)
+    url=("https://query1.finance.yahoo.com/v8/finance/chart/"+urllib.parse.quote(ticker)+
+         "?interval=1d&period1="+str(int(start.timestamp()))+"&period2="+str(int(end.timestamp()))+
+         "&events=div%2Csplits")
+    req=urllib.request.Request(url,headers={"User-Agent":"Aurora-Council-Learner/1.0","Accept":"application/json"})
+    with urllib.request.urlopen(req,timeout=15) as resp: data=json.loads(resp.read().decode())
+    r=((data.get("chart") or {}).get("result") or [None])[0]
+    if not r:return None
+    stamps=r.get("timestamp") or []; closes=(((r.get("indicators") or {}).get("quote") or [{}])[0].get("close") or [])
+    for ts,close in zip(stamps,closes):
+        if close is not None and dt.datetime.fromtimestamp(ts,dt.timezone.utc).date()>=target_date:return float(close)
+    return None
+
+def auto_settle(now=None):
+    """Settle every matured unsolved horizon from point-in-time daily closes."""
+    now=now or dt.datetime.now(dt.timezone.utc); rows=_load(LEDGER,[]); changed=0
+    for r in rows:
+        created=iso(r["created_utc"]); ticker=r["ticker"]
+        for h,days in HORIZONS.items():
+            if h in (r.get("outcomes") or {}):continue
+            target=(created+dt.timedelta(days=days)).date()
+            if now.date()<target:continue
+            try: px=yahoo_daily_close(ticker,target)
+            except Exception: px=None
+            if px is None:continue
+            entry=float(r["price"]); ret=px/entry-1; y=1 if ret>0 else 0
+            r.setdefault("outcomes",{})[h]={"exit_price":px,"return":ret,"up":y,
+                "target_date":target.isoformat(),"settled_utc":now.isoformat(),"source":"Yahoo Finance daily close"}
+            changed+=1
+    if changed:_save(LEDGER,rows)
+    rebuild_state(rows); return {"settled":changed,"predictions":len(rows)}
+
 def settle(prediction_id,horizon,exit_price,settled_utc=None):
     if horizon not in HORIZONS: raise ValueError("unknown horizon")
     rows=_load(LEDGER,[]); found=None
@@ -115,10 +151,11 @@ def main():
     ap=argparse.ArgumentParser(); sub=ap.add_subparsers(dest="cmd",required=True)
     p=sub.add_parser("record"); p.add_argument("json_file")
     q=sub.add_parser("settle"); q.add_argument("id"); q.add_argument("horizon",choices=HORIZONS); q.add_argument("exit_price",type=float)
-    sub.add_parser("rebuild"); sub.add_parser("context")
+    sub.add_parser("rebuild"); sub.add_parser("context"); sub.add_parser("auto-settle")
     a=ap.parse_args()
     if a.cmd=="record": print(json.dumps(record(json.loads(Path(a.json_file).read_text())),indent=2))
     elif a.cmd=="settle": print(json.dumps(settle(a.id,a.horizon,a.exit_price),indent=2))
     elif a.cmd=="rebuild": print(json.dumps(rebuild_state(),indent=2))
+    elif a.cmd=="auto-settle": print(json.dumps(auto_settle(),indent=2))
     else: print(json.dumps(context(),indent=2))
 if __name__=="__main__": main()
