@@ -1,1 +1,179 @@
-[]
+[
+  {
+    "id": "PROF-20261007T2143Z-001",
+    "created_utc": "2026-10-07T21:43:00+00:00",
+    "ticker": "PROF",
+    "price": 5.93,
+    "agents": {
+      "price_chart": {
+        "evidence": "Oct 7 close $5.93, -2.55%; catalyst arrived after close; 50DMA ~$6.63, 200DMA ~$6.82.",
+        "p_up": {
+          "1w": 0.56,
+          "3m": 0.57,
+          "1y": 0.58
+        },
+        "uncertainty": "high; post-market repricing unavailable",
+        "invalidation": "fails to reclaim/hold recent $6 area after catalyst"
+      },
+      "financials": {
+        "evidence": "TTM revenue ~$19.09M, net loss ~$32.74M; cash ~$38.27M vs debt ~$7.38M; Q2 gross margin 78%; shares +20.87% YoY.",
+        "p_up": {
+          "1w": 0.53,
+          "3m": 0.64,
+          "1y": 0.67
+        },
+        "uncertainty": "medium-high; loss-making and dilution risk",
+        "invalidation": "cash burn/dilution accelerates or gross margin falls materially"
+      },
+      "analyst_targets": {
+        "evidence": "Sparse analyst coverage; consensus targets around $11.14-$11.50 versus $5.93 close, with rating disagreement.",
+        "p_up": {
+          "1w": 0.53,
+          "3m": 0.62,
+          "1y": 0.68
+        },
+        "uncertainty": "high",
+        "invalidation": "material target cuts after full Q3"
+      },
+      "earnings_estimates": {
+        "evidence": "Preliminary Q3 revenue $9.8-$10.0M, ~45-47% above Bloomberg mean $6.78M; gross margin expected >70%.",
+        "p_up": {
+          "1w": 0.72,
+          "3m": 0.75,
+          "1y": 0.72
+        },
+        "uncertainty": "medium; unaudited",
+        "invalidation": "full Q3 materially below preliminaries or weak guidance"
+      },
+      "insider_trades": {
+        "evidence": "NO_READ: no reliable fresh directional insider evidence established.",
+        "p_up": {
+          "1w": 0.5,
+          "3m": 0.5,
+          "1y": 0.5
+        },
+        "uncertainty": "high",
+        "invalidation": "verified cluster activity"
+      },
+      "congress_trades": {
+        "evidence": "NO_READ: no ticker-specific congressional trade established.",
+        "p_up": {
+          "1w": 0.5,
+          "3m": 0.5,
+          "1y": 0.5
+        },
+        "uncertainty": "high",
+        "invalidation": "verified ticker-specific disclosure"
+      },
+      "news": {
+        "evidence": "Oct 7 post-close release says record Q3 revenue driven by installed-base and new-customer activity; full Q3 due Nov 5.",
+        "p_up": {
+          "1w": 0.7,
+          "3m": 0.72,
+          "1y": 0.68
+        },
+        "uncertainty": "medium",
+        "invalidation": "commercial momentum fails to persist"
+      },
+      "sec_filings": {
+        "evidence": "Oct 7 material release supports preliminary Q3 figures; Q2 disclosure showed $3.1M shipments shifted into Q3, so part of sequential surge is timing.",
+        "p_up": {
+          "1w": 0.64,
+          "3m": 0.67,
+          "1y": 0.64
+        },
+        "uncertainty": "medium",
+        "invalidation": "quality-of-revenue or liquidity concern"
+      },
+      "institutional_holdings": {
+        "evidence": "Institutions reported around 50.46% ownership; no fresh directional 13F change established.",
+        "p_up": {
+          "1w": 0.5,
+          "3m": 0.53,
+          "1y": 0.55
+        },
+        "uncertainty": "high",
+        "invalidation": "verified broad institutional distribution"
+      },
+      "options_market": {
+        "evidence": "Illiquid options; Oct 6 OI concentrated at $7.50 calls (~700) and $5 puts (~1000); no unusual-volume signal.",
+        "p_up": {
+          "1w": 0.5,
+          "3m": 0.5,
+          "1y": 0.5
+        },
+        "uncertainty": "very high",
+        "invalidation": "liquid directional flow emerges"
+      },
+      "economy": {
+        "evidence": "Risk-off macro: S&P -0.2%, Russell 2000 -1.3%, elevated long yields; small-cap growth faces duration headwind.",
+        "p_up": {
+          "1w": 0.44,
+          "3m": 0.46,
+          "1y": 0.5
+        },
+        "uncertainty": "medium-high",
+        "invalidation": "yields fall materially and risk appetite broadens"
+      },
+      "related_markets": {
+        "evidence": "NO_READ strong enough for sector signal; company-specific adoption dominates.",
+        "p_up": {
+          "1w": 0.52,
+          "3m": 0.55,
+          "1y": 0.58
+        },
+        "uncertainty": "high",
+        "invalidation": "sector/competitive/reimbursement shock"
+      }
+    },
+    "bull": {
+      "summary": "Large revenue surprise, >70% expected GM, net cash and analyst-target gap can force revisions.",
+      "p_up": {
+        "1w": 0.72,
+        "3m": 0.76,
+        "1y": 0.75
+      }
+    },
+    "bear": {
+      "summary": "Shipment timing boosts sequential growth; company remains loss-making, dilution material, coverage sparse, post-release executable price unknown.",
+      "p_up": {
+        "1w": 0.43,
+        "3m": 0.45,
+        "1y": 0.48
+      }
+    },
+    "challenger": {
+      "summary": "Do not equate revenue surprise with stock upside. Close predates release, so gap risk can consume expected return. Neutralize unavailable insider/congress/options evidence. No prior outcomes means no learned edge."
+    },
+    "final": {
+      "p_up": {
+        "1w": 0.62,
+        "3m": 0.68,
+        "1y": 0.7
+      },
+      "expected_return": {
+        "1w": 0.06,
+        "3m": 0.22,
+        "1y": 0.4
+      },
+      "forecast_range": {
+        "1w": [
+          -0.12,
+          0.25
+        ],
+        "3m": [
+          -0.25,
+          0.6
+        ],
+        "1y": [
+          -0.4,
+          1.1
+        ]
+      },
+      "action": "WATCH_NOT_BUY_NOW",
+      "confidence": "moderate",
+      "reason": "Strong catalyst, but post-close repricing is unknown and council has zero calibrated history; require post-news price/volume confirmation."
+    },
+    "outcomes": {}
+  }
+]
