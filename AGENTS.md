@@ -22,6 +22,9 @@ Last updated: **2026-09-17**
   coverage in health status; it cannot claim whole-market consolidated tape.
 - Windows local supervisor start-local.ps1 loads optional ignored .env, binds loopback,
   persists runtime SQLite/logs and restarts a crashed child. Local operation needs an awake PC.
+- Local mode loads Nasdaq/other-exchange non-ETF/test symbol directories with a daily
+  cached startup refresh; includes ADRs/non-common securities, excludes OTC. Broad news
+  matching is distinct from full-market live tape, which remains credential-limited.
 
 ### Binaural software continuation
 

@@ -56,11 +56,11 @@ class Service:
         pending = self.engine.db.execute('SELECT count(*) FROM outbox WHERE sent=0').fetchone()[0]
         tape_age = now - self.status.get('tape', {}).get('last_ok', 0)
         return web.json_response({'alive': True, 'ready': tape_age < 120 and bool(os.getenv('TELEGRAM_BOT_TOKEN')) and bool(os.getenv('TELEGRAM_CHAT_ID')),
-                                 'tape_age_seconds': tape_age, 'outbox_pending': pending, 'adapters': self.status})
+                                 'tape_age_seconds': tape_age, 'outbox_pending': pending, 'universe_symbols':len(self.engine.universe), 'news_sources':len(self.sources), 'adapters': self.status})
 
     async def local_alerts(self, request):
-        rows = self.engine.db.execute('SELECT payload,sent FROM outbox ORDER BY rowid DESC LIMIT 100').fetchall()
-        return web.json_response([{'text': format_alert(json.loads(r['payload'])), 'sent': bool(r['sent'])} for r in rows])
+        rows = self.engine.db.execute("SELECT payload,sent FROM outbox WHERE rowid IN (SELECT MAX(rowid) FROM outbox GROUP BY json_extract(payload,'$.ticker')) ORDER BY rowid DESC LIMIT 300").fetchall()
+        return web.json_response([{'text': format_alert(json.loads(r['payload'])), 'sent': bool(r['sent']), 'alert':json.loads(r['payload'])} for r in rows])
 
     async def dashboard(self, request):
         return web.Response(text=Path('continuous/dashboard.html').read_text(encoding='utf-8'), content_type='text/html')
@@ -133,7 +133,7 @@ class Service:
         """Only completed prior NY sessions enter volume baseline; paginate all bars."""
         today = datetime.now(NY).date()
         start = datetime.now(timezone.utc) - timedelta(days=35)
-        symbols = list(self.engine.universe)
+        symbols = self.tape_symbols(feed)
         for offset in range(0, len(symbols), 100):
             history = defaultdict(lambda: defaultdict(list))
             params = {'symbols': ','.join(symbols[offset:offset+100]), 'timeframe': '1Min', 'start': start.isoformat(),
@@ -277,7 +277,14 @@ class Service:
             await self.pause(10)
 
     async def maintain(self):
+        universe_checked = time.time()
         while not self.stopping.is_set():
+            if os.getenv('RADAR_NASDAQ_UNIVERSE') == '1' and time.time() - universe_checked >= 86400:
+                from continuous.universe import load_universe
+                broad = await asyncio.to_thread(load_universe, Path('runtime/universe.json'))
+                broad.update(self.config['universe'])
+                self.engine.universe.update(broad)
+                universe_checked = time.time()
             now=time.time()
             with self.engine.db:
                 self.engine.db.execute('DELETE FROM bars WHERE time<?',(now-172800,))
@@ -329,6 +336,11 @@ class DeliveryRetry(Exception):
 def main():
     logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s %(message)s')
     config = json.loads(Path(os.getenv('RADAR_CONFIG', 'continuous/sources.json')).read_text())
+    if os.getenv('RADAR_NASDAQ_UNIVERSE') == '1':
+        from continuous.universe import load_universe
+        broad = load_universe(Path('runtime/universe.json'))
+        broad.update(config['universe'])
+        config['universe'] = broad
     if os.getenv('RADAR_UNIVERSE_FILE'):
         config['universe'].update(json.loads(Path(os.environ['RADAR_UNIVERSE_FILE']).read_text()))
     db = Path(os.getenv('RADAR_DB', 'runtime/radar.sqlite'))

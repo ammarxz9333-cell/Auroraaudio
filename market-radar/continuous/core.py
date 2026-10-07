@@ -43,12 +43,14 @@ class Engine:
 
     def resolve(self, text):
         found = set()
+        explicit = {symbol.upper() for group in re.findall(r'\$([A-Z][A-Z0-9.\-]*)|(?:NASDAQ|NYSE)\s*:\s*([A-Z][A-Z0-9.\-]*)', text, re.I) for symbol in group if symbol}
+        lower = text.lower()
         for ticker, aliases in self.universe.items():
             # Bare short English symbols like AI/IT/ON are ambiguous. Require cashtag,
             # exchange declaration or the verified company name.
-            if re.search(r'\$' + re.escape(ticker) + r'\b|(?:NASDAQ|NYSE)\s*:\s*' + re.escape(ticker) + r'\b', text, re.I):
+            if ticker.upper() in explicit:
                 found.add(ticker)
-            if any(re.search(r'\b' + re.escape(a) + r'\b', text, re.I) for a in aliases if len(a) > 4):
+            if any(re.search(r'\b' + re.escape(a) + r'\b', text, re.I) for a in aliases if len(a) > 4 and a.lower() in lower):
                 found.add(ticker)
         return sorted(found)
 

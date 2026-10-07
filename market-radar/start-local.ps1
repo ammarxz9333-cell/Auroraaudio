@@ -10,6 +10,7 @@ try {
     $env:RADAR_BIND = '127.0.0.1'
     $env:RADAR_PORT = '8787'
     $env:ALPACA_FEED = 'iex'
+    $env:RADAR_NASDAQ_UNIVERSE = '1'
     $radarEnvFile = Join-Path $radarRoot '.env'
     if (Test-Path -LiteralPath $radarEnvFile) {
         foreach ($radarLine in Get-Content -LiteralPath $radarEnvFile) {

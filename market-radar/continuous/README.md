@@ -159,6 +159,14 @@ deduplication; a container's temporary filesystem is not durable VPS storage.
 
 ## Validation
 
+Local news matching now uses Nasdaq's public Nasdaq-listed and other-exchange
+directories (`RADAR_NASDAQ_UNIVERSE=1`), cached and refreshed daily. ETFs and test
+issues are excluded; ADRs and other listed non-ETF securities remain. OTC is absent.
+Six broad catalyst queries complement the configured feeds. This does not cover
+every news item or every social account. Whole-market tape is still unavailable
+without appropriate data credentials. The simple Arabic dashboard shows the latest
+alert per ticker and refuses buy presentation when tape or alert data is stale/missing.
+
 Windows local mode: launch `start-local.ps1 -Python <venv Python path>` in a hidden
 PowerShell process. The supervisor restarts crashes and persists SQLite in runtime/.
 Open http://127.0.0.1:8787 for locally stored alerts. An optional ignored .env supplies

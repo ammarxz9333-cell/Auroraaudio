@@ -394,6 +394,66 @@
       "confidence": 60,
       "public": true,
       "interval_seconds": 30
+    },
+    {
+      "id": "market-wide-0",
+      "type": "google_news",
+      "query": "NASDAQ NYSE earnings beat guidance",
+      "public": true,
+      "confidence": 55,
+      "official": false,
+      "interval_seconds": 30,
+      "enabled": true
+    },
+    {
+      "id": "market-wide-1",
+      "type": "google_news",
+      "query": "stock merger acquisition public company",
+      "public": true,
+      "confidence": 55,
+      "official": false,
+      "interval_seconds": 30,
+      "enabled": true
+    },
+    {
+      "id": "market-wide-2",
+      "type": "google_news",
+      "query": "FDA approval biotech stock",
+      "public": true,
+      "confidence": 55,
+      "official": false,
+      "interval_seconds": 30,
+      "enabled": true
+    },
+    {
+      "id": "market-wide-3",
+      "type": "google_news",
+      "query": "stock offering dilution financing",
+      "public": true,
+      "confidence": 55,
+      "official": false,
+      "interval_seconds": 30,
+      "enabled": true
+    },
+    {
+      "id": "market-wide-4",
+      "type": "google_news",
+      "query": "AI company contract partnership",
+      "public": true,
+      "confidence": 55,
+      "official": false,
+      "interval_seconds": 30,
+      "enabled": true
+    },
+    {
+      "id": "market-wide-5",
+      "type": "google_news",
+      "query": "NYSE NASDAQ trading halt investigation",
+      "public": true,
+      "confidence": 55,
+      "official": false,
+      "interval_seconds": 30,
+      "enabled": true
     }
   ],
   "universe": {
