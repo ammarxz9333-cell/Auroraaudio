@@ -54,6 +54,36 @@ def _num(v):
     try: return float(x)
     except ValueError: return None
 
+
+def tape_signal(snapshot):
+    """Classify abnormal tape action conservatively.
+
+    Requires abnormal relative volume plus fresh momentum. Large day moves
+    without continuing short-window momentum are treated as already repriced,
+    not early opportunities.
+    """
+    s=snapshot or {}
+    rvol=_num(s.get("same_time_volume_ratio"))
+    day=_num(s.get("change_pct")) or 0.0
+    m5=_num(s.get("change_5m_pct")) or 0.0
+    m15=_num(s.get("change_15m_pct")) or 0.0
+    m30=_num(s.get("change_30m_pct")) or 0.0
+    session=str(s.get("market_session") or "").upper()
+    hits=[]
+    if rvol is None or rvol < 2.0:
+        return {"qualifies":False,"hits":[],"score":0.0,"reason":"insufficient-relative-volume"}
+    # Reject stale/parabolic day moves whose immediate tape has gone flat.
+    if abs(day) >= 25 and max(abs(m5),abs(m15),abs(m30)) < 1.5:
+        return {"qualifies":False,"hits":["parabolic-chase"],"score":0.0,"reason":"already-repriced"}
+    if session in {"PRE","PREMARKET"} and rvol >= 3 and abs(day) >= 3 and (abs(m15)>=1.5 or abs(m30)>=2.0):
+        hits.append("premarket-accumulation")
+    if session=="REGULAR" and rvol >= 2.5 and (abs(m5)>=0.8 or abs(m15)>=1.5 or abs(m30)>=2.5):
+        if s.get("holds_vwap") is not False:
+            hits.append("regular-volume-momentum")
+    score=min(10.0,(rvol or 0)*0.8+abs(m5)*0.7+abs(m15)*0.5+abs(m30)*0.3)
+    return {"qualifies":bool(hits),"hits":hits,"score":round(score,3),
+            "reason":"fresh-abnormal-tape" if hits else "no-fresh-momentum"}
+
 def discover_candidates(fetch, limit=30):
     """Broad-universe pass with Yahoo fallback when Nasdaq is unavailable."""
     errors=[]
