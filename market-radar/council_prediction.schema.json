@@ -1,0 +1,12 @@
+{
+  "$schema":"https://json-schema.org/draft/2020-12/schema",
+  "title":"Aurora 12-Agent Council Prediction",
+  "type":"object",
+  "required":["ticker","price","agents","final"],
+  "properties":{
+    "ticker":{"type":"string"},"price":{"type":"number","exclusiveMinimum":0},
+    "market_regime":{"type":"string"},"catalyst":{"type":"string"},
+    "agents":{"type":"object","description":"Exactly the 12 independent seat outputs; each seat may include evidence, uncertainty and invalidation in addition to p_up."},
+    "final":{"type":"object","description":"Final Judge output. p_up is distinct from expected_return and forecast_range."}
+  }
+}
