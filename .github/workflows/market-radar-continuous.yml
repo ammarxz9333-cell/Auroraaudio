@@ -17,7 +17,7 @@ jobs:
       - run: pip install -r market-radar/continuous/requirements.txt
       - working-directory: market-radar
         run: |
-          python -m unittest continuous.test_core continuous.test_service continuous.test_universe -v
+          python -m unittest continuous.test_core continuous.test_service continuous.test_universe continuous.test_classification -v
           python -m continuous.peng_acceptance
           cp .env.example .env
           docker compose config --quiet

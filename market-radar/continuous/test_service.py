@@ -32,6 +32,8 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
         app = web.Application()
         app.router.add_post('/events',self.s.ingest)
         app.router.add_get('/health',self.s.health)
+        app.router.add_get('/stocks',self.s.stocks)
+        app.router.add_get('/stock/{ticker}',self.s.stock_details)
         self.client=TestClient(TestServer(app))
         await self.client.start_server()
 
@@ -76,6 +78,25 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_missing_tape_not_ready(self):
         response=await self.client.get('/health')
         self.assertFalse((await response.json())['ready'])
+
+    async def test_directory_search_and_pagination(self):
+        self.s.engine.universe.update({f'T{i}':[f'Issuer {i}'] for i in range(40)})
+        response=await self.client.get('/stocks?limit=12&offset=12')
+        data=await response.json()
+        self.assertEqual(data['total'],41)
+        self.assertEqual(len(data['data']),12)
+        data=await (await self.client.get('/stocks?q=Penguin')).json()
+        self.assertEqual([s['ticker'] for s in data['data']],['PENG'])
+
+    async def test_snapshot_cache_and_no_unrelated_news_anchor(self):
+        self.s.engine.event(dict(title='Penguin Solutions earnings',url='https://example.org/public',published_at=utc(time.time()-100)),self.s.sources['ir'],time.time())
+        with patch('continuous.service.yahoo_market_snapshot',return_value={'price':74,'change_pct':12}) as fetch:
+            first=await (await self.client.get('/stock/PENG')).json()
+            second=await (await self.client.get('/stock/PENG')).json()
+            self.assertEqual(first,second)
+            fetch.assert_called_once_with('PENG')
+            self.assertEqual(first['rating']['classification'],'LATE')
+            self.assertFalse(first['rating']['buyable'])
 
     async def test_corrected_bars_do_not_double_volume(self):
         t=time.time()-70

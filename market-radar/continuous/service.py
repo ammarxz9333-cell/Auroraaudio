@@ -16,7 +16,8 @@ import aiohttp
 from aiohttp import web
 
 from continuous.core import Engine, format_alert, timestamp, utc
-from radar import parse_feed, google_news_url
+from continuous.classification import classify
+from radar import parse_feed, google_news_url, yahoo_market_snapshot
 
 LOG = logging.getLogger('radar')
 NY = ZoneInfo('America/New_York')
@@ -36,6 +37,65 @@ class Service:
         self.telegram_base = 'https://api.telegram.org'
         self.stopping = asyncio.Event()
         self.session = None
+        self.market_cache = {}
+        self.stock_locks = {}
+        self.public_requests = asyncio.Semaphore(2)
+
+    async def stocks(self, request):
+        query = request.query.get('q', '').strip().lower()[:100]
+        try:
+            offset = max(0, int(request.query.get('offset', '0')))
+            limit = min(25, max(1, int(request.query.get('limit', '12'))))
+        except ValueError:
+            raise web.HTTPBadRequest()
+        news_symbols = {r[0] for r in self.engine.db.execute('SELECT DISTINCT ticker FROM events')}
+        symbols = [s for s,names in self.engine.universe.items() if not query or query in s.lower() or any(query in n.lower() for n in names)]
+        if request.query.get('news') == '1':
+            symbols = [s for s in symbols if s in news_symbols]
+        symbols.sort(key=lambda s: (s not in news_symbols, s not in ('PENG','AAPL','NVDA','MSFT','AMZN','GOOGL','TSLA','META','CRWV'), s))
+        return web.json_response({'total':len(symbols),'offset':offset,'limit':limit,
+            'data':[{'ticker':s,'name':self.engine.universe[s][-1],'has_news':s in news_symbols} for s in symbols[offset:offset+limit]]})
+
+    async def stock_details(self, request):
+        symbol = request.match_info['ticker'].upper()
+        if symbol not in self.engine.universe:
+            raise web.HTTPNotFound()
+        async with self.stock_locks.setdefault(symbol, asyncio.Lock()):
+            cached = self.market_cache.get(symbol)
+            if cached and time.time() - cached['fetched_at'] < 60:
+                return web.json_response(cached)
+            async with self.public_requests:
+                existing = self.engine.db.execute('SELECT payload FROM events WHERE ticker=? ORDER BY published DESC LIMIT 1',(symbol,)).fetchone()
+                if not existing:
+                    policy = {'id':'public-company-news','type':'google_news','public':True,'confidence':55,'official':False}
+                    query = '"' + self.engine.universe[symbol][-1] + '" stock'
+                    try:
+                        async with self.session.get(google_news_url(query)) as response:
+                            response.raise_for_status()
+                            raw = await response.content.read(4_000_001)
+                            if len(raw) <= 4_000_000:
+                                for item in list(parse_feed(raw, policy))[:15]:
+                                    if item['published']:
+                                        try:
+                                            self.engine.event(dict(title=item['title'],content=item['snippet'],url=item['url'],published_at=item['published'].isoformat()),policy,time.time())
+                                        except ValueError:
+                                            pass
+                    except Exception:
+                        pass
+                rows = self.engine.db.execute('SELECT payload FROM events WHERE ticker=? ORDER BY published DESC LIMIT 5',(symbol,)).fetchall()
+                news = [json.loads(r['payload']) for r in rows]
+                # Headlines can concern unrelated catalysts. The oldest issuer headline
+                # must never become a fabricated price anchor for the current catalyst.
+                snapshot = await asyncio.to_thread(yahoo_market_snapshot, symbol)
+                self.engine.evaluate(symbol,time.time())
+                latest = self.engine.db.execute("SELECT payload FROM outbox WHERE json_extract(payload,'$.ticker')=? ORDER BY rowid DESC LIMIT 1",(symbol,)).fetchone()
+                rating = classify(news,snapshot,json.loads(latest[0]) if latest else None,time.time())
+                payload = {'ticker':symbol,'name':self.engine.universe[symbol][-1], 'news':news,
+                    'rating':rating,
+                    'snapshot':snapshot,'fetched_at':time.time(), 'price_source':'Yahoo Finance public 5-minute snapshot; not authenticated real-time tape',
+                    'stream_confirmed':False}
+                self.market_cache[symbol] = payload
+                return web.json_response(payload)
 
     async def ingest(self, request):
         key = os.getenv('RADAR_INGEST_TOKEN', '')
@@ -297,7 +357,7 @@ class Service:
 
     async def run(self):
         app = web.Application(client_max_size=128*1024)
-        app.add_routes([web.get('/', self.dashboard), web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
+        app.add_routes([web.get('/', self.dashboard), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, os.getenv('RADAR_BIND', '127.0.0.1'), int(os.getenv('RADAR_PORT', '8787'))).start()

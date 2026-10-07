@@ -189,3 +189,25 @@ at $73.74. October 6's returned data ends at the regular close and omits the 20:
 release window. Full historical acceptance requires source timestamp proof, after-hours
 bars, point-in-time volume baselines and historical bid/ask. It is currently INCOMPLETE.
 Do not infer early detection, historical profitability or live operation from fixtures.
+# Local classification and stock browser
+
+The Arabic dashboard searches the full loaded symbol directory and paginates it.
+Visible stocks retrieve public company headlines and Yahoo 5-minute snapshots with
+two concurrent requests and a 60-second per-symbol cache; this is not a whole-market
+streaming scanner. Snapshot volume ratio uses Yahoo's limited history and is displayed
+separately from the streaming prior-session, same-minute RVOL.
+
+The agreed classes are HIGH-CONVICTION EARLY, DEVELOPING, CONFIRMED, LATE and AVOID.
+Core early-entry gates require a catalyst within 10 minutes, source confidence >=70,
+fresh pre-source anchor and tape, RVOL >=2, price above VWAP and a 20-minute breakout,
+known spread <=1%, and score >=70. CONFIRMED additionally requires an official source.
+Risk overrides all positive evidence. LATE means >=8% since source or >=5% VWAP
+extension with a known source anchor. The public snapshot display also flags daily
+gains >=8% as a conservative chase warning, explicitly distinct from since-source move.
+
+Score weights: source confidence x0.55, tape confirmation +20, acceleration >=2 +10,
+two independent source groups +10, source age <=10 minutes +5, capped at 100.
+These are uncalibrated rules, not success probabilities or evidence of a world-best
+system. Missing options/relative strength/SEC review are disclosed rather than invented.
+Snapshot data alone cannot authorize entry; streaming alerts older than 90 seconds
+cannot authorize entry through the dashboard. The dashboard shows reasons and provenance.

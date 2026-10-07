@@ -25,6 +25,11 @@ Last updated: **2026-09-17**
 - Local mode loads Nasdaq/other-exchange non-ETF/test symbol directories with a daily
   cached startup refresh; includes ADRs/non-common securities, excludes OTC. Broad news
   matching is distinct from full-market live tape, which remains credential-limited.
+- Local dashboard searches/paginates the whole directory, retrieves bounded on-demand
+  public Yahoo 5-minute snapshots and company news, and explains all five agreed classes.
+  classification.py never authorizes buying from snapshots alone; stale streaming signals
+  fail closed. Daily +8% is a separately explained conservative chase warning, not a
+  fabricated since-source move. Weights are heuristic and uncalibrated, not world-best.
 
 ### Binaural software continuation
 
