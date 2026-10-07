@@ -352,5 +352,197 @@
       "reason": "Fundamental beat is exceptional but leverage, GAAP losses and weak price confirmation materially reduce actionable conviction. Wait for post-earnings price/volume confirmation."
     },
     "outcomes": {}
+  },
+  {
+    "id": "PROF-20261007T2355Z-V2",
+    "contract_version": "2.0",
+    "created_utc": "2026-10-07T23:55:00+00:00",
+    "snapshot_utc": "2026-10-07T23:55:00+00:00",
+    "ticker": "PROF",
+    "price": 5.68,
+    "agents": {
+      "price_chart": {
+        "evidence": "Oct 7 Nasdaq close $5.68 (-6.58%); price was below recent $6 area and the material Q3 release arrived 4:15pm ET after the close. Short-term tape therefore has not confirmed the catalyst.",
+        "evidence_as_of": "2026-10-07T16:00:00-04:00",
+        "p_up": {
+          "1w": 0.44,
+          "3m": 0.49,
+          "1y": 0.53
+        },
+        "uncertainty": "high; no reliable liquid post-release price captured",
+        "invalidation": "post-news session reclaims $6.10-$6.35 with convincing volume"
+      },
+      "financials": {
+        "evidence": "Latest reported Q2: $2.5M revenue (+12% YoY) was distorted by $3.1M shipments completed in July; adjusted-for-timing Q2 would be ~$5.6M (+153%). Q2 GM 78%, opex -16%, net loss improved 39% to $9.5M; cash $38.3M. Newer preliminary Q3 revenue $9.8-$10.0M (+85-89% YoY), GM >70%.",
+        "evidence_as_of": "2026-10-07T20:15:00-04:00",
+        "p_up": {
+          "1w": 0.57,
+          "3m": 0.65,
+          "1y": 0.67
+        },
+        "uncertainty": "medium-high; still loss-making and cash burn meaningful",
+        "invalidation": "full Q3 contradicts preliminary numbers, GM <70%, or liquidity/dilution worsens"
+      },
+      "analyst_targets": {
+        "evidence": "Sparse coverage; recent sources show average target about $11.14-$11.50, with $10-$12 range in one dataset. Ratings are not unanimous across vendors, so target gap is evidence, not probability.",
+        "evidence_as_of": "2026-10-06T23:59:00-04:00",
+        "p_up": {
+          "1w": 0.52,
+          "3m": 0.6,
+          "1y": 0.65
+        },
+        "uncertainty": "high; sparse/lagging coverage",
+        "invalidation": "post-Q3 analysts cut targets materially"
+      },
+      "earnings_estimates": {
+        "evidence": "Preliminary Q3 revenue $9.8-$10.0M is ~45-47% above Bloomberg mean consensus $6.78M. Full Q3 scheduled Nov 5.",
+        "evidence_as_of": "2026-10-07T20:15:00-04:00",
+        "p_up": {
+          "1w": 0.68,
+          "3m": 0.7,
+          "1y": 0.66
+        },
+        "uncertainty": "medium; preliminary unaudited and some Q2 shipments shifted into Q3",
+        "invalidation": "Nov 5 actuals/guidance materially disappoint"
+      },
+      "insider_trades": {
+        "evidence": "No clean recent open-market directional transaction established from primary filings in this run; September entries visible in secondary data are option-related, not treated as buys.",
+        "evidence_as_of": "2026-10-07T23:55:00Z",
+        "p_up": {
+          "1w": 0.5,
+          "3m": 0.5,
+          "1y": 0.5
+        },
+        "uncertainty": "high",
+        "invalidation": "verified fresh open-market cluster buying/selling appears"
+      },
+      "congress_trades": {
+        "evidence": "NO_READ: no reliable ticker-specific congressional disclosure established.",
+        "evidence_as_of": "2026-10-07T23:55:00Z",
+        "p_up": {
+          "1w": 0.5,
+          "3m": 0.5,
+          "1y": 0.5
+        },
+        "uncertainty": "high",
+        "invalidation": "verified ticker-specific congressional disclosure"
+      },
+      "news": {
+        "evidence": "Material post-close catalyst: preliminary record Q3 revenue $9.8-$10.0M, +85-89% YoY and 45-47% above consensus; company attributes growth to installed-base and new-account commercial activity.",
+        "evidence_as_of": "2026-10-07T20:15:00-04:00",
+        "p_up": {
+          "1w": 0.71,
+          "3m": 0.68,
+          "1y": 0.62
+        },
+        "uncertainty": "medium; market reaction not yet validated",
+        "invalidation": "post-news price rejects catalyst or full results/guidance weaken"
+      },
+      "sec_filings": {
+        "evidence": "Latest Q2 10-Q plus Oct 7 material release show a real timing issue: $3.1M June-anticipated shipments moved into July. This explains part, but not all, of Q3 sequential acceleration and must not be double-counted as new demand.",
+        "evidence_as_of": "2026-10-07T20:15:00-04:00",
+        "p_up": {
+          "1w": 0.58,
+          "3m": 0.61,
+          "1y": 0.6
+        },
+        "uncertainty": "medium",
+        "invalidation": "filings reveal weak collections, liquidity stress, dilution, or demand reversal"
+      },
+      "institutional_holdings": {
+        "evidence": "Latest available reported ownership is stale by construction; one current aggregation shows ~45% ownership and holdings declining from ~17.0M to ~16.3M shares between Mar and Jun snapshots. Directional signal is weak.",
+        "evidence_as_of": "2026-06-30T23:59:00Z",
+        "p_up": {
+          "1w": 0.49,
+          "3m": 0.48,
+          "1y": 0.5
+        },
+        "uncertainty": "high; 13F lag",
+        "invalidation": "fresh filings show broad accumulation/distribution"
+      },
+      "options_market": {
+        "evidence": "NO_READ/neutral for directional inference: chain is too illiquid/noisy to justify the prior extreme bearish probability. High IV can inform range but not direction without robust liquid flow.",
+        "evidence_as_of": "2026-10-07T23:55:00Z",
+        "p_up": {
+          "1w": 0.5,
+          "3m": 0.5,
+          "1y": 0.5
+        },
+        "uncertainty": "very high",
+        "invalidation": "sustained liquid post-catalyst directional flow emerges"
+      },
+      "economy": {
+        "evidence": "Macro is a modest headwind for unprofitable small-cap growth: elevated long yields and risk sensitivity raise discount/funding pressure; healthcare defensiveness does not remove duration risk.",
+        "evidence_as_of": "2026-10-07T23:55:00Z",
+        "p_up": {
+          "1w": 0.47,
+          "3m": 0.47,
+          "1y": 0.51
+        },
+        "uncertainty": "medium-high",
+        "invalidation": "rates/credit conditions ease materially"
+      },
+      "related_markets": {
+        "evidence": "NO_READ strong enough to claim sector mean reversion as an edge; company-specific TULSA adoption/reimbursement is more important than generic healthcare beta.",
+        "evidence_as_of": "2026-10-07T23:55:00Z",
+        "p_up": {
+          "1w": 0.5,
+          "3m": 0.52,
+          "1y": 0.55
+        },
+        "uncertainty": "high",
+        "invalidation": "verified peer/sector relative-strength regime emerges"
+      }
+    },
+    "bull": {
+      "summary": "The catalyst is genuinely large: Q3 preliminary growth 85-89% YoY, 45-47% above consensus, GM >70%, with Q2 cost/loss improvement and net cash cushion.",
+      "p_up": {
+        "1w": 0.69,
+        "3m": 0.72,
+        "1y": 0.7
+      }
+    },
+    "bear": {
+      "summary": "PROF remains loss-making with meaningful cash burn; part of Q3 acceleration is shipment timing, institutional data are not clearly supportive, and the stock closed weak before the release. A gap can price in much of the surprise before entry.",
+      "p_up": {
+        "1w": 0.39,
+        "3m": 0.42,
+        "1y": 0.45
+      }
+    },
+    "challenger": {
+      "summary": "Freshness conflict resolved: Q2 +12% reported growth cannot be called current growth after the Oct 7 Q3 preliminary release. Q2 adjusted-for-timing growth was ~153%, while Q3 preliminary is +85-89%; label each period. Do not double-count the $3.1M timing shift as incremental demand. Reject universal-buy language because coverage sources disagree. Neutralize illiquid options rather than infer severe downside. Do not claim sector mean reversion without evidence. No matured outcomes exist, so all learned reliability weights remain neutral."
+    },
+    "final": {
+      "p_up": {
+        "1w": 0.56,
+        "3m": 0.61,
+        "1y": 0.63
+      },
+      "expected_return": {
+        "1w": 0.035,
+        "3m": 0.14,
+        "1y": 0.26
+      },
+      "forecast_range": {
+        "1w": [
+          -0.18,
+          0.28
+        ],
+        "3m": [
+          -0.3,
+          0.52
+        ],
+        "1y": [
+          -0.42,
+          0.9
+        ]
+      },
+      "action": "WATCH_FOR_CONFIRMATION",
+      "confidence": "moderate",
+      "reason": "V2 recognizes the exceptional fresh revenue catalyst but removes stale-growth, illiquid-options and generic-sector distortions. Because the release was post-close, actionable conviction requires the first liquid post-news session to confirm price/volume rather than paying an unknown gap."
+    },
+    "audit": [],
+    "outcomes": {}
   }
 ]
