@@ -32,5 +32,9 @@ class ClassificationTests(unittest.TestCase):
         self.assertEqual(result['classification'],'LATE')
         self.assertIn('الإغلاق السابق',result['reasons'][0])
 
+    def test_old_avoid_alert_is_not_current_risk_evidence(self):
+        result=classify([],{},dict(classification='AVOID',detected_at=utc(1),tape_stale=True),1000)
+        self.assertEqual(result['classification'],'DEVELOPING')
+
 if __name__ == '__main__':
     unittest.main()

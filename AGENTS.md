@@ -30,6 +30,9 @@ Last updated: **2026-09-17**
   classification.py never authorizes buying from snapshots alone; stale streaming signals
   fail closed. Daily +8% is a separately explained conservative chase warning, not a
   fabricated since-source move. Weights are heuristic and uncalibrated, not world-best.
+- Current risk evidence uses the preceding 24 hours; old alerts cannot supply current
+  risk. Google News query IDs share one origin group, so query overlap cannot inflate
+  independent-source confirmation without verified publisher provenance.
 
 ### Binaural software continuation
 

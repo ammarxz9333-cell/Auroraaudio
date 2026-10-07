@@ -27,6 +27,11 @@ class Service:
     def __init__(self, config, db):
         self.config = config
         self.sources = {s['id']: s for s in config['sources']}
+        for source in self.sources.values():
+            if source.get('type') == 'google_news':
+                # Query IDs are not independent publishers. Conservative until the
+                # underlying publisher provenance is resolved and verified.
+                source['origin_group'] = 'google-news-aggregate'
         self.engine = Engine(db, config['universe'])
         self.status = {}
         self.quotes = {}
@@ -67,7 +72,7 @@ class Service:
             async with self.public_requests:
                 existing = self.engine.db.execute('SELECT payload FROM events WHERE ticker=? AND published>=? ORDER BY published DESC LIMIT 1',(symbol,time.time()-86400)).fetchone()
                 if not existing:
-                    policy = {'id':'public-company-news','type':'google_news','public':True,'confidence':55,'official':False}
+                    policy = {'id':'public-company-news','origin_group':'google-news-aggregate','type':'google_news','public':True,'confidence':55,'official':False}
                     query = '"' + self.engine.universe[symbol][-1] + '" stock'
                     try:
                         async with self.session.get(google_news_url(query)) as response:
