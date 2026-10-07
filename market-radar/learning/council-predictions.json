@@ -175,5 +175,182 @@
       "reason": "Strong catalyst, but post-close repricing is unknown and council has zero calibrated history; require post-news price/volume confirmation."
     },
     "outcomes": {}
+  },
+  {
+    "id": "APLD-20261007T2200Z-001",
+    "created_utc": "2026-10-07T22:00:00+00:00",
+    "ticker": "APLD",
+    "price": 23.81,
+    "agents": {
+      "price_chart": {
+        "evidence": "Current post-results indication ~$23.81 after ~6% regular-session decline; recent support around $24, overhead/200DMA near $32; beta is very high.",
+        "p_up": {
+          "1w": 0.54,
+          "3m": 0.56,
+          "1y": 0.58
+        },
+        "uncertainty": "high",
+        "invalidation": "decisive loss of post-earnings support with expanding volume"
+      },
+      "financials": {
+        "evidence": "Q1 FY2027 revenue $341.9M; adjusted EBITDA $64.4M, but GAAP net loss $221.0M. Aug 31 cash/cash equivalents/restricted cash $3.7B versus $6.4B debt.",
+        "p_up": {
+          "1w": 0.55,
+          "3m": 0.61,
+          "1y": 0.64
+        },
+        "uncertainty": "high due leverage/capex",
+        "invalidation": "funding costs or leverage rise faster than contracted cash generation"
+      },
+      "analyst_targets": {
+        "evidence": "Street remains bullish but dispersed: consensus targets roughly mid-$60s; recent initiations include UBS Buy $38, with published target range extending far wider.",
+        "p_up": {
+          "1w": 0.54,
+          "3m": 0.63,
+          "1y": 0.68
+        },
+        "uncertainty": "medium-high; targets may lag earnings",
+        "invalidation": "broad post-earnings target cuts"
+      },
+      "earnings_estimates": {
+        "evidence": "Q1 revenue $341.9M versus pre-report expectations around $116-125M; adjusted EPS loss ~$0.01 versus roughly -$0.26 to -$0.30 expected.",
+        "p_up": {
+          "1w": 0.69,
+          "3m": 0.71,
+          "1y": 0.69
+        },
+        "uncertainty": "medium; GAAP/non-GAAP and consolidation effects complicate comparison",
+        "invalidation": "next-quarter recurring/base-rent economics disappoint"
+      },
+      "insider_trades": {
+        "evidence": "Recent verified activity is selling, including director Richard Nottenburg 75,000 shares at $31.15 on Aug 4; no fresh cluster buy established.",
+        "p_up": {
+          "1w": 0.47,
+          "3m": 0.45,
+          "1y": 0.45
+        },
+        "uncertainty": "medium-high",
+        "invalidation": "material open-market insider buying emerges"
+      },
+      "congress_trades": {
+        "evidence": "NO_READ: no reliable ticker-specific congressional trade established in this run.",
+        "p_up": {
+          "1w": 0.5,
+          "3m": 0.5,
+          "1y": 0.5
+        },
+        "uncertainty": "high",
+        "invalidation": "verified disclosure emerges"
+      },
+      "news": {
+        "evidence": "Record Q1 growth and additional capacity are positive; Finland potential 1GW adds optionality but is uncontracted and power expected from 2028.",
+        "p_up": {
+          "1w": 0.62,
+          "3m": 0.66,
+          "1y": 0.68
+        },
+        "uncertainty": "medium-high",
+        "invalidation": "lease/capacity milestones slip or counterparties weaken"
+      },
+      "sec_filings": {
+        "evidence": "Company filings document multi-billion-dollar long-term take-or-pay leases and large secured financing; debt/capex intensity remains material.",
+        "p_up": {
+          "1w": 0.56,
+          "3m": 0.61,
+          "1y": 0.64
+        },
+        "uncertainty": "high",
+        "invalidation": "covenant/liquidity/dilution stress or construction delay"
+      },
+      "institutional_holdings": {
+        "evidence": "NO_READ: no sufficiently fresh directional 13F/institutional-flow evidence established.",
+        "p_up": {
+          "1w": 0.5,
+          "3m": 0.5,
+          "1y": 0.5
+        },
+        "uncertainty": "high",
+        "invalidation": "fresh verified accumulation/distribution data"
+      },
+      "options_market": {
+        "evidence": "Pre-earnings options volume was heavy but net option delta was bearish; 50-day put/call ratio ranked in 95th percentile, while short interest was ~21.4% of float.",
+        "p_up": {
+          "1w": 0.48,
+          "3m": 0.5,
+          "1y": 0.5
+        },
+        "uncertainty": "very high post-event",
+        "invalidation": "post-earnings flow turns persistently bullish with liquidity"
+      },
+      "economy": {
+        "evidence": "Capital-intensive long-duration AI infrastructure is sensitive to elevated yields and financing costs.",
+        "p_up": {
+          "1w": 0.45,
+          "3m": 0.46,
+          "1y": 0.51
+        },
+        "uncertainty": "medium-high",
+        "invalidation": "material easing in rates/credit spreads"
+      },
+      "related_markets": {
+        "evidence": "AI infrastructure demand remains structurally strong, but APLD peers also sold off today, indicating sector-level risk-off pressure.",
+        "p_up": {
+          "1w": 0.48,
+          "3m": 0.56,
+          "1y": 0.62
+        },
+        "uncertainty": "medium-high",
+        "invalidation": "AI infrastructure demand/capex cycle deteriorates"
+      }
+    },
+    "bull": {
+      "summary": "Revenue/adjusted-EPS beat is extreme, adjusted EBITDA is scaling, and long-term contracted AI capacity can produce a large rerating if execution continues.",
+      "p_up": {
+        "1w": 0.68,
+        "3m": 0.73,
+        "1y": 0.76
+      }
+    },
+    "bear": {
+      "summary": "The headline beat masks huge GAAP losses, $6.4B debt, capital intensity, construction/execution risk and a stock that has not confirmed the earnings surprise.",
+      "p_up": {
+        "1w": 0.39,
+        "3m": 0.42,
+        "1y": 0.44
+      }
+    },
+    "challenger": {
+      "summary": "Reject the naive '322% growth + analyst upside = buy' argument. Revenue composition/consolidation makes consensus comparisons imperfect; leverage is enormous; analyst targets are widely dispersed; pre-event options and insider evidence are not bullish; sector tape is weak. With zero matured council outcomes, historical reliability weights remain neutral."
+    },
+    "final": {
+      "p_up": {
+        "1w": 0.57,
+        "3m": 0.62,
+        "1y": 0.65
+      },
+      "expected_return": {
+        "1w": 0.04,
+        "3m": 0.16,
+        "1y": 0.3
+      },
+      "forecast_range": {
+        "1w": [
+          -0.15,
+          0.22
+        ],
+        "3m": [
+          -0.3,
+          0.5
+        ],
+        "1y": [
+          -0.45,
+          0.95
+        ]
+      },
+      "action": "WATCH_NOT_BUY_NOW",
+      "confidence": "moderate-low",
+      "reason": "Fundamental beat is exceptional but leverage, GAAP losses and weak price confirmation materially reduce actionable conviction. Wait for post-earnings price/volume confirmation."
+    },
+    "outcomes": {}
   }
 ]
