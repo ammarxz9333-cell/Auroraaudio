@@ -1,0 +1,504 @@
+{
+  "sources": [
+    {
+      "name": "U.S. Department of Defense contracts",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 5,
+      "query": "site:defense.gov/News/Contracts/ (contract OR award) when:1d",
+      "id": "feed-0",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "FDA news and regulatory signals",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 5,
+      "query": "site:fda.gov (approval OR PDUFA OR advisory OR clinical OR recall OR safety OR drug OR device) when:1d",
+      "id": "feed-1",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "USAspending public award coverage",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 4,
+      "query": "site:usaspending.gov (award OR contract OR recipient) when:1d",
+      "id": "feed-2",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "SAM.gov public procurement coverage",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 4,
+      "query": "site:sam.gov (award OR solicitation OR contract OR procurement) when:1d",
+      "id": "feed-3",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "FERC public filings and releases",
+      "type": "google_news",
+      "class": "primary",
+      "weight": 4,
+      "query": "site:ferc.gov (order OR filing OR interconnection OR data center OR power) when:1d",
+      "id": "feed-4",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "ICIJ",
+      "type": "rss",
+      "class": "investigative",
+      "weight": 4,
+      "url": "https://www.icij.org/feed/",
+      "id": "feed-5",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "OCCRP",
+      "type": "google_news",
+      "class": "investigative",
+      "weight": 4,
+      "query": "site:occrp.org company OR corporation OR bank OR investor OR deal OR investigation when:2d",
+      "id": "feed-6",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Reuters M&A / transactional",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 5,
+      "query": "site:reuters.com (exclusive OR acquisition OR merger OR takeover OR deal OR sources say OR people familiar) when:1d",
+      "id": "feed-7",
+      "public": true,
+      "confidence": 75,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Bloomberg Deals / Scoops",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 5,
+      "query": "site:bloomberg.com (deal OR acquisition OR merger OR takeover OR exclusive OR people familiar) when:1d",
+      "id": "feed-8",
+      "public": true,
+      "confidence": 75,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "The Information",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 4,
+      "query": "site:theinformation.com (exclusive OR deal OR acquisition OR partnership OR supplier OR AI OR data center) when:2d",
+      "id": "feed-9",
+      "public": true,
+      "confidence": 75,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Financial Times Alphaville / M&A",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 4,
+      "query": "site:ft.com (Alphaville OR merger OR acquisition OR takeover OR M&A OR deal) when:1d",
+      "id": "feed-10",
+      "public": true,
+      "confidence": 75,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Semafor Business",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 4,
+      "query": "site:semafor.com business (exclusive OR scoop OR deal OR acquisition OR financing OR AI) when:2d",
+      "id": "feed-11",
+      "public": true,
+      "confidence": 75,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Breaking Defense",
+      "type": "google_news",
+      "class": "scoop",
+      "weight": 4,
+      "query": "site:breakingdefense.com (exclusive OR contract OR award OR drone OR autonomous OR Pentagon) when:2d",
+      "id": "feed-12",
+      "public": true,
+      "confidence": 75,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Utility Dive",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 3,
+      "query": "site:utilitydive.com (data center OR hyperscaler OR power OR contract OR interconnection) when:2d",
+      "id": "feed-13",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Data Center Dynamics",
+      "type": "google_news",
+      "class": "industry",
+      "weight": 3,
+      "query": "site:datacenterdynamics.com (hyperscaler OR contract OR power OR campus OR AI) when:2d",
+      "id": "feed-14",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Muddy Waters / short-seller research",
+      "type": "google_news",
+      "class": "investigative",
+      "weight": 4,
+      "query": "(site:muddywatersresearch.com OR \"Muddy Waters\") (report OR short OR fraud OR company) when:2d",
+      "id": "feed-15",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Ming-Chi Kuo",
+      "type": "google_news",
+      "class": "leaker",
+      "weight": 4,
+      "query": "\"Ming-Chi Kuo\" (Apple OR Nvidia OR supplier OR shipment OR forecast OR chip OR headset) when:2d",
+      "id": "feed-16",
+      "public": true,
+      "confidence": 60,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Reddit WallStreetBets new",
+      "type": "rss",
+      "class": "social",
+      "weight": 1,
+      "url": "https://www.reddit.com/r/wallstreetbets/new/.rss",
+      "id": "feed-17",
+      "public": true,
+      "confidence": 30,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Reddit Stocks new",
+      "type": "rss",
+      "class": "social",
+      "weight": 1,
+      "url": "https://www.reddit.com/r/stocks/new/.rss",
+      "fallback_query": "site:reddit.com/r/stocks (DD OR catalyst OR earnings OR acquisition OR FDA OR contract) when:1d",
+      "id": "feed-18",
+      "public": true,
+      "confidence": 30,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Reddit ShortSqueeze new",
+      "type": "rss",
+      "class": "social",
+      "weight": 1,
+      "url": "https://www.reddit.com/r/Shortsqueeze/new/.rss",
+      "fallback_query": "site:reddit.com/r/Shortsqueeze (short OR squeeze OR catalyst OR float) when:1d",
+      "id": "feed-19",
+      "public": true,
+      "confidence": 30,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Reddit Biotechplays new",
+      "type": "rss",
+      "class": "social",
+      "weight": 2,
+      "url": "https://www.reddit.com/r/Biotechplays/new/.rss",
+      "fallback_query": "site:reddit.com/r/Biotechplays (FDA OR PDUFA OR phase OR trial OR catalyst) when:1d",
+      "id": "feed-20",
+      "public": true,
+      "confidence": 30,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "name": "Reddit pennystocks new",
+      "type": "rss",
+      "class": "social",
+      "weight": 1,
+      "url": "https://www.reddit.com/r/pennystocks/new/.rss",
+      "fallback_query": "site:reddit.com/r/pennystocks (catalyst OR contract OR FDA OR acquisition OR offering) when:1d",
+      "id": "feed-21",
+      "public": true,
+      "confidence": 30,
+      "official": false,
+      "interval_seconds": 30
+    },
+    {
+      "official": true,
+      "public": true,
+      "confidence": 95,
+      "url": "https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&count=100&output=atom",
+      "interval_seconds": 15,
+      "id": "sec-current",
+      "type": "rss"
+    },
+    {
+      "confidence": 95,
+      "official": true,
+      "origin_group": "penguin",
+      "public": true,
+      "interval_seconds": 15,
+      "type": "rss",
+      "id": "penguin-ir",
+      "url": "https://ir.penguinsolutions.com/rss/news-releases.xml",
+      "enabled": false,
+      "allow_push": true,
+      "note": "RSS endpoint unverified/access blocked in live probe; enable only after verification"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:telegram",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:reddit",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": false,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:discord",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:bluesky",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:mastodon",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:hackernews",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:rss",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:googlenews",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:gdelt",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:github",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:sec-edgar",
+      "type": "bridge"
+    },
+    {
+      "official": false,
+      "public": true,
+      "confidence": 35,
+      "allow_push": true,
+      "id": "ri:x",
+      "type": "bridge"
+    },
+    {
+      "query": "\"Penguin Solutions\" (earnings OR outlook OR AI OR guidance) when:1d",
+      "official": false,
+      "id": "penguin-google-public",
+      "type": "google_news",
+      "confidence": 60,
+      "public": true,
+      "interval_seconds": 30
+    }
+  ],
+  "universe": {
+    "CRWV": [
+      "CoreWeave"
+    ],
+    "AESI": [
+      "Atlas Energy Solutions",
+      "Atlas Energy"
+    ],
+    "NRGV": [
+      "Energy Vault"
+    ],
+    "CRMD": [
+      "CorMedix"
+    ],
+    "OUST": [
+      "Ouster"
+    ],
+    "RR": [
+      "Richtech Robotics",
+      "Richtech"
+    ],
+    "ASTS": [
+      "AST SpaceMobile",
+      "AST Space Mobile"
+    ],
+    "RKLB": [
+      "Rocket Lab"
+    ],
+    "AEHR": [
+      "Aehr Test Systems",
+      "Aehr"
+    ],
+    "ONDS": [
+      "Ondas"
+    ],
+    "IRD": [
+      "Opus Genetics"
+    ],
+    "INO": [
+      "Inovio"
+    ],
+    "UMAC": [
+      "Unusual Machines"
+    ],
+    "KOPN": [
+      "Kopin"
+    ],
+    "LCTX": [
+      "Lineage Cell Therapeutics"
+    ],
+    "NBIS": [
+      "Nebius"
+    ],
+    "GLND": [
+      "Greenland Energy Company",
+      "Greenland Energy"
+    ],
+    "ALM": [
+      "Almonty Industries",
+      "Almonty"
+    ],
+    "MIRM": [
+      "Mirum Pharmaceuticals",
+      "Mirum"
+    ],
+    "NBTX": [
+      "Nanobiotix"
+    ],
+    "SRRK": [
+      "Scholar Rock"
+    ],
+    "LASE": [
+      "Laser Photonics"
+    ],
+    "FLNC": [
+      "Fluence Energy"
+    ],
+    "LUNR": [
+      "Intuitive Machines"
+    ],
+    "JOBY": [
+      "Joby Aviation"
+    ],
+    "ACHR": [
+      "Archer Aviation"
+    ],
+    "QBTS": [
+      "D-Wave Quantum",
+      "D Wave Quantum"
+    ],
+    "RGTI": [
+      "Rigetti Computing",
+      "Rigetti"
+    ],
+    "IONQ": [
+      "IonQ"
+    ],
+    "SOUN": [
+      "SoundHound AI",
+      "SoundHound"
+    ],
+    "PENG": [
+      "Penguin Solutions"
+    ]
+  }
+}

@@ -6,6 +6,17 @@
 
 Last updated: **2026-09-17**
 
+### Market Radar continuous service (2026-10-07)
+
+- Existing `market-radar-live`/PR #229 now includes `market-radar/continuous/`:
+  async public RSS/Atom listeners, external read-only Radar Intelligence mentions bridge,
+  Alpaca streaming minute bars/quotes, prior-session RVOL, persistent correlation and
+  Telegram outbox. Run with `market-radar/compose.yml`; see continuous/README.md.
+- Synthetic early/late contracts and local HTTP delivery retry are separate from
+  real PENG regular-session late rejection. Full historical first-public/after-hours
+  acceptance and live VPS/Telegram delivery are incomplete without data/credentials.
+- No audio architecture is changed. No private OSINT access or stolen dumps are used.
+
 ### Binaural software continuation
 
 - #212 prepared FIR core, #213 bounded pose timeline, #214 zero-allocation proof and

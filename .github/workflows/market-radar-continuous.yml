@@ -1,0 +1,24 @@
+name: Market Radar Continuous Tests
+on:
+  push:
+    paths: ["market-radar/continuous/**", "market-radar/compose.yml", ".github/workflows/market-radar-continuous.yml"]
+  pull_request:
+    paths: ["market-radar/continuous/**", "market-radar/compose.yml", ".github/workflows/market-radar-continuous.yml"]
+permissions:
+  contents: read
+jobs:
+  continuous:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - run: pip install -r market-radar/continuous/requirements.txt
+      - working-directory: market-radar
+        run: |
+          python -m unittest continuous.test_core continuous.test_service -v
+          python -m continuous.peng_acceptance
+          cp .env.example .env
+          docker compose config --quiet
+          docker compose build

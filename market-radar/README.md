@@ -1,5 +1,8 @@
 # Market Radar
 
+For the persistent VPS service, Docker Compose, streaming price/volume correlation,
+Telegram outbox and explicit PENG acceptance evidence, see [continuous/README.md](continuous/README.md).
+
 A free first-public-source market monitor that runs every 5 minutes on GitHub Actions and opens a GitHub Issue when a new public item scores as potentially market-moving.
 
 ## What it watches

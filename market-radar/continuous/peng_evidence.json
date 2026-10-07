@@ -1,0 +1,77 @@
+{
+  "provider": "TickerLayer connector",
+  "symbol": "US:PENG",
+  "queried_dates": [
+    "2026-10-06",
+    "2026-10-07"
+  ],
+  "bars": 555,
+  "days": {
+    "2026-10-06": {
+      "count": 390,
+      "first": {
+        "o": 61.6,
+        "h": 61.76,
+        "l": 60.865,
+        "c": 60.95,
+        "v": 51733,
+        "t": 1791293400000
+      },
+      "last": {
+        "o": 64.255,
+        "h": 64.58,
+        "l": 64.14,
+        "c": 64.355,
+        "v": 307810,
+        "t": 1791316740000
+      }
+    },
+    "2026-10-07": {
+      "count": 165,
+      "first": {
+        "o": 67.3,
+        "h": 69.2,
+        "l": 65.7,
+        "c": 66,
+        "v": 428716,
+        "t": 1791379800000
+      },
+      "last": {
+        "o": 74.01,
+        "h": 74.11,
+        "l": 73.8101,
+        "c": 73.885,
+        "v": 25854,
+        "t": 1791389640000
+      }
+    }
+  },
+  "historical_acceptance": "BLOCKED: provided bars omit postmarket source window on October 6; historical bid/ask and same-minute volume baseline not yet supplied",
+  "publication_time": "2026-10-06T20:05:00Z is secondary-source timestamp, not first-public proof",
+  "regular_session_open_sample": [
+    {
+      "o": 67.3,
+      "h": 69.2,
+      "l": 65.7,
+      "c": 66,
+      "v": 428716,
+      "t": 1791379800000
+    },
+    {
+      "o": 66.965,
+      "h": 71.45,
+      "l": 66.44,
+      "c": 71.45,
+      "v": 390074,
+      "t": 1791379860000
+    },
+    {
+      "o": 71.32,
+      "h": 74.9499,
+      "l": 71.11,
+      "c": 73.74,
+      "v": 667812,
+      "t": 1791379920000
+    }
+  ]
+}
