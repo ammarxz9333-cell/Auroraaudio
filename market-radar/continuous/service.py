@@ -48,7 +48,7 @@ class Service:
             limit = min(25, max(1, int(request.query.get('limit', '12'))))
         except ValueError:
             raise web.HTTPBadRequest()
-        news_symbols = {r[0] for r in self.engine.db.execute('SELECT DISTINCT ticker FROM events')}
+        news_symbols = {r[0] for r in self.engine.db.execute('SELECT DISTINCT ticker FROM events WHERE published>=?',(time.time()-86400,))}
         symbols = [s for s,names in self.engine.universe.items() if not query or query in s.lower() or any(query in n.lower() for n in names)]
         if request.query.get('news') == '1':
             symbols = [s for s in symbols if s in news_symbols]
@@ -65,7 +65,7 @@ class Service:
             if cached and time.time() - cached['fetched_at'] < 60:
                 return web.json_response(cached)
             async with self.public_requests:
-                existing = self.engine.db.execute('SELECT payload FROM events WHERE ticker=? ORDER BY published DESC LIMIT 1',(symbol,)).fetchone()
+                existing = self.engine.db.execute('SELECT payload FROM events WHERE ticker=? AND published>=? ORDER BY published DESC LIMIT 1',(symbol,time.time()-86400)).fetchone()
                 if not existing:
                     policy = {'id':'public-company-news','type':'google_news','public':True,'confidence':55,'official':False}
                     query = '"' + self.engine.universe[symbol][-1] + '" stock'
@@ -89,7 +89,8 @@ class Service:
                 snapshot = await asyncio.to_thread(yahoo_market_snapshot, symbol)
                 self.engine.evaluate(symbol,time.time())
                 latest = self.engine.db.execute("SELECT payload FROM outbox WHERE json_extract(payload,'$.ticker')=? ORDER BY rowid DESC LIMIT 1",(symbol,)).fetchone()
-                rating = classify(news,snapshot,json.loads(latest[0]) if latest else None,time.time())
+                recent_news = [json.loads(r[0]) for r in self.engine.db.execute('SELECT payload FROM events WHERE ticker=? AND published BETWEEN ? AND ?',(symbol,time.time()-86400,time.time()))]
+                rating = classify(recent_news,snapshot,json.loads(latest[0]) if latest else None,time.time())
                 payload = {'ticker':symbol,'name':self.engine.universe[symbol][-1], 'news':news,
                     'rating':rating,
                     'snapshot':snapshot,'fetched_at':time.time(), 'price_source':'Yahoo Finance public 5-minute snapshot; not authenticated real-time tape',

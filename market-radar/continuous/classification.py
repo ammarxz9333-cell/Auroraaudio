@@ -24,7 +24,7 @@ def classify(news, snapshot, alert, now):
     day_move = snapshot.get('change_pct')
     label = 'DEVELOPING'
     buyable = False
-    if risk or alert.get('classification') == 'AVOID':
+    if risk or (fresh and alert.get('classification') == 'AVOID'):
         label = 'AVOID'
         reasons.append('رُصد خبر سلبي أو تمويل قد يخفّف ملكية المساهمين؛ يلزم فحص المصدر.')
     elif (fresh and alert.get('classification') == 'LATE') or (move is not None and move >= 8):
