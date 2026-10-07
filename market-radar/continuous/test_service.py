@@ -96,6 +96,10 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
         report=analyze(stock,{},time.time())
         self.assertIn('انتظار',report['advice'])
         self.assertIn('السعر غير متاح أو قديم',report['missing'])
+        stock['news']=[{'published_at':utc(time.time()-90000),'official':True}]
+        report=analyze(stock,{},time.time())
+        self.assertEqual(report['catalyst']['headlines'],[])
+        self.assertIn('24',report['catalyst']['assessment'])
 
     async def test_nomination_price_is_fixed_and_ranking_never_enables_buy(self):
         from continuous.early import rank

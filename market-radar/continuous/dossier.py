@@ -3,7 +3,13 @@ from continuous.core import utc, timestamp
 
 
 def analyze(stock, financials, now):
-    snapshot=stock.get('snapshot') or {}; rating=stock['rating']; news=stock['news']
+    snapshot=stock.get('snapshot') or {}; rating=stock['rating']; news=[]
+    for item in stock['news']:
+        try:
+            if 0<=now-timestamp(item['published_at'])<=86400:
+                news.append(item)
+        except (KeyError,TypeError,ValueError,AttributeError):
+            continue
     missing=['النقد والديون والتدفق النقدي غير متاحة','مراجعة ملفات SEC والتخفيف غير مكتملة','مقارنة التقييم بشركات القطاع غير مكتملة']
     try:
         fresh=0<=now-timestamp(snapshot['bar_time_utc'])<=120
@@ -39,7 +45,7 @@ def analyze(stock, financials, now):
     return dict(ticker=stock['ticker'],name=stock['name'],analyzed_at=utc(now),advice=advice,reason=reason,
         completeness='تحليل بالبيانات المتاحة — مراجعة مالية وSEC ناقصة',
         price=snapshot.get('price'),price_asof=snapshot.get('bar_time_utc'),
-        catalyst={'headlines':news,'assessment':'مصدر رسمي مرصود' if any(n.get('official') for n in news) else 'العناوين تحتاج تأكيدًا من المصدر الأصلي؛ ليست proof لمفاجأة أرباح أو لقيمة العقد'},
+        catalyst={'headlines':news,'assessment':'لا يوجد خبر مطابق خلال آخر 24 ساعة.' if not news else 'مصدر رسمي مرصود' if any(n.get('official') for n in news) else 'العناوين تحتاج تأكيدًا من المصدر الأصلي؛ لا تثبت مفاجأة أرباح أو قيمة العقد'},
         technical={'observations':technical,'change_pct':snapshot.get('change_pct'),'change_5m_pct':snapshot.get('change_5m_pct'),'change_15m_pct':snapshot.get('change_15m_pct'),'vwap':snapshot.get('vwap'),'session_high':snapshot.get('session_high'),'session_low':snapshot.get('session_low')},
         valuation={'metrics':financials,'interpretation':valuation,'source':'Yahoo public screener, provider-reported multiples and EPS'},
         scenarios={'positive':'تأكيد المحفّز من الشركة مع تسارع حجم موثوق واختراق يتماسك فوق VWAP.','negative':'فشل استعادة VWAP أو كسر مستوى الإلغاء أو ظهور تمويل/خبر ينفي المحفّز.','entry':rating.get('trigger'),'invalidation':rating.get('invalidation'),'target':None,'risk_reward':None},
