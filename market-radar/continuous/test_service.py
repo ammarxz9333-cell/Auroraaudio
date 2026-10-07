@@ -81,6 +81,27 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
         response=await self.client.get('/health')
         self.assertFalse((await response.json())['ready'])
 
+    async def test_nomination_price_is_fixed_and_ranking_never_enables_buy(self):
+        from continuous.early import rank
+        now=time.time()
+        quote={'regularMarketPrice':65,'regularMarketChangePercent':3,'regularMarketTime':now,'regularMarketVolume':200000}
+        item={'ticker':'PENG','name':'Penguin','trend_reasons':['الأكثر تداولًا','الأكثر ارتفاعًا'],'quote':quote}
+        async def stop(seconds):self.s.stopping.set()
+        for price in (65,66):
+            item=dict(item,quote=dict(quote,regularMarketPrice=price))
+            self.s.stopping.clear()
+            with patch('continuous.service.discover',return_value=([item],{}, {'active':1})),patch.object(self.s,'pause',stop):
+                await self.s.trend_monitor()
+        row=self.s.engine.db.execute('SELECT * FROM candidate_journal').fetchone()
+        self.assertEqual(row['price'],65)
+        self.assertEqual(row['last_price'],66)
+        data=json.loads((await self.s.trends(None)).text)['data'][0]
+        result=rank(data,time.time())
+        self.assertFalse(result['buyable'])
+        self.assertIn('غير مؤكد',result['label'])
+        data['snapshot']['bar_time_utc']=utc(now-1000)
+        self.assertIsNone(rank(data,time.time()))
+
     async def test_trend_discovery_dedupes_and_failure_preserves_stale_list(self):
         from continuous.trending import normalize
         results={'بحث رائج':[{'symbol':'PENG'},{'symbol':'BTC-USD'}],

@@ -20,6 +20,7 @@ from aiohttp import web
 from continuous.core import Engine, format_alert, timestamp, utc
 from continuous.classification import classify
 from continuous.trending import discover
+from continuous.early import rank
 from radar import parse_feed, google_news_url, yahoo_market_snapshot
 
 LOG = logging.getLogger('radar')
@@ -50,15 +51,32 @@ class Service:
         self.public_requests = asyncio.Semaphore(2)
         self.engine.db.execute('CREATE TABLE IF NOT EXISTS public_scan(ticker TEXT PRIMARY KEY, attempted REAL, payload TEXT)')
         self.engine.db.execute('CREATE TABLE IF NOT EXISTS trends(ticker TEXT PRIMARY KEY, observed REAL, payload TEXT)')
+        self.engine.db.execute('CREATE TABLE IF NOT EXISTS candidate_journal(ticker TEXT,day TEXT,detected REAL,price REAL,payload TEXT,last_price REAL,last_observed REAL,return_pct REAL,PRIMARY KEY(ticker,day))')
 
     async def trend_monitor(self):
         while not self.stopping.is_set():
             data,errors,counts=await asyncio.to_thread(discover,self.engine.universe)
             now=time.time()
             if counts:
+                previous={r['ticker']:(r['observed'],json.loads(r['payload'])) for r in self.engine.db.execute('SELECT * FROM trends')}
+                for item in data:
+                    old=previous.get(item['ticker'])
+                    quote=item['quote']; prior=old[1]['quote'] if old else {}
+                    if old and 30<=now-old[0]<=180 and quote.get('regularMarketTime',0)>prior.get('regularMarketTime',0) and prior.get('regularMarketPrice',0)>0 and quote.get('regularMarketPrice',0)>0:
+                        item['momentum_pct']=(quote['regularMarketPrice']/prior['regularMarketPrice']-1)*100
                 with self.engine.db:
                     self.engine.db.execute('DELETE FROM trends')
                     self.engine.db.executemany('INSERT INTO trends VALUES(?,?,?)',[(d['ticker'],now,json.dumps(d)) for d in data])
+                current=json.loads((await self.trends(None)).text)['data']
+                day=datetime.now(NY).date().isoformat()
+                with self.engine.db:
+                    for item in current:
+                        candidate=rank(item,now)
+                        if candidate:
+                            self.engine.db.execute('INSERT OR IGNORE INTO candidate_journal(ticker,day,detected,price,payload) VALUES(?,?,?,?,?)',(item['ticker'],day,now,candidate['price'],json.dumps(candidate)))
+                        snap=item['snapshot']
+                        if snap.get('price') and snap.get('bar_time_utc') and 0<=now-timestamp(snap['bar_time_utc'])<=120:
+                            self.engine.db.execute('UPDATE candidate_journal SET last_price=?,last_observed=?,return_pct=(?/price-1)*100 WHERE ticker=? AND day=? AND ? > detected',(snap['price'],now,snap['price'],item['ticker'],day,now))
             self.status['trends']={'last_attempt':now,'matched_symbols':len(data),'provider_counts':counts,'errors':errors,'refresh_seconds':60,'scope':'public bounded US trending, actives, gainers lists; not whole-market realtime'}
             await self.pause(60)
 
@@ -78,6 +96,16 @@ class Service:
             output.append(data)
         output.sort(key=lambda d:(d['trend_stale'],d['snapshot']['price'] is None,-len(d['trend_reasons']),-(d['snapshot']['change_pct'] or 0)))
         return web.json_response({'data':output,'total':len(output),'status':self.status.get('trends',{}),'coverage':'جميع الرموز المطابقة لدليلنا في قوائم الترند العامة المتاحة؛ ليست كل أسهم السوق'})
+
+    async def early_candidates(self,request):
+        trends=json.loads((await self.trends(None)).text); data=[]
+        for item in trends['data']:
+            candidate=rank(item,time.time())
+            if candidate:
+                item['early']=candidate; data.append(item)
+        data.sort(key=lambda d:-d['early']['score'])
+        journal=[dict(r) for r in self.engine.db.execute('SELECT ticker,detected,price,last_price,last_observed,return_pct FROM candidate_journal ORDER BY detected DESC LIMIT 50')]
+        return web.json_response({'data':data,'total':len(data),'journal':journal,'limitation':'ترتيب استكشافي؛ العائد المرصود ليس اختبار نجاح ولا يشمل تكلفة التداول أو الحركة بين اللقطات'})
 
     async def market_sweep(self):
         """Slow public full-directory sweep; never claim realtime coverage."""
@@ -464,7 +492,7 @@ class Service:
 
     async def run(self):
         app = web.Application(client_max_size=128*1024)
-        app.add_routes([web.get('/', self.dashboard),web.get('/trends',self.trends),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
+        app.add_routes([web.get('/', self.dashboard),web.get('/early',self.early_candidates),web.get('/trends',self.trends),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, os.getenv('RADAR_BIND', '127.0.0.1'), int(os.getenv('RADAR_PORT', '8787'))).start()
