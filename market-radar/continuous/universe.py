@@ -19,7 +19,12 @@ def parse_directory(text):
         if not re.fullmatch(r'[A-Z][A-Z0-9.\-$]{0,9}', symbol):
             continue
         company = re.split(r'\s+-\s+|\s+(?:Class [A-Z] |Common Stock|Ordinary Shares|American Depositary|Warrants|Units|Preferred)', name, maxsplit=1)[0].strip()
-        result[symbol] = list(dict.fromkeys([name, company]))
+        # Short one-word names (e.g. Bullish) also occur as ordinary headline words.
+        # Keep the formal security name and require a cashtag/exchange for those.
+        aliases = [name]
+        if len(company.split()) >= 2 or len(company) > 8:
+            aliases.append(company)
+        result[symbol] = list(dict.fromkeys(aliases))
     return result
 
 
