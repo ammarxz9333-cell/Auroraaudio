@@ -81,6 +81,22 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
         response=await self.client.get('/health')
         self.assertFalse((await response.json())['ready'])
 
+    async def test_analysis_missing_evidence_and_late_advice(self):
+        from continuous.dossier import analyze
+        stock={'ticker':'PENG','name':'Penguin','snapshot':{'price':74,'bar_time_utc':utc(time.time())},'news':[],
+               'rating':{'classification':'LATE','buyable':False,'reasons':['chase']}}
+        report=analyze(stock,{'epsTrailingTwelveMonths':-2},time.time())
+        self.assertIn('لا تطارد',report['advice'])
+        self.assertIsNone(report['scenarios']['target'])
+        self.assertIsNone(report['scenarios']['risk_reward'])
+        self.assertTrue(any('SEC' in item for item in report['missing']))
+        self.assertIn('سالبة',report['valuation']['interpretation'][0])
+        stock['rating']['classification']='DEVELOPING'
+        stock['snapshot']['bar_time_utc']=None
+        report=analyze(stock,{},time.time())
+        self.assertIn('انتظار',report['advice'])
+        self.assertIn('السعر غير متاح أو قديم',report['missing'])
+
     async def test_nomination_price_is_fixed_and_ranking_never_enables_buy(self):
         from continuous.early import rank
         now=time.time()

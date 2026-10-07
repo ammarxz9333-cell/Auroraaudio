@@ -18,7 +18,7 @@ def normalize(results, universe):
                 continue
             item=data.setdefault(symbol,{'ticker':symbol,'name':universe[symbol][-1],'trend_reasons':[],'quote':{}})
             item['trend_reasons'].append(reason)
-            for key in ('regularMarketPrice','regularMarketChangePercent','regularMarketVolume','regularMarketTime','averageDailyVolume3Month'):
+            for key in ('regularMarketPrice','regularMarketChangePercent','regularMarketVolume','regularMarketTime','averageDailyVolume3Month','marketCap','trailingPE','forwardPE','epsTrailingTwelveMonths','priceToBook','fiftyTwoWeekHigh','fiftyTwoWeekLow'):
                 value=quote.get(key)
                 if isinstance(value,dict):
                     value=value.get('raw')

@@ -21,6 +21,7 @@ from continuous.core import Engine, format_alert, timestamp, utc
 from continuous.classification import classify
 from continuous.trending import discover
 from continuous.early import rank
+from continuous.dossier import analyze
 from radar import parse_feed, google_news_url, yahoo_market_snapshot
 
 LOG = logging.getLogger('radar')
@@ -52,6 +53,33 @@ class Service:
         self.engine.db.execute('CREATE TABLE IF NOT EXISTS public_scan(ticker TEXT PRIMARY KEY, attempted REAL, payload TEXT)')
         self.engine.db.execute('CREATE TABLE IF NOT EXISTS trends(ticker TEXT PRIMARY KEY, observed REAL, payload TEXT)')
         self.engine.db.execute('CREATE TABLE IF NOT EXISTS candidate_journal(ticker TEXT,day TEXT,detected REAL,price REAL,payload TEXT,last_price REAL,last_observed REAL,return_pct REAL,PRIMARY KEY(ticker,day))')
+        self.engine.db.execute('CREATE TABLE IF NOT EXISTS analyses(ticker TEXT PRIMARY KEY,updated REAL,payload TEXT)')
+
+    async def deep_analysis(self,request):
+        symbol=request.match_info['ticker'].upper()
+        stock=json.loads((await self.stock_details(SimpleNamespace(match_info={'ticker':symbol}))).text)
+        trend=self.engine.db.execute('SELECT payload FROM trends WHERE ticker=?',(symbol,)).fetchone()
+        quote=json.loads(trend[0])['quote'] if trend else {}
+        keys=('marketCap','trailingPE','forwardPE','epsTrailingTwelveMonths','priceToBook','fiftyTwoWeekHigh','fiftyTwoWeekLow')
+        report=analyze(stock,{k:quote[k] for k in keys if k in quote},time.time())
+        with self.engine.db:
+            self.engine.db.execute('INSERT OR REPLACE INTO analyses VALUES(?,?,?)',(symbol,time.time(),json.dumps(report)))
+        return web.json_response(report)
+
+    async def analysis_monitor(self):
+        while not self.stopping.is_set():
+            candidates=json.loads((await self.early_candidates(None)).text)['data']
+            prior={r[0]:r[1] for r in self.engine.db.execute('SELECT ticker,updated FROM analyses')}
+            candidates.sort(key=lambda d:(d['ticker'] in prior,prior.get(d['ticker'],0),-d['early']['score']))
+            if candidates:
+                symbol=candidates[0]['ticker']
+                if time.time()-prior.get(symbol,0)>300:
+                    try:
+                        await self.deep_analysis(SimpleNamespace(match_info={'ticker':symbol}))
+                        self.status['analysis']={'last_symbol':symbol,'last_ok':time.time(),'candidate_count':len(candidates),'mode':'automatic available-data analysis; missing SEC/financial evidence disclosed'}
+                    except Exception as exc:
+                        self.status['analysis']={'error':type(exc).__name__,'last_symbol':symbol}
+            await self.pause(3)
 
     async def trend_monitor(self):
         while not self.stopping.is_set():
@@ -105,6 +133,9 @@ class Service:
                 item['early']=candidate; data.append(item)
         data.sort(key=lambda d:-d['early']['score'])
         journal=[dict(r) for r in self.engine.db.execute('SELECT ticker,detected,price,last_price,last_observed,return_pct FROM candidate_journal ORDER BY detected DESC LIMIT 50')]
+        reports={r['ticker']:{'updated_at':utc(r['updated']),'report':json.loads(r['payload'])} for r in self.engine.db.execute('SELECT * FROM analyses')}
+        for item in data:
+            item['analysis']=reports.get(item['ticker'])
         return web.json_response({'data':data,'total':len(data),'journal':journal,'limitation':'ترتيب استكشافي؛ العائد المرصود ليس اختبار نجاح ولا يشمل تكلفة التداول أو الحركة بين اللقطات'})
 
     async def market_sweep(self):
@@ -492,7 +523,7 @@ class Service:
 
     async def run(self):
         app = web.Application(client_max_size=128*1024)
-        app.add_routes([web.get('/', self.dashboard),web.get('/early',self.early_candidates),web.get('/trends',self.trends),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
+        app.add_routes([web.get('/', self.dashboard),web.get('/analysis/{ticker}',self.deep_analysis),web.get('/early',self.early_candidates),web.get('/trends',self.trends),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, os.getenv('RADAR_BIND', '127.0.0.1'), int(os.getenv('RADAR_PORT', '8787'))).start()
@@ -510,7 +541,7 @@ class Service:
                 except Exception as exc:
                     raise RuntimeError('Full universe requested but directory unavailable') from exc
             self.engine.universe.setdefault('SPY',['SPDR S&P 500 ETF Trust'])
-            tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain()),asyncio.create_task(self.market_sweep()),asyncio.create_task(self.trend_monitor())]
+            tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain()),asyncio.create_task(self.market_sweep()),asyncio.create_task(self.trend_monitor()),asyncio.create_task(self.analysis_monitor())]
             tasks.extend(asyncio.create_task(self.poll(s)) for s in self.sources.values() if s.get('enabled',True) and s.get('type') in ('rss', 'google_news'))
             try:
                 await asyncio.gather(*tasks)
