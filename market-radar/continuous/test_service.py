@@ -34,6 +34,7 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
         app.router.add_get('/health',self.s.health)
         app.router.add_get('/stocks',self.s.stocks)
         app.router.add_get('/opportunities',self.s.opportunities)
+        app.router.add_get('/trends',self.s.trends)
         app.router.add_get('/stock/{ticker}',self.s.stock_details)
         self.client=TestClient(TestServer(app))
         await self.client.start_server()
@@ -79,6 +80,29 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_missing_tape_not_ready(self):
         response=await self.client.get('/health')
         self.assertFalse((await response.json())['ready'])
+
+    async def test_trend_discovery_dedupes_and_failure_preserves_stale_list(self):
+        from continuous.trending import normalize
+        results={'بحث رائج':[{'symbol':'PENG'},{'symbol':'BTC-USD'}],
+            'الأكثر ارتفاعًا':[{'symbol':'PENG','regularMarketPrice':{'raw':74},'regularMarketChangePercent':12}]}
+        data=normalize(results,self.s.engine.universe)
+        self.assertEqual(len(data),1)
+        self.assertEqual(len(data[0]['trend_reasons']),2)
+        async def stop(seconds):self.s.stopping.set()
+        with patch('continuous.service.discover',return_value=(data,{}, {'trending':2})),patch.object(self.s,'pause',stop):
+            await self.s.trend_monitor()
+        response=await (await self.client.get('/trends')).json()
+        self.assertEqual(response['total'],1)
+        self.assertEqual(response['data'][0]['rating']['classification'],'LATE')
+        self.assertFalse(response['data'][0]['rating']['buyable'])
+        self.s.stopping.clear()
+        with patch('continuous.service.discover',return_value=([],{'trending':'HTTPError'},{})),patch.object(self.s,'pause',stop):
+            await self.s.trend_monitor()
+        self.s.engine.db.execute('UPDATE trends SET observed=?',(time.time()-200,))
+        response=await (await self.client.get('/trends')).json()
+        self.assertEqual(response['total'],1)
+        self.assertTrue(response['data'][0]['trend_stale'])
+        self.assertFalse(response['data'][0]['rating']['buyable'])
 
     async def test_opportunities_require_fresh_price_and_reject_chasing(self):
         now=time.time()

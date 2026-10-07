@@ -19,6 +19,7 @@ from aiohttp import web
 
 from continuous.core import Engine, format_alert, timestamp, utc
 from continuous.classification import classify
+from continuous.trending import discover
 from radar import parse_feed, google_news_url, yahoo_market_snapshot
 
 LOG = logging.getLogger('radar')
@@ -48,6 +49,35 @@ class Service:
         self.stock_locks = {}
         self.public_requests = asyncio.Semaphore(2)
         self.engine.db.execute('CREATE TABLE IF NOT EXISTS public_scan(ticker TEXT PRIMARY KEY, attempted REAL, payload TEXT)')
+        self.engine.db.execute('CREATE TABLE IF NOT EXISTS trends(ticker TEXT PRIMARY KEY, observed REAL, payload TEXT)')
+
+    async def trend_monitor(self):
+        while not self.stopping.is_set():
+            data,errors,counts=await asyncio.to_thread(discover,self.engine.universe)
+            now=time.time()
+            if counts:
+                with self.engine.db:
+                    self.engine.db.execute('DELETE FROM trends')
+                    self.engine.db.executemany('INSERT INTO trends VALUES(?,?,?)',[(d['ticker'],now,json.dumps(d)) for d in data])
+            self.status['trends']={'last_attempt':now,'matched_symbols':len(data),'provider_counts':counts,'errors':errors,'refresh_seconds':60,'scope':'public bounded US trending, actives, gainers lists; not whole-market realtime'}
+            await self.pause(60)
+
+    async def trends(self,request):
+        now=time.time(); output=[]
+        for row in self.engine.db.execute('SELECT observed,payload FROM trends'):
+            data=json.loads(row['payload']); symbol=data['ticker']; quote=data.pop('quote')
+            news=[json.loads(r[0]) for r in self.engine.db.execute('SELECT payload FROM events WHERE ticker=? AND published BETWEEN ? AND ? ORDER BY published DESC LIMIT 5',(symbol,now-86400,now))]
+            alert=self.engine.db.execute("SELECT payload FROM outbox WHERE json_extract(payload,'$.ticker')=? ORDER BY rowid DESC LIMIT 1",(symbol,)).fetchone()
+            snapshot={'price':quote.get('regularMarketPrice'),'change_pct':quote.get('regularMarketChangePercent'),'cum_volume':quote.get('regularMarketVolume'),'bar_time_utc':utc(quote['regularMarketTime']) if quote.get('regularMarketTime') else None}
+            data.update(snapshot=snapshot,news=news,rating=classify(news,snapshot,json.loads(alert[0]) if alert else None,now),observed_at=utc(row['observed']),trend_stale=now-row['observed']>180)
+            if data['trend_stale']:
+                data['rating']['buyable']=False
+                data['rating']['decision']='بيانات الترند قديمة — أعد التحقق'
+            data['opportunity_kind']='شراء مشروط' if data['rating']['buyable'] else data['rating']['decision']
+            data['fetched_at']=row['observed']
+            output.append(data)
+        output.sort(key=lambda d:(d['trend_stale'],d['snapshot']['price'] is None,-len(d['trend_reasons']),-(d['snapshot']['change_pct'] or 0)))
+        return web.json_response({'data':output,'total':len(output),'status':self.status.get('trends',{}),'coverage':'جميع الرموز المطابقة لدليلنا في قوائم الترند العامة المتاحة؛ ليست كل أسهم السوق'})
 
     async def market_sweep(self):
         """Slow public full-directory sweep; never claim realtime coverage."""
@@ -434,7 +464,7 @@ class Service:
 
     async def run(self):
         app = web.Application(client_max_size=128*1024)
-        app.add_routes([web.get('/', self.dashboard),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
+        app.add_routes([web.get('/', self.dashboard),web.get('/trends',self.trends),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, os.getenv('RADAR_BIND', '127.0.0.1'), int(os.getenv('RADAR_PORT', '8787'))).start()
@@ -452,7 +482,7 @@ class Service:
                 except Exception as exc:
                     raise RuntimeError('Full universe requested but directory unavailable') from exc
             self.engine.universe.setdefault('SPY',['SPDR S&P 500 ETF Trust'])
-            tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain()),asyncio.create_task(self.market_sweep())]
+            tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain()),asyncio.create_task(self.market_sweep()),asyncio.create_task(self.trend_monitor())]
             tasks.extend(asyncio.create_task(self.poll(s)) for s in self.sources.values() if s.get('enabled',True) and s.get('type') in ('rss', 'google_news'))
             try:
                 await asyncio.gather(*tasks)

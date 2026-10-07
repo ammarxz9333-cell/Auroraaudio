@@ -297,3 +297,5 @@ Also run every domain-specific gate touched by the change. GenAVB adapter/contro
 - Default dashboard is now an opportunities shortlist: recent positive catalyst + fresh public snapshot, non-negative daily move and holds VWAP; excludes LATE/AVOID. Watch candidates are explicit, never authenticated entries without live gates. Enrichment caps 25 news candidates per request and reports unexamined count.
 
 - Opportunities now separates price-qualified candidates, catalyst watchlist awaiting price/data confirmation, and excluded LATE/AVOID. Watchlist inclusion does not weaken entry rules. Directory navigation exits opportunities mode.
+
+- Persistent trend_monitor discovers bounded Yahoo US trending/most-active/gainer lists every 60 seconds; dedupes and intersects the exchange directory. /trends and default Arabic trend tab expose all matched symbols, categories, snapshot prices and classification. It does not claim every trending stock worldwide or real-time tape; stale lists disable entries.
