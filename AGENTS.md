@@ -291,3 +291,4 @@ cargo test --workspace --all-features --locked
 ```
 
 Also run every domain-specific gate touched by the change. GenAVB adapter/control/runtime changes must run `GenAVB AAF Talker CI`; open pro-audio config/source-policy changes must run `Open Audio Stack CI`; ESP fanout/orchestration changes must run `ESP-AVB Endpoint Contract CI`; ESP physical validation-firmware changes must run `ESP-AVB P4 Firmware Build CI`. Tooling/simulation/reference/build gates must never be reported as physical, RF, synchronization, interoperability, acoustic or perceptual proof.
+`n- Background public_scan now sweeps all directory symbols at bounded concurrency and 2-second spacing; progress persists across restarts. It is slow public snapshot coverage, not realtime. Health separates directory size, attempts, successful snapshots and actual fresh streaming symbols.

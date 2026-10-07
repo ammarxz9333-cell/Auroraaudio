@@ -45,6 +45,23 @@ class Service:
         self.market_cache = {}
         self.stock_locks = {}
         self.public_requests = asyncio.Semaphore(2)
+        self.engine.db.execute('CREATE TABLE IF NOT EXISTS public_scan(ticker TEXT PRIMARY KEY, attempted REAL, payload TEXT)')
+
+    async def market_sweep(self):
+        """Slow public full-directory sweep; never claim realtime coverage."""
+        while not self.stopping.is_set():
+            # Oldest/unattempted first makes restart continue rather than start over.
+            prior = {r[0]:r[1] for r in self.engine.db.execute('SELECT ticker,attempted FROM public_scan')}
+            symbols = sorted(self.engine.universe,key=lambda s:prior.get(s,0))
+            for symbol in symbols:
+                if self.stopping.is_set():
+                    return
+                async with self.public_requests:
+                    snapshot = await asyncio.to_thread(yahoo_market_snapshot,symbol)
+                with self.engine.db:
+                    self.engine.db.execute('INSERT OR REPLACE INTO public_scan VALUES(?,?,?)',(symbol,time.time(),json.dumps(snapshot)))
+                self.status['public_scan']={'last_symbol':symbol,'last_attempt':time.time(),'mode':'slow public snapshots, not realtime'}
+                await self.pause(2)
 
     async def stocks(self, request):
         query = request.query.get('q', '').strip().lower()[:100]
@@ -91,7 +108,8 @@ class Service:
                 news = [json.loads(r['payload']) for r in rows]
                 # Headlines can concern unrelated catalysts. The oldest issuer headline
                 # must never become a fabricated price anchor for the current catalyst.
-                snapshot = await asyncio.to_thread(yahoo_market_snapshot, symbol)
+                scanned = self.engine.db.execute('SELECT attempted,payload FROM public_scan WHERE ticker=?',(symbol,)).fetchone()
+                snapshot = json.loads(scanned['payload']) if scanned and time.time()-scanned['attempted']<60 else await asyncio.to_thread(yahoo_market_snapshot, symbol)
                 self.engine.evaluate(symbol,time.time())
                 latest = self.engine.db.execute("SELECT payload FROM outbox WHERE json_extract(payload,'$.ticker')=? ORDER BY rowid DESC LIMIT 1",(symbol,)).fetchone()
                 recent_news = [json.loads(r[0]) for r in self.engine.db.execute('SELECT payload FROM events WHERE ticker=? AND published BETWEEN ? AND ?',(symbol,time.time()-86400,time.time()))]
@@ -121,7 +139,10 @@ class Service:
         now = time.time()
         pending = self.engine.db.execute('SELECT count(*) FROM outbox WHERE sent=0').fetchone()[0]
         tape_age = now - self.status.get('tape', {}).get('last_ok', 0)
+        scan = self.engine.db.execute("SELECT COUNT(*),SUM(CASE WHEN payload!='null' THEN 1 ELSE 0 END),SUM(CASE WHEN attempted>=? AND payload!='null' THEN 1 ELSE 0 END) FROM public_scan",(now-300,)).fetchone()
+        live_symbols = self.engine.db.execute('SELECT COUNT(DISTINCT ticker) FROM bars WHERE time>=?',(now-90,)).fetchone()[0]
         return web.json_response({'alive': True, 'ready': tape_age < 120 and bool(os.getenv('TELEGRAM_BOT_TOKEN')) and bool(os.getenv('TELEGRAM_CHAT_ID')),
+                                 'coverage':{'public_attempted':scan[0],'public_available':scan[1] or 0,'public_fetched_last_5m':scan[2] or 0,'live_tape_symbols':live_symbols,'full_market_realtime':False,'minimum_public_cycle_minutes':round(len(self.engine.universe)*2/60)},
                                  'tape_age_seconds': tape_age, 'outbox_pending': pending, 'universe_symbols':len(self.engine.universe), 'news_sources':len(self.sources), 'adapters': self.status})
 
     async def local_alerts(self, request):
@@ -381,7 +402,7 @@ class Service:
                 except Exception as exc:
                     raise RuntimeError('Full universe requested but directory unavailable') from exc
             self.engine.universe.setdefault('SPY',['SPDR S&P 500 ETF Trust'])
-            tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain())]
+            tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain()),asyncio.create_task(self.market_sweep())]
             tasks.extend(asyncio.create_task(self.poll(s)) for s in self.sources.values() if s.get('enabled',True) and s.get('type') in ('rss', 'google_news'))
             try:
                 await asyncio.gather(*tasks)

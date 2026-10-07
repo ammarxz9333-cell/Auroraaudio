@@ -211,3 +211,4 @@ These are uncalibrated rules, not success probabilities or evidence of a world-b
 system. Missing options/relative strength/SEC review are disclosed rather than invented.
 Snapshot data alone cannot authorize entry; streaming alerts older than 90 seconds
 cannot authorize entry through the dashboard. The dashboard shows reasons and provenance.
+`nThe background public sweep now visits every directory symbol, resumes oldest/unattempted symbols after restart, and stores results in SQLite public_scan. With 7,487 symbols and a two-second minimum spacing, one cycle takes at least 250 minutes plus request time. It does not meet sub-minute whole-market price detection. The dashboard reports attempted, available, recently fetched snapshots and actual streaming symbols separately.

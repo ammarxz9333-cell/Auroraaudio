@@ -79,6 +79,21 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
         response=await self.client.get('/health')
         self.assertFalse((await response.json())['ready'])
 
+    async def test_background_sweep_resumes_unattempted_symbols(self):
+        self.s.engine.universe['ZZZ']=['Example Company']
+        async def stop_after_one(seconds):
+            self.s.stopping.set()
+        with patch('continuous.service.yahoo_market_snapshot',return_value={'price':65}) as fetch, patch.object(self.s,'pause',stop_after_one):
+            await self.s.market_sweep()
+            self.s.stopping.clear()
+            await self.s.market_sweep()
+            self.assertEqual([c.args[0] for c in fetch.call_args_list],['PENG','ZZZ'])
+        coverage=(await (await self.client.get('/health')).json())['coverage']
+        self.assertEqual(coverage['public_attempted'],2)
+        self.assertEqual(coverage['public_available'],2)
+        self.assertEqual(coverage['live_tape_symbols'],0)
+        self.assertFalse(coverage['full_market_realtime'])
+
     async def test_directory_search_and_pagination(self):
         self.s.engine.universe.update({f'T{i}':[f'Issuer {i}'] for i in range(40)})
         response=await self.client.get('/stocks?limit=12&offset=12')
