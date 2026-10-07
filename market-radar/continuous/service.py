@@ -5,12 +5,14 @@ import json
 import logging
 import os
 import random
+import re
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from statistics import median
 from zoneinfo import ZoneInfo
+from types import SimpleNamespace
 
 import aiohttp
 from aiohttp import web
@@ -77,6 +79,39 @@ class Service:
         symbols.sort(key=lambda s: (s not in news_symbols, s not in ('PENG','AAPL','NVDA','MSFT','AMZN','GOOGL','TSLA','META','CRWV'), s))
         return web.json_response({'total':len(symbols),'offset':offset,'limit':limit,
             'data':[{'ticker':s,'name':self.engine.universe[s][-1],'has_news':s in news_symbols} for s in symbols[offset:offset+limit]]})
+
+    async def opportunities(self, request):
+        now=time.time()
+        candidates={}
+        for row in self.engine.db.execute('SELECT ticker,payload,published FROM events WHERE published BETWEEN ? AND ? ORDER BY published DESC',(now-86400,now)):
+            event=json.loads(row['payload'])
+            if event.get('confidence',0)>=55 and re.search(r'\b(beat|raises?|raised|approval|approved|contract|partnership|acquisition|merger|AI|earnings)\b',event['title'],re.I):
+                candidates.setdefault(row['ticker'],row['published'])
+        # Bounded enrichment; keep the HTTP response useful even when public feeds fail.
+        async def inspect(symbol):
+            try:
+                response=await asyncio.wait_for(self.stock_details(SimpleNamespace(match_info={'ticker':symbol})),30)
+                return json.loads(response.text)
+            except (Exception,asyncio.TimeoutError):
+                return None
+        results=await asyncio.gather(*(inspect(s) for s in list(candidates)[:25]))
+        eligible=[]
+        for data in results:
+            if not data:
+                continue
+            rating=data['rating']; snapshot=data.get('snapshot') or {}
+            try:
+                fresh=0<=time.time()-timestamp(snapshot['bar_time_utc'])<=600
+            except (KeyError,ValueError,TypeError):
+                fresh=False
+            if rating['classification'] in ('LATE','AVOID') or not fresh or snapshot.get('price') is None:
+                continue
+            if not rating['buyable'] and (snapshot.get('holds_vwap') is not True or snapshot.get('change_pct',-1)<0):
+                continue
+            data['opportunity_kind']='فرصة دخول مشروطة' if rating['buyable'] else 'مرشّح للمتابعة — الدخول غير مؤكد'
+            eligible.append(data)
+        eligible.sort(key=lambda d:(not d['rating']['buyable'],-(d['rating']['score'] or 0),-candidates[d['ticker']]))
+        return web.json_response({'data':eligible,'candidate_count':len(candidates),'evaluated':sum(d is not None for d in results),'unexamined':max(0,len(candidates)-25),'confirmed_entries':sum(d['rating']['buyable'] for d in eligible),'updated_at':utc(time.time())})
 
     async def stock_details(self, request):
         symbol = request.match_info['ticker'].upper()
@@ -384,7 +419,7 @@ class Service:
 
     async def run(self):
         app = web.Application(client_max_size=128*1024)
-        app.add_routes([web.get('/', self.dashboard), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
+        app.add_routes([web.get('/', self.dashboard),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, os.getenv('RADAR_BIND', '127.0.0.1'), int(os.getenv('RADAR_PORT', '8787'))).start()

@@ -33,6 +33,7 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
         app.router.add_post('/events',self.s.ingest)
         app.router.add_get('/health',self.s.health)
         app.router.add_get('/stocks',self.s.stocks)
+        app.router.add_get('/opportunities',self.s.opportunities)
         app.router.add_get('/stock/{ticker}',self.s.stock_details)
         self.client=TestClient(TestServer(app))
         await self.client.start_server()
@@ -78,6 +79,24 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_missing_tape_not_ready(self):
         response=await self.client.get('/health')
         self.assertFalse((await response.json())['ready'])
+
+    async def test_opportunities_require_fresh_price_and_reject_chasing(self):
+        now=time.time()
+        self.s.engine.event(dict(title='Penguin Solutions earnings beat',url='https://example.org/beat',published_at=utc(now-10)),self.s.sources['ir'],now)
+        snapshot=dict(price=65,change_pct=2,holds_vwap=True,bar_time_utc=utc(now))
+        with patch('continuous.service.yahoo_market_snapshot',return_value=snapshot):
+            data=await (await self.client.get('/opportunities')).json()
+        self.assertEqual(len(data['data']),1)
+        self.assertEqual(data['confirmed_entries'],0)
+        self.assertFalse(data['data'][0]['rating']['buyable'])
+        self.s.market_cache.clear()
+        with patch('continuous.service.yahoo_market_snapshot',return_value=dict(snapshot,change_pct=12)):
+            data=await (await self.client.get('/opportunities')).json()
+        self.assertEqual(data['data'],[])
+        self.s.market_cache.clear()
+        with patch('continuous.service.yahoo_market_snapshot',return_value=dict(snapshot,bar_time_utc=utc(now-3600))):
+            data=await (await self.client.get('/opportunities')).json()
+        self.assertEqual(data['data'],[])
 
     async def test_background_sweep_resumes_unattempted_symbols(self):
         self.s.engine.universe['ZZZ']=['Example Company']
