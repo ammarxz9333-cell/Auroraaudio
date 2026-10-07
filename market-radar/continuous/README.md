@@ -149,6 +149,10 @@ installs the continuous service dependencies for native Python builds. One worke
 fits the advertised 750 monthly hours; do not create additional free workers.
 Skip optional billing setup. Configure Alpaca and Telegram secrets in the dashboard,
 never in Git. Free IEX data is only one venue and is not consolidated market volume.
+The Basic plan permits 30 streaming symbols. IEX mode prioritizes PENG and SPY then
+the first configured issuers up to 30; /health exposes the selected symbols and
+excluded count. News remains collected for all configured issuers. This free mode
+does not confirm tape across the whole US market.
 Without those credentials the process collects public news but cannot deliver
 Telegram or confirm live tape. Verify storage persistence before relying on restart
 deduplication; a container's temporary filesystem is not durable VPS storage.

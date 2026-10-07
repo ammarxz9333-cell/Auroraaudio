@@ -190,6 +190,18 @@ class Service:
             self.engine.bar(bar, time.time())
             self.status['tape'] = {'last_ok': time.time(), 'feed': os.getenv('ALPACA_FEED', 'sip')}
 
+    def tape_symbols(self, feed):
+        symbols = list(self.engine.universe)
+        if feed == 'iex':
+            # Basic accounts permit 30 concurrent symbols; never reconnect forever
+            # with an oversized subscription. News collection remains independent.
+            priority = [s for s in ('PENG', 'SPY') if s in symbols]
+            symbols = (priority + [s for s in symbols if s not in priority])[:30]
+        self.status['tape_coverage'] = {'feed': feed, 'symbols': symbols,
+            'excluded': len(self.engine.universe) - len(symbols),
+            'volume_basis': 'IEX venue only' if feed == 'iex' else 'consolidated SIP'}
+        return symbols
+
     async def tape(self):
         key, secret = os.getenv('ALPACA_API_KEY'), os.getenv('ALPACA_SECRET_KEY')
         if not key or not secret:
@@ -218,7 +230,7 @@ class Service:
                             if b.get('T') == 'error':
                                 raise ValueError('provider rejected authentication/subscription')
                             if b.get('T') == 'success' and b.get('msg') == 'authenticated':
-                                symbols = list(self.engine.universe)
+                                symbols = self.tape_symbols(feed)
                                 await ws.send_json({'action': 'subscribe', 'bars': symbols, 'quotes': symbols})
                                 subscribed = True
                             elif b.get('T') == 'q':

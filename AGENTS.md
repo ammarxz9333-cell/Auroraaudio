@@ -18,6 +18,8 @@ Last updated: **2026-09-17**
 - No audio architecture is changed. No private OSINT access or stolen dumps are used.
 - Native free-worker deployment uses market-radar/requirements.txt, root /market-radar
   and python -m continuous.service; credentials and durable storage remain runtime requirements.
+- Free IEX streaming is capped at 30 symbols (PENG/SPY prioritized), with explicit
+  coverage in health status; it cannot claim whole-market consolidated tape.
 
 ### Binaural software continuation
 

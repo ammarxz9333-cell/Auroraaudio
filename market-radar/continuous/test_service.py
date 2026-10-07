@@ -15,6 +15,15 @@ from continuous.core import utc
 
 
 class ServiceTest(unittest.IsolatedAsyncioTestCase):
+    async def test_free_feed_subscription_limit_and_coverage(self):
+        self.s.engine.universe.update({f'T{i}': [f'Issuer {i}'] for i in range(40)})
+        self.s.engine.universe['SPY'] = ['SPDR']
+        symbols = self.s.tape_symbols('iex')
+        self.assertEqual(len(symbols), 30)
+        self.assertEqual(symbols[:2], ['PENG', 'SPY'])
+        self.assertGreater(self.s.status['tape_coverage']['excluded'], 0)
+        self.assertEqual(len(self.s.tape_symbols('sip')), len(self.s.engine.universe))
+
     async def asyncSetUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.s = Service({'universe':{'PENG':['Penguin Solutions']},'sources':[{'id':'ir','public':True,'official':True,'confidence':95,'allow_push':True}]},self.tmp.name+'/radar.db')
