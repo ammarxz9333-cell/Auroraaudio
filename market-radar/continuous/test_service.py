@@ -93,10 +93,14 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
         with patch('continuous.service.yahoo_market_snapshot',return_value=dict(snapshot,change_pct=12)):
             data=await (await self.client.get('/opportunities')).json()
         self.assertEqual(data['data'],[])
+        self.assertEqual(data['excluded'][0]['ticker'],'PENG')
         self.s.market_cache.clear()
         with patch('continuous.service.yahoo_market_snapshot',return_value=dict(snapshot,bar_time_utc=utc(now-3600))):
             data=await (await self.client.get('/opportunities')).json()
         self.assertEqual(data['data'],[])
+        self.assertEqual(data['watch'][0]['ticker'],'PENG')
+        self.assertFalse(data['watch'][0]['rating']['buyable'])
+        self.assertIn('earnings beat',data['watch'][0]['catalyst_title'])
 
     async def test_background_sweep_resumes_unattempted_symbols(self):
         self.s.engine.universe['ZZZ']=['Example Company']

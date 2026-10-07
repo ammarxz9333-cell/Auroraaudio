@@ -83,10 +83,12 @@ class Service:
     async def opportunities(self, request):
         now=time.time()
         candidates={}
+        catalysts={}
         for row in self.engine.db.execute('SELECT ticker,payload,published FROM events WHERE published BETWEEN ? AND ? ORDER BY published DESC',(now-86400,now)):
             event=json.loads(row['payload'])
             if event.get('confidence',0)>=55 and re.search(r'\b(beat|raises?|raised|approval|approved|contract|partnership|acquisition|merger|AI|earnings)\b',event['title'],re.I):
                 candidates.setdefault(row['ticker'],row['published'])
+                catalysts.setdefault(row['ticker'],event['title'])
         # Bounded enrichment; keep the HTTP response useful even when public feeds fail.
         async def inspect(symbol):
             try:
@@ -102,6 +104,7 @@ class Service:
             if not data:
                 continue
             rating=data['rating']; snapshot=data.get('snapshot') or {}
+            data['catalyst_title']=catalysts[data['ticker']]
             try:
                 fresh=0<=time.time()-timestamp(snapshot['bar_time_utc'])<=600
             except (KeyError,ValueError,TypeError):
@@ -118,6 +121,7 @@ class Service:
             data['opportunity_kind']='فرصة دخول مشروطة' if rating['buyable'] else 'مرشّح للمتابعة — الدخول غير مؤكد'
             eligible.append(data)
         eligible.sort(key=lambda d:(not d['rating']['buyable'],-(d['rating']['score'] or 0),-candidates[d['ticker']]))
+        watch.sort(key=lambda d:(not bool((d.get('snapshot') or {}).get('price')),-candidates[d['ticker']]))
         return web.json_response({'data':eligible,'watch':watch,'excluded':excluded,'candidate_count':len(candidates),'evaluated':sum(d is not None for d in results),'unexamined':max(0,len(candidates)-25),'confirmed_entries':sum(d['rating']['buyable'] for d in eligible),'updated_at':utc(time.time())})
 
     async def stock_details(self, request):
