@@ -295,3 +295,5 @@ Also run every domain-specific gate touched by the change. GenAVB adapter/contro
 - Background public_scan now sweeps all directory symbols at bounded concurrency and 2-second spacing; progress persists across restarts. It is slow public snapshot coverage, not realtime. Health separates directory size, attempts, successful snapshots and actual fresh streaming symbols.
 
 - Default dashboard is now an opportunities shortlist: recent positive catalyst + fresh public snapshot, non-negative daily move and holds VWAP; excludes LATE/AVOID. Watch candidates are explicit, never authenticated entries without live gates. Enrichment caps 25 news candidates per request and reports unexamined count.
+
+- Opportunities now separates price-qualified candidates, catalyst watchlist awaiting price/data confirmation, and excluded LATE/AVOID. Watchlist inclusion does not weaken entry rules. Directory navigation exits opportunities mode.

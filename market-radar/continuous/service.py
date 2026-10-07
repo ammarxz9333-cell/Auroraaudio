@@ -96,6 +96,8 @@ class Service:
                 return None
         results=await asyncio.gather(*(inspect(s) for s in list(candidates)[:25]))
         eligible=[]
+        watch=[]
+        excluded=[]
         for data in results:
             if not data:
                 continue
@@ -104,14 +106,19 @@ class Service:
                 fresh=0<=time.time()-timestamp(snapshot['bar_time_utc'])<=600
             except (KeyError,ValueError,TypeError):
                 fresh=False
-            if rating['classification'] in ('LATE','AVOID') or not fresh or snapshot.get('price') is None:
+            if rating['classification'] in ('LATE','AVOID'):
+                data['opportunity_kind']='مستبعد: '+rating['label']
+                excluded.append(data)
                 continue
-            if not rating['buyable'] and (snapshot.get('holds_vwap') is not True or snapshot.get('change_pct',-1)<0):
+            if not fresh or snapshot.get('price') is None or (not rating['buyable'] and (snapshot.get('holds_vwap') is not True or snapshot.get('change_pct',-1)<0)):
+                data['opportunity_kind']='قائمة انتظار — خبر محفّز، شروط السعر لم تكتمل'
+                data['watch_reason']='السعر غير متاح أو قديم' if not fresh or snapshot.get('price') is None else 'انتظار استعادة VWAP وتحسن حركة السعر'
+                watch.append(data)
                 continue
             data['opportunity_kind']='فرصة دخول مشروطة' if rating['buyable'] else 'مرشّح للمتابعة — الدخول غير مؤكد'
             eligible.append(data)
         eligible.sort(key=lambda d:(not d['rating']['buyable'],-(d['rating']['score'] or 0),-candidates[d['ticker']]))
-        return web.json_response({'data':eligible,'candidate_count':len(candidates),'evaluated':sum(d is not None for d in results),'unexamined':max(0,len(candidates)-25),'confirmed_entries':sum(d['rating']['buyable'] for d in eligible),'updated_at':utc(time.time())})
+        return web.json_response({'data':eligible,'watch':watch,'excluded':excluded,'candidate_count':len(candidates),'evaluated':sum(d is not None for d in results),'unexamined':max(0,len(candidates)-25),'confirmed_entries':sum(d['rating']['buyable'] for d in eligible),'updated_at':utc(time.time())})
 
     async def stock_details(self, request):
         symbol = request.match_info['ticker'].upper()
