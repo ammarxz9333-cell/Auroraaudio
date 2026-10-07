@@ -1,0 +1,11 @@
+<!doctype html>
+<html lang="ar" dir="rtl"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Market Radar</title>
+<style>body{background:#101822;color:#edf3fa;font:17px system-ui;max-width:1100px;margin:40px auto;padding:20px}h1{color:#79d9b3}#state{padding:18px;background:#233044;border-radius:12px}article{background:#192536;border:1px solid #324357;border-radius:12px;padding:20px;margin:16px 0}pre{direction:ltr;text-align:left;white-space:pre-wrap;overflow-wrap:anywhere;font:14px/1.7 system-ui}small{color:#bcc8d8}</style>
+<h1>Market Radar · الرادار المحلي</h1>
+<p id="state">جارٍ الاتصال…</p><small>هذه تنبيهات آلية من مصادر عامة. التصنيف تقدير قواعد، والمعلومات غير المتاحة تظهر unknown. تُحدّث الشاشة كل 10 ثوانٍ.</small>
+<main id="alerts"></main>
+<script>
+async function refresh(){try{const [h,alerts]=await Promise.all([fetch('/health').then(r=>r.json()),fetch('/alerts').then(r=>r.json())]);document.getElementById('state').textContent=h.ready?'الخدمة تعمل · بيانات السوق وTelegram متصلان':'جمع الأخبار يعمل · تأكيد السعر المباشر أو Telegram غير متصل · التنبيهات محفوظة محليًا';const main=document.getElementById('alerts');main.replaceChildren();for(const a of alerts){const card=document.createElement('article');const note=document.createElement('small');note.textContent=a.sent?'أُرسل عبر Telegram':'محفوظ محليًا';const pre=document.createElement('pre');pre.textContent=a.text;card.append(note,pre);main.append(card)}}catch(e){document.getElementById('state').textContent='تعذر الاتصال بالرادار المحلي؛ تحقق أن الخدمة تعمل.'}}
+refresh();setInterval(refresh,10000);
+</script></html>

@@ -20,6 +20,8 @@ Last updated: **2026-09-17**
   and python -m continuous.service; credentials and durable storage remain runtime requirements.
 - Free IEX streaming is capped at 30 symbols (PENG/SPY prioritized), with explicit
   coverage in health status; it cannot claim whole-market consolidated tape.
+- Windows local supervisor start-local.ps1 loads optional ignored .env, binds loopback,
+  persists runtime SQLite/logs and restarts a crashed child. Local operation needs an awake PC.
 
 ### Binaural software continuation
 

@@ -58,6 +58,13 @@ class Service:
         return web.json_response({'alive': True, 'ready': tape_age < 120 and bool(os.getenv('TELEGRAM_BOT_TOKEN')) and bool(os.getenv('TELEGRAM_CHAT_ID')),
                                  'tape_age_seconds': tape_age, 'outbox_pending': pending, 'adapters': self.status})
 
+    async def local_alerts(self, request):
+        rows = self.engine.db.execute('SELECT payload,sent FROM outbox ORDER BY rowid DESC LIMIT 100').fetchall()
+        return web.json_response([{'text': format_alert(json.loads(r['payload'])), 'sent': bool(r['sent'])} for r in rows])
+
+    async def dashboard(self, request):
+        return web.Response(text=Path('continuous/dashboard.html').read_text(encoding='utf-8'), content_type='text/html')
+
     async def poll(self, source):
         interval = max(10, source.get('interval_seconds', 30))
         etag = None
@@ -283,7 +290,7 @@ class Service:
 
     async def run(self):
         app = web.Application(client_max_size=128*1024)
-        app.add_routes([web.get('/health', self.health), web.post('/events', self.ingest)])
+        app.add_routes([web.get('/', self.dashboard), web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, os.getenv('RADAR_BIND', '127.0.0.1'), int(os.getenv('RADAR_PORT', '8787'))).start()

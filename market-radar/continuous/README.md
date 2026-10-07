@@ -159,6 +159,14 @@ deduplication; a container's temporary filesystem is not durable VPS storage.
 
 ## Validation
 
+Windows local mode: launch `start-local.ps1 -Python <venv Python path>` in a hidden
+PowerShell process. The supervisor restarts crashes and persists SQLite in runtime/.
+Open http://127.0.0.1:8787 for locally stored alerts. An optional ignored .env supplies
+credentials; without them news works, tape confirmation and Telegram do not.
+The installed Windows Startup shortcut runs after sign-in. Keep the PC awake and
+online. To stop, create runtime/STOP and stop the child PID in runtime/service.pid;
+remove STOP before starting again. Logs are timestamped in runtime/.
+
 ```sh
 python -m pip install -r continuous/requirements.txt
 python -m unittest continuous.test_core continuous.test_service -v
