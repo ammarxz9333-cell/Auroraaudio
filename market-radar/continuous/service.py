@@ -86,7 +86,11 @@ class Service:
         catalysts={}
         for row in self.engine.db.execute('SELECT ticker,payload,published FROM events WHERE published BETWEEN ? AND ? ORDER BY published DESC',(now-86400,now)):
             event=json.loads(row['payload'])
-            if event.get('confidence',0)>=55 and re.search(r'\b(beat|raises?|raised|approval|approved|contract|partnership|acquisition|merger|AI|earnings)\b',event['title'],re.I):
+            # "Acquisition Corporation" in an issuer name and a generic earnings
+            # loss are not positive catalysts.
+            catalyst=re.search(r'\b(beats?|approval|approved|contract|partnership|merger)\b|\brais\w*.*(?:guidance|outlook)|\bacqui(?:res|red|sition of)\b|business combination agreement|\bAI\b.*(?:cloud|demand|infrastructure|contract)',event['title'],re.I)
+            negative=re.search(r'\b(loss|misses|missed|lowers|lowered|cuts|cut guidance|investigation|fraud)\b',event['title'],re.I)
+            if event.get('confidence',0)>=55 and catalyst and not negative:
                 candidates.setdefault(row['ticker'],row['published'])
                 catalysts.setdefault(row['ticker'],event['title'])
         # Bounded enrichment; keep the HTTP response useful even when public feeds fail.
