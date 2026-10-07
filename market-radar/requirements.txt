@@ -1,0 +1,2 @@
+# Native background-worker hosts build from the market-radar directory.
+-r continuous/requirements.txt

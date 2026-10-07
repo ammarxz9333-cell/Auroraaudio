@@ -141,6 +141,18 @@ There is one alert per state transition. Telegram errors and rate limits retry f
 SQLite across restart. Delivery is at-least-once: a crash after Telegram accepts
 but before the database commits can duplicate a message.
 
+## Free Voroa background worker
+
+Select Auroraaudio, branch `market-radar-live`, root `/market-radar`, start command
+`python -m continuous.service`, and the free Nano worker. The root requirements.txt
+installs the continuous service dependencies for native Python builds. One worker
+fits the advertised 750 monthly hours; do not create additional free workers.
+Skip optional billing setup. Configure Alpaca and Telegram secrets in the dashboard,
+never in Git. Free IEX data is only one venue and is not consolidated market volume.
+Without those credentials the process collects public news but cannot deliver
+Telegram or confirm live tape. Verify storage persistence before relying on restart
+deduplication; a container's temporary filesystem is not durable VPS storage.
+
 ## Validation
 
 ```sh

@@ -16,6 +16,8 @@ Last updated: **2026-09-17**
   real PENG regular-session late rejection. Full historical first-public/after-hours
   acceptance and live VPS/Telegram delivery are incomplete without data/credentials.
 - No audio architecture is changed. No private OSINT access or stolen dumps are used.
+- Native free-worker deployment uses market-radar/requirements.txt, root /market-radar
+  and python -m continuous.service; credentials and durable storage remain runtime requirements.
 
 ### Binaural software continuation
 
