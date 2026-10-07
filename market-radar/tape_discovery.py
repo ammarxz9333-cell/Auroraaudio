@@ -82,3 +82,66 @@ def discover_candidates(fetch, limit=30):
     ranked=sorted(unique.values(),key=lambda x:x["rank"],reverse=True)
     return ranked[:max(1,int(limit))]
 
+
+
+def tape_signal(snapshot):
+    """Score first abnormal tape acceleration without waiting for full confirmation.
+
+    Requires abnormal same-clock volume.  Designed to page EARLY while a move is
+    still small, and to reject mature/parabolic moves.  It never implies a trade.
+    """
+    pct = float(snapshot.get("change_pct") or 0.0)
+    m5 = float(snapshot.get("change_5m_pct") or 0.0)
+    m15 = float(snapshot.get("change_15m_pct") or 0.0)
+    m30 = float(snapshot.get("change_30m_pct") or 0.0)
+    rvol = snapshot.get("same_time_volume_ratio")
+    rvol = float(rvol) if rvol is not None else 0.0
+    session = str(snapshot.get("market_session") or "")
+    hits, score = [], 0
+
+    # Volume is mandatory: price-only gainers are too noisy.
+    if rvol < 1.8:
+        return {"qualifies": False, "score": 0, "hits": ["insufficient-rvol"],
+                "summary": f"RVOL {rvol:.2f}x below early-tape floor"}
+
+    if rvol >= 2.0:
+        score += 2; hits.append("abnormal-rvol")
+    if rvol >= 4.0:
+        score += 2; hits.append("extreme-rvol")
+
+    # First acceleration: deliberately fires before VWAP confirmation.
+    if m5 >= 0.7:
+        score += 2; hits.append("5m-acceleration")
+    if m15 >= 1.5:
+        score += 2; hits.append("15m-acceleration")
+    if m30 >= 2.2:
+        score += 1; hits.append("30m-acceleration")
+
+    # Small day move + abnormal tape is the desired early window.
+    if 1.0 <= pct <= 5.0 and (m5 >= 0.7 or m15 >= 1.5):
+        score += 3; hits.append("early-window")
+    elif 5.0 < pct <= 10.0:
+        score += 1; hits.append("developing-window")
+
+    if session == "PRE" and pct >= 1.5 and rvol >= 2.5 and (m15 >= 1.5 or m30 >= 2.2):
+        score += 2; hits.append("premarket-accumulation")
+
+    if snapshot.get("holds_vwap") is True:
+        score += 1; hits.append("vwap-hold")
+    if snapshot.get("holds_open") is True:
+        score += 1; hits.append("open-hold")
+
+    # Do not page a mature move as an 'early' discovery.
+    if abs(pct) >= 20:
+        score -= 6; hits.append("chase-penalty")
+    if abs(pct) >= 40:
+        score -= 8; hits.append("parabolic-penalty")
+    if abs(pct) >= 15 and abs(m15) < 1.0:
+        score -= 4; hits.append("stale-move-penalty")
+
+    qualifies = score >= 7 and abs(pct) < 20
+    summary = (
+        f"day {pct:+.2f}% | 5m {m5:+.2f}% | 15m {m15:+.2f}% | "
+        f"30m {m30:+.2f}% | same-time RVOL {rvol:.2f}x | {session}"
+    )
+    return {"qualifies": qualifies, "score": score, "hits": hits, "summary": summary}
