@@ -20,7 +20,7 @@ concurrency:
 jobs:
   scan:
     runs-on: ubuntu-slim
-    timeout-minutes: 4
+    timeout-minutes: 5
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -41,7 +41,14 @@ jobs:
           RADAR_USER_AGENT: "Ammar-Market-Radar/1.0 contact=${{ github.repository_owner }}@users.noreply.github.com"
           TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
           TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
-        run: python3 market-radar/radar.py
+        run: |
+          # GitHub cron is coarse; keep this job alive for four one-minute passes.
+          # Alerts are emitted immediately on each pass while state is retained locally.
+          for pass in 1 2 3 4; do
+            echo "Market Radar early pass $pass/4"
+            python3 market-radar/radar.py
+            if [ "$pass" != "4" ]; then sleep 55; fi
+          done
 
       - name: Persist radar state
         shell: bash
