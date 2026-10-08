@@ -35,3 +35,4 @@ jobs:
           retention-days: 14
           if-no-files-found: error
           path: market-radar/android/app/build/outputs/apk/debug/app-debug.apk
+      # Build triggered by this workflow update; never upload an empty artifact.
