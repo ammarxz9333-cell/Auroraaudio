@@ -1,7 +1,288 @@
 {
-  "generated_utc": null,
-  "min_samples_for_weighting": 8,
-  "agents": {},
-  "calibration": {},
-  "lessons": []
+  "agents": {
+    "analyst_targets": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "congress_trades": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "earnings_estimates": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "economy": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "financials": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "insider_trades": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "institutional_holdings": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "news": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "options_market": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "price_chart": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "related_markets": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    },
+    "sec_filings": {
+      "1w": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "1y": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      },
+      "3m": {
+        "brier": null,
+        "direction_accuracy": null,
+        "log_loss": null,
+        "n": 0,
+        "weight": 1.0
+      }
+    }
+  },
+  "calibration": {
+    "1w": {},
+    "1y": {},
+    "3m": {}
+  },
+  "generated_utc": "2026-10-08T10:54:59.783707+00:00",
+  "lessons": [],
+  "min_samples_for_weighting": 8
 }
