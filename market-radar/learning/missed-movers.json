@@ -1464,6 +1464,107 @@
         "recent_alert_overlap": 0
       },
       "timing_limit": "The day-gainers endpoint supplies a current quote, not the first time the move crossed the threshold. A recent alert can have arrived after the move. Overlap is not advance-warning recall."
+    },
+    "2026-10-07": {
+      "criteria": {
+        "alert_lookback_hours": 72,
+        "min_gain_pct": 8.0,
+        "min_price": 1.0,
+        "min_volume": 500000,
+        "source": "Yahoo Finance predefined day_gainers public endpoint"
+      },
+      "errors": [],
+      "generated_utc": "2026-10-08T00:22:51.647857+00:00",
+      "investigation_protocol": {
+        "required_output": "For every mover: earliest clue, full catalyst/rumor timeline, pre-move features, why missed, machine-detectable pattern, false-positive tradeoff, and proposed reversible model/source change.",
+        "required_root_cause_labels": [
+          "source-coverage-gap",
+          "ticker-entity-extraction",
+          "catalyst-vocabulary-gap",
+          "score-threshold",
+          "watchlist-bias",
+          "source-latency",
+          "market-data-latency",
+          "deduplication",
+          "direction-classification",
+          "market-reaction-filter",
+          "sector-sympathy-not-modeled",
+          "analyst-action-not-modeled",
+          "index-flow-not-modeled",
+          "rumor-not-modeled",
+          "price-volume-momentum-not-modeled",
+          "genuinely-unpredictable"
+        ],
+        "research_domains": [
+          "SEC filings/exhibits and company IR",
+          "customer/supplier/partner releases",
+          "government contracts, procurement, permits and regulatory records",
+          "analyst initiations/upgrades/downgrades and target changes",
+          "index additions/rebalances and ETF/passive-flow effects",
+          "earnings, guidance, balance sheet, dilution, ATM/S-3/424B5 and buybacks",
+          "insider/Form 4 and 13D/13G ownership changes",
+          "short interest, float, borrow and options positioning when public",
+          "sector/peer/sympathy moves and commodity/macro exposures",
+          "public rumors, alleged leaks, Reddit, Stocktwits and X with provenance labels",
+          "intraday price/volume/VWAP/relative-strength structure before acceleration"
+        ],
+        "timeline": "Reconstruct several trading days before the move through the move itself using point-in-time public timestamps."
+      },
+      "movers": [
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 2268579,
+          "change_pct": 24.191,
+          "exchange": "NasdaqGS",
+          "market_cap": 26088458240,
+          "matching_alerts": [],
+          "name": "Bending Spoons S.p.A.",
+          "no_recent_alert": true,
+          "price": 41.07,
+          "quote_time_utc": "2026-10-07T20:00:01+00:00",
+          "ticker": "BSP",
+          "volume": 8803139,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 2740959,
+          "change_pct": 13.082,
+          "exchange": "NasdaqGS",
+          "market_cap": 3720732416,
+          "matching_alerts": [],
+          "name": "Penguin Solutions, Inc.",
+          "no_recent_alert": true,
+          "price": 72.61,
+          "quote_time_utc": "2026-10-07T20:00:00+00:00",
+          "ticker": "PENG",
+          "volume": 20973895,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 2527870,
+          "change_pct": 8.049,
+          "exchange": "NasdaqGS",
+          "market_cap": 3232612608,
+          "matching_alerts": [],
+          "name": "Braze, Inc.",
+          "no_recent_alert": true,
+          "price": 28.46,
+          "quote_time_utc": "2026-10-07T20:00:01+00:00",
+          "ticker": "BRZE",
+          "volume": 4043815,
+          "watchlist_member": false
+        }
+      ],
+      "summary": {
+        "advance_warning_recall_pct": null,
+        "eligible_movers": 3,
+        "no_recent_alert": 3,
+        "no_recent_alert_watchlist_members": 0,
+        "recent_alert_overlap": 0
+      },
+      "timing_limit": "The day-gainers endpoint supplies a current quote, not the first time the move crossed the threshold. A recent alert can have arrived after the move. Overlap is not advance-warning recall."
     }
   }
 }
