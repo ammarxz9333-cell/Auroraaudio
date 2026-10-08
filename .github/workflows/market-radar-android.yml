@@ -7,7 +7,7 @@ on:
       - "market-radar/android/**"
       - ".github/workflows/market-radar-android.yml"
 permissions:
-  contents: read
+  contents: write
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -35,4 +35,10 @@ jobs:
           retention-days: 14
           if-no-files-found: error
           path: market-radar/android/app/build/outputs/apk/debug/app-debug.apk
-      # Build triggered by this workflow update; never upload an empty artifact.
+      - name: Publish installable APK to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release view market-radar-latest >/dev/null 2>&1 || gh release create market-radar-latest --title "Market Radar Android" --notes "Android debug APK built from main-v2. Requires internet for live charts." --target main-v2
+          gh release upload market-radar-latest market-radar/android/app/build/outputs/apk/debug/app-debug.apk#MarketRadar.apk --clobber
+
