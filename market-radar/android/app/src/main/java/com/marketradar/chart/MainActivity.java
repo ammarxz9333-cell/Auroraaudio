@@ -14,6 +14,8 @@ public final class MainActivity extends Activity {
   super.onCreate(state);
   web = new WebView(this);
   web.getSettings().setJavaScriptEnabled(true);
+  web.getSettings().setAllowFileAccess(false);
+  web.getSettings().setAllowContentAccess(false);
   web.getSettings().setDomStorageEnabled(true);
   web.getSettings().setMixedContentMode(WebSettings.MIXED_CONTENT_NEVER_ALLOW);
   web.setWebViewClient(new WebViewClient() {
@@ -26,6 +28,7 @@ public final class MainActivity extends Activity {
   });
   setContentView(web);
   web.loadUrl(URL);
+  // The hosted chart uses live market-data snapshots; no synthetic prices.
  }
  @Override public void onBackPressed() { if(web.canGoBack()) web.goBack(); else super.onBackPressed(); }
  @Override public void onDestroy() { if(web!=null)web.destroy(); super.onDestroy(); }
