@@ -32,6 +32,16 @@ jobs:
         run: |
           test -s market-radar/android/app/build/outputs/apk/debug/app-debug.apk
           sha256sum market-radar/android/app/build/outputs/apk/debug/app-debug.apk
+          python3 - <<'PY'
+          import zipfile, pathlib
+          p=pathlib.Path('market-radar/android/app/build/outputs/apk/debug/app-debug.apk')
+          with zipfile.ZipFile(p) as apk:
+              names=set(apk.namelist())
+              assert 'AndroidManifest.xml' in names, 'Missing Android manifest'
+              assert 'classes.dex' in names, 'Missing compiled application code'
+              assert any(n.startswith('META-INF/') for n in names), 'Missing APK signature metadata'
+              print('APK structure verified:', p.stat().st_size, 'bytes; entries:', len(names))
+          PY
       - uses: actions/upload-artifact@v4
         with:
           name: market-radar-android-debug-apk
