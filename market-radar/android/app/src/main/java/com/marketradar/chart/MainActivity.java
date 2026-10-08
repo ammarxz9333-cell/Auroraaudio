@@ -51,7 +51,7 @@ public final class MainActivity extends Activity {
     root.addView(timeRow);
     price=text("—",27,WHITE);price.setTypeface(null,Typeface.BOLD);root.addView(price);
     status=text("جارٍ تحميل بيانات السوق...",13,0xff91a7c5);root.addView(status);
-    chart=new Chart(this);root.addView(chart,new LinearLayout.LayoutParams(-1,dp(390)));
+    chart=new Chart(this);root.addView(chart,new LinearLayout.LayoutParams(-1,dp(610)));
     analysis=text("التحليل الفني سيظهر بعد تحميل الشموع.",15,WHITE);analysis.setBackgroundColor(PANEL);root.addView(analysis,new LinearLayout.LayoutParams(-1,-2));
     Button refresh=new Button(this);refresh.setText("تحديث الأسعار والتحليل");root.addView(refresh);refresh.setOnClickListener(v->load());
     root.addView(text("مصدر الأسعار: Yahoo Finance chart API غير الرسمي. الأسعار قد تتأخر. إشارات الدعم والمقاومة تقديرية وليست توصية مالية.",12,0xff91a7c5));
@@ -133,12 +133,44 @@ public final class MainActivity extends Activity {
       float step=(right-left)/count,w=Math.max(1,step*.55f);
       for(int i=start;i<n;i++){
         Candle k=candles.get(i);float x=left+(i-start+.5f)*step;
-        int color=k.c>=k.o?0xff2dd4a1:0xfffb7185;
+        int color=k.c>=k.o?0xff00ef47:0xffff4599;
         float yh=top+(max-k.h)/span*(bottom-top),yl=top+(max-k.l)/span*(bottom-top),yo=top+(max-k.o)/span*(bottom-top),yc=top+(max-k.c)/span*(bottom-top);
         line(canvas,color,dp(1),x,yh,x,yl);
         paint.setColor(color);paint.setStyle(Paint.Style.FILL);canvas.drawRect(x-w/2,Math.min(yo,yc),x+w/2,Math.max(Math.max(yo,yc),Math.min(yo,yc)+dp(1)),paint);
       }
+      drawTrendLines(canvas,start,n,left,right,top,bottom,min,max,step);
       if(n>=20){Path path=new Path();for(int i=Math.max(start,19);i<n;i++){float sum=0;for(int j=i-19;j<=i;j++)sum+=candles.get(j).c;float y=top+(max-sum/20)/span*(bottom-top),x=left+(i-start+.5f)*step;if(i==Math.max(start,19))path.moveTo(x,y);else path.lineTo(x,y);}paint.setColor(0xfffbbf24);paint.setStrokeWidth(dp(2));paint.setStyle(Paint.Style.STROKE);canvas.drawPath(path,paint);paint.setStyle(Paint.Style.FILL);}
+    }
+    private void drawTrendLines(Canvas canvas,int start,int n,float left,float right,float top,float bottom,float min,float max,float step){
+      ArrayList<Integer> peaks=new ArrayList<>(),troughs=new ArrayList<>();
+      for(int i=Math.max(start+2,2);i<n-2;i++){
+        boolean peak=true,trough=true;
+        for(int j=i-2;j<=i+2;j++)if(j!=i){
+          if(candles.get(j).h>=candles.get(i).h)peak=false;
+          if(candles.get(j).l<=candles.get(i).l)trough=false;
+        }
+        if(peak)peaks.add(i);if(trough)troughs.add(i);
+      }
+      drawPivotTrend(canvas,peaks,true,start,n,left,top,bottom,min,max,step);
+      drawPivotTrend(canvas,troughs,false,start,n,left,top,bottom,min,max,step);
+    }
+    private void drawPivotTrend(Canvas canvas,ArrayList<Integer> pivots,boolean upper,int start,int n,float left,float top,float bottom,float min,float max,float step){
+      if(pivots.size()<2)return;
+      int from=Math.max(0,pivots.size()-4),size=pivots.size()-from;
+      double sx=0,sy=0,sxx=0,sxy=0;
+      for(int k=from;k<pivots.size();k++){
+        int i=pivots.get(k);double y=upper?candles.get(i).h:candles.get(i).l;
+        sx+=i;sy+=y;sxx+=i*(double)i;sxy+=i*y;
+      }
+      double denominator=size*sxx-sx*sx;if(Math.abs(denominator)<1e-9)return;
+      double slope=(size*sxy-sx*sy)/denominator,intercept=(sy-slope*sx)/size;
+      int first=pivots.get(from),last=n-1;
+      float x1=left+(first-start+.5f)*step,x2=left+(last-start+.5f)*step;
+      float y1=top+(float)((max-(intercept+slope*first))/(max-min))*(bottom-top);
+      float y2=top+(float)((max-(intercept+slope*last))/(max-min))*(bottom-top);
+      canvas.save();canvas.clipRect(left,top,left+step*(n-start),bottom);
+      line(canvas,upper?0xff447cff:0xff4ec9ff,dp(2),x1,y1,x2,y2);
+      canvas.restore();
     }
   }
   @Override protected void onDestroy(){executor.shutdownNow();super.onDestroy();}
