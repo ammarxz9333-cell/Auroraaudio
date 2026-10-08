@@ -77,3 +77,46 @@ EARLY should target the first +0.5% to +3% reaction when catalyst magnitude and 
 - Closing-auction volume is not equivalent to organic accumulation.
 - Reject changes that improve recall only by flooding alerts.
 - Promote a rule to production only after walk-forward validation improves early recall with acceptable false-positive rate.
+
+
+## September benchmark expansion
+
+A public September 2026 news-gainer board contains 100 ranked news-driven moves, with a largest ranked gain of +271.15%. Use it as an external discovery benchmark, but validate material events against original sources when promoting rules.
+
+### Tradability-aware labels
+
+Historical "detectability" is not enough. Every mover must also be labeled by the first realistically tradable state:
+
+- PRE_EVENT_WATCH: event known before outcome; direction unknown.
+- EARLY_TRADABLE: first lawful public catalyst + market reaction while move remains <=3%.
+- DEVELOPING_TRADABLE: reaction >3% and <=8%, still with acceptable asymmetry.
+- LATE_AT_OPEN: opening gap already >8%; never count as successful early capture.
+- BINARY_RESULT_GAP: scheduled event known but result causes an immediate large gap; credit event preparedness, not directional prediction.
+- SOURCE_FIRST_NO_TAPE_NEEDED: definitive M&A or similarly price-defining terms; alert immediately after source validation.
+- UNPREDICTABLE: no lawful public clue and no reliable abnormal tape before move.
+
+### Historical examples added
+
+- GRML 2026-09-21: news after hours Sep 18; next measured session opened about +157% and closed +230.5%, with ~391.8x relative volume. Label LATE_AT_OPEN. The system could have detected the news, but must not claim a +1-3% tradable capture.
+- KOD 2026-09-28: Sep 25 notice scheduled DAYBREAK Phase 3 topline for Sep 28. Label PRE_EVENT_WATCH before result and BINARY_RESULT_GAP after positive result. Direction was unknowable from the schedule alone.
+- ROIV 2026-09-08: positive PHocus clinical results released 06:00 ET premarket; measured session +18.75%. Label result-driven biotech; reconstruct first premarket tradable print before crediting an early capture.
+- ACVA 2026-09-10: definitive Copart acquisition at $10.50/share, ~45% premium; shares jumped >40%. Label SOURCE_FIRST_NO_TAPE_NEEDED / LATE_AT_OPEN depending first executable quote.
+- PTC 2026-10-05: definitive $205/share acquisition at ~42% premium; premarket ~+34%. Same principle: source detection is valuable, but not a pre-3% directional capture.
+
+### Evaluation metrics
+
+Primary:
+- recall_before_3pct: fraction of eventual >=10% movers alerted while <=3%.
+- median_alert_move_pct: median move already completed when alert fired.
+- median_source_to_alert_seconds.
+- false_positive_alerts_per_session.
+
+Secondary:
+- recall_before_5pct and before_8pct.
+- family-specific precision/recall.
+- percentage of alerts that become >=10% movers.
+- percentage correctly rejected as LATE_AT_OPEN.
+- duplicate-alert rate.
+- classifier-direction error rate.
+
+Do not optimize raw recall without the false-positive denominator.
