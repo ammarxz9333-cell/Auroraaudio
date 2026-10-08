@@ -1,0 +1,5 @@
+event_date,ticker,family,eventual_move_pct,alert_move_pct,source_to_alert_seconds,false_positive,duplicate,direction_error,tradability_label,confidence
+2026-09-28,KOD,scheduled-binary-event,177,,,false,false,false,PRE_EVENT_WATCH,high
+2026-09-21,GRML,news-shock,230.5,157,,false,false,false,LATE_AT_OPEN,high
+2026-10-05,PTC,confirmed-m-and-a,33.486,34,,false,false,false,LATE_AT_OPEN,high
+2026-10-07,PENG,earnings-inflection,13.082,,,,false,false,false,UNKNOWN,high

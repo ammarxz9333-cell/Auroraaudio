@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "objective": "learn features observable before +3% without hindsight leakage",
+  "rows": [
+    {
+      "ticker": "KOD",
+      "family": "scheduled-binary-event",
+      "advance_watch": true,
+      "direction_known": false,
+      "key": "Sep 25 company notice scheduled Sep 28 08:30 ET Phase 3 DAYBREAK topline",
+      "lesson": "event calendar gives advance readiness; result parser+tape determines direction"
+    },
+    {
+      "ticker": "GRAL",
+      "family": "regulatory-document-first",
+      "advance_watch": true,
+      "direction_known": false,
+      "key": "FDA staff briefing documents before advisory review",
+      "lesson": "direct FDA document listener can beat mainstream coverage"
+    },
+    {
+      "ticker": "VICR",
+      "family": "repeated-catalyst-compounding",
+      "advance_watch": true,
+      "direction_known": false,
+      "key": "fab expansion -> AI OEM VPD license -> royalty-driven guide raises",
+      "lesson": "persistent catalyst memory should increase priority when same thesis compounds"
+    },
+    {
+      "ticker": "PTC",
+      "family": "confirmed-m-and-a",
+      "advance_watch": false,
+      "direction_known": true,
+      "key": "definitive $205 cash deal ~42% premium",
+      "lesson": "after first public source alert immediately; do not wait for technical confirmation"
+    },
+    {
+      "ticker": "PENG",
+      "family": "earnings-inflection",
+      "advance_watch": false,
+      "direction_known": true,
+      "key": "earnings surprise plus raised FY27 outlook",
+      "lesson": "parse guide delta and seed next-session hot watch"
+    },
+    {
+      "ticker": "FORM",
+      "family": "analyst-action",
+      "advance_watch": false,
+      "direction_known": false,
+      "key": "new Buy and large target with AI/HBM exposure",
+      "lesson": "analyst feed needs tape confirmation because base false-positive rate is high"
+    }
+  ],
+  "production_gate": "Do not promote thresholds until walk-forward validation shows better pre-3% recall without unacceptable false positives."
+}
