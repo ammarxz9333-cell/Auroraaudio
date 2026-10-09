@@ -8,11 +8,17 @@ on:
     paths:
       - "config/external-components-v1.json"
       - "validation/immersive/**"
+      - "validation/physical/aurora_live_earc_harness.rs"
+      - "validation/physical/aurora_alsa_iec61937_pipe.py"
+      - "validation/physical/run-live-earc-vbap.sh"
       - ".github/workflows/immersive-joc-stack-ci.yml"
   pull_request:
     paths:
       - "config/external-components-v1.json"
       - "validation/immersive/**"
+      - "validation/physical/aurora_live_earc_harness.rs"
+      - "validation/physical/aurora_alsa_iec61937_pipe.py"
+      - "validation/physical/run-live-earc-vbap.sh"
       - ".github/workflows/immersive-joc-stack-ci.yml"
 
 permissions:
@@ -60,6 +66,10 @@ jobs:
           AURORA_HARLETTY_TARGET_DIR: ${{ github.workspace }}/.cache/joc/harletty-target
           AURORA_JOC_HARNESS_TARGET_DIR: ${{ github.workspace }}/.cache/joc/harness-target
         run: bash validation/immersive/test-joc-aurora-live-runtime.sh
+      - name: Prove connected IEC61937 JOC through Aurora 3D VBAP output
+        env:
+          AURORA_JOC_BUILD_MODE: release
+        run: bash validation/physical/run-live-earc-vbap.sh --fixture
       - name: Install checksum-pinned OpenJOC reference binary
         id: openjoc
         shell: bash
