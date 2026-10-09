@@ -1565,6 +1565,152 @@
         "recent_alert_overlap": 0
       },
       "timing_limit": "The day-gainers endpoint supplies a current quote, not the first time the move crossed the threshold. A recent alert can have arrived after the move. Overlap is not advance-warning recall."
+    },
+    "2026-10-08": {
+      "criteria": {
+        "alert_lookback_hours": 72,
+        "min_gain_pct": 8.0,
+        "min_price": 1.0,
+        "min_volume": 500000,
+        "source": "Yahoo Finance predefined day_gainers public endpoint"
+      },
+      "errors": [],
+      "generated_utc": "2026-10-09T00:36:22.964246+00:00",
+      "investigation_protocol": {
+        "required_output": "For every mover: earliest clue, full catalyst/rumor timeline, pre-move features, why missed, machine-detectable pattern, false-positive tradeoff, and proposed reversible model/source change.",
+        "required_root_cause_labels": [
+          "source-coverage-gap",
+          "ticker-entity-extraction",
+          "catalyst-vocabulary-gap",
+          "score-threshold",
+          "watchlist-bias",
+          "source-latency",
+          "market-data-latency",
+          "deduplication",
+          "direction-classification",
+          "market-reaction-filter",
+          "sector-sympathy-not-modeled",
+          "analyst-action-not-modeled",
+          "index-flow-not-modeled",
+          "rumor-not-modeled",
+          "price-volume-momentum-not-modeled",
+          "genuinely-unpredictable"
+        ],
+        "research_domains": [
+          "SEC filings/exhibits and company IR",
+          "customer/supplier/partner releases",
+          "government contracts, procurement, permits and regulatory records",
+          "analyst initiations/upgrades/downgrades and target changes",
+          "index additions/rebalances and ETF/passive-flow effects",
+          "earnings, guidance, balance sheet, dilution, ATM/S-3/424B5 and buybacks",
+          "insider/Form 4 and 13D/13G ownership changes",
+          "short interest, float, borrow and options positioning when public",
+          "sector/peer/sympathy moves and commodity/macro exposures",
+          "public rumors, alleged leaks, Reddit, Stocktwits and X with provenance labels",
+          "intraday price/volume/VWAP/relative-strength structure before acceleration"
+        ],
+        "timeline": "Reconstruct several trading days before the move through the move itself using point-in-time public timestamps."
+      },
+      "movers": [
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 678940,
+          "change_pct": 17.461,
+          "exchange": "NYSE",
+          "market_cap": 5435532800,
+          "matching_alerts": [],
+          "name": "Haemonetics Corporation",
+          "no_recent_alert": true,
+          "price": 119.47,
+          "quote_time_utc": "2026-10-08T20:00:02+00:00",
+          "ticker": "HAE",
+          "volume": 2765558,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 729806,
+          "change_pct": 14.133,
+          "exchange": "NYSE",
+          "market_cap": 5290618368,
+          "matching_alerts": [],
+          "name": "Veradermics, Incorporated",
+          "no_recent_alert": true,
+          "price": 126.63,
+          "quote_time_utc": "2026-10-08T20:00:02+00:00",
+          "ticker": "MANE",
+          "volume": 3489827,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 2754062,
+          "change_pct": 11.053,
+          "exchange": "NYSE",
+          "market_cap": 2066943488,
+          "matching_alerts": [],
+          "name": "Securitize Corp.",
+          "no_recent_alert": true,
+          "price": 12.66,
+          "quote_time_utc": "2026-10-08T20:00:02+00:00",
+          "ticker": "SECZ",
+          "volume": 7806309,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 1185148,
+          "change_pct": 10.523,
+          "exchange": "NasdaqGS",
+          "market_cap": 3239235328,
+          "matching_alerts": [],
+          "name": "The Vita Coco Company, Inc.",
+          "no_recent_alert": true,
+          "price": 55.98,
+          "quote_time_utc": "2026-10-08T20:00:01+00:00",
+          "ticker": "COCO",
+          "volume": 2239711,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 4282789,
+          "change_pct": 9.49,
+          "exchange": "NasdaqGS",
+          "market_cap": 5407321088,
+          "matching_alerts": [],
+          "name": "Erasca, Inc.",
+          "no_recent_alert": true,
+          "price": 15.46,
+          "quote_time_utc": "2026-10-08T20:00:01+00:00",
+          "ticker": "ERAS",
+          "volume": 9533185,
+          "watchlist_member": false
+        },
+        {
+          "alerted_within_lookback": false,
+          "avg_volume_3m": 6900185,
+          "change_pct": 8.007,
+          "exchange": "NasdaqGS",
+          "market_cap": 12078940160,
+          "matching_alerts": [],
+          "name": "CoStar Group, Inc.",
+          "no_recent_alert": true,
+          "price": 29.81,
+          "quote_time_utc": "2026-10-08T20:00:01+00:00",
+          "ticker": "CSGP",
+          "volume": 9467084,
+          "watchlist_member": false
+        }
+      ],
+      "summary": {
+        "advance_warning_recall_pct": null,
+        "eligible_movers": 6,
+        "no_recent_alert": 6,
+        "no_recent_alert_watchlist_members": 0,
+        "recent_alert_overlap": 0
+      },
+      "timing_limit": "The day-gainers endpoint supplies a current quote, not the first time the move crossed the threshold. A recent alert can have arrived after the move. Overlap is not advance-warning recall."
     }
   }
 }
