@@ -48,7 +48,7 @@ jobs:
           docker run --rm --platform linux/arm64 \
             -v "$PWD:/work" -w /work \
             rust:1.88-bookworm \
-            bash -c 'export PATH=/usr/local/cargo/bin:/usr/local/rustup/bin:$PATH; apt-get update && apt-get install -y python3 device-tree-compiler ca-certificates && bash validation/pi5/qemu-arm64-smoke.sh' \
+            bash -c 'export PATH=/usr/local/cargo/bin:/usr/local/rustup/bin:$PATH; bash validation/pi5/qemu-arm64-smoke.sh' \
             > /tmp/aurora-pi5-qemu.log 2>&1
           rc=$?
           echo "rc=$rc" >> "$GITHUB_OUTPUT"
