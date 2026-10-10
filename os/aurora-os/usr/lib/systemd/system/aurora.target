@@ -1,0 +1,7 @@
+[Unit]
+Description=Aurora modular immersive audio appliance
+Wants=network-online.target aurora-control.service aurora-audio.service aurora-health.timer
+After=network-online.target sound.target
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG="${AURORA_OS_CONFIG:-/etc/aurora/aurora-os.json}"
+HEALTH="/run/aurora/health.json"
+PLAN="/run/aurora/active-plan.json"
+INTENT="/var/lib/aurora/intent.json"
+
+usage() {
+  cat <<'EOF'
+Usage:
+  auroractl status
+  auroractl health [--quiet]
+  auroractl plan
+  auroractl modules
+  auroractl set-intent FILE
+  auroractl clear-intent
+  auroractl audio start|stop|restart
+  auroractl logs [control|audio]
+EOF
+}
+
+case "${1:-}" in
+  status)
+    systemctl --no-pager --full status aurora-control.service aurora-audio.service
+    ;;
+  health)
+    quiet="${2:-}"
+    [[ -f "$HEALTH" ]] || { [[ "$quiet" == "--quiet" ]] || echo "health file missing"; exit 1; }
+    python3 - "$HEALTH" "$quiet" <<'PY'
+import json, os, sys, time
+p=sys.argv[1]
+quiet=sys.argv[2] == "--quiet"
+data=json.load(open(p, encoding="utf-8"))
+age=time.time() - os.stat(p).st_mtime
+alive=age < 5.0 and data.get("state") != "daemon-error"
+if not quiet:
+    data["age_seconds"]=round(age,3)
+    print(json.dumps(data, indent=2))
+raise SystemExit(0 if alive else 1)
+PY
+    ;;
+  plan)
+    [[ -f "$PLAN" ]] && cat "$PLAN" || { echo "No active admitted plan (fail-closed or waiting for intent)."; exit 1; }
+    ;;
+  modules)
+    shopt -s nullglob
+    files=(/run/aurora/modules/*.json)
+    if (( ${#files[@]} == 0 )); then
+      echo "No speaker modules discovered."
+      exit 0
+    fi
+    for f in "${files[@]}"; do
+      echo "=== ${f##*/} ==="
+      cat "$f"
+      echo
+    done
+    ;;
+  set-intent)
+    [[ -n "${2:-}" && -f "$2" ]] || { echo "set-intent requires a JSON file" >&2; exit 2; }
+    install -m 0644 "$2" "$INTENT"
+    echo "Intent installed; control plane will reconcile automatically."
+    ;;
+  clear-intent)
+    rm -f "$INTENT"
+    echo "Intent removed; Aurora will fail closed."
+    ;;
+  audio)
+    case "${2:-}" in
+      start|stop|restart) systemctl "${2}" aurora-audio.service ;;
+      *) usage; exit 2 ;;
+    esac
+    ;;
+  logs)
+    case "${2:-control}" in
+      control) journalctl -u aurora-control.service -f ;;
+      audio) journalctl -u aurora-audio.service -f ;;
+      *) usage; exit 2 ;;
+    esac
+    ;;
+  *)
+    usage
+    exit 2
+    ;;
+esac

@@ -1,0 +1,41 @@
+name: Aurora OS CI
+
+on:
+  push:
+    branches:
+      - aurora-os-v1
+      - main-v2
+    paths:
+      - "crates/aurora-os-daemon/**"
+      - "os/aurora-os/**"
+      - "crates/aurora-modular-speaker-fabric/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/aurora-os-ci.yml"
+  pull_request:
+    paths:
+      - "crates/aurora-os-daemon/**"
+      - "os/aurora-os/**"
+      - "crates/aurora-modular-speaker-fabric/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/aurora-os-ci.yml"
+
+jobs:
+  aurora-os:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Rust tests
+        run: cargo test --locked -p aurora-os-daemon -p aurora-modular-speaker-fabric
+      - name: Rust check
+        run: cargo check --locked -p aurora-os-daemon
+      - name: Shell syntax
+        run: |
+          bash -n os/aurora-os/install-overlay.sh
+          bash -n os/aurora-os/build-image.sh
+          bash -n os/aurora-os/usr/local/sbin/aurora-audio
+          bash -n os/aurora-os/usr/local/bin/auroractl
+      - name: Validate default config
+        run: python3 -m json.tool os/aurora-os/etc/aurora/aurora-os.json >/dev/null

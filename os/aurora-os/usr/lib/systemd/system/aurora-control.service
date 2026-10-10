@@ -1,0 +1,26 @@
+[Unit]
+Description=Aurora modular speaker control plane
+After=network-online.target
+PartOf=aurora.target
+
+[Service]
+Type=simple
+User=aurora
+Group=aurora
+RuntimeDirectory=aurora
+StateDirectory=aurora
+CacheDirectory=aurora
+ExecStart=/usr/local/sbin/aurora-os-daemon --config /etc/aurora/aurora-os.json
+Restart=always
+RestartSec=1
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadWritePaths=/run/aurora /var/lib/aurora /var/cache/aurora
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=aurora.target

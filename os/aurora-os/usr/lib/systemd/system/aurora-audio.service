@@ -1,0 +1,26 @@
+[Unit]
+Description=Aurora live immersive audio pipeline
+After=aurora-control.service sound.target
+Requires=aurora-control.service
+PartOf=aurora.target
+
+[Service]
+Type=simple
+User=aurora
+Group=aurora
+SupplementaryGroups=audio
+ExecStart=/usr/local/sbin/aurora-audio
+Restart=on-failure
+RestartSec=2
+LimitRTPRIO=80
+LimitMEMLOCK=infinity
+Nice=-10
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectHome=yes
+ProtectSystem=strict
+ReadOnlyPaths=/opt/aurora/src
+ReadWritePaths=/run/aurora /var/lib/aurora /var/cache/aurora
+
+[Install]
+WantedBy=aurora.target
