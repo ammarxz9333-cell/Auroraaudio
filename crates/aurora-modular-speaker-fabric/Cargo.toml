@@ -8,5 +8,6 @@ rust-version.workspace = true
 
 [dependencies]
 aurora-core = { path = "../aurora-core" }
+aurora-realtime-audio-api = { path = "../aurora-realtime-audio-api" }
 serde.workspace = true
 thiserror.workspace = true
