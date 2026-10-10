@@ -50,6 +50,14 @@ Detached cinema preset:
 - fail-closed admission for cinema/stereo/multiroom modes;
 - deterministic reconfiguration plans.
 
+For detached assignments, the fabric also materializes Aurora network routes:
+- source channel indexes are taken from the canonical 7.1.4 rendered PCM bus;
+- PTP endpoints become `PtpFollower` network streams;
+- adaptive-peer endpoints become `AdaptiveRateFollower` streams;
+- docked assignments remain on the synchronous local dock path.
+
+A stateful `FabricSession` reconciles hot dock/undock, disappearance, and sync changes. If a previously active module loses synchronization or disappears, the active plan is cleared immediately instead of retaining a stale route.
+
 It deliberately does **not** own:
 
 - Wi-Fi drivers;
@@ -142,7 +150,7 @@ left-pod  = detached / WirelessNetwork / SL
 right-pod = detached / WirelessNetwork / SR
 ```
 
-State B is accepted only when both endpoint clocks are locked and scheduled playout/skew evidence passes policy.
+State B is accepted only when both endpoint clocks are locked and scheduled playout/skew evidence passes policy. In the canonical 7.1.4 bus this SL/SR pair materializes source channel indexes 4 and 5 (zero-based) into timestamped network streams.
 
 Run:
 
