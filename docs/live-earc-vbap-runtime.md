@@ -55,6 +55,42 @@ bash validation/physical/run-live-earc-vbap.sh \
 
 The output contract is interleaved `S32_LE`, 12 channels, 48 kHz in Aurora's canonical 7.1.4 order. In direct-device mode the rendered stream crosses Aurora's adaptive duplex bridge before `aplay`: a single bounded 12-channel FIFO feeds one shared ASRC ratio, preserving channel coherence while compensating the independent eARC-input and USB-output clocks.
 
+
+### UMC1820 + ADA8200 output profile
+
+For the proven Linux UMC1820 topology at 48 kHz, the UMC1820 exposes 20 playback slots when the ADAT expansion is present. Aurora provides a dedicated `umc1820-ada8200` sink profile rather than relying on ALSA's default first-N-channel routing.
+
+Logical Aurora 7.1.4 is mapped as follows:
+
+| Aurora | UMC1820 USB playback slot | Physical destination |
+| --- | ---: | --- |
+| FL | 3 | Line Out 3 |
+| FR | 4 | Line Out 4 |
+| FC | 5 | Line Out 5 |
+| LFE | 6 | Line Out 6 |
+| SL | 7 | Line Out 7 |
+| SR | 8 | Line Out 8 |
+| SBL | 9 | Line Out 9 |
+| SBR | 10 | Line Out 10 |
+| TFL | 13 | ADAT 1 -> ADA8200 Out 1 |
+| TFR | 14 | ADAT 2 -> ADA8200 Out 2 |
+| TRL | 15 | ADAT 3 -> ADA8200 Out 3 |
+| TRR | 16 | ADAT 4 -> ADA8200 Out 4 |
+
+USB playback slots 1-2, 11-12, and 17-20 are emitted as digital silence. This intentionally avoids the UMC1820 Main 1-2 hardware volume control and avoids sending Aurora channels to S/PDIF.
+
+Use a conversion-capable ALSA endpoint such as `plughw:` for this profile because Linux reports the UMC1820's 20-channel hardware playback format as `S24_3LE`, while Aurora's pipe contract remains `S32_LE`.
+
+```bash
+bash validation/physical/run-live-earc-vbap.sh \
+  --capture-device 'hw:CAPTURE,DEV' \
+  --output-device 'plughw:UMC1820,0' \
+  --output-profile umc1820-ada8200 \
+  --seconds 85
+```
+
+At 48 kHz the optical output carries eight ADAT channels; the profile currently uses the first four and leaves ADAT 5-8 silent. The physical UMC1820 + ADA8200 + Raspberry Pi chain remains an evidence gate until run on the actual hardware.
+
 ## Truth boundary
 
 A passing fixture CI proves the software connection from IEC61937 JOC through Harletty into Aurora's own 3D renderer and proves the adaptive-output bridge builds and passes its synthetic multichannel self-test. It does not prove a physical eARC capture, a specific streaming service, a specific USB/TDM device, or long-duration dual-clock stability.
