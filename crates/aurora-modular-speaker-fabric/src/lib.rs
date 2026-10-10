@@ -6,7 +6,7 @@
 //! cinema plan only when the selected route has explicit synchronization
 //! evidence; otherwise planning fails closed.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use aurora_core::{ChannelRole, StandardLayout};
 use aurora_realtime_audio_api::{
@@ -621,6 +621,262 @@ pub fn detachable_atmos_rear_intent(left: &str, right: &str) -> DeploymentIntent
     }
 }
 
+
+
+/// One ordered control command for a detachable endpoint handover.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EndpointHandoverCommand {
+    /// Silence the endpoint before changing route, clock domain or speaker role.
+    Mute {
+        module_id: String,
+        epoch: u64,
+    },
+    /// Install the next admitted assignment while the endpoint remains muted.
+    Prepare {
+        assignment: ModuleAssignment,
+        epoch: u64,
+    },
+    /// Arm the prepared route for one future Aurora media-frame boundary.
+    Arm {
+        module_id: String,
+        epoch: u64,
+        start_frame: u64,
+    },
+    /// Make the armed assignment active. Audio remains gated until start_frame.
+    Commit {
+        module_id: String,
+        epoch: u64,
+    },
+}
+
+/// Deterministic make-before-play handover across all changed modules.
+///
+/// Commands are intentionally grouped globally as mute -> prepare -> arm ->
+/// commit. No changed endpoint is allowed to begin the new route while another
+/// changed endpoint is still playing the old topology.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HandoverPlan {
+    pub epoch: u64,
+    pub start_frame: u64,
+    pub commands: Vec<EndpointHandoverCommand>,
+}
+
+/// Errors returned by handover planning or endpoint command application.
+#[derive(Debug, Error, Clone, PartialEq, Eq)]
+pub enum HandoverError {
+    #[error("handover epoch must be non-zero")]
+    InvalidEpoch,
+    #[error("handover command addressed the wrong module")]
+    WrongModule,
+    #[error("handover command uses a stale or unexpected epoch")]
+    EpochMismatch,
+    #[error("handover command arrived out of order")]
+    InvalidPhase,
+}
+
+/// Build a deterministic handover from an optional active plan to a new plan.
+///
+/// Unchanged assignments are left running. Changed/new assignments are muted,
+/// prepared, armed to the same future media frame, then committed. Assignments
+/// removed from the next plan receive only Mute and remain fail-closed.
+pub fn build_handover_plan(
+    previous: Option<&FabricPlan>,
+    next: &FabricPlan,
+    epoch: u64,
+    start_frame: u64,
+) -> Result<HandoverPlan, HandoverError> {
+    if epoch == 0 {
+        return Err(HandoverError::InvalidEpoch);
+    }
+
+    let mut ids = BTreeSet::<String>::new();
+    if let Some(previous) = previous {
+        for assignment in &previous.assignments {
+            ids.insert(assignment.module_id.clone());
+        }
+    }
+    for assignment in &next.assignments {
+        ids.insert(assignment.module_id.clone());
+    }
+
+    let lookup = |plan: Option<&FabricPlan>, id: &str| {
+        plan.and_then(|plan| {
+            plan.assignments
+                .iter()
+                .find(|assignment| assignment.module_id == id)
+        })
+    };
+
+    let mut changed = Vec::<(String, Option<ModuleAssignment>)>::new();
+    for id in ids {
+        let old = lookup(previous, &id);
+        let new = lookup(Some(next), &id);
+        if old != new {
+            changed.push((id, new.cloned()));
+        }
+    }
+
+    let mut commands = Vec::new();
+    for (module_id, _) in &changed {
+        commands.push(EndpointHandoverCommand::Mute {
+            module_id: module_id.clone(),
+            epoch,
+        });
+    }
+    for (_, assignment) in &changed {
+        if let Some(assignment) = assignment {
+            commands.push(EndpointHandoverCommand::Prepare {
+                assignment: assignment.clone(),
+                epoch,
+            });
+        }
+    }
+    for (module_id, assignment) in &changed {
+        if assignment.is_some() {
+            commands.push(EndpointHandoverCommand::Arm {
+                module_id: module_id.clone(),
+                epoch,
+                start_frame,
+            });
+        }
+    }
+    for (module_id, assignment) in &changed {
+        if assignment.is_some() {
+            commands.push(EndpointHandoverCommand::Commit {
+                module_id: module_id.clone(),
+                epoch,
+            });
+        }
+    }
+
+    Ok(HandoverPlan {
+        epoch,
+        start_frame,
+        commands,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum EndpointHandoverPhase {
+    Idle,
+    Muted,
+    Prepared,
+    Armed,
+}
+
+/// Endpoint-side fail-closed state machine for applying handover commands.
+///
+/// The physical endpoint firmware can mirror this contract. A stale epoch or
+/// out-of-order Prepare/Arm/Commit is rejected and cannot unmute the speaker.
+#[derive(Debug, Clone)]
+pub struct EndpointHandoverState {
+    module_id: String,
+    last_epoch: u64,
+    phase: EndpointHandoverPhase,
+    pending: Option<ModuleAssignment>,
+    active: Option<ModuleAssignment>,
+    armed_start_frame: Option<u64>,
+    muted: bool,
+}
+
+impl EndpointHandoverState {
+    pub fn new(module_id: impl Into<String>) -> Self {
+        Self {
+            module_id: module_id.into(),
+            last_epoch: 0,
+            phase: EndpointHandoverPhase::Idle,
+            pending: None,
+            active: None,
+            armed_start_frame: None,
+            muted: true,
+        }
+    }
+
+    pub fn apply(&mut self, command: &EndpointHandoverCommand) -> Result<(), HandoverError> {
+        match command {
+            EndpointHandoverCommand::Mute { module_id, epoch } => {
+                self.require_module(module_id)?;
+                if *epoch == 0 || *epoch <= self.last_epoch {
+                    return Err(HandoverError::EpochMismatch);
+                }
+                self.last_epoch = *epoch;
+                self.phase = EndpointHandoverPhase::Muted;
+                self.pending = None;
+                self.armed_start_frame = None;
+                self.muted = true;
+                Ok(())
+            }
+            EndpointHandoverCommand::Prepare { assignment, epoch } => {
+                self.require_module(&assignment.module_id)?;
+                self.require_epoch(*epoch)?;
+                if self.phase != EndpointHandoverPhase::Muted {
+                    return Err(HandoverError::InvalidPhase);
+                }
+                self.pending = Some(assignment.clone());
+                self.phase = EndpointHandoverPhase::Prepared;
+                Ok(())
+            }
+            EndpointHandoverCommand::Arm {
+                module_id,
+                epoch,
+                start_frame,
+            } => {
+                self.require_module(module_id)?;
+                self.require_epoch(*epoch)?;
+                if self.phase != EndpointHandoverPhase::Prepared {
+                    return Err(HandoverError::InvalidPhase);
+                }
+                self.armed_start_frame = Some(*start_frame);
+                self.phase = EndpointHandoverPhase::Armed;
+                Ok(())
+            }
+            EndpointHandoverCommand::Commit { module_id, epoch } => {
+                self.require_module(module_id)?;
+                self.require_epoch(*epoch)?;
+                if self.phase != EndpointHandoverPhase::Armed {
+                    return Err(HandoverError::InvalidPhase);
+                }
+                self.active = self.pending.take();
+                self.phase = EndpointHandoverPhase::Idle;
+                self.muted = false;
+                Ok(())
+            }
+        }
+    }
+
+    pub fn is_muted(&self) -> bool {
+        self.muted
+    }
+
+    pub fn active_assignment(&self) -> Option<&ModuleAssignment> {
+        self.active.as_ref()
+    }
+
+    pub fn armed_start_frame(&self) -> Option<u64> {
+        self.armed_start_frame
+    }
+
+    pub fn last_epoch(&self) -> u64 {
+        self.last_epoch
+    }
+
+    fn require_module(&self, module_id: &str) -> Result<(), HandoverError> {
+        if self.module_id == module_id {
+            Ok(())
+        } else {
+            Err(HandoverError::WrongModule)
+        }
+    }
+
+    fn require_epoch(&self, epoch: u64) -> Result<(), HandoverError> {
+        if epoch != 0 && epoch == self.last_epoch {
+            Ok(())
+        } else {
+            Err(HandoverError::EpochMismatch)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -973,5 +1229,186 @@ mod tests {
             FabricPlanner::with_defaults().plan(&modules, &invalid),
             Err(FabricError::InvalidStandaloneIntent)
         );
+    }
+}
+
+
+#[cfg(test)]
+mod handover_tests {
+    use super::*;
+
+    fn assignment(
+        id: &str,
+        route: ModuleRoute,
+        roles: Vec<ChannelRole>,
+        clock_source: ModuleClockSource,
+    ) -> ModuleAssignment {
+        ModuleAssignment {
+            module_id: id.to_owned(),
+            route,
+            clock_source,
+            roles,
+        }
+    }
+
+    #[test]
+    fn dock_to_wireless_role_change_is_muted_prepared_armed_then_committed() {
+        let previous = FabricPlan {
+            mode: DeploymentMode::Cinema,
+            assignments: vec![assignment(
+                "left-pod",
+                ModuleRoute::DockBus,
+                vec![ChannelRole::FrontLeft, ChannelRole::TopFrontLeft],
+                ModuleClockSource::DockRecovered,
+            )],
+        };
+        let next = FabricPlan {
+            mode: DeploymentMode::Cinema,
+            assignments: vec![assignment(
+                "left-pod",
+                ModuleRoute::WirelessNetwork,
+                vec![ChannelRole::SurroundLeft, ChannelRole::TopRearLeft],
+                ModuleClockSource::Ptp,
+            )],
+        };
+
+        let handover = build_handover_plan(Some(&previous), &next, 7, 96_000).unwrap();
+        assert_eq!(handover.commands.len(), 4);
+        assert!(matches!(
+            handover.commands[0],
+            EndpointHandoverCommand::Mute { epoch: 7, .. }
+        ));
+        assert!(matches!(
+            handover.commands[1],
+            EndpointHandoverCommand::Prepare { epoch: 7, .. }
+        ));
+        assert!(matches!(
+            handover.commands[2],
+            EndpointHandoverCommand::Arm {
+                epoch: 7,
+                start_frame: 96_000,
+                ..
+            }
+        ));
+        assert!(matches!(
+            handover.commands[3],
+            EndpointHandoverCommand::Commit { epoch: 7, .. }
+        ));
+
+        let mut endpoint = EndpointHandoverState::new("left-pod");
+        for command in &handover.commands {
+            endpoint.apply(command).unwrap();
+        }
+        assert!(!endpoint.is_muted());
+        assert_eq!(endpoint.last_epoch(), 7);
+        assert_eq!(endpoint.armed_start_frame(), Some(96_000));
+        assert_eq!(
+            endpoint.active_assignment().unwrap().roles,
+            vec![ChannelRole::SurroundLeft, ChannelRole::TopRearLeft]
+        );
+    }
+
+    #[test]
+    fn all_changed_modules_are_muted_before_any_prepare() {
+        let previous = FabricPlan {
+            mode: DeploymentMode::Cinema,
+            assignments: vec![
+                assignment(
+                    "left",
+                    ModuleRoute::DockBus,
+                    vec![ChannelRole::FrontLeft],
+                    ModuleClockSource::DockRecovered,
+                ),
+                assignment(
+                    "right",
+                    ModuleRoute::DockBus,
+                    vec![ChannelRole::FrontRight],
+                    ModuleClockSource::DockRecovered,
+                ),
+            ],
+        };
+        let next = FabricPlan {
+            mode: DeploymentMode::Cinema,
+            assignments: vec![
+                assignment(
+                    "left",
+                    ModuleRoute::WirelessNetwork,
+                    vec![ChannelRole::SurroundLeft],
+                    ModuleClockSource::Ptp,
+                ),
+                assignment(
+                    "right",
+                    ModuleRoute::WirelessNetwork,
+                    vec![ChannelRole::SurroundRight],
+                    ModuleClockSource::Ptp,
+                ),
+            ],
+        };
+
+        let handover = build_handover_plan(Some(&previous), &next, 2, 48_000).unwrap();
+        assert!(handover.commands[..2]
+            .iter()
+            .all(|command| matches!(command, EndpointHandoverCommand::Mute { .. })));
+        assert!(handover.commands[2..4]
+            .iter()
+            .all(|command| matches!(command, EndpointHandoverCommand::Prepare { .. })));
+    }
+
+    #[test]
+    fn stale_epoch_and_out_of_order_commit_fail_closed() {
+        let mut endpoint = EndpointHandoverState::new("rear");
+        endpoint
+            .apply(&EndpointHandoverCommand::Mute {
+                module_id: "rear".to_owned(),
+                epoch: 3,
+            })
+            .unwrap();
+
+        assert_eq!(
+            endpoint.apply(&EndpointHandoverCommand::Commit {
+                module_id: "rear".to_owned(),
+                epoch: 3,
+            }),
+            Err(HandoverError::InvalidPhase)
+        );
+        assert!(endpoint.is_muted());
+
+        assert_eq!(
+            endpoint.apply(&EndpointHandoverCommand::Mute {
+                module_id: "rear".to_owned(),
+                epoch: 2,
+            }),
+            Err(HandoverError::EpochMismatch)
+        );
+        assert!(endpoint.is_muted());
+    }
+
+    #[test]
+    fn removed_module_receives_mute_only_and_stays_muted() {
+        let previous = FabricPlan {
+            mode: DeploymentMode::Cinema,
+            assignments: vec![assignment(
+                "rear",
+                ModuleRoute::WirelessNetwork,
+                vec![ChannelRole::SurroundLeft],
+                ModuleClockSource::Ptp,
+            )],
+        };
+        let next = FabricPlan {
+            mode: DeploymentMode::Cinema,
+            assignments: vec![],
+        };
+
+        let handover = build_handover_plan(Some(&previous), &next, 9, 144_000).unwrap();
+        assert_eq!(handover.commands.len(), 1);
+        assert!(matches!(
+            handover.commands[0],
+            EndpointHandoverCommand::Mute { epoch: 9, .. }
+        ));
+
+        let mut endpoint = EndpointHandoverState::new("rear");
+        endpoint.apply(&handover.commands[0]).unwrap();
+        assert!(endpoint.is_muted());
+        assert!(endpoint.active_assignment().is_none());
     }
 }
