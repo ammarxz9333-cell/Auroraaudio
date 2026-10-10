@@ -7,6 +7,8 @@ import argparse
 import json
 import pathlib
 import re
+import shutil
+import subprocess
 import sys
 
 
@@ -80,6 +82,95 @@ def evaluate(info: dict[str, object]) -> list[str]:
     return errors
 
 
+def parse_mixer_values(text: str) -> list[str]:
+    matches = re.findall(r"(?m)^\s*: values=(.+?)\s*$", text)
+    if not matches:
+        raise ValueError("missing mixer values")
+    return [value.strip() for value in matches[-1].split(",")]
+
+
+def inspect_mixer(card: str, require_controls: bool) -> tuple[dict[str, object], list[str]]:
+    result: dict[str, object] = {
+        "amixer_available": shutil.which("amixer") is not None,
+        "playback_switch": None,
+        "playback_volume": None,
+    }
+    errors: list[str] = []
+    if not result["amixer_available"]:
+        if require_controls:
+            errors.append("amixer is required to verify UMC1820 playback mute state")
+        return result, errors
+
+    controls = (
+        ("playback_switch", "UMC1820 Output Playback Switch"),
+        ("playback_volume", "UMC1820 Output Playback Volume"),
+    )
+    for key, name in controls:
+        process = subprocess.run(
+            ["amixer", "-c", card, "cget", f"name={name}"],
+            text=True,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            check=False,
+        )
+        if process.returncode != 0:
+            result[key] = {
+                "available": False,
+                "returncode": process.returncode,
+                "stderr": process.stderr.strip(),
+            }
+            if require_controls:
+                errors.append(f"missing ALSA mixer control {name!r}")
+            continue
+        try:
+            values = parse_mixer_values(process.stdout)
+        except ValueError as error:
+            result[key] = {
+                "available": True,
+                "parse_error": str(error),
+                "raw": process.stdout,
+            }
+            if require_controls:
+                errors.append(f"could not parse ALSA mixer control {name!r}")
+            continue
+        result[key] = {"available": True, "values": values}
+
+    switch = result.get("playback_switch")
+    if isinstance(switch, dict) and switch.get("available") is True:
+        values = switch.get("values")
+        if isinstance(values, list):
+            if len(values) < 16:
+                errors.append(
+                    f"UMC1820 playback switch exposes {len(values)} values; expected at least 16"
+                )
+            else:
+                muted = [index + 1 for index, value in enumerate(values[:16]) if value.lower() != "on"]
+                if muted:
+                    errors.append(
+                        "UMC1820 playback outputs muted in ALSA mixer: "
+                        + ",".join(map(str, muted))
+                    )
+
+    volume = result.get("playback_volume")
+    if isinstance(volume, dict) and volume.get("available") is True:
+        values = volume.get("values")
+        if isinstance(values, list):
+            numeric: list[int] = []
+            for value in values[:16]:
+                match = re.search(r"-?\d+", value)
+                if match:
+                    numeric.append(int(match.group(0)))
+            if len(numeric) >= 16:
+                zero = [index + 1 for index, value in enumerate(numeric[:16]) if value <= 0]
+                if zero:
+                    errors.append(
+                        "UMC1820 playback volumes are zero for outputs: "
+                        + ",".join(map(str, zero))
+                    )
+
+    return result, errors
+
+
 def synthetic_stream() -> str:
     return """BEHRINGER UMC1820 at usb-0000:00:1d.0-1.3, high speed : USB Audio
 
@@ -108,6 +199,7 @@ def main() -> int:
     parser.add_argument("--card", default="UMC1820")
     parser.add_argument("--proc-root", default="/proc/asound")
     parser.add_argument("--report")
+    parser.add_argument("--require-mixer-controls", action="store_true")
     parser.add_argument("--self-test", action="store_true")
     args = parser.parse_args()
 
@@ -120,6 +212,9 @@ def main() -> int:
         broken_info = parse_playback_block(broken)
         if not evaluate(broken_info):
             raise SystemExit("self-test failed to reject 12-channel topology")
+        switch = parse_mixer_values(": values=on,on,on,off\n")
+        if switch != ["on", "on", "on", "off"]:
+            raise SystemExit("self-test failed to parse mixer values")
         print(
             "AURORA-UMC1820-PREFLIGHT-SELFTEST-PASS "
             f"channels={info['channels']} format={info['format']} rates={','.join(map(str, info['rates']))}"
@@ -131,6 +226,8 @@ def main() -> int:
         text = stream_path.read_text(encoding="utf-8", errors="replace")
         info = parse_playback_block(text)
         errors = evaluate(info)
+        mixer, mixer_errors = inspect_mixer(resolved_card, args.require_mixer_controls)
+        errors.extend(mixer_errors)
     except (OSError, ValueError) as error:
         print(f"AURORA-UMC1820-PREFLIGHT-FAIL: {error}", file=sys.stderr)
         return 2
@@ -140,6 +237,7 @@ def main() -> int:
         "card_resolved": resolved_card,
         "stream0": str(stream_path),
         "playback": info,
+        "mixer": mixer,
         "expected": {
             "format": EXPECTED_FORMAT,
             "channels": EXPECTED_CHANNELS,
@@ -152,6 +250,7 @@ def main() -> int:
             "Use one UMC1820 USB clock domain; ADA8200 is the ADAT expansion.",
             "Aurora's umc1820-ada8200 profile emits 20 USB slots and keeps unused slots silent.",
             "Use a conversion-capable ALSA endpoint such as plughw because Aurora emits S32_LE while the hardware endpoint advertises S24_3LE.",
+            "Some Linux/ALSA combinations have been observed with UMC1820 playback outputs muted by default; mixer state is checked when the controls are available.",
         ],
     }
 
