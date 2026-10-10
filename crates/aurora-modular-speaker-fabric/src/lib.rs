@@ -621,16 +621,11 @@ pub fn detachable_atmos_rear_intent(left: &str, right: &str) -> DeploymentIntent
     }
 }
 
-
-
 /// One ordered control command for a detachable endpoint handover.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum EndpointHandoverCommand {
     /// Silence the endpoint before changing route, clock domain or speaker role.
-    Mute {
-        module_id: String,
-        epoch: u64,
-    },
+    Mute { module_id: String, epoch: u64 },
     /// Install the next admitted assignment while the endpoint remains muted.
     Prepare {
         assignment: ModuleAssignment,
@@ -643,10 +638,7 @@ pub enum EndpointHandoverCommand {
         start_frame: u64,
     },
     /// Make the armed assignment active. Audio remains gated until start_frame.
-    Commit {
-        module_id: String,
-        epoch: u64,
-    },
+    Commit { module_id: String, epoch: u64 },
 }
 
 /// Deterministic make-before-play handover across all changed modules.
@@ -1231,7 +1223,6 @@ mod tests {
         );
     }
 }
-
 
 #[cfg(test)]
 mod handover_tests {
