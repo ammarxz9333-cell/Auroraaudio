@@ -853,10 +853,7 @@ mod tests {
             module("right", ModuleAttachment::Detached, ptp(160)),
         ];
         let plan = FabricPlanner::with_defaults()
-            .plan(
-                &modules,
-                &detachable_atmos_rear_intent("left", "right"),
-            )
+            .plan(&modules, &detachable_atmos_rear_intent("left", "right"))
             .unwrap();
 
         assert_eq!(
@@ -880,10 +877,7 @@ mod tests {
             module("right", ModuleAttachment::Detached, ptp(160)),
         ];
         let plan = FabricPlanner::with_defaults()
-            .plan(
-                &modules,
-                &detachable_atmos_rear_intent("left", "right"),
-            )
+            .plan(&modules, &detachable_atmos_rear_intent("left", "right"))
             .unwrap();
         let timing = NetworkTimingPolicy {
             target_latency_frames: 480,
