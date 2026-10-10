@@ -51,10 +51,18 @@ impl Default for PolicyConfig {
     }
 }
 
-fn default_poll_ms() -> u64 { 250 }
-fn default_cinema_skew() -> u32 { 1_000 }
-fn default_stereo_skew() -> u32 { 1_000 }
-fn default_multiroom_skew() -> u32 { 10_000 }
+fn default_poll_ms() -> u64 {
+    250
+}
+fn default_cinema_skew() -> u32 {
+    1_000
+}
+fn default_stereo_skew() -> u32 {
+    1_000
+}
+fn default_multiroom_skew() -> u32 {
+    10_000
+}
 
 #[derive(Debug, Serialize)]
 struct PlanView {
@@ -249,7 +257,12 @@ fn run_once(config: &ControlConfig) -> Result<()> {
     };
     atomic_json(&config.health_path, &health)?;
     if health.state == "daemon-error" {
-        anyhow::bail!("{}", health.error.unwrap_or_else(|| "unknown daemon error".to_owned()));
+        anyhow::bail!(
+            "{}",
+            health
+                .error
+                .unwrap_or_else(|| "unknown daemon error".to_owned())
+        );
     }
     Ok(())
 }
