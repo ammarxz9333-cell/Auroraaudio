@@ -1,9 +1,13 @@
 use aurora_modular_speaker_fabric::{
     build_handover_plan, detachable_atmos_rear_intent, docked_atmos_wing_intent,
     EndpointHandoverCommand, EndpointHandoverState, FabricPlanner, ModuleAttachment,
-    ModuleClockSource, ModuleSyncStatus, SpeakerModuleCapabilities, SpeakerModuleState,
+    ModuleClockSource, ModuleSyncStatus, PreparedModuleNetworkFanout, SpeakerModuleCapabilities,
+    SpeakerModuleState,
 };
-use aurora_realtime_audio_api::NetworkTimingPolicy;
+use aurora_realtime_audio_api::{
+    MediaTimestamp, NetworkAudioBlock, NetworkAudioFormat, NetworkTimingPolicy,
+    AURORA_NETWORK_MEDIA_RATE,
+};
 
 fn module(id: &str, attachment: ModuleAttachment, sync: ModuleSyncStatus) -> SpeakerModuleState {
     SpeakerModuleState {
@@ -90,6 +94,29 @@ fn main() {
     assert_eq!(routes[0].source_channel_indices, vec![4, 10]);
     assert_eq!(routes[1].source_channel_indices, vec![5, 11]);
 
+    // Prove the admitted role mapping reaches real timestamped PCM lanes.
+    let mut fanout = PreparedModuleNetworkFanout::prepare(routes).expect("prepared PCM fanout");
+    let pcm = (0..48)
+        .flat_map(|frame| (0..12).map(move |channel| (frame * 100 + channel) as f32))
+        .collect::<Vec<_>>();
+    let input = NetworkAudioBlock {
+        sequence: 23,
+        timestamp: MediaTimestamp::new(96_000, AURORA_NETWORK_MEDIA_RATE)
+            .expect("valid media timestamp"),
+        format: NetworkAudioFormat {
+            sample_rate: AURORA_NETWORK_MEDIA_RATE,
+            channels: 12,
+            block_frames: 48,
+        },
+        samples: &pcm,
+    };
+    fanout.split(&input).expect("route canonical 7.1.4 PCM");
+    let left_pcm = fanout.module_block(0).expect("left pod PCM");
+    let right_pcm = fanout.module_block(1).expect("right pod PCM");
+    assert_eq!(&left_pcm.samples[..4], &[4.0, 10.0, 104.0, 110.0]);
+    assert_eq!(&right_pcm.samples[..4], &[5.0, 11.0, 105.0, 111.0]);
+    assert_eq!(left_pcm.timestamp, right_pcm.timestamp);
+
     let handover = build_handover_plan(Some(&bar), &rears, 1, 192_000)
         .expect("atomic dock-to-wireless handover");
     assert_eq!(handover.commands.len(), 8);
@@ -119,6 +146,6 @@ fn main() {
     assert_eq!(right_endpoint.armed_start_frame(), Some(192_000));
 
     println!(
-        "AURORA-MODULAR-ATMOS-PASS docked=FL+TFL,FR+TFR detached=SL+TRL,SR+TRR lanes_per_pod=2 handover=atomic"
+        "AURORA-MODULAR-ATMOS-PASS docked=FL+TFL,FR+TFR detached=SL+TRL,SR+TRR pcm=4+10,5+11 lanes_per_pod=2 handover=atomic"
     );
 }
