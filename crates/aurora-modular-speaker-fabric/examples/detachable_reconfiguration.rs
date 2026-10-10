@@ -53,10 +53,7 @@ fn main() {
         module("right-pod", ModuleAttachment::Detached, wireless_sync(220)),
     ];
     let rears = planner
-        .plan(
-            &detached,
-            &detached_rear_intent("left-pod", "right-pod"),
-        )
+        .plan(&detached, &detached_rear_intent("left-pod", "right-pod"))
         .expect("detached rear plan");
     println!("detached={rears:?}");
 }
