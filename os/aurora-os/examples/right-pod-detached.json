@@ -1,0 +1,18 @@
+{
+  "module_id": "right-pod",
+  "capabilities": {
+    "output_lanes": 2,
+    "dock_pcm": true,
+    "wired_network_audio": false,
+    "wireless_network_audio": true,
+    "battery_powered": true
+  },
+  "attachment": {"state": "detached"},
+  "sync": {
+    "locked": true,
+    "scheduled_playout": true,
+    "estimated_skew_micros": 300,
+    "clock_source": "ptp"
+  },
+  "online": true
+}

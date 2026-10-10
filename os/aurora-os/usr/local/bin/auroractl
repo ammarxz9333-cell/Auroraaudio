@@ -5,6 +5,8 @@ CONFIG="${AURORA_OS_CONFIG:-/etc/aurora/aurora-os.json}"
 HEALTH="/run/aurora/health.json"
 PLAN="/run/aurora/active-plan.json"
 INTENT="/var/lib/aurora/intent.json"
+PRESETS="/usr/share/aurora/presets"
+MODULE_DIR="/run/aurora/modules"
 
 usage() {
   cat <<'EOF'
@@ -13,11 +15,39 @@ Usage:
   auroractl health [--quiet]
   auroractl plan
   auroractl modules
+  auroractl register-module FILE
+  auroractl remove-module MODULE_ID
   auroractl set-intent FILE
+  auroractl preset docked-atmos|detached-atmos|stereo
   auroractl clear-intent
-  auroractl audio start|stop|restart
+  auroractl audio enable|disable|start|stop|restart
   auroractl logs [control|audio]
 EOF
+}
+
+set_audio_enabled() {
+  local value="$1"
+  python3 - "$CONFIG" "$value" <<'PY'
+import json, os, sys, tempfile
+path=sys.argv[1]
+value=sys.argv[2] == "true"
+with open(path, encoding="utf-8") as f:
+    data=json.load(f)
+data.setdefault("audio", {})["enabled"]=value
+directory=os.path.dirname(path) or "."
+fd,tmp=tempfile.mkstemp(prefix=".aurora-os.", dir=directory)
+try:
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        json.dump(data,f,indent=2)
+        f.write("\n")
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp,path)
+except Exception:
+    try: os.unlink(tmp)
+    except OSError: pass
+    raise
+PY
 }
 
 case "${1:-}" in
@@ -45,7 +75,7 @@ PY
     ;;
   modules)
     shopt -s nullglob
-    files=(/run/aurora/modules/*.json)
+    files=("$MODULE_DIR"/*.json)
     if (( ${#files[@]} == 0 )); then
       echo "No speaker modules discovered."
       exit 0
@@ -56,10 +86,39 @@ PY
       echo
     done
     ;;
+  register-module)
+    [[ -n "${2:-}" && -f "$2" ]] || { echo "register-module requires a JSON file" >&2; exit 2; }
+    module_id="$(python3 - "$2" <<'PY'
+import json,sys
+v=json.load(open(sys.argv[1], encoding="utf-8")).get("module_id","")
+if not v or "/" in v or v in (".",".."):
+    raise SystemExit("invalid module_id")
+print(v)
+PY
+)"
+    install -d -m 0755 "$MODULE_DIR"
+    install -m 0644 "$2" "$MODULE_DIR/$module_id.json"
+    echo "Module $module_id registered."
+    ;;
+  remove-module)
+    [[ -n "${2:-}" ]] || { echo "remove-module requires MODULE_ID" >&2; exit 2; }
+    rm -f "$MODULE_DIR/$2.json"
+    echo "Module $2 removed."
+    ;;
   set-intent)
     [[ -n "${2:-}" && -f "$2" ]] || { echo "set-intent requires a JSON file" >&2; exit 2; }
     install -m 0644 "$2" "$INTENT"
     echo "Intent installed; control plane will reconcile automatically."
+    ;;
+  preset)
+    case "${2:-}" in
+      docked-atmos) src="$PRESETS/docked-atmos.json" ;;
+      detached-atmos) src="$PRESETS/detached-atmos.json" ;;
+      stereo) src="$PRESETS/stereo.json" ;;
+      *) usage; exit 2 ;;
+    esac
+    install -m 0644 "$src" "$INTENT"
+    echo "Preset ${2} installed."
     ;;
   clear-intent)
     rm -f "$INTENT"
@@ -67,8 +126,21 @@ PY
     ;;
   audio)
     case "${2:-}" in
-      start|stop|restart) systemctl "${2}" aurora-audio.service ;;
-      *) usage; exit 2 ;;
+      enable)
+        set_audio_enabled true
+        systemctl restart aurora-audio.service
+        ;;
+      disable)
+        set_audio_enabled false
+        systemctl restart aurora-audio.service
+        ;;
+      start|stop|restart)
+        systemctl "${2}" aurora-audio.service
+        ;;
+      *)
+        usage
+        exit 2
+        ;;
     esac
     ;;
   logs)

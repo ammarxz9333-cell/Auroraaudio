@@ -26,6 +26,7 @@ install -m 0644 "$ROOT/os/aurora-os/usr/lib/systemd/system/"*.service "$DEST/usr
 install -m 0644 "$ROOT/os/aurora-os/usr/lib/systemd/system/"*.timer "$DEST/usr/lib/systemd/system/"
 install -m 0644 "$ROOT/os/aurora-os/usr/lib/systemd/system/"*.target "$DEST/usr/lib/systemd/system/"
 install -m 0644 "$ROOT/os/aurora-os/etc/tmpfiles.d/aurora.conf" "$DEST/etc/tmpfiles.d/aurora.conf"
+install -m 0644 "$ROOT/os/aurora-os/presets/"*.json "$DEST/usr/share/aurora/presets/"
 
 if [[ ! -e "$DEST/etc/aurora/aurora-os.json" ]]; then
   install -m 0644 "$ROOT/os/aurora-os/etc/aurora/aurora-os.json" "$DEST/etc/aurora/aurora-os.json"
