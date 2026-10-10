@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/config/external-components-v1.json"
 HARNESS_SOURCE="$ROOT_DIR/validation/physical/aurora_live_earc_harness.rs"
 PIPE_ADAPTER="$ROOT_DIR/validation/physical/aurora_alsa_iec61937_pipe.py"
+ADAPTIVE_SOURCE="$ROOT_DIR/validation/physical/aurora_adaptive_output.rs"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
 BUILD_MODE="${AURORA_JOC_BUILD_MODE:-release}"
 KEEP_WORKDIR="${AURORA_KEEP_LIVE_EARC_WORKDIR:-0}"
@@ -27,9 +28,10 @@ Physical mode:
   TV/eARC -> ALSA S32_LE/2ch/192k -> IEC61937 E-AC-3 JOC -> Harletty ->
   Aurora Vbap3dRenderer -> S32_LE/12ch/48k -> file or one ALSA output device.
 
-The physical output path intentionally uses one ALSA device only. It does not
-aggregate independently clocked USB devices. Long-duration input/output clock
-drift compensation is a separate acceptance gate.
+Direct ALSA-device mode inserts Aurora's bounded adaptive duplex bridge between
+VBAP and aplay: one 12-channel FIFO, PI drift controller, clock estimator, and
+Rubato ASRC shared coherently across all channels. File mode remains an unpaced
+evidence capture and intentionally bypasses clock adaptation.
 EOF
 }
 
@@ -61,7 +63,7 @@ fi
 for cmd in git python3 cargo rustup ffmpeg; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
-[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" ]] || {
+[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$ADAPTIVE_SOURCE" ]] || {
   echo "Aurora live eARC sources are incomplete" >&2
   exit 2
 }
@@ -149,14 +151,18 @@ aurora-core = { path = "$ROOT_DIR/crates/aurora-core" }
 aurora-decoder-api = { path = "$ROOT_DIR/crates/aurora-decoder-api" }
 aurora-renderer-vbap = { path = "$ROOT_DIR/crates/aurora-renderer-vbap" }
 aurora-source-runtime = { path = "$ROOT_DIR/crates/aurora-source-runtime" }
+aurora-realtime-engine = { path = "$ROOT_DIR/crates/aurora-realtime-engine" }
 EOF_CARGO
 cp "$HARNESS_SOURCE" "$HARNESS_DIR/src/main.rs"
+mkdir -p "$HARNESS_DIR/src/bin"
+cp "$ADAPTIVE_SOURCE" "$HARNESS_DIR/src/bin/aurora-adaptive-output.rs"
 
 CARGO_TARGET_DIR="$HARNESS_TARGET" cargo +"$TOOLCHAIN" build "${PROFILE_ARGS[@]}"   --manifest-path "$HARNESS_DIR/Cargo.toml"
 
 BRIDGE_LIB="$HARLETTY_TARGET/$PROFILE_DIR/libharletty_bridge.so"
 HARNESS_BIN="$HARNESS_TARGET/$PROFILE_DIR/aurora-live-earc-harness"
-[[ -f "$BRIDGE_LIB" && -x "$HARNESS_BIN" ]] || {
+ADAPTIVE_BIN="$HARNESS_TARGET/$PROFILE_DIR/aurora-adaptive-output"
+[[ -f "$BRIDGE_LIB" && -x "$HARNESS_BIN" && -x "$ADAPTIVE_BIN" ]] || {
   echo "live eARC build products missing" >&2
   exit 1
 }
@@ -204,6 +210,7 @@ if [[ "$MODE" == "fixture" ]]; then
 
   cat "$JOC_IEC" | "$HARNESS_BIN" "$BRIDGE_LIB" > "$OUT"
   verify_s32_output "$OUT"
+  "$ADAPTIVE_BIN" --self-test --channels 12 --sample-rate 48000
 
   ffmpeg -nostdin -hide_banner -loglevel error -y     -f lavfi -i "anullsrc=channel_layout=5.1:sample_rate=48000"     -t 0.25 -c:a eac3 -b:a 448k -f spdif "$PLAIN_IEC"
 
@@ -245,7 +252,7 @@ else
     echo "aplay is required for --output-device" >&2
     exit 2
   }
-  python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "$HARNESS_BIN" "$BRIDGE_LIB"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c 12 -r 48000
+  python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "$HARNESS_BIN" "$BRIDGE_LIB"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c 12 -r 48000
 fi
 
 python3 "$ROOT_DIR/validation/physical/aurora_live_ingress.py" analyze   --input "$IEC_CAPTURE"   --report "$INGRESS_REPORT"   --max-invalid-bursts 0   --max-unclassified-bytes 0   --max-relocks 0   --minimum-valid-bursts 2   --require-locked-end
