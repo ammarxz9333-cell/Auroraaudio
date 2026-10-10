@@ -129,7 +129,8 @@ fn run_stream() -> Result<(), Box<dyn std::error::Error>> {
             filled += read;
         }
 
-        map_frame(&input_frame, &mut output_frame)?;
+        map_frame(&input_frame, &mut output_frame)
+            .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))?;
         output.write_all(&output_frame)?;
         frames = frames.saturating_add(1);
     }
