@@ -1,0 +1,42 @@
+name: Modular Speaker Fabric CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main-v2
+    paths:
+      - "crates/aurora-modular-speaker-fabric/**"
+      - "docs/modular-speaker-fabric.md"
+      - ".github/workflows/modular-speaker-fabric-ci.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+  pull_request:
+    paths:
+      - "crates/aurora-modular-speaker-fabric/**"
+      - "docs/modular-speaker-fabric.md"
+      - ".github/workflows/modular-speaker-fabric-ci.yml"
+      - "Cargo.toml"
+      - "Cargo.lock"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: modular-speaker-fabric-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  topology:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - run: cargo fmt --all --check
+      - run: cargo clippy -p aurora-modular-speaker-fabric --all-targets -- -D warnings
+      - run: cargo test -p aurora-modular-speaker-fabric
+      - name: Prove docked to detached reconfiguration
+        run: cargo run -p aurora-modular-speaker-fabric --example detachable_reconfiguration

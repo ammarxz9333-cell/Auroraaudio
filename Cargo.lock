@@ -221,6 +221,16 @@ name = "aurora-measurement"
 version = "0.1.0"
 
 [[package]]
+name = "aurora-modular-speaker-fabric"
+version = "0.1.0"
+dependencies = [
+ "aurora-core",
+ "aurora-realtime-audio-api",
+ "serde",
+ "thiserror",
+]
+
+[[package]]
 name = "aurora-plugin-api"
 version = "0.1.0"
 dependencies = [
