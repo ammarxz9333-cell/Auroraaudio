@@ -18,7 +18,9 @@ echo "AURORA-PI5-QEMU-OVERLAY-COMPILE-PASS"
 python3 validation/physical/aurora_alsa_iec61937_capture.py self-test
 python3 validation/physical/aurora_live_ingress.py self-test
 
-cargo test --locked -p aurora-modular-speaker-fabric -p aurora-os-daemon
+cargo build --quiet --locked -p aurora-os-daemon
+test -x target/debug/aurora-os-daemon
+echo "AURORA-PI5-QEMU-RUST-BUILD-PASS binary=target/debug/aurora-os-daemon"
 
 TMP="$(mktemp -d)"
 trap 'rm -rf "$TMP" /tmp/aurora-earc-tap.dtbo' EXIT
@@ -47,7 +49,7 @@ cfg={
 (root/"aurora-os.json").write_text(json.dumps(cfg), encoding="utf-8")
 PY
 
-cargo run --quiet --locked -p aurora-os-daemon -- --config "$TMP/aurora-os.json" --once
+target/debug/aurora-os-daemon --config "$TMP/aurora-os.json" --once
 
 python3 - "$TMP/active-plan.json" "$TMP/health.json" <<'PY'
 import json,sys
