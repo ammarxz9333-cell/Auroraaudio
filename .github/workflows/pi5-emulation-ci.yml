@@ -37,29 +37,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - name: Install ARM64 cross linker
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Cross-build Aurora OS daemon for ARM64
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --locked -p aurora-os-daemon --target aarch64-unknown-linux-gnu
       - uses: docker/setup-qemu-action@v3
         with:
           platforms: arm64
-      - name: Run Aurora under emulated ARM64 Linux
-        id: emulate
-        continue-on-error: true
+      - name: Run real ARM64 Aurora binary under QEMU
         run: |
-          set +e
           docker run --rm --platform linux/arm64 \
             -v "$PWD:/work" -w /work \
-            rust:1.88-bookworm \
-            bash -c 'export PATH=/usr/local/cargo/bin:/usr/local/rustup/bin:$PATH; bash validation/pi5/qemu-arm64-smoke.sh' \
-            > /tmp/aurora-pi5-qemu.log 2>&1
-          rc=$?
-          echo "rc=$rc" >> "$GITHUB_OUTPUT"
-          exit 0
-      - name: Publish emulation log
-        if: always()
-        run: |
-          echo '## Aurora Pi5 ARM64/QEMU log' >> "$GITHUB_STEP_SUMMARY"
-          echo '```text' >> "$GITHUB_STEP_SUMMARY"
-          tail -n 180 /tmp/aurora-pi5-qemu.log >> "$GITHUB_STEP_SUMMARY" || true
-          echo '```' >> "$GITHUB_STEP_SUMMARY"
-      - name: Enforce emulation result
-        if: always()
-        run: test "${{ steps.emulate.outputs.rc }}" = "0"
+            debian:bookworm-slim \
+            bash validation/pi5/qemu-arm64-runtime-smoke.sh \
+              /work/target/aarch64-unknown-linux-gnu/debug/aurora-os-daemon
