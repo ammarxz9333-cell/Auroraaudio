@@ -35,8 +35,10 @@ fi
 tar -C "$ROOT" --exclude=.git --exclude=target --exclude=os/aurora-os -cf - .   | tar -C "$DEST/opt/aurora/src" -xf -
 
 if [[ "$DEST" == "/" ]]; then
-  id aurora >/dev/null 2>&1 || useradd --system --home /var/lib/aurora --shell /usr/sbin/nologin aurora
-  usermod -a -G audio aurora || true
+  getent group aurora >/dev/null 2>&1 || groupadd --system aurora
+  id aurora >/dev/null 2>&1 || useradd --system --gid aurora --home-dir /var/lib/aurora --shell /usr/sbin/nologin aurora
+  getent group audio >/dev/null 2>&1 && usermod -a -G audio aurora || true
+  chown -R aurora:aurora /var/lib/aurora /var/cache/aurora
   systemd-tmpfiles --create /etc/tmpfiles.d/aurora.conf
   systemctl daemon-reload
   systemctl enable aurora.target
