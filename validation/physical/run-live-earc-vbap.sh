@@ -6,6 +6,7 @@ MANIFEST="$ROOT_DIR/config/external-components-v1.json"
 HARNESS_SOURCE="$ROOT_DIR/validation/physical/aurora_live_earc_harness.rs"
 PIPE_ADAPTER="$ROOT_DIR/validation/physical/aurora_alsa_iec61937_pipe.py"
 ADAPTIVE_SOURCE="$ROOT_DIR/validation/physical/aurora_adaptive_output.rs"
+UMC_PREFLIGHT="$ROOT_DIR/validation/physical/aurora_umc1820_preflight.py"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
 BUILD_MODE="${AURORA_JOC_BUILD_MODE:-release}"
 KEEP_WORKDIR="${AURORA_KEEP_LIVE_EARC_WORKDIR:-0}"
@@ -15,6 +16,7 @@ CAPTURE_DEVICE=""
 OUTPUT_FILE=""
 OUTPUT_DEVICE=""
 OUTPUT_PROFILE="native"
+UMC_CARD="UMC1820"
 MAX_SECONDS=""
 WORK_DIR=""
 
@@ -23,7 +25,7 @@ usage() {
 Usage:
   validation/physical/run-live-earc-vbap.sh --fixture [--work-dir DIR]
   validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-file FILE [--seconds N] [--work-dir DIR]
-  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-device DEV [--output-profile native|umc1820-ada8200] [--seconds N] [--work-dir DIR]
+  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-device DEV [--output-profile native|umc1820-ada8200] [--umc-card CARD] [--seconds N] [--work-dir DIR]
 
 Physical mode:
   TV/eARC -> ALSA S32_LE/2ch/192k -> IEC61937 E-AC-3 JOC -> Harletty ->
@@ -46,6 +48,7 @@ while (( "$#" )); do
     --output-file) OUTPUT_FILE="$2"; shift 2 ;;
     --output-device) OUTPUT_DEVICE="$2"; shift 2 ;;
     --output-profile) OUTPUT_PROFILE="$2"; shift 2 ;;
+    --umc-card) UMC_CARD="$2"; shift 2 ;;
     --seconds) MAX_SECONDS="$2"; shift 2 ;;
     --work-dir) WORK_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -76,7 +79,7 @@ fi
 for cmd in git python3 cargo rustup ffmpeg; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
-[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$ADAPTIVE_SOURCE" ]] || {
+[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$ADAPTIVE_SOURCE" && -f "$UMC_PREFLIGHT" ]] || {
   echo "Aurora live eARC sources are incomplete" >&2
   exit 2
 }
@@ -225,6 +228,7 @@ if [[ "$MODE" == "fixture" ]]; then
   verify_s32_output "$OUT"
   "$ADAPTIVE_BIN" --self-test --channels 12 --sample-rate 48000 --output-profile native
   "$ADAPTIVE_BIN" --self-test --channels 12 --sample-rate 48000 --output-profile umc1820-ada8200
+  python3 "$UMC_PREFLIGHT" --self-test
 
   ffmpeg -nostdin -hide_banner -loglevel error -y     -f lavfi -i "anullsrc=channel_layout=5.1:sample_rate=48000"     -t 0.25 -c:a eac3 -b:a 448k -f spdif "$PLAIN_IEC"
 
@@ -269,6 +273,7 @@ else
   APLAY_CHANNELS=12
   if [[ "$OUTPUT_PROFILE" == "umc1820-ada8200" ]]; then
     APLAY_CHANNELS=20
+    python3 "$UMC_PREFLIGHT" --card "$UMC_CARD" --report "$ARTIFACTS/umc1820-preflight.json"
   fi
   python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "$HARNESS_BIN" "$BRIDGE_LIB"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
 fi
