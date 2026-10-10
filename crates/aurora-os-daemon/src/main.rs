@@ -1,6 +1,5 @@
 use std::{
-    env,
-    fs,
+    env, fs,
     io::Write,
     path::{Path, PathBuf},
     thread,
@@ -146,16 +145,13 @@ fn atomic_json<T: Serialize>(path: &Path, value: &T) -> Result<()> {
     let parent = path
         .parent()
         .context("output path has no parent directory")?;
-    fs::create_dir_all(parent)
-        .with_context(|| format!("create {}", parent.display()))?;
+    fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
     let tmp = path.with_extension("tmp");
-    let mut file = fs::File::create(&tmp)
-        .with_context(|| format!("create {}", tmp.display()))?;
+    let mut file = fs::File::create(&tmp).with_context(|| format!("create {}", tmp.display()))?;
     serde_json::to_writer_pretty(&mut file, value)?;
     file.write_all(b"\n")?;
     file.sync_all()?;
-    fs::rename(&tmp, path)
-        .with_context(|| format!("replace {}", path.display()))?;
+    fs::rename(&tmp, path).with_context(|| format!("replace {}", path.display()))?;
     Ok(())
 }
 
@@ -171,8 +167,8 @@ fn load_modules(dir: &Path) -> Result<Vec<SpeakerModuleState>> {
 
     let mut modules = Vec::with_capacity(paths.len());
     for path in paths {
-        let bytes = fs::read(&path)
-            .with_context(|| format!("read module state {}", path.display()))?;
+        let bytes =
+            fs::read(&path).with_context(|| format!("read module state {}", path.display()))?;
         let module = serde_json::from_slice::<SpeakerModuleState>(&bytes)
             .with_context(|| format!("parse module state {}", path.display()))?;
         modules.push(module);
@@ -182,10 +178,9 @@ fn load_modules(dir: &Path) -> Result<Vec<SpeakerModuleState>> {
 
 fn load_intent(path: &Path) -> Result<Option<DeploymentIntent>> {
     match fs::read(path) {
-        Ok(bytes) => Ok(Some(
-            serde_json::from_slice(&bytes)
-                .with_context(|| format!("parse deployment intent {}", path.display()))?,
-        )),
+        Ok(bytes) => Ok(Some(serde_json::from_slice(&bytes).with_context(|| {
+            format!("parse deployment intent {}", path.display())
+        })?)),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error).with_context(|| format!("read {}", path.display())),
     }
@@ -289,8 +284,8 @@ fn main() -> Result<()> {
         }
     }
 
-    let config_bytes = fs::read(&config_path)
-        .with_context(|| format!("read {}", config_path.display()))?;
+    let config_bytes =
+        fs::read(&config_path).with_context(|| format!("read {}", config_path.display()))?;
     let config = serde_json::from_slice::<AuroraOsConfig>(&config_bytes)
         .with_context(|| format!("parse {}", config_path.display()))?;
 
