@@ -578,6 +578,27 @@ pub fn stereo_pair_intent(left: &str, right: &str) -> DeploymentIntent {
     }
 }
 
+/// Convenience preset for two docked two-lane Atmos wing modules.
+///
+/// While attached to the bar, the left wing carries FL+TFL and the right wing
+/// carries FR+TFR over the shared dock clock. The same physical pods can later
+/// be reassigned by detachable_atmos_rear_intent after moving behind the listener.
+pub fn docked_atmos_wing_intent(left: &str, right: &str) -> DeploymentIntent {
+    DeploymentIntent {
+        mode: DeploymentMode::Cinema,
+        targets: vec![
+            ModuleTarget {
+                module_id: left.to_owned(),
+                roles: vec![ChannelRole::FrontLeft, ChannelRole::TopFrontLeft],
+            },
+            ModuleTarget {
+                module_id: right.to_owned(),
+                roles: vec![ChannelRole::FrontRight, ChannelRole::TopFrontRight],
+            },
+        ],
+    }
+}
+
 /// Convenience preset for two detachable two-lane Atmos pods.
 ///
 /// Each rear pod carries one horizontal surround lane and one up-firing/top
@@ -844,6 +865,42 @@ mod tests {
             Err(FabricError::UnknownModule(id)) if id == "right"
         ));
         assert!(session.current_plan().is_none());
+    }
+
+    #[test]
+    fn same_two_lane_pods_are_front_plus_top_front_while_docked() {
+        let modules = [
+            module(
+                "left",
+                ModuleAttachment::Docked {
+                    slot_id: "left-edge".to_owned(),
+                },
+                ModuleSyncStatus::docked_locked(),
+            ),
+            module(
+                "right",
+                ModuleAttachment::Docked {
+                    slot_id: "right-edge".to_owned(),
+                },
+                ModuleSyncStatus::docked_locked(),
+            ),
+        ];
+        let plan = FabricPlanner::with_defaults()
+            .plan(&modules, &docked_atmos_wing_intent("left", "right"))
+            .unwrap();
+
+        assert_eq!(
+            plan.assignments[0].roles,
+            vec![ChannelRole::FrontLeft, ChannelRole::TopFrontLeft]
+        );
+        assert_eq!(
+            plan.assignments[1].roles,
+            vec![ChannelRole::FrontRight, ChannelRole::TopFrontRight]
+        );
+        assert!(plan
+            .assignments
+            .iter()
+            .all(|assignment| assignment.route == ModuleRoute::DockBus));
     }
 
     #[test]
