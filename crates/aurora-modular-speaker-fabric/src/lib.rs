@@ -10,8 +10,8 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use aurora_core::{ChannelRole, StandardLayout};
 use aurora_realtime_audio_api::{
-    NetworkAudioFormat, NetworkClockDiscipline, NetworkStreamConfig, NetworkTimingPolicy,
-    NetworkTransportError, AURORA_NETWORK_MEDIA_RATE,
+    MediaTimestamp, NetworkAudioBlock, NetworkAudioFormat, NetworkClockDiscipline,
+    NetworkStreamConfig, NetworkTimingPolicy, NetworkTransportError, AURORA_NETWORK_MEDIA_RATE,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -252,6 +252,194 @@ pub fn materialize_network_routes(
         });
     }
     Ok(routes)
+}
+
+
+/// Prepared worker-side fanout from Aurora's canonical 7.1.4 PCM bus to the
+/// arbitrary per-module network routes admitted by the modular fabric.
+///
+/// This is the data-plane bridge for detachable pods such as SL+TRL and
+/// SR+TRR. It performs only bounded copies into buffers allocated during
+/// preparation; it does not perform network I/O.
+pub struct PreparedModuleNetworkFanout {
+    routes: Vec<NetworkRouteSpec>,
+    input_format: NetworkAudioFormat,
+    buffers: Vec<Vec<f32>>,
+    current_sequence: Option<u64>,
+    current_timestamp: Option<MediaTimestamp>,
+    next_sequence: Option<u64>,
+    next_timestamp: Option<MediaTimestamp>,
+}
+
+impl PreparedModuleNetworkFanout {
+    /// Validates route shape and allocates all endpoint buffers before playback.
+    pub fn prepare(routes: Vec<NetworkRouteSpec>) -> Result<Self, NetworkFanoutError> {
+        let first = routes.first().ok_or(NetworkFanoutError::NoRoutes)?;
+        let block_frames = first.stream.format.block_frames;
+        if block_frames == 0 {
+            return Err(NetworkFanoutError::InvalidRoute);
+        }
+
+        let mut seen_modules = BTreeSet::<&str>::new();
+        let mut seen_sources = [false; 12];
+        let mut buffers = Vec::with_capacity(routes.len());
+
+        for route in &routes {
+            if route.module_id.is_empty() || !seen_modules.insert(route.module_id.as_str()) {
+                return Err(NetworkFanoutError::InvalidRoute);
+            }
+            if route.source_channel_indices.is_empty()
+                || route.source_channel_indices.len() != route.stream.format.channels
+                || route.stream.format.sample_rate != AURORA_NETWORK_MEDIA_RATE
+                || route.stream.format.block_frames != block_frames
+                || !matches!(
+                    route.stream.clock_discipline,
+                    NetworkClockDiscipline::PtpFollower
+                        | NetworkClockDiscipline::AdaptiveRateFollower
+                )
+            {
+                return Err(NetworkFanoutError::InvalidRoute);
+            }
+
+            for &source in &route.source_channel_indices {
+                if source >= 12 || seen_sources[source] {
+                    return Err(NetworkFanoutError::InvalidRoute);
+                }
+                seen_sources[source] = true;
+            }
+
+            let samples = route
+                .stream
+                .format
+                .samples_per_block()
+                .ok_or(NetworkFanoutError::InvalidRoute)?;
+            buffers.push(vec![0.0; samples]);
+        }
+
+        Ok(Self {
+            routes,
+            input_format: NetworkAudioFormat {
+                sample_rate: AURORA_NETWORK_MEDIA_RATE,
+                channels: 12,
+                block_frames,
+            },
+            buffers,
+            current_sequence: None,
+            current_timestamp: None,
+            next_sequence: None,
+            next_timestamp: None,
+        })
+    }
+
+    /// Copies one canonical 12-channel block into all admitted module routes.
+    ///
+    /// Sequence and presentation timestamp must be exactly continuous inside one
+    /// stream epoch. Call reset before accepting an intentional discontinuity.
+    pub fn split(&mut self, block: &NetworkAudioBlock<'_>) -> Result<(), NetworkFanoutError> {
+        block
+            .validate()
+            .map_err(|_| NetworkFanoutError::InvalidInput)?;
+        if block.format != self.input_format {
+            return Err(NetworkFanoutError::InvalidInput);
+        }
+
+        if let Some(expected) = self.next_sequence {
+            if block.sequence != expected {
+                return Err(NetworkFanoutError::TimelineDiscontinuity);
+            }
+        }
+        if let Some(expected) = self.next_timestamp {
+            if block.timestamp != expected {
+                return Err(NetworkFanoutError::TimelineDiscontinuity);
+            }
+        }
+
+        for frame in 0..self.input_format.block_frames {
+            let input_base = frame * self.input_format.channels;
+            for (route_index, route) in self.routes.iter().enumerate() {
+                let output_channels = route.source_channel_indices.len();
+                let output_base = frame * output_channels;
+                let output = &mut self.buffers[route_index];
+                for (lane, &source) in route.source_channel_indices.iter().enumerate() {
+                    output[output_base + lane] = block.samples[input_base + source];
+                }
+            }
+        }
+
+        self.current_sequence = Some(block.sequence);
+        self.current_timestamp = Some(block.timestamp);
+        self.next_sequence = Some(
+            block
+                .sequence
+                .checked_add(1)
+                .ok_or(NetworkFanoutError::TimelineDiscontinuity)?,
+        );
+        self.next_timestamp = Some(
+            block
+                .timestamp
+                .checked_advance(block.format.block_frames)
+                .map_err(|_| NetworkFanoutError::TimelineDiscontinuity)?,
+        );
+        Ok(())
+    }
+
+    /// Borrows one routed module block after split.
+    pub fn module_block(
+        &self,
+        route_index: usize,
+    ) -> Result<NetworkAudioBlock<'_>, NetworkFanoutError> {
+        let route = self
+            .routes
+            .get(route_index)
+            .ok_or(NetworkFanoutError::InvalidRouteIndex)?;
+        let samples = self
+            .buffers
+            .get(route_index)
+            .ok_or(NetworkFanoutError::InvalidRouteIndex)?;
+        let sequence = self.current_sequence.ok_or(NetworkFanoutError::NoBlockReady)?;
+        let timestamp = self
+            .current_timestamp
+            .ok_or(NetworkFanoutError::NoBlockReady)?;
+
+        Ok(NetworkAudioBlock {
+            sequence,
+            timestamp,
+            format: route.stream.format,
+            samples,
+        })
+    }
+
+    /// Returns the immutable route spec paired with module_block.
+    pub fn route(&self, route_index: usize) -> Result<&NetworkRouteSpec, NetworkFanoutError> {
+        self.routes
+            .get(route_index)
+            .ok_or(NetworkFanoutError::InvalidRouteIndex)
+    }
+
+    /// Starts a new explicit stream epoch without reallocating route buffers.
+    pub fn reset(&mut self) {
+        self.current_sequence = None;
+        self.current_timestamp = None;
+        self.next_sequence = None;
+        self.next_timestamp = None;
+    }
+}
+
+/// Fail-closed errors for modular network PCM fanout.
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkFanoutError {
+    #[error("modular network fanout requires at least one route")]
+    NoRoutes,
+    #[error("invalid modular network route")]
+    InvalidRoute,
+    #[error("invalid canonical 7.1.4 input block")]
+    InvalidInput,
+    #[error("invalid modular network route index")]
+    InvalidRouteIndex,
+    #[error("no modular network block is ready")]
+    NoBlockReady,
+    #[error("modular network sequence/timestamp discontinuity")]
+    TimelineDiscontinuity,
 }
 
 /// Stateful control-plane session for hot dock/undock reconciliation.
