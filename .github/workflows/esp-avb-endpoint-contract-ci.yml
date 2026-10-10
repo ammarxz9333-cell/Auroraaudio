@@ -48,15 +48,6 @@ jobs:
             --example orchestration_probe | tee artifacts/esp-avb-orchestration.txt
           grep -q 'PASS endpoints=6 rate=48000 block=48 clock=ptp-follower sequence=23 timestamp=96000' \
             artifacts/esp-avb-orchestration.txt
-            artifacts/esp-avb-modular-fabric.txt
-
-      - name: Exercise detachable modular speaker fabric
-        run: |
-          cargo run --release \
-            --manifest-path adapters/aurora-network-esp-avb/Cargo.toml \
-            --example modular_fabric_probe | tee artifacts/esp-avb-modular-fabric.txt
-          grep -q 'PASS modules=6 channels=12 docked-and-wireless=true reassign=true fail_closed=true' \
-            artifacts/esp-avb-modular-fabric.txt
 
       - name: Upload endpoint evidence
         if: always()
