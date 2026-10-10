@@ -578,6 +578,28 @@ pub fn stereo_pair_intent(left: &str, right: &str) -> DeploymentIntent {
     }
 }
 
+/// Convenience preset for two detachable two-lane Atmos pods.
+///
+/// Each rear pod carries one horizontal surround lane and one up-firing/top
+/// lane. A left/right pair therefore becomes SL+TRL and SR+TRR after being
+/// moved behind the listener. The same physical drivers may be assigned
+/// different front/top-front roles by a docked soundbar preset.
+pub fn detachable_atmos_rear_intent(left: &str, right: &str) -> DeploymentIntent {
+    DeploymentIntent {
+        mode: DeploymentMode::Cinema,
+        targets: vec![
+            ModuleTarget {
+                module_id: left.to_owned(),
+                roles: vec![ChannelRole::SurroundLeft, ChannelRole::TopRearLeft],
+            },
+            ModuleTarget {
+                module_id: right.to_owned(),
+                roles: vec![ChannelRole::SurroundRight, ChannelRole::TopRearRight],
+            },
+        ],
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -822,6 +844,60 @@ mod tests {
             Err(FabricError::UnknownModule(id)) if id == "right"
         ));
         assert!(session.current_plan().is_none());
+    }
+
+    #[test]
+    fn detachable_two_lane_pods_become_surround_plus_top_rear() {
+        let modules = [
+            module("left", ModuleAttachment::Detached, ptp(140)),
+            module("right", ModuleAttachment::Detached, ptp(160)),
+        ];
+        let plan = FabricPlanner::with_defaults()
+            .plan(
+                &modules,
+                &detachable_atmos_rear_intent("left", "right"),
+            )
+            .unwrap();
+
+        assert_eq!(
+            plan.assignments[0].roles,
+            vec![ChannelRole::SurroundLeft, ChannelRole::TopRearLeft]
+        );
+        assert_eq!(
+            plan.assignments[1].roles,
+            vec![ChannelRole::SurroundRight, ChannelRole::TopRearRight]
+        );
+        assert!(plan
+            .assignments
+            .iter()
+            .all(|assignment| assignment.route == ModuleRoute::WirelessNetwork));
+    }
+
+    #[test]
+    fn detachable_atmos_pods_map_to_canonical_seven_one_four_indexes() {
+        let modules = [
+            module("left", ModuleAttachment::Detached, ptp(140)),
+            module("right", ModuleAttachment::Detached, ptp(160)),
+        ];
+        let plan = FabricPlanner::with_defaults()
+            .plan(
+                &modules,
+                &detachable_atmos_rear_intent("left", "right"),
+            )
+            .unwrap();
+        let timing = NetworkTimingPolicy {
+            target_latency_frames: 480,
+            minimum_latency_frames: 240,
+            maximum_latency_frames: 960,
+            maximum_rate_correction_ppm: 250.0,
+        };
+        let routes = materialize_network_routes(&plan, 48, timing).unwrap();
+
+        assert_eq!(routes.len(), 2);
+        assert_eq!(routes[0].source_channel_indices, vec![4, 10]);
+        assert_eq!(routes[1].source_channel_indices, vec![5, 11]);
+        assert_eq!(routes[0].stream.format.channels, 2);
+        assert_eq!(routes[1].stream.format.channels, 2);
     }
 
     #[test]
