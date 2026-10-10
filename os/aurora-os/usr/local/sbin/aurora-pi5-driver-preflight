@@ -1,0 +1,48 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+MODEL_PATH="/proc/device-tree/model"
+BOOT_ROOT="/boot/firmware"
+[[ -d "$BOOT_ROOT/overlays" ]] || BOOT_ROOT="/boot"
+CONFIG="$BOOT_ROOT/config.txt"
+OVERLAY="$BOOT_ROOT/overlays/aurora-earc-tap.dtbo"
+CARD="${AURORA_EARC_CARD:-eARC}"
+
+fail() {
+  echo "AURORA-PI5-DRIVER-PREFLIGHT-FAIL $*" >&2
+  exit 1
+}
+
+[[ -r "$MODEL_PATH" ]] || fail "missing Raspberry Pi model node"
+model="$(tr -d '\0' < "$MODEL_PATH")"
+[[ "$model" == *"Raspberry Pi 5"* ]] || fail "expected Raspberry Pi 5, got: $model"
+
+kernel="$(uname -r)"
+echo "AURORA-PI5-KERNEL kernel=$kernel model=$model"
+
+command -v modprobe >/dev/null 2>&1 || fail "modprobe missing"
+for module in snd_soc_dwc_i2s snd_soc_simple_card snd_soc_spdif_rx; do
+  modprobe -n "$module" >/dev/null 2>&1 || fail "kernel module unavailable: $module"
+  echo "AURORA-PI5-DRIVER-PRESENT module=$module"
+done
+
+[[ -f "$CONFIG" ]] || fail "missing boot config: $CONFIG"
+if grep -Eq '^[[:space:]]*dtoverlay=pcie-32bit-dma([,[:space:]]|$)' "$CONFIG"; then
+  fail "pcie-32bit-dma overlay is incompatible with Aurora RP1 I2S capture"
+fi
+
+[[ -s "$OVERLAY" ]] || fail "Aurora eARC overlay not installed: $OVERLAY"
+grep -Eq '^[[:space:]]*dtoverlay=aurora-earc-tap([,[:space:]]|$)' "$CONFIG" ||
+  fail "dtoverlay=aurora-earc-tap missing from $CONFIG"
+
+command -v arecord >/dev/null 2>&1 || fail "arecord missing"
+arecord -l | grep -qi "$CARD" || fail "ALSA eARC card not enumerated"
+
+params="$(arecord -D "hw:$CARD,0" --dump-hw-params -d 0.05 -t raw -f S32_LE -c 2 -r 192000 /dev/null 2>&1 || true)"
+grep -q 'S32_LE' <<<"$params" || fail "S32_LE not advertised by eARC PCM"
+grep -Eq 'CHANNELS:.*(2|\[2[[:space:]]+8\])' <<<"$params" ||
+  fail "expected 2..8 capture-channel capability"
+grep -Eq 'RATE:.*192000|RATE:.*\[[0-9]+[[:space:]]+([0-9]{6}|[2-9][0-9]{5})\]' <<<"$params" ||
+  fail "192 kHz carrier capability not visible"
+
+echo "AURORA-PI5-DRIVER-PREFLIGHT-PASS kernel=$kernel card=$CARD"

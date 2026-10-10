@@ -1,0 +1,7 @@
+{
+  "mode": "cinema",
+  "targets": [
+    {"module_id": "left-pod", "roles": ["SL", "TRL"]},
+    {"module_id": "right-pod", "roles": ["SR", "TRR"]}
+  ]
+}

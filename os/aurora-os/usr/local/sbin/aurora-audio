@@ -1,0 +1,49 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+CONFIG="${AURORA_OS_CONFIG:-/etc/aurora/aurora-os.json}"
+
+read_config() {
+  python3 - "$CONFIG" "$1" <<'PY'
+import json, sys
+cfg=json.load(open(sys.argv[1], encoding="utf-8"))
+value=cfg
+for key in sys.argv[2].split("."):
+    value=value[key]
+if isinstance(value, bool):
+    print("1" if value else "0")
+elif value is None:
+    print("")
+else:
+    print(value)
+PY
+}
+
+enabled="$(read_config audio.enabled)"
+if [[ "$enabled" != "1" ]]; then
+  echo "Aurora audio is disabled in $CONFIG; control plane remains active."
+  exec sleep infinity
+fi
+
+preflight="/usr/local/sbin/aurora-pi5-driver-preflight"
+[[ -x "$preflight" ]] || {
+  echo "Aurora Pi5 driver preflight is missing: $preflight" >&2
+  exit 1
+}
+"$preflight"
+
+repo="$(read_config audio.repository)"
+capture="$(read_config audio.capture_device)"
+output="$(read_config audio.output_device)"
+profile="$(read_config audio.output_profile)"
+umc_card="$(read_config audio.umc_card)"
+work_dir="$(read_config audio.work_dir)"
+
+runner="$repo/validation/physical/run-live-earc-vbap.sh"
+[[ -x "$runner" ]] || {
+  echo "Aurora live runner not executable: $runner" >&2
+  exit 1
+}
+
+mkdir -p "$work_dir"
+exec "$runner"   --capture-device "$capture"   --output-device "$output"   --output-profile "$profile"   --umc-card "$umc_card"   --work-dir "$work_dir"

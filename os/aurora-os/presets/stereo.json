@@ -1,0 +1,7 @@
+{
+  "mode": "stereo",
+  "targets": [
+    {"module_id": "left-pod", "roles": ["FL"]},
+    {"module_id": "right-pod", "roles": ["FR"]}
+  ]
+}

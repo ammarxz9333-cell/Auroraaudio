@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodic Aurora health probe
+
+[Timer]
+OnBootSec=15s
+OnUnitActiveSec=10s
+AccuracySec=1s
+Unit=aurora-health.service
+
+[Install]
+WantedBy=timers.target

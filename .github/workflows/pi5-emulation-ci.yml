@@ -1,0 +1,58 @@
+name: Pi5 Driver and ARM64 Emulation CI
+
+on:
+  push:
+    branches:
+      - aurora-os-v1
+      - main-v2
+    paths:
+      - "platform/pi5/**"
+      - "validation/pi5/**"
+      - "os/aurora-os/**"
+      - "crates/aurora-os-daemon/**"
+      - "crates/aurora-modular-speaker-fabric/**"
+      - ".github/workflows/pi5-emulation-ci.yml"
+  pull_request:
+    paths:
+      - "platform/pi5/**"
+      - "validation/pi5/**"
+      - "os/aurora-os/**"
+      - "crates/aurora-os-daemon/**"
+      - "crates/aurora-modular-speaker-fabric/**"
+      - ".github/workflows/pi5-emulation-ci.yml"
+
+jobs:
+  kernel-driver-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install device-tree tools
+        run: sudo apt-get update && sudo apt-get install -y device-tree-compiler
+      - name: Compile Aurora Pi5 overlay
+        run: dtc -@ -I dts -O dtb -o /tmp/aurora-earc-tap.dtbo platform/pi5/aurora-earc-tap-overlay.dts
+      - name: Validate against Raspberry Pi 6.18 kernel source
+        run: bash validation/pi5/validate-rpi-kernel-contract.sh
+
+  arm64-userspace-emulation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: aarch64-unknown-linux-gnu
+      - name: Install ARM64 cross linker
+        run: sudo apt-get update && sudo apt-get install -y gcc-aarch64-linux-gnu
+      - name: Cross-build Aurora OS daemon for ARM64
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: aarch64-linux-gnu-gcc
+        run: cargo build --locked -p aurora-os-daemon --target aarch64-unknown-linux-gnu
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: Run real ARM64 Aurora binary under QEMU
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD:/work" -w /work \
+            debian:bookworm-slim \
+            bash validation/pi5/qemu-arm64-runtime-smoke.sh \
+              /work/target/aarch64-unknown-linux-gnu/debug/aurora-os-daemon

@@ -1,0 +1,76 @@
+// SPDX-License-Identifier: MIT
+//
+// Aurora Pi 5 eARC I2S tap overlay.
+// Derived from sofianchitac/VibesboxSRC commit
+// 8f84376df8b7499808b17c150a328b8665ba1384,
+// config/overlays/vibesbox-earc-tap-overlay.dts (MIT).
+//
+// Lindy 38368 / SiI9437 wiring:
+//   pin 10 SCK  -> Pi GPIO18
+//   pin 11 WS   -> Pi GPIO19
+//   pin 12 SD0  -> Pi GPIO20
+//   pin 13 SD1  -> Pi GPIO22
+//   pin 14 SD2  -> Pi GPIO24
+//   pin 15 SD3  -> Pi GPIO26
+//
+// SiI9437 is BCLK/WS master. RP1 i2s1 is the clock consumer.
+// Capture card name: eARC
+/dts-v1/;
+/plugin/;
+
+/ {
+	compatible = "brcm,bcm2712";
+
+	fragment@0 {
+		target = <&gpio>;
+		__overlay__ {
+			rp1_i2s1_aurora_earc: rp1_i2s1_aurora_earc {
+				function = "i2s1";
+				pins = "gpio18", "gpio19", "gpio20",
+				       "gpio22", "gpio24", "gpio26";
+				bias-disable;
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@1 {
+		target = <&i2s_clk_consumer>;
+		__overlay__ {
+			pinctrl-names = "default";
+			pinctrl-0 = <&rp1_i2s1_aurora_earc>;
+			status = "okay";
+		};
+	};
+
+	fragment@2 {
+		target-path = "/";
+		__overlay__ {
+			aurora_earc_codec: aurora-earc-codec {
+				#sound-dai-cells = <0>;
+				compatible = "linux,spdif-dir";
+				status = "okay";
+			};
+		};
+	};
+
+	fragment@3 {
+		target = <&sound>;
+		__overlay__ {
+			compatible = "simple-audio-card";
+			simple-audio-card,name = "eARC";
+			simple-audio-card,format = "i2s";
+			simple-audio-card,bitclock-master = <&aurora_earc_dai>;
+			simple-audio-card,frame-master = <&aurora_earc_dai>;
+			status = "okay";
+
+			simple-audio-card,cpu {
+				sound-dai = <&i2s_clk_consumer>;
+			};
+
+			aurora_earc_dai: simple-audio-card,codec {
+				sound-dai = <&aurora_earc_codec>;
+			};
+		};
+	};
+};

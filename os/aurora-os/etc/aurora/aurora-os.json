@@ -1,0 +1,23 @@
+{
+  "control": {
+    "module_dir": "/run/aurora/modules",
+    "intent_path": "/var/lib/aurora/intent.json",
+    "plan_path": "/run/aurora/active-plan.json",
+    "health_path": "/run/aurora/health.json",
+    "poll_millis": 250,
+    "policy": {
+      "maximum_cinema_skew_micros": 1000,
+      "maximum_stereo_skew_micros": 1000,
+      "maximum_multiroom_skew_micros": 10000
+    }
+  },
+  "audio": {
+    "enabled": false,
+    "repository": "/opt/aurora/src",
+    "capture_device": "hw:Loopback,1,0",
+    "output_device": "plughw:CARD=UMC1820,DEV=0",
+    "output_profile": "umc1820-ada8200",
+    "umc_card": "UMC1820",
+    "work_dir": "/var/cache/aurora/live-earc"
+  }
+}

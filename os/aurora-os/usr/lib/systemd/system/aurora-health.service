@@ -1,0 +1,7 @@
+[Unit]
+Description=Aurora health probe
+After=aurora-control.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/auroractl health --quiet
