@@ -255,6 +255,104 @@ pub fn materialize_network_routes(
     Ok(routes)
 }
 
+/// Stateful control-plane session for hot dock/undock reconciliation.
+///
+/// The session never keeps a stale active plan after inventory/synchronization
+/// changes. If replanning fails, `current_plan()` becomes `None`; the audio
+/// control plane must mute/deactivate the affected routes until a new valid
+/// plan is admitted.
+#[derive(Debug, Clone)]
+pub struct FabricSession {
+    planner: FabricPlanner,
+    inventory: BTreeMap<String, SpeakerModuleState>,
+    intent: Option<DeploymentIntent>,
+    current_plan: Option<FabricPlan>,
+}
+
+impl FabricSession {
+    /// Creates an empty session with explicit policy.
+    pub fn new(policy: FabricPolicy) -> Self {
+        Self {
+            planner: FabricPlanner::new(policy),
+            inventory: BTreeMap::new(),
+            intent: None,
+            current_plan: None,
+        }
+    }
+
+    /// Creates an empty session with default Aurora policy.
+    pub fn with_defaults() -> Self {
+        Self::new(FabricPolicy::default())
+    }
+
+    /// Replaces the requested deployment and immediately reconciles it.
+    pub fn set_intent(&mut self, intent: DeploymentIntent) -> Result<&FabricPlan, FabricError> {
+        self.intent = Some(intent);
+        self.reconcile()
+    }
+
+    /// Inserts or replaces one observed physical-module state, then reconciles.
+    ///
+    /// If no deployment intent has been selected yet, the inventory is updated
+    /// and no plan is activated.
+    pub fn upsert_module(
+        &mut self,
+        module: SpeakerModuleState,
+    ) -> Result<Option<&FabricPlan>, FabricError> {
+        if module.module_id.is_empty() {
+            self.current_plan = None;
+            return Err(FabricError::InvalidModuleIdentity);
+        }
+        self.inventory.insert(module.module_id.clone(), module);
+        if self.intent.is_none() {
+            self.current_plan = None;
+            return Ok(None);
+        }
+        self.reconcile().map(Some)
+    }
+
+    /// Removes a module that disappeared from discovery/control-plane state.
+    ///
+    /// Any active plan is cleared before replanning, so a disappearing endpoint
+    /// cannot remain logically active.
+    pub fn remove_module(&mut self, module_id: &str) -> Result<Option<&FabricPlan>, FabricError> {
+        self.inventory.remove(module_id);
+        self.current_plan = None;
+        if self.intent.is_none() {
+            return Ok(None);
+        }
+        self.reconcile().map(Some)
+    }
+
+    /// Returns the currently admitted plan, or `None` while fail-closed.
+    pub fn current_plan(&self) -> Option<&FabricPlan> {
+        self.current_plan.as_ref()
+    }
+
+    /// Returns one immutable module snapshot.
+    pub fn module(&self, module_id: &str) -> Option<&SpeakerModuleState> {
+        self.inventory.get(module_id)
+    }
+
+    fn reconcile(&mut self) -> Result<&FabricPlan, FabricError> {
+        let Some(intent) = self.intent.as_ref() else {
+            self.current_plan = None;
+            unreachable!("reconcile requires an intent");
+        };
+        let modules = self.inventory.values().cloned().collect::<Vec<_>>();
+        match self.planner.plan(&modules, intent) {
+            Ok(plan) => {
+                self.current_plan = Some(plan);
+                Ok(self.current_plan.as_ref().expect("plan was just installed"))
+            }
+            Err(error) => {
+                self.current_plan = None;
+                Err(error)
+            }
+        }
+    }
+}
+
 /// Synchronization and routing policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct FabricPolicy {
@@ -674,6 +772,70 @@ mod tests {
             FabricPlanner::with_defaults().plan(&modules, &intent),
             Err(FabricError::SynchronizationInsufficient(_))
         ));
+    }
+
+    #[test]
+    fn hot_undock_reconciles_roles_and_sync_loss_mutes_plan() {
+        let mut session = FabricSession::with_defaults();
+        session
+            .upsert_module(module(
+                "left",
+                ModuleAttachment::Detached,
+                ptp(120),
+            ))
+            .unwrap();
+        session
+            .upsert_module(module(
+                "right",
+                ModuleAttachment::Detached,
+                ptp(140),
+            ))
+            .unwrap();
+
+        let plan = session
+            .set_intent(detached_rear_intent("left", "right"))
+            .unwrap();
+        assert_eq!(plan.assignments.len(), 2);
+        assert_eq!(plan.assignments[0].route, ModuleRoute::WirelessNetwork);
+
+        let mut lost_sync = module("left", ModuleAttachment::Detached, ptp(120));
+        lost_sync.sync.locked = false;
+        assert!(matches!(
+            session.upsert_module(lost_sync),
+            Err(FabricError::SynchronizationInsufficient(id)) if id == "left"
+        ));
+        assert!(session.current_plan().is_none());
+
+        let recovered = session
+            .upsert_module(module(
+                "left",
+                ModuleAttachment::Detached,
+                ptp(90),
+            ))
+            .unwrap()
+            .expect("plan restored after sync recovery");
+        assert_eq!(recovered.assignments.len(), 2);
+    }
+
+    #[test]
+    fn disappearing_module_clears_active_plan() {
+        let mut session = FabricSession::with_defaults();
+        session
+            .upsert_module(module("left", ModuleAttachment::Detached, ptp(100)))
+            .unwrap();
+        session
+            .upsert_module(module("right", ModuleAttachment::Detached, ptp(100)))
+            .unwrap();
+        session
+            .set_intent(detached_rear_intent("left", "right"))
+            .unwrap();
+        assert!(session.current_plan().is_some());
+
+        assert!(matches!(
+            session.remove_module("right"),
+            Err(FabricError::UnknownModule(id)) if id == "right"
+        ));
+        assert!(session.current_plan().is_none());
     }
 
     #[test]
