@@ -231,6 +231,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "aurora-os-daemon"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "aurora-core",
+ "aurora-modular-speaker-fabric",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "aurora-plugin-api"
 version = "0.1.0"
 dependencies = [
