@@ -6,7 +6,7 @@
 //! cinema plan only when the selected route has explicit synchronization
 //! evidence; otherwise planning fails closed.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeMap;
 
 use aurora_core::ChannelRole;
 use serde::{Deserialize, Serialize};
@@ -243,12 +243,13 @@ impl FabricPlanner {
 
         let mut inventory = BTreeMap::<&str, &SpeakerModuleState>::new();
         for module in modules {
-            if module.module_id.is_empty() || inventory.insert(&module.module_id, module).is_some() {
+            if module.module_id.is_empty() || inventory.insert(&module.module_id, module).is_some()
+            {
                 return Err(FabricError::InvalidModuleIdentity);
             }
         }
 
-        let mut roles = BTreeSet::<String>::new();
+        let mut roles = Vec::<ChannelRole>::new();
         let mut assignments = Vec::with_capacity(intent.targets.len());
         for target in &intent.targets {
             let module = inventory
@@ -262,10 +263,10 @@ impl FabricPlanner {
                 return Err(FabricError::LaneCapacity(module.module_id.clone()));
             }
             for role in &target.roles {
-                let canonical = format!("{role:?}");
-                if !roles.insert(canonical) {
+                if roles.contains(role) {
                     return Err(FabricError::DuplicateRole);
                 }
+                roles.push(role.clone());
             }
 
             let route = self.select_route(module, intent.mode)?;
@@ -388,7 +389,11 @@ pub fn stereo_pair_intent(left: &str, right: &str) -> DeploymentIntent {
 mod tests {
     use super::*;
 
-    fn module(id: &str, attachment: ModuleAttachment, sync: ModuleSyncStatus) -> SpeakerModuleState {
+    fn module(
+        id: &str,
+        attachment: ModuleAttachment,
+        sync: ModuleSyncStatus,
+    ) -> SpeakerModuleState {
         SpeakerModuleState {
             module_id: id.to_owned(),
             capabilities: SpeakerModuleCapabilities {
