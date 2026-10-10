@@ -1,7 +1,8 @@
 use aurora_modular_speaker_fabric::{
-    detached_rear_intent, stereo_pair_intent, FabricPlanner, ModuleAttachment, ModuleClockSource,
-    ModuleSyncStatus, SpeakerModuleCapabilities, SpeakerModuleState,
+    detachable_atmos_rear_intent, stereo_pair_intent, FabricPlanner, ModuleAttachment,
+    ModuleClockSource, ModuleSyncStatus, SpeakerModuleCapabilities, SpeakerModuleState,
 };
+use aurora_realtime_audio_api::NetworkTimingPolicy;
 
 fn module(id: &str, attachment: ModuleAttachment, sync: ModuleSyncStatus) -> SpeakerModuleState {
     SpeakerModuleState {
@@ -40,7 +41,7 @@ fn main() {
     let bar = planner
         .plan(&docked, &stereo_pair_intent("left-pod", "right-pod"))
         .expect("docked stereo plan");
-    println!("docked={bar:?}");
+    assert_eq!(bar.assignments.len(), 2);
 
     let wireless_sync = |skew| ModuleSyncStatus {
         locked: true,
@@ -53,7 +54,28 @@ fn main() {
         module("right-pod", ModuleAttachment::Detached, wireless_sync(220)),
     ];
     let rears = planner
-        .plan(&detached, &detached_rear_intent("left-pod", "right-pod"))
-        .expect("detached rear plan");
-    println!("detached={rears:?}");
+        .plan(
+            &detached,
+            &detachable_atmos_rear_intent("left-pod", "right-pod"),
+        )
+        .expect("detached Atmos rear plan");
+
+    let routes = aurora_modular_speaker_fabric::materialize_network_routes(
+        &rears,
+        48,
+        NetworkTimingPolicy {
+            target_latency_frames: 480,
+            minimum_latency_frames: 240,
+            maximum_latency_frames: 960,
+            maximum_rate_correction_ppm: 250.0,
+        },
+    )
+    .expect("network routes");
+
+    assert_eq!(routes[0].source_channel_indices, vec![4, 10]);
+    assert_eq!(routes[1].source_channel_indices, vec![5, 11]);
+
+    println!(
+        "AURORA-MODULAR-ATMOS-PASS docked=2 detached=2 lanes_per_pod=2 left=SL+TRL right=SR+TRR"
+    );
 }
