@@ -26,6 +26,7 @@ members = [
     "crates/aurora-realtime-engine",
     "crates/aurora-realtime-acceptance",
     "crates/aurora-measurement",
+    "crates/aurora-modular-speaker-fabric",
     "crates/aurora-plugin-api",
     "crates/aurora-plugin-host",
     "crates/aurora-source-runtime",
