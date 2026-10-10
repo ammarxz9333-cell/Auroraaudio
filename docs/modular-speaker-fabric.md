@@ -158,6 +158,26 @@ Run:
 cargo run -p aurora-modular-speaker-fabric --example detachable_reconfiguration
 ```
 
+## Atomic dock-to-wireless handover
+
+A route change is not applied by simply flipping a module from docked to wireless. Aurora now builds an explicit handover epoch for every changed endpoint:
+
+```text
+MUTE all changed modules
+        ↓
+PREPARE new route / roles while silent
+        ↓
+ARM every changed endpoint for the same future media-frame
+        ↓
+COMMIT the new assignments
+        ↓
+audio may resume at the armed frame
+```
+
+The endpoint-side state machine rejects stale epochs and out-of-order Prepare/Arm/Commit commands. A removed module receives only Mute and remains fail-closed. This prevents one pod from continuing an old front role while another pod has already switched to a rear role.
+
+The software probe exercises the complete two-pod transition from docked FL+TFL / FR+TFR to detached SL+TRL / SR+TRR and arms both endpoints to the same Aurora frame.
+
 ## Physical milestones
 
 ### M1 — dock proof
