@@ -25,6 +25,13 @@ if [[ "$enabled" != "1" ]]; then
   exec sleep infinity
 fi
 
+preflight="/usr/local/sbin/aurora-pi5-driver-preflight"
+[[ -x "$preflight" ]] || {
+  echo "Aurora Pi5 driver preflight is missing: $preflight" >&2
+  exit 1
+}
+"$preflight"
+
 repo="$(read_config audio.repository)"
 capture="$(read_config audio.capture_device)"
 output="$(read_config audio.output_device)"
