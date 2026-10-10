@@ -21,6 +21,7 @@ install -d "$DEST/usr/local/sbin" "$DEST/usr/local/bin"   "$DEST/usr/lib/systemd
 
 install -m 0755 "$DAEMON_BIN" "$DEST/usr/local/sbin/aurora-os-daemon"
 install -m 0755 "$ROOT/os/aurora-os/usr/local/sbin/aurora-audio" "$DEST/usr/local/sbin/aurora-audio"
+install -m 0755 "$ROOT/os/aurora-os/usr/local/sbin/aurora-pi5-driver-preflight" "$DEST/usr/local/sbin/aurora-pi5-driver-preflight"
 install -m 0755 "$ROOT/os/aurora-os/usr/local/bin/auroractl" "$DEST/usr/local/bin/auroractl"
 install -m 0644 "$ROOT/os/aurora-os/usr/lib/systemd/system/"*.service "$DEST/usr/lib/systemd/system/"
 install -m 0644 "$ROOT/os/aurora-os/usr/lib/systemd/system/"*.timer "$DEST/usr/lib/systemd/system/"
