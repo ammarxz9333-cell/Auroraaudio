@@ -10,8 +10,9 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use aurora_core::{ChannelRole, StandardLayout};
 use aurora_realtime_audio_api::{
-    MediaTimestamp, NetworkAudioBlock, NetworkAudioFormat, NetworkClockDiscipline,
-    NetworkStreamConfig, NetworkTimingPolicy, NetworkTransportError, AURORA_NETWORK_MEDIA_RATE,
+    MediaTimestamp, NetworkAudioBlock, NetworkAudioFormat, NetworkAudioTransport,
+    NetworkClockDiscipline, NetworkStreamConfig, NetworkTimingPolicy, NetworkTransportError,
+    AURORA_NETWORK_MEDIA_RATE,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -441,6 +442,206 @@ pub enum NetworkFanoutError {
     NoBlockReady,
     #[error("modular network sequence/timestamp discontinuity")]
     TimelineDiscontinuity,
+}
+
+
+/// Worker-side transport coordinator for arbitrary detachable module routes.
+///
+/// All module transports share the same Aurora input timeline. Any preparation,
+/// start, or submission failure invalidates the complete set rather than
+/// allowing one detached speaker to continue on a stale epoch.
+pub struct ModuleNetworkTransportSet {
+    fanout: PreparedModuleNetworkFanout,
+    transports: Vec<Box<dyn NetworkAudioTransport>>,
+    lifecycle: ModuleNetworkLifecycle,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ModuleNetworkLifecycle {
+    New,
+    Prepared,
+    Started,
+}
+
+impl ModuleNetworkTransportSet {
+    /// Builds a transport set after validating route count and capabilities.
+    pub fn new(
+        routes: Vec<NetworkRouteSpec>,
+        transports: Vec<Box<dyn NetworkAudioTransport>>,
+    ) -> Result<Self, ModuleNetworkTransportSetError> {
+        if routes.len() != transports.len() {
+            return Err(ModuleNetworkTransportSetError::TransportCount);
+        }
+
+        let fanout =
+            PreparedModuleNetworkFanout::prepare(routes).map_err(ModuleNetworkTransportSetError::Fanout)?;
+
+        for (route_index, transport) in transports.iter().enumerate() {
+            let route = fanout
+                .route(route_index)
+                .map_err(ModuleNetworkTransportSetError::Fanout)?;
+            let capabilities = transport.capabilities();
+            if capabilities.max_channels < route.stream.format.channels
+                || !capabilities.scheduled_playout
+                || (route.stream.clock_discipline == NetworkClockDiscipline::AdaptiveRateFollower
+                    && !capabilities.adaptive_rate_matching)
+            {
+                return Err(ModuleNetworkTransportSetError::Capability { route_index });
+            }
+        }
+
+        Ok(Self {
+            fanout,
+            transports,
+            lifecycle: ModuleNetworkLifecycle::New,
+        })
+    }
+
+    /// Prepares every backend with the exact stream config admitted by fabric.
+    pub fn prepare(&mut self) -> Result<(), ModuleNetworkTransportSetError> {
+        if self.lifecycle == ModuleNetworkLifecycle::Started {
+            return Err(ModuleNetworkTransportSetError::InvalidLifecycle);
+        }
+
+        for route_index in 0..self.transports.len() {
+            let config = self
+                .fanout
+                .route(route_index)
+                .map_err(ModuleNetworkTransportSetError::Fanout)?
+                .stream;
+            if let Err(source) = self.transports[route_index].prepare(config) {
+                for prepared in 0..route_index {
+                    self.transports[prepared].reset();
+                }
+                self.fanout.reset();
+                self.lifecycle = ModuleNetworkLifecycle::New;
+                return Err(ModuleNetworkTransportSetError::Endpoint {
+                    route_index,
+                    source,
+                });
+            }
+        }
+
+        self.fanout.reset();
+        self.lifecycle = ModuleNetworkLifecycle::Prepared;
+        Ok(())
+    }
+
+    /// Starts all module transports atomically with rollback on partial start.
+    pub fn start(&mut self) -> Result<(), ModuleNetworkTransportSetError> {
+        if self.lifecycle != ModuleNetworkLifecycle::Prepared {
+            return Err(ModuleNetworkTransportSetError::InvalidLifecycle);
+        }
+
+        for route_index in 0..self.transports.len() {
+            if let Err(source) = self.transports[route_index].start() {
+                for started in 0..route_index {
+                    let _ = self.transports[started].stop();
+                    self.transports[started].reset();
+                }
+                self.fanout.reset();
+                return Err(ModuleNetworkTransportSetError::Endpoint {
+                    route_index,
+                    source,
+                });
+            }
+        }
+
+        self.fanout.reset();
+        self.lifecycle = ModuleNetworkLifecycle::Started;
+        Ok(())
+    }
+
+    /// Routes one canonical 7.1.4 block and submits every module block.
+    pub fn submit(
+        &mut self,
+        block: &NetworkAudioBlock<'_>,
+    ) -> Result<(), ModuleNetworkTransportSetError> {
+        if self.lifecycle != ModuleNetworkLifecycle::Started {
+            return Err(ModuleNetworkTransportSetError::InvalidLifecycle);
+        }
+
+        self.fanout
+            .split(block)
+            .map_err(ModuleNetworkTransportSetError::Fanout)?;
+
+        for route_index in 0..self.transports.len() {
+            let module_block = self
+                .fanout
+                .module_block(route_index)
+                .map_err(ModuleNetworkTransportSetError::Fanout)?;
+            if let Err(source) = self.transports[route_index].submit(module_block) {
+                self.abort_stream();
+                return Err(ModuleNetworkTransportSetError::Endpoint {
+                    route_index,
+                    source,
+                });
+            }
+        }
+        Ok(())
+    }
+
+    /// Stops every active module transport and retains prepared capacity.
+    pub fn stop(&mut self) -> Result<(), ModuleNetworkTransportSetError> {
+        if self.lifecycle != ModuleNetworkLifecycle::Started {
+            return Err(ModuleNetworkTransportSetError::InvalidLifecycle);
+        }
+
+        let mut first_error = None;
+        for route_index in 0..self.transports.len() {
+            if let Err(source) = self.transports[route_index].stop() {
+                if first_error.is_none() {
+                    first_error = Some(ModuleNetworkTransportSetError::Endpoint {
+                        route_index,
+                        source,
+                    });
+                }
+            }
+            self.transports[route_index].reset();
+        }
+        self.fanout.reset();
+        self.lifecycle = ModuleNetworkLifecycle::Prepared;
+
+        match first_error {
+            Some(error) => Err(error),
+            None => Ok(()),
+        }
+    }
+
+    /// Clears transport and media-timeline state without changing capacities.
+    pub fn reset(&mut self) {
+        for transport in &mut self.transports {
+            transport.reset();
+        }
+        self.fanout.reset();
+    }
+
+    fn abort_stream(&mut self) {
+        for transport in &mut self.transports {
+            let _ = transport.stop();
+            transport.reset();
+        }
+        self.fanout.reset();
+        self.lifecycle = ModuleNetworkLifecycle::New;
+    }
+}
+
+/// Fail-closed errors for the detachable module transport set.
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum ModuleNetworkTransportSetError {
+    #[error("module network transport count does not match route count")]
+    TransportCount,
+    #[error("module network fanout failed: {0}")]
+    Fanout(NetworkFanoutError),
+    #[error("module network transport has incompatible capabilities at route {route_index}")]
+    Capability { route_index: usize },
+    #[error("module network endpoint {route_index} failed: {source}")]
+    Endpoint {
+        route_index: usize,
+        source: NetworkTransportError,
+    },
+    #[error("invalid module network transport lifecycle")]
+    InvalidLifecycle,
 }
 
 /// Stateful control-plane session for hot dock/undock reconciliation.
