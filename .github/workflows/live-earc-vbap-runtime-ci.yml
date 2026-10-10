@@ -7,6 +7,7 @@ on:
       - main-v2
     paths:
       - "validation/physical/aurora_live_earc_harness.rs"
+      - "validation/physical/aurora_adaptive_output.rs"
       - "validation/physical/aurora_alsa_iec61937_pipe.py"
       - "validation/physical/run-live-earc-vbap.sh"
       - "config/external-components-v1.json"
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - "validation/physical/aurora_live_earc_harness.rs"
+      - "validation/physical/aurora_adaptive_output.rs"
       - "validation/physical/aurora_alsa_iec61937_pipe.py"
       - "validation/physical/run-live-earc-vbap.sh"
       - "config/external-components-v1.json"
