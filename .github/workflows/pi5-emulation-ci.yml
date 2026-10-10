@@ -1,0 +1,48 @@
+name: Pi5 Driver and ARM64 Emulation CI
+
+on:
+  push:
+    branches:
+      - aurora-os-v1
+      - main-v2
+    paths:
+      - "platform/pi5/**"
+      - "validation/pi5/**"
+      - "os/aurora-os/**"
+      - "crates/aurora-os-daemon/**"
+      - "crates/aurora-modular-speaker-fabric/**"
+      - ".github/workflows/pi5-emulation-ci.yml"
+  pull_request:
+    paths:
+      - "platform/pi5/**"
+      - "validation/pi5/**"
+      - "os/aurora-os/**"
+      - "crates/aurora-os-daemon/**"
+      - "crates/aurora-modular-speaker-fabric/**"
+      - ".github/workflows/pi5-emulation-ci.yml"
+
+jobs:
+  kernel-driver-contract:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install device-tree tools
+        run: sudo apt-get update && sudo apt-get install -y device-tree-compiler
+      - name: Compile Aurora Pi5 overlay
+        run: dtc -@ -I dts -O dtb -o /tmp/aurora-earc-tap.dtbo platform/pi5/aurora-earc-tap-overlay.dts
+      - name: Validate against Raspberry Pi 6.18 kernel source
+        run: bash validation/pi5/validate-rpi-kernel-contract.sh
+
+  arm64-userspace-emulation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+      - name: Run Aurora under emulated ARM64 Linux
+        run: |
+          docker run --rm --platform linux/arm64 \
+            -v "$PWD:/work" -w /work \
+            rust:1.88-bookworm \
+            bash -lc 'apt-get update && apt-get install -y python3 device-tree-compiler && bash validation/pi5/qemu-arm64-smoke.sh'
