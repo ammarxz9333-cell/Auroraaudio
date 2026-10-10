@@ -40,9 +40,7 @@ fn timing() -> NetworkTimingPolicy {
 
 fn samples(block_frames: usize) -> Vec<f32> {
     (0..block_frames)
-        .flat_map(|frame| {
-            (0..12).map(move |channel| (frame * 100 + channel) as f32)
-        })
+        .flat_map(|frame| (0..12).map(move |channel| (frame * 100 + channel) as f32))
         .collect()
 }
 
