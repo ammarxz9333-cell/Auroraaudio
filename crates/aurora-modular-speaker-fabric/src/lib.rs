@@ -8,7 +8,11 @@
 
 use std::collections::BTreeMap;
 
-use aurora_core::ChannelRole;
+use aurora_core::{ChannelRole, StandardLayout};
+use aurora_realtime_audio_api::{
+    NetworkAudioFormat, NetworkClockDiscipline, NetworkStreamConfig, NetworkTimingPolicy,
+    NetworkTransportError, AURORA_NETWORK_MEDIA_RATE,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -147,6 +151,8 @@ pub struct ModuleAssignment {
     pub module_id: String,
     /// Route selected from physical state/capabilities.
     pub route: ModuleRoute,
+    /// Clock relationship admitted for this assignment.
+    pub clock_source: ModuleClockSource,
     /// Logical roles carried by the route.
     pub roles: Vec<ChannelRole>,
 }
@@ -158,6 +164,95 @@ pub struct FabricPlan {
     pub mode: DeploymentMode,
     /// Deterministic assignments in intent order.
     pub assignments: Vec<ModuleAssignment>,
+}
+
+
+/// One detached module materialized onto Aurora's timestamped network-audio boundary.
+#[derive(Debug, Clone, PartialEq)]
+pub struct NetworkRouteSpec {
+    /// Stable physical module identity.
+    pub module_id: String,
+    /// Source indexes from Aurora's canonical 7.1.4 rendered PCM bus.
+    pub source_channel_indices: Vec<usize>,
+    /// Prepared network stream shape and clock-discipline requirement.
+    pub stream: NetworkStreamConfig,
+}
+
+/// Failure while translating an admitted fabric plan into network streams.
+#[derive(Debug, Error, Clone, Copy, PartialEq, Eq)]
+pub enum NetworkRouteError {
+    /// Network output requires a non-zero block size.
+    #[error("network route block size must be greater than zero")]
+    InvalidBlockSize,
+    /// A requested role is not representable on Aurora's canonical 7.1.4 bus.
+    #[error("network route contains a role outside canonical 7.1.4")]
+    UnsupportedRole,
+    /// Network route has no valid network clock discipline.
+    #[error("network route has an unsupported clock source")]
+    UnsupportedClockSource,
+    /// Shared network timing policy is invalid.
+    #[error("invalid network timing policy")]
+    Timing(#[from] NetworkTransportError),
+}
+
+/// Converts admitted detached assignments into network worker streams.
+///
+/// DockBus assignments are intentionally skipped because they remain on the
+/// synchronous local dock transport. The returned source indexes can feed the
+/// existing Aurora network worker/fanout layer without reinterpreting speaker
+/// semantics.
+pub fn materialize_network_routes(
+    plan: &FabricPlan,
+    block_frames: usize,
+    timing: NetworkTimingPolicy,
+) -> Result<Vec<NetworkRouteSpec>, NetworkRouteError> {
+    if block_frames == 0 {
+        return Err(NetworkRouteError::InvalidBlockSize);
+    }
+    timing.validate()?;
+
+    let canonical = StandardLayout::SevenOneFour.canonical_roles();
+    let mut routes = Vec::new();
+    for assignment in &plan.assignments {
+        if !matches!(
+            assignment.route,
+            ModuleRoute::WiredNetwork | ModuleRoute::WirelessNetwork
+        ) {
+            continue;
+        }
+
+        let clock_discipline = match assignment.clock_source {
+            ModuleClockSource::Ptp => NetworkClockDiscipline::PtpFollower,
+            ModuleClockSource::AdaptivePeer => NetworkClockDiscipline::AdaptiveRateFollower,
+            ModuleClockSource::DockRecovered | ModuleClockSource::Unlocked => {
+                return Err(NetworkRouteError::UnsupportedClockSource);
+            }
+        };
+
+        let mut source_channel_indices = Vec::with_capacity(assignment.roles.len());
+        for role in &assignment.roles {
+            let index = canonical
+                .iter()
+                .position(|candidate| candidate == role)
+                .ok_or(NetworkRouteError::UnsupportedRole)?;
+            source_channel_indices.push(index);
+        }
+
+        routes.push(NetworkRouteSpec {
+            module_id: assignment.module_id.clone(),
+            source_channel_indices,
+            stream: NetworkStreamConfig {
+                format: NetworkAudioFormat {
+                    sample_rate: AURORA_NETWORK_MEDIA_RATE,
+                    channels: assignment.roles.len(),
+                    block_frames,
+                },
+                clock_discipline,
+                timing,
+            },
+        });
+    }
+    Ok(routes)
 }
 
 /// Synchronization and routing policy.
@@ -273,6 +368,7 @@ impl FabricPlanner {
             assignments.push(ModuleAssignment {
                 module_id: module.module_id.clone(),
                 route,
+                clock_source: module.sync.clock_source,
                 roles: target.roles.clone(),
             });
         }
@@ -457,6 +553,35 @@ mod tests {
         assert_eq!(plan.assignments[0].route, ModuleRoute::WirelessNetwork);
         assert_eq!(plan.assignments[0].roles, vec![ChannelRole::SurroundLeft]);
         assert_eq!(plan.assignments[1].roles, vec![ChannelRole::SurroundRight]);
+    }
+
+
+    #[test]
+    fn detached_rears_materialize_to_canonical_network_bus_indexes() {
+        let modules = [
+            module("left", ModuleAttachment::Detached, ptp(180)),
+            module("right", ModuleAttachment::Detached, ptp(220)),
+        ];
+        let plan = FabricPlanner::with_defaults()
+            .plan(&modules, &detached_rear_intent("left", "right"))
+            .unwrap();
+        let timing = NetworkTimingPolicy {
+            target_latency_frames: 480,
+            minimum_latency_frames: 240,
+            maximum_latency_frames: 960,
+            maximum_rate_correction_ppm: 250.0,
+        };
+        let routes = materialize_network_routes(&plan, 48, timing).unwrap();
+
+        assert_eq!(routes.len(), 2);
+        assert_eq!(routes[0].source_channel_indices, vec![4]);
+        assert_eq!(routes[1].source_channel_indices, vec![5]);
+        assert_eq!(
+            routes[0].stream.clock_discipline,
+            NetworkClockDiscipline::PtpFollower
+        );
+        assert_eq!(routes[0].stream.format.channels, 1);
+        assert_eq!(routes[0].stream.format.sample_rate, 48_000);
     }
 
     #[test]
