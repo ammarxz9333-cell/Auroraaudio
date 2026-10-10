@@ -166,7 +166,6 @@ pub struct FabricPlan {
     pub assignments: Vec<ModuleAssignment>,
 }
 
-
 /// One detached module materialized onto Aurora's timestamped network-audio boundary.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NetworkRouteSpec {
@@ -653,7 +652,6 @@ mod tests {
         assert_eq!(plan.assignments[1].roles, vec![ChannelRole::SurroundRight]);
     }
 
-
     #[test]
     fn detached_rears_materialize_to_canonical_network_bus_indexes() {
         let modules = [
@@ -778,18 +776,10 @@ mod tests {
     fn hot_undock_reconciles_roles_and_sync_loss_mutes_plan() {
         let mut session = FabricSession::with_defaults();
         session
-            .upsert_module(module(
-                "left",
-                ModuleAttachment::Detached,
-                ptp(120),
-            ))
+            .upsert_module(module("left", ModuleAttachment::Detached, ptp(120)))
             .unwrap();
         session
-            .upsert_module(module(
-                "right",
-                ModuleAttachment::Detached,
-                ptp(140),
-            ))
+            .upsert_module(module("right", ModuleAttachment::Detached, ptp(140)))
             .unwrap();
 
         let plan = session
@@ -807,11 +797,7 @@ mod tests {
         assert!(session.current_plan().is_none());
 
         let recovered = session
-            .upsert_module(module(
-                "left",
-                ModuleAttachment::Detached,
-                ptp(90),
-            ))
+            .upsert_module(module("left", ModuleAttachment::Detached, ptp(90)))
             .unwrap()
             .expect("plan restored after sync recovery");
         assert_eq!(recovered.assignments.len(), 2);
