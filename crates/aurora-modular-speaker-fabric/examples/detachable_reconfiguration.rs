@@ -104,8 +104,12 @@ fn main() {
             EndpointHandoverCommand::Prepare { assignment, .. } => assignment.module_id.as_str(),
         };
         match module_id {
-            "left-pod" => left_endpoint.apply(command).expect("left endpoint handover"),
-            "right-pod" => right_endpoint.apply(command).expect("right endpoint handover"),
+            "left-pod" => left_endpoint
+                .apply(command)
+                .expect("left endpoint handover"),
+            "right-pod" => right_endpoint
+                .apply(command)
+                .expect("right endpoint handover"),
             _ => panic!("unexpected module in handover"),
         }
     }
