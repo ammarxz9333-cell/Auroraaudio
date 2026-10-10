@@ -691,13 +691,13 @@ pub fn build_handover_plan(
         ids.insert(assignment.module_id.clone());
     }
 
-    let lookup = |plan: Option<&FabricPlan>, id: &str| {
+    fn lookup<'a>(plan: Option<&'a FabricPlan>, id: &str) -> Option<&'a ModuleAssignment> {
         plan.and_then(|plan| {
             plan.assignments
                 .iter()
                 .find(|assignment| assignment.module_id == id)
         })
-    };
+    }
 
     let mut changed = Vec::<(String, Option<ModuleAssignment>)>::new();
     for id in ids {
