@@ -444,7 +444,6 @@ pub enum NetworkFanoutError {
     TimelineDiscontinuity,
 }
 
-
 /// Worker-side transport coordinator for arbitrary detachable module routes.
 ///
 /// All module transports share the same Aurora input timeline. Any preparation,
@@ -473,8 +472,8 @@ impl ModuleNetworkTransportSet {
             return Err(ModuleNetworkTransportSetError::TransportCount);
         }
 
-        let fanout =
-            PreparedModuleNetworkFanout::prepare(routes).map_err(ModuleNetworkTransportSetError::Fanout)?;
+        let fanout = PreparedModuleNetworkFanout::prepare(routes)
+            .map_err(ModuleNetworkTransportSetError::Fanout)?;
 
         for (route_index, transport) in transports.iter().enumerate() {
             let route = fanout
