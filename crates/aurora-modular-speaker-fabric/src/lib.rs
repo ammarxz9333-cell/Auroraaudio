@@ -254,7 +254,6 @@ pub fn materialize_network_routes(
     Ok(routes)
 }
 
-
 /// Prepared worker-side fanout from Aurora's canonical 7.1.4 PCM bus to the
 /// arbitrary per-module network routes admitted by the modular fabric.
 ///
@@ -396,7 +395,9 @@ impl PreparedModuleNetworkFanout {
             .buffers
             .get(route_index)
             .ok_or(NetworkFanoutError::InvalidRouteIndex)?;
-        let sequence = self.current_sequence.ok_or(NetworkFanoutError::NoBlockReady)?;
+        let sequence = self
+            .current_sequence
+            .ok_or(NetworkFanoutError::NoBlockReady)?;
         let timestamp = self
             .current_timestamp
             .ok_or(NetworkFanoutError::NoBlockReady)?;
