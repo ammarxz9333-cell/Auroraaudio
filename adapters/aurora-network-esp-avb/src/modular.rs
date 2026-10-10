@@ -141,7 +141,7 @@ impl ModularCinemaPlan {
             if module.module_id.is_empty() {
                 return Err(ModularFabricError::InvalidModuleId);
             }
-            if seen_ids.iter().any(|seen| *seen == module.module_id) {
+            if seen_ids.iter().any(|seen| *seen == module.module_id.as_str()) {
                 return Err(ModularFabricError::DuplicateModuleId);
             }
             seen_ids.push(module.module_id.as_str());
