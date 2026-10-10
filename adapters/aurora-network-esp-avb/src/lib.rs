@@ -11,7 +11,6 @@
 //! a later AVB sender can map that timestamp into the endpoint PTP/gPTP domain.
 
 mod coordinator;
-mod modular;
 
 use std::fmt;
 
@@ -21,10 +20,6 @@ use aurora_realtime_audio_api::{
 };
 
 pub use coordinator::{EspAvbTransportArray, EspAvbTransportSet, EspAvbTransportSetError};
-pub use modular::{
-    CinemaAssignment, ModularCinemaPlan, ModularFabricError, ModularFabricPolicy,
-    ModuleAttachment, ModuleIntent, ModuleObservation, ModuleSync, ModuleTransport, RolePair,
-};
 
 /// Canonical Aurora 7.1.4 channel count.
 pub const AURORA_7_1_4_CHANNELS: usize = 12;
