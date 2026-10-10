@@ -14,6 +14,7 @@ MODE=""
 CAPTURE_DEVICE=""
 OUTPUT_FILE=""
 OUTPUT_DEVICE=""
+OUTPUT_PROFILE="native"
 MAX_SECONDS=""
 WORK_DIR=""
 
@@ -22,7 +23,7 @@ usage() {
 Usage:
   validation/physical/run-live-earc-vbap.sh --fixture [--work-dir DIR]
   validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-file FILE [--seconds N] [--work-dir DIR]
-  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-device DEV [--seconds N] [--work-dir DIR]
+  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-device DEV [--output-profile native|umc1820-ada8200] [--seconds N] [--work-dir DIR]
 
 Physical mode:
   TV/eARC -> ALSA S32_LE/2ch/192k -> IEC61937 E-AC-3 JOC -> Harletty ->
@@ -30,7 +31,10 @@ Physical mode:
 
 Direct ALSA-device mode inserts Aurora's bounded adaptive duplex bridge between
 VBAP and aplay: one 12-channel FIFO, PI drift controller, clock estimator, and
-Rubato ASRC shared coherently across all channels. File mode remains an unpaced
+Rubato ASRC shared coherently across all logical channels. The optional
+umc1820-ada8200 profile expands the 12 logical channels to the UMC1820's 20 USB
+playback slots, routing Aurora to Line Out 3-10 and ADAT 1-4 while silencing the
+unused Main, S/PDIF, and remaining ADAT slots. File mode remains an unpaced
 evidence capture and intentionally bypasses clock adaptation.
 EOF
 }
@@ -41,6 +45,7 @@ while (( "$#" )); do
     --capture-device) CAPTURE_DEVICE="$2"; shift 2 ;;
     --output-file) OUTPUT_FILE="$2"; shift 2 ;;
     --output-device) OUTPUT_DEVICE="$2"; shift 2 ;;
+    --output-profile) OUTPUT_PROFILE="$2"; shift 2 ;;
     --seconds) MAX_SECONDS="$2"; shift 2 ;;
     --work-dir) WORK_DIR="$2"; shift 2 ;;
     -h|--help) usage; exit 0 ;;
@@ -58,6 +63,14 @@ if [[ "$MODE" != "fixture" ]]; then
     echo "one of --output-file or --output-device is required" >&2
     exit 2
   }
+  case "$OUTPUT_PROFILE" in
+    native|umc1820-ada8200) ;;
+    *) echo "--output-profile must be native or umc1820-ada8200" >&2; exit 2 ;;
+  esac
+  if [[ -n "$OUTPUT_FILE" && "$OUTPUT_PROFILE" != "native" ]]; then
+    echo "--output-profile applies only to --output-device; raw evidence files stay canonical 12-channel Aurora PCM" >&2
+    exit 2
+  fi
 fi
 
 for cmd in git python3 cargo rustup ffmpeg; do
@@ -210,7 +223,8 @@ if [[ "$MODE" == "fixture" ]]; then
 
   cat "$JOC_IEC" | "$HARNESS_BIN" "$BRIDGE_LIB" > "$OUT"
   verify_s32_output "$OUT"
-  "$ADAPTIVE_BIN" --self-test --channels 12 --sample-rate 48000
+  "$ADAPTIVE_BIN" --self-test --channels 12 --sample-rate 48000 --output-profile native
+  "$ADAPTIVE_BIN" --self-test --channels 12 --sample-rate 48000 --output-profile umc1820-ada8200
 
   ffmpeg -nostdin -hide_banner -loglevel error -y     -f lavfi -i "anullsrc=channel_layout=5.1:sample_rate=48000"     -t 0.25 -c:a eac3 -b:a 448k -f spdif "$PLAIN_IEC"
 
@@ -252,7 +266,11 @@ else
     echo "aplay is required for --output-device" >&2
     exit 2
   }
-  python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "$HARNESS_BIN" "$BRIDGE_LIB"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c 12 -r 48000
+  APLAY_CHANNELS=12
+  if [[ "$OUTPUT_PROFILE" == "umc1820-ada8200" ]]; then
+    APLAY_CHANNELS=20
+  fi
+  python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "$HARNESS_BIN" "$BRIDGE_LIB"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
 fi
 
 python3 "$ROOT_DIR/validation/physical/aurora_live_ingress.py" analyze   --input "$IEC_CAPTURE"   --report "$INGRESS_REPORT"   --max-invalid-bursts 0   --max-unclassified-bytes 0   --max-relocks 0   --minimum-valid-bursts 2   --require-locked-end
