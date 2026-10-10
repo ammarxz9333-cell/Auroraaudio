@@ -20,6 +20,57 @@ const DEFAULT_CAPACITY_FRAMES: usize = 16_384;
 const DEFAULT_TARGET_FILL_FRAMES: usize = 4_096;
 const BACKPRESSURE_SLEEP: Duration = Duration::from_millis(1);
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum OutputProfile {
+    Native,
+    Umc1820Ada8200,
+}
+
+impl OutputProfile {
+    fn parse(value: &str) -> Result<Self, String> {
+        match value {
+            "native" => Ok(Self::Native),
+            "umc1820-ada8200" => Ok(Self::Umc1820Ada8200),
+            _ => Err(format!(
+                "unsupported --output-profile {value:?}; expected native or umc1820-ada8200"
+            )),
+        }
+    }
+
+    fn sink_channels(self, logical_channels: usize) -> Result<usize, String> {
+        match self {
+            Self::Native => Ok(logical_channels),
+            Self::Umc1820Ada8200 if logical_channels == 12 => Ok(20),
+            Self::Umc1820Ada8200 => Err(
+                "umc1820-ada8200 profile requires Aurora's 12-channel 7.1.4 stream".to_owned(),
+            ),
+        }
+    }
+
+    fn sink_slot(self, logical_channel: usize) -> Option<usize> {
+        match self {
+            Self::Native => Some(logical_channel),
+            // UMC1820 USB playback:
+            //   1-2   Main Out 1-2 (intentionally unused)
+            //   3-10  analog Line Out 3-10
+            //   11-12 S/PDIF (intentionally unused)
+            //   13-20 ADAT 1-8
+            // Aurora 7.1.4 maps bed channels to Line Out 3-10 and heights to ADAT 1-4.
+            Self::Umc1820Ada8200 => {
+                const MAP: [usize; 12] = [2, 3, 4, 5, 6, 7, 8, 9, 12, 13, 14, 15];
+                MAP.get(logical_channel).copied()
+            }
+        }
+    }
+
+    fn name(self) -> &'static str {
+        match self {
+            Self::Native => "native",
+            Self::Umc1820Ada8200 => "umc1820-ada8200",
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy)]
 struct Config {
     channels: usize,
@@ -27,6 +78,7 @@ struct Config {
     block_frames: usize,
     capacity_frames: usize,
     target_fill_frames: usize,
+    output_profile: OutputProfile,
     self_test: bool,
 }
 
@@ -38,6 +90,7 @@ impl Default for Config {
             block_frames: DEFAULT_BLOCK_FRAMES,
             capacity_frames: DEFAULT_CAPACITY_FRAMES,
             target_fill_frames: DEFAULT_TARGET_FILL_FRAMES,
+            output_profile: OutputProfile::Native,
             self_test: false,
         }
     }
@@ -83,12 +136,18 @@ fn parse_args() -> Result<Config, String> {
                     .parse()
                     .map_err(|_| "invalid --target-fill-frames")?;
             }
+            "--output-profile" => {
+                config.output_profile = OutputProfile::parse(
+                    &args.next().ok_or("--output-profile requires a value")?,
+                )?;
+            }
             "--self-test" => config.self_test = true,
             "-h" | "--help" => {
                 eprintln!(
                     "usage: aurora-adaptive-output [--channels N] [--sample-rate HZ] \
-                     [--block-frames N] [--capacity-frames N] [--target-fill-frames N]\n\
-                     stdin/stdout: interleaved S32_LE PCM; --self-test performs no I/O"
+                     [--block-frames N] [--capacity-frames N] [--target-fill-frames N] \
+                     [--output-profile native|umc1820-ada8200]\n\
+                     stdin/stdout: interleaved S32_LE PCM; --self-test performs no stream I/O"
                 );
                 std::process::exit(0);
             }
@@ -104,6 +163,7 @@ fn parse_args() -> Result<Config, String> {
     {
         return Err("invalid adaptive-output configuration".to_owned());
     }
+    config.output_profile.sink_channels(config.channels)?;
     Ok(config)
 }
 
@@ -123,6 +183,39 @@ fn decode_s32(bytes: &[u8], output: &mut Vec<f32>) -> Result<usize, String> {
         output.push((sample as f32 / i32::MAX as f32).clamp(-1.0, 1.0));
     }
     Ok(output.len())
+}
+
+fn map_output_block(
+    logical: &[f32],
+    logical_channels: usize,
+    profile: OutputProfile,
+    sink: &mut [f32],
+) -> Result<usize, String> {
+    if logical_channels == 0 || logical.len() % logical_channels != 0 {
+        return Err("logical output block has invalid channel shape".to_owned());
+    }
+    let sink_channels = profile.sink_channels(logical_channels)?;
+    let frames = logical.len() / logical_channels;
+    if sink.len() != frames.saturating_mul(sink_channels) {
+        return Err("sink output block has invalid channel shape".to_owned());
+    }
+    sink.fill(0.0);
+    for frame_index in 0..frames {
+        let source = &logical
+            [frame_index * logical_channels..(frame_index + 1) * logical_channels];
+        let destination =
+            &mut sink[frame_index * sink_channels..(frame_index + 1) * sink_channels];
+        for (logical_channel, sample) in source.iter().enumerate() {
+            let sink_slot = profile
+                .sink_slot(logical_channel)
+                .ok_or("output profile is missing a logical channel")?;
+            if sink_slot >= sink_channels {
+                return Err("output profile selected an out-of-range sink slot".to_owned());
+            }
+            destination[sink_slot] = *sample;
+        }
+    }
+    Ok(sink_channels)
 }
 
 fn read_fullish<R: Read>(reader: &mut R, buffer: &mut [u8]) -> io::Result<usize> {
@@ -165,7 +258,42 @@ fn fault_policy(config: Config) -> DuplexFaultPolicy {
     }
 }
 
+fn validate_profile_mapping(config: Config) -> Result<(), String> {
+    let sink_channels = config.output_profile.sink_channels(config.channels)?;
+    let logical = (0..config.channels)
+        .map(|channel| (channel + 1) as f32)
+        .collect::<Vec<_>>();
+    let mut sink = vec![f32::NAN; sink_channels];
+    map_output_block(
+        &logical,
+        config.channels,
+        config.output_profile,
+        &mut sink,
+    )?;
+
+    for (logical_channel, expected) in logical.iter().enumerate() {
+        let slot = config
+            .output_profile
+            .sink_slot(logical_channel)
+            .ok_or("profile dropped a logical channel")?;
+        if sink[slot] != *expected {
+            return Err(format!(
+                "profile mapping mismatch for logical channel {logical_channel}: slot {slot}"
+            ));
+        }
+    }
+    for (slot, sample) in sink.iter().enumerate() {
+        let used = (0..config.channels)
+            .any(|channel| config.output_profile.sink_slot(channel) == Some(slot));
+        if !used && *sample != 0.0 {
+            return Err(format!("unused sink slot {slot} is not silent"));
+        }
+    }
+    Ok(())
+}
+
 fn run_self_test(config: Config) -> Result<(), String> {
+    validate_profile_mapping(config)?;
     let (producer, mut consumer, status) = create_adaptive_duplex_bridge(
         bridge_config(config),
         fault_policy(config),
@@ -214,13 +342,20 @@ fn run_self_test(config: Config) -> Result<(), String> {
         return Err(format!("adaptive self-test failed: {snapshot:?} peak={peak}"));
     }
     eprintln!(
-        "AURORA-ADAPTIVE-OUTPUT-SELFTEST-PASS channels={} rate={} block={} peak={:.6} ratio={:.9}",
-        config.channels, config.sample_rate, config.block_frames, peak, snapshot.current_ratio
+        "AURORA-ADAPTIVE-OUTPUT-SELFTEST-PASS channels={} sink_channels={} profile={} rate={} block={} peak={:.6} ratio={:.9}",
+        config.channels,
+        config.output_profile.sink_channels(config.channels)?,
+        config.output_profile.name(),
+        config.sample_rate,
+        config.block_frames,
+        peak,
+        snapshot.current_ratio
     );
     Ok(())
 }
 
 fn run_stream(config: Config) -> Result<(), Box<dyn std::error::Error>> {
+    let sink_channels = config.output_profile.sink_channels(config.channels)?;
     let (producer, mut consumer, status) = create_adaptive_duplex_bridge(
         bridge_config(config),
         fault_policy(config),
@@ -266,13 +401,15 @@ fn run_stream(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     let output_thread = thread::spawn(move || -> Result<u64, String> {
         let stdout = io::stdout();
         let mut writer = BufWriter::new(stdout.lock());
-        let mut output = vec![0.0_f32; output_config.block_frames * output_config.channels];
-        let mut bytes = vec![0_u8; output.len() * 4];
+        let mut logical_output =
+            vec![0.0_f32; output_config.block_frames * output_config.channels];
+        let mut sink_output = vec![0.0_f32; output_config.block_frames * sink_channels];
+        let mut bytes = vec![0_u8; sink_output.len() * 4];
         let mut written_frames = 0_u64;
 
         loop {
             let before = status_for_output.snapshot();
-            consumer.read_interleaved(&mut output, output_config.channels);
+            consumer.read_interleaved(&mut logical_output, output_config.channels);
             let after = status_for_output.snapshot();
 
             if after.fault != AdaptiveDuplexFault::None || after.duplex.health == DuplexHealth::Fatal {
@@ -284,7 +421,13 @@ fn run_stream(config: Config) -> Result<(), Box<dyn std::error::Error>> {
                 break;
             }
 
-            for (sample, dst) in output.iter().zip(bytes.chunks_exact_mut(4)) {
+            map_output_block(
+                &logical_output,
+                output_config.channels,
+                output_config.output_profile,
+                &mut sink_output,
+            )?;
+            for (sample, dst) in sink_output.iter().zip(bytes.chunks_exact_mut(4)) {
                 dst.copy_from_slice(&sample_to_s32(*sample).to_le_bytes());
             }
             writer.write_all(&bytes).map_err(|error| error.to_string())?;
@@ -339,11 +482,14 @@ fn run_stream(config: Config) -> Result<(), Box<dyn std::error::Error>> {
     }
 
     eprintln!(
-        "AURORA-ADAPTIVE-OUTPUT-PASS input_frames={} output_frames={} fill={} min_fill={} max_fill={} \
+        "AURORA-ADAPTIVE-OUTPUT-PASS input_frames={} output_frames={} logical_channels={} sink_channels={} profile={} fill={} min_fill={} max_fill={} \
 ratio={:.9} correction_ppm={:.3} estimated_input_clock_ppm={:.3} trusted={} \
 underflows={} overflows={} fault={:?}",
         input_frames,
         written_frames,
+        config.channels,
+        sink_channels,
+        config.output_profile.name(),
         snapshot.duplex.fill_frames,
         snapshot.duplex.min_fill_frames,
         snapshot.duplex.max_fill_frames,
@@ -367,7 +513,7 @@ fn main() {
         }
     };
 
-    let result = if config.self_test {
+    let result: Result<(), Box<dyn std::error::Error>> = if config.self_test {
         run_self_test(config).map_err(|error| error.into())
     } else {
         run_stream(config)
