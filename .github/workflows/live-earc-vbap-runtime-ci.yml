@@ -1,0 +1,41 @@
+name: Live eARC VBAP Runtime CI
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main-v2
+    paths:
+      - "validation/physical/aurora_live_earc_harness.rs"
+      - "validation/physical/aurora_adaptive_output.rs"
+      - "validation/physical/aurora_umc1820_preflight.py"
+      - "validation/physical/aurora_alsa_iec61937_pipe.py"
+      - "validation/physical/run-live-earc-vbap.sh"
+      - "config/external-components-v1.json"
+      - ".github/workflows/live-earc-vbap-runtime-ci.yml"
+  pull_request:
+    paths:
+      - "validation/physical/aurora_live_earc_harness.rs"
+      - "validation/physical/aurora_adaptive_output.rs"
+      - "validation/physical/aurora_umc1820_preflight.py"
+      - "validation/physical/aurora_alsa_iec61937_pipe.py"
+      - "validation/physical/run-live-earc-vbap.sh"
+      - "config/external-components-v1.json"
+      - ".github/workflows/live-earc-vbap-runtime-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  fixture-live-runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: Install audio build dependencies
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev
+      - name: Validate JOC through Harletty and Aurora 3D VBAP
+        env:
+          AURORA_JOC_BUILD_MODE: release
+        run: bash validation/physical/run-live-earc-vbap.sh --fixture
