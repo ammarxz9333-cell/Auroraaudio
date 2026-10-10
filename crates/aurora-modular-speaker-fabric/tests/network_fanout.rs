@@ -128,7 +128,6 @@ fn fanout_rejects_timeline_skip_until_explicit_reset() {
     fanout.split(&skipped).unwrap();
 }
 
-
 #[derive(Default)]
 struct TransportProbe {
     prepared: usize,
