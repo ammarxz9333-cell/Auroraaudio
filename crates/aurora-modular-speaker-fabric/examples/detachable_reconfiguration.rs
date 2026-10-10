@@ -1,5 +1,5 @@
 use aurora_modular_speaker_fabric::{
-    detachable_atmos_rear_intent, stereo_pair_intent, FabricPlanner, ModuleAttachment,
+    detachable_atmos_rear_intent, docked_atmos_wing_intent, FabricPlanner, ModuleAttachment,
     ModuleClockSource, ModuleSyncStatus, SpeakerModuleCapabilities, SpeakerModuleState,
 };
 use aurora_realtime_audio_api::NetworkTimingPolicy;
@@ -39,9 +39,23 @@ fn main() {
         ),
     ];
     let bar = planner
-        .plan(&docked, &stereo_pair_intent("left-pod", "right-pod"))
-        .expect("docked stereo plan");
+        .plan(&docked, &docked_atmos_wing_intent("left-pod", "right-pod"))
+        .expect("docked Atmos wing plan");
     assert_eq!(bar.assignments.len(), 2);
+    assert_eq!(
+        bar.assignments[0].roles,
+        vec![
+            aurora_core::ChannelRole::FrontLeft,
+            aurora_core::ChannelRole::TopFrontLeft,
+        ]
+    );
+    assert_eq!(
+        bar.assignments[1].roles,
+        vec![
+            aurora_core::ChannelRole::FrontRight,
+            aurora_core::ChannelRole::TopFrontRight,
+        ]
+    );
 
     let wireless_sync = |skew| ModuleSyncStatus {
         locked: true,
@@ -76,6 +90,6 @@ fn main() {
     assert_eq!(routes[1].source_channel_indices, vec![5, 11]);
 
     println!(
-        "AURORA-MODULAR-ATMOS-PASS docked=2 detached=2 lanes_per_pod=2 left=SL+TRL right=SR+TRR"
+        "AURORA-MODULAR-ATMOS-PASS docked=FL+TFL,FR+TFR detached=SL+TRL,SR+TRR lanes_per_pod=2"
     );
 }
