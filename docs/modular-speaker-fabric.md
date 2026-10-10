@@ -150,7 +150,7 @@ left-pod  = detached / WirelessNetwork / SL
 right-pod = detached / WirelessNetwork / SR
 ```
 
-State B is accepted only when both endpoint clocks are locked and scheduled playout/skew evidence passes policy. In the canonical 7.1.4 bus this SL/SR pair materializes source channel indexes 4 and 5 (zero-based) into timestamped network streams.
+State B is accepted only when both endpoint clocks are locked and scheduled playout/skew evidence passes policy. A two-lane detachable Atmos pod can carry both a horizontal surround lane and an up-firing/top lane: the left pod becomes SL+TRL and the right pod becomes SR+TRR. In Aurora's canonical 7.1.4 bus those pairs materialize source indexes [4,10] and [5,11] (zero-based) into timestamped two-channel network streams. This lets the same physical side pods serve front/top-front roles while docked and surround/top-rear roles after they are moved behind the listener.
 
 Run:
 
