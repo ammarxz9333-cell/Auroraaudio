@@ -102,9 +102,7 @@ pub fn estimate_impulse_response(
     // forward to a separate wall/ceiling echo.
     let search_end = provisional_onset.saturating_add(8).min(max_onset);
     let onset_frames = (provisional_onset..=search_end)
-        .max_by(|a, b| {
-            y[*a].re.abs().total_cmp(&y[*b].re.abs())
-        })
+        .max_by(|a, b| y[*a].re.abs().total_cmp(&y[*b].re.abs()))
         .ok_or(CaptureDspError::NoArrival)?;
     let impulse = y[onset_frames..onset_frames + 9_600]
         .iter()
@@ -239,7 +237,8 @@ mod tests {
         let estimated = estimate_impulse_response(&reference, &captured, 48_000).unwrap();
         assert!(
             (estimated.onset_frames as i64 - 1_000).abs() <= 2,
-            "onset frame: {}", estimated.onset_frames
+            "onset frame: {}",
+            estimated.onset_frames
         );
         assert!(estimated.impulse[0].abs() > 0.3);
         assert!(estimated.impulse[600].abs() > 0.15);
