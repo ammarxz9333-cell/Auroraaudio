@@ -39,11 +39,14 @@ impl AutoAimSavedPreset {
         let preset = Self {
             schema_version: 1,
             source: "on-demand-acoustic-aim".into(),
-            angles: choices.iter().map(|c| StoredAngle {
-                module_id: c.module_id.clone(),
-                angle_deg: c.angle_deg,
-                relative_score: c.score,
-            }).collect(),
+            angles: choices
+                .iter()
+                .map(|c| StoredAngle {
+                    module_id: c.module_id.clone(),
+                    angle_deg: c.angle_deg,
+                    relative_score: c.score,
+                })
+                .collect(),
         };
         preset.validate()?;
         Ok(preset)
@@ -74,11 +77,14 @@ impl AutoAimSavedPreset {
     /// Saved angles are stale on unknown hardware; motor adapter must still
     /// verify physical limits and encoder state before applying them.
     pub fn as_selection(&self) -> Vec<AimSelection> {
-        self.angles.iter().map(|a| AimSelection {
-            module_id: a.module_id.clone(),
-            angle_deg: a.angle_deg,
-            score: a.relative_score,
-        }).collect()
+        self.angles
+            .iter()
+            .map(|a| AimSelection {
+                module_id: a.module_id.clone(),
+                angle_deg: a.angle_deg,
+                score: a.relative_score,
+            })
+            .collect()
     }
 }
 
@@ -107,12 +113,12 @@ impl AtomicPresetFile {
         }
         let mut data = String::new();
         file.take(MAX_PRESET_BYTES + 1)
-            .read_to_string(&mut data).map_err(|e| e.to_string())?;
+            .read_to_string(&mut data)
+            .map_err(|e| e.to_string())?;
         if data.len() as u64 > MAX_PRESET_BYTES {
             return Err("preset exceeds safety size limit".into());
         }
-        let decoded: AutoAimSavedPreset =
-            serde_json::from_str(&data).map_err(|e| e.to_string())?;
+        let decoded: AutoAimSavedPreset = serde_json::from_str(&data).map_err(|e| e.to_string())?;
         decoded.validate()?;
         Ok(Some(decoded))
     }
@@ -170,8 +176,15 @@ mod tests {
     use std::time::{SystemTime, UNIX_EPOCH};
 
     fn test_file() -> PathBuf {
-        let ns = SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_nanos();
-        std::env::temp_dir().join(format!("aurora-aim-preset-{}-{}.json", std::process::id(), ns))
+        let ns = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        std::env::temp_dir().join(format!(
+            "aurora-aim-preset-{}-{}.json",
+            std::process::id(),
+            ns
+        ))
     }
 
     fn selected(angle: i16) -> Vec<AimSelection> {
