@@ -120,6 +120,18 @@ impl HeadPoseHrtfScheduler {
         self.poses.commit(sample).map_err(SchedulerError::Pose)
     }
 
+    /// Clears tracker-pose history before an explicit mapper re-anchor/reconnect.
+    ///
+    /// Any prepared candidate must first be committed/released or cancelled on the control
+    /// thread. Filter generation and Aurora media-boundary history intentionally continue.
+    pub fn reset_pose_epoch(&mut self) -> Result<(), SchedulerError> {
+        if self.pending.is_some() {
+            return Err(SchedulerError::PendingCandidate);
+        }
+        self.poses.reset();
+        Ok(())
+    }
+
     /// Prepares one pose-selected filter snapshot for an exact future block boundary.
     ///
     /// This is a control-thread operation and may allocate. It is transactional: identity,
@@ -405,6 +417,30 @@ mod tests {
         scheduler.cancel_pending(generation).unwrap();
         let next = scheduler.prepare_at(101, &objects()).unwrap();
         assert_eq!(next, generation + 1);
+    }
+
+    #[test]
+    fn explicit_pose_epoch_reset_accepts_restarted_source_sequence() {
+        let mut scheduler = scheduler(10);
+        let generation = scheduler.prepare_at(100, &objects()).unwrap();
+        assert_eq!(
+            scheduler.reset_pose_epoch(),
+            Err(SchedulerError::PendingCandidate)
+        );
+        scheduler.cancel_pending(generation).unwrap();
+
+        scheduler.reset_pose_epoch().unwrap();
+        scheduler
+            .commit_pose(HeadPoseSample {
+                sequence: 1,
+                media_frame: 200,
+                orientation: UnitQuaternion::IDENTITY,
+            })
+            .unwrap();
+        let generation = scheduler.prepare_at(200, &objects()).unwrap();
+        let mut renderer = renderer();
+        scheduler.commit_at_boundary(&mut renderer, 200, 1).unwrap();
+        scheduler.release_committed(generation).unwrap();
     }
 
     #[test]

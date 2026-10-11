@@ -5,6 +5,7 @@
 
 mod backend;
 mod clock;
+mod head_tracker;
 mod loopback;
 mod network;
 mod profile;
@@ -12,6 +13,12 @@ mod simulation;
 
 pub use backend::SimAudioBackend;
 pub use clock::{CallbackEvent, DeterministicRng, VirtualClock, VirtualScheduler};
+pub use head_tracker::{
+    builtin_head_tracker_profile, generate_head_tracker_trace, run_head_tracker_simulation,
+    HeadTrackerDeliveryEvent, HeadTrackerFault, HeadTrackerSimulationConfig,
+    HeadTrackerSimulationError, HeadTrackerSimulationRecord, HeadTrackerSimulationReport,
+    HeadTrackerTrace,
+};
 pub use loopback::{simulate_latency, LatencySimulationConfig, SimulatedLatencyReport};
 pub use network::{SimNetworkTransport, SimulatedNetworkBlock};
 pub use profile::{

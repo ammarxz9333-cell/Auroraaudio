@@ -283,14 +283,29 @@
     },
     {
       "id": "binaural-head-tracking",
-      "status": "planned",
+      "status": "covered",
       "evidence_class": "software_reference",
+      "simulator_capability": "binaural-head-tracking",
+      "profiles": [
+        "head-tracker-healthy",
+        "head-tracker-jitter",
+        "head-tracker-burst-loss",
+        "head-tracker-reorder",
+        "head-tracker-duplicate",
+        "head-tracker-timestamp-jump",
+        "head-tracker-stale-hold",
+        "head-tracker-reconnect"
+      ],
       "evidence": [
         "crates/aurora-renderer-basic/tests/hrtf_preparation.rs",
         "crates/aurora-realtime-engine/tests/prepared_binaural_allocation.rs",
-        "validation/binaural/aurora_prepared_fir_probe.rs"
+        "crates/aurora-realtime-engine/tests/head_pose_clock_scheduler.rs",
+        "crates/aurora-realtime-audio-sim/src/head_tracker.rs",
+        "crates/aurora-realtime-audio-sim/tests/head_tracker_hrtf.rs",
+        "validation/binaural/aurora_prepared_fir_probe.rs",
+        "docs/head-tracker-delivery-simulation.md"
       ],
-      "truth_boundary": "Prepared pose snapshots select bounded nearest-direction FIRs from canonical SOFA measurements on the control thread. Tests exercise axis/yaw semantics, PCM crossfades, malformed/stale/uncovered rejection and allocation-free commit/process; exact-pinned sofar supplies six-direction PCM reference evidence. Continuous tracker scheduling and AuroraSim integration remain planned. No physical tracking, personalization, perception or latency proof."
+      "truth_boundary": "Executable software/reference coverage now includes explicit tracker-clock anchoring, bounded timestamp-to-media-frame mapping, stable object identity, exact-boundary HRTF scheduling, deterministic healthy/jitter delivery, burst loss, reorder, duplicate sequence, timestamp jump, stale hold and explicit reconnect/re-anchor recovery through AuroraSim. The reconnect path resets mapper and scheduler pose epochs without resetting Aurora media time or filter generation. Exact-pinned sofar remains the FIR reference lane. No physical tracker, sensor calibration, OS/radio latency, personalized HRTF, perception, acoustic output or measured motion-to-sound latency is proven."
     },
     {
       "id": "personalized-audio-element-timeline",
