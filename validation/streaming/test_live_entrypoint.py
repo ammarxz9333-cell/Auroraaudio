@@ -55,7 +55,7 @@ def main():
         assert evidence["type_counts"]["AC3"] >= 10
         assert evidence["type_counts"]["EAC3_JOC_CANDIDATE"] >= 5
         assert evidence["relock_count"] >= 2
-        assert "PHYSICAL RUN COMPLETE" in done.stderr.decode()
+        # File fixtures prove the software path, not an installed eARC/DAC device.\n        assert "AURORA LIVE EARC SOFTWARE RUN COMPLETE" in done.stdout.decode()
         assert not (workspace / "harletty-target").exists()
         assert not (workspace / "harletty-bridge").exists()
         assert not (workspace / "live-earc-harness").exists()
