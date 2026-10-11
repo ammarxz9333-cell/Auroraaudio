@@ -229,6 +229,41 @@ This probe is software evidence only. It does not claim that a particular
 ESP32 radio, PTP implementation, DAC, Class-D stage, battery pack or dock has
 met the physical timing/electrical acceptance gates.
 
+
+## Physical acceptance harness
+
+Physical endpoint trials are evaluated by:
+
+```bash
+python validation/physical/aurora_detachable_physical_acceptance.py module \
+  --input left-pod.json \
+  --max-start-error-us 1000
+
+python validation/physical/aurora_detachable_physical_acceptance.py pair \
+  --left left-pod.json \
+  --right right-pod.json \
+  --max-start-error-us 1000 \
+  --max-pair-skew-us 1000 \
+  --output pair-report.json
+```
+
+A module trial cannot pass from advertised capabilities alone. The evidence must
+contain a measured electrical activation timestamp, one continuously locked gPTP
+epoch, progressing receive counters, zero pre-roll, zero underflows, and observed
+hardware mute behavior before activation, on STOP/MUTE, and on sync loss.
+
+A two-module `PHYSICAL-PASS` additionally requires distinct module and stream
+identities, one shared handover epoch, one shared PTP grandmaster, one requested
+absolute PTP activation time, and measured inter-module electrical skew inside
+the explicitly selected threshold.
+
+The default 1000 microsecond limits mirror the V1 cinema admission policy only;
+they are not a claim that this is the final perceptual target. Tighter limits can
+be selected for later hardware qualification. The built-in `self-test` uses
+synthetic fixtures and therefore prints `physical-pass=synthetic-only`; it is
+only a schema/fail-closed CI test.
+
+
 ## Physical milestones
 
 ### M1 — dock proof
