@@ -5,6 +5,7 @@ on:
   pull_request:
     paths:
       - "validation/streaming/**"
+      - "validation/physical/run-live-earc-vbap.sh"
       - "docs/streaming-surround-priority.md"
       - ".github/workflows/streaming-surround-7-1-4-ci.yml"
 
@@ -21,5 +22,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes ffmpeg
       - name: Verify actual AC-3 and E-AC-3 5.1 codec -> 12-channel Aurora PCM
         run: python3 validation/streaming/test_streaming_bed.py
+      - name: Check live eARC runner shell syntax
+        run: bash -n validation/physical/run-live-earc-vbap.sh
       - name: Check streaming scripts compile
         run: python3 -m py_compile validation/streaming/*.py
