@@ -43,5 +43,7 @@ jobs:
       - run: cargo clippy -p aurora-modular-speaker-fabric --all-targets -- -D warnings
       - run: cargo test -p aurora-modular-speaker-fabric
       - run: cargo test -p aurora-measurement
+      - name: Prove Auto-Aim two-module offline end-to-end integration
+        run: cargo run -p aurora-measurement --example auto_aim_bench
       - name: Prove docked to detached reconfiguration
         run: cargo run -p aurora-modular-speaker-fabric --example detachable_reconfiguration
