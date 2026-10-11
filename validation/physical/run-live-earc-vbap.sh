@@ -6,6 +6,7 @@ MANIFEST="${AURORA_EXTERNAL_COMPONENT_MANIFEST:-$ROOT_DIR/config/external-compon
 HARNESS_SOURCE="$ROOT_DIR/validation/physical/aurora_live_earc_harness.rs"
 PIPE_ADAPTER="$ROOT_DIR/validation/physical/aurora_alsa_iec61937_pipe.py"
 BED_SOURCE="$ROOT_DIR/validation/streaming/aurora_streaming_bed.py"
+AUTO_BED_SOURCE="$ROOT_DIR/validation/streaming/aurora_auto_bed.py"
 ADAPTIVE_SOURCE="$ROOT_DIR/validation/physical/aurora_adaptive_output.rs"
 UMC_PREFLIGHT="$ROOT_DIR/validation/physical/aurora_umc1820_preflight.py"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
@@ -27,7 +28,7 @@ usage() {
   cat <<'EOF'
 Usage:
   validation/physical/run-live-earc-vbap.sh --fixture [--work-dir DIR]
-  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-file FILE [--decoder-mode joc-native|channel-bed] [--seconds N] [--work-dir DIR]
+  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-file FILE [--decoder-mode joc-native|channel-bed|auto-bed|auto-bed] [--seconds N] [--work-dir DIR]
   validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-device DEV [--decoder-mode joc-native|channel-bed] [--output-profile native|umc1820-ada8200] [--umc-card CARD] [--seconds N] [--work-dir DIR]
 
 Physical mode:
@@ -36,7 +37,8 @@ Physical mode:
      channel-bed: AC-3 or DD+ 2/5.1/7.1 -> FFmpeg bed + synthetic ambience
   -> canonical S32_LE/12ch/48k -> file or one ALSA output device.
   Stereo input is explicitly upmixed/labeled unless --require-surround-input is set.
-  This is an explicit decoder selection: NOT automatic format switching.
+  auto-bed: validated AC-3 <-> DD+ channel-bed codec switching (no JOC objects).
+  Only AC-3/DD+ bed changes auto-switch in this mode; JOC needs native decoder selection.
 
 Direct ALSA-device mode inserts Aurora's bounded adaptive duplex bridge between
 VBAP and aplay: one 12-channel FIFO, PI drift controller, clock estimator, and
@@ -76,8 +78,8 @@ if [[ "$MODE" != "fixture" ]]; then
     exit 2
   }
   case "$DECODER_MODE" in
-    joc-native|channel-bed) ;;
-    *) echo "--decoder-mode must be joc-native or channel-bed" >&2; exit 2 ;;
+    joc-native|channel-bed|auto-bed) ;;
+    *) echo "--decoder-mode must be joc-native, channel-bed or auto-bed" >&2; exit 2 ;;
   esac
   case "$OUTPUT_PROFILE" in
     native|umc1820-ada8200) ;;
@@ -89,10 +91,10 @@ if [[ "$MODE" != "fixture" ]]; then
   fi
 fi
 
-for cmd in git python3 cargo rustup ffmpeg; do
+for cmd in python3 ffmpeg; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
-[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$BED_SOURCE" && -f "$ADAPTIVE_SOURCE" && -f "$UMC_PREFLIGHT" ]] || {
+[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$BED_SOURCE" && -f "$AUTO_BED_SOURCE" && -f "$ADAPTIVE_SOURCE" && -f "$UMC_PREFLIGHT" ]] || {
   echo "Aurora live eARC sources are incomplete" >&2
   exit 2
 }
@@ -120,6 +122,15 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# Avoid building/loading the native JOC codec/renderer when playing
+# ordinary AC-3/DD+ beds. File capture needs no Rust build at all.
+HARNESS_BIN=""
+BRIDGE_LIB=""
+ADAPTIVE_BIN=""
+if [[ "$MODE" == "fixture" || "$DECODER_MODE" == "joc-native" ]]; then
+  for cmd in git cargo rustup; do
+    command -v "$cmd" >/dev/null 2>&1 || { echo "missing native JOC build tool: $cmd" >&2; exit 2; }
+  done
 eval "$(python3 - "$MANIFEST" <<'PY'
 import json, shlex, sys
 manifest = json.load(open(sys.argv[1], encoding="utf-8"))
@@ -195,6 +206,34 @@ ADAPTIVE_BIN="$HARNESS_TARGET/$PROFILE_DIR/aurora-adaptive-output"
   echo "live eARC build products missing" >&2
   exit 1
 }
+
+
+elif [[ -n "$OUTPUT_DEVICE" ]]; then
+  for cmd in cargo rustup; do
+    command -v "$cmd" >/dev/null 2>&1 || { echo "missing adaptive output build tool: $cmd" >&2; exit 2; }
+  done
+  # A minimal standalone process with ONLY the realtime-engine dependency:
+  # no Harletty, Omniphony, PCM renderer or second decoder in channel-bed mode.
+  ADAPTIVE_DIR="$WORK_DIR/adaptive-only"
+  mkdir -p "$ADAPTIVE_DIR/src"
+  cat > "$ADAPTIVE_DIR/Cargo.toml" <<EOF_ADAPTIVE
+[package]
+name = "aurora-adaptive-output"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[dependencies]
+aurora-realtime-engine = { path = "$ROOT_DIR/crates/aurora-realtime-engine" }
+EOF_ADAPTIVE
+  cp "$ADAPTIVE_SOURCE" "$ADAPTIVE_DIR/src/main.rs"
+  rustup toolchain install "$TOOLCHAIN" --profile minimal >/dev/null
+  CARGO_TARGET_DIR="$WORK_DIR/adaptive-target" cargo +"$TOOLCHAIN" build "${PROFILE_ARGS[@]}" --manifest-path "$ADAPTIVE_DIR/Cargo.toml"
+  ADAPTIVE_BIN="$WORK_DIR/adaptive-target/$PROFILE_DIR/aurora-adaptive-output"
+  [[ -x "$ADAPTIVE_BIN" ]] || { echo "standalone adaptive output build missing" >&2; exit 1; }
+fi
 
 verify_s32_output() {
   python3 - "$1" <<'PY'
@@ -274,7 +313,9 @@ if [[ -n "$MAX_SECONDS" ]]; then
   PIPE_ARGS+=(--max-seconds "$MAX_SECONDS")
 fi
 
-if [[ "$DECODER_MODE" == "channel-bed" ]]; then
+if [[ "$DECODER_MODE" == "auto-bed" ]]; then
+  DECODER=(python3 "$AUTO_BED_SOURCE")
+elif [[ "$DECODER_MODE" == "channel-bed" ]]; then
   DECODER=(python3 "$BED_SOURCE")
   if (( REQUIRE_SURROUND_INPUT == 1 )); then
     DECODER+=(--require-surround-input)
@@ -302,7 +343,11 @@ else
   python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "${DECODER[@]}"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
 fi
 
-python3 "$ROOT_DIR/validation/physical/aurora_live_ingress.py" analyze   --input "$IEC_CAPTURE"   --report "$INGRESS_REPORT"   --max-invalid-bursts 0   --max-unclassified-bytes 0   --max-relocks 0   --minimum-valid-bursts 2   --require-locked-end
+INGRESS_POLICY=(--max-invalid-bursts 0 --max-unclassified-bytes 0 --minimum-valid-bursts 2 --require-locked-end)
+if [[ "$DECODER_MODE" != "auto-bed" ]]; then
+  INGRESS_POLICY+=(--max-relocks 0)
+fi
+python3 "$ROOT_DIR/validation/physical/aurora_live_ingress.py" analyze --input "$IEC_CAPTURE" --report "$INGRESS_REPORT" "${INGRESS_POLICY[@]}"
 
 echo "AURORA LIVE EARC PHYSICAL RUN COMPLETE decoder_mode=$DECODER_MODE (hardware evidence still required)"
 echo "evidence: $ARTIFACTS"
