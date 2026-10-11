@@ -15,6 +15,7 @@ KEEP_WORKDIR="${AURORA_KEEP_LIVE_EARC_WORKDIR:-0}"
 
 MODE=""
 CAPTURE_DEVICE=""
+IEC_INPUT_FILE=""
 OUTPUT_FILE=""
 OUTPUT_DEVICE=""
 OUTPUT_PROFILE="native"
@@ -28,6 +29,7 @@ usage() {
   cat <<'EOF'
 Usage:
   validation/physical/run-live-earc-vbap.sh --fixture [--work-dir DIR]
+  validation/physical/run-live-earc-vbap.sh --iec-input-file FILE --output-file FILE [--decoder-mode channel-bed|auto-bed]
   validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-file FILE [--decoder-mode joc-native|channel-bed|auto-bed|auto-bed] [--seconds N] [--work-dir DIR]
   validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-device DEV [--decoder-mode joc-native|channel-bed] [--output-profile native|umc1820-ada8200] [--umc-card CARD] [--seconds N] [--work-dir DIR]
 
@@ -54,6 +56,7 @@ while (( "$#" )); do
   case "$1" in
     --fixture) MODE="fixture"; shift ;;
     --capture-device) CAPTURE_DEVICE="$2"; shift 2 ;;
+    --iec-input-file) IEC_INPUT_FILE="$2"; shift 2 ;;
     --output-file) OUTPUT_FILE="$2"; shift 2 ;;
     --output-device) OUTPUT_DEVICE="$2"; shift 2 ;;
     --output-profile) OUTPUT_PROFILE="$2"; shift 2 ;;
@@ -68,7 +71,18 @@ while (( "$#" )); do
 done
 
 if [[ "$MODE" != "fixture" ]]; then
-  [[ -n "$CAPTURE_DEVICE" ]] || { echo "--capture-device is required outside --fixture mode" >&2; exit 2; }
+  if [[ -n "$CAPTURE_DEVICE" && -n "$IEC_INPUT_FILE" ]]; then
+    echo "choose exactly one of --capture-device or --iec-input-file" >&2
+    exit 2
+  fi
+  [[ -n "$CAPTURE_DEVICE" || -n "$IEC_INPUT_FILE" ]] || {
+    echo "--capture-device or --iec-input-file required outside --fixture" >&2
+    exit 2
+  }
+  if [[ -n "$IEC_INPUT_FILE" && ! -f "$IEC_INPUT_FILE" ]]; then
+    echo "authorized IEC input file not found: $IEC_INPUT_FILE" >&2
+    exit 2
+  fi
   if [[ -n "$OUTPUT_FILE" && -n "$OUTPUT_DEVICE" ]]; then
     echo "choose exactly one of --output-file or --output-device" >&2
     exit 2
@@ -326,9 +340,15 @@ fi
 
 echo "AURORA LIVE EARC selected_decoder=$DECODER_MODE output=7.1.4 objects_decoded=$([[ "$DECODER_MODE" == "joc-native" ]] && echo true || echo false)" >&2
 
+if [[ -n "$IEC_INPUT_FILE" ]]; then
+  SOURCE=(cat "$IEC_INPUT_FILE")
+else
+  SOURCE=(python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}")
+fi
+
 if [[ -n "$OUTPUT_FILE" ]]; then
   mkdir -p "$(dirname "$OUTPUT_FILE")"
-  python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "${DECODER[@]}"     > "$OUTPUT_FILE"
+  "${SOURCE[@]}"     | tee "$IEC_CAPTURE"     | "${DECODER[@]}"     > "$OUTPUT_FILE"
   verify_s32_output "$OUTPUT_FILE"
 else
   command -v aplay >/dev/null 2>&1 || {
@@ -340,7 +360,7 @@ else
     APLAY_CHANNELS=20
     python3 "$UMC_PREFLIGHT" --card "$UMC_CARD" --report "$ARTIFACTS/umc1820-preflight.json"
   fi
-  python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "${DECODER[@]}"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
+  "${SOURCE[@]}"     | tee "$IEC_CAPTURE"     | "${DECODER[@]}"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
 fi
 
 INGRESS_POLICY=(--max-invalid-bursts 0 --max-unclassified-bytes 0 --minimum-valid-bursts 2 --require-locked-end)
