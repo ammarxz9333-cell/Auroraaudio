@@ -137,6 +137,10 @@ cleanup() {
 }
 trap cleanup EXIT
 
+# All modes write only bounded diagnostic JSON by default.
+ARTIFACTS="$WORK_DIR/artifacts"
+mkdir -p "$ARTIFACTS"
+
 # Avoid building/loading the native JOC codec/renderer when playing
 # ordinary AC-3/DD+ beds. File capture needs no Rust build at all.
 HARNESS_BIN=""
