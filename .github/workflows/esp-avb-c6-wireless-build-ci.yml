@@ -1,0 +1,140 @@
+name: ESP-AVB C6 Wireless Endpoint Build CI
+
+on:
+  pull_request:
+    paths:
+      - "validation/physical/esp_avb_c6_wireless_sdkconfig.defaults"
+      - "config/esp-avb-c6-build-reference-v1.json"
+      - "validation/physical/aurora_patch_esp_ptp_lock_evidence.py"
+      - "validation/physical/aurora_patch_esp_avb_listener_evidence.py"
+      - "validation/physical/aurora_patch_esp_avb_aem_endpoint.py"
+      - "validation/physical/aurora_patch_esp_avb_ptp_deadline.py"
+      - "validation/physical/esp_avb_aurora_snapshot.c"
+      - ".github/workflows/esp-avb-c6-wireless-build-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: esp-avb-c6-wireless-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-pinned-c6-wireless-endpoint:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Load exact C6 build reference
+        shell: bash
+        run: |
+          python - <<'PY' >> "$GITHUB_ENV"
+          import json
+          from pathlib import Path
+          cfg = json.loads(Path("config/esp-avb-c6-build-reference-v1.json").read_text())
+          pins = cfg["source_pins"]
+          print("ESP_IDF_IMAGE=espressif/idf:v6.0.2")
+          print(f"ESP_IDF_SHA={pins['esp_idf_commit']}")
+          print(f"ENDPOINT_SHA={pins['endpoint_commit']}")
+          print(f"ESP_AVB_SHA={pins['esp_avb_commit']}")
+          print(f"ESP_PTP_SHA={pins['esp_ptp_commit']}")
+          print(f"ESP_PTP_RPC_SHA={pins['esp_ptp_rpc_commit']}")
+          PY
+
+      - name: Materialize exact upstream endpoint and component pins
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/aurora-esp-c6-build"
+          rm -rf "$root"
+          mkdir -p "$root"
+
+          clone_pin() {
+            local repo="$1"
+            local sha="$2"
+            local dest="$3"
+            git clone --filter=blob:none --no-checkout "$repo" "$dest"
+            git -C "$dest" fetch --depth 1 origin "$sha"
+            git -C "$dest" checkout --detach FETCH_HEAD
+            test "$(git -C "$dest" rev-parse HEAD)" = "$sha"
+          }
+
+          clone_pin https://github.com/scrambletools/ESP-AVB-Endpoint.git "$ENDPOINT_SHA" "$root/endpoint"
+          mkdir -p "$root/endpoint/components"
+          clone_pin https://github.com/scrambletools/esp_avb.git "$ESP_AVB_SHA" "$root/endpoint/components/esp_avb"
+          clone_pin https://github.com/scrambletools/esp_ptp.git "$ESP_PTP_SHA" "$root/endpoint/components/esp_ptp"
+          clone_pin https://github.com/scrambletools/esp_ptp_rpc.git "$ESP_PTP_RPC_SHA" "$root/endpoint/components/esp_ptp_rpc"
+          clone_pin https://github.com/scrambletools/esp-idf.git "$ESP_IDF_SHA" "$root/esp-idf"
+          git -C "$root/esp-idf" submodule update --init --recursive --depth 1
+
+          cp validation/physical/esp_avb_c6_wireless_sdkconfig.defaults             "$root/endpoint/sdkconfig.defaults.aurora-c6"
+          echo "AURORA_ESP_C6_ROOT=$root" >> "$GITHUB_ENV"
+
+      - name: Verify exact pin exposes the requested wireless topology symbols
+        shell: bash
+        run: |
+          set -euo pipefail
+          k="$AURORA_ESP_C6_ROOT/endpoint/components/esp_ptp/Kconfig.projbuild"
+          grep -q "config ESP_PTP_PORT0_MEDIUM_WIFI_FTM" "$k"
+          grep -q "config ESP_PTP_PORT0_HOST_IF_AHB" "$k"
+          grep -q "config ESP_PTP_PORT0_TYPE_PRIMARY" "$k"
+          grep -q "config ESP_PTP_PORT0_WIFI_MODE_STA" "$k"
+
+      - name: Apply Aurora exact-pin endpoint instrumentation
+        shell: bash
+        run: |
+          set -euo pipefail
+          python validation/physical/aurora_patch_esp_ptp_lock_evidence.py apply-check             --root "$AURORA_ESP_C6_ROOT/endpoint/components/esp_ptp"
+          python validation/physical/aurora_patch_esp_avb_listener_evidence.py apply-check             --root "$AURORA_ESP_C6_ROOT/endpoint/components/esp_avb"
+          python validation/physical/aurora_patch_esp_avb_aem_endpoint.py apply-check             --root "$AURORA_ESP_C6_ROOT/endpoint/components/esp_avb"
+          python validation/physical/aurora_patch_esp_avb_ptp_deadline.py apply-check             --root "$AURORA_ESP_C6_ROOT/endpoint/components/esp_avb"
+
+          cp validation/physical/esp_avb_aurora_snapshot.c             "$AURORA_ESP_C6_ROOT/endpoint/main/esp_avb_aurora_snapshot.c"
+          python - <<'PY'
+          import os
+          from pathlib import Path
+          path = Path(os.environ["AURORA_ESP_C6_ROOT"]) / "endpoint" / "main" / "CMakeLists.txt"
+          text = path.read_text(encoding="utf-8")
+          old = 'set(srcs "avb_endpoint.c")'
+          new = 'set(srcs "avb_endpoint.c" "esp_avb_aurora_snapshot.c")'
+          if text.count(old) != 1:
+              raise SystemExit("exact endpoint CMake source anchor not found once")
+          path.write_text(text.replace(old, new, 1), encoding="utf-8")
+          PY
+
+      - name: Build exact ESP32-C6 native-Wi-Fi endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker run --rm --entrypoint /bin/bash             -v "$AURORA_ESP_C6_ROOT/endpoint:/project"             -v "$AURORA_ESP_C6_ROOT/esp-idf:/opt/aurora-idf"             -e IDF_PATH=/opt/aurora-idf             -e IDF_TOOLS_PATH=/opt/aurora-idf-tools             -w /project             "$ESP_IDF_IMAGE"             -lc 'set -euo pipefail; unset IDF_PYTHON_ENV_PATH; /opt/aurora-idf/install.sh esp32c6; python3 /opt/aurora-idf/tools/idf_tools.py install cmake ninja; . /opt/aurora-idf/export.sh; idf.py --version; idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.aurora-c6" set-target esp32c6; idf.py -D SDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.defaults.aurora-c6" build'
+
+      - name: Verify resolved build is C6 Wi-Fi STA endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+          cfg="$AURORA_ESP_C6_ROOT/endpoint/sdkconfig"
+          grep -q '^CONFIG_IDF_TARGET="esp32c6"$' "$cfg"
+          grep -q '^CONFIG_ESP_PTP_NUM_PORTS=1$' "$cfg"
+          grep -q '^CONFIG_ESP_PTP_PORT0_MEDIUM_WIFI_FTM=y$' "$cfg"
+          grep -q '^CONFIG_ESP_PTP_PORT0_HOST_IF_AHB=y$' "$cfg"
+          grep -q '^CONFIG_ESP_PTP_PORT0_TYPE_PRIMARY=y$' "$cfg"
+          grep -q '^CONFIG_ESP_PTP_PORT0_WIFI_MODE_STA=y$' "$cfg"
+          if grep -q '^CONFIG_ESP_PTP_PORT0_MEDIUM_ETH_HWTS=y$' "$cfg"; then
+            echo "wired PTP medium unexpectedly enabled" >&2
+            exit 1
+          fi
+
+      - name: Verify Aurora endpoint code was compiled
+        shell: bash
+        run: |
+          set -euo pipefail
+          find "$AURORA_ESP_C6_ROOT/endpoint/build" -type f             \( -name '*atdecc*.o' -o -name '*atdecc*.obj' \) -print             | tee "$RUNNER_TEMP/aurora-c6-atdecc-object.txt"
+          test -s "$RUNNER_TEMP/aurora-c6-atdecc-object.txt"
+          find "$AURORA_ESP_C6_ROOT/endpoint/build" -type f             \( -name '*esp_avb_aurora_snapshot*.o' -o -name '*esp_avb_aurora_snapshot*.obj' \) -print             | tee "$RUNNER_TEMP/aurora-c6-snapshot-object.txt"
+          test -s "$RUNNER_TEMP/aurora-c6-snapshot-object.txt"
