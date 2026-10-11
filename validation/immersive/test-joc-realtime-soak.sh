@@ -69,12 +69,12 @@ OMNIP_TARGET_DIR="${AURORA_OMNIP_TARGET_DIR:-$OMNIP_DIR/omniphony-renderer/targe
 HARNESS_TARGET_DIR="${AURORA_JOC_HARNESS_TARGET_DIR:-$WORK_DIR/iec-joc-harness-target}"
 HARNESS_DIR="$WORK_DIR/iec-joc-harness"
 BASE_IEC="$WORK_DIR/joc_atmos_1s.spdif"
-BASE_RENDER="$WORK_DIR/joc_atmos_7_1_4.f32"
+BASE_RENDER="$WORK_DIR/joc_atmos_aurora_11_1_4.f32"
 SOAK_IEC="$WORK_DIR/joc_atmos_continuous.spdif"
-SOAK_RENDER="$WORK_DIR/joc_atmos_paced_7_1_4.f32"
+SOAK_RENDER="$WORK_DIR/joc_atmos_paced_aurora_11_1_4.f32"
 BRIDGE_LIB="$HARLETTY_TARGET_DIR/$PROFILE_DIR/libharletty_bridge.so"
 ORENDER="$OMNIP_TARGET_DIR/$PROFILE_DIR/orender"
-LAYOUT="$OMNIP_DIR/layouts/7.1.4.yaml"
+LAYOUT="$ROOT_DIR/config/layouts/omniphony-11.1.4-aurora.yaml"
 BRIDGE_LOG="$WORK_DIR/joc-continuous-bridge.log"
 PACED_LOG="$WORK_DIR/orender-joc-paced.log"
 
@@ -106,9 +106,9 @@ for index in range(base_bursts):
     offset = index * burst_bytes
     if carrier[offset:offset + 4] != sync:
         raise SystemExit(f"missing IEC61937 sync at burst {index} offset {offset}")
-frame_bytes = 12 * 4
+frame_bytes = 16 * 4
 if len(render) % frame_bytes:
-    raise SystemExit("baseline 7.1.4 render is not whole 12-channel f32 frames")
+    raise SystemExit("baseline Aurora 11.1.4 render is not whole 12-channel f32 frames")
 base_frames = len(render) // frame_bytes
 if base_frames == 0 or base_frames % base_bursts:
     raise SystemExit(
@@ -175,7 +175,7 @@ if (( TIMEOUT_SECONDS < 1 )); then
   exit 2
 fi
 
-printf '\n== Aurora realtime JOC phase: media-paced stdin render to 7.1.4 ==\n'
+printf '\n== Aurora realtime JOC phase: media-paced stdin render to Aurora 11.1.4 ==\n'
 START_NS="$(python3 - <<'PY'
 import time
 print(time.monotonic_ns())
@@ -205,7 +205,7 @@ if second <= 0 or len(carrier) % second:
     raise SystemExit("cannot derive fixed IEC61937 burst size")
 burst_bytes = second
 base_bursts = len(carrier) // burst_bytes
-frame_bytes = 12 * 4
+frame_bytes = 16 * 4
 if len(render) % frame_bytes:
     raise SystemExit("baseline render shape invalid")
 base_frames = len(render) // frame_bytes
@@ -258,9 +258,9 @@ second = carrier.find(sync, 4)
 if second <= 0 or len(carrier) % second:
     raise SystemExit("cannot derive baseline burst geometry")
 base_bursts = len(carrier) // second
-frame_bytes = 12 * 4
+frame_bytes = 16 * 4
 if len(base_render) % frame_bytes or len(soak_render) % frame_bytes:
-    raise SystemExit("7.1.4 output is not whole 12-channel f32 frames")
+    raise SystemExit("Aurora 11.1.4 output is not whole 12-channel f32 frames")
 base_frames = len(base_render) // frame_bytes
 actual_frames = len(soak_render) // frame_bytes
 expected_frames = base_frames * loops
@@ -289,7 +289,7 @@ if elapsed > maximum_elapsed:
     )
 realtime_factor = media_seconds / elapsed if elapsed > 0 else 0.0
 print(
-    "JOC-PACED-7.1.4-PASS "
+    "JOC-PACED-AURORA-11.1.4-PASS "
     f"loops={loops} bursts={base_bursts * loops} frames={actual_frames} "
     f"media_seconds={media_seconds:.3f} elapsed_seconds={elapsed:.3f} "
     f"realtime_factor={realtime_factor:.3f}"
