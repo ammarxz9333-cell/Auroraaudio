@@ -4,6 +4,7 @@
 //! inputs are `unit_test`/`deterministic_simulation` truth only; they are not
 //! physical measurements until fed by an accepted real capture path.
 
+pub mod auto_aim;
 pub mod remote_clock;
 pub mod stimulus;
 
