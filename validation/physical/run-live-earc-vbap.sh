@@ -8,6 +8,7 @@ PIPE_ADAPTER="$ROOT_DIR/validation/physical/aurora_alsa_iec61937_pipe.py"
 BED_SOURCE="$ROOT_DIR/validation/streaming/aurora_streaming_bed.py"
 AUTO_BED_SOURCE="$ROOT_DIR/validation/streaming/aurora_auto_bed.py"
 IEC_MONITOR_SOURCE="$ROOT_DIR/validation/streaming/aurora_iec_live_monitor.py"
+LPCM_SOURCE="$ROOT_DIR/validation/streaming/aurora_lpcm_ingress.py"
 ADAPTIVE_SOURCE="$ROOT_DIR/validation/physical/aurora_adaptive_output.rs"
 UMC_PREFLIGHT="$ROOT_DIR/validation/physical/aurora_umc1820_preflight.py"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
@@ -17,6 +18,10 @@ KEEP_WORKDIR="${AURORA_KEEP_LIVE_EARC_WORKDIR:-0}"
 MODE=""
 CAPTURE_DEVICE=""
 IEC_INPUT_FILE=""
+PCM_INPUT_FILE=""
+LPCM_LAYOUT="7.1"
+LPCM_FORMAT="s32le"
+LPCM_RATE="48000"
 OUTPUT_FILE=""
 OUTPUT_DEVICE=""
 OUTPUT_PROFILE="native"
@@ -31,7 +36,8 @@ usage() {
 Usage:
   validation/physical/run-live-earc-vbap.sh --fixture [--work-dir DIR]
   validation/physical/run-live-earc-vbap.sh --iec-input-file FILE --output-file FILE [--decoder-mode channel-bed|auto-bed]
-  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-file FILE [--decoder-mode joc-native|channel-bed|auto-bed|auto-bed] [--seconds N] [--work-dir DIR]
+  validation/physical/run-live-earc-vbap.sh --pcm-input-file FILE --decoder-mode lpcm --lpcm-layout stereo|5.1(side)|5.1|7.1 --lpcm-format s16le|s24le|s32le|f32le --lpcm-rate HZ --output-file FILE
+  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-file FILE [--decoder-mode joc-native|channel-bed|auto-bed] [--seconds N] [--work-dir DIR]
   validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-device DEV [--decoder-mode joc-native|channel-bed] [--output-profile native|umc1820-ada8200] [--umc-card CARD] [--seconds N] [--work-dir DIR]
 
 Physical mode:
@@ -58,6 +64,10 @@ while (( "$#" )); do
     --fixture) MODE="fixture"; shift ;;
     --capture-device) CAPTURE_DEVICE="$2"; shift 2 ;;
     --iec-input-file) IEC_INPUT_FILE="$2"; shift 2 ;;
+    --pcm-input-file) PCM_INPUT_FILE="$2"; shift 2 ;;
+    --lpcm-layout) LPCM_LAYOUT="$2"; shift 2 ;;
+    --lpcm-format) LPCM_FORMAT="$2"; shift 2 ;;
+    --lpcm-rate) LPCM_RATE="$2"; shift 2 ;;
     --output-file) OUTPUT_FILE="$2"; shift 2 ;;
     --output-device) OUTPUT_DEVICE="$2"; shift 2 ;;
     --output-profile) OUTPUT_PROFILE="$2"; shift 2 ;;
@@ -72,17 +82,25 @@ while (( "$#" )); do
 done
 
 if [[ "$MODE" != "fixture" ]]; then
-  if [[ -n "$CAPTURE_DEVICE" && -n "$IEC_INPUT_FILE" ]]; then
-    echo "choose exactly one of --capture-device or --iec-input-file" >&2
+  SOURCE_COUNT=0
+  [[ -n "$CAPTURE_DEVICE" ]] && SOURCE_COUNT=$((SOURCE_COUNT + 1))
+  [[ -n "$IEC_INPUT_FILE" ]] && SOURCE_COUNT=$((SOURCE_COUNT + 1))
+  [[ -n "$PCM_INPUT_FILE" ]] && SOURCE_COUNT=$((SOURCE_COUNT + 1))
+  if [[ "$SOURCE_COUNT" != "1" ]]; then
+    echo "choose exactly one source: --capture-device, --iec-input-file or --pcm-input-file" >&2
     exit 2
   fi
-  [[ -n "$CAPTURE_DEVICE" || -n "$IEC_INPUT_FILE" ]] || {
-    echo "--capture-device or --iec-input-file required outside --fixture" >&2
-    exit 2
-  }
   if [[ -n "$IEC_INPUT_FILE" && ! -f "$IEC_INPUT_FILE" ]]; then
-    echo "authorized IEC input file not found: $IEC_INPUT_FILE" >&2
-    exit 2
+    echo "authorized IEC input file not found: $IEC_INPUT_FILE" >&2; exit 2
+  fi
+  if [[ -n "$PCM_INPUT_FILE" && ! -f "$PCM_INPUT_FILE" ]]; then
+    echo "raw PCM input file not found: $PCM_INPUT_FILE" >&2; exit 2
+  fi
+  if [[ -n "$PCM_INPUT_FILE" && "$DECODER_MODE" != "lpcm" ]]; then
+    echo "raw PCM file requires --decoder-mode lpcm" >&2; exit 2
+  fi
+  if [[ "$DECODER_MODE" == "lpcm" && -z "$PCM_INPUT_FILE" ]]; then
+    echo "LPCM requires explicitly labeled --pcm-input-file; 2-channel IEC eARC is not arbitrary 8ch PCM" >&2; exit 2
   fi
   if [[ -n "$OUTPUT_FILE" && -n "$OUTPUT_DEVICE" ]]; then
     echo "choose exactly one of --output-file or --output-device" >&2
@@ -93,8 +111,8 @@ if [[ "$MODE" != "fixture" ]]; then
     exit 2
   }
   case "$DECODER_MODE" in
-    joc-native|channel-bed|auto-bed) ;;
-    *) echo "--decoder-mode must be joc-native, channel-bed or auto-bed" >&2; exit 2 ;;
+    joc-native|channel-bed|auto-bed|lpcm) ;;
+    *) echo "--decoder-mode must be joc-native, channel-bed, auto-bed or lpcm" >&2; exit 2 ;;
   esac
   case "$OUTPUT_PROFILE" in
     native|umc1820-ada8200) ;;
@@ -109,7 +127,7 @@ fi
 for cmd in python3 ffmpeg; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
-[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$BED_SOURCE" && -f "$AUTO_BED_SOURCE" && -f "$IEC_MONITOR_SOURCE" && -f "$ADAPTIVE_SOURCE" && -f "$UMC_PREFLIGHT" ]] || {
+[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$BED_SOURCE" && -f "$AUTO_BED_SOURCE" && -f "$IEC_MONITOR_SOURCE" && -f "$LPCM_SOURCE" && -f "$ADAPTIVE_SOURCE" && -f "$UMC_PREFLIGHT" ]] || {
   echo "Aurora live eARC sources are incomplete" >&2
   exit 2
 }
@@ -331,7 +349,9 @@ if [[ -n "$MAX_SECONDS" ]]; then
   PIPE_ARGS+=(--max-seconds "$MAX_SECONDS")
 fi
 
-if [[ "$DECODER_MODE" == "auto-bed" ]]; then
+if [[ "$DECODER_MODE" == "lpcm" ]]; then
+  DECODER=(python3 "$LPCM_SOURCE" --layout "$LPCM_LAYOUT" --sample-format "$LPCM_FORMAT" --sample-rate "$LPCM_RATE")
+elif [[ "$DECODER_MODE" == "auto-bed" ]]; then
   DECODER=(python3 "$AUTO_BED_SOURCE")
 elif [[ "$DECODER_MODE" == "channel-bed" ]]; then
   DECODER=(python3 "$BED_SOURCE")
@@ -349,7 +369,9 @@ fi
 
 echo "AURORA LIVE EARC selected_decoder=$DECODER_MODE output=7.1.4 objects_decoded=$([[ "$DECODER_MODE" == "joc-native" ]] && echo true || echo false)" >&2
 
-if [[ -n "$IEC_INPUT_FILE" ]]; then
+if [[ -n "$PCM_INPUT_FILE" ]]; then
+  SOURCE=(cat "$PCM_INPUT_FILE")
+elif [[ -n "$IEC_INPUT_FILE" ]]; then
   SOURCE=(cat "$IEC_INPUT_FILE")
 else
   SOURCE=(python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}")
@@ -357,7 +379,11 @@ fi
 
 if [[ -n "$OUTPUT_FILE" ]]; then
   mkdir -p "$(dirname "$OUTPUT_FILE")"
-  "${SOURCE[@]}"     | "${MONITOR[@]}"     | "${DECODER[@]}"     > "$OUTPUT_FILE"
+  if [[ "$DECODER_MODE" == "lpcm" ]]; then
+    "${SOURCE[@]}" | "${DECODER[@]}" > "$OUTPUT_FILE"
+  else
+    "${SOURCE[@]}" | "${MONITOR[@]}" | "${DECODER[@]}" > "$OUTPUT_FILE"
+  fi
   verify_s32_output "$OUTPUT_FILE"
 else
   command -v aplay >/dev/null 2>&1 || {
@@ -369,11 +395,28 @@ else
     APLAY_CHANNELS=20
     python3 "$UMC_PREFLIGHT" --card "$UMC_CARD" --report "$ARTIFACTS/umc1820-preflight.json"
   fi
-  "${SOURCE[@]}"     | "${MONITOR[@]}"     | "${DECODER[@]}"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
+  if [[ "$DECODER_MODE" == "lpcm" ]]; then
+    "${SOURCE[@]}" | "${DECODER[@]}" | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE" | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
+  else
+    "${SOURCE[@]}" | "${MONITOR[@]}" | "${DECODER[@]}" | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE" | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
+  fi
 fi
 
-# The ingress monitor already validated the carrier before forwarding; its
-# final bounded report is at "$INGRESS_REPORT". No raw media is saved by default.
+# IEC uses the live packet monitor; PCM has a separately signaled, explicit
+# sample/channel contract. Neither pipeline saves raw input by default.
+if [[ "$DECODER_MODE" == "lpcm" ]]; then
+  python3 - "$INGRESS_REPORT" "$LPCM_LAYOUT" "$LPCM_FORMAT" "$LPCM_RATE" <<'PY_LPCM_STATUS'
+import json, pathlib, sys
+path, layout, fmt, rate = sys.argv[1:]
+pathlib.Path(path).write_text(json.dumps({
+ "schema_version": 1, "verdict": "pass",
+ "transport": "explicit-file-raw-lpcm", "source_layout": layout,
+ "source_format": fmt, "source_rate": int(rate),
+ "output": "S32_LE/48000/12ch", "native_atmos_objects": False,
+ "physical_audio_verified": False
+}, indent=2) + "\n")
+PY_LPCM_STATUS
+fi
 
 echo "AURORA LIVE EARC PHYSICAL RUN COMPLETE decoder_mode=$DECODER_MODE (hardware evidence still required)"
 echo "evidence: $ARTIFACTS"
