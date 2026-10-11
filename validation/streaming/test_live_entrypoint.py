@@ -61,7 +61,7 @@ def main():
         assert not (workspace / "live-earc-harness").exists()
         # The SAME production-facing runner must also accept a named
         # multichannel LPCM source without treating it as Dolby MAT.
-        raw_pcm = folder / "authorized-synthetic-7.1.f32le"
+        raw_pcm_file = folder / "authorized-synthetic-7.1.f32le"
         raw_7_1 = folder / "7.1-to-7.1.4.s32"
         import array
         import math
@@ -70,11 +70,11 @@ def main():
             for frame in range(5000)
             for channel in range(8)
         ))
-        raw_pcm.write_bytes(samples.tobytes())
+        raw_pcm_file.write_bytes(samples.tobytes())
         pcm_done = subprocess.run(
             [
                 "bash", str(RUNNER),
-                "--pcm-input-file", str(raw_pcm),
+                "--pcm-input-file", str(raw_pcm_file),
                 "--decoder-mode", "lpcm",
                 "--lpcm-layout", "7.1",
                 "--lpcm-format", "f32le",
