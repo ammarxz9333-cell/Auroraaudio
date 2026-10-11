@@ -2,8 +2,8 @@
 //! The motor firmware MUST report a real position sensor and travel-limit
 //! checks. Merely echoing a target angle is not a valid hardware acceptance.
 //! A transport timeout or mismatched epoch/sequence fails closed.
-use std::time::Duration;
 use super::auto_aim_host::MotorFeedback;
+use std::time::Duration;
 
 const MAX_FRAME: usize = 160;
 const MAX_MOTOR_ANGLE: i16 = 90;
@@ -21,8 +21,7 @@ pub enum MotorProtocolError {
 
 pub trait MotorExchange {
     /// Exchange exactly one frame under an actual enforced deadline.
-    fn exchange(&mut self, request: &[u8], timeout: Duration)
-        -> Result<Vec<u8>, String>;
+    fn exchange(&mut self, request: &[u8], timeout: Duration) -> Result<Vec<u8>, String>;
     /// Independent emergency stop; firmware still requires a hardware limit.
     fn emergency_stop(&mut self) -> Result<(), String>;
 }
@@ -38,30 +37,49 @@ impl<T: MotorExchange> VerifiedMotorLink<T> {
         if fresh_epoch == 0 {
             return Err(MotorProtocolError::InvalidCommand);
         }
-        Ok(Self { transport, epoch: fresh_epoch, last_sequence: 0 })
+        Ok(Self {
+            transport,
+            epoch: fresh_epoch,
+            last_sequence: 0,
+        })
     }
 
     pub fn request_position(
-        &mut self, module: &str, target_deg: i16,
+        &mut self,
+        module: &str,
+        target_deg: i16,
     ) -> Result<MotorFeedback, MotorProtocolError> {
         if !valid_id(module) || target_deg.abs() > MAX_MOTOR_ANGLE {
             return Err(MotorProtocolError::InvalidCommand);
         }
-        let next = self.last_sequence.checked_add(1)
+        let next = self
+            .last_sequence
+            .checked_add(1)
             .ok_or(MotorProtocolError::InvalidCommand)?;
         self.last_sequence = next; // Never reuse a sequence after timeout.
-        let body = format!("AIM1|MOVE|{}|{}|{}|{}", self.epoch, next, module, target_deg);
+        let body = format!(
+            "AIM1|MOVE|{}|{}|{}|{}",
+            self.epoch, next, module, target_deg
+        );
         let request = append_crc(&body);
-        let response = self.transport.exchange(request.as_bytes(), MOVE_TIMEOUT)
+        let response = self
+            .transport
+            .exchange(request.as_bytes(), MOVE_TIMEOUT)
             .map_err(MotorProtocolError::Transport)?;
         let body = validate_frame(&response)?;
         let parts: Vec<&str> = body.split('|').collect();
         if parts.len() != 8 || parts[0] != "AIM1" || parts[1] != "ACK" {
             return Err(MotorProtocolError::InvalidFrame);
         }
-        let epoch: u64 = parts[2].parse().map_err(|_| MotorProtocolError::InvalidFrame)?;
-        let seq: u32 = parts[3].parse().map_err(|_| MotorProtocolError::InvalidFrame)?;
-        let actual: i16 = parts[5].parse().map_err(|_| MotorProtocolError::InvalidFrame)?;
+        let epoch: u64 = parts[2]
+            .parse()
+            .map_err(|_| MotorProtocolError::InvalidFrame)?;
+        let seq: u32 = parts[3]
+            .parse()
+            .map_err(|_| MotorProtocolError::InvalidFrame)?;
+        let actual: i16 = parts[5]
+            .parse()
+            .map_err(|_| MotorProtocolError::InvalidFrame)?;
         if epoch != self.epoch || seq != next || parts[4] != module {
             return Err(MotorProtocolError::ReplayOrWrongTarget);
         }
@@ -86,7 +104,9 @@ impl<T: MotorExchange> VerifiedMotorLink<T> {
     }
 
     pub fn emergency_stop(&mut self) -> Result<(), MotorProtocolError> {
-        self.transport.emergency_stop().map_err(MotorProtocolError::Transport)
+        self.transport
+            .emergency_stop()
+            .map_err(MotorProtocolError::Transport)
     }
 
     pub fn transport_mut(&mut self) -> &mut T {
@@ -97,16 +117,24 @@ impl<T: MotorExchange> VerifiedMotorLink<T> {
 /// Firmware-side ACK encoding for simulator and integration reference only.
 /// Firmware may call this ONLY with verified encoder/limit-switch feedback.
 pub fn reference_ack(
-    epoch: u64, sequence: u32, module: &str, measured_deg: i16,
-    encoder_settled: bool, limits_ok: bool,
+    epoch: u64,
+    sequence: u32,
+    module: &str,
+    measured_deg: i16,
+    encoder_settled: bool,
+    limits_ok: bool,
 ) -> Result<Vec<u8>, MotorProtocolError> {
     if !valid_id(module) || measured_deg.abs() > MAX_MOTOR_ANGLE || epoch == 0 || sequence == 0 {
         return Err(MotorProtocolError::InvalidCommand);
     }
     let body = format!(
         "AIM1|ACK|{}|{}|{}|{}|{}|{}",
-        epoch, sequence, module, measured_deg,
-        u8::from(encoder_settled), u8::from(limits_ok),
+        epoch,
+        sequence,
+        module,
+        measured_deg,
+        u8::from(encoder_settled),
+        u8::from(limits_ok),
     );
     Ok(append_crc(&body).into_bytes())
 }
@@ -114,7 +142,9 @@ pub fn reference_ack(
 fn valid_id(id: &str) -> bool {
     !id.is_empty()
         && id.len() <= 32
-        && id.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || b == b'_' || b == b'-')
 }
 
 fn append_crc(body: &str) -> String {
@@ -126,14 +156,17 @@ fn validate_frame(frame: &[u8]) -> Result<&str, MotorProtocolError> {
         return Err(MotorProtocolError::InvalidFrame);
     }
     let text = std::str::from_utf8(frame).map_err(|_| MotorProtocolError::InvalidFrame)?;
-    let line = text.strip_suffix('\n').ok_or(MotorProtocolError::InvalidFrame)?;
-    let (payload, expected) = line.rsplit_once('|')
+    let line = text
+        .strip_suffix('\n')
+        .ok_or(MotorProtocolError::InvalidFrame)?;
+    let (payload, expected) = line
+        .rsplit_once('|')
         .ok_or(MotorProtocolError::InvalidFrame)?;
     if expected.len() != 4 || !expected.bytes().all(|b| b.is_ascii_hexdigit()) {
         return Err(MotorProtocolError::InvalidFrame);
     }
-    let checksum = u16::from_str_radix(expected, 16)
-        .map_err(|_| MotorProtocolError::InvalidFrame)?;
+    let checksum =
+        u16::from_str_radix(expected, 16).map_err(|_| MotorProtocolError::InvalidFrame)?;
     if checksum != crc16(payload.as_bytes()) {
         return Err(MotorProtocolError::InvalidChecksum);
     }
@@ -172,15 +205,29 @@ mod tests {
         fn exchange(&mut self, request: &[u8], _: Duration) -> Result<Vec<u8>, String> {
             let body = validate_frame(request).map_err(|e| format!("{e:?}"))?;
             let p: Vec<&str> = body.split('|').collect();
-            if p.len() != 6 { return Err("wrong command".into()); }
+            if p.len() != 6 {
+                return Err("wrong command".into());
+            }
             let epoch = p[2].parse().map_err(|_| "bad epoch")?;
             let sequence: u32 = p[3].parse().map_err(|_| "bad seq")?;
             let angle = p[5].parse().map_err(|_| "bad angle")?;
             let mut ack = reference_ack(
-                epoch, if self.stale_reply { sequence + 1 } else { sequence },
-                p[4], angle, !self.unsettled, true,
-            ).map_err(|e| format!("{e:?}"))?;
-            if self.bad_crc { let at = ack.len()-2; ack[at] = b'0'; }
+                epoch,
+                if self.stale_reply {
+                    sequence + 1
+                } else {
+                    sequence
+                },
+                p[4],
+                angle,
+                !self.unsettled,
+                true,
+            )
+            .map_err(|e| format!("{e:?}"))?;
+            if self.bad_crc {
+                let at = ack.len() - 2;
+                ack[at] = b'0';
+            }
             Ok(ack)
         }
         fn emergency_stop(&mut self) -> Result<(), String> {
@@ -190,13 +237,24 @@ mod tests {
     }
 
     fn rig() -> FakeWire {
-        FakeWire { stale_reply: false, bad_crc: false, unsettled: false, emergency_stopped: false }
+        FakeWire {
+            stale_reply: false,
+            bad_crc: false,
+            unsettled: false,
+            emergency_stopped: false,
+        }
     }
 
     #[test]
     fn checks_accepted_encoder_feedback_and_limits() {
         let mut driver = VerifiedMotorLink::new(rig(), 2026).unwrap();
-        assert_eq!(driver.request_position("rear-left", 25).unwrap().measured_angle_deg, 25);
+        assert_eq!(
+            driver
+                .request_position("rear-left", 25)
+                .unwrap()
+                .measured_angle_deg,
+            25
+        );
         assert!(driver.request_position("rear-left", 95).is_err());
         assert!(driver.request_position("line\ninjection", 0).is_err());
         driver.emergency_stop().unwrap();
@@ -216,15 +274,19 @@ mod tests {
         let mut second = rig();
         second.unsettled = true;
         assert_eq!(
-            VerifiedMotorLink::new(second, 10).unwrap()
-                .request_position("front", 10).unwrap_err(),
+            VerifiedMotorLink::new(second, 10)
+                .unwrap()
+                .request_position("front", 10)
+                .unwrap_err(),
             MotorProtocolError::UnsafePosition
         );
         let mut third = rig();
         third.bad_crc = true;
         assert_eq!(
-            VerifiedMotorLink::new(third, 10).unwrap()
-                .request_position("front", 10).unwrap_err(),
+            VerifiedMotorLink::new(third, 10)
+                .unwrap()
+                .request_position("front", 10)
+                .unwrap_err(),
             MotorProtocolError::InvalidChecksum
         );
     }
