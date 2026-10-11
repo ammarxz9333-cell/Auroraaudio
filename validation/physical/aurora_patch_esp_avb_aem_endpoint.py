@@ -69,6 +69,23 @@ HEADER_CONTROL_NEW = """  uint8_t ctrl_identify;                     // IDENTIFY
   aurora_endpoint_control_s aurora_endpoint; // detachable endpoint staging/state
   char descriptor_names[AVB_NAME_COUNT][64]; // user-settable descriptor names"""
 
+AVB_INIT_OLD = """  state->codec_enabled = false;
+
+  if ((state->config.talker || state->config.listener) &&"""
+
+AVB_INIT_NEW = """  state->codec_enabled = false;
+
+  /* Aurora detachable endpoint control always boots fail-closed. This flag is
+   * protocol state only; a physical amplifier-mute hook is a separate gate. */
+  state->aurora_endpoint.phase = aurora_endpoint_boot_muted;
+  state->aurora_endpoint.muted = true;
+  state->aurora_endpoint.staged_role0 = AURORA_ENDPOINT_ROLE_UNUSED;
+  state->aurora_endpoint.staged_role1 = AURORA_ENDPOINT_ROLE_UNUSED;
+  state->aurora_endpoint.active_role0 = AURORA_ENDPOINT_ROLE_UNUSED;
+  state->aurora_endpoint.active_role1 = AURORA_ENDPOINT_ROLE_UNUSED;
+
+  if ((state->config.talker || state->config.listener) &&"""
+
 ATDECC_FUNCTION_MARKER = """int avb_send_aecp_rsp_read_descr_control(avb_state_s *state,
                                          aecp_read_descriptor_rsp_s *msg,
                                          eth_addr_t *dest_addr) {"""
@@ -466,13 +483,15 @@ def replace_exact(path: Path, old: str, new: str) -> None:
 
 def apply(root: Path) -> None:
     header = root / "avb.h"
+    source = root / "avb.c"
     atdecc = root / "atdecc.c"
-    if not header.is_file() or not atdecc.is_file():
+    if not header.is_file() or not source.is_file() or not atdecc.is_file():
         raise ValueError("root does not look like an esp_avb checkout")
 
     replace_exact(header, HEADER_COUNT_OLD, HEADER_COUNT_NEW)
     replace_exact(header, HEADER_STATE_MARKER, HEADER_STATE_INSERT)
     replace_exact(header, HEADER_CONTROL_OLD, HEADER_CONTROL_NEW)
+    replace_exact(source, AVB_INIT_OLD, AVB_INIT_NEW)
 
     replace_exact(atdecc, ATDECC_FUNCTION_MARKER, ATDECC_HELPERS)
     replace_exact(atdecc, ATDECC_DESC_OLD, ATDECC_DESC_NEW)
@@ -485,6 +504,7 @@ def apply(root: Path) -> None:
 
 def check(root: Path) -> None:
     header = (root / "avb.h").read_text(encoding="utf-8")
+    source = (root / "avb.c").read_text(encoding="utf-8")
     atdecc = (root / "atdecc.c").read_text(encoding="utf-8")
     required = (
         "#define AEM_NUM_CONTROLS 8",
@@ -497,10 +517,12 @@ def check(root: Path) -> None:
         "aurora_endpoint_apply_command",
         "fault recovery requires fresh epoch",
         "A separate PTP-time scheduler must perform the eventual",
+        "state->aurora_endpoint.muted = true;",
+        "state->aurora_endpoint.phase = aurora_endpoint_boot_muted;",
         "state->aurora_endpoint.staged_start_ptp_ns = octets_to_uint(values, 8)",
         "aurora_control_value_len(desc_index)",
     )
-    joined = header + "\n" + atdecc
+    joined = header + "\n" + source + "\n" + atdecc
     missing = [token for token in required if token not in joined]
     if missing:
         raise ValueError("Aurora AEM endpoint patch missing: " + ", ".join(missing))
