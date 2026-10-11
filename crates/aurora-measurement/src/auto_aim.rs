@@ -250,7 +250,9 @@ fn score_impulse(
     const DIRECT: usize = 240;
     const EARLY: usize = 2_880;
     const END: usize = 9_600;
-    let end = onset_frame.checked_add(END).ok_or(AimError::InvalidImpulse)?;
+    let end = onset_frame
+        .checked_add(END)
+        .ok_or(AimError::InvalidImpulse)?;
     if impulse.len() > 96_000 || end > impulse.len() {
         return Err(AimError::InvalidImpulse);
     }
@@ -319,12 +321,35 @@ mod tests {
             "tap-1".into(),
         )
         .unwrap();
-        assert_eq!(start, AimAction::MoveMotor { module_id: "left".into(), angle_deg: 0 });
+        assert_eq!(
+            start,
+            AimAction::MoveMotor {
+                module_id: "left".into(),
+                angle_deg: 0
+            }
+        );
         assert_eq!(session.phase(), AimPhase::AwaitMotor);
-        assert_eq!(session.motor_settled("left", 0).unwrap(), AimAction::PlaySweep { module_id: "left".into(), angle_deg: 0 });
-        assert_eq!(session.submit_impulse_response("left", 0, &ir(0.1, 0.8, 0.1), 100, &quality()).unwrap(), AimAction::MoveMotor { module_id: "left".into(), angle_deg: 20 });
+        assert_eq!(
+            session.motor_settled("left", 0).unwrap(),
+            AimAction::PlaySweep {
+                module_id: "left".into(),
+                angle_deg: 0
+            }
+        );
+        assert_eq!(
+            session
+                .submit_impulse_response("left", 0, &ir(0.1, 0.8, 0.1), 100, &quality())
+                .unwrap(),
+            AimAction::MoveMotor {
+                module_id: "left".into(),
+                angle_deg: 20
+            }
+        );
         session.motor_settled("left", 20).unwrap();
-        match session.submit_impulse_response("left", 20, &ir(0.9, 0.1, 0.1), 100, &quality()).unwrap() {
+        match session
+            .submit_impulse_response("left", 20, &ir(0.9, 0.1, 0.1), 100, &quality())
+            .unwrap()
+        {
             AimAction::ProposePreset(choices) => assert_eq!(choices[0].angle_deg, 20),
             other => panic!("unexpected {other:?}"),
         }
@@ -336,11 +361,19 @@ mod tests {
 
     #[test]
     fn reflected_mode_optimizes_early_energy_only() {
-        let (mut s, _) = AutoAimSession::begin_from_calibrate_button(vec![plan(AimObjective::EarlyReflection)], "tap-1".into()).unwrap();
+        let (mut s, _) = AutoAimSession::begin_from_calibrate_button(
+            vec![plan(AimObjective::EarlyReflection)],
+            "tap-1".into(),
+        )
+        .unwrap();
         s.motor_settled("left", 0).unwrap();
-        s.submit_impulse_response("left", 0, &ir(0.9, 0.1, 0.1), 100, &quality()).unwrap();
+        s.submit_impulse_response("left", 0, &ir(0.9, 0.1, 0.1), 100, &quality())
+            .unwrap();
         s.motor_settled("left", 20).unwrap();
-        match s.submit_impulse_response("left", 20, &ir(0.1, 0.9, 0.1), 100, &quality()).unwrap() {
+        match s
+            .submit_impulse_response("left", 20, &ir(0.1, 0.9, 0.1), 100, &quality())
+            .unwrap()
+        {
             AimAction::ProposePreset(choices) => assert_eq!(choices[0].angle_deg, 20),
             other => panic!("unexpected {other:?}"),
         }
@@ -348,26 +381,48 @@ mod tests {
 
     #[test]
     fn stale_bad_captures_do_not_advance_and_abort_restores() {
-        let (mut s, _) = AutoAimSession::begin_from_calibrate_button(vec![plan(AimObjective::DirectArrival)], "tap-1".into()).unwrap();
+        let (mut s, _) = AutoAimSession::begin_from_calibrate_button(
+            vec![plan(AimObjective::DirectArrival)],
+            "tap-1".into(),
+        )
+        .unwrap();
         assert_eq!(s.motor_settled("left", 20), Err(AimError::WrongTarget));
         s.motor_settled("left", 0).unwrap();
         let mut q = quality();
         q.unprocessed_capture = false;
-        assert_eq!(s.submit_impulse_response("left", 0, &ir(1.0, 0.0, 0.0), 100, &q), Err(AimError::PoorCapture));
+        assert_eq!(
+            s.submit_impulse_response("left", 0, &ir(1.0, 0.0, 0.0), 100, &q),
+            Err(AimError::PoorCapture)
+        );
         q = quality();
         q.phone_session_id = "wrong".into();
-        assert_eq!(s.submit_impulse_response("left", 0, &ir(1.0, 0.0, 0.0), 100, &q), Err(AimError::InvalidSession));
-        assert_eq!(s.submit_impulse_response("left", 0, &[0.0; 10], 0, &quality()), Err(AimError::InvalidImpulse));
+        assert_eq!(
+            s.submit_impulse_response("left", 0, &ir(1.0, 0.0, 0.0), 100, &q),
+            Err(AimError::InvalidSession)
+        );
+        assert_eq!(
+            s.submit_impulse_response("left", 0, &[0.0; 10], 0, &quality()),
+            Err(AimError::InvalidImpulse)
+        );
         assert_eq!(s.phase(), AimPhase::AwaitCapture);
-        assert_eq!(s.abort().unwrap(), AimAction::RestorePrevious(vec![("left".into(), 0)]));
+        assert_eq!(
+            s.abort().unwrap(),
+            AimAction::RestorePrevious(vec![("left".into(), 0)])
+        );
     }
 
     #[test]
     fn rejects_unsafe_and_duplicate_motor_plans() {
         let mut p = plan(AimObjective::DirectArrival);
         p.candidates_deg = vec![0, 91];
-        assert!(matches!(AutoAimSession::begin_from_calibrate_button(vec![p], "tap".into()), Err(AimError::InvalidPlan)));
+        assert!(matches!(
+            AutoAimSession::begin_from_calibrate_button(vec![p], "tap".into()),
+            Err(AimError::InvalidPlan)
+        ));
         let p = plan(AimObjective::DirectArrival);
-        assert!(matches!(AutoAimSession::begin_from_calibrate_button(vec![p.clone(), p], "tap".into()), Err(AimError::InvalidPlan)));
+        assert!(matches!(
+            AutoAimSession::begin_from_calibrate_button(vec![p.clone(), p], "tap".into()),
+            Err(AimError::InvalidPlan)
+        ));
     }
 }
