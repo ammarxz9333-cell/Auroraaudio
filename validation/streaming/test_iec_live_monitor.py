@@ -53,6 +53,18 @@ def main():
     assert report["invalid_bursts"] > 0
     assert len(failed.stdout) < len(malformed)
     print("PASS invalid IEC type blocked before forwarding to decoder")
+
+    bad_padding = bytearray(stream)
+    # AC-3 IEC bursts are 6144 bytes; the last byte of the first burst is
+    # defined padding and must be ZERO. This test catches streaming monitors
+    # that forward a header before the complete packet was validated.
+    assert bad_padding[6143] == 0
+    bad_padding[6143] = 1
+    held, outcome, _ = run(bytes(bad_padding), allow_switches=True)
+    assert held.returncode != 0
+    assert outcome["invalid_bursts"] >= 1
+    assert not held.stdout, "part of the rejected burst escaped downstream"
+    print("PASS invalid IEC padding rejects the whole packet before PCM decoding")
     print("AURORA-IEC-LIVE-MONITOR-SOFTWARE-PASS")
 
 
