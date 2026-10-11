@@ -1,0 +1,119 @@
+{
+  "schema_version": 1,
+  "description": "Aurora 7.1.4 canonical renderer decoder group compat; catalog means research, not runtime availability",
+  "canonical_output": {
+    "format": "s32le",
+    "sample_rate_hz": 48000,
+    "channels": 12,
+    "channel_roles": [
+      "FL",
+      "FR",
+      "FC",
+      "LFE",
+      "SL",
+      "SR",
+      "SBL",
+      "SBR",
+      "TFL",
+      "TFR",
+      "TRL",
+      "TRR"
+    ]
+  },
+  "isolation": "out-of-process-restart-before-audible-epoch",
+  "bundles": [
+    {
+      "id": "joc-current-pin",
+      "state": "existing-software-fixture-validated",
+      "backend": "harletty",
+      "components": {
+        "harletty-bridge": {
+          "version": "v0.7.4",
+          "commit": "10943821cca7e6886c11f45d2267b06d76e6db7c",
+          "upstream": "https://github.com/harletty/harletty-bridge"
+        },
+        "omniphony": {
+          "version": "v0.5.2",
+          "commit": "f9a79721af64ad9c39042d4deded158b568fc598",
+          "upstream": "https://github.com/mgth/Omniphony"
+        }
+      },
+      "compatibility_group": "harletty-v0.7-omniphony-v0.5",
+      "expected_interface": "legacy-pin-tested-together",
+      "capability_status": {
+        "eac3-joc": "software-fixture-only",
+        "truehd-atmos": "research-only",
+        "dts-x": "not-established",
+        "auro-3d": "not-established"
+      },
+      "physically_verified": false,
+      "eligible_for_live_hotswap": false
+    },
+    {
+      "id": "joc-spatial-v0.8-candidate",
+      "state": "research-candidate-not-integrated",
+      "backend": "harletty",
+      "components": {
+        "harletty-bridge": {
+          "version": "v0.8.0",
+          "commit": "eddb123f876048268ee1f096ccdd1cbcf65ad07d",
+          "upstream": "https://github.com/harletty/harletty-bridge"
+        },
+        "omniphony": {
+          "version": "v0.6.0",
+          "commit": "dd5546bbc64e60719dfa367bea0534dc8a3ab34b",
+          "upstream": "https://github.com/mgth/Omniphony"
+        }
+      },
+      "compatibility_group": "harletty-v0.8-omniphony-v0.6",
+      "expected_interface": "bridge_api-0.4",
+      "capability_status": {
+        "eac3-joc": "upstream-claimed-not-aurora-validated",
+        "truehd-atmos": "upstream-claimed-not-aurora-validated",
+        "dts-x": "upstream-experimental-not-aurora-validated",
+        "auro-3d": "upstream-claimed-not-aurora-validated"
+      },
+      "physically_verified": false,
+      "eligible_for_live_hotswap": false
+    }
+  ],
+  "upgrade_policy": {
+    "strategy": "staged-paired-process-restart-atomic-pointer-rollback",
+    "allow_hot_swap_in_audio_callback": false,
+    "keep_previous_bundle": true,
+    "required_test_gates": [
+      "decoder-corpus",
+      "renderer-shape",
+      "channel-map",
+      "stream-fault-recovery",
+      "physical-output"
+    ],
+    "advertise_only_physically_verified": true,
+    "no_auto_upgrade": true
+  },
+  "upstream_research_candidates": [
+    {
+      "id": "oxideav-ac4",
+      "version": "unverified",
+      "commit": "cb908ef9100ef01505b1a6f4518c3187e54d2966",
+      "role": "ac4-channel-object-candidate",
+      "status": "not-integrated",
+      "source": "https://github.com/OxideAV/oxideav-ac4"
+    },
+    {
+      "id": "fraunhofer-mpeghdec",
+      "version": "pinned-in-external-components-v1",
+      "role": "mpeg-h-rendered-pcm-reference",
+      "status": "offline-evaluation-only",
+      "source": "https://github.com/Fraunhofer-IIS/mpeghdec"
+    },
+    {
+      "id": "aom-libiamf",
+      "version": "pinned-in-external-components-v1",
+      "role": "iamf-rendered-pcm-reference",
+      "status": "offline-evaluation-only",
+      "source": "https://github.com/AOMediaCodec/libiamf"
+    }
+  ],
+  "truth_boundary": "Manifest catalogs paired version compatibility and upgrade tests; it is NOT a codec decoder, working HDMI/MAT receiver, commercial-streaming approval, or physical output validation."
+}
