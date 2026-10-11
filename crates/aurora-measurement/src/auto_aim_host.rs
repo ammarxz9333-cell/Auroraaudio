@@ -27,10 +27,12 @@ pub struct MotorFeedback {
 /// Never infer safe/settled from command acknowledgement alone.
 pub trait AutoAimRig {
     fn begin_isolated_calibration(&mut self) -> Result<(), String>;
-    fn move_motor(&mut self, module_id: &str, angle_deg: i16)
-        -> Result<MotorFeedback, String>;
+    fn move_motor(&mut self, module_id: &str, angle_deg: i16) -> Result<MotorFeedback, String>;
     fn record_sweep(
-        &mut self, module_id: &str, angle_deg: i16, mono_48khz_sweep: &[f32],
+        &mut self,
+        module_id: &str,
+        angle_deg: i16,
+        mono_48khz_sweep: &[f32],
     ) -> Result<RecordedSweep, String>;
     /// Must stop stimulus and mute before rollback on failure.
     fn halt_output(&mut self);
@@ -71,9 +73,8 @@ pub fn calibrate_on_request<R: AutoAimRig, S: AutoAimPresetStore>(
     plans: Vec<AimModulePlan>,
     phone_session_id: String,
 ) -> Result<AutoAimReport, AutoAimHostError> {
-    let (mut session, first) =
-        AutoAimSession::begin_from_calibrate_button(plans, phone_session_id)
-            .map_err(AutoAimHostError::InvalidPlan)?;
+    let (mut session, first) = AutoAimSession::begin_from_calibrate_button(plans, phone_session_id)
+        .map_err(AutoAimHostError::InvalidPlan)?;
     let mut action = first;
     let mut observed_angles = 0;
     let result = (|| {
@@ -85,32 +86,53 @@ pub fn calibrate_on_request<R: AutoAimRig, S: AutoAimPresetStore>(
             end_hz: 12_000.0,
             amplitude: 0.15,
             ..LogSweepConfig::default()
-        }).map_err(|err| AutoAimHostError::MotorOrCapture(err.to_string()))?;
+        })
+        .map_err(|err| AutoAimHostError::MotorOrCapture(err.to_string()))?;
         loop {
             action = match action {
-                AimAction::MoveMotor { ref module_id, angle_deg } => {
-                    let feedback = rig.move_motor(module_id, angle_deg)
+                AimAction::MoveMotor {
+                    ref module_id,
+                    angle_deg,
+                } => {
+                    let feedback = rig
+                        .move_motor(module_id, angle_deg)
                         .map_err(AutoAimHostError::MotorOrCapture)?;
                     validate_motor(angle_deg, feedback)?;
-                    session.motor_settled(module_id, angle_deg)
+                    session
+                        .motor_settled(module_id, angle_deg)
                         .map_err(AutoAimHostError::Measurement)?
                 }
-                AimAction::PlaySweep { ref module_id, angle_deg } => {
-                    let mut recorded = rig.record_sweep(module_id, angle_deg, &stimulus)
+                AimAction::PlaySweep {
+                    ref module_id,
+                    angle_deg,
+                } => {
+                    let mut recorded = rig
+                        .record_sweep(module_id, angle_deg, &stimulus)
                         .map_err(AutoAimHostError::MotorOrCapture)?;
                     if recorded.samples.len() > 480_000 {
                         return Err(AutoAimHostError::Processing(CaptureDspError::TooLarge));
                     }
                     let impulse = estimate_impulse_response(
-                        &stimulus, &recorded.samples, recorded.quality.sample_rate_hz
-                    ).map_err(AutoAimHostError::Processing)?;
+                        &stimulus,
+                        &recorded.samples,
+                        recorded.quality.sample_rate_hz,
+                    )
+                    .map_err(AutoAimHostError::Processing)?;
                     // Actual observed clipping always supersedes a client's claim.
                     recorded.quality.clipped_fraction = recorded
-                        .quality.clipped_fraction.max(impulse.clipped_fraction);
+                        .quality
+                        .clipped_fraction
+                        .max(impulse.clipped_fraction);
                     observed_angles += 1;
-                    session.submit_impulse_response(
-                        module_id, angle_deg, &impulse.impulse, 0, &recorded.quality,
-                    ).map_err(AutoAimHostError::Measurement)?
+                    session
+                        .submit_impulse_response(
+                            module_id,
+                            angle_deg,
+                            &impulse.impulse,
+                            0,
+                            &recorded.quality,
+                        )
+                        .map_err(AutoAimHostError::Measurement)?
                 }
                 AimAction::ProposePreset(ref choices) => {
                     // A proposed preset does not move or save hardware by itself.
@@ -119,11 +141,13 @@ pub fn calibrate_on_request<R: AutoAimRig, S: AutoAimPresetStore>(
                         if !names.insert(&selection.module_id) {
                             return Err(AutoAimHostError::MotorUnsafe);
                         }
-                        let feedback = rig.move_motor(&selection.module_id, selection.angle_deg)
+                        let feedback = rig
+                            .move_motor(&selection.module_id, selection.angle_deg)
                             .map_err(AutoAimHostError::MotorOrCapture)?;
                         validate_motor(selection.angle_deg, feedback)?;
                     }
-                    store.save_atomically(choices)
+                    store
+                        .save_atomically(choices)
                         .map_err(AutoAimHostError::Persistence)?;
                     session.saved().map_err(AutoAimHostError::Measurement)?;
                     return Ok(AutoAimReport {
@@ -203,7 +227,9 @@ mod tests {
         }
 
         fn move_motor(&mut self, id: &str, angle: i16) -> Result<MotorFeedback, String> {
-            if self.fail_rollback && self.muted { return Err("broken rollback motor".into()); }
+            if self.fail_rollback && self.muted {
+                return Err("broken rollback motor".into());
+            }
             self.angles.insert(id.into(), angle);
             Ok(MotorFeedback {
                 measured_angle_deg: angle,
@@ -212,10 +238,15 @@ mod tests {
             })
         }
 
-        fn record_sweep(&mut self, id: &str, angle: i16, reference: &[f32])
-            -> Result<RecordedSweep, String>
-        {
-            if !self.running || self.fail_capture { return Err("capture unavailable".into()); }
+        fn record_sweep(
+            &mut self,
+            id: &str,
+            angle: i16,
+            reference: &[f32],
+        ) -> Result<RecordedSweep, String> {
+            if !self.running || self.fail_capture {
+                return Err("capture unavailable".into());
+            }
             let mut samples = vec![0.0_f32; reference.len() + 12_000];
             // Synthetic impulse: at angle 20, early return is stronger.
             let first_gain = if angle == 20 { 0.15 } else { 0.7 };
@@ -235,8 +266,12 @@ mod tests {
                 },
             })
         }
-        fn halt_output(&mut self) { self.muted = true; }
-        fn finish_calibration(&mut self) { self.running = false; }
+        fn halt_output(&mut self) {
+            self.muted = true;
+        }
+        fn finish_calibration(&mut self) {
+            self.running = false;
+        }
     }
 
     #[derive(Default)]
@@ -246,7 +281,9 @@ mod tests {
     }
     impl AutoAimPresetStore for MemStore {
         fn save_atomically(&mut self, choices: &[AimSelection]) -> Result<(), String> {
-            if self.fail_save { return Err("disk failure".into()); }
+            if self.fail_save {
+                return Err("disk failure".into());
+            }
             self.saved = choices.to_vec();
             Ok(())
         }
@@ -266,8 +303,12 @@ mod tests {
         let mut rig = SimRig::default();
         let mut store = MemStore::default();
         let report = calibrate_on_request(
-            &mut rig, &mut store, vec![plan()], "left-calibration".into(),
-        ).unwrap();
+            &mut rig,
+            &mut store,
+            vec![plan()],
+            "left-calibration".into(),
+        )
+        .unwrap();
         assert_eq!(report.observed_angles, 2);
         assert_eq!(report.selected[0].angle_deg, 20);
         assert_eq!(store.saved[0].angle_deg, 20);
@@ -278,10 +319,18 @@ mod tests {
 
     #[test]
     fn failure_restores_original_angle_and_preserves_store() {
-        let mut rig = SimRig {fail_capture: true, ..SimRig::default()};
+        let mut rig = SimRig {
+            fail_capture: true,
+            ..SimRig::default()
+        };
         let mut store = MemStore::default();
         assert!(matches!(
-            calibrate_on_request(&mut rig, &mut store, vec![plan()], "left-calibration".into()),
+            calibrate_on_request(
+                &mut rig,
+                &mut store,
+                vec![plan()],
+                "left-calibration".into()
+            ),
             Err(AutoAimHostError::MotorOrCapture(_))
         ));
         assert_eq!(rig.angles["left"], 0);
@@ -291,10 +340,19 @@ mod tests {
 
     #[test]
     fn fails_closed_when_rollback_actuator_unavailable() {
-        let mut rig = SimRig {fail_capture: true, fail_rollback: true, ..SimRig::default()};
+        let mut rig = SimRig {
+            fail_capture: true,
+            fail_rollback: true,
+            ..SimRig::default()
+        };
         let mut store = MemStore::default();
         assert!(matches!(
-            calibrate_on_request(&mut rig, &mut store, vec![plan()], "left-calibration".into()),
+            calibrate_on_request(
+                &mut rig,
+                &mut store,
+                vec![plan()],
+                "left-calibration".into()
+            ),
             Err(AutoAimHostError::RollbackFailed)
         ));
         assert!(rig.muted);
