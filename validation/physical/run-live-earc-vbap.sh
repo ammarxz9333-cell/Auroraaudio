@@ -18,6 +18,7 @@ OUTPUT_FILE=""
 OUTPUT_DEVICE=""
 OUTPUT_PROFILE="native"
 DECODER_MODE="joc-native"
+REQUIRE_SURROUND_INPUT=0
 UMC_CARD="UMC1820"
 MAX_SECONDS=""
 WORK_DIR=""
@@ -34,6 +35,7 @@ Physical mode:
      joc-native: E-AC-3 JOC -> Harletty object renderer
      channel-bed: AC-3 or DD+ 2/5.1/7.1 -> FFmpeg bed + synthetic ambience
   -> canonical S32_LE/12ch/48k -> file or one ALSA output device.
+  Stereo input is explicitly upmixed/labeled unless --require-surround-input is set.
   This is an explicit decoder selection: NOT automatic format switching.
 
 Direct ALSA-device mode inserts Aurora's bounded adaptive duplex bridge between
@@ -54,6 +56,7 @@ while (( "$#" )); do
     --output-device) OUTPUT_DEVICE="$2"; shift 2 ;;
     --output-profile) OUTPUT_PROFILE="$2"; shift 2 ;;
     --decoder-mode) DECODER_MODE="$2"; shift 2 ;;
+    --require-surround-input) REQUIRE_SURROUND_INPUT=1; shift ;;
     --umc-card) UMC_CARD="$2"; shift 2 ;;
     --seconds) MAX_SECONDS="$2"; shift 2 ;;
     --work-dir) WORK_DIR="$2"; shift 2 ;;
@@ -272,7 +275,10 @@ if [[ -n "$MAX_SECONDS" ]]; then
 fi
 
 if [[ "$DECODER_MODE" == "channel-bed" ]]; then
-  DECODER=(python3 "$BED_SOURCE" --require-surround-input)
+  DECODER=(python3 "$BED_SOURCE")
+  if (( REQUIRE_SURROUND_INPUT == 1 )); then
+    DECODER+=(--require-surround-input)
+  fi
 else
   DECODER=("$HARNESS_BIN" "$BRIDGE_LIB")
 fi
