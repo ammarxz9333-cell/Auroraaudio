@@ -78,4 +78,5 @@ jobs:
             artifacts/esp-avb-fanout.txt
             artifacts/esp-avb-orchestration.txt
             artifacts/esp-avb-detachable-control.txt
+            artifacts/esp-avb-aem-control.txt
           if-no-files-found: warn
