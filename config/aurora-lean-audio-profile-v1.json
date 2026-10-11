@@ -231,9 +231,31 @@
   "runtime_nonthird_party_components": [
     "aurora-source-runtime",
     "aurora-decoder-api",
-    "aurora-renderer-vbap",
     "aurora-audio-io",
-    "aurora-modular-speaker-fabric"
+    "aurora-modular-speaker-fabric",
+    "aurora-output-channel-map"
   ],
-  "truth_boundary": "A curated selection and safety policy is not a tested performance ranking or proof of every codec; resident runtime group count here is a target, and actual loaded process census has not been measured."
+  "truth_boundary": "A curated selection and safety policy is not a tested performance ranking or proof of every codec; resident runtime group count here is a target, and actual loaded process census has not been measured. Render paths are mutually exclusive; integrated Omniphony object rendering and Aurora VBAP must not process the same scene serially.",
+  "render_paths": {
+    "channel-bed": {
+      "decoder_group": "ffmpeg-channel-bed",
+      "renderer": "aurora-internal-fixed-channel-map",
+      "spatial_object_renderer_active": false,
+      "object_metadata_claim": "none",
+      "isolated_additional_upmix": "optional-labelled-synthetic"
+    },
+    "native-object": {
+      "decoder_group": "harletty-omniphony-objects",
+      "renderer": "omniphony-integrated-spatial",
+      "spatial_object_renderer_active": true,
+      "object_metadata_claim": "only-verified-extracted-metadata",
+      "disable_second_vbap_renderer": true
+    },
+    "specialist-decoded-pcm": {
+      "decoder_group": "one-approved-specialist-only",
+      "renderer": "aurora-internal-fixed-channel-map",
+      "spatial_object_renderer_active": false,
+      "unverified_allowed": false
+    }
+  }
 }
