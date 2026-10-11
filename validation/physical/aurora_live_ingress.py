@@ -209,7 +209,12 @@ class LiveIngressClassifier:
         if self.candidate_count >= self.lock_bursts:
             self.transition(LOCK_STATE[item.data_type], f"stable-{item.type_name.lower()}")
 
-    def feed(self, data: bytes, *, final: bool = False) -> None:
+    def feed(self, data: bytes, *, final: bool = False, on_valid_burst=None) -> None:
+        """In live decode, yield only fully validated bursts to a sink callback.
+
+        Backwards compatible with existing classifier users. Callback may
+        exert downstream backpressure and must not change classifier state.
+        """
         self.buffer.extend(data)
         while True:
             sync = self.buffer.find(SYNC)
@@ -245,6 +250,8 @@ class LiveIngressClassifier:
             self.bursts.append(item)
             if item.valid:
                 self._accept_valid_burst(item)
+                if on_valid_burst is not None:
+                    on_valid_burst(raw_burst)
             else:
                 self.invalid_bursts += 1
                 if self.state.startswith("LOCKED_"):
