@@ -9,4 +9,6 @@ rust-version = "1.78"
 [workspace]
 
 [dependencies]
+aurora-core = { path = "../../crates/aurora-core" }
+aurora-modular-speaker-fabric = { path = "../../crates/aurora-modular-speaker-fabric" }
 aurora-realtime-audio-api = { path = "../../crates/aurora-realtime-audio-api" }
