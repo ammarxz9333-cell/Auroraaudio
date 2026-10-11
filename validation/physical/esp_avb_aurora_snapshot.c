@@ -96,3 +96,54 @@ int aurora_esp_avb_print_listener_snapshot(const char *epoch_id,
 
   return pass ? 0 : -1;
 }
+
+
+#define AURORA_ENDPOINT_SNAPSHOT_SCHEMA "aurora.esp-avb.endpoint-control-snapshot.v1"
+
+/*
+ * Print endpoint scheduler/control-plane telemetry.
+ *
+ * scheduler_unmute_ptp_ns is the firmware time at which Aurora requested the
+ * board output gate to unmute. It is deliberately NOT named or treated as an
+ * electrical output timestamp. Physical acceptance must correlate this with an
+ * independently measured amplifier/output transition.
+ */
+int aurora_esp_avb_print_endpoint_control_snapshot(const char *epoch_id,
+                                                    uint64_t capture_unix_ms) {
+  if (!aurora_epoch_valid(epoch_id) || capture_unix_ms == 0)
+    return -1;
+
+  avb_status_s status;
+  memset(&status, 0, sizeof(status));
+  int status_rc = avb_status(&status);
+  bool gptp_locked = status.gptp_profile && status.clock_source_valid &&
+                     status.gptp_clock_stable;
+  bool gm_valid = id_nonzero(status.grandmaster_id);
+  bool pass = status_rc == 0 && status.aurora_endpoint_evidence.present &&
+              gptp_locked && gm_valid;
+
+  printf("{\"schema\":\"%s\",\"verdict\":\"%s\",\"epoch_id\":\"%s\","
+         "\"capture_unix_ms\":%" PRIu64 ",\"gptp_locked\":%s,"
+         "\"grandmaster_id\":\"",
+         AURORA_ENDPOINT_SNAPSHOT_SCHEMA, pass ? "PASS" : "FAIL", epoch_id,
+         capture_unix_ms, gptp_locked ? "true" : "false");
+  print_id(status.grandmaster_id);
+  printf("\",\"active_epoch\":%" PRIu64
+         ",\"active_role0\":%u,\"active_role1\":%u,"
+         "\"requested_start_ptp_ns\":%" PRIu64
+         ",\"scheduler_unmute_ptp_ns\":%" PRIu64
+         ",\"scheduler_unmute_count\":%" PRIu32
+         ",\"deadline_fault_count\":%" PRIu32
+         ",\"phase\":%u,\"muted\":%s}\n",
+         status.aurora_endpoint_evidence.active_epoch,
+         (unsigned)status.aurora_endpoint_evidence.active_role0,
+         (unsigned)status.aurora_endpoint_evidence.active_role1,
+         status.aurora_endpoint_evidence.requested_start_ptp_ns,
+         status.aurora_endpoint_evidence.scheduler_unmute_ptp_ns,
+         status.aurora_endpoint_evidence.scheduler_unmute_count,
+         status.aurora_endpoint_evidence.deadline_fault_count,
+         (unsigned)status.aurora_endpoint_evidence.phase,
+         status.aurora_endpoint_evidence.muted ? "true" : "false");
+
+  return pass ? 0 : -1;
+}
