@@ -42,6 +42,15 @@ def main() -> int:
     policy.validate()
 
     classifier = LiveIngressClassifier(record_limit=args.retained_records)
+    def forward_validated_burst(frame: bytes):
+        # This callback runs ONLY after the whole IEC packet, its syncword,
+        # payload length and zero-padding have all been verified.
+        # A non-allowed format relock is stopped BEFORE its first burst can
+        # reach the decoder.
+        if args.max_relocks is not None and classifier.relock_count > args.max_relocks:
+            raise ValueError("unexpected codec change: halted before release")
+        sys.stdout.buffer.write(frame)
+        sys.stdout.buffer.flush()
     processed_chunks = 0
     status = "pass"
     reason = None
@@ -50,20 +59,15 @@ def main() -> int:
             chunk = sys.stdin.buffer.read(args.chunk_bytes)
             if not chunk:
                 break
-            classifier.feed(chunk)
+            classifier.feed(chunk, on_valid_burst=forward_validated_burst)
             processed_chunks += 1
-            # Fail BEFORE forwarding a chunk containing invalid data.
-            # For a valid AC3 <-> DD+ switch, allow relocks in auto-bed mode.
-            if (classifier.invalid_bursts
-                or classifier.unclassified_total
-                or (args.max_relocks is not None
-                    and classifier.relock_count > args.max_relocks)):
+            # Bad packets are discarded by the parser itself. Never forward
+            # arbitrary bytes from a chunk containing an invalid IEC frame.
+            if classifier.invalid_bursts or classifier.unclassified_total:
                 status = "fail"
-                reason = "invalid-unclassified-or-unexpected-format-change"
+                reason = "invalid-or-unclassified-iec-carrier"
                 break
-            sys.stdout.buffer.write(chunk)
-            sys.stdout.buffer.flush()
-        classifier.feed(b"", final=True)
+        classifier.feed(b"", final=True, on_valid_burst=forward_validated_burst)
         report = classifier.report(policy)
         if status != "pass":
             report["verdict"] = "fail"
@@ -74,6 +78,12 @@ def main() -> int:
             "raw_iec_capture_saved": False,
             "max_diagnostic_records": args.retained_records,
         }
+    except (ValueError, BrokenPipeError, OSError) as error:
+        status = "fail"
+        reason = str(error)
+        report = classifier.report(policy)
+        report["verdict"] = "fail"
+        report["verdict_failures"].append(reason)
     finally:
         # The report is always written, including when decoding/pipe output
         # breaks; it never contains sensitive captured media samples.
