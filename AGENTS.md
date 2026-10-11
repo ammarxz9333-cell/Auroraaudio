@@ -218,6 +218,12 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 - AVDECC/ACMP owns network stream connection identity/state on the GenAVB path; Aurora owns PCM production and worker lifecycle around that state.
 - fanout occurs after common rendering/system DSP; only one production speaker renderer processes a block.
 
+### Acoustic Auto-Aim (manual-only experimental control)
+
+- A standalone manually started angle-sweep session is introduced in crates/aurora-measurement/src/auto_aim.rs with validation, motor acknowledgement ordering, IR quality gates, relative angle scoring, proposed-preset/persist acknowledgement and cancellation rollback. See docs/acoustic-auto-aim.md.
+- NO verified phone microphone app, unprocessed capture/deconvolution, live Wi-Fi control, motor driver/feedback, acoustic optimization proof or physical acceptance exists yet; the test fixture is synthetic. One phone mic cannot identify ceiling versus wall reflections. No background tracking or mic activity is intended.
+- Next integration: explicit mobile button/permissions, real controlled phone capture/IR analysis, hardware motor safety, guarded saved preset and multi-position physical testing. Keep separate from eARC critical path.
+
 ## 6. Current work / Next actions
 
 Continue in this order unless the user explicitly changes priorities:
