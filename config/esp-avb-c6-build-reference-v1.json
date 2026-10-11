@@ -24,8 +24,9 @@
     "aurora_patch_esp_ptp_lock_evidence.py",
     "aurora_patch_esp_avb_listener_evidence.py",
     "aurora_patch_esp_avb_aem_endpoint.py",
-    "aurora_patch_esp_avb_ptp_deadline.py"
+    "aurora_patch_esp_avb_ptp_deadline.py",
+    "aurora_patch_esp_avb_endpoint_telemetry.py"
   ],
   "sdkconfig_defaults": "validation/physical/esp_avb_c6_wireless_sdkconfig.defaults",
-  "truth_boundary": "A green build proves exact-pin ESP32-C6 source/API/link compatibility for the native-Wi-Fi endpoint topology and Aurora handover/PTP-deadline code. It does not prove RF transport, physical PTP accuracy, DAC/Class-D mute timing, battery/dock hardware, or acoustic synchronization."
+  "truth_boundary": "A green build proves exact-pin ESP32-C6 source/API/link compatibility for the native-Wi-Fi endpoint topology, Aurora handover/PTP-deadline code, and scheduler telemetry export. Scheduler telemetry is firmware/control-plane timing only and does not prove electrical output timing, RF transport, physical PTP accuracy, DAC/Class-D mute timing, battery/dock hardware, or acoustic synchronization."
 }
