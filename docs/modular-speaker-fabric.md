@@ -278,6 +278,33 @@ identities, one shared handover epoch, one shared PTP grandmaster, one requested
 absolute PTP activation time, and measured inter-module electrical skew inside
 the explicitly selected threshold.
 
+
+Raw physical captures can be correlated directly before module acceptance:
+
+```bash
+python validation/physical/aurora_detachable_physical_acceptance.py correlate \
+  --before-listener listener-before.json \
+  --after-listener listener-after.json \
+  --endpoint endpoint-control.json \
+  --electrical electrical-capture.json \
+  --max-start-error-us 1000 \
+  --max-scheduler-late-us 2000 \
+  --output left-pod-physical.json
+```
+
+The correlator requires the ESP listener snapshots to retain one epoch, stream,
+grandmaster and 48 kHz/2ch/24-bit media contract while RX advances. The endpoint
+snapshot must be committed/unmuted with no deadline fault, and its firmware
+scheduler request must occur at or after the requested PTP deadline inside the
+selected scheduler bound.
+
+The electrical capture uses schema
+`aurora.detachable-electrical-capture.v1` and supplies the independent measured
+output activation timestamp plus observed physical mute behavior. This is the
+only timestamp accepted as `measured_start_ptp_ns`; the firmware scheduler
+timestamp is retained as correlation metadata, never substituted for the
+electrical measurement.
+
 The default 1000 microsecond limits mirror the V1 cinema admission policy only;
 they are not a claim that this is the final perceptual target. Tighter limits can
 be selected for later hardware qualification. The built-in `self-test` uses
