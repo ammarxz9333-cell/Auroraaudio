@@ -96,3 +96,17 @@ At 48 kHz the optical output carries eight ADAT channels; the profile currently 
 A passing fixture CI proves the software connection from IEC61937 JOC through Harletty into Aurora's own 3D renderer and proves the adaptive-output bridge builds and passes its synthetic multichannel self-test. It does not prove a physical eARC capture, a specific streaming service, a specific USB/TDM device, or long-duration dual-clock stability.
 
 The direct ALSA pipeline now wires Aurora's existing adaptive drift/ASRC path at the clock-domain crossing. That removes the previous architectural gap, but it is still software evidence only until the real Pi/eARC/input clock and the selected multichannel USB output clock complete a long-duration physical run without XRUNs, uncontrolled fill excursions, adaptive faults, or audible artifacts.
+
+## Direct streaming channel-bed alternative (7.1.4 minimum output)
+
+The default `--decoder-mode joc-native` remains the **native E-AC-3 JOC** path. For a non-JOC AC-3 / E-AC-3 channel-bed source, explicitly select:
+
+```bash
+bash validation/physical/run-live-earc-vbap.sh \
+  --capture-device 'hw:CARD,DEV' \
+  --decoder-mode channel-bed \
+  --output-device 'plughw:CARD,DEV' \
+  --seconds 85
+```
+
+This alternative buffers a short IEC carrier prefix, uses FFprobe to admit only verified AC-3/E-AC-3 5.1/7.1 channel input, decodes through FFmpeg, and routes **12 interleaved S32_LE channels at 48 kHz** through the same bounded Aurora adaptive output. It synthesizes extra ambience; **it does not decode JOC objects**. The decoder selection is explicit, not seamless runtime auto-switching. Source layout or codec changes after the initial probe have not yet been physically qualified. The native JOC route remains separate and must not silently claim success for plain DD+. See [streaming priority and limits](streaming-surround-priority.md).
