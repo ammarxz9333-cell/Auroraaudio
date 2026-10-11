@@ -40,3 +40,5 @@ jobs:
       - run: cargo test -p aurora-modular-speaker-fabric
       - name: Prove docked to detached reconfiguration
         run: cargo run -p aurora-modular-speaker-fabric --example detachable_reconfiguration
+      - name: Prove approved automatic topology profile
+        run: cargo run -p aurora-modular-speaker-fabric --example automatic_reconfiguration
