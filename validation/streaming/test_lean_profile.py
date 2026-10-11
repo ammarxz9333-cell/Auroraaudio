@@ -63,6 +63,20 @@ class LeanProfileTests(unittest.TestCase):
         ))
         self.reject(lambda x: x["policy"].update(max_third_party_runtime_groups=20))
 
+    def test_no_second_renderer_on_atmos_or_plain_pcm(self):
+        self.reject(lambda x: x["render_paths"]["native-object"].update(
+            renderer="aurora-internal-fixed-channel-map"
+        ))
+        self.reject(lambda x: x["render_paths"]["native-object"].update(
+            disable_second_vbap_renderer=False
+        ))
+        self.reject(lambda x: x["render_paths"]["channel-bed"].update(
+            spatial_object_renderer_active=True
+        ))
+        self.reject(lambda x: x["render_paths"]["specialist-decoded-pcm"].update(
+            unverified_allowed=True
+        ))
+
     def test_no_duplicate_specialist(self):
         self.reject(lambda x: x["conditional_format_specialists"].append(
             copy.deepcopy(x["conditional_format_specialists"][0])
