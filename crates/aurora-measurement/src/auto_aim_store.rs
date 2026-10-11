@@ -64,7 +64,7 @@ impl AutoAimSavedPreset {
         for a in &self.angles {
             if a.module_id.trim().is_empty()
                 || a.module_id.len() > 128
-                || a.angle_deg.abs() > 90
+                || !(-90..=90).contains(&a.angle_deg)
                 || !a.relative_score.is_finite()
                 || !seen.insert(a.module_id.as_str())
             {
