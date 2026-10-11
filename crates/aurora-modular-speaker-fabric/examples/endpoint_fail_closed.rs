@@ -1,7 +1,7 @@
 use aurora_core::ChannelRole;
 use aurora_modular_speaker_fabric::{
     endpoint::{
-        DetachableEndpoint, EndpointCommand, EndpointPolicy, EndpointPowerStatus, EndpointPhase,
+        DetachableEndpoint, EndpointCommand, EndpointPhase, EndpointPolicy, EndpointPowerStatus,
     },
     ModuleClockSource, ModuleRoute, ModuleSyncStatus, SpeakerModuleCapabilities,
 };
