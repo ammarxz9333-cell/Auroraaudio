@@ -7,6 +7,7 @@ on:
       - "validation/streaming/**"
       - "config/aurora-codec-bundles-v1.json"
       - "config/aurora-audio-component-contracts-v1.json"
+      - "config/aurora-lean-audio-profile-v1.json"
       - "validation/physical/run-live-earc-vbap.sh"
       - "docs/streaming-surround-priority.md"
       - ".github/workflows/streaming-surround-7-1-4-ci.yml"
@@ -38,6 +39,12 @@ jobs:
         run: |
           python3 validation/streaming/aurora_component_contracts.py config/aurora-audio-component-contracts-v1.json
           python3 validation/streaming/test_component_upgrades.py
+      - name: Reject redundant decoder/renderer/DSP runtime projects
+        run: |
+          python3 validation/streaming/aurora_lean_profile.py config/aurora-lean-audio-profile-v1.json
+          python3 validation/streaming/test_lean_profile.py
+      - name: Baseline FFmpeg 5.1-to-12ch throughput smoke without speed claims
+        run: python3 validation/streaming/aurora_codec_perf.py --candidate-bin ffmpeg --fixture-seconds 4 --runs 2
       - name: Check live eARC runner shell syntax
         run: bash -n validation/physical/run-live-earc-vbap.sh
       - name: Check streaming scripts compile
