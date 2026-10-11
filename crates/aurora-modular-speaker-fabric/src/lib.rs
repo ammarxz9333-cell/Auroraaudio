@@ -7,6 +7,7 @@
 //! evidence; otherwise planning fails closed.
 
 pub mod endpoint;
+pub mod profile;
 
 use std::collections::{BTreeMap, BTreeSet};
 
