@@ -115,13 +115,14 @@ def check_profile(data: dict) -> dict:
     owners = data.get("source_format_owners")
     if not isinstance(owners, dict) or set(owners) != REQUIRED_FORMATS:
         raise ProfileError("some upstream streaming codecs have no single primary owner")
+    # Validate types BEFORE applying set logic; adversarial/malformed maps
+    # must be rejected deterministically, not crash the conformance test.
+    for codec, owner in owners.items():
+        if not isinstance(owner, str):
+            raise ProfileError(f"{codec}: codec must have exactly one primary")
     allowed_owners = PRIMARY_IDS | {x.get("id") for x in specials}
     if not set(owners.values()).issubset(allowed_owners):
         raise ProfileError("codec is routed to unreviewed duplicate decoder")
-    for codec, owner in owners.items():
-        # No codec may have multiple owners; map-valued owner only.
-        if not isinstance(owner, str):
-            raise ProfileError(f"{codec}: codec must have exactly one primary")
     for codec in ("eac3-joc", "truehd-atmos", "dts-x"):
         if owners[codec] != immersive["id"]:
             raise ProfileError("native object codec bypasses dedicated paired renderer")
