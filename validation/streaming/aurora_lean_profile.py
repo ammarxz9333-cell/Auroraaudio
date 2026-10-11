@@ -128,6 +128,30 @@ def check_profile(data: dict) -> dict:
     for codec in ("ac3", "eac3", "dts", "dts-hd", "truehd"):
         if owners[codec] != "ffmpeg-channel-bed":
             raise ProfileError("duplicate ordinary channel-bed codec implementation")
+    # A source's bed and immersive renderers are mutually exclusive. Never
+    # cascade Omniphony with a second full VBAP renderer for the same objects.
+    paths = data.get("render_paths", {})
+    if set(paths) != {"channel-bed", "native-object", "specialist-decoded-pcm"}:
+        raise ProfileError("missing one mutually exclusive speaker render path")
+    bed = paths["channel-bed"]
+    object_path = paths["native-object"]
+    specialist_path = paths["specialist-decoded-pcm"]
+    if (bed.get("decoder_group") != "ffmpeg-channel-bed"
+        or bed.get("renderer") != "aurora-internal-fixed-channel-map"
+        or bed.get("spatial_object_renderer_active") is not False
+        or bed.get("object_metadata_claim") != "none"):
+        raise ProfileError("channel bed is being remapped through a duplicate object renderer")
+    if (object_path.get("decoder_group") != "harletty-omniphony-objects"
+        or object_path.get("renderer") != "omniphony-integrated-spatial"
+        or object_path.get("spatial_object_renderer_active") is not True
+        or object_path.get("disable_second_vbap_renderer") is not True
+        or object_path.get("object_metadata_claim")
+           != "only-verified-extracted-metadata"):
+        raise ProfileError("two spatial renderers would process the same native object scene")
+    if (specialist_path.get("decoder_group") != "one-approved-specialist-only"
+        or specialist_path.get("renderer") != "aurora-internal-fixed-channel-map"
+        or specialist_path.get("unverified_allowed") is not False):
+        raise ProfileError("specialist path is allowed to activate an untested second decoder")
     return {
         "result": "PASS",
         "runtime_groups": len(groups),
