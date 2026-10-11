@@ -135,6 +135,7 @@ pub enum EndpointFault {
     StreamUnderflow,
     TransportLost,
     AttachmentChanged,
+    MissedStartFrame,
 }
 
 /// Protocol/state-machine errors. Rejected commands never unmute the endpoint.
@@ -257,6 +258,9 @@ impl DetachableEndpoint {
             return Vec::new();
         }
         self.attachment = attachment;
+        if matches!(self.phase, EndpointPhase::BootMuted | EndpointPhase::Muted) {
+            return Vec::new();
+        }
         self.fail_closed(EndpointFault::AttachmentChanged)
     }
 
@@ -350,6 +354,9 @@ impl DetachableEndpoint {
             .ok_or(EndpointError::InvalidPhase)?;
         if frame_index < start {
             return Ok(Vec::new());
+        }
+        if frame_index > start {
+            return Ok(self.fail_closed(EndpointFault::MissedStartFrame));
         }
 
         let active = self.pending.take().ok_or(EndpointError::InvalidPhase)?;
@@ -813,6 +820,44 @@ mod tests {
                 roles: vec![ChannelRole::FrontLeft, ChannelRole::TopFrontLeft],
             })
             .is_ok());
+    }
+
+    #[test]
+    fn boot_time_dock_detection_does_not_latch_a_fault() {
+        let mut endpoint =
+            DetachableEndpoint::new("left-pod", capabilities(), EndpointPolicy::default()).unwrap();
+        let actions = endpoint.update_attachment(ModuleAttachment::Docked {
+            slot_id: "left-edge".into(),
+        });
+        assert!(actions.is_empty());
+        assert_eq!(endpoint.phase(), EndpointPhase::BootMuted);
+        assert_eq!(endpoint.last_fault(), None);
+        assert!(endpoint.amplifier_muted());
+    }
+
+    #[test]
+    fn missing_the_armed_start_frame_fails_closed() {
+        let mut endpoint = detached_ready();
+        prepare_rear(&mut endpoint, 12);
+        endpoint
+            .apply(&EndpointCommand::Arm {
+                module_id: "left-pod".into(),
+                epoch: 12,
+                start_frame: 96_000,
+            })
+            .unwrap();
+        endpoint
+            .apply(&EndpointCommand::Commit {
+                module_id: "left-pod".into(),
+                epoch: 12,
+            })
+            .unwrap();
+
+        let actions = endpoint.on_media_frame(96_001).unwrap();
+        assert_eq!(endpoint.phase(), EndpointPhase::Fault);
+        assert_eq!(endpoint.last_fault(), Some(EndpointFault::MissedStartFrame));
+        assert!(endpoint.amplifier_muted());
+        assert!(actions.contains(&EndpointAction::SetAmplifierMute(true)));
     }
 
     #[test]
