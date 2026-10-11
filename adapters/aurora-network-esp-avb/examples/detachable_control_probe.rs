@@ -2,9 +2,7 @@ use aurora_core::ChannelRole;
 use aurora_modular_speaker_fabric::{
     EndpointHandoverCommand, HandoverPlan, ModuleAssignment, ModuleClockSource, ModuleRoute,
 };
-use aurora_network_esp_avb::{
-    compile_handover_control, EspAvbEndpointMedium, EspAvbModuleBinding,
-};
+use aurora_network_esp_avb::{compile_handover_control, EspAvbEndpointMedium, EspAvbModuleBinding};
 
 fn main() {
     let handover = HandoverPlan {
