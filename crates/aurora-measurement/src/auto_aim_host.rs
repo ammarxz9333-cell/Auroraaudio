@@ -119,6 +119,9 @@ pub fn calibrate_on_request<R: AutoAimRig, S: AutoAimPresetStore>(
                     )
                     .map_err(AutoAimHostError::Processing)?;
                     // Actual observed clipping always supersedes a client's claim.
+                    if !recorded.quality.clipped_fraction.is_finite() {
+                        return Err(AutoAimHostError::Measurement(AimError::PoorCapture));
+                    }
                     recorded.quality.clipped_fraction = recorded
                         .quality
                         .clipped_fraction
