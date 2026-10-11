@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "purpose": "Exact-pin ESP32-C6 native-Wi-Fi detachable endpoint build reference for Aurora",
+  "target": "esp32c6",
+  "topology": {
+    "ptp_ports": 1,
+    "medium": "wifi_ftm",
+    "host_if": "ahb",
+    "port_type": "primary",
+    "wifi_mode": "sta",
+    "nominal_link_mbps": 150,
+    "clock_backend": "software disciplined via esp_timer"
+  },
+  "source_pins": {
+    "esp_idf_upstream": "https://github.com/scrambletools/esp-idf",
+    "esp_idf_commit": "eff8fd1d0b182429b1b574cba4ae8e9be7afa457",
+    "endpoint_upstream": "https://github.com/scrambletools/ESP-AVB-Endpoint",
+    "endpoint_commit": "43765a5a828187b647c77d91d8f988b743816f8b",
+    "esp_avb_commit": "5e75bd3ed91b5407a254a5e49bfc18fc35e6cbb9",
+    "esp_ptp_commit": "5b7eec233a93733ae954beefb6df3bb9c12dc901",
+    "esp_ptp_rpc_commit": "4183c8392be08aaffcb7bfb008b17016106a7df3"
+  },
+  "aurora_patches": [
+    "aurora_patch_esp_ptp_lock_evidence.py",
+    "aurora_patch_esp_avb_listener_evidence.py",
+    "aurora_patch_esp_avb_aem_endpoint.py",
+    "aurora_patch_esp_avb_ptp_deadline.py"
+  ],
+  "sdkconfig_defaults": "validation/physical/esp_avb_c6_wireless_sdkconfig.defaults",
+  "truth_boundary": "A green build proves exact-pin ESP32-C6 source/API/link compatibility for the native-Wi-Fi endpoint topology and Aurora handover/PTP-deadline code. It does not prove RF transport, physical PTP accuracy, DAC/Class-D mute timing, battery/dock hardware, or acoustic synchronization."
+}
