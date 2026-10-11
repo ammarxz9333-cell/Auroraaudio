@@ -9,6 +9,7 @@ on:
       - "validation/physical/aurora_patch_esp_avb_listener_evidence.py"
       - "validation/physical/aurora_patch_esp_avb_aem_endpoint.py"
       - "validation/physical/aurora_patch_esp_avb_ptp_deadline.py"
+      - "validation/physical/aurora_patch_esp_avb_endpoint_telemetry.py"
       - "validation/physical/esp_avb_aurora_snapshot.c"
       - ".github/workflows/esp-avb-c6-wireless-build-ci.yml"
   workflow_dispatch:
@@ -94,6 +95,7 @@ jobs:
           python validation/physical/aurora_patch_esp_avb_listener_evidence.py apply-check             --root "$AURORA_ESP_C6_ROOT/endpoint/components/esp_avb"
           python validation/physical/aurora_patch_esp_avb_aem_endpoint.py apply-check             --root "$AURORA_ESP_C6_ROOT/endpoint/components/esp_avb"
           python validation/physical/aurora_patch_esp_avb_ptp_deadline.py apply-check             --root "$AURORA_ESP_C6_ROOT/endpoint/components/esp_avb"
+          python validation/physical/aurora_patch_esp_avb_endpoint_telemetry.py apply-check             --root "$AURORA_ESP_C6_ROOT/endpoint/components/esp_avb"
 
           cp validation/physical/esp_avb_aurora_snapshot.c             "$AURORA_ESP_C6_ROOT/endpoint/main/esp_avb_aurora_snapshot.c"
           python - <<'PY'
