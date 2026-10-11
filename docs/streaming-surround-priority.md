@@ -76,3 +76,9 @@ This reuses Aurora's IEC capture conversion and adaptive 12-channel PCM output. 
 - Service playback and UI switching/seek/pause tests on real hardware.
 
 Mobile calibration and motorized auto-aim remain lower priority until this path is proven.
+
+## Fire TV 4K Max initial physical-test settings
+
+On the Fire TV, try **Settings → Display & Sounds → Audio → Surround Sound → Dolby Digital Plus** to favor the DD+ family for the first real Aurora eARC validation; the default **Best Available** may negotiate a different output profile including Dolby MAT. These device options are not a universal codec guarantee: capture and inspect the actual TV eARC stream before selecting the decoder. Check that the chosen title and audio language really provide 5.1 or Atmos. Never report MAT/JOC compatibility merely because the Fire TV lists support.
+
+The source app is running on the legitimate Fire TV/TV; Aurora is not decrypting or bypassing Netflix/Disney+/Prime Video. Appropriate app subscription, TV eARC negotiation and output capability remain external requirements.
