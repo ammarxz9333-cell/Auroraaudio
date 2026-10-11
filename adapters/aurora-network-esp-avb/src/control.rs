@@ -57,7 +57,9 @@ impl fmt::Display for EspAvbControlError {
             Self::DuplicateModule => formatter.write_str("duplicate ESP-AVB module binding"),
             Self::DuplicateEndpoint => formatter.write_str("duplicate ESP-AVB endpoint binding"),
             Self::DuplicateStream => formatter.write_str("duplicate ESP-AVB stream binding"),
-            Self::UnknownModule => formatter.write_str("handover targets an unbound ESP-AVB module"),
+            Self::UnknownModule => {
+                formatter.write_str("handover targets an unbound ESP-AVB module")
+            }
             Self::InvalidEpoch => formatter.write_str("ESP-AVB handover epoch is invalid"),
             Self::InvalidStartFrame => {
                 formatter.write_str("ESP-AVB handover start frame is invalid")
@@ -127,7 +129,12 @@ pub fn compile_handover_control(
             }
             EndpointHandoverCommand::Prepare { assignment, epoch } => {
                 transition(&mut phases, &assignment.module_id, 1, 2)?;
-                validate_assignment(binding, assignment.route, assignment.clock_source, assignment.roles.len())?;
+                validate_assignment(
+                    binding,
+                    assignment.route,
+                    assignment.clock_source,
+                    assignment.roles.len(),
+                )?;
                 EndpointCommand::Prepare {
                     module_id: assignment.module_id.clone(),
                     epoch: *epoch,
@@ -173,7 +180,8 @@ pub fn compile_handover_control(
 
 fn validate_bindings(bindings: &[EspAvbModuleBinding]) -> Result<(), EspAvbControlError> {
     for (index, binding) in bindings.iter().enumerate() {
-        if binding.module_id.is_empty() || binding.endpoint_id.is_empty() || binding.stream_id == 0 {
+        if binding.module_id.is_empty() || binding.endpoint_id.is_empty() || binding.stream_id == 0
+        {
             return Err(EspAvbControlError::InvalidBinding);
         }
         for other in bindings.iter().skip(index + 1) {
