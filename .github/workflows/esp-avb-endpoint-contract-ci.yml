@@ -59,6 +59,15 @@ jobs:
             --example detachable_control_probe | tee artifacts/esp-avb-detachable-control.txt
           grep -q 'AURORA-ESP-AVB-DETACHABLE-CONTROL-PASS messages=8 modules=2 epoch=42 start_frame=96000 lanes_per_pod=2 clock=ptp' \
             artifacts/esp-avb-detachable-control.txt
+            artifacts/esp-avb-aem-control.txt
+
+      - name: Exercise PTP-aligned AEM control program
+        run: |
+          cargo run --release \
+            --manifest-path adapters/aurora-network-esp-avb/Cargo.toml \
+            --example aem_control_probe | tee artifacts/esp-avb-aem-control.txt
+          grep -q 'AURORA-ESP-AVB-AEM-CONTROL-PASS modules=2 envelopes=8 writes=22 start_ptp_ns=2000000000 controls=3-7 transport=aecp-aem' \
+            artifacts/esp-avb-aem-control.txt
 
       - name: Upload endpoint evidence
         if: always()
