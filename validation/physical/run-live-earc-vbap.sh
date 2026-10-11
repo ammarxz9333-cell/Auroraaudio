@@ -5,6 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/config/external-components-v1.json"
 HARNESS_SOURCE="$ROOT_DIR/validation/physical/aurora_live_earc_harness.rs"
 PIPE_ADAPTER="$ROOT_DIR/validation/physical/aurora_alsa_iec61937_pipe.py"
+BED_SOURCE="$ROOT_DIR/validation/streaming/aurora_streaming_bed.py"
 ADAPTIVE_SOURCE="$ROOT_DIR/validation/physical/aurora_adaptive_output.rs"
 UMC_PREFLIGHT="$ROOT_DIR/validation/physical/aurora_umc1820_preflight.py"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
@@ -16,6 +17,7 @@ CAPTURE_DEVICE=""
 OUTPUT_FILE=""
 OUTPUT_DEVICE=""
 OUTPUT_PROFILE="native"
+DECODER_MODE="joc-native"
 UMC_CARD="UMC1820"
 MAX_SECONDS=""
 WORK_DIR=""
@@ -24,12 +26,15 @@ usage() {
   cat <<'EOF'
 Usage:
   validation/physical/run-live-earc-vbap.sh --fixture [--work-dir DIR]
-  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-file FILE [--seconds N] [--work-dir DIR]
-  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-device DEV [--output-profile native|umc1820-ada8200] [--umc-card CARD] [--seconds N] [--work-dir DIR]
+  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-file FILE [--decoder-mode joc-native|channel-bed] [--seconds N] [--work-dir DIR]
+  validation/physical/run-live-earc-vbap.sh --capture-device DEV --output-device DEV [--decoder-mode joc-native|channel-bed] [--output-profile native|umc1820-ada8200] [--umc-card CARD] [--seconds N] [--work-dir DIR]
 
 Physical mode:
-  TV/eARC -> ALSA S32_LE/2ch/192k -> IEC61937 E-AC-3 JOC -> Harletty ->
-  Aurora Vbap3dRenderer -> S32_LE/12ch/48k -> file or one ALSA output device.
+  TV/eARC -> ALSA S32_LE/2ch/192k -> IEC61937 -> selected decoder:
+     joc-native: E-AC-3 JOC -> Harletty object renderer
+     channel-bed: AC-3 or DD+ 2/5.1/7.1 -> FFmpeg bed + synthetic ambience
+  -> canonical S32_LE/12ch/48k -> file or one ALSA output device.
+  This is an explicit decoder selection: NOT automatic format switching.
 
 Direct ALSA-device mode inserts Aurora's bounded adaptive duplex bridge between
 VBAP and aplay: one 12-channel FIFO, PI drift controller, clock estimator, and
@@ -48,6 +53,7 @@ while (( "$#" )); do
     --output-file) OUTPUT_FILE="$2"; shift 2 ;;
     --output-device) OUTPUT_DEVICE="$2"; shift 2 ;;
     --output-profile) OUTPUT_PROFILE="$2"; shift 2 ;;
+    --decoder-mode) DECODER_MODE="$2"; shift 2 ;;
     --umc-card) UMC_CARD="$2"; shift 2 ;;
     --seconds) MAX_SECONDS="$2"; shift 2 ;;
     --work-dir) WORK_DIR="$2"; shift 2 ;;
@@ -66,6 +72,10 @@ if [[ "$MODE" != "fixture" ]]; then
     echo "one of --output-file or --output-device is required" >&2
     exit 2
   }
+  case "$DECODER_MODE" in
+    joc-native|channel-bed) ;;
+    *) echo "--decoder-mode must be joc-native or channel-bed" >&2; exit 2 ;;
+  esac
   case "$OUTPUT_PROFILE" in
     native|umc1820-ada8200) ;;
     *) echo "--output-profile must be native or umc1820-ada8200" >&2; exit 2 ;;
@@ -79,7 +89,7 @@ fi
 for cmd in git python3 cargo rustup ffmpeg; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
-[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$ADAPTIVE_SOURCE" && -f "$UMC_PREFLIGHT" ]] || {
+[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$BED_SOURCE" && -f "$ADAPTIVE_SOURCE" && -f "$UMC_PREFLIGHT" ]] || {
   echo "Aurora live eARC sources are incomplete" >&2
   exit 2
 }
@@ -261,9 +271,17 @@ if [[ -n "$MAX_SECONDS" ]]; then
   PIPE_ARGS+=(--max-seconds "$MAX_SECONDS")
 fi
 
+if [[ "$DECODER_MODE" == "channel-bed" ]]; then
+  DECODER=(python3 "$BED_SOURCE" --require-surround-input)
+else
+  DECODER=("$HARNESS_BIN" "$BRIDGE_LIB")
+fi
+
+echo "AURORA LIVE EARC selected_decoder=$DECODER_MODE output=7.1.4 objects_decoded=$([[ "$DECODER_MODE" == "joc-native" ]] && echo true || echo false)" >&2
+
 if [[ -n "$OUTPUT_FILE" ]]; then
   mkdir -p "$(dirname "$OUTPUT_FILE")"
-  python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "$HARNESS_BIN" "$BRIDGE_LIB"     > "$OUTPUT_FILE"
+  python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "${DECODER[@]}"     > "$OUTPUT_FILE"
   verify_s32_output "$OUTPUT_FILE"
 else
   command -v aplay >/dev/null 2>&1 || {
@@ -275,10 +293,10 @@ else
     APLAY_CHANNELS=20
     python3 "$UMC_PREFLIGHT" --card "$UMC_CARD" --report "$ARTIFACTS/umc1820-preflight.json"
   fi
-  python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "$HARNESS_BIN" "$BRIDGE_LIB"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
+  python3 "$PIPE_ADAPTER" "${PIPE_ARGS[@]}"     | tee "$IEC_CAPTURE"     | "${DECODER[@]}"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
 fi
 
 python3 "$ROOT_DIR/validation/physical/aurora_live_ingress.py" analyze   --input "$IEC_CAPTURE"   --report "$INGRESS_REPORT"   --max-invalid-bursts 0   --max-unclassified-bytes 0   --max-relocks 0   --minimum-valid-bursts 2   --require-locked-end
 
-echo "AURORA LIVE EARC VBAP PHYSICAL RUN COMPLETE"
+echo "AURORA LIVE EARC PHYSICAL RUN COMPLETE decoder_mode=$DECODER_MODE (hardware evidence still required)"
 echo "evidence: $ARTIFACTS"
