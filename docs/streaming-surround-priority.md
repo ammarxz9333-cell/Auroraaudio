@@ -59,6 +59,21 @@ bash validation/physical/run-live-earc-vbap.sh \
 
 This reuses Aurora's IEC capture conversion and adaptive 12-channel PCM output. The actual ALSA device must first be detected on the selected physical host; these names are placeholders. It is not a one-command proof of Netflix compatibility without actual hardware/recording evidence.
 
+## Integrated one-command software playback of authorized IEC source
+
+After the AC-3/DD+ format-change and subprocess integration tests pass, the real Aurora eARC runner can now take an existing IEC61937 stream file **without any physical eARC device**:
+
+~~~bash
+bash validation/physical/run-live-earc-vbap.sh \
+  --iec-input-file /path/to/authorized-capture.spdif \
+  --decoder-mode auto-bed \
+  --output-file /tmp/aurora-7.1.4.s32
+~~~
+
+The same `--decoder-mode auto-bed` applies to `--capture-device hw:...` when real ALSA hardware is present. It locks onto AC-3 or DD+ burst types, drains one worker at codec boundary, and starts the next with a 12ch/48k S32LE output contract. The native JOC path is still manually selectable; data-type 0x15 cannot independently prove JOC metadata. **Auto-bed is channel-bed ONLY** and discards any encoded JOC object extensions rather than claiming Atmos. Codec switches may briefly mute/delay audio; fully glitchless realtime switching is NOT established.
+
+For plain channel-bed file mode this runner does **not** build Harletty, Omniphony or a Rust audio engine; it needs only Python + ffmpeg/ffprobe. For live ALSA output, it builds only the Aurora adaptive bridge from `aurora-realtime-engine`. The explicit `joc-native` path still builds the versioned Harletty+Omniphony pair. The same full runner is exercised in streaming CI by `test_live_entrypoint.py` with real encoded AC-3 -> DD+ -> AC-3 source changes, and verifies no unwanted JOC build.
+
 ## What is not yet established
 
 1. Continuous format changes between AC-3, DD+, JOC, MAT and stereo, especially when TV/audio settings change mid-playback. This initial decoder probes the starting layout and **does not** prove seamless format-change renegotiation. Reject/re-arm until physically verified, rather than silently lose channels.
