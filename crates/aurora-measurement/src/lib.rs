@@ -7,6 +7,7 @@
 pub mod auto_aim;
 pub mod auto_aim_dsp;
 pub mod auto_aim_host;
+pub mod auto_aim_motor;
 pub mod auto_aim_store;
 pub mod remote_clock;
 pub mod stimulus;
