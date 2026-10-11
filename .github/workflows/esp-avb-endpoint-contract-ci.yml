@@ -51,7 +51,6 @@ jobs:
             --example orchestration_probe | tee artifacts/esp-avb-orchestration.txt
           grep -q 'PASS endpoints=6 rate=48000 block=48 clock=ptp-follower sequence=23 timestamp=96000' \
             artifacts/esp-avb-orchestration.txt
-            artifacts/esp-avb-detachable-control.txt
 
       - name: Exercise detachable endpoint control bridge
         run: |
@@ -69,4 +68,5 @@ jobs:
           path: |
             artifacts/esp-avb-fanout.txt
             artifacts/esp-avb-orchestration.txt
+            artifacts/esp-avb-detachable-control.txt
           if-no-files-found: warn
