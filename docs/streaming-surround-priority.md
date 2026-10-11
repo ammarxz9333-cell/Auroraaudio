@@ -46,6 +46,19 @@ python3 validation/streaming/test_streaming_bed.py
 
 This test **encodes** actual AC-3 and E-AC-3 5.1 stimuli via FFmpeg, sends real IEC61937 carriers through the new decoder, checks 12-channel format, checks energy on the six known original channels and synthetic back/heights, checks strict stereo rejection and explicit stereo upmix, and rejects malformed input. It is **not** a protected-service test or a continuous hardware timing measurement.
 
+## Existing physical live-eARC runner integration
+
+The existing Aurora JOC runner now accepts an explicit `--decoder-mode channel-bed` switch, while keeping `joc-native` as the default. Example:
+
+~~~bash
+bash validation/physical/run-live-earc-vbap.sh \
+  --capture-device 'hw:CARD,DEV' \
+  --decoder-mode channel-bed \
+  --output-device 'plughw:CARD,DEV' --seconds 85
+~~~
+
+This reuses Aurora's IEC capture conversion and adaptive 12-channel PCM output. The actual ALSA device must first be detected on the selected physical host; these names are placeholders. It is not a one-command proof of Netflix compatibility without actual hardware/recording evidence.
+
 ## What is not yet established
 
 1. Continuous format changes between AC-3, DD+, JOC, MAT and stereo, especially when TV/audio settings change mid-playback. This initial decoder probes the starting layout and **does not** prove seamless format-change renegotiation. Reject/re-arm until physically verified, rather than silently lose channels.
