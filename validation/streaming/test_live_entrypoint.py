@@ -63,7 +63,6 @@ def main():
         # multichannel LPCM source without treating it as Dolby MAT.
         raw_pcm_file = folder / "authorized-synthetic-7.1.f32le"
         raw_7_1 = folder / "7.1-to-7.1.4.s32"
-        import array
         import math
         samples = array.array("f", (
             0.08 * math.sin(2 * math.pi * (340 + channel * 111) * frame / 48000)
