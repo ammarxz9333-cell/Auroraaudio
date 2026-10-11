@@ -42,3 +42,20 @@ To admit a capture V1 requires the same nonblank ephemeral phone session, 48 kHz
 - No physical pass, latency/synchronization claim, or Dolby/Atmos parity claim from software-only tests.
 
 This is an experimental optional module and is not on the physical eARC/decoder critical path.
+
+## Backend build-out before phone UI (2026-10-11)
+
+Host modules are implemented and exercised in software:
+
+- `auto_aim_dsp.rs`: regularized FFT deconvolution from raw sweep samples to a 200 ms impulse response; detects first arrival and actual clipping. Strict sample limits and finite samples. Uses only host/offline thread.
+- `auto_aim_host.rs`: runs the requested sequence across movement, real-position acknowledgement, room-test sweep recording, DSP, quality gates, proposals, final motor verification and store. Failure halts the sweep, mutes, and tries to restore the previously configured angles; failed rollback is a hard error.
+- `auto_aim_store.rs`: versioned JSON saved angles, validates identities/scores/limits, writes via fsync plus same-directory rename. Does not store raw microphone recordings.
+- `auto_aim_motor.rs`: explicit bounded ASCII motor wire contract with `AIM1` commands, sequence/epoch, CRC-16, feedback-settled and mechanical-limit evidence. The exchange layer must enforce timeouts, peer authentication and physical encoder/limit verification. CRC is only corruption detection, NOT authentication.
+
+**Important:** A successful deterministic test is proof of software flow only. The `AutoAimRig` implementation for a selected motor controller and microphone, its physical interlocks and a real acoustic proof are pending. App GUI stays last, after functional bench testing. A single-axis motor controls one angle; optional two-axis yaw/elevation needs a separate mechanical build and requalification.
+
+### Motor wire contract
+
+Command (one ASCII line): `AIM1|MOVE|epoch|sequence|module-id|angle-deg|crc16-hex` followed by LF.
+ACK: `AIM1|ACK|epoch|sequence|module-id|measured-angle-deg|settled-0-or-1|within-limits-0-or-1|crc16-hex` followed by LF.
+CRC is CCITT-FALSE over the bytes **before** the final `|crc` field. Positive ACK must be derived from a measured position sensor, not a command echo. Host MUST mute stimulus and stop on timeout/failure. Physical endpoints are not yet chosen/verified.
