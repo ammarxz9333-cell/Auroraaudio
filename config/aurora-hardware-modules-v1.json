@@ -148,11 +148,13 @@
         "alsa_format": "S32_LE",
         "rate_hz": 48000,
         "open_host_driver": true,
-        "firmware_source_confirmed": true,
+        "firmware_source_confirmed": false,
         "exact_board_verified": false,
         "physical_12ch_verified": false,
         "cost_eur": null,
-        "status": "SOURCE-DESIGN CANDIDATE NOT BUILT"
+        "status": "SOURCE-AVAILABLE RESTRICTED-LICENSE CANDIDATE; NOT A FULLY OPEN IMPLEMENTATION",
+        "library_source_available": true,
+        "license_review": "XMOS Public Licence v1 is field-of-use restricted; source presence alone is NOT OSI-open or an approved Aurora runtime"
       },
       {
         "id": "rpi5-rp1-tdm8",
@@ -183,6 +185,22 @@
         "physical_12ch_verified": false,
         "cost_eur": null,
         "status": "REJECT: NO GUARANTEED COMMON CLOCK"
+      },
+      {
+        "id": "stm32h7-tinyusb-hs-tdm16-prototype",
+        "hardware": "STM32H7 + verified USB high-speed PHY + open TinyUSB UAC2 firmware developed for 12/16ch + synchronized TDM DAC board, not yet built",
+        "input": "aurora-12ch-pcm/v1",
+        "analog_outputs": 16,
+        "shared_clock": true,
+        "alsa_format": "S32_LE",
+        "rate_hz": 48000,
+        "open_host_driver": true,
+        "firmware_source_confirmed": false,
+        "upstream_source_license": "MIT TinyUSB library; the required 12/16-output application firmware does NOT exist yet",
+        "exact_board_verified": false,
+        "physical_12ch_verified": false,
+        "cost_eur": null,
+        "status": "FULLY-OPEN-SOFTWARE RESEARCH PATH; NEED HIGH-SPEED USB, CUSTOM FIRMWARE, ACTUAL PCB AND TESTS"
       }
     ],
     "amplifier": [
