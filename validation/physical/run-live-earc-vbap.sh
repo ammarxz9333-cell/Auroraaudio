@@ -418,5 +418,9 @@ pathlib.Path(path).write_text(json.dumps({
 PY_LPCM_STATUS
 fi
 
-echo "AURORA LIVE EARC PHYSICAL RUN COMPLETE decoder_mode=$DECODER_MODE (hardware evidence still required)"
+if [[ -n "$CAPTURE_DEVICE" ]]; then
+  echo "AURORA LIVE EARC CAPTURE PIPELINE COMPLETE decoder_mode=$DECODER_MODE (physical output, service playback and sync NOT established)"
+else
+  echo "AURORA LIVE EARC SOFTWARE RUN COMPLETE decoder_mode=$DECODER_MODE (file fixture only; no physical receiver or speakers)"
+fi
 echo "evidence: $ARTIFACTS"
