@@ -10,6 +10,7 @@
 //! It preserves the original sequence and media timestamp for every endpoint so
 //! a later AVB sender can map that timestamp into the endpoint PTP/gPTP domain.
 
+mod aem_control;
 mod control;
 mod coordinator;
 
@@ -20,6 +21,14 @@ use aurora_realtime_audio_api::{
     NetworkTransportCapabilities, NetworkTransportFamily, AURORA_NETWORK_MEDIA_RATE,
 };
 
+pub use aem_control::{
+    compile_aem_control_program, AemControlScalarType, AemSetControlWrite,
+    EspAvbAemControlError, EspAvbAemTarget, PtpMediaAnchor, AURORA_AEM_COMMAND_ARM,
+    AURORA_AEM_COMMAND_COMMIT, AURORA_AEM_COMMAND_MUTE, AURORA_AEM_COMMAND_PREPARE,
+    AURORA_AEM_COMMAND_STOP, AURORA_AEM_CONTROL_COMMAND, AURORA_AEM_CONTROL_EPOCH,
+    AURORA_AEM_CONTROL_ROLE0, AURORA_AEM_CONTROL_ROLE1,
+    AURORA_AEM_CONTROL_START_PTP_NS, AURORA_AEM_ROLE_UNUSED,
+};
 pub use control::{
     compile_handover_control, EspAvbControlEnvelope, EspAvbControlError, EspAvbModuleBinding,
 };
