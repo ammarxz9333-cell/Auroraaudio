@@ -3,8 +3,8 @@ use aurora_modular_speaker_fabric::{
     EndpointHandoverCommand, HandoverPlan, ModuleAssignment, ModuleClockSource, ModuleRoute,
 };
 use aurora_network_esp_avb::{
-    compile_aem_control_program, compile_handover_control, EspAvbAemTarget,
-    EspAvbEndpointMedium, EspAvbModuleBinding, PtpMediaAnchor, AURORA_AEM_CONTROL_COMMAND,
+    compile_aem_control_program, compile_handover_control, EspAvbAemTarget, EspAvbEndpointMedium,
+    EspAvbModuleBinding, PtpMediaAnchor, AURORA_AEM_CONTROL_COMMAND,
     AURORA_AEM_CONTROL_START_PTP_NS,
 };
 
@@ -13,8 +13,14 @@ fn main() {
         epoch: 42,
         start_frame: 96_000,
         commands: vec![
-            EndpointHandoverCommand::Mute { module_id: "left-pod".into(), epoch: 42 },
-            EndpointHandoverCommand::Mute { module_id: "right-pod".into(), epoch: 42 },
+            EndpointHandoverCommand::Mute {
+                module_id: "left-pod".into(),
+                epoch: 42,
+            },
+            EndpointHandoverCommand::Mute {
+                module_id: "right-pod".into(),
+                epoch: 42,
+            },
             EndpointHandoverCommand::Prepare {
                 assignment: ModuleAssignment {
                     module_id: "left-pod".into(),
@@ -33,10 +39,24 @@ fn main() {
                 },
                 epoch: 42,
             },
-            EndpointHandoverCommand::Arm { module_id: "left-pod".into(), epoch: 42, start_frame: 96_000 },
-            EndpointHandoverCommand::Arm { module_id: "right-pod".into(), epoch: 42, start_frame: 96_000 },
-            EndpointHandoverCommand::Commit { module_id: "left-pod".into(), epoch: 42 },
-            EndpointHandoverCommand::Commit { module_id: "right-pod".into(), epoch: 42 },
+            EndpointHandoverCommand::Arm {
+                module_id: "left-pod".into(),
+                epoch: 42,
+                start_frame: 96_000,
+            },
+            EndpointHandoverCommand::Arm {
+                module_id: "right-pod".into(),
+                epoch: 42,
+                start_frame: 96_000,
+            },
+            EndpointHandoverCommand::Commit {
+                module_id: "left-pod".into(),
+                epoch: 42,
+            },
+            EndpointHandoverCommand::Commit {
+                module_id: "right-pod".into(),
+                epoch: 42,
+            },
         ],
     };
 
