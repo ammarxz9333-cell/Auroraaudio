@@ -131,7 +131,11 @@ impl AutoAimPresetStore for AtomicPresetFile {
         // A malformed prior file is an error, never silently overwritten.
         if let Some(previous) = self.load()? {
             for old in previous.angles {
-                if !preset.angles.iter().any(|new| new.module_id == old.module_id) {
+                if !preset
+                    .angles
+                    .iter()
+                    .any(|new| new.module_id == old.module_id)
+                {
                     preset.angles.push(old);
                 }
             }
@@ -217,11 +221,13 @@ mod tests {
         assert_eq!(store.load().unwrap().unwrap().angles[0].angle_deg, 15);
         store.save_atomically(&selected(20)).unwrap();
         assert_eq!(store.load().unwrap().unwrap().angles[0].angle_deg, 20);
-        store.save_atomically(&[AimSelection {
-            module_id: "rear-right".into(),
-            angle_deg: -15,
-            score: 20.0,
-        }]).unwrap();
+        store
+            .save_atomically(&[AimSelection {
+                module_id: "rear-right".into(),
+                angle_deg: -15,
+                score: 20.0,
+            }])
+            .unwrap();
         let both = store.load().unwrap().unwrap();
         assert_eq!(both.angles.len(), 2);
         assert_eq!(both.angles[0].module_id, "rear-left");
