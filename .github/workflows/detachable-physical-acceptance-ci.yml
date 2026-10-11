@@ -1,0 +1,44 @@
+name: Detachable Physical Acceptance CI
+
+on:
+  pull_request:
+    paths:
+      - "validation/physical/aurora_detachable_physical_acceptance.py"
+      - "docs/modular-speaker-fabric.md"
+      - ".github/workflows/detachable-physical-acceptance-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: detachable-physical-acceptance-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  acceptance-contract:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+
+      - name: Compile acceptance harness
+        run: python -m py_compile validation/physical/aurora_detachable_physical_acceptance.py
+
+      - name: Exercise fail-closed physical evidence contract
+        run: |
+          mkdir -p artifacts
+          python validation/physical/aurora_detachable_physical_acceptance.py self-test             | tee artifacts/detachable-physical-acceptance-self-test.txt
+          grep -q 'SELF-TEST PASS positive=1 negative=12 physical-pass=synthetic-only'             artifacts/detachable-physical-acceptance-self-test.txt
+
+      - name: Upload contract evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: detachable-physical-acceptance-contract
+          path: artifacts/detachable-physical-acceptance-self-test.txt
+          if-no-files-found: warn
