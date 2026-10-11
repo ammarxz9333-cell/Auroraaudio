@@ -1,8 +1,6 @@
 //! End-to-end SYNTHETIC proof; no phone microphone or physical motor connected.
 //! Run: cargo run -p aurora-measurement --example auto_aim_bench
-use aurora_measurement::auto_aim::{
-    AimModulePlan, AimObjective, PhoneCaptureQuality,
-};
+use aurora_measurement::auto_aim::{AimModulePlan, AimObjective, PhoneCaptureQuality};
 use aurora_measurement::auto_aim_host::{
     calibrate_on_request, AutoAimRig, MotorFeedback, RecordedSweep,
 };
@@ -75,10 +73,8 @@ impl AutoAimRig for SyntheticRig {
 }
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let file = std::env::temp_dir().join(format!(
-        "aurora-auto-aim-bench-{}.json",
-        std::process::id()
-    ));
+    let file =
+        std::env::temp_dir().join(format!("aurora-auto-aim-bench-{}.json", std::process::id()));
     let mut rig = SyntheticRig::default();
     let mut preset = AtomicPresetFile::new(&file);
     let plans = vec![
@@ -95,19 +91,20 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
             objective: AimObjective::DirectArrival,
         },
     ];
-    let result = calibrate_on_request(
-        &mut rig,
-        &mut preset,
-        plans,
-        "bench-explicit-run".into(),
-    ).map_err(|error| format!("synthetic calibration failed: {error:?}"))?;
-    let saved = preset.load().map_err(|e| format!("preset read failed: {e}"))?
+    let result = calibrate_on_request(&mut rig, &mut preset, plans, "bench-explicit-run".into())
+        .map_err(|error| format!("synthetic calibration failed: {error:?}"))?;
+    let saved = preset
+        .load()
+        .map_err(|e| format!("preset read failed: {e}"))?
         .ok_or("missing saved preset")?;
     assert_eq!(saved.angles.len(), 2);
     assert!(rig.muted && !rig.calibration_on);
     assert_eq!(result.observed_angles, 4);
-    println!("SIMULATION-ONLY: {} measured angles, {} saved motor poses",
-        result.observed_angles, saved.angles.len());
+    println!(
+        "SIMULATION-ONLY: {} measured angles, {} saved motor poses",
+        result.observed_angles,
+        saved.angles.len()
+    );
     for angle in &saved.angles {
         println!("  {}: {} degrees", angle.module_id, angle.angle_deg);
     }
