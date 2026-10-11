@@ -59,6 +59,37 @@ def main():
         assert not (workspace / "harletty-target").exists()
         assert not (workspace / "harletty-bridge").exists()
         assert not (workspace / "live-earc-harness").exists()
+        # The SAME production-facing runner must also accept a named
+        # multichannel LPCM source without treating it as Dolby MAT.
+        raw_pcm = folder / "authorized-synthetic-7.1.f32le"
+        raw_7_1 = folder / "7.1-to-7.1.4.s32"
+        import array
+        import math
+        samples = array.array("f", (
+            0.08 * math.sin(2 * math.pi * (340 + channel * 111) * frame / 48000)
+            for frame in range(5000)
+            for channel in range(8)
+        ))
+        raw_pcm.write_bytes(samples.tobytes())
+        pcm_done = subprocess.run(
+            [
+                "bash", str(RUNNER),
+                "--pcm-input-file", str(raw_pcm),
+                "--decoder-mode", "lpcm",
+                "--lpcm-layout", "7.1",
+                "--lpcm-format", "f32le",
+                "--lpcm-rate", "48000",
+                "--output-file", str(raw_7_1),
+                "--work-dir", str(folder / "pcm-runner"),
+            ], cwd=ROOT, env=env, capture_output=True, timeout=35,
+        )
+        assert pcm_done.returncode == 0, pcm_done.stderr[-2600:].decode(errors="replace")
+        assert raw_7_1.stat().st_size > 5000 * 12 * 4 * 0.95
+        pcm_evidence = json.loads((folder / "pcm-runner/artifacts/live-ingress-report.json").read_text())
+        assert pcm_evidence["verdict"] == "pass"
+        assert pcm_evidence["source_layout"] == "7.1"
+        assert pcm_evidence["native_atmos_objects"] is False
+        print("AURORA-INTEGRATED-LPCM-RUNNER-PASS original=7.1 output=7.1.4")
         print(
             f"AURORA-INTEGRATED-IEC-RUNNER-PASS "
             f"frames={len(pcm)//frame_bytes} "
