@@ -1,0 +1,25 @@
+name: Streaming Surround 7.1.4 Channel-Bed CI
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "validation/streaming/**"
+      - "docs/streaming-surround-priority.md"
+      - ".github/workflows/streaming-surround-7-1-4-ci.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  channel-bed-7-1-4:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install FFmpeg and probe tools
+        run: sudo apt-get update && sudo apt-get install --yes ffmpeg
+      - name: Verify actual AC-3 and E-AC-3 5.1 codec -> 12-channel Aurora PCM
+        run: python3 validation/streaming/test_streaming_bed.py
+      - name: Check streaming scripts compile
+        run: python3 -m py_compile validation/streaming/*.py
