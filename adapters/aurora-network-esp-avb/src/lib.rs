@@ -10,6 +10,7 @@
 //! It preserves the original sequence and media timestamp for every endpoint so
 //! a later AVB sender can map that timestamp into the endpoint PTP/gPTP domain.
 
+mod control;
 mod coordinator;
 
 use std::fmt;
@@ -19,6 +20,9 @@ use aurora_realtime_audio_api::{
     NetworkTransportCapabilities, NetworkTransportFamily, AURORA_NETWORK_MEDIA_RATE,
 };
 
+pub use control::{
+    compile_handover_control, EspAvbControlEnvelope, EspAvbControlError, EspAvbModuleBinding,
+};
 pub use coordinator::{EspAvbTransportArray, EspAvbTransportSet, EspAvbTransportSetError};
 
 /// Canonical Aurora 7.1.4 channel count.
