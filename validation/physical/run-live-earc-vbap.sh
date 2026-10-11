@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-MANIFEST="$ROOT_DIR/config/external-components-v1.json"
+MANIFEST="${AURORA_EXTERNAL_COMPONENT_MANIFEST:-$ROOT_DIR/config/external-components-v1.json}"
 HARNESS_SOURCE="$ROOT_DIR/validation/physical/aurora_live_earc_harness.rs"
 PIPE_ADAPTER="$ROOT_DIR/validation/physical/aurora_alsa_iec61937_pipe.py"
 BED_SOURCE="$ROOT_DIR/validation/streaming/aurora_streaming_bed.py"
