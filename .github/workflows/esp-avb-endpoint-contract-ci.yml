@@ -4,6 +4,9 @@ on:
   pull_request:
     paths:
       - "adapters/aurora-network-esp-avb/**"
+      - "crates/aurora-modular-speaker-fabric/**"
+      - "crates/aurora-core/**"
+      - "crates/aurora-realtime-audio-api/**"
       - ".github/workflows/esp-avb-endpoint-contract-ci.yml"
   workflow_dispatch:
 
@@ -48,6 +51,15 @@ jobs:
             --example orchestration_probe | tee artifacts/esp-avb-orchestration.txt
           grep -q 'PASS endpoints=6 rate=48000 block=48 clock=ptp-follower sequence=23 timestamp=96000' \
             artifacts/esp-avb-orchestration.txt
+            artifacts/esp-avb-detachable-control.txt
+
+      - name: Exercise detachable endpoint control bridge
+        run: |
+          cargo run --release \
+            --manifest-path adapters/aurora-network-esp-avb/Cargo.toml \
+            --example detachable_control_probe | tee artifacts/esp-avb-detachable-control.txt
+          grep -q 'AURORA-ESP-AVB-DETACHABLE-CONTROL-PASS messages=8 modules=2 epoch=42 start_frame=96000 lanes_per_pod=2 clock=ptp' \
+            artifacts/esp-avb-detachable-control.txt
 
       - name: Upload endpoint evidence
         if: always()
