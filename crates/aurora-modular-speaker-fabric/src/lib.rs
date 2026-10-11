@@ -6,6 +6,8 @@
 //! cinema plan only when the selected route has explicit synchronization
 //! evidence; otherwise planning fails closed.
 
+pub mod endpoint;
+
 use std::collections::{BTreeMap, BTreeSet};
 
 use aurora_core::{ChannelRole, StandardLayout};
