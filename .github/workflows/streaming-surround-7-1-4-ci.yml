@@ -27,6 +27,8 @@ jobs:
         run: python3 validation/streaming/test_streaming_bed.py
       - name: Test real live encoded AC3/DD+ self-switching codec runner
         run: python3 validation/streaming/test_auto_bed.py
+      - name: Test bounded fail-closed IEC streaming monitor and corrupt padding
+        run: python3 validation/streaming/test_iec_live_monitor.py
       - name: Test complete eARC entrypoint with automatic AC3/DD+ switching
         run: python3 validation/streaming/test_live_entrypoint.py
       - name: Test multichannel LPCM ingress into 7.1.4
