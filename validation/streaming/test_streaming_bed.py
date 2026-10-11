@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import array
 import math
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -36,7 +37,7 @@ def raw_pcm():
 
 def encode(pcm, codec):
     result = command([
-        "ffmpeg", "-nostdin", "-hide_banner", "-loglevel", "error",
+        os.environ.get("AURORA_FFMPEG_BIN", "ffmpeg"), "-nostdin", "-hide_banner", "-loglevel", "error",
         "-f", "f32le", "-ar", str(RATE), "-ac", "6",
         "-channel_layout", "5.1(side)", "-i", "pipe:0",
         "-c:a", codec, "-b:a", "448k" if codec == "ac3" else "640k",
