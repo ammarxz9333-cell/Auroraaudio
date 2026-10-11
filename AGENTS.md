@@ -221,7 +221,7 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 ### Acoustic Auto-Aim (manual-only experimental control)
 
 - A standalone manually started angle-sweep session is introduced in crates/aurora-measurement/src/auto_aim.rs with validation, motor acknowledgement ordering, IR quality gates, relative angle scoring, proposed-preset/persist acknowledgement and cancellation rollback. See docs/acoustic-auto-aim.md.
-- NO verified phone microphone app, unprocessed capture/deconvolution, live Wi-Fi control, motor driver/feedback, acoustic optimization proof or physical acceptance exists yet; the test fixture is synthetic. One phone mic cannot identify ceiling versus wall reflections. No background tracking or mic activity is intended.
+- Host-side offline FFT deconvolution, scripted motor feedback protocol, isolated control loop and atomic saved-angle JSON backend are included under aurora-measurement (see auto_aim_dsp, auto_aim_host, auto_aim_motor, auto_aim_store). These have synthetic tests only. No verified physical microphone frontend, ESP motor firmware/encoder, live Wi-Fi control, acoustic optimization proof or physical acceptance exists yet. One phone mic cannot identify ceiling versus wall reflections. No background tracking or mic activity is intended.
 - Next integration: explicit mobile button/permissions, real controlled phone capture/IR analysis, hardware motor safety, guarded saved preset and multi-position physical testing. Keep separate from eARC critical path.
 
 ## 6. Current work / Next actions
