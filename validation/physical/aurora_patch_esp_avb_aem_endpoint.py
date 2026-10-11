@@ -321,12 +321,22 @@ ATDECC_DESC_NEW = """    uint16_t value_string_ref = 20; /* strings desc 2, stri
     return OK;
   }"""
 
-SET_PRE_SWITCH_OLD = """  uint8_t *values = (uint8_t *)cmd + sizeof(aecp_aem_short_s);
+SET_PRE_SWITCH_OLD = """int avb_process_aecp_cmd_set_control(avb_state_s *state, aecp_message_u *msg,
+                                     eth_addr_t *src_addr) {
+  struct timespec ts;
+  aecp_aem_short_s *cmd = (aecp_aem_short_s *)msg;
+  uint16_t desc_index = octets_to_uint(cmd->descriptor_index, 2);
+  uint8_t *values = (uint8_t *)cmd + sizeof(aecp_aem_short_s);
   uint8_t status = aecp_status_success;
 
   switch (desc_index) {"""
 
-SET_PRE_SWITCH_NEW = """  uint8_t *values = (uint8_t *)cmd + sizeof(aecp_aem_short_s);
+SET_PRE_SWITCH_NEW = """int avb_process_aecp_cmd_set_control(avb_state_s *state, aecp_message_u *msg,
+                                     eth_addr_t *src_addr) {
+  struct timespec ts;
+  aecp_aem_short_s *cmd = (aecp_aem_short_s *)msg;
+  uint16_t desc_index = octets_to_uint(cmd->descriptor_index, 2);
+  uint8_t *values = (uint8_t *)cmd + sizeof(aecp_aem_short_s);
   uint8_t status = aecp_status_success;
   uint16_t values_len = aurora_control_value_len(desc_index);
   uint16_t incoming_cdl =
