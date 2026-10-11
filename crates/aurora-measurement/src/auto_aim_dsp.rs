@@ -39,7 +39,11 @@ pub fn estimate_impulse_response(
     {
         return Err(CaptureDspError::InvalidFormat);
     }
-    if reference.iter().chain(recorded.iter()).any(|x| !x.is_finite()) {
+    if reference
+        .iter()
+        .chain(recorded.iter())
+        .any(|x| !x.is_finite())
+    {
         return Err(CaptureDspError::InvalidSignal);
     }
     let clipped = recorded.iter().filter(|x| x.abs() >= 0.999).count();
@@ -66,9 +70,7 @@ pub fn estimate_impulse_response(
     }
     fft(&mut x, false);
     fft(&mut y, false);
-    let peak_power = x
-        .iter()
-        .fold(0.0_f64, |acc, z| acc.max(z.power()));
+    let peak_power = x.iter().fold(0.0_f64, |acc, z| acc.max(z.power()));
     // Regularization avoids divergent estimates around sweep spectral nulls.
     // This is an experimental, bounded reference, not a calibrated RIR solver.
     let regularization = peak_power * 1.0e-9;
@@ -81,7 +83,9 @@ pub fn estimate_impulse_response(
     }
     fft(&mut y, true);
     let analysis_len = recorded.len().min(y.len());
-    let peak_ir = y[..analysis_len].iter().fold(0.0_f64, |acc, z| acc.max(z.re.abs()));
+    let peak_ir = y[..analysis_len]
+        .iter()
+        .fold(0.0_f64, |acc, z| acc.max(z.re.abs()));
     if !peak_ir.is_finite() || peak_ir < 1.0e-5 {
         return Err(CaptureDspError::NoArrival);
     }
@@ -115,7 +119,10 @@ impl Complex {
         Self::default()
     }
     fn conjugate(self) -> Self {
-        Self { re: self.re, im: -self.im }
+        Self {
+            re: self.re,
+            im: -self.im,
+        }
     }
     fn power(self) -> f64 {
         self.re * self.re + self.im * self.im
@@ -125,13 +132,19 @@ impl Complex {
 impl std::ops::Add for Complex {
     type Output = Self;
     fn add(self, rhs: Self) -> Self {
-        Self { re: self.re + rhs.re, im: self.im + rhs.im }
+        Self {
+            re: self.re + rhs.re,
+            im: self.im + rhs.im,
+        }
     }
 }
 impl std::ops::Sub for Complex {
     type Output = Self;
     fn sub(self, rhs: Self) -> Self {
-        Self { re: self.re - rhs.re, im: self.im - rhs.im }
+        Self {
+            re: self.re - rhs.re,
+            im: self.im - rhs.im,
+        }
     }
 }
 impl std::ops::Mul for Complex {
@@ -146,7 +159,10 @@ impl std::ops::Mul for Complex {
 impl std::ops::Div<f64> for Complex {
     type Output = Self;
     fn div(self, rhs: f64) -> Self {
-        Self { re: self.re / rhs, im: self.im / rhs }
+        Self {
+            re: self.re / rhs,
+            im: self.im / rhs,
+        }
     }
 }
 
@@ -169,7 +185,10 @@ fn fft(values: &mut [Complex], inverse: bool) {
     let mut size = 2;
     while size <= n {
         let a = if inverse { 2.0 } else { -2.0 } * PI / size as f64;
-        let root = Complex { re: a.cos(), im: a.sin() };
+        let root = Complex {
+            re: a.cos(),
+            im: a.sin(),
+        };
         for offset in (0..n).step_by(size) {
             let mut factor = Complex { re: 1.0, im: 0.0 };
             for k in 0..size / 2 {
@@ -201,14 +220,18 @@ mod tests {
             start_hz: 300.0,
             end_hz: 12_000.0,
             ..LogSweepConfig::default()
-        }).unwrap();
+        })
+        .unwrap();
         let mut captured = vec![0.0_f32; reference.len() + 12_000];
         for (index, sample) in reference.iter().enumerate() {
             captured[index + 1_000] += 0.8 * sample;
             captured[index + 1_600] += 0.5 * sample;
         }
         let estimated = estimate_impulse_response(&reference, &captured, 48_000).unwrap();
-        assert!((estimated.onset_frames as i64 - 1_000).abs() <= 2, "{estimated:?}");
+        assert!(
+            (estimated.onset_frames as i64 - 1_000).abs() <= 2,
+            "{estimated:?}"
+        );
         assert!(estimated.impulse[0].abs() > 0.3);
         assert!(estimated.impulse[600].abs() > 0.15);
         assert_eq!(estimated.clipped_fraction, 0.0);
@@ -218,8 +241,14 @@ mod tests {
     fn rejects_invalid_and_nan_recordings() {
         let reference = vec![0.1; 256];
         let mut capture = vec![0.0; 12_000];
-        assert_eq!(estimate_impulse_response(&reference, &capture, 44_100).unwrap_err(), CaptureDspError::InvalidFormat);
+        assert_eq!(
+            estimate_impulse_response(&reference, &capture, 44_100).unwrap_err(),
+            CaptureDspError::InvalidFormat
+        );
         capture[2] = f32::NAN;
-        assert_eq!(estimate_impulse_response(&reference, &capture, 48_000).unwrap_err(), CaptureDspError::InvalidSignal);
+        assert_eq!(
+            estimate_impulse_response(&reference, &capture, 48_000).unwrap_err(),
+            CaptureDspError::InvalidSignal
+        );
     }
 }
