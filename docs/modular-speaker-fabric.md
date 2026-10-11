@@ -1,6 +1,6 @@
 # Aurora Modular Speaker Fabric
 
-Status: software control-plane baseline. Docked/wireless physical hardware is not yet validated.
+Status: software control-plane plus fail-closed endpoint-contract baseline. Docked/wireless physical hardware is not yet validated.
 
 ## Product goal
 
@@ -177,6 +177,56 @@ audio may resume at the armed frame
 The endpoint-side state machine rejects stale epochs and out-of-order Prepare/Arm/Commit commands. A removed module receives only Mute and remains fail-closed. This prevents one pod from continuing an old front role while another pod has already switched to a rear role.
 
 The software probe exercises the complete two-pod transition from docked FL+TFL / FR+TFR to detached SL+TRL / SR+TRR and arms both endpoints to the same Aurora frame.
+
+
+## Detachable endpoint firmware contract
+
+Aurora now defines the MCU-facing safety state machine in
+`aurora_modular_speaker_fabric::endpoint`. It is deliberately independent of
+ESP-IDF, Wi-Fi and a particular amplifier so the same contract can be carried by
+ESP32-P4/C6 or another endpoint processor.
+
+Every module boots with the amplifier muted and follows:
+
+```text
+BOOT MUTED
+   ↓
+MUTE(new epoch)
+   ↓
+PREPARE(route + roles)
+   ↓
+ARM(shared future Aurora media frame)
+   ↓
+COMMIT (still muted)
+   ↓
+scheduled frame reached
+   ↓
+PLAY + unmute
+```
+
+The endpoint independently rejects stale epochs, wrong module IDs, unsupported
+routes, too many output lanes, insufficient detached power, missing scheduled
+playout, wrong clock source and excessive reported skew. Clock loss, transport
+loss, attachment change or stream underflow immediately clears the active route
+and returns hardware actions that mute the amplifier and stop playout.
+
+A fault is latched. Recovery only returns to a muted state; Aurora must issue a
+fresh complete handover epoch before sound can resume. This prevents a stale
+front/rear assignment from becoming audible after a reconnect.
+
+The endpoint exposes a `SpeakerModuleState` snapshot using the same identity,
+capabilities, attachment and synchronization evidence consumed by Aurora OS, so
+the device-side and core-side admission models share one truth boundary.
+
+Run the deterministic endpoint probe:
+
+```bash
+cargo run -p aurora-modular-speaker-fabric --example endpoint_fail_closed
+```
+
+This probe is software evidence only. It does not claim that a particular
+ESP32 radio, PTP implementation, DAC, Class-D stage, battery pack or dock has
+met the physical timing/electrical acceptance gates.
 
 ## Physical milestones
 
