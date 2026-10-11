@@ -49,7 +49,7 @@ impl<T: MotorExchange> VerifiedMotorLink<T> {
         module: &str,
         target_deg: i16,
     ) -> Result<MotorFeedback, MotorProtocolError> {
-        if !valid_id(module) || target_deg.abs() > MAX_MOTOR_ANGLE {
+        if !valid_id(module) || !(-MAX_MOTOR_ANGLE..=MAX_MOTOR_ANGLE).contains(&target_deg) {
             return Err(MotorProtocolError::InvalidCommand);
         }
         let next = self
@@ -93,7 +93,7 @@ impl<T: MotorExchange> VerifiedMotorLink<T> {
             "0" => false,
             _ => return Err(MotorProtocolError::InvalidFrame),
         };
-        if !settled || !limits || actual != target_deg || actual.abs() > MAX_MOTOR_ANGLE {
+        if !settled || !limits || actual != target_deg || !(-MAX_MOTOR_ANGLE..=MAX_MOTOR_ANGLE).contains(&actual) {
             return Err(MotorProtocolError::UnsafePosition);
         }
         Ok(MotorFeedback {
@@ -124,7 +124,7 @@ pub fn reference_ack(
     encoder_settled: bool,
     limits_ok: bool,
 ) -> Result<Vec<u8>, MotorProtocolError> {
-    if !valid_id(module) || measured_deg.abs() > MAX_MOTOR_ANGLE || epoch == 0 || sequence == 0 {
+    if !valid_id(module) || !(-MAX_MOTOR_ANGLE..=MAX_MOTOR_ANGLE).contains(&measured_deg) || epoch == 0 || sequence == 0 {
         return Err(MotorProtocolError::InvalidCommand);
     }
     let body = format!(
