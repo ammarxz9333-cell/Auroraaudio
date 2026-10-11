@@ -7,6 +7,7 @@ HARNESS_SOURCE="$ROOT_DIR/validation/physical/aurora_live_earc_harness.rs"
 PIPE_ADAPTER="$ROOT_DIR/validation/physical/aurora_alsa_iec61937_pipe.py"
 BED_SOURCE="$ROOT_DIR/validation/streaming/aurora_streaming_bed.py"
 AUTO_BED_SOURCE="$ROOT_DIR/validation/streaming/aurora_auto_bed.py"
+IEC_MONITOR_SOURCE="$ROOT_DIR/validation/streaming/aurora_iec_live_monitor.py"
 ADAPTIVE_SOURCE="$ROOT_DIR/validation/physical/aurora_adaptive_output.rs"
 UMC_PREFLIGHT="$ROOT_DIR/validation/physical/aurora_umc1820_preflight.py"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
@@ -108,7 +109,7 @@ fi
 for cmd in python3 ffmpeg; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
-[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$BED_SOURCE" && -f "$AUTO_BED_SOURCE" && -f "$ADAPTIVE_SOURCE" && -f "$UMC_PREFLIGHT" ]] || {
+[[ -f "$MANIFEST" && -f "$HARNESS_SOURCE" && -f "$PIPE_ADAPTER" && -f "$BED_SOURCE" && -f "$AUTO_BED_SOURCE" && -f "$IEC_MONITOR_SOURCE" && -f "$ADAPTIVE_SOURCE" && -f "$UMC_PREFLIGHT" ]] || {
   echo "Aurora live eARC sources are incomplete" >&2
   exit 2
 }
@@ -314,7 +315,6 @@ fi
 STATUS="$ARTIFACTS/capture-status.json"
 HW_PARAMS="$ARTIFACTS/arecord-hw-params.log"
 CAPTURE_STDERR="$ARTIFACTS/arecord-stderr.log"
-IEC_CAPTURE="$ARTIFACTS/live-earc.spdif"
 INGRESS_REPORT="$ARTIFACTS/live-ingress-report.json"
 
 PIPE_ARGS=(
@@ -338,6 +338,11 @@ else
   DECODER=("$HARNESS_BIN" "$BRIDGE_LIB")
 fi
 
+MONITOR=(python3 "$IEC_MONITOR_SOURCE" --report "$INGRESS_REPORT" --minimum-valid-bursts 2 --require-locked-end --retained-records 256)
+if [[ "$DECODER_MODE" != "auto-bed" ]]; then
+  MONITOR+=(--max-relocks 0)
+fi
+
 echo "AURORA LIVE EARC selected_decoder=$DECODER_MODE output=7.1.4 objects_decoded=$([[ "$DECODER_MODE" == "joc-native" ]] && echo true || echo false)" >&2
 
 if [[ -n "$IEC_INPUT_FILE" ]]; then
@@ -348,7 +353,7 @@ fi
 
 if [[ -n "$OUTPUT_FILE" ]]; then
   mkdir -p "$(dirname "$OUTPUT_FILE")"
-  "${SOURCE[@]}"     | tee "$IEC_CAPTURE"     | "${DECODER[@]}"     > "$OUTPUT_FILE"
+  "${SOURCE[@]}"     | "${MONITOR[@]}"     | "${DECODER[@]}"     > "$OUTPUT_FILE"
   verify_s32_output "$OUTPUT_FILE"
 else
   command -v aplay >/dev/null 2>&1 || {
@@ -360,14 +365,11 @@ else
     APLAY_CHANNELS=20
     python3 "$UMC_PREFLIGHT" --card "$UMC_CARD" --report "$ARTIFACTS/umc1820-preflight.json"
   fi
-  "${SOURCE[@]}"     | tee "$IEC_CAPTURE"     | "${DECODER[@]}"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
+  "${SOURCE[@]}"     | "${MONITOR[@]}"     | "${DECODER[@]}"     | "$ADAPTIVE_BIN" --channels 12 --sample-rate 48000 --output-profile "$OUTPUT_PROFILE"     | aplay -D "$OUTPUT_DEVICE" -t raw -f S32_LE -c "$APLAY_CHANNELS" -r 48000
 fi
 
-INGRESS_POLICY=(--max-invalid-bursts 0 --max-unclassified-bytes 0 --minimum-valid-bursts 2 --require-locked-end)
-if [[ "$DECODER_MODE" != "auto-bed" ]]; then
-  INGRESS_POLICY+=(--max-relocks 0)
-fi
-python3 "$ROOT_DIR/validation/physical/aurora_live_ingress.py" analyze --input "$IEC_CAPTURE" --report "$INGRESS_REPORT" "${INGRESS_POLICY[@]}"
+# The ingress monitor already validated the carrier before forwarding; its
+# final bounded report is at "$INGRESS_REPORT". No raw media is saved by default.
 
 echo "AURORA LIVE EARC PHYSICAL RUN COMPLETE decoder_mode=$DECODER_MODE (hardware evidence still required)"
 echo "evidence: $ARTIFACTS"
