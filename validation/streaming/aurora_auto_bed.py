@@ -101,9 +101,12 @@ class Worker:
             raise RuntimeError(f"decoder worker failed on input: {error}") from error
 
     def stop(self, *, expected_eof: bool):
-        # Invalidate worker epoch BEFORE changing worker process/lane.
-        with self.state["lock"]:
-            self.state["epoch"] += 1
+        # For a clean codec boundary/EOF, drain the entire old valid epoch
+        # BEFORE starting the new one. On corruption, invalidate immediately
+        # so stale PCM from a failed generation can never become audible.
+        if not expected_eof:
+            with self.state["lock"]:
+                self.state["epoch"] += 1
         assert self.process.stdin is not None
         if expected_eof:
             try:
@@ -131,6 +134,11 @@ class Worker:
         self.drain.join(timeout=3)
         if self.drain.is_alive():
             self.state["stats"].decoder_failures += 1
+        # No further frames may pass from the drained old source. The caller
+        # can now start a differently typed worker without channel mixing.
+        if expected_eof:
+            with self.state["lock"]:
+                self.state["epoch"] += 1
         self.state["stats"].stop_count += 1
 
 
@@ -186,7 +194,7 @@ class AutoChannelBed:
             return
         if self.worker:
             self.stats.codec_switches += 1
-            self._stop_worker()
+            self._stop_worker(eof=True)
         if self.candidate_type != kind:
             self.candidate_type = kind
             self.candidate = []
