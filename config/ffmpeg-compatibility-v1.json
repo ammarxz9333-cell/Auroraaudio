@@ -23,6 +23,13 @@
       "tag": "n9.0.1",
       "commit": "bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa",
       "role": "validated-current-stable-candidate"
+    },
+    {
+      "label": "stable-9.0.2",
+      "version": "9.0.2",
+      "tag": "n9.0.2",
+      "commit": "946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+      "role": "latest-upstream-stable-candidate-software-ci-pending"
     }
   ],
   "aurora_roles_under_test": [
@@ -45,7 +52,8 @@
   "observed_result": {
     "baseline-6.1.1": "PASS",
     "maintenance-6.1.6": "PASS",
-    "stable-9.0.1": "PASS"
+    "stable-9.0.1": "PASS",
+    "stable-9.0.2": "PENDING-CI"
   },
-  "decision_policy": "The green matrix promotes 6.1.6 as Aurora's pinned maintenance baseline. The green 9.0.1 lane establishes compatibility with this bounded software path but remains a major-version evaluation candidate; it does not establish universal FFmpeg compatibility or Atmos/JOC object support."
+  "decision_policy": "The green matrix promotes 6.1.6 as Aurora's pinned maintenance baseline. The green 9.0.1 lane establishes compatibility with this bounded software path but remains a major-version evaluation candidate; it does not establish universal FFmpeg compatibility or Atmos/JOC object support. FFmpeg 9.0.2 is the latest stable candidate as of 2026-10-11 and MUST pass all software matrix gates before Aurora pin promotion; a source tag alone does not establish compatibility."
 }
