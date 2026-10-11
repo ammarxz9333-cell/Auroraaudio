@@ -218,6 +218,12 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 - AVDECC/ACMP owns network stream connection identity/state on the GenAVB path; Aurora owns PCM production and worker lifecycle around that state.
 - fanout occurs after common rendering/system DSP; only one production speaker renderer processes a block.
 
+### Streaming surround first (7.1.2 minimum / 7.1.4 preferred)
+
+- In isolated draft PR/branch `feature/streaming-surround-first-v1`, the streaming **channel-bed** alternative probes IEC61937 AC-3/E-AC-3, verifies decoded source layouts, and outputs canonical 12ch/48 kHz S32_LE (7.1.4) with explicitly synthetic extra/back/height channels. Codec and channel behavior use synthetic encoded 5.1 acceptance. Do NOT claim native JOC/Atmos for that path.
+- The existing live eARC runner has explicit `--decoder-mode channel-bed` versus default `joc-native`; codec/layout changes within an ongoing stream, MAT, AC-4, real service access, actual eARC capture, DAC and synchronized wireless output remain unproven.
+- This is now higher priority than Auto-Aim and mobile application. Review `docs/streaming-surround-priority.md`.
+
 ## 6. Current work / Next actions
 
 Continue in this order unless the user explicitly changes priorities:
