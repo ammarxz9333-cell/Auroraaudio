@@ -25,6 +25,8 @@ jobs:
         run: sudo apt-get update && sudo apt-get install --yes ffmpeg
       - name: Verify actual AC-3 and E-AC-3 5.1 codec -> 12-channel Aurora PCM
         run: python3 validation/streaming/test_streaming_bed.py
+      - name: Test real live encoded AC3/DD+ self-switching codec runner
+        run: python3 validation/streaming/test_auto_bed.py
       - name: Test multichannel LPCM ingress into 7.1.4
         run: python3 validation/streaming/test_lpcm_ingress.py
       - name: Enforce honest codec registry including MAT, TrueHD, DTS and AC-4
