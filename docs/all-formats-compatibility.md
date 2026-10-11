@@ -79,3 +79,12 @@ Updates follow **stage -> integration test -> physical qualification -> mute/dra
 - No claim of every format being supported until tests on real selected hardware pass.
 
 **No DRM circumvention. No silent stereo fallback reported as 7.1.4 native. No Dolby branding/certification claim from experimental code.**
+
+
+## Per-stage update protection (added after source audit)
+
+The frozen module chain is defined in config/aurora-audio-component-contracts-v1.json and verified by validation/streaming/aurora_component_contracts.py. All seven stages have typed input/output ABI names and the invariant 12-channel output. A future adapter update must match the previous and next interface exactly. Accidental stereo, mismatched role order, incompatible version, or dropping a stage is rejected before touching a running graph.
+
+validation/streaming/aurora_component_supervisor.py models an operator-requested component upgrade transaction: stage the candidate without muting; require software and separately trusted physical approval; mute and flush before replacing; accept only authenticated CURRENT worker generation and exact input/output ABI, finite PCM, stable clock and no XRUNs; on failure increment epoch, discard the candidate and recover the previous graph while muted. An unverified recovery remains muted. Synthetic tests mutate all seven stages individually and exercise stale generations, bad channel order, bad clock and fail-closed rollback.
+
+**Implementation boundary:** The Python modules are a testable CONTROL-PLANE reference only. They do NOT orchestrate actual processes, atomically replace binaries, read a physical mute line, or certify plugin signatures. The application/host adapter implementing process lifecycle and real acoustic/hardware verification remains pending. Safe software architecture is not the same as experimentally established system reliability.
