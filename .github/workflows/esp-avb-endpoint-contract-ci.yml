@@ -59,7 +59,6 @@ jobs:
             --example detachable_control_probe | tee artifacts/esp-avb-detachable-control.txt
           grep -q 'AURORA-ESP-AVB-DETACHABLE-CONTROL-PASS messages=8 modules=2 epoch=42 start_frame=96000 lanes_per_pod=2 clock=ptp' \
             artifacts/esp-avb-detachable-control.txt
-            artifacts/esp-avb-aem-control.txt
 
       - name: Exercise PTP-aligned AEM control program
         run: |
