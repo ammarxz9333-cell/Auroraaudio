@@ -177,7 +177,7 @@ mod tests {
             let sequence: u32 = p[3].parse().map_err(|_| "bad seq")?;
             let angle = p[5].parse().map_err(|_| "bad angle")?;
             let mut ack = reference_ack(
-                epoch, if self.stale_reply { sequence - 1 } else { sequence },
+                epoch, if self.stale_reply { sequence + 1 } else { sequence },
                 p[4], angle, !self.unsettled, true,
             ).map_err(|e| format!("{e:?}"))?;
             if self.bad_crc { let at = ack.len()-2; ack[at] = b'0'; }
@@ -210,7 +210,7 @@ mod tests {
         let mut driver = VerifiedMotorLink::new(first, 10).unwrap();
         assert_eq!(
             driver.request_position("front", 10).unwrap_err(),
-            MotorProtocolError::InvalidCommand
+            MotorProtocolError::ReplayOrWrongTarget
         );
         // The helper cannot generate sequence zero, and rejects replay fixture.
         let mut second = rig();
