@@ -803,7 +803,6 @@ mod tests {
         endpoint.update_attachment(ModuleAttachment::Docked {
             slot_id: "left-edge".into(),
         });
-        endpoint.recover_to_muted().unwrap();
         endpoint.update_sync(ModuleSyncStatus::docked_locked());
         endpoint
             .apply(&EndpointCommand::Mute {
