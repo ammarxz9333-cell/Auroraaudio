@@ -230,6 +230,27 @@ ESP32 radio, PTP implementation, DAC, Class-D stage, battery pack or dock has
 met the physical timing/electrical acceptance gates.
 
 
+
+## Endpoint scheduler telemetry
+
+The exact-pinned ESP-AVB endpoint build can expose Aurora handover scheduler
+telemetry through the existing serialized `avb_status()` path. The telemetry
+includes the active handover epoch, rendered roles, requested absolute PTP
+activation time, the PTP timestamp at which firmware requested output unmute,
+scheduler unmute count, deadline-fault count, endpoint phase, and logical mute
+state.
+
+The companion snapshot helper emits:
+
+`aurora.esp-avb.endpoint-control-snapshot.v1`
+
+This telemetry is intentionally separated from physical acceptance. The field
+`scheduler_unmute_ptp_ns` records firmware/control-plane timing only. It is
+**not** the measured DAC/Class-D/speaker electrical activation timestamp and
+cannot satisfy the physical acceptance harness by itself. A real M2/M3 trial
+must correlate it with an independent electrical capture.
+
+
 ## Physical acceptance harness
 
 Physical endpoint trials are evaluated by:
