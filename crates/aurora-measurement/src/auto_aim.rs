@@ -87,7 +87,7 @@ impl AutoAimSession {
         for p in &plans {
             if p.module_id.trim().is_empty()
                 || !names.insert(p.module_id.as_str())
-                || p.previous_angle_deg.abs() > 90
+                || !(-90..=90).contains(&p.previous_angle_deg)
                 || p.candidates_deg.len() < 2
                 || p.candidates_deg.len() > 25
                 || !p.candidates_deg.contains(&p.previous_angle_deg)
@@ -96,7 +96,7 @@ impl AutoAimSession {
             }
             let mut angles = HashSet::new();
             for a in &p.candidates_deg {
-                if a.abs() > 90 || !angles.insert(a) {
+                if !(-90..=90).contains(a) || !angles.insert(a) {
                     return Err(AimError::InvalidPlan);
                 }
             }
