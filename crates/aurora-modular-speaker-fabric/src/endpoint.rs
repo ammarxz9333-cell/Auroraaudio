@@ -54,7 +54,9 @@ impl EndpointPowerStatus {
     }
 
     fn valid(self) -> bool {
-        self.battery_percent.map(|value| value <= 100).unwrap_or(true)
+        self.battery_percent
+            .map(|value| value <= 100)
+            .unwrap_or(true)
     }
 }
 
@@ -86,10 +88,7 @@ pub struct EndpointRoute {
 #[serde(tag = "command", rename_all = "kebab-case")]
 pub enum EndpointCommand {
     /// Starts a new epoch and silences the amplifier before any reconfiguration.
-    Mute {
-        module_id: String,
-        epoch: u64,
-    },
+    Mute { module_id: String, epoch: u64 },
     /// Stages a route and role set while the endpoint remains muted.
     Prepare {
         module_id: String,
@@ -105,15 +104,9 @@ pub enum EndpointCommand {
         start_frame: u64,
     },
     /// Commits the armed route. The amplifier remains muted until start_frame.
-    Commit {
-        module_id: String,
-        epoch: u64,
-    },
+    Commit { module_id: String, epoch: u64 },
     /// Stops the current route and returns to a muted state.
-    Stop {
-        module_id: String,
-        epoch: u64,
-    },
+    Stop { module_id: String, epoch: u64 },
 }
 
 /// Hardware-facing actions produced by the pure endpoint state machine.
@@ -492,8 +485,7 @@ impl DetachableEndpoint {
                 }
             }
             ModuleRoute::WiredNetwork => {
-                if !self.capabilities.wired_network_audio
-                    || clock_source != ModuleClockSource::Ptp
+                if !self.capabilities.wired_network_audio || clock_source != ModuleClockSource::Ptp
                 {
                     return Err(EndpointError::UnsupportedRoute);
                 }
@@ -729,7 +721,10 @@ mod tests {
             clock_source: ModuleClockSource::Ptp,
         });
         assert_eq!(endpoint.phase(), EndpointPhase::Fault);
-        assert_eq!(endpoint.last_fault(), Some(EndpointFault::SynchronizationLost));
+        assert_eq!(
+            endpoint.last_fault(),
+            Some(EndpointFault::SynchronizationLost)
+        );
         assert!(endpoint.amplifier_muted());
         assert!(actions.contains(&EndpointAction::SetAmplifierMute(true)));
     }
