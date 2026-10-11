@@ -93,9 +93,18 @@ pub fn estimate_impulse_response(
     // Rejects a path without at least 200 ms of response after arrival.
     let threshold = (peak_ir * 0.12).max(1.0e-5);
     let max_onset = analysis_len - 9_600;
-    let onset_frames = y[..=max_onset]
+    let provisional_onset = y[..=max_onset]
         .iter()
         .position(|z| z.re.abs() >= threshold)
+        .ok_or(CaptureDspError::NoArrival)?;
+    // Regularized deconvolution can produce a short pre-ringing lobe.
+    // Refine only inside the following 8 frames (~0.17 ms); do not jump
+    // forward to a separate wall/ceiling echo.
+    let search_end = provisional_onset.saturating_add(8).min(max_onset);
+    let onset_frames = (provisional_onset..=search_end)
+        .max_by(|a, b| {
+            y[*a].re.abs().total_cmp(&y[*b].re.abs())
+        })
         .ok_or(CaptureDspError::NoArrival)?;
     let impulse = y[onset_frames..onset_frames + 9_600]
         .iter()
@@ -230,7 +239,7 @@ mod tests {
         let estimated = estimate_impulse_response(&reference, &captured, 48_000).unwrap();
         assert!(
             (estimated.onset_frames as i64 - 1_000).abs() <= 2,
-            "{estimated:?}"
+            "onset frame: {}", estimated.onset_frames
         );
         assert!(estimated.impulse[0].abs() > 0.3);
         assert!(estimated.impulse[600].abs() > 0.15);
