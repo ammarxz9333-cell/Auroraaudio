@@ -8,9 +8,7 @@
 use std::fmt;
 
 use aurora_core::ChannelRole;
-use aurora_modular_speaker_fabric::{
-    endpoint::EndpointCommand, ModuleClockSource, ModuleRoute,
-};
+use aurora_modular_speaker_fabric::{endpoint::EndpointCommand, ModuleClockSource, ModuleRoute};
 use aurora_realtime_audio_api::AURORA_NETWORK_MEDIA_RATE;
 
 use crate::EspAvbControlEnvelope;
@@ -48,10 +46,7 @@ pub struct PtpMediaAnchor {
 
 impl PtpMediaAnchor {
     /// Maps a future Aurora media frame to nearest-integer PTP nanoseconds.
-    pub fn ptp_time_for_frame(
-        self,
-        frame_index: u64,
-    ) -> Result<u64, EspAvbAemControlError> {
+    pub fn ptp_time_for_frame(self, frame_index: u64) -> Result<u64, EspAvbAemControlError> {
         if self.sample_rate != AURORA_NETWORK_MEDIA_RATE {
             return Err(EspAvbAemControlError::InvalidMediaAnchor);
         }
@@ -293,7 +288,10 @@ fn validate_prepare(
     clock_source: ModuleClockSource,
     roles: &[ChannelRole],
 ) -> Result<(), EspAvbAemControlError> {
-    if !matches!(route, ModuleRoute::WiredNetwork | ModuleRoute::WirelessNetwork) {
+    if !matches!(
+        route,
+        ModuleRoute::WiredNetwork | ModuleRoute::WirelessNetwork
+    ) {
         return Err(EspAvbAemControlError::UnsupportedRoute);
     }
     if clock_source != ModuleClockSource::Ptp {
