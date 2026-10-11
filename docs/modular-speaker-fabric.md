@@ -206,9 +206,10 @@ PLAY + unmute
 
 The endpoint independently rejects stale epochs, wrong module IDs, unsupported
 routes, too many output lanes, insufficient detached power, missing scheduled
-playout, wrong clock source and excessive reported skew. Clock loss, transport
-loss, attachment change or stream underflow immediately clears the active route
-and returns hardware actions that mute the amplifier and stop playout.
+playout, wrong clock source and excessive reported skew. Clock loss, transport loss, an attachment change during a prepared/active route,
+or stream underflow immediately clears the active route and returns hardware
+actions that mute the amplifier and stop playout. Initial dock detection while
+boot-muted or already muted is accepted without latching a fault.
 
 A fault is latched. Recovery only returns to a muted state; Aurora must issue a
 fresh complete handover epoch before sound can resume. This prevents a stale
