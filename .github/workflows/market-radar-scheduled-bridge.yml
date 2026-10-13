@@ -1,0 +1,42 @@
+name: Market Radar Scheduled Bridge
+on:
+  schedule:
+    - cron: "*/5 * * * *"
+  workflow_dispatch:
+permissions:
+  contents: write
+  issues: write
+concurrency:
+  group: market-radar-live-bridge
+  cancel-in-progress: false
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 8
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: market-radar-live
+          fetch-depth: 1
+          persist-credentials: true
+      - name: Validate scanner
+        run: python3 -m py_compile market-radar/radar.py market-radar/entry_gate.py market-radar/tape_discovery.py market-radar/learning/missed_movers.py
+      - name: Scan official and public sources
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RADAR_SCORE_THRESHOLD: "8"
+          RADAR_BOOTSTRAP_ALERT_HOURS: "8"
+          RADAR_USER_AGENT: "Ammar-Market-Radar/1.0 contact=${{ github.repository_owner }}@users.noreply.github.com"
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+        run: python3 market-radar/radar.py
+      - name: Persist state to alert PR branch
+        if: always()
+        shell: bash
+        run: |
+          git add market-radar/state.json market-radar/live/trades.json market-radar/live/tape/ market-radar/learning/missed-movers.json 2>/dev/null || true
+          if git diff --cached --quiet; then exit 0; fi
+          git config user.name "market-radar-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "chore(market-radar): persist live radar state [skip ci]"
+          git push origin HEAD:market-radar-live
