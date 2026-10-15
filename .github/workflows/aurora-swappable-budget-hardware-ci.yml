@@ -1,0 +1,42 @@
+name: Aurora Swappable Budget Hardware CI
+
+on:
+  pull_request:
+    paths:
+      - "config/aurora-hardware-modules-v1.json"
+      - "validation/hardware/**"
+      - "docs/aurora-swappable-budget-hardware.md"
+      - ".github/workflows/aurora-swappable-budget-hardware-ci.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-swappable-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  module-contracts:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 4
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate 12ch software-hardware ABI and budget disclosure
+        run: python3 validation/hardware/aurora_swappable_hardware.py
+      - name: Run swap, negative and failure-mode tests
+        run: python3 validation/hardware/test_swappable_hardware.py
+      - name: Confirm physical readiness is NOT falsely advertised
+        run: |
+          if python3 validation/hardware/aurora_swappable_hardware.py --require-physical; then
+            echo "ERROR: unverified hardware configuration was falsely accepted" >&2
+            exit 1
+          fi
+      - name: Confirm a Pi 5 8-channel TDM board is NOT accepted as 7.1.4
+        run: |
+          if python3 validation/hardware/aurora_swappable_hardware.py --set output=rpi5-rp1-tdm8; then
+            echo "ERROR: 8ch output passed 12ch contract" >&2
+            exit 1
+          fi
+      - name: Verify scripts compile without third-party dependencies
+        run: python3 -m py_compile validation/hardware/*.py

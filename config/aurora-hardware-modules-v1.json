@@ -1,0 +1,256 @@
+{
+  "schema_version": 1,
+  "purpose": "Budget modular Aurora 7.1.4: component replacement policy, NOT a certified working hardware BOM",
+  "budget": {
+    "currency": "EUR",
+    "compute_and_boot_accessories_ceiling": 200,
+    "full_7_1_4_price_verified": false,
+    "owned_earc_receiver_incremental_price": 0,
+    "notes": "Speakers, 11 amp channels, active sub, 12ch DAC, case, wiring and power are NOT priced; never claim complete 7.1.4 costs 200 EUR."
+  },
+  "canonical_bus": {
+    "format": "S32_LE",
+    "sample_rate_hz": 48000,
+    "channels": 12,
+    "roles": [
+      "FL",
+      "FR",
+      "FC",
+      "LFE",
+      "SL",
+      "SR",
+      "SBL",
+      "SBR",
+      "TFL",
+      "TFR",
+      "TRL",
+      "TRR"
+    ]
+  },
+  "permitted_closed_external_hardware": [
+    "lindy-sii9437"
+  ],
+  "module_contracts": {
+    "compute": {
+      "requires": "linux-host/v1",
+      "provides": "aurora-process-host/v1"
+    },
+    "ingress": {
+      "requires": "authorized-earc-source/v1",
+      "provides": "aurora-iec61937/v1"
+    },
+    "output": {
+      "requires": "aurora-12ch-pcm/v1",
+      "provides": "synchronous-analog-12ch/v1"
+    },
+    "amplifier": {
+      "requires": "synchronous-analog-12ch/v1",
+      "provides": "eleven-speaker-feeds-plus-active-sub/v1"
+    },
+    "wireless": {
+      "requires": "eleven-speaker-feeds-plus-active-sub/v1",
+      "provides": "speaker-endpoints/v1"
+    }
+  },
+  "options": {
+    "compute": [
+      {
+        "id": "pi5-4gb",
+        "hardware": "Raspberry Pi 5 4GB",
+        "os": "linux",
+        "arch": "aarch64",
+        "open_aurora_software": true,
+        "reference_price_eur": 120.6,
+        "price_source": "https://www.reichelt.de/de/de/shop/produkt/raspberry_pi_5_b_4x_2_4_ghz_4_gb_ram_wlan_bt-359842",
+        "performance_7_1_4_proven": false,
+        "available_now": false
+      },
+      {
+        "id": "pi5-2gb",
+        "hardware": "Raspberry Pi 5 2GB",
+        "os": "linux",
+        "arch": "aarch64",
+        "open_aurora_software": true,
+        "reference_price_eur": 72.1,
+        "price_source": "https://www.reichelt.de/de/de/shop/produkt/raspberry_pi_5_b_4x_2_4_ghz_4_gb_ram_wlan_bt-359842",
+        "performance_7_1_4_proven": false,
+        "available_now": false
+      },
+      {
+        "id": "generic-linux-arm64",
+        "hardware": "user-provided Linux ARM64 SBC",
+        "os": "linux",
+        "arch": "aarch64",
+        "open_aurora_software": true,
+        "reference_price_eur": null,
+        "performance_7_1_4_proven": false,
+        "available_now": null
+      },
+      {
+        "id": "generic-linux-x86",
+        "hardware": "user-provided Linux x86-64 host",
+        "os": "linux",
+        "arch": "x86_64",
+        "open_aurora_software": true,
+        "reference_price_eur": null,
+        "performance_7_1_4_proven": false,
+        "available_now": null
+      }
+    ],
+    "ingress": [
+      {
+        "id": "lindy-sii9437",
+        "hardware": "Existing Lindy 38368 / SiI9437 authorized experimental eARC tap",
+        "input": "tv-earc",
+        "output": "aurora-iec61937/v1",
+        "hardware_closed": true,
+        "approved_exception": true,
+        "iec_bed_capture_observed": true,
+        "all_formats_verified": false,
+        "mat_truehd_dtsx_verified": false,
+        "price_incremental_eur": 0
+      },
+      {
+        "id": "open-file-fixture",
+        "hardware": "Synthetic authorized IEC61937 file (development only)",
+        "input": "file",
+        "output": "aurora-iec61937/v1",
+        "hardware_closed": false,
+        "approved_exception": false,
+        "iec_bed_capture_observed": false,
+        "all_formats_verified": false,
+        "mat_truehd_dtsx_verified": false,
+        "price_incremental_eur": 0
+      }
+    ],
+    "output": [
+      {
+        "id": "uac2-12ch-single-device",
+        "hardware": "To-be-selected 12+ analog-output USB Audio Class 2 device with open firmware source required",
+        "input": "aurora-12ch-pcm/v1",
+        "analog_outputs": 12,
+        "shared_clock": true,
+        "alsa_format": "S32_LE",
+        "rate_hz": 48000,
+        "open_host_driver": true,
+        "firmware_source_confirmed": false,
+        "exact_board_verified": false,
+        "physical_12ch_verified": false,
+        "cost_eur": null,
+        "status": "INTERFACE ONLY: NO EXACT VERIFIED PRODUCT"
+      },
+      {
+        "id": "xmos-lib-xua-16ch-prototype",
+        "hardware": "Open-source xmos/lib_xua firmware design plus one-clock TDM16 DAC carrier, needs actual PCB build",
+        "input": "aurora-12ch-pcm/v1",
+        "analog_outputs": 16,
+        "shared_clock": true,
+        "alsa_format": "S32_LE",
+        "rate_hz": 48000,
+        "open_host_driver": true,
+        "firmware_source_confirmed": false,
+        "exact_board_verified": false,
+        "physical_12ch_verified": false,
+        "cost_eur": null,
+        "status": "SOURCE-AVAILABLE RESTRICTED-LICENSE CANDIDATE; NOT A FULLY OPEN IMPLEMENTATION",
+        "library_source_available": true,
+        "license_review": "XMOS Public Licence v1 is field-of-use restricted; source presence alone is NOT OSI-open or an approved Aurora runtime"
+      },
+      {
+        "id": "rpi5-rp1-tdm8",
+        "hardware": "Experimental Raspberry Pi 5 8-channel RP1 I2S/TDM path",
+        "input": "aurora-12ch-pcm/v1",
+        "analog_outputs": 8,
+        "shared_clock": true,
+        "alsa_format": "S32_LE",
+        "rate_hz": 48000,
+        "open_host_driver": true,
+        "firmware_source_confirmed": true,
+        "exact_board_verified": false,
+        "physical_12ch_verified": false,
+        "cost_eur": null,
+        "status": "REJECT: ONLY 8 OUTPUTS"
+      },
+      {
+        "id": "multiple-independent-usb-dacs",
+        "hardware": "Several unrelated USB sound cards",
+        "input": "aurora-12ch-pcm/v1",
+        "analog_outputs": 12,
+        "shared_clock": false,
+        "alsa_format": "S32_LE",
+        "rate_hz": 48000,
+        "open_host_driver": true,
+        "firmware_source_confirmed": false,
+        "exact_board_verified": false,
+        "physical_12ch_verified": false,
+        "cost_eur": null,
+        "status": "REJECT: NO GUARANTEED COMMON CLOCK"
+      },
+      {
+        "id": "stm32h7-tinyusb-hs-tdm16-prototype",
+        "hardware": "STM32H7 + verified USB high-speed PHY + open TinyUSB UAC2 firmware developed for 12/16ch + synchronized TDM DAC board, not yet built",
+        "input": "aurora-12ch-pcm/v1",
+        "analog_outputs": 16,
+        "shared_clock": true,
+        "alsa_format": "S32_LE",
+        "rate_hz": 48000,
+        "open_host_driver": true,
+        "firmware_source_confirmed": false,
+        "upstream_source_license": "MIT TinyUSB library; the required 12/16-output application firmware does NOT exist yet",
+        "exact_board_verified": false,
+        "physical_12ch_verified": false,
+        "cost_eur": null,
+        "status": "FULLY-OPEN-SOFTWARE RESEARCH PATH; NEED HIGH-SPEED USB, CUSTOM FIRMWARE, ACTUAL PCB AND TESTS"
+      }
+    ],
+    "amplifier": [
+      {
+        "id": "eleven-independent-class-d-plus-active-sub",
+        "hardware": "11 independent power-amplified loudspeaker feeds + active subwoofer; power wiring and electrical qualification required",
+        "analog_speaker_amps": 11,
+        "subwoofer_type": "active",
+        "physical_power_verified": false,
+        "reference_price_eur": null
+      }
+    ],
+    "wireless": [
+      {
+        "id": "wired-only",
+        "mode": "wired",
+        "synchronization_physically_verified": true,
+        "physical_7_1_4_verified": false,
+        "cost_eur": null
+      },
+      {
+        "id": "esp-avb-ptp-prototype",
+        "mode": "wireless-experimental",
+        "synchronization_physically_verified": false,
+        "physical_7_1_4_verified": false,
+        "cost_eur": null
+      }
+    ]
+  },
+  "selected": {
+    "compute": "pi5-4gb",
+    "ingress": "lindy-sii9437",
+    "output": "uac2-12ch-single-device",
+    "amplifier": "eleven-independent-class-d-plus-active-sub",
+    "wireless": "wired-only"
+  },
+  "replace_rules": {
+    "software_abi": "aurora-12ch-pcm/v1",
+    "single_output_clock_required": true,
+    "no_live_hardware_unplug": true,
+    "mute_before_restart": true,
+    "rerun_12ch_electrical_channel_test": true,
+    "rollback_if_new_interface_unhealthy": true,
+    "hardware_acceptance_requires": [
+      "actual_iec_capture",
+      "measured_12channel_clock",
+      "12channel_electrical_mapping",
+      "amp_and_power_safety",
+      "sixty_minute_xrun_free_soak",
+      "actual_streaming_content_incoming_codec"
+    ]
+  }
+}

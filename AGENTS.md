@@ -1,5 +1,17 @@
 # Aurora Agent Reference — Canonical Living Handoff
 
+## Modularity and budget policy (2026-10-11)
+
+- **User decision:** Aurora is a low-cost, modular, DIY/open-source application. Existing Lindy 38368 / SiI9437 eARC receiver silicon is the ONLY explicitly authorized external proprietary ingress hardware exception; do not propose closed Denon/JBL/Samsung receiver internals as Aurora's runtime.
+- Initial host choice: Raspberry Pi 5 4GB Linux, NOT a hard dependency. Keep Linux ARM64 / x86-64 host, capture, DAC, amp and wired/wireless endpoints replaceable through explicitly validated interfaces.
+- Before buying or swapping any output device, demand one coherent-clock 12ch+ ALSA output at 48k S32_LE and verified physical mapping. Pi5 8ch RP1/TDM alone and aggregated unsynchronized USB DACs are unsuitable for 7.1.4.
+- Canonical hardware selection / strict negative compatibility / price incompleteness: `config/aurora-hardware-modules-v1.json`, `validation/hardware/aurora_swappable_hardware.py`, `docs/aurora-swappable-budget-hardware.md`. CI: `.github/workflows/aurora-swappable-budget-hardware-ci.yml`.
+- This check is **design-only**. Still NO accepted open-firmware low-cost exact 12ch USB DAC board; no physical 7.1.4 evidence, complete BOM, real Atmos MAT capture or wireless speaker sync. Always disclose unpriced components.
+- Replacement means planned stop/mute/power-safe switch + source/clock/channel electrical re-test + rollback, not hot unplug of powered DAC/amps.
+- The stereo/IEC DD+ software progress is separately in PR #443; do not merge experimental software-only codec support into the user-facing hardware capability claim.
+
+
+
 > Read this file first. Keep it factual, compact, and current.
 >
 > **Maintenance rule:** every meaningful code/schema/architecture/validation/PR/issue/critical-path change must update this file in the same PR or immediately after merge.
