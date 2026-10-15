@@ -1,0 +1,106 @@
+{
+  "schema_version": 1,
+  "purpose": "Stable chain contracts for independent component upgrades; no runtime backend creation or physical pass",
+  "audio_bus": {
+    "format": "S32_LE",
+    "sample_rate_hz": 48000,
+    "channels": 12,
+    "role_order": [
+      "FL",
+      "FR",
+      "FC",
+      "LFE",
+      "SL",
+      "SR",
+      "SBL",
+      "SBR",
+      "TFL",
+      "TFR",
+      "TRL",
+      "TRR"
+    ]
+  },
+  "modules": [
+    {
+      "id": "earc-ingress",
+      "kind": "transport",
+      "implementation": "validation/physical/aurora_alsa_iec61937_pipe.py",
+      "requires": "audio-carrier-source/v1",
+      "provides": "bounded-encoded-packet/v1",
+      "independent": true,
+      "truth": "format/passthrough physically unproven"
+    },
+    {
+      "id": "format-router",
+      "kind": "control",
+      "implementation": "validation/streaming/aurora_stream_epoch.py",
+      "requires": "bounded-encoded-packet/v1",
+      "provides": "verified-decoder-input/v1",
+      "independent": true,
+      "truth": "control state machine tests, no running-hardware route integration"
+    },
+    {
+      "id": "decoder-worker",
+      "kind": "codec",
+      "implementation": "crates/aurora-decoder-api/src/lib.rs",
+      "requires": "verified-decoder-input/v1",
+      "provides": "decoded-audio-and-objects/v1",
+      "independent": true,
+      "truth": "external decoder may require linked paired ABI and isolated process"
+    },
+    {
+      "id": "spatial-renderer",
+      "kind": "renderer",
+      "implementation": "crates/aurora-renderer-vbap/src/lib.rs",
+      "requires": "decoded-audio-and-objects/v1",
+      "provides": "aurora-12ch-pcm/v1",
+      "independent": true,
+      "truth": "native object render requires genuine metadata"
+    },
+    {
+      "id": "post-dsp",
+      "kind": "dsp",
+      "implementation": "validation/physical/aurora_adaptive_output.rs",
+      "requires": "aurora-12ch-pcm/v1",
+      "provides": "aurora-12ch-pcm/v1",
+      "independent": true,
+      "truth": "ASRC virtual self-tests; physical xrun tests needed"
+    },
+    {
+      "id": "speaker-output",
+      "kind": "output",
+      "implementation": "validation/physical/run-live-earc-vbap.sh",
+      "requires": "aurora-12ch-pcm/v1",
+      "provides": "device-output/v1",
+      "independent": true,
+      "truth": "12-channel USB DAC/electrical capture remains physical gate"
+    },
+    {
+      "id": "wireless-speaker-fabric",
+      "kind": "wireless",
+      "implementation": "crates/aurora-modular-speaker-fabric/src/lib.rs",
+      "requires": "device-output/v1",
+      "provides": "timed-speaker-output/v1",
+      "independent": true,
+      "truth": "physical multi-node synchronization not demonstrated"
+    }
+  ],
+  "required_update_protocol": [
+    "stage-new-generation",
+    "run-component-conformance",
+    "validate-adjacent-interfaces",
+    "mute-and-flush",
+    "activate-on-media-control-thread",
+    "verify-current-generation-only",
+    "rollback-to-last-known-good-on-failure"
+  ],
+  "callback_forbidden": [
+    "dlopen",
+    "untrusted-plugin-call",
+    "subprocess",
+    "file-io",
+    "network-block",
+    "dynamic-version-switch"
+  ],
+  "truth_boundary": "Control plane contracts/CI only. Current physical device, proprietary object formats and active live worker restart may not be wired."
+}

@@ -1,0 +1,125 @@
+{
+  "schema_version": 1,
+  "verified_on": "2026-10-11",
+  "policy": "latest tagged stable pins are evaluated as independent versioned candidates; never auto-promote on version string alone",
+  "output_contract": "Aurora 12ch/48000/S32LE",
+  "packages": [
+    {
+      "id": "ffmpeg",
+      "latest_version": "9.0.2",
+      "tag": "n9.0.2",
+      "commit": "946fcce07b6dcd0331c8cc609192aeff5e1924f8",
+      "integration": "tested-channel-bed-candidate",
+      "current_pinned": "6.1.6",
+      "gateway": "FFmpeg Compatibility CI AND Decoded PCM Upmix Validation CI",
+      "production_approved": false
+    },
+    {
+      "id": "harletty-bridge",
+      "latest_version": "0.8.0",
+      "tag": "v0.8.0",
+      "commit": "eddb123f876048268ee1f096ccdd1cbcf65ad07d",
+      "integration": "paired-abi-candidate",
+      "current_pinned": "0.7.4",
+      "requires": "omniphony@0.6.0:bridge_api-0.4",
+      "gateway": "Candidate Harletty Omniphony Pair Compatibility",
+      "production_approved": false
+    },
+    {
+      "id": "omniphony",
+      "latest_version": "0.6.0",
+      "tag": "v0.6.0",
+      "commit": "dd5546bbc64e60719dfa367bea0534dc8a3ab34b",
+      "integration": "paired-abi-candidate",
+      "current_pinned": "0.5.2",
+      "requires": "harletty-bridge@0.8.0:bridge_api-0.4",
+      "gateway": "Candidate Harletty Omniphony Pair Compatibility",
+      "production_approved": false
+    },
+    {
+      "id": "openjoc",
+      "latest_version": "0.19.0",
+      "tag": "v0.19.0",
+      "commit": "291900ce33ea349c4b855655cdb282819e94eabc",
+      "integration": "reference-candidate",
+      "current_pinned": "0.17.0",
+      "gateway": "New OpenJOC 0.19.0 differential+ABI+object-fixture tests",
+      "production_approved": false
+    },
+    {
+      "id": "oxideav-ac4",
+      "latest_version": "0.0.8",
+      "tag": "v0.0.8",
+      "commit": "cc6dcb8e60b54004bf3edfeb269451c42e7db206",
+      "integration": "research-candidate",
+      "current_pinned": null,
+      "gateway": "AC4/A-JOC codec/object truth plus real carrier input",
+      "production_approved": false
+    },
+    {
+      "id": "fraunhofer-mpeghdec",
+      "latest_version": "4.0.1",
+      "tag": "r4.0.1",
+      "commit": "4448b69738da2fa5f2f2f2b0ce29eea32509e046",
+      "integration": "reference-candidate",
+      "current_pinned": "source-commit-same",
+      "gateway": "MPEG-H reference/corpus acceptance",
+      "production_approved": false
+    },
+    {
+      "id": "libiamf",
+      "latest_version": "2.0.0",
+      "tag": "v2.0.0",
+      "commit": "1c78d481d6ca16b9ec9855ed599de3d20cb4b6c8",
+      "integration": "reference-candidate",
+      "current_pinned": "prior-source-commit",
+      "gateway": "IAMF ABI and channel/object corpus acceptance",
+      "production_approved": false
+    },
+    {
+      "id": "iamf-tools",
+      "latest_version": "3.0.0",
+      "tag": "v3.0.0",
+      "commit": "5ad3728679495d0037c9be7334338f2859d2a3fa",
+      "integration": "reference-candidate",
+      "current_pinned": "prior-source-commit",
+      "gateway": "IAMF tool reference/CI test",
+      "production_approved": false
+    },
+    {
+      "id": "ittiam-libmpegh",
+      "latest_version": "1.6",
+      "tag": "v1.6",
+      "commit": "507cff9acf15d6bd2803d072f9cdba186018f295",
+      "integration": "reference-candidate",
+      "current_pinned": "old-branch-commit",
+      "gateway": "MPEG-H external build/reference gate",
+      "production_approved": false
+    },
+    {
+      "id": "camilladsp",
+      "latest_version": "4.1.3",
+      "tag": "v4.1.3",
+      "commit": "05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74",
+      "integration": "existing-reference-stable",
+      "current_pinned": "4.1.3",
+      "gateway": "Room Correction CamillaDSP Differential CI",
+      "production_approved": false
+    }
+  ],
+  "developer_heads_not_stable": [
+    {
+      "id": "harletty-bridge",
+      "branch": "main",
+      "commit": "0039f3f0a285534e64fceb5ed7c68045f060ae5f",
+      "note": "bleeding-edge multi-plugin bridge_api 0.6; requires Omniphony matching development branch, not a published stable upgrade"
+    },
+    {
+      "id": "omniphony",
+      "branch": "main",
+      "commit": "2aed03376756391a0481edb748a500da81fb06b8",
+      "note": "development API may break stable bridge_api 0.4; update in isolated matching pair only"
+    }
+  ],
+  "truth_boundary": "Upstream version discovery and pinning only. Exact source tags are not proof of runtime decoding, universal HDMI capture, codec license, protected streaming interoperability or speaker output."
+}

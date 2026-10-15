@@ -34,6 +34,10 @@ jobs:
             version: 9.0.1
             commit: bf1b838f2ab88b4f8fd83443325c782ea0e0f7fa
 
+          - label: stable-9.0.2
+            version: 9.0.2
+            commit: 946fcce07b6dcd0331c8cc609192aeff5e1924f8
+
     steps:
       - name: Checkout Aurora
         uses: actions/checkout@v4
@@ -85,7 +89,7 @@ jobs:
             --disable-ffplay \
             --disable-network \
             --disable-autodetect
-          make -j2 ffmpeg
+          make -j2 ffmpeg ffprobe
           test -x ./ffmpeg
           ./ffmpeg -version | tee "${GITHUB_WORKSPACE}/ffmpeg-version.txt"
 
@@ -117,6 +121,18 @@ jobs:
             | tee ffmpeg-surround-test.txt
           grep -q "PASS: real E-AC-3 IEC61937 -> 7.1.4" ffmpeg-surround-test.txt
           grep -q "no JOC or hardware proof" ffmpeg-surround-test.txt
+
+      - name: Verify latest pinned FFmpeg on actual AC-3/E-AC-3 5.1 and 7.1.4 bus
+        if: matrix.label == 'stable-9.0.2'
+        shell: bash
+        env:
+          AURORA_FFMPEG_BIN: ${{ github.workspace }}/ffmpeg-src/ffmpeg
+          AURORA_FFPROBE_BIN: ${{ github.workspace }}/ffmpeg-src/ffprobe
+        run: |
+          set -euo pipefail
+          python3 validation/streaming/test_streaming_bed.py
+          python3 validation/streaming/test_lpcm_ingress.py
+          python3 validation/streaming/test_format_routes.py
 
       - name: Capture bounded capability evidence
         shell: bash

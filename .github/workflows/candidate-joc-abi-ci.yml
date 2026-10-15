@@ -1,0 +1,56 @@
+name: Candidate Harletty Omniphony Pair Compatibility
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - "config/aurora-codec-bundles-v1.json"
+      - "validation/physical/run-live-earc-vbap.sh"
+      - "docs/all-formats-compatibility.md"
+      - ".github/workflows/candidate-joc-abi-ci.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aurora-audio-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  candidate-sandbox:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install external-component build requirements
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev
+      - name: Build isolated candidate manifest from verified source tags
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import json, os, pathlib
+          original=json.loads(pathlib.Path("config/external-components-v1.json").read_text())
+          bundles=json.loads(pathlib.Path("config/aurora-codec-bundles-v1.json").read_text())
+          item=next(x for x in bundles["bundles"] if x["id"] == "joc-spatial-v0.8-candidate")
+          for component in original["components"]:
+              if component["id"] in item["components"]:
+                  target=item["components"][component["id"]]
+                  component["tested_version"]=target["version"]
+                  component["pinned_commit"]=target["commit"]
+          path=pathlib.Path(os.environ["RUNNER_TEMP"])/"aurora-joc-candidate.json"
+          path.write_text(json.dumps(original, indent=2)+"\n")
+          with pathlib.Path(os.environ["GITHUB_ENV"]).open("a") as env:
+              env.write(f"AURORA_EXTERNAL_COMPONENT_MANIFEST={path}\n")
+          print("ISOLATED-CANDIDATE-PAIR-RESOLVED Harletty v0.8.0 + Omniphony v0.6.0")
+          PY
+      - name: Build candidate bridge against Aurora JOC runtime without replacement
+        env:
+          AURORA_JOC_BUILD_MODE: debug
+        run: |
+          bash validation/physical/run-live-earc-vbap.sh --fixture
+      - name: Report compatibility boundary
+        if: always()
+        run: echo "Candidate compilation/fixture only; never promotes or installs this decoder, and never proves Netflix/HDMI hardware."

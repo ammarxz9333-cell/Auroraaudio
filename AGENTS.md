@@ -218,6 +218,20 @@ Aurora owns decoder/scene/renderer/DSP/realtime/runtime boundaries. Network and 
 - AVDECC/ACMP owns network stream connection identity/state on the GenAVB path; Aurora owns PCM production and worker lifecycle around that state.
 - fanout occurs after common rendering/system DSP; only one production speaker renderer processes a block.
 
+### Streaming surround first (7.1.2 minimum / 7.1.4 preferred)
+
+- In isolated draft PR/branch `feature/streaming-surround-first-v1`, the streaming **channel-bed** alternative probes IEC61937 AC-3/E-AC-3, verifies decoded source layouts, and outputs canonical 12ch/48 kHz S32_LE (7.1.4) with explicitly synthetic extra/back/height channels. Codec and channel behavior use synthetic encoded 5.1 acceptance. Do NOT claim native JOC/Atmos for that path.
+- The existing live eARC runner has explicit `--decoder-mode channel-bed` versus default `joc-native`; codec/layout changes within an ongoing stream, MAT, AC-4, real service access, actual eARC capture, DAC and synchronized wireless output remain unproven.
+- This is now higher priority than Auto-Aim and mobile application. Review `docs/streaming-surround-priority.md`.
+
+### Lean audio runtime freeze (no redundant project collection)
+
+- The 29 upstream entries in `config/external-components-v1.json` are a RESEARCH inventory, not 29 installed runtime decoders. Only `config/aurora-lean-audio-profile-v1.json` defines Aurora's preferred audio runtime selection; see `docs/lean-audio-stack.md`.
+- Primary external role owners: FFmpeg only for plain channel beds; Harletty+Omniphony as ONE ABI-paired group for native objects; CamillaDSP optionally for room filters. Keep OpenJOC/JOCForge/alternatives as offline test references, never parallel live decoders. For AC-4, MPEG-H, IAMF, MAT, xHE-AAC and other unverified carriers, keep only one evaluation candidate/explicit unsupported status until source/physical tests pass.
+- Never cascade a second VBAP/object renderer after Omniphony native-object rendering. Bed sources remain channel-beds with explicitly synthetic extra heights only.
+- `validation/streaming/test_lean_profile.py` enforces no duplicate codec owners or renderer/DSP groups; `aurora_codec_perf.py` measures only same-host offline DD+ throughput. No fastest claim without apples-to-apples repeatable measurements and no codec deployment without corpus and physical acceptance.
+- An isolated candidate must REPLACE its incumbent after tests; not be installed beside it as a second live pipeline. Preserve known-good pins for rollback, not concurrent playback. No physical Dolby/Netflix/universal source proof yet.
+
 ## 6. Current work / Next actions
 
 Continue in this order unless the user explicitly changes priorities:

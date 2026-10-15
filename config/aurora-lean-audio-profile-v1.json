@@ -1,0 +1,261 @@
+{
+  "schema_version": 1,
+  "policy": {
+    "goal": "Single purpose-built runtime backend per audio semantic family, minimized resident processes",
+    "physical_verified": false,
+    "automatic_upgrade": false,
+    "max_third_party_runtime_groups": 3,
+    "approved_semantics": [
+      "channel-bed",
+      "native-objects",
+      "signal-processing",
+      "format-specialist"
+    ],
+    "prohibit_external_oracle_loading": true,
+    "disallow_parallel_decoder_fallback": true,
+    "hot_upgrade_in_audio_callback": false,
+    "benchmark_decisions_require_measured_same_host": true,
+    "unverified_codec_policy": "fail-closed-observed-unsupported-not-false-stereo-success"
+  },
+  "canonical_output": {
+    "sample_rate_hz": 48000,
+    "channels": 12,
+    "format": "S32_LE",
+    "roles": [
+      "FL",
+      "FR",
+      "FC",
+      "LFE",
+      "SL",
+      "SR",
+      "SBL",
+      "SBR",
+      "TFL",
+      "TFR",
+      "TRL",
+      "TRR"
+    ]
+  },
+  "runtime_groups": [
+    {
+      "id": "ffmpeg-channel-bed",
+      "role": "channel-bed",
+      "runtime": "enabled-in-software-ci-only",
+      "packages": [
+        {
+          "id": "ffmpeg",
+          "stable_version": "6.1.6",
+          "preferred_next_version": "9.0.2",
+          "previous_pin": "f1e3a2bf7a2f2cde936d1ed97f09a26853d20125",
+          "next_pin": "946fcce07b6dcd0331c8cc609192aeff5e1924f8"
+        }
+      ],
+      "handles": [
+        "ac3",
+        "eac3",
+        "truehd",
+        "dts",
+        "dts-hd",
+        "aac",
+        "he-aac",
+        "opus",
+        "flac",
+        "alac",
+        "vorbis",
+        "mp3"
+      ],
+      "limitations": "Only AC-3/E-AC-3 channel-bed and simple PCM accepted in current streaming ingress, other listed codecs require input adapters and corpus validation; no object metadata."
+    },
+    {
+      "id": "harletty-omniphony-objects",
+      "role": "native-objects",
+      "runtime": "software-fixture-only",
+      "packages": [
+        {
+          "id": "harletty-bridge",
+          "stable_version": "0.7.4",
+          "preferred_next_version": "0.8.0",
+          "previous_pin": "10943821cca7e6886c11f45d2267b06d76e6db7c",
+          "next_pin": "eddb123f876048268ee1f096ccdd1cbcf65ad07d"
+        },
+        {
+          "id": "omniphony",
+          "stable_version": "0.5.2",
+          "preferred_next_version": "0.6.0",
+          "previous_pin": "f9a79721af64ad9c39042d4deded158b568fc598",
+          "next_pin": "dd5546bbc64e60719dfa367bea0534dc8a3ab34b"
+        }
+      ],
+      "abi_pair": "bridge_api-0.4-candidate",
+      "handles": [
+        "eac3-joc",
+        "truehd-atmos",
+        "dts-x"
+      ],
+      "limitations": "Native object extractor and renderer ONE GROUP. Legacy JOC fixture accepted; newer TrueHD Atmos/DTS:X need independent verified source tests. No independent duplicate object renderer active."
+    },
+    {
+      "id": "camilladsp-room",
+      "role": "signal-processing",
+      "runtime": "optional-disabled-until-room-eq-configured",
+      "packages": [
+        {
+          "id": "camilladsp",
+          "stable_version": "4.1.3",
+          "previous_pin": "05e9cfcdf43c0dfe078ed3feb8af4c8bd701fd74"
+        }
+      ],
+      "handles": [],
+      "limitations": "Do not run both CamillaDSP and duplicated Aurora external EQ algorithms for same filter stage; optional after acoustic validation."
+    }
+  ],
+  "conditional_format_specialists": [
+    {
+      "codec": "ac4",
+      "id": "oxideav-ac4",
+      "version": "0.0.8",
+      "pin": "cc6dcb8e60b54004bf3edfeb269451c42e7db206",
+      "mode": "DISABLED-BENCH-ONLY",
+      "reason": "AC-4 coverage incomplete and no approved real source adapter"
+    },
+    {
+      "codec": "mpeg-h",
+      "id": "fraunhofer-mpeghdec",
+      "version": "4.0.1",
+      "pin": "4448b69738da2fa5f2f2f2b0ce29eea32509e046",
+      "mode": "DISABLED-BENCH-ONLY",
+      "reason": "Single MPEG-H evaluation implementation; source/patent constraints and real codec corpus unverified"
+    },
+    {
+      "codec": "iamf",
+      "id": "libiamf",
+      "version": "2.0.0",
+      "pin": "1c78d481d6ca16b9ec9855ed599de3d20cb4b6c8",
+      "mode": "DISABLED-BENCH-ONLY",
+      "reason": "Single IAMF playback candidate; do not bundle iamf-tools as second decoder"
+    },
+    {
+      "codec": "xhe-aac",
+      "id": "not-selected",
+      "version": null,
+      "pin": null,
+      "mode": "BLOCKED-UNTIL-TESTED",
+      "reason": "No separately verified decoder and tested stream input for full xHE-AAC family"
+    },
+    {
+      "codec": "dolby-mat",
+      "id": "not-selected",
+      "version": null,
+      "pin": null,
+      "mode": "BLOCKED-UNTIL-TESTED",
+      "reason": "A MAT HDMI ingress and real object decoder have not been proven; raw PCM is not MAT"
+    }
+  ],
+  "reference_only": [
+    {
+      "id": "openjoc",
+      "purpose": "Independent JOC differential validation; do not simultaneously instantiate as live decoder"
+    },
+    {
+      "id": "jocforge",
+      "purpose": "JOC test fixture generation, offline only"
+    },
+    {
+      "id": "ittiam-libmpegh",
+      "purpose": "MPEG-H differential oracle only, not second deployed decoder"
+    },
+    {
+      "id": "aomedia-iamf-tools",
+      "purpose": "IAMF encoding/validation fixtures only, NOT runtime IAMF 2.0 decoder"
+    },
+    {
+      "id": "aomedia-oar",
+      "purpose": "Independent renderer test oracle only"
+    },
+    {
+      "id": "ebu-ear",
+      "purpose": "ADM reference only"
+    },
+    {
+      "id": "spatial-audio-framework",
+      "purpose": "Renderer differential test only"
+    },
+    {
+      "id": "videolan-libspatialaudio",
+      "purpose": "Renderer differential test only"
+    },
+    {
+      "id": "google-obr",
+      "purpose": "Headphone binaural reference only, not 7.1.4 loudspeaker runtime"
+    },
+    {
+      "id": "ebu-bear",
+      "purpose": "Binaural reference only"
+    },
+    {
+      "id": "sofar",
+      "purpose": "HRTF test reference only"
+    },
+    {
+      "id": "roomeq",
+      "purpose": "Room calibration design-time only; CamillaDSP alone executes final live filter graph"
+    }
+  ],
+  "source_format_owners": {
+    "pcm": "ffmpeg-channel-bed",
+    "dolby-mat": "not-selected",
+    "ac3": "ffmpeg-channel-bed",
+    "eac3": "ffmpeg-channel-bed",
+    "eac3-joc": "harletty-omniphony-objects",
+    "truehd": "ffmpeg-channel-bed",
+    "truehd-atmos": "harletty-omniphony-objects",
+    "dts": "ffmpeg-channel-bed",
+    "dts-hd": "ffmpeg-channel-bed",
+    "dts-x": "harletty-omniphony-objects",
+    "ac4": "oxideav-ac4",
+    "mpeg-h": "fraunhofer-mpeghdec",
+    "iamf": "libiamf",
+    "aac": "ffmpeg-channel-bed",
+    "he-aac": "ffmpeg-channel-bed",
+    "xhe-aac": "not-selected",
+    "opus": "ffmpeg-channel-bed",
+    "flac": "ffmpeg-channel-bed",
+    "alac": "ffmpeg-channel-bed",
+    "vorbis": "ffmpeg-channel-bed",
+    "mp3": "ffmpeg-channel-bed"
+  },
+  "app_specific_transport_policies": {
+    "live_eARC": "only hardware-observed format/EDID, default fail closed on unknown",
+    "stored_media": "same backend ownership; no second copy of codec library installed unless independent evidence justifies replacement"
+  },
+  "runtime_nonthird_party_components": [
+    "aurora-source-runtime",
+    "aurora-decoder-api",
+    "aurora-audio-io",
+    "aurora-modular-speaker-fabric",
+    "aurora-output-channel-map"
+  ],
+  "truth_boundary": "A curated selection and safety policy is not a tested performance ranking or proof of every codec; resident runtime group count here is a target, and actual loaded process census has not been measured. Render paths are mutually exclusive; integrated Omniphony object rendering and Aurora VBAP must not process the same scene serially.",
+  "render_paths": {
+    "channel-bed": {
+      "decoder_group": "ffmpeg-channel-bed",
+      "renderer": "aurora-internal-fixed-channel-map",
+      "spatial_object_renderer_active": false,
+      "object_metadata_claim": "none",
+      "isolated_additional_upmix": "optional-labelled-synthetic"
+    },
+    "native-object": {
+      "decoder_group": "harletty-omniphony-objects",
+      "renderer": "omniphony-integrated-spatial",
+      "spatial_object_renderer_active": true,
+      "object_metadata_claim": "only-verified-extracted-metadata",
+      "disable_second_vbap_renderer": true
+    },
+    "specialist-decoded-pcm": {
+      "decoder_group": "one-approved-specialist-only",
+      "renderer": "aurora-internal-fixed-channel-map",
+      "spatial_object_renderer_active": false,
+      "unverified_allowed": false
+    }
+  }
+}
