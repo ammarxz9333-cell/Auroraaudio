@@ -26347,6 +26347,19 @@
           "price": 212.59,
           "qualified": false,
           "same_time_volume_ratio": 9.12
+        },
+        {
+          "bar_time_utc": "2026-10-15T22:05:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 9.25,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 212.59,
+          "qualified": false,
+          "same_time_volume_ratio": 8.43
         }
       ],
       "outcome_known": false,
@@ -27862,6 +27875,19 @@
           "price": 122.26,
           "qualified": false,
           "same_time_volume_ratio": 2.52
+        },
+        {
+          "bar_time_utc": "2026-10-15T20:00:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": 0.51,
+          "change_30m_pct": 0.655,
+          "change_5m_pct": 0.057,
+          "change_pct": 6.61,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 122.26,
+          "qualified": false,
+          "same_time_volume_ratio": 2.41
         }
       ],
       "outcome_known": false,
@@ -27964,6 +27990,19 @@
           "price": 111.93,
           "qualified": false,
           "same_time_volume_ratio": 1.95
+        },
+        {
+          "bar_time_utc": "2026-10-15T21:05:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 6.844,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 111.93,
+          "qualified": false,
+          "same_time_volume_ratio": 1.89
         }
       ],
       "outcome_known": false,
@@ -28305,6 +28344,19 @@
           "price": 74.5,
           "qualified": false,
           "same_time_volume_ratio": 1.91
+        },
+        {
+          "bar_time_utc": "2026-10-15T20:55:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 11.277,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 74.5,
+          "qualified": false,
+          "same_time_volume_ratio": 1.84
         }
       ],
       "outcome_known": false,
@@ -28394,6 +28446,19 @@
           "price": 169.12,
           "qualified": false,
           "same_time_volume_ratio": 2.36
+        },
+        {
+          "bar_time_utc": "2026-10-15T20:25:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 6.815,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 169.12,
+          "qualified": false,
+          "same_time_volume_ratio": 2.4
         }
       ],
       "outcome_known": false,
@@ -28661,6 +28726,19 @@
           "price": 148.93,
           "qualified": false,
           "same_time_volume_ratio": 2.35
+        },
+        {
+          "bar_time_utc": "2026-10-15T20:20:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 6.565,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 148.93,
+          "qualified": false,
+          "same_time_volume_ratio": 2.23
         }
       ],
       "outcome_known": false,
@@ -28787,6 +28865,19 @@
           "price": 175.77,
           "qualified": false,
           "same_time_volume_ratio": 2.01
+        },
+        {
+          "bar_time_utc": "2026-10-15T21:05:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 6.631,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 175.77,
+          "qualified": false,
+          "same_time_volume_ratio": 1.96
         }
       ],
       "outcome_known": false,
@@ -30401,6 +30492,19 @@
           "price": 29.06,
           "qualified": false,
           "same_time_volume_ratio": 2.4
+        },
+        {
+          "bar_time_utc": "2026-10-15T21:40:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": -0.137,
+          "change_pct": 9.951,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 29.06,
+          "qualified": false,
+          "same_time_volume_ratio": 2.47
         }
       ],
       "outcome_known": false,
@@ -30705,6 +30809,19 @@
           "price": 88.7675,
           "qualified": false,
           "same_time_volume_ratio": 0.88
+        },
+        {
+          "bar_time_utc": "2026-10-15T23:35:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 9.501,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 88.7675,
+          "qualified": false,
+          "same_time_volume_ratio": 0.95
         }
       ],
       "outcome_known": false,
@@ -30933,6 +31050,19 @@
           "price": 218.61,
           "qualified": false,
           "same_time_volume_ratio": 1.41
+        },
+        {
+          "bar_time_utc": "2026-10-15T20:00:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.199,
+          "change_30m_pct": -0.233,
+          "change_5m_pct": 0.05,
+          "change_pct": 7.663,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 218.61,
+          "qualified": false,
+          "same_time_volume_ratio": 1.44
         }
       ],
       "outcome_known": false,
@@ -31237,10 +31367,1466 @@
           "price": 131.03,
           "qualified": false,
           "same_time_volume_ratio": 1.07
+        },
+        {
+          "bar_time_utc": "2026-10-15T21:10:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 6.78,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 131.03,
+          "qualified": false,
+          "same_time_volume_ratio": 1.04
         }
       ],
       "outcome_known": false,
       "ticker": "WING"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:15:00+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.176,
+        "change_30m_pct": null,
+        "change_5m_pct": -0.088,
+        "change_pct": 0.501,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 34.07,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "KRMN:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:15:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.176,
+          "change_30m_pct": null,
+          "change_5m_pct": -0.088,
+          "change_pct": 0.501,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 34.07,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "KRMN"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:44:59+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": -0.176,
+        "change_pct": -2.1,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 10.49,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "ERIC:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:44:59+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": -0.176,
+          "change_pct": -2.1,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 10.49,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "ERIC"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T08:33:30+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": -0.826,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 31.2,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "Z:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T08:33:30+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": -0.826,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 31.2,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "Z"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:10:00+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": -0.361,
+        "change_pct": -0.307,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 27.6,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "FIGR:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:10:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": -0.361,
+          "change_pct": -0.307,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 27.6,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "FIGR"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:20:01+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": 0.675,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 9.69,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "COMP:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:20:01+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 0.675,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 9.69,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "COMP"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T08:31:53+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": 0.051,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 118.16,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "SIG:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T08:31:53+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 0.051,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 118.16,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "SIG"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:44:47+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.726,
+        "change_30m_pct": -1.045,
+        "change_5m_pct": -0.4,
+        "change_pct": -2.34,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 12.31,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "WULF:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:44:47+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.726,
+          "change_30m_pct": -1.045,
+          "change_5m_pct": -0.4,
+          "change_pct": -2.34,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 12.31,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "WULF"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:42:52+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.662,
+        "change_30m_pct": -0.664,
+        "change_5m_pct": -0.338,
+        "change_pct": -1.644,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 85.54,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "CRCL:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:42:52+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.662,
+          "change_30m_pct": -0.664,
+          "change_5m_pct": -0.338,
+          "change_pct": -1.644,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 85.54,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "CRCL"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:45:38+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.179,
+        "change_30m_pct": -0.77,
+        "change_5m_pct": 0.03,
+        "change_pct": -2.548,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 33.47,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "IONQ:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:45:38+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.179,
+          "change_30m_pct": -0.77,
+          "change_5m_pct": 0.03,
+          "change_pct": -2.548,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 33.47,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "IONQ"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:20:00+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": null,
+        "change_pct": -0.219,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 24.6959,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "UPST:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:20:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": -0.219,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 24.6959,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "UPST"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:44:43+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.531,
+        "change_30m_pct": -0.336,
+        "change_5m_pct": -0.489,
+        "change_pct": -0.247,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 11.1624,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "QXO:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:44:43+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.531,
+          "change_30m_pct": -0.336,
+          "change_5m_pct": -0.489,
+          "change_pct": -0.247,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 11.1624,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "QXO"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:44:07+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.324,
+        "change_30m_pct": -0.552,
+        "change_5m_pct": 0.163,
+        "change_pct": -2.416,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 12.32,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "RGTI:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:44:07+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.324,
+          "change_30m_pct": -0.552,
+          "change_5m_pct": 0.163,
+          "change_pct": -2.416,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 12.32,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "RGTI"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T09:19:19+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": 0.993,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 11.19,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "EQX:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T09:19:19+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 0.993,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 11.19,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "EQX"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:32:21+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": -0.683,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 32.0,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "TOST:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:32:21+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": -0.683,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 32.0,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "TOST"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:23:50+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": 0.739,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": 0.465,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 20.53,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "BBWI:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:23:50+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": 0.739,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 0.465,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 20.53,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "BBWI"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:01:16+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": 0.536,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 94.78,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "MNDY:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:01:16+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 0.536,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 94.78,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "MNDY"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:44:44+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": 0.498,
+        "change_30m_pct": -0.031,
+        "change_5m_pct": 0.424,
+        "change_pct": 0.621,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 13.1957,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "TTD:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:44:44+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": 0.498,
+          "change_30m_pct": -0.031,
+          "change_5m_pct": 0.424,
+          "change_pct": 0.621,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 13.1957,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "TTD"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:43:34+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": -0.553,
+        "change_pct": -0.54,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 75.48,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "AFRM:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:43:34+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": -0.553,
+          "change_pct": -0.54,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 75.48,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "AFRM"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:37:07+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.115,
+        "change_pct": -0.039,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 51.12,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "RBLX:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:37:07+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.115,
+          "change_pct": -0.039,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 51.12,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "RBLX"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T10:15:00+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": null,
+        "change_pct": -1.873,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 87.51,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "ETSY:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T10:15:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": -1.873,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 87.51,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "ETSY"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:45:20+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.692,
+        "change_30m_pct": -1.213,
+        "change_5m_pct": 0.026,
+        "change_pct": 0.657,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 11.1629,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "USAR:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:45:20+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.692,
+          "change_30m_pct": -1.213,
+          "change_5m_pct": 0.026,
+          "change_pct": 0.657,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 11.1629,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "USAR"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:45:44+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": 0.088,
+        "change_30m_pct": null,
+        "change_5m_pct": -0.021,
+        "change_pct": -0.021,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 27.3942,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "VKTX:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:45:44+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": 0.088,
+          "change_30m_pct": null,
+          "change_5m_pct": -0.021,
+          "change_pct": -0.021,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 27.3942,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "VKTX"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:10:33+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": 0.0,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": 0.216,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 55.55,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "CAVA:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:10:33+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": 0.0,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 0.216,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 55.55,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "CAVA"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T09:55:28+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": -0.06,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 116.0,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "ELF:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T09:55:28+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": -0.06,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 116.0,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "ELF"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T10:35:11+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": -0.98,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 159.69,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "EFX:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T10:35:11+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": -0.98,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 159.69,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "EFX"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T10:45:00+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": 0.0,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.822,
+        "change_pct": -0.653,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 158.29,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "RDDT:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T10:45:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": 0.0,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.822,
+          "change_pct": -0.653,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 158.29,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "RDDT"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:39:25+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.167,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.125,
+        "change_pct": 0.503,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 23.96,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "KGC:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:39:25+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.167,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.125,
+          "change_pct": 0.503,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 23.96,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "KGC"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:20:00+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": null,
+        "change_pct": 2.086,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 18.35,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "MMED:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:20:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 2.086,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 18.35,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "MMED"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:44:58+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.172,
+        "change_30m_pct": null,
+        "change_5m_pct": -0.172,
+        "change_pct": 0.392,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 23.1001,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "FIG:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:44:58+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.172,
+          "change_30m_pct": null,
+          "change_5m_pct": -0.172,
+          "change_pct": 0.392,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 23.1001,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "FIG"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:44:42+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.704,
+        "change_pct": -1.038,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 14.3,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "CORZ:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:44:42+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.704,
+          "change_pct": -1.038,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 14.3,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "CORZ"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:05:00+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": null,
+        "change_pct": 0.297,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 772.3974,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "FICO:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:05:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 0.297,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 772.3974,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "FICO"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:45:21+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.556,
+        "change_pct": 0.37,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 5.43,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "AUR:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:45:21+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.556,
+          "change_pct": 0.37,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 5.43,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "AUR"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T10:35:00+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": null,
+        "change_pct": 0.689,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 34.32,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "IP:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T10:35:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 0.689,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 34.32,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "IP"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T10:39:31+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": 0.912,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 121.75,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "BOOT:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T10:39:31+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 0.912,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 121.75,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "BOOT"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T10:40:00+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": null,
+        "change_pct": 0.021,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 24.21,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "M:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T10:40:00+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 0.021,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 24.21,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "M"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:45:28+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.238,
+        "change_30m_pct": -1.173,
+        "change_5m_pct": 0.157,
+        "change_pct": -1.289,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 12.6498,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "QBTS:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:45:28+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.238,
+          "change_30m_pct": -1.173,
+          "change_5m_pct": 0.157,
+          "change_pct": -1.289,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 12.6498,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "QBTS"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:34:45+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": null,
+        "change_pct": -0.014,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 279.15,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "APP:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:34:45+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": -0.014,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 279.15,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "APP"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T08:01:04+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": 1.198,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 378.58,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "ONC:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T08:01:04+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 1.198,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 378.58,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "ONC"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-10-16",
+      "first_observation": {
+        "bar_time_utc": "2026-10-16T11:16:58+00:00",
+        "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+        "change_15m_pct": -0.328,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.0,
+        "change_pct": 0.592,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 332.1555,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "key": "INTU:2026-10-16",
+      "max_move_from_first_pct": 0.0,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-10-16T11:16:58+00:00",
+          "captured_utc": "2026-10-16T11:45:20.383320+00:00",
+          "change_15m_pct": -0.328,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.0,
+          "change_pct": 0.592,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 332.1555,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "INTU"
     }
   ],
   "metrics": {
@@ -31251,5 +32837,5 @@
     "warning": "Recall uses only timestamped live observations; no future data may populate pre-alert features."
   },
   "schema_version": 2,
-  "updated_utc": "2026-10-16T06:26:33.495186+00:00"
+  "updated_utc": "2026-10-16T11:45:59.485295+00:00"
 }
