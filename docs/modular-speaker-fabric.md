@@ -353,3 +353,46 @@ It does not yet prove:
 - automatic acoustic positioning;
 - Dolby certification;
 - a complete production soundbar enclosure.
+
+
+## Approved automatic topology profiles
+
+Aurora can now react automatically to dock state **without inferring room position**.
+A `DetachableAtmosPairProfile` binds stable left/right module IDs to stable
+left/right dock-slot IDs. Only two complete states are approved:
+
+```text
+both in approved dock slots
+→ FL+TFL / FR+TFR
+→ shared DockBus
+
+both detached + fabric admission passes
+→ SL+TRL / SR+TRR
+→ synchronized network routes
+```
+
+A mixed state, missing pod, duplicate identity, unexpected dock slot, offline
+endpoint, or insufficient synchronization does not preserve the old audible
+assignment. `build_pair_reconfiguration` emits a **mute-only fail-closed
+handover** for the previous topology. Once both modules reach a complete approved
+state, Aurora builds the normal global Mute → Prepare → Arm → Commit handover.
+
+This makes physical detach/reattach usable as an automatic product behavior while
+keeping the safety rule intact: the system follows an explicitly stored profile,
+not a guess that every removed speaker must be a rear.
+
+Run:
+
+```bash
+cargo run -p aurora-modular-speaker-fabric --example automatic_reconfiguration
+```
+
+Expected software marker:
+
+```text
+AURORA-AUTO-MODULAR-PASS docked=FL+TFL,FR+TFR mixed=muted detached=SL+TRL,SR+TRR
+```
+
+This remains software evidence. Automatic physical rear activation is not
+declared proven until the detached hardware passes the physical acceptance
+milestones and measured synchronization gates below.
