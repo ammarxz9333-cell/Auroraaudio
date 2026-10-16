@@ -9,6 +9,16 @@
   },
   "capabilities": [
     {
+      "id": "acoustic-auto-aim-manual",
+      "status": "planned",
+      "evidence_class": "virtual",
+      "evidence": [
+        "crates/aurora-measurement/src/auto_aim.rs",
+        "docs/acoustic-auto-aim.md"
+      ],
+      "truth_boundary": "On-demand relative-angle scoring, bounded FFT deconvolution, host motor/capture sequence, saved presets and a CRC-framed motor control contract have synthetic unit tests only. AuroraSim export, actual microphone capture, actual motor firmware/encoder, room reflections and acoustic perception remain pending."
+    },
+    {
       "id": "simics-tv-audio-ingress",
       "status": "planned",
       "evidence_class": "virtual",
