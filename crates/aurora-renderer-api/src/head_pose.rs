@@ -273,6 +273,15 @@ impl HeadPoseState {
         })
     }
 
+    /// Clears the current tracker epoch without changing interpolation/stale policy.
+    ///
+    /// This is explicit control-plane recovery for tracker reconnect or clock re-anchor.
+    /// Aurora logical media time is owned by the caller and is not reset here.
+    pub fn reset(&mut self) {
+        self.previous = None;
+        self.current = None;
+    }
+
     /// Most recently accepted sample, if any.
     pub const fn current(self) -> Option<HeadPoseSample> {
         self.current
@@ -427,6 +436,29 @@ mod tests {
             .commit(sample(8, 1_100, UnitQuaternion::IDENTITY))
             .unwrap();
         assert_eq!(state.current().unwrap().sequence, 8);
+    }
+
+    #[test]
+    fn explicit_reset_starts_a_new_tracker_epoch() {
+        let policy = HeadPosePolicy::new(256, 256).unwrap();
+        let mut state = HeadPoseState::new(policy);
+        state
+            .commit(sample(100, 1_000, UnitQuaternion::IDENTITY))
+            .unwrap();
+        assert_eq!(
+            state.commit(sample(1, 2_000, UnitQuaternion::IDENTITY)),
+            Err(HeadPoseError::NonMonotonicSequence {
+                previous: 100,
+                actual: 1,
+            })
+        );
+
+        state.reset();
+        state
+            .commit(sample(1, 2_000, UnitQuaternion::IDENTITY))
+            .unwrap();
+        assert_eq!(state.current().unwrap().sequence, 1);
+        assert_eq!(state.current().unwrap().media_frame, 2_000);
     }
 
     #[test]
