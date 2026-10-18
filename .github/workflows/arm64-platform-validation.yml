@@ -2,6 +2,18 @@ name: ARM64 Platform Validation
 
 on:
   workflow_dispatch:
+  pull_request:
+    paths:
+      - "crates/**"
+      - "validation/immersive/**"
+      - "validation/physical/test-pi5-earc-runtime-contract.sh"
+      - "config/external-components-v1.json"
+      - "config/layouts/**"
+      - "scripts/pi5/**"
+      - "platform/pi5/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/arm64-platform-validation.yml"
   push:
     branches:
       - main-v2
@@ -9,6 +21,9 @@ on:
       - "crates/**"
       - "validation/immersive/**"
       - "config/external-components-v1.json"
+      - "config/layouts/**"
+      - "scripts/pi5/**"
+      - "platform/pi5/**"
       - "Cargo.toml"
       - "Cargo.lock"
       - ".github/workflows/arm64-platform-validation.yml"
@@ -108,6 +123,43 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - name: Install JOC/render build dependencies
         run: sudo apt-get update && sudo apt-get install --yes ffmpeg libasound2-dev libpipewire-0.3-dev pkg-config time
+      - name: Validate pinned CamillaDSP Pi5 post-DSP on native ARM64
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p output/arm64-joc "$RUNNER_TEMP/aurora-camilladsp"
+          eval "$(python3 - <<'PY'
+          import json, shlex
+          doc=json.load(open("config/external-components-v1.json", encoding="utf-8"))
+          cam=next(x for x in doc["components"] if x["id"]=="camilladsp")
+          art=cam["release_artifacts"]["aarch64-unknown-linux-gnu"]
+          print("CAMILLA_VERSION="+shlex.quote(cam["tested_version"]))
+          print("CAMILLA_ASSET="+shlex.quote(art["name"]))
+          print("CAMILLA_SHA256="+shlex.quote(art["sha256"]))
+          print("CAMILLA_UPSTREAM="+shlex.quote(cam["upstream"]))
+          PY
+          )"
+          archive="$RUNNER_TEMP/aurora-camilladsp/$CAMILLA_ASSET"
+          url="$CAMILLA_UPSTREAM/releases/download/v$CAMILLA_VERSION/$CAMILLA_ASSET"
+          curl -fL --retry 3 --retry-delay 1 "$url" -o "$archive"
+          printf '%s  %s\n' "$CAMILLA_SHA256" "$archive" | sha256sum -c -
+          tar -xzf "$archive" -C "$RUNNER_TEMP/aurora-camilladsp"
+          camilla="$(find "$RUNNER_TEMP/aurora-camilladsp" -type f -name camilladsp -perm -u+x | head -n1)"
+          test -n "$camilla"
+          "$camilla" --version | tee output/arm64-joc/camilladsp-version.txt
+          python3 scripts/pi5/make-camilladsp-config.py \
+            --output "$RUNNER_TEMP/aurora-camilladsp/runtime.yml" \
+            --device default \
+            --samplerate 48000 \
+            --channels 16 \
+            --chunksize 512 \
+            --queuelimit 2 \
+            --target-level 512 \
+            --adjust-period 3
+          "$camilla" --check "$RUNNER_TEMP/aurora-camilladsp/runtime.yml" \
+            | tee output/arm64-joc/camilladsp-config-check.txt
+          grep -q "Config is valid" output/arm64-joc/camilladsp-config-check.txt
+          echo "AURORA-CAMILLADSP-ARM64-CONTRACT-PASS" | tee output/arm64-joc/camilladsp-pass.txt
       - name: Run real Harletty plus Omniphony 7.1.4 stack on native ARM64
         env:
           AURORA_JOC_BUILD_MODE: release

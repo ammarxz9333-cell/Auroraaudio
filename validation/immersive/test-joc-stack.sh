@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 MANIFEST="$ROOT_DIR/config/external-components-v1.json"
-OMNIP_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.5.2-low-latency-stdout.patch"
+OMNIP_ARM64_PATCH="$ROOT_DIR/validation/immersive/omniphony-v0.6.0-arm64-c-char.patch"
 TOOLCHAIN="${AURORA_EXTERNAL_RUST_TOOLCHAIN:-stable}"
 KEEP_WORKDIR="${AURORA_KEEP_JOC_TEST_WORKDIR:-0}"
 BUILD_MODE="${AURORA_JOC_BUILD_MODE:-debug}"
@@ -36,7 +36,7 @@ for cmd in git python3 ffmpeg rustup cargo; do
   command -v "$cmd" >/dev/null 2>&1 || { echo "missing required command: $cmd" >&2; exit 2; }
 done
 [[ -f "$MANIFEST" ]] || { echo "missing external component manifest: $MANIFEST" >&2; exit 2; }
-[[ -f "$OMNIP_PATCH" ]] || { echo "missing Omniphony latency patch: $OMNIP_PATCH" >&2; exit 2; }
+[[ -f "$OMNIP_ARM64_PATCH" ]] || { echo "missing Omniphony ARM64 portability patch: $OMNIP_ARM64_PATCH" >&2; exit 2; }
 
 if [[ -n "${AURORA_JOC_TEST_WORKDIR:-}" ]]; then
   WORK_DIR="$AURORA_JOC_TEST_WORKDIR"
@@ -100,9 +100,11 @@ CARGO_TARGET_DIR="$HARLETTY_TARGET_DIR" cargo +"$TOOLCHAIN" build --locked "${PR
   --manifest-path "$HARLETTY_DIR/Cargo.toml" \
   -p harletty-bridge
 
-phase "patch and build Omniphony renderer ($BUILD_MODE)"
-git -C "$OMNIP_DIR/omniphony-renderer" apply --check "$OMNIP_PATCH"
-git -C "$OMNIP_DIR/omniphony-renderer" apply "$OMNIP_PATCH"
+phase "apply Omniphony 0.6 c_char portability patch"
+git -C "$OMNIP_DIR" apply --check "$OMNIP_ARM64_PATCH"
+git -C "$OMNIP_DIR" apply "$OMNIP_ARM64_PATCH"
+
+phase "build Omniphony renderer ($BUILD_MODE)"
 CARGO_TARGET_DIR="$OMNIP_TARGET_DIR" cargo +"$TOOLCHAIN" build "${PROFILE_ARGS[@]}" \
   --manifest-path "$OMNIP_DIR/omniphony-renderer/Cargo.toml" \
   -p omniphony-renderer
@@ -113,10 +115,15 @@ PLAIN_IEC_FILE="$WORK_DIR/plain_eac3_5_1.spdif"
 BRIDGE_LIB="$HARLETTY_TARGET_DIR/$PROFILE_DIR/libharletty_bridge.so"
 ORENDER="$OMNIP_TARGET_DIR/$PROFILE_DIR/orender"
 LAYOUT="$OMNIP_DIR/layouts/7.1.4.yaml"
+AURORA_LAYOUT="$ROOT_DIR/config/layouts/omniphony-11.1.4-aurora.yaml"
 RENDER_OUT="$WORK_DIR/joc_atmos_7_1_4.f32"
+AURORA_RENDER_OUT="$WORK_DIR/joc_atmos_aurora_11_1_4.f32"
 RENDER_LOG="$WORK_DIR/orender-joc.log"
+AURORA_RENDER_LOG="$WORK_DIR/orender-joc-aurora-11.1.4.log"
+AURORA_STDOUT_RENDER="$WORK_DIR/joc_atmos_aurora_11_1_4_stdout.f32"
+AURORA_STDOUT_LOG="$WORK_DIR/orender-joc-aurora-11.1.4-stdout.log"
 
-for path in "$JOC_FIXTURE" "$BRIDGE_LIB" "$ORENDER" "$LAYOUT"; do
+for path in "$JOC_FIXTURE" "$BRIDGE_LIB" "$ORENDER" "$LAYOUT" "$AURORA_LAYOUT"; do
   [[ -f "$path" ]] || { echo "expected validation input/build product missing: $path" >&2; exit 1; }
 done
 
@@ -272,6 +279,102 @@ for ch in range(12):
     vals = samples[ch::12]
     rms.append(math.sqrt(sum(v * v for v in vals) / max(1, len(vals))))
 print(f"7.1.4 render PASS: frames={frames} bytes={len(data)} channel_rms=" + ",".join(f"{v:.6g}" for v in rms))
+PY
+
+phase "render real JOC IEC61937 fixture to Aurora custom 11.1.4"
+if ! RUST_LOG="${RUST_LOG:-info}" "$ORENDER" "$IEC_FILE" \
+  --bridge-path "$BRIDGE_LIB" \
+  --enable-vbap \
+  --speaker-layout "$AURORA_LAYOUT" \
+  --output-backend file \
+  --output-file "$AURORA_RENDER_OUT" \
+  --output-file-format raw-f32 \
+  >"$AURORA_RENDER_LOG" 2>&1; then
+  echo "orender failed while rendering Aurora custom 11.1.4:" >&2
+  cat "$AURORA_RENDER_LOG" >&2
+  exit 1
+fi
+
+python3 - "$AURORA_RENDER_OUT" <<'PY'
+from array import array
+import math, pathlib, sys
+p = pathlib.Path(sys.argv[1])
+data = p.read_bytes()
+channels = 16
+frame_bytes = channels * 4
+if len(data) < frame_bytes * 100:
+    raise SystemExit(f"Aurora 11.1.4 render output too short: {len(data)} bytes")
+if len(data) % frame_bytes:
+    raise SystemExit(f"Aurora 11.1.4 output is not whole 16-channel f32 frames: {len(data)} bytes")
+samples = array('f')
+samples.frombytes(data)
+if not all(math.isfinite(v) for v in samples):
+    raise SystemExit("Aurora 11.1.4 render output contains NaN/Inf")
+if not any(abs(v) > 1e-8 for v in samples):
+    raise SystemExit("Aurora 11.1.4 render output is silent")
+frames = len(samples) // channels
+rms = []
+for ch in range(channels):
+    vals = samples[ch::channels]
+    rms.append(math.sqrt(sum(v * v for v in vals) / max(1, len(vals))))
+active = sum(v > 1e-8 for v in rms)
+if active < 2:
+    raise SystemExit(f"Aurora 11.1.4 render has too few active channels: {active}")
+print(
+    f"AURORA-11.1.4-JOC-RENDER-PASS frames={frames} bytes={len(data)} active_channels={active} "
+    + "channel_rms=" + ",".join(f"{v:.6g}" for v in rms)
+)
+PY
+
+phase "render Aurora 11.1.4 as raw F32 on stdout"
+if ! RUST_LOG="${RUST_LOG:-info}" "$ORENDER" "$IEC_FILE" \
+  --bridge-path "$BRIDGE_LIB" \
+  --enable-vbap \
+  --speaker-layout "$AURORA_LAYOUT" \
+  --output-backend file \
+  --output-file - \
+  --output-file-format raw-f32 \
+  >"$AURORA_STDOUT_RENDER" 2>"$AURORA_STDOUT_LOG"; then
+  echo "orender failed while emitting Aurora raw F32 to stdout:" >&2
+  cat "$AURORA_STDOUT_LOG" >&2
+  exit 1
+fi
+
+python3 - "$AURORA_RENDER_OUT" "$AURORA_STDOUT_RENDER" <<'PY'
+from array import array
+import math, pathlib, sys
+
+file_path = pathlib.Path(sys.argv[1])
+stdout_path = pathlib.Path(sys.argv[2])
+file_data = file_path.read_bytes()
+stdout_data = stdout_path.read_bytes()
+channels = 16
+frame_bytes = channels * 4
+
+if not stdout_data:
+    raise SystemExit("Aurora stdout F32 render is empty")
+if len(stdout_data) % frame_bytes:
+    raise SystemExit(
+        f"Aurora stdout F32 is contaminated/misaligned: {len(stdout_data)} bytes"
+    )
+samples = array("f")
+samples.frombytes(stdout_data)
+if not all(math.isfinite(v) for v in samples):
+    raise SystemExit("Aurora stdout F32 contains NaN/Inf")
+if not any(abs(v) > 1e-8 for v in samples):
+    raise SystemExit("Aurora stdout F32 render is silent")
+
+file_frames = len(file_data) // frame_bytes
+stdout_frames = len(stdout_data) // frame_bytes
+if stdout_frames != file_frames:
+    raise SystemExit(
+        f"stdout/file frame mismatch: stdout={stdout_frames} file={file_frames}"
+    )
+
+print(
+    f"AURORA-11.1.4-STDOUT-F32-PASS "
+    f"frames={stdout_frames} bytes={len(stdout_data)} channels={channels}"
+)
 PY
 
 echo "AURORA JOC SOFTWARE STACK PASS"

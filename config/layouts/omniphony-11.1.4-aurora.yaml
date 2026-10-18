@@ -1,0 +1,135 @@
+# Aurora custom 11.1.4 output layout for Omniphony 0.6.
+# 11 full-range bed speakers + LFE + 4 height speakers = 16 outputs.
+# This is an Aurora physical-output topology, not a claim of a Dolby-standard
+# 11.1.4 channel bed. Objects are rendered into this custom geometry.
+name: "Aurora 11.1.4 custom"
+radius_m: 1
+speakers:
+  - name: "FL"
+    coord_mode: "cartesian"
+    x: -0.7
+    y: 1.0
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "FR"
+    coord_mode: "cartesian"
+    x: 0.7
+    y: 1.0
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "C"
+    coord_mode: "cartesian"
+    x: 0.0
+    y: 1.0
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "FWL"
+    coord_mode: "cartesian"
+    x: -1.0
+    y: 0.58
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "FWR"
+    coord_mode: "cartesian"
+    x: 1.0
+    y: 0.58
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "SL"
+    coord_mode: "cartesian"
+    x: -1.0
+    y: 0.0
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "SR"
+    coord_mode: "cartesian"
+    x: 1.0
+    y: 0.0
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "RWL"
+    coord_mode: "cartesian"
+    x: -1.0
+    y: -0.52
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "RWR"
+    coord_mode: "cartesian"
+    x: 1.0
+    y: -0.52
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "BL"
+    coord_mode: "cartesian"
+    x: -0.64
+    y: -1.0
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "BR"
+    coord_mode: "cartesian"
+    x: 0.64
+    y: -1.0
+    z: 0.0
+    spatialize: true
+    freq_low: 80
+    delay_ms: 0
+  - name: "LFE"
+    coord_mode: "cartesian"
+    x: 0.0
+    y: 0.4
+    z: 0.0
+    spatialize: true
+    freq_high: 80
+    delay_ms: 0
+  - name: "TFL"
+    coord_mode: "cartesian"
+    x: -0.55
+    y: 0.6
+    z: 1.0
+    spatialize: true
+    freq_low: 100
+    delay_ms: 0
+  - name: "TFR"
+    coord_mode: "cartesian"
+    x: 0.55
+    y: 0.6
+    z: 1.0
+    spatialize: true
+    freq_low: 100
+    delay_ms: 0
+  - name: "TRL"
+    coord_mode: "cartesian"
+    x: -0.55
+    y: -0.6
+    z: 1.0
+    spatialize: true
+    freq_low: 100
+    delay_ms: 0
+  - name: "TRR"
+    coord_mode: "cartesian"
+    x: 0.55
+    y: -0.6
+    z: 1.0
+    spatialize: true
+    freq_low: 100
+    delay_ms: 0
