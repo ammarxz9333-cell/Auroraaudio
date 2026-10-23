@@ -121,6 +121,7 @@ replace_once(
 # for this endpoint; an empty day is not end-of-history.
 file = ROOT / "lib/features/home/home_feeds.dart"
 source = file.read_text(encoding="utf-8")
+source = source.replace("import '../../shared/widgets/app_refresh_indicator.dart';\n", "", 1)
 source = source.replace(
     "import 'home_providers.dart';\n",
     "import 'daily_archive_provider.dart';\n"
