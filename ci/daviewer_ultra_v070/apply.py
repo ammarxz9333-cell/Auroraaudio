@@ -1,4 +1,4 @@
-"""DAViewer Ultra v0.7.1 migration patches for upstream v0.7.0.
+"""DAViewer Ultra v0.7.2 migration patches for upstream v0.7.0.
 
 Each anchor is checked. A changed upstream source fails CI rather than silently
 building a partially modified app. All changes affect the CI checkout only.
@@ -18,7 +18,7 @@ def replace_once(relative: str, old: str, new: str) -> None:
 
 
 # Use a strictly higher code than both the previous Ultra and upstream builds.
-replace_once("pubspec.yaml", "version: 0.7.0+239", "version: 0.7.1+701")
+replace_once("pubspec.yaml", "version: 0.7.0+239", "version: 0.7.2+702")
 replace_once(
     "android/app/src/main/AndroidManifest.xml",
     'android:label="DA Viewer"',
@@ -38,22 +38,144 @@ replace_once(
     '                signingConfigs.getByName("debug")',
 )
 
-# The app has a public OAuth client ID, app_links callbacks and the Android
-# intent filter already. Provider sign-in in embedded WebViews is often blocked.
-# Open authorization in the system browser on Android; retain the unified
-# WebView implementation on desktop and an optional browser session in-app.
+# Preserve the externally launched Android authorization as the default.
+# Allow the user to opt into the embedded flow if the browser route fails;
+# both reuse the secure PKCE callback stream without leaking credentials.
 replace_once(
-    "lib/core/runtime/app_runtime.dart",
-    "import '../network/dynamic_proxy_dio.dart';\n",
-    "import '../network/desktop_uri_launcher.dart';\n"
-    "import '../network/dynamic_proxy_dio.dart';\n",
+    "lib/core/auth/webview_oauth_bridge.dart",
+    """  WebViewOAuthBridge({ExternalUriLauncher? fallback})
+    : _fallback = fallback ?? const DesktopUriLauncher();""",
+    """  WebViewOAuthBridge({
+    ExternalUriLauncher? fallback,
+    this.preferExternalBrowser = false,
+  }) : _fallback = fallback ?? const DesktopUriLauncher();
+
+  bool preferExternalBrowser;""",
+)
+replace_once(
+    "lib/core/auth/webview_oauth_bridge.dart",
+    "  Future<void> launch(Uri uri) async {\n",
+    """  Future<void> launch(Uri uri) async {
+    if (preferExternalBrowser) {
+      AppLogger.instance.info('oauthBridge', 'authorize target=system');
+      await _fallback.launch(uri);
+      return;
+    }
+""",
 )
 replace_once(
     "lib/core/runtime/app_runtime.dart",
-    "      launcher: webViewOAuthBridge,\n",
-    "      launcher: Platform.isAndroid\n"
-    "          ? const DesktopUriLauncher()\n"
-    "          : webViewOAuthBridge,\n",
+    "import '../network/dynamic_proxy_dio.dart';\n",
+    "import '../network/dynamic_proxy_dio.dart';\n"
+    "import '../network/oauth_network_fallback.dart';\n",
+)
+replace_once(
+    "lib/core/runtime/app_runtime.dart",
+    "final webViewOAuthBridge = WebViewOAuthBridge();",
+    "final webViewOAuthBridge = WebViewOAuthBridge(\n"
+    "      preferExternalBrowser: Platform.isAndroid,\n"
+    "    );",
+)
+replace_once(
+    "lib/core/runtime/app_runtime.dart",
+    "      endpoint: dio == null ? null : DioOAuthEndpoint(dio: dio),\n",
+    """      endpoint: dio == null
+          ? null
+          : SafeOAuthNetworkFallback(
+              primary: DioOAuthEndpoint(dio: dio),
+              direct: DioOAuthEndpoint(
+                dio: createDynamicProxyDio(
+                  () => 'DIRECT',
+                  options: BaseOptions(
+                    connectTimeout: const Duration(seconds: 15),
+                    receiveTimeout: const Duration(seconds: 30),
+                    headers: <String, Object>{
+                      'User-Agent': 'DAViewer-Ultra/0.7.2',
+                      'Accept-Encoding': 'gzip',
+                    },
+                  ),
+                ),
+              ),
+              source: () => proxyController?.source ?? ProxySource.direct,
+            ),
+""",
+)
+replace_once(
+    "lib/core/runtime/app_runtime.dart",
+    """        receiveTimeout: const Duration(seconds: 30),
+      ),
+    );
+    dio.interceptors.add(PlatformAiInterceptor());""",
+    """        receiveTimeout: const Duration(seconds: 30),
+        headers: <String, Object>{
+          'User-Agent': 'DAViewer-Ultra/0.7.2',
+          'Accept-Encoding': 'gzip',
+        },
+      ),
+    );
+    dio.interceptors.add(PlatformAiInterceptor());""",
+)
+
+# Clear diagnosis and real recovery controls instead of a generic red banner
+# sitting over a white WebView. The error code is safe; tokens and callbacks
+# must never appear in the visible message.
+replace_once(
+    "lib/features/web_login/web_login_screen.dart",
+    "import 'package:flutter/material.dart';\n",
+    "import 'package:dakit_core/dakit_core.dart';\n"
+    "import 'package:flutter/material.dart';\n",
+)
+replace_once(
+    "lib/core/l10n/app_strings.dart",
+    "  String get loginNetworkFailure => _lang == AppLanguage.zh\n",
+    "  String get loginTryEmbedded => _lang == AppLanguage.zh\n"
+    "      ? '改用应用内登录'\n"
+    "      : 'Try in-app sign-in';\n"
+    "  String get loginNetworkFailure => _lang == AppLanguage.zh\n",
+)
+replace_once(
+    "lib/features/web_login/web_login_screen.dart",
+    """              if (auth.error != null)
+                _LoginErrorBanner(
+                  message: friendlyLoginErrorMessage(auth.error!, s),
+                ),""",
+    """              if (auth.error != null) ...<Widget>[
+                _LoginErrorBanner(
+                  message: auth.error is DAKitException
+                      ? '${friendlyLoginErrorMessage(auth.error!, s)} '
+                        '(${(auth.error as DAKitException).code})'
+                      : friendlyLoginErrorMessage(auth.error!, s),
+                ),
+                Padding(
+                  padding: const EdgeInsets.all(12),
+                  child: Wrap(
+                    spacing: 8,
+                    runSpacing: 8,
+                    children: <Widget>[
+                      FilledButton.tonalIcon(
+                        onPressed: auth.isLoggingIn
+                            ? null
+                            : () => unawaited(_authController.retryLogin()),
+                        icon: const Icon(Icons.refresh),
+                        label: Text(s.retry),
+                      ),
+                      if (Platform.isAndroid)
+                        OutlinedButton(
+                          onPressed: auth.isLoggingIn
+                              ? null
+                              : () {
+                                  ref
+                                      .read(runtimeProvider)
+                                      .webViewOAuthBridge
+                                      ?.preferExternalBrowser = false;
+                                  unawaited(_authController.retryLogin());
+                                },
+                          child: Text(s.loginTryEmbedded),
+                        ),
+                    ],
+                  ),
+                ),
+              ],""",
 )
 
 # External-browser OAuth and the embedded WebView have isolated cookie stores.
@@ -167,8 +289,11 @@ file.write_text(source, encoding="utf-8")
 for relative in (
     "lib/features/home/daily_archive_provider.dart",
     "test/daily_archive_cursor_test.dart",
+    "lib/core/network/oauth_network_fallback.dart",
+    "test/oauth_network_fallback_test.dart",
+    "test/oauth_launcher_switch_test.dart",
 ):
     if not (ROOT / relative).is_file():
         raise SystemExit(f"missing bundled file: {relative}")
 
-print("DAViewer Ultra v0.7.1 patches applied")
+print("DAViewer Ultra v0.7.2 login recovery patches applied")
