@@ -25,6 +25,19 @@ replace_once(
     'android:label="DAViewer Ultra"',
 )
 
+# Allow this CI-only personal artifact to build without upload-key secrets.
+# This uses a debug key and cannot update a differently-signed installation.
+replace_once(
+    "android/app/build.gradle.kts",
+    """                error(
+                    "Release signing is not configured. " +
+                    "Create android/key.properties and " +
+                    "android/app/upload-keystore.p12 before building a release APK. " +
+                    "See README.md / CI signing secrets."
+                )""",
+    '                signingConfigs.getByName("debug")',
+)
+
 # The app has a public OAuth client ID, app_links callbacks and the Android
 # intent filter already. Provider sign-in in embedded WebViews is often blocked.
 # Open authorization in the system browser on Android; retain the unified
