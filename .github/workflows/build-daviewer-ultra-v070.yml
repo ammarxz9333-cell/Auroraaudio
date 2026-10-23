@@ -1,0 +1,125 @@
+name: Build DAViewer Ultra v0.7.1
+
+on:
+  push:
+    branches:
+      - app/daviewer-ultra-v070-20261023
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: daviewer-ultra-v070-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - name: Checkout Aurora patch carrier
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+
+      - name: Fetch verified upstream DAViewer v0.7.0
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/redtidev1918/DAViewer.git DAViewer
+          git -C DAViewer checkout 6ec59f574cb73819ee0e8889c7ad14ccfa55b613
+          test "$(git -C DAViewer rev-parse HEAD)" = "6ec59f574cb73819ee0e8889c7ad14ccfa55b613"
+          grep -q '^version: 0.7.0+239$' DAViewer/pubspec.yaml
+
+      - name: Install bundled files and apply migration
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp ci/daviewer_ultra_v070/daily_archive_provider.dart DAViewer/lib/features/home/daily_archive_provider.dart
+          cp ci/daviewer_ultra_v070/daily_archive_cursor_test.dart DAViewer/test/daily_archive_cursor_test.dart
+          python3 ci/daviewer_ultra_v070/apply.py
+          cd DAViewer
+          dart format lib/core/runtime/app_runtime.dart lib/features/web_login/web_login_screen.dart lib/features/search/search_providers.dart lib/shared/widgets/artwork_feed_grid.dart lib/features/home/home_feeds.dart lib/features/home/daily_archive_provider.dart test/daily_archive_cursor_test.dart
+
+      - name: Ensure only reviewed source files changed
+        working-directory: DAViewer
+        shell: bash
+        run: |
+          set -euo pipefail
+          git status --short
+          python3 - <<'PY'
+          import subprocess
+          allowed = {
+              "pubspec.yaml",
+              "android/app/build.gradle.kts",
+              "android/app/src/main/AndroidManifest.xml",
+              "lib/core/runtime/app_runtime.dart",
+              "lib/features/web_login/web_login_screen.dart",
+              "lib/features/search/search_providers.dart",
+              "lib/shared/widgets/artwork_feed_grid.dart",
+              "lib/features/home/home_feeds.dart",
+              "lib/features/home/daily_archive_provider.dart",
+              "test/daily_archive_cursor_test.dart",
+          }
+          porcelain = subprocess.check_output(["git", "status", "--porcelain"], text=True)
+          paths = {line[3:].strip() for line in porcelain.splitlines() if line.strip()}
+          unexpected = paths - allowed
+          if unexpected:
+              raise SystemExit(f"Unexpected changed files: {sorted(unexpected)}")
+          required = allowed - {"test/daily_archive_cursor_test.dart"}
+          missing = required - paths
+          if missing:
+              raise SystemExit(f"Expected changes missing: {sorted(missing)}")
+          print("Verified DAViewer Ultra patch scope:", sorted(paths))
+          PY
+
+      - name: Resolve Flutter dependencies
+        working-directory: DAViewer
+        run: flutter pub get
+
+      - name: Analyze
+        working-directory: DAViewer
+        run: flutter analyze
+
+      - name: Format gate
+        working-directory: DAViewer
+        run: dart format --output=none --set-exit-if-changed lib test
+
+      - name: Run regression suite
+        working-directory: DAViewer
+        run: flutter test
+
+      - name: Build Android APK
+        working-directory: DAViewer
+        run: flutter build apk --release --dart-define=DAVIEWER_VERSION=0.7.1
+
+      - name: Package APK and checksums
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-Ultra-v0.7.1-android.apk
+          cd out
+          sha256sum DAViewer-Ultra-v0.7.1-android.apk > SHA256SUMS.txt
+          printf '%s\n' \
+            'DAViewer Ultra 0.7.1+701' \
+            'Upstream DAViewer v0.7.0 (6ec59f574cb73819ee0e8889c7ad14ccfa55b613)' \
+            'External Android OAuth via system browser / app_links callback' \
+            'Daily archive date cursors, search empty-page continuity, manual pagination' \
+            'Signing: CI ephemeral debug key (not compatible with other signatures)' \
+            'Validation: Flutter analyze, format gate, full test suite, APK build' \
+            > BUILD-INFO.txt
+
+      - name: Upload tested APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-Ultra-v0.7.1-android
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
