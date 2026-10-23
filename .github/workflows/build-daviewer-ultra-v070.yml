@@ -1,16 +1,16 @@
-name: Build DAViewer Ultra v0.7.1
+name: Build DAViewer Ultra v0.7.2
 
 on:
   push:
     branches:
-      - app/daviewer-ultra-v070-20261023
+      - app/daviewer-ultra-v072-login-fix-20261023
   workflow_dispatch:
 
 permissions:
   contents: read
 
 concurrency:
-  group: daviewer-ultra-v070-${{ github.ref }}
+  group: daviewer-ultra-v072-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -43,9 +43,12 @@ jobs:
           set -euo pipefail
           cp ci/daviewer_ultra_v070/daily_archive_provider.dart DAViewer/lib/features/home/daily_archive_provider.dart
           cp ci/daviewer_ultra_v070/daily_archive_cursor_test.dart DAViewer/test/daily_archive_cursor_test.dart
+          cp ci/daviewer_ultra_v070/oauth_network_fallback.dart DAViewer/lib/core/network/oauth_network_fallback.dart
+          cp ci/daviewer_ultra_v070/oauth_network_fallback_test.dart DAViewer/test/oauth_network_fallback_test.dart
+          cp ci/daviewer_ultra_v070/oauth_launcher_switch_test.dart DAViewer/test/oauth_launcher_switch_test.dart
           python3 ci/daviewer_ultra_v070/apply.py
           cd DAViewer
-          dart format lib/core/runtime/app_runtime.dart lib/features/web_login/web_login_screen.dart lib/features/search/search_providers.dart lib/shared/widgets/artwork_feed_grid.dart lib/features/home/home_feeds.dart lib/features/home/daily_archive_provider.dart test/daily_archive_cursor_test.dart
+          dart format lib/core/auth/webview_oauth_bridge.dart lib/core/l10n/app_strings.dart lib/core/network/oauth_network_fallback.dart test/oauth_network_fallback_test.dart test/oauth_launcher_switch_test.dart lib/core/runtime/app_runtime.dart lib/features/web_login/web_login_screen.dart lib/features/search/search_providers.dart lib/shared/widgets/artwork_feed_grid.dart lib/features/home/home_feeds.dart lib/features/home/daily_archive_provider.dart test/daily_archive_cursor_test.dart
 
       - name: Ensure only reviewed source files changed
         working-directory: DAViewer
@@ -60,6 +63,11 @@ jobs:
               "android/app/build.gradle.kts",
               "android/app/src/main/AndroidManifest.xml",
               "lib/core/runtime/app_runtime.dart",
+              "lib/core/auth/webview_oauth_bridge.dart",
+              "lib/core/l10n/app_strings.dart",
+              "lib/core/network/oauth_network_fallback.dart",
+              "test/oauth_network_fallback_test.dart",
+              "test/oauth_launcher_switch_test.dart",
               "lib/features/web_login/web_login_screen.dart",
               "lib/features/search/search_providers.dart",
               "lib/shared/widgets/artwork_feed_grid.dart",
@@ -104,13 +112,13 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p out
-          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-Ultra-v0.7.1-android.apk
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-Ultra-v0.7.2-android.apk
           cd out
-          sha256sum DAViewer-Ultra-v0.7.1-android.apk > SHA256SUMS.txt
+          sha256sum DAViewer-Ultra-v0.7.2-android.apk > SHA256SUMS.txt
           printf '%s\n' \
-            'DAViewer Ultra 0.7.1+701' \
+            'DAViewer Ultra 0.7.2+702' \
             'Upstream DAViewer v0.7.0 (6ec59f574cb73819ee0e8889c7ad14ccfa55b613)' \
-            'External Android OAuth via system browser / app_links callback' \
+            'Android OAuth browser/embedded fallback, safe network recovery' \
             'Daily archive date cursors, search empty-page continuity, manual pagination' \
             'Signing: CI ephemeral debug key (not compatible with other signatures)' \
             'Validation: Flutter analyze, format gate, full test suite, APK build' \
@@ -119,7 +127,7 @@ jobs:
       - name: Upload tested APK
         uses: actions/upload-artifact@v4
         with:
-          name: DAViewer-Ultra-v0.7.1-android
+          name: DAViewer-Ultra-v0.7.2-android
           path: out/*
           if-no-files-found: error
           retention-days: 14
