@@ -1,5 +1,6 @@
 """Async adapters, authenticated local ingestion, durable Telegram delivery."""
 import asyncio
+import hashlib
 import hmac
 import json
 import logging
@@ -326,6 +327,73 @@ class Service:
                             'news/tape classifications; no auto orders; '
                             'real TradingView parity unverified')})
 
+
+    def enqueue_overkill_v2_alerts(self, asof):
+        """One de-duplicated read-only next-open alert per ticker/signal date.
+
+        Keep these independent of the intraday catalyst BUYABLE_NOW classifier.
+        Enqueue only validated, still-pending signals from a completed candle.
+        """
+        if os.getenv('OVERKILL_V2_ENABLED') != '1':
+            return 0
+        ny_now = asof.astimezone(NY)
+        queued = 0
+        rows = self.engine.db.execute(
+            'SELECT payload FROM overkill_v2_snapshots').fetchall()
+        for row in rows:
+            item = json.loads(row[0])
+            if (item.get('status') != 'READY' or
+                    item.get('bars_confirmed') is not True or
+                    item.get('signal_window_open') is not True):
+                continue
+            target_string = item.get('next_expected_open_date')
+            if not target_string:
+                continue
+            try:
+                target = datetime.fromisoformat(target_string).date()
+                signal_day = datetime.fromisoformat(item['date']).date()
+            except (ValueError, TypeError, KeyError):
+                continue
+            if (ny_now.date() > target or
+                    (ny_now.date() == target and
+                     (ny_now.hour, ny_now.minute) >= (9, 30))):
+                continue
+            actions = {name: mode['next_open_action']
+                       for name, mode in item.get('modes', {}).items()
+                       if isinstance(mode, dict) and
+                       mode.get('next_open_action') in
+                       ('BUY_NEXT_OPEN', 'EXIT_NEXT_OPEN')}
+            if not actions:
+                continue
+            ticker = item.get('ticker')
+            if not ticker:
+                continue
+            alert = {
+                'strategy': 'OVERKILL_V2',
+                'ticker': ticker,
+                'signal_date': signal_day.isoformat(),
+                'next_expected_open_date': target_string,
+                'observed_at': asof.astimezone(timezone.utc).isoformat(),
+                'actions': actions,
+                'fib_retracement': item.get('fib_retracement'),
+                'gold_zone': item.get('gold_zone'),
+                'red_zone': item.get('red_zone'),
+                'weekly_green_regime': item.get('weekly_green_regime'),
+                'monthly_green_regime': item.get('monthly_green_regime'),
+                'price_basis': item.get('price_basis'),
+                'simulated_only': True,
+                'fixed_take_profit': None,
+            }
+            ident = hashlib.sha256(
+                f'overkill-v2:{ticker}:{signal_day.isoformat()}'.encode()
+            ).hexdigest()
+            with self.engine.db:
+                cursor = self.engine.db.execute(
+                    'INSERT OR IGNORE INTO outbox(id,payload) VALUES(?,?)',
+                    (ident, json.dumps(alert)))
+                queued += cursor.rowcount
+        return queued
+
     async def overkill_v2_monitor(self):
         """Opt-in, bounded daily history scan without touching the core tape."""
         if os.getenv('OVERKILL_V2_ENABLED') != '1':
@@ -344,6 +412,8 @@ class Service:
                         'APCA-API-KEY-ID': key,
                         'APCA-API-SECRET-KEY': secret},
                         os.getenv('ALPACA_FEED', 'sip'))
+                    if info.get('status') in ('complete', 'partial'):
+                        info['queued_strategy_alerts'] = self.enqueue_overkill_v2_alerts(now)
                     self.status['overkill_v2'] = info
                     if info.get('status') == 'complete':
                         last_cutoff = cutoff
@@ -355,7 +425,7 @@ class Service:
 
     async def local_alerts(self, request):
         rows = self.engine.db.execute("SELECT payload,sent FROM outbox WHERE rowid IN (SELECT MAX(rowid) FROM outbox GROUP BY json_extract(payload,'$.ticker')) ORDER BY rowid DESC LIMIT 300").fetchall()
-        return web.json_response([{'text': format_alert(json.loads(r['payload'])), 'sent': bool(r['sent']), 'alert':json.loads(r['payload'])} for r in rows])
+        return web.json_response([{'text': format_alert(json.loads(r['payload'])), 'sent': r['sent']==1, 'delivery_state': 'expired' if r['sent']==2 else 'sent' if r['sent']==1 else 'pending', 'alert':json.loads(r['payload'])} for r in rows])
 
     async def dashboard(self, request):
         return web.Response(text=Path('continuous/dashboard.html').read_text(encoding='utf-8'), content_type='text/html')
@@ -408,7 +478,21 @@ class Service:
             rows = self.engine.db.execute('SELECT * FROM outbox WHERE sent=0 AND next_try<=? LIMIT 20', (time.time(),)).fetchall()
             for row in rows:
                 try:
-                    async with self.session.post(f'{self.telegram_base}/bot{token}/sendMessage', json={'chat_id': chat, 'text': format_alert(json.loads(row['payload'])), 'disable_web_page_preview': True}) as response:
+                    payload = json.loads(row['payload'])
+                    if payload.get('strategy') == 'OVERKILL_V2':
+                        expected = datetime.fromisoformat(
+                            payload['next_expected_open_date']).date()
+                        local = datetime.now(NY)
+                        expired = (local.date() > expected or
+                                   (local.date() == expected and
+                                    (local.hour, local.minute) >= (9, 30)))
+                        if expired:
+                            with self.engine.db:
+                                self.engine.db.execute(
+                                    'UPDATE outbox SET sent=2 WHERE id=?',
+                                    (row['id'],))
+                            continue
+                    async with self.session.post(f'{self.telegram_base}/bot{token}/sendMessage', json={'chat_id': chat, 'text': format_alert(payload), 'disable_web_page_preview': True}) as response:
                         result = await response.json()
                         if not result.get('ok'):
                             delay = result.get('parameters', {}).get('retry_after', min(300, 2 ** min(row['attempts'] + 1, 8)))
@@ -421,7 +505,7 @@ class Service:
                         self.engine.db.execute('UPDATE outbox SET attempts=attempts+1,next_try=? WHERE id=?', (time.time() + delay, row['id']))
                     LOG.warning('Telegram delivery failed (%s); queued retry', type(exc).__name__)
             with self.engine.db:
-                self.engine.db.execute('DELETE FROM outbox WHERE sent=1 AND next_try<? AND rowid NOT IN (SELECT rowid FROM outbox ORDER BY rowid DESC LIMIT 5000)', (time.time() - 86400,))
+                self.engine.db.execute('DELETE FROM outbox WHERE sent IN (1,2) AND next_try<? AND rowid NOT IN (SELECT rowid FROM outbox ORDER BY rowid DESC LIMIT 5000)', (time.time() - 86400,))
             await self.pause(1)
 
     async def seed_baselines(self, headers, feed):
