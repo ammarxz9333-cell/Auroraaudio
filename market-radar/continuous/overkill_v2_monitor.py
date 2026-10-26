@@ -91,6 +91,22 @@ async def scan_daily(session, db, now, headers, feed='sip', symbols=None):
                 complete = [b for b in gathered[name]
                             if date.fromisoformat(b['t'][:10]) <= cutoff]
                 result = compute(complete)
+                # Measured only from CONFIRMED daily bars. Never infer RVOL
+                # from the same-day incomplete candle or invent missing volume.
+                latest = complete[-1]
+                prior = complete[-2]
+                volumes = [float(b.get('v', 0)) for b in complete[-21:-1]]
+                current_volume = float(latest.get('v', 0))
+                daily_ratio = (current_volume / (sum(volumes) / 20)
+                               if len(volumes) == 20 and current_volume > 0
+                               and all(v > 0 for v in volumes) else None)
+                result['price_context'] = {
+                    'bullish_close': float(latest['c']) > float(latest['o']),
+                    'positive_daily_return': float(latest['c']) > float(prior['c']),
+                    'daily_volume_ratio': daily_ratio,
+                    'volume_basis': ('confirmed daily volume / prior 20-day mean'
+                                     if daily_ratio is not None else 'unavailable'),
+                }
                 last = date.fromisoformat(result['date'])
                 local = now.astimezone(NY)
                 next_session = next_weekday(last)
