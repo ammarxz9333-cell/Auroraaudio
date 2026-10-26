@@ -106,6 +106,32 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(alert['actions']['Wave dots only'],
                              'BUY_NEXT_OPEN')
             self.assertIn('لا يوجد هدف ربح ثابت 10%', format_alert(alert))
+            self.assertEqual(alert['fusion']['tier'], 'TECHNICAL_BUY')
+            # A real source-backed positive event upgrades the SAME signal.
+            positive = {
+                'title': 'CoreWeave raises revenue guidance',
+                'url': 'https://example.org/company-ir',
+                'official': True, 'confidence': 95,
+                'source_group': 'issuer-ir', 'source_id': 'issuer-ir',
+                'dilution': False, 'negative': False
+            }
+            with self.s.engine.db:
+                self.s.engine.db.execute(
+                    'INSERT INTO events(id,ticker,story,published,observed,payload) '
+                    'VALUES(?,?,?,?,?,?)',
+                    ('test-news-1', 'CRWV', 'test-story-1',
+                     now.timestamp()-300, now.timestamp()-290,
+                     json.dumps(positive)))
+            self.assertEqual(self.s.enqueue_overkill_v2_alerts(now), 1)
+            self.assertEqual(self.s.enqueue_overkill_v2_alerts(now), 0)
+            fusion_alerts = [json.loads(r[0]) for r in
+                             self.s.engine.db.execute(
+                                 "SELECT payload FROM outbox WHERE "
+                                 "json_extract(payload,'$.strategy')='OVERKILL_V2'")]
+            self.assertEqual(len(fusion_alerts), 2)
+            self.assertEqual(fusion_alerts[-1]['fusion']['tier'],
+                             'SUPPORTED_BUY')
+            self.assertTrue(fusion_alerts[-1]['upgrade'])
             self.assertEqual(self.s.enqueue_overkill_v2_alerts(
                 datetime(2026, 10, 27, 15, 0, tzinfo=timezone.utc)), 0)
         with patch.dict(os.environ, {'OVERKILL_V2_ENABLED': '0'}):
