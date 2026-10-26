@@ -35,7 +35,9 @@ def selection():
     if override:
         names = [x.strip().upper() for x in override.split(',')]
     else:
-        names = json.loads(REPORT.read_text(encoding='utf-8'))['stocks']['tickers']
+        # Preserve the frozen 206-symbol validation cohort; add the user's
+        # CRWV watch symbol without rewriting historical test membership.
+        names = json.loads(REPORT.read_text(encoding='utf-8'))['stocks']['tickers'] + ['CRWV']
     valid = (x for x in names if x.isascii() and x.replace('.', '').isalpha()
              and len(x) <= 8)
     return list(dict.fromkeys(valid))[:210]
