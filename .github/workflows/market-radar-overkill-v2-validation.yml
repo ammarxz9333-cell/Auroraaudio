@@ -4,6 +4,8 @@ on:
     paths:
       - "market-radar/backtest/overkill_independent_v2.js"
       - "market-radar/continuous/overkill_v2_signals.py"
+      - "market-radar/continuous/overkill_fusion.py"
+      - "market-radar/continuous/test_overkill_fusion.py"
       - "market-radar/continuous/overkill_v2_monitor.py"
       - "market-radar/continuous/test_overkill_v2_signals.py"
       - "market-radar/continuous/service.py"
@@ -16,6 +18,8 @@ on:
     paths:
       - "market-radar/backtest/overkill_independent_v2.js"
       - "market-radar/continuous/overkill_v2_signals.py"
+      - "market-radar/continuous/overkill_fusion.py"
+      - "market-radar/continuous/test_overkill_fusion.py"
       - "market-radar/continuous/overkill_v2_monitor.py"
       - "market-radar/continuous/test_overkill_v2_signals.py"
       - "market-radar/continuous/service.py"
@@ -41,9 +45,9 @@ jobs:
           python-version: "3.13"
       - name: Check same saved v2 daily signals and Alpaca completed-bar boundary
         working-directory: market-radar
-        run: python -m unittest continuous.test_overkill_v2_signals -v
+        run: python -m unittest continuous.test_overkill_v2_signals continuous.test_overkill_fusion -v
       - name: Compile monitor integration
         working-directory: market-radar
-        run: python -m py_compile continuous/service.py continuous/overkill_v2_monitor.py continuous/overkill_v2_signals.py
+        run: python -m py_compile continuous/service.py continuous/overkill_v2_monitor.py continuous/overkill_v2_signals.py continuous/overkill_fusion.py
       - name: Syntax-check Arabic dashboard embedded JavaScript
         run: node -e "const fs=require('fs');const html=fs.readFileSync('market-radar/continuous/dashboard.html','utf8');const js=html.split('<script>')[1].split('</script>')[0];new Function(js);"
