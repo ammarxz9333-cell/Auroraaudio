@@ -41,13 +41,9 @@ async function loadOverkill(){
       const count=actionCount(d);
       const card=el('article'),btn=el('button');
       const label=count?'إشارات جديدة: '+count:'لا توجد إشارة دخول/خروج جديدة';
-      btn.append(el('h2','setInterval(load,60000);
-</script></html>
-+d.ticker),el('p',label,count?'good':'muted'),el('small','آخر إغلاق يومي: '+(d.date||'غير متاح')+' · '+(d.status||'UNAVAILABLE')));
+      btn.append(el('h2','$'+d.ticker),el('p',label,count?'good':'muted'),el('small','آخر إغلاق يومي: '+(d.date||'غير متاح')+' · '+(d.status||'UNAVAILABLE')));
       btn.onclick=()=>{
-        const p=$('details');p.replaceChildren(el('h2','setInterval(load,60000);
-</script></html>
-+d.ticker+' — Overkill Independent v2'));
+        const p=$('details');p.replaceChildren(el('h2','$'+d.ticker+' — Overkill Independent v2'));
         p.append(el('p','آخر شمعة مكتملة: '+(d.date||'غير متاح')+' · المصدر: '+(d.source||'غير متاح'),'muted'));
         p.append(el('p','النقطة الخضراء: '+Boolean(d.daily_green_dot)+' · الحمراء: '+Boolean(d.daily_red_dot)));
         p.append(el('p','مستوى Fibonacci: '+(d.fib_retracement==null?'غير متاح':Number(d.fib_retracement).toFixed(3))+' · منطقة ذهبية: '+Boolean(d.gold_zone)+' · حمراء: '+Boolean(d.red_zone)));
