@@ -200,6 +200,40 @@ class Engine:
 
 
 def format_alert(a):
+    if a.get('strategy') == 'OVERKILL_V2':
+        labels = {
+            'Wave dots only': 'Wave dots only',
+            'Weekly + Fibonacci': 'Weekly + Fibonacci',
+            'Monthly + Fibonacci': 'Monthly + Fibonacci',
+        }
+        actions = ['• ' + labels.get(mode, mode) + ': ' +
+                   ('شراء افتراضي عند الافتتاح التالي' if action == 'BUY_NEXT_OPEN'
+                    else 'خروج افتراضي عند الافتتاح التالي')
+                   for mode, action in a['actions'].items()]
+        return '\n'.join([
+            'Overkill Independent v2 | إشعار بحثي — 
+        return 'unknown' if v is None else f'{v:.2f}' if isinstance(v, (float, int)) else str(v)
+    return '\n'.join([
+        f"{a['classification']} — ${a['ticker']} | score {a['score']}/100 (heuristic)",
+        f"Public: {a['first_public_at']} | detected: {a['detected_at']}",
+        f"Price ${fmt(a['price'])} | at source ${fmt(a['price_at_source'])} | move {fmt(a['price_move_since_source_pct'])}%",
+        f"RVOL {fmt(a['rvol'])} | acceleration {fmt(a['acceleration'])} | gap {fmt(a['gap_pct'])}%",
+        f"VWAP {fmt(a['vwap'])} | breakout {a['breakout']} | RS {fmt(a['relative_strength_pct'])}",
+        a['catalyst'][:600],
+        f"Source confidence {a['source_confidence']} | independent {a['independent_sources']} | novelty {a['novelty']}",
+        f"Trigger ${fmt(a['trigger'])} | invalidation ${fmt(a['invalidation'])} | chase {fmt(a['chase_distance_pct'])}%",
+        f"Buyable by rule: {a['buyable']} | SEC/dilution: {a['dilution_sec_risk']} | options {a['options']}",
+        *[p['source'] + ': ' + p['url'] for p in a['provenance'][:3]],
+    ])[:4000]
+ + a['ticker'],
+            'إغلاق شمعة الإشارة: ' + a['signal_date'],
+            'الافتتاح المتوقع: ' + a['next_expected_open_date'] + ' (نيويورك)',
+            *actions,
+            'WaveTrend 9/12/3 | مستويات ±53 | Fibonacci 100',
+            'لا يوجد هدف ربح ثابت 10% ولا تنفيذ تداول تلقائي.',
+            'المراكز افتراضية فقط، وليست حيازات حسابك الفعلية.',
+            'الإشارة من إعادة بناء مستقلة للمؤشر وليست نسخة Overkill الأصلية.',
+        ])[:4000]
     def fmt(v):
         return 'unknown' if v is None else f'{v:.2f}' if isinstance(v, (float, int)) else str(v)
     return '\n'.join([
