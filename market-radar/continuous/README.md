@@ -225,3 +225,48 @@ Early candidates use a transparent ranking (maximum 90): catalyst 30, most-activ
 
 ## Automatic candidate analysis
 Ranked candidates are analyzed in the background and cached in SQLite analyses. Click a candidate for /analysis/{ticker}: provenance, public price/volume, provider-reported market cap/PE/EPS/book ratios when available, scenarios and a conditional advice summary. Reports explicitly disclose incomplete cash, debt, cash-flow, peer valuation and SEC review. SEC public endpoints returned 403 in the tested environment; the program does not infer financial safety from missing records or claim a complete audit. No invented price targets, reward/risk ratios or success probabilities. Refreshing an analysis does not place any orders.
+
+## Optional saved Overkill Independent v2 daily signals
+
+This is the SAME independent `backtest/Overkill_Independent_Backtest_v2.pine`
+that was tested on 206 stocks and 22 crypto pairs, not a new indicator and not
+the creator's proprietary Overkill implementation. No 10% fixed take-profit.
+Rules: WaveTrend 9/12/3, +/-53 crossed dots; original three modes, including
+prior closed weekly/monthly confirmation and previous-100-day Fibonacci
+entry/exit zones. Fixed 12% stop is OFF, matching the original default.
+
+The `continuous/overkill_v2_signals.py` engine and guarded daily-data scanner
+are wired into this service without changing the existing intraday news/tape
+radar, alert classes, Telegram queue, or placing any trades. Opt in by setting:
+
+```sh
+OVERKILL_V2_ENABLED=1
+# Optional: OVERKILL_V2_SYMBOLS=AAPL,MSFT,NVDA,CRWV
+```
+
+The scanner requires configured `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` plus
+historical stock-data entitlement. By default it scans the SAME frozen 206
+stock tickers (crypto not yet connected). It requests Alpaca 1Day OHLC with
+`adjustment=split`, paginates provider results, discards today's candle until
+20:30 New York time to avoid unfinished extended-hours daily candles, and
+fails closed for gaps, bad OHLC, insufficient history or expired next-open
+signals. This is a better corporate-action basis than the old heuristic
+backtest split detection, but it does not retroactively validate the prior
+TickerLayer holdout figures.
+
+Use GET `/overkill-v2` for the separate stored read-only results or
+`/overkill-v2?mode=Weekly%20%2B%20Fibonacci` for one original mode. A
+`BUY_NEXT_OPEN` or `EXIT_NEXT_OPEN` status is a *hypothetical* next-session
+open signal based on last completed daily candle; the endpoint invalidates it
+at the expected 09:30 NY next weekday open. Holidays can suppress rather than
+overstate signals; a full exchange calendar is still needed for precision.
+
+No position sizing, actual brokerage holdings, order execution or fixed TP
+has been introduced. The monitored strategy's position state is simulated
+from supplied history and can differ from actual holdings. Exact numerical
+parity with TradingView/Pine, true live profitability, data-plan permissions,
+and operational Telegram delivery are **not verified**. This feature
+defaults to DISABLED and must not be represented as an already running scanner.
+
+Test: `python -m unittest continuous.test_overkill_v2_signals -v` from
+`market-radar/`; GitHub Actions also runs the original JS regression suite.
