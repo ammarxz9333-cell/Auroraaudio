@@ -3,6 +3,10 @@ on:
   push:
     paths:
       - "market-radar/backtest/overkill_independent_v2.js"
+      - "market-radar/continuous/overkill_v2_signals.py"
+      - "market-radar/continuous/overkill_v2_monitor.py"
+      - "market-radar/continuous/test_overkill_v2_signals.py"
+      - "market-radar/continuous/service.py"
       - "market-radar/backtest/Overkill_Independent_Backtest_v2.pine"
       - "market-radar/backtest/test_overkill_independent_v2.cjs"
       - "market-radar/backtest/results/overkill-independent-v2-no-target-2026-10-26.json"
@@ -10,6 +14,10 @@ on:
   pull_request:
     paths:
       - "market-radar/backtest/overkill_independent_v2.js"
+      - "market-radar/continuous/overkill_v2_signals.py"
+      - "market-radar/continuous/overkill_v2_monitor.py"
+      - "market-radar/continuous/test_overkill_v2_signals.py"
+      - "market-radar/continuous/service.py"
       - "market-radar/backtest/Overkill_Independent_Backtest_v2.pine"
       - "market-radar/backtest/test_overkill_independent_v2.cjs"
       - "market-radar/backtest/results/overkill-independent-v2-no-target-2026-10-26.json"
@@ -26,3 +34,12 @@ jobs:
           node-version: "22"
       - name: Validate saved v2 backtester, no fixed TP, split invariance and no-peeking
         run: node market-radar/backtest/test_overkill_independent_v2.cjs
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Check same saved v2 daily signals and Alpaca completed-bar boundary
+        working-directory: market-radar
+        run: python -m unittest continuous.test_overkill_v2_signals -v
+      - name: Compile monitor integration
+        working-directory: market-radar
+        run: python -m py_compile continuous/service.py continuous/overkill_v2_monitor.py continuous/overkill_v2_signals.py
