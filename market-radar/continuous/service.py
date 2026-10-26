@@ -307,6 +307,18 @@ class Service:
         if not ticker:
             return {'status': 'MISSING_TICKER', 'score': None,
                     'tier': 'NOT_ACTIONABLE', 'components': None}
+        target_string = item.get('next_expected_open_date')
+        if target_string:
+            try:
+                deadline = datetime.fromisoformat(target_string).date()
+                local = datetime.fromtimestamp(observed, NY)
+                expired = (local.date() > deadline or
+                           local.date() == deadline and
+                           (local.hour, local.minute) >= (9, 30))
+                if expired:
+                    item = {**item, 'signal_window_open': False}
+            except (ValueError, TypeError):
+                item = {**item, 'signal_window_open': False}
         events = self.engine.db.execute(
             'SELECT payload,published,observed FROM events '
             'WHERE ticker=? AND published BETWEEN ? AND ?',
@@ -439,6 +451,7 @@ class Service:
             alert = {
                 'strategy': 'OVERKILL_V2',
                 'fusion': fusion,
+                'price_context': item.get('price_context') or {},
                 'ticker': ticker,
                 'signal_date': signal_day.isoformat(),
                 'next_expected_open_date': target_string,
