@@ -17,7 +17,7 @@ assert.equal(frozen.crypto.tickers.length, 22);
 function fakeDailyOHLC() {
   const data = [];
   for (let i = 0; i < 2122; i++) {
-    const px = 100 + 8*Math.sin(i/13) + 0.02*i;
+    const px = 100 + 6*Math.sin(i/13) + 3*Math.sin(i/29) + 0.02*i;
     data.push({t: Date.UTC(2021, 0, 1+i), o:px, h:px+2, l:px-2, c:px});
   }
   return data;
