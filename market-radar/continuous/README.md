@@ -226,6 +226,52 @@ Early candidates use a transparent ranking (maximum 90): catalyst 30, most-activ
 ## Automatic candidate analysis
 Ranked candidates are analyzed in the background and cached in SQLite analyses. Click a candidate for /analysis/{ticker}: provenance, public price/volume, provider-reported market cap/PE/EPS/book ratios when available, scenarios and a conditional advice summary. Reports explicitly disclose incomplete cash, debt, cash-flow, peer valuation and SEC review. SEC public endpoints returned 403 in the tested environment; the program does not infer financial safety from missing records or claim a complete audit. No invented price targets, reward/risk ratios or success probabilities. Refreshing an analysis does not place any orders.
 
+## Unified Overkill v2 + news/price evidence (2026-10-26)
+
+The radar no longer displays Overkill evidence in isolation: completed-bar
+signals are enriched through `continuous/overkill_fusion.py`, and the combined
+results appear in the existing opportunities feed (`strategy_signals`), per-stock
+details (`strategy_signal`), the Overkill dashboard and the same Telegram outbox.
+
+**A real, unexpired Overkill NEXT-OPEN BUY/EXIT is the mandatory gate.** News
+on its own NEVER creates a strategy buy. The entry/exit logic in
+`Overkill_Independent_Backtest_v2.pine` is unchanged. BUY signals receive
+a transparent evidence grade, not a forecast or calibrated success probability:
+
+- Technical: 45 for a confirmed strategy BUY; +5 for closed weekly green
+  regime; +5 for closed monthly green regime; +5 for golden Fibonacci zone;
+  maximum 60.
+- Verified public catalyst: up to 25 for recent affirmative issuer/official
+  release, 18 for multiple independent high-trust reports, or 10 for a single
+  high-trust nonofficial report. No rumor/news is worth points by default;
+  events must have published/observed timestamps no later than scoring time
+  and be within 48 hours.
+- Confirmed daily momentum: +5 bullish completed candle, +5 positive close
+  versus prior complete day, +5 volume >=1.5 times prior 20-day daily average;
+  max 15. Volume never inferred if 20 valid prior daily volumes are unavailable.
+- Financing/dilution evidence -40, material adverse evidence -25; either
+  overrides BUY enthusiasm with `RISK_REVIEW`.
+
+Tier thresholds: `TECHNICAL_BUY` <65, `SUPPORTED_BUY` 65-79,
+`HIGH_ALIGNMENT_BUY` >=80, subject to `RISK_REVIEW` and conflicting
+modes overrides. A new higher tier or new risk classification creates one
+additional deduplicated Telegram alert for that signal date; no re-alerts for
+unchanged prices/news. Exits retain their own `EXIT_SIGNAL` classification;
+they are never scored as buying.
+
+All score weights are initial **heuristic hypotheses**, not a validated
+ranking of winning trades. Positive headline patterns are narrow and
+insufficient for due diligence, SEC filing completeness, guaranteed sentiment
+accuracy or operating profitability. Live performance calibration and a
+timestamped out-of-sample record are required before tuning weights.
+
+Deployed hosts must enable `OVERKILL_V2_ENABLED=1`, provide Alpaca historical
+data access and Telegram token/chat, restart the service, and check
+`/health`, `/overkill-v2` and an actual test delivery. Checked-in code or
+`.env.example` alone do not activate any host or guarantee user notifications.
+Unfinished daily candles and expired next-session entries must not be sent.
+No automated brokerage orders or fixed profit targets.
+
 ## Optional saved Overkill Independent v2 daily signals
 
 This is the SAME independent `backtest/Overkill_Independent_Backtest_v2.pine`
