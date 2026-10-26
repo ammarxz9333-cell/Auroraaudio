@@ -101,6 +101,8 @@ async def scan_daily(session, db, now, headers, feed='sip', symbols=None):
                                if len(volumes) == 20 and current_volume > 0
                                and all(v > 0 for v in volumes) else None)
                 result['price_context'] = {
+                    'last_completed_close': float(latest['c']),
+                    'last_completed_low': float(latest['l']),
                     'bullish_close': float(latest['c']) > float(latest['o']),
                     'positive_daily_return': float(latest['c']) > float(prior['c']),
                     'daily_volume_ratio': daily_ratio,
