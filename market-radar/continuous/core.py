@@ -201,20 +201,56 @@ class Engine:
 
 def format_alert(a):
     if a.get('strategy') == 'OVERKILL_V2':
+        fusion = a.get('fusion') or {}
+        components = fusion.get('components') or {}
+        context = a.get('price_context') or {}
         actions = ['• ' + mode + ': ' +
                    ('شراء افتراضي عند الافتتاح التالي' if action == 'BUY_NEXT_OPEN'
                     else 'خروج افتراضي عند الافتتاح التالي')
                    for mode, action in a['actions'].items()]
-        return '\n'.join([
-            'Overkill Independent v2 | إشعار بحثي — $' + a['ticker'],
-            'إغلاق شمعة الإشارة: ' + a['signal_date'],
-            'الافتتاح المتوقع: ' + a['next_expected_open_date'] + ' (نيويورك)',
+        score = fusion.get('score')
+        score_text = (f"{score}/100" if score is not None else
+                      'غير مطبق على إشارات الخروج')
+        lines = [
+            ('🔺 ترقية تقييم الإشارة' if a.get('upgrade')
+             else '📊 إشارة Overkill + Market Radar'),
+            '$' + a['ticker'] + ' | ' + fusion.get('tier', 'UNRATED'),
+            'تقييم الأدلة: ' + score_text + ' (ليس احتمال ربح)',
+            'إغلاق الإشارة: ' + a['signal_date'],
+            'الافتتاح الافتراضي التالي: ' + a['next_expected_open_date'] +
+            ' (نيويورك)',
             *actions,
-            'WaveTrend 9/12/3 | مستويات ±53 | Fibonacci 100',
-            'لا يوجد هدف ربح ثابت 10% ولا تنفيذ تداول تلقائي.',
-            'المراكز افتراضية فقط، وليست حيازات حسابك الفعلية.',
-            'الإشارة من إعادة بناء مستقلة للمؤشر وليست نسخة Overkill الأصلية.',
-        ])[:4000]
+        ]
+        if components:
+            lines.append(
+                'النقاط: فني ' + str(components.get('technical')) +
+                ' + أخبار ' + str(components.get('positive_news')) +
+                ' + زخم ' + str(components.get('momentum')) +
+                ' - مخاطر ' + str(components.get('risk_penalty')))
+        if context.get('last_completed_close') is not None:
+            lines.append('سعر آخر إغلاق مكتمل: $' +
+                         f"{context['last_completed_close']:.2f}" +
+                         ' (ليس سعر تنفيذ)')
+        if context.get('last_completed_low') is not None:
+            lines.append('قاع آخر شمعة: $' +
+                         f"{context['last_completed_low']:.2f}" +
+                         ' (مرجع للمخاطر، ليس وقف خسارة محدداً)')
+        catalyst = fusion.get('positive_catalyst')
+        if catalyst:
+            lines.append('خبر إيجابي موثق: ' + catalyst['title'])
+            lines.append(catalyst['url'])
+        for bad in (fusion.get('risk_headlines') or [])[:2]:
+            lines.append('تحذير ' + bad['kind'] + ': ' + bad['title'])
+            lines.append(bad['url'])
+        if fusion.get('missing_evidence'):
+            lines.append('أدلة غير متوفرة: ' +
+                         '، '.join(fusion['missing_evidence'][:2]))
+        lines.extend([
+            'لا يوجد هدف ربح ثابت 10%؛ الخروج بإشارة المؤشر.',
+            'لا توجد أوامر تداول آلية؛ المراكز افتراضية.',
+            'المؤشر إعادة بناء مستقلة، وليس نسخة TikTok الأصلية.'
+        ])
+        return '\n'.join(lines)[:4000]
     def fmt(v):
         return 'unknown' if v is None else f'{v:.2f}' if isinstance(v, (float, int)) else str(v)
     return '\n'.join([
