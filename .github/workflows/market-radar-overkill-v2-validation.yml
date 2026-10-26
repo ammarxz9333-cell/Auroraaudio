@@ -1,0 +1,28 @@
+name: Market Radar Existing Overkill v2 Validation
+on:
+  push:
+    paths:
+      - "market-radar/backtest/overkill_independent_v2.js"
+      - "market-radar/backtest/Overkill_Independent_Backtest_v2.pine"
+      - "market-radar/backtest/test_overkill_independent_v2.cjs"
+      - "market-radar/backtest/results/overkill-independent-v2-no-target-2026-10-26.json"
+      - ".github/workflows/market-radar-overkill-v2-validation.yml"
+  pull_request:
+    paths:
+      - "market-radar/backtest/overkill_independent_v2.js"
+      - "market-radar/backtest/Overkill_Independent_Backtest_v2.pine"
+      - "market-radar/backtest/test_overkill_independent_v2.cjs"
+      - "market-radar/backtest/results/overkill-independent-v2-no-target-2026-10-26.json"
+      - ".github/workflows/market-radar-overkill-v2-validation.yml"
+permissions:
+  contents: read
+jobs:
+  saved-v2-no-target:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Validate saved v2 backtester, no fixed TP, split invariance and no-peeking
+        run: node market-radar/backtest/test_overkill_independent_v2.cjs
