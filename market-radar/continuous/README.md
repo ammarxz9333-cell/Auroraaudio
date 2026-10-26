@@ -237,7 +237,10 @@ entry/exit zones. Fixed 12% stop is OFF, matching the original default.
 
 The `continuous/overkill_v2_signals.py` engine and guarded daily-data scanner
 are wired into this service without changing the existing intraday news/tape
-radar, alert classes, Telegram queue, or placing any trades. Opt in by setting:
+radar logic or placing any trades. Verified pending next-open BUY/EXIT signals
+are now separately queued for Telegram (one deduplicated alert per ticker/day,
+listing all modes that fired), and stale alerts are discarded after the
+expected next session open. Set this in the **deployed** `.env`:
 
 ```sh
 OVERKILL_V2_ENABLED=1
@@ -245,8 +248,9 @@ OVERKILL_V2_ENABLED=1
 ```
 
 The scanner requires configured `ALPACA_API_KEY`/`ALPACA_SECRET_KEY` plus
-historical stock-data entitlement. By default it scans the SAME frozen 206
-stock tickers (crypto not yet connected). It requests Alpaca 1Day OHLC with
+historical stock-data entitlement. By default it scans the same frozen 206
+stock tickers **plus CRWV** as an explicit live-watch addition (207 total;
+crypto not yet connected). The historical 206-symbol validation results remain unchanged. It requests Alpaca 1Day OHLC with
 `adjustment=split`, paginates provider results, discards today's candle until
 20:30 New York time to avoid unfinished extended-hours daily candles, and
 fails closed for gaps, bad OHLC, insufficient history or expired next-open
@@ -265,8 +269,13 @@ No position sizing, actual brokerage holdings, order execution or fixed TP
 has been introduced. The monitored strategy's position state is simulated
 from supplied history and can differ from actual holdings. Exact numerical
 parity with TradingView/Pine, true live profitability, data-plan permissions,
-and operational Telegram delivery are **not verified**. This feature
-defaults to DISABLED and must not be represented as an already running scanner.
+and operational Telegram delivery are **not verified**. The checked-in
+`.env.example` enables it for *fresh* deployments; existing deployed `.env`
+files must be changed to `OVERKILL_V2_ENABLED=1` and the service restarted.
+A code commit alone does **not** prove that a VPS is running or that its
+Alpaca/Telegram credentials work. `/health` and `/overkill-v2` must be checked
+on the actual host. The daily strategy cannot catch the same-day intraday
+rebound before its candle closes; the original tape/news radar handles that.
 
 Test: `python -m unittest continuous.test_overkill_v2_signals -v` from
 `market-radar/`; GitHub Actions also runs the original JS regression suite.
