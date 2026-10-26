@@ -290,6 +290,20 @@ class Service:
         """Separate historical daily signals; NOT radar intraday buyability."""
         records = [json.loads(row[0]) for row in self.engine.db.execute(
             'SELECT payload FROM overkill_v2_snapshots ORDER BY ticker LIMIT 210')]
+        # A next-open signal must EXPIRE once the expected NY session opens,
+        # even if the daily scan snapshot has not refreshed since premarket.
+        ny_now = datetime.now(NY)
+        for item in records:
+            expected = item.get('next_expected_open_date')
+            if expected:
+                target = datetime.fromisoformat(expected).date()
+                expired = (ny_now.date() > target or
+                           (ny_now.date() == target and
+                            (ny_now.hour, ny_now.minute) >= (9, 30)))
+                if expired:
+                    item['signal_window_open'] = False
+                    for details in item.get('modes', {}).values():
+                        details['next_open_action'] = 'NONE'
         mode = request.query.get('mode', '')
         if mode:
             allowed = ('Wave dots only', 'Weekly + Fibonacci', 'Monthly + Fibonacci')
