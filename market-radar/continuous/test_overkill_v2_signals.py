@@ -89,8 +89,9 @@ class TestSignals(unittest.TestCase):
         ny = ZoneInfo('America/New_York')
         self.assertEqual(cutoff_date(datetime(2026,10,26,19,50,tzinfo=ny)).isoformat(), '2026-10-25')
         self.assertEqual(cutoff_date(datetime(2026,10,26,20,31,tzinfo=ny)).isoformat(), '2026-10-26')
-        self.assertEqual(len(selection()),206)
-        self.assertEqual(len(set(selection())),206)
+        self.assertEqual(len(selection()),207)
+        self.assertEqual(len(set(selection())),207)
+        self.assertIn('CRWV', selection())
 
     def test_alpaca_scanner_read_only_and_no_incomplete_day(self):
         ny = ZoneInfo('America/New_York')
