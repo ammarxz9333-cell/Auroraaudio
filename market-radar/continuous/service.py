@@ -22,6 +22,7 @@ from continuous.classification import classify
 from continuous.trending import discover
 from continuous.early import rank
 from continuous.dossier import analyze
+from continuous.overkill_v2_monitor import scan_daily as scan_overkill_v2
 from radar import parse_feed, google_news_url, yahoo_market_snapshot
 
 LOG = logging.getLogger('radar')
@@ -54,6 +55,7 @@ class Service:
         self.engine.db.execute('CREATE TABLE IF NOT EXISTS trends(ticker TEXT PRIMARY KEY, observed REAL, payload TEXT)')
         self.engine.db.execute('CREATE TABLE IF NOT EXISTS candidate_journal(ticker TEXT,day TEXT,detected REAL,price REAL,payload TEXT,last_price REAL,last_observed REAL,return_pct REAL,PRIMARY KEY(ticker,day))')
         self.engine.db.execute('CREATE TABLE IF NOT EXISTS analyses(ticker TEXT PRIMARY KEY,updated REAL,payload TEXT)')
+        self.engine.db.execute('CREATE TABLE IF NOT EXISTS overkill_v2_snapshots(ticker TEXT PRIMARY KEY,day TEXT,observed REAL,payload TEXT)')
 
     async def deep_analysis(self,request):
         symbol=request.match_info['ticker'].upper()
@@ -283,6 +285,53 @@ class Service:
         return web.json_response({'alive': True, 'ready': tape_age < 120 and bool(os.getenv('TELEGRAM_BOT_TOKEN')) and bool(os.getenv('TELEGRAM_CHAT_ID')),
                                  'coverage':{'public_attempted':scan[0],'public_available':scan[1] or 0,'public_fetched_last_5m':scan[2] or 0,'live_tape_symbols':live_symbols,'full_market_realtime':False,'minimum_public_cycle_minutes':round(len(self.engine.universe)*2/60)},
                                  'tape_age_seconds': tape_age, 'outbox_pending': pending, 'universe_symbols':len(self.engine.universe), 'news_sources':len(self.sources), 'adapters': self.status})
+
+    async def overkill_v2_signals(self, request):
+        """Separate historical daily signals; NOT radar intraday buyability."""
+        records = [json.loads(row[0]) for row in self.engine.db.execute(
+            'SELECT payload FROM overkill_v2_snapshots ORDER BY ticker LIMIT 210')]
+        mode = request.query.get('mode', '')
+        if mode:
+            allowed = ('Wave dots only', 'Weekly + Fibonacci', 'Monthly + Fibonacci')
+            if mode not in allowed:
+                raise web.HTTPBadRequest(text='unknown original v2 mode')
+            for item in records:
+                item['modes'] = {mode: item.get('modes', {}).get(mode)}
+        return web.json_response({
+            'strategy': 'Overkill Independent v2',
+            'monitor_enabled': os.getenv('OVERKILL_V2_ENABLED') == '1',
+            'status': self.status.get('overkill_v2', {'state':'not_started'}),
+            'data': records, 'total': len(records),
+            'limitations': ('NEXT-open daily signal only; independent from '
+                            'news/tape classifications; no auto orders; '
+                            'real TradingView parity unverified')})
+
+    async def overkill_v2_monitor(self):
+        """Opt-in, bounded daily history scan without touching the core tape."""
+        if os.getenv('OVERKILL_V2_ENABLED') != '1':
+            self.status['overkill_v2'] = {'state':'disabled_by_default'}
+            return
+        last_cutoff = None
+        while not self.stopping.is_set():
+            try:
+                from continuous.overkill_v2_monitor import cutoff_date
+                now = datetime.now(timezone.utc)
+                cutoff = cutoff_date(now).isoformat()
+                if cutoff != last_cutoff:
+                    key = os.getenv('ALPACA_API_KEY', '')
+                    secret = os.getenv('ALPACA_SECRET_KEY', '')
+                    info = await scan_overkill_v2(self.session, self.engine.db, now, {
+                        'APCA-API-KEY-ID': key,
+                        'APCA-API-SECRET-KEY': secret},
+                        os.getenv('ALPACA_FEED', 'sip'))
+                    self.status['overkill_v2'] = info
+                    if info.get('status') == 'complete':
+                        last_cutoff = cutoff
+            except Exception as exc:
+                self.status['overkill_v2'] = {
+                    'state':'error', 'reason': type(exc).__name__}
+                LOG.warning('Overkill v2 scan unavailable: %s', type(exc).__name__)
+            await self.pause(1800)
 
     async def local_alerts(self, request):
         rows = self.engine.db.execute("SELECT payload,sent FROM outbox WHERE rowid IN (SELECT MAX(rowid) FROM outbox GROUP BY json_extract(payload,'$.ticker')) ORDER BY rowid DESC LIMIT 300").fetchall()
@@ -523,7 +572,7 @@ class Service:
 
     async def run(self):
         app = web.Application(client_max_size=128*1024)
-        app.add_routes([web.get('/', self.dashboard),web.get('/analysis/{ticker}',self.deep_analysis),web.get('/early',self.early_candidates),web.get('/trends',self.trends),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/health', self.health), web.post('/events', self.ingest)])
+        app.add_routes([web.get('/', self.dashboard),web.get('/analysis/{ticker}',self.deep_analysis),web.get('/early',self.early_candidates),web.get('/trends',self.trends),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/overkill-v2', self.overkill_v2_signals), web.get('/health', self.health), web.post('/events', self.ingest)])
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, os.getenv('RADAR_BIND', '127.0.0.1'), int(os.getenv('RADAR_PORT', '8787'))).start()
@@ -541,7 +590,7 @@ class Service:
                 except Exception as exc:
                     raise RuntimeError('Full universe requested but directory unavailable') from exc
             self.engine.universe.setdefault('SPY',['SPDR S&P 500 ETF Trust'])
-            tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain()),asyncio.create_task(self.market_sweep()),asyncio.create_task(self.trend_monitor()),asyncio.create_task(self.analysis_monitor())]
+            tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain()),asyncio.create_task(self.market_sweep()),asyncio.create_task(self.trend_monitor()),asyncio.create_task(self.analysis_monitor()), asyncio.create_task(self.overkill_v2_monitor())]
             tasks.extend(asyncio.create_task(self.poll(s)) for s in self.sources.values() if s.get('enabled',True) and s.get('type') in ('rss', 'google_news'))
             try:
                 await asyncio.gather(*tasks)
