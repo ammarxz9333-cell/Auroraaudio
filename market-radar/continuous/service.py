@@ -24,6 +24,7 @@ from continuous.trending import discover
 from continuous.early import rank
 from continuous.dossier import analyze
 from continuous.overkill_v2_monitor import scan_daily as scan_overkill_v2
+from continuous.overkill_fusion import evaluate as evaluate_overkill_fusion
 from radar import parse_feed, google_news_url, yahoo_market_snapshot
 
 LOG = logging.getLogger('radar')
@@ -218,7 +219,7 @@ class Service:
             eligible.append(data)
         eligible.sort(key=lambda d:(not d['rating']['buyable'],-(d['rating']['score'] or 0),-candidates[d['ticker']]))
         watch.sort(key=lambda d:(not bool((d.get('snapshot') or {}).get('price')),-candidates[d['ticker']]))
-        return web.json_response({'data':eligible,'watch':watch,'excluded':excluded,'candidate_count':len(candidates),'evaluated':sum(d is not None for d in results),'unexamined':max(0,len(candidates)-25),'confirmed_entries':sum(d['rating']['buyable'] for d in eligible),'updated_at':utc(time.time())})
+        return web.json_response({'data':eligible,'watch':watch,'excluded':excluded,'candidate_count':len(candidates),'evaluated':sum(d is not None for d in results),'unexamined':max(0,len(candidates)-25),'confirmed_entries':sum(d['rating']['buyable'] for d in eligible),'strategy_signals':self.active_overkill_rankings(now), 'updated_at':utc(time.time())})
 
     async def stock_details(self, request):
         symbol = request.match_info['ticker'].upper()
@@ -256,7 +257,15 @@ class Service:
                 latest = self.engine.db.execute("SELECT payload FROM outbox WHERE json_extract(payload,'$.ticker')=? ORDER BY rowid DESC LIMIT 1",(symbol,)).fetchone()
                 recent_news = [json.loads(r[0]) for r in self.engine.db.execute('SELECT payload FROM events WHERE ticker=? AND published BETWEEN ? AND ?',(symbol,time.time()-86400,time.time()))]
                 rating = classify(recent_news,snapshot,json.loads(latest[0]) if latest else None,time.time())
+                saved_strategy = self.engine.db.execute(
+                    'SELECT payload FROM overkill_v2_snapshots WHERE ticker=?',
+                    (symbol,)).fetchone()
+                strategy = None
+                if saved_strategy:
+                    candidate = json.loads(saved_strategy[0])
+                    strategy = self.rank_overkill_snapshot(candidate)
                 payload = {'ticker':symbol,'name':self.engine.universe[symbol][-1], 'news':news,
+                    'strategy_signal': strategy,
                     'rating':rating,
                     'snapshot':snapshot,'fetched_at':time.time(), 'price_source':'Yahoo Finance public 5-minute snapshot; not authenticated real-time tape',
                     'stream_confirmed':False}
@@ -287,6 +296,59 @@ class Service:
                                  'coverage':{'public_attempted':scan[0],'public_available':scan[1] or 0,'public_fetched_last_5m':scan[2] or 0,'live_tape_symbols':live_symbols,'full_market_realtime':False,'minimum_public_cycle_minutes':round(len(self.engine.universe)*2/60)},
                                  'tape_age_seconds': tape_age, 'outbox_pending': pending, 'universe_symbols':len(self.engine.universe), 'news_sources':len(self.sources), 'adapters': self.status})
 
+    def rank_overkill_snapshot(self, item, observed=None):
+        """Enrich real completed-day signals with current, attributable news."""
+        observed = observed or time.time()
+        if os.getenv('OVERKILL_V2_ENABLED') != '1':
+            return {'status': 'MONITOR_DISABLED', 'score': None,
+                    'tier': 'NOT_ACTIONABLE', 'components': None}
+        ticker = item.get('ticker')
+        if not ticker:
+            return {'status': 'MISSING_TICKER', 'score': None,
+                    'tier': 'NOT_ACTIONABLE', 'components': None}
+        events = self.engine.db.execute(
+            'SELECT payload,published,observed FROM events '
+            'WHERE ticker=? AND published BETWEEN ? AND ?',
+            (ticker, observed - 48 * 3600, observed)).fetchall()
+        return evaluate_overkill_fusion(item, events, observed)
+
+    def active_overkill_rankings(self, observed=None):
+        """For the unified opportunities feed: confirmed signals only."""
+        observed = observed or time.time()
+        ny_now = datetime.fromtimestamp(observed, NY)
+        ranked = []
+        if os.getenv('OVERKILL_V2_ENABLED') != '1':
+            return ranked
+        for row in self.engine.db.execute(
+                'SELECT payload FROM overkill_v2_snapshots'):
+            item = json.loads(row[0])
+            target = item.get('next_expected_open_date')
+            if target:
+                try:
+                    close = datetime.fromisoformat(target).date()
+                except ValueError:
+                    continue
+                if (ny_now.date() > close or
+                    ny_now.date() == close and
+                    (ny_now.hour, ny_now.minute) >= (9, 30)):
+                    continue
+            score = self.rank_overkill_snapshot(item, observed)
+            if score.get('status') not in ('BUY', 'EXIT'):
+                continue
+            ranked.append({'ticker': item['ticker'],
+                           'signal_date': item.get('date'),
+                           'next_expected_open_date': target,
+                           'fusion': score,
+                           'modes': item.get('modes'),
+                           'source': item.get('source'),
+                           'next_open_only': True,
+                           'auto_orders': False})
+        ranked.sort(key=lambda r: (
+            r['fusion']['status'] != 'EXIT',
+            r['fusion']['tier'] == 'RISK_REVIEW',
+            -(r['fusion'].get('score') or 0), r['ticker']))
+        return ranked
+
     async def overkill_v2_signals(self, request):
         """Separate historical daily signals; NOT radar intraday buyability."""
         records = [json.loads(row[0]) for row in self.engine.db.execute(
@@ -311,6 +373,8 @@ class Service:
                     item['signal_window_open'] = False
                     for details in item.get('modes', {}).values():
                         details['next_open_action'] = 'NONE'
+        for item in records:
+            item['fusion'] = self.rank_overkill_snapshot(item)
         mode = request.query.get('mode', '')
         if mode:
             allowed = ('Wave dots only', 'Weekly + Fibonacci', 'Monthly + Fibonacci')
@@ -368,8 +432,12 @@ class Service:
             ticker = item.get('ticker')
             if not ticker:
                 continue
+            fusion = self.rank_overkill_snapshot(item, asof.timestamp())
+            if fusion.get('status') not in ('BUY', 'EXIT'):
+                continue
             alert = {
                 'strategy': 'OVERKILL_V2',
+                'fusion': fusion,
                 'ticker': ticker,
                 'signal_date': signal_day.isoformat(),
                 'next_expected_open_date': target_string,
