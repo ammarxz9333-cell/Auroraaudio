@@ -282,6 +282,7 @@ class Service:
             if not source.get('allow_push'):
                 raise ValueError('push disabled for source')
             self.engine.event(data, source, time.time())
+            self.enqueue_overkill_v2_alerts(datetime.now(timezone.utc))
         except (KeyError, TypeError, ValueError):
             raise web.HTTPBadRequest(text='invalid public-source event')
         return web.json_response({'accepted': True})
@@ -452,13 +453,30 @@ class Service:
                 'simulated_only': True,
                 'fixed_take_profit': None,
             }
+            # A score upgrade produces one new alert, not an endless repeat.
+            # RISK_REVIEW overrides positives; no fixed target ever introduced.
+            grades = {'TECHNICAL_BUY': 1, 'SUPPORTED_BUY': 2,
+                      'HIGH_ALIGNMENT_BUY': 3, 'RISK_REVIEW': 4,
+                      'MIXED_SIGNALS': 4, 'EXIT_SIGNAL': 4}
+            grade = grades.get(fusion.get('tier'), 0)
+            grade_key = f'overkill-v2-grade:{ticker}:{signal_day.isoformat()}'
+            previous_row = self.engine.db.execute(
+                'SELECT value FROM meta WHERE key=?', (grade_key,)).fetchone()
+            previous = int(previous_row['value']) if previous_row else 0
+            if grade <= previous:
+                continue
+            alert['classification'] = fusion['tier']
+            alert['upgrade'] = previous > 0
             ident = hashlib.sha256(
-                f'overkill-v2:{ticker}:{signal_day.isoformat()}'.encode()
+                f'overkill-v2:{ticker}:{signal_day.isoformat()}:{grade}'.encode()
             ).hexdigest()
             with self.engine.db:
                 cursor = self.engine.db.execute(
                     'INSERT OR IGNORE INTO outbox(id,payload) VALUES(?,?)',
                     (ident, json.dumps(alert)))
+                self.engine.db.execute(
+                    'INSERT OR REPLACE INTO meta(key,value) VALUES(?,?)',
+                    (grade_key, str(grade)))
                 queued += cursor.rowcount
         return queued
 
@@ -524,6 +542,8 @@ class Service:
                             except ValueError:
                                 LOG.warning('Rejected feed item from %s', source['id'])
                     if response.status != 429:
+                        if response.status != 304:
+                            self.enqueue_overkill_v2_alerts(datetime.now(timezone.utc))
                         self.status[source['id']] = {'last_ok': time.time(), 'http_status': response.status}
             except Exception as exc:
                 self.status[source['id']] = {'error': type(exc).__name__, 'at': time.time()}
