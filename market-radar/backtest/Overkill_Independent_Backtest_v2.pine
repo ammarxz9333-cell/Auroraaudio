@@ -1,0 +1,102 @@
+//@version=6
+strategy("Overkill-style INDEPENDENT backtest v2 (not original)", shorttitle="Independent Wave Backtest v2", overlay=true, pyramiding=0, initial_capital=10000, default_qty_type=strategy.percent_of_equity, default_qty_value=100, commission_type=strategy.commission.percent, commission_value=0.1, slippage=1, process_orders_on_close=false)
+
+// EDUCATIONAL RECONSTRUCTION, NOT THE PROPRIETARY OVERKILL TRADING INDICATOR.
+// Designed for DAILY charts. A signal detected at the close is acted upon
+// at the next trading bar's OPEN (TradingView's normal strategy order model).
+// Commission is 0.1% per SIDE plus 1 tick slippage. Change these through
+// Strategy Properties to model your broker or crypto exchange.
+// No future leaks in weekly/monthly confirmations: [1] + lookahead_on.
+// Fibonacci rolling bands are illustrative. The original creator's red/golden
+// zones are not publicly specified and are NOT proven equivalent to these.
+
+entryMode = input.string("Wave dots only", "Backtest variant", options=["Wave dots only", "Weekly + Fibonacci", "Monthly + Fibonacci"], group="01 - Test rules")
+channelLen = input.int(9, "WaveTrend channel length", minval=2, group="02 - Wave signal")
+averageLen = input.int(12, "WaveTrend average length", minval=2, group="02 - Wave signal")
+signalLen  = input.int(3, "WaveTrend signal smoothing", minval=1, group="02 - Wave signal")
+oversold   = input.float(-53.0, "Green dot threshold", maxval=-5, group="02 - Wave signal")
+overbought = input.float(53.0, "Red dot threshold", minval=5, group="02 - Wave signal")
+lookback = input.int(100, "Past DAILY candles for Fibonacci", minval=20, maxval=1000, group="03 - Illustrative Fibonacci")
+goldMin = input.float(0.50, "Golden retracement - lower bound", minval=0, maxval=1, step=0.001, group="03 - Illustrative Fibonacci")
+goldMax = input.float(0.78, "Golden retracement - upper bound", minval=0, maxval=1, step=0.001, group="03 - Illustrative Fibonacci")
+redMax = input.float(0.35, "Red-zone retracement upper bound", minval=0, maxval=1, step=0.001, group="03 - Illustrative Fibonacci")
+useStop = input.bool(false, "Extra fixed-percentage stop (not specified by creator)", group="04 - Risk controls")
+stopPercent = input.float(12.0, "Stop distance in %", minval=0.5, maxval=95, step=0.5, group="04 - Risk controls")
+showFib = input.bool(true, "Display illustrative Fibonacci zones", group="05 - Display")
+showMAs = input.bool(true, "Display EMA 9 and 30", group="05 - Display")
+show4Yr = input.bool(false, "Display 200-week EMA proxy", group="05 - Display")
+
+f_wave() =>
+    ap = hlc3
+    esa = ta.ema(ap, channelLen)
+    dev = ta.ema(math.abs(ap - esa), channelLen)
+    ci = dev == 0 ? 0.0 : (ap - esa) / (0.015 * dev)
+    fast = ta.ema(ci, averageLen)
+    slow = ta.sma(fast, signalLen)
+    [fast, slow]
+
+f_direction() =>
+    [a, b] = f_wave()
+    green = ta.crossover(a, b) and b <= oversold
+    red = ta.crossunder(a, b) and b >= overbought
+    green ? 1 : red ? -1 : 0
+
+[fast, slow] = f_wave()
+greenDot = ta.crossover(fast, slow) and slow <= oversold and barstate.isconfirmed
+redDot = ta.crossunder(fast, slow) and slow >= overbought and barstate.isconfirmed
+
+// Confirmed previous higher-timeframe bar, valid from first bar of new period.
+weekSignal = request.security(syminfo.tickerid, "W", f_direction()[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+monthSignal = request.security(syminfo.tickerid, "M", f_direction()[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+var int weekRegime = 0
+var int monthRegime = 0
+newWeek = timeframe.change("W")
+newMonth = timeframe.change("M")
+if newWeek
+    if weekSignal == 1
+        weekRegime := 1
+    else if weekSignal == -1
+        weekRegime := -1
+if newMonth
+    if monthSignal == 1
+        monthRegime := 1
+    else if monthSignal == -1
+        monthRegime := -1
+
+pastHigh = ta.highest(high[1], lookback)
+pastLow = ta.lowest(low[1], lookback)
+pastRange = pastHigh - pastLow
+retracement = pastRange > 0 ? (pastHigh - close) / pastRange : na
+inGold = retracement >= goldMin and retracement <= goldMax
+inRed = retracement >= -0.05 and retracement <= redMax
+activeRegime = entryMode == "Weekly + Fibonacci" ? weekRegime == 1 : monthRegime == 1
+buyEligible = entryMode == "Wave dots only" ? greenDot : greenDot and inGold and activeRegime
+sellEligible = entryMode == "Wave dots only" ? redDot : redDot and inRed
+closedHTFRed = entryMode == "Weekly + Fibonacci" ? (newWeek and weekSignal == -1) : entryMode == "Monthly + Fibonacci" ? (newMonth and monthSignal == -1) : false
+
+if barstate.isconfirmed
+    if strategy.position_size == 0 and buyEligible
+        strategy.entry("Long", strategy.long, comment="Confirmed green dot")
+    if strategy.position_size > 0 and (sellEligible or closedHTFRed)
+        strategy.close("Long", comment=closedHTFRed ? "Closed HTF red dot" : "Daily red dot")
+if useStop and strategy.position_size > 0
+    strategy.exit("Optional stop", from_entry="Long", stop=strategy.position_avg_price * (1 - stopPercent/100))
+
+plotshape(greenDot, title="Daily green dot", color=color.lime, location=location.belowbar, style=shape.circle, size=size.tiny)
+plotshape(redDot, title="Daily red dot", color=color.red, location=location.abovebar, style=shape.circle, size=size.tiny)
+plotshape(newWeek and weekSignal == 1, title="CLOSED weekly green", color=color.green, text="W", textcolor=color.white, location=location.belowbar, style=shape.labelup, size=size.tiny)
+plotshape(newMonth and monthSignal == 1, title="CLOSED monthly green", color=color.teal, text="M", textcolor=color.white, location=location.belowbar, style=shape.labelup, size=size.tiny)
+plot(showMAs ? ta.ema(close, 9) : na, title="EMA 9", color=color.orange, linewidth=2)
+plot(showMAs ? ta.ema(close, 30) : na, title="EMA 30", color=color.blue, linewidth=2)
+mean4Yr = request.security(syminfo.tickerid, "W", ta.ema(close, 200)[1], gaps=barmerge.gaps_off, lookahead=barmerge.lookahead_on)
+plot(show4Yr ? mean4Yr : na, title="200-week EMA proxy", color=color.purple, linewidth=2)
+goldHi = pastHigh - goldMin * pastRange
+goldLo = pastHigh - goldMax * pastRange
+redHi = pastHigh + 0.05 * pastRange
+redLo = pastHigh - redMax * pastRange
+p1 = plot(showFib ? goldHi : na, color=color.new(color.yellow, 70), title="Illustrative golden upper")
+p2 = plot(showFib ? goldLo : na, color=color.new(color.yellow, 70), title="Illustrative golden lower")
+fill(p1, p2, color=color.new(color.yellow, 89), title="Illustrative golden band")
+p3 = plot(showFib ? redHi : na, color=color.new(color.red, 75), title="Illustrative red upper")
+p4 = plot(showFib ? redLo : na, color=color.new(color.red, 75), title="Illustrative red lower")
+fill(p3, p4, color=color.new(color.red, 90), title="Illustrative red band")
