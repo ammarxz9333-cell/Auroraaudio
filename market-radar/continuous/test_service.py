@@ -11,7 +11,8 @@ from aiohttp import web
 from aiohttp.test_utils import TestServer, TestClient
 
 from continuous.service import Service
-from continuous.core import utc
+from continuous.core import utc, format_alert
+from datetime import datetime, timezone
 
 
 class ServiceTest(unittest.IsolatedAsyncioTestCase):
@@ -76,6 +77,39 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
                 self.s.stopping.set()
                 await task
                 await server.close()
+
+
+    async def test_overkill_next_open_alerts_deduplicate_and_expire(self):
+        now = datetime(2026, 10, 26, 21, 0, tzinfo=timezone.utc)
+        record = {
+            'ticker': 'CRWV', 'status': 'READY',
+            'bars_confirmed': True, 'signal_window_open': True,
+            'date': '2026-10-26',
+            'next_expected_open_date': '2026-10-27',
+            'modes': {
+                'Wave dots only': {'next_open_action': 'BUY_NEXT_OPEN'},
+                'Weekly + Fibonacci': {'next_open_action': 'NONE'},
+                'Monthly + Fibonacci': {'next_open_action': 'EXIT_NEXT_OPEN'}
+            }
+        }
+        with self.s.engine.db:
+            self.s.engine.db.execute(
+                'INSERT OR REPLACE INTO overkill_v2_snapshots(ticker,day,observed,payload) '
+                'VALUES(?,?,?,?)', ('CRWV', '2026-10-26', now.timestamp(),
+                                   json.dumps(record)))
+        with patch.dict(os.environ, {'OVERKILL_V2_ENABLED': '1'}):
+            self.assertEqual(self.s.enqueue_overkill_v2_alerts(now), 1)
+            self.assertEqual(self.s.enqueue_overkill_v2_alerts(now), 0)
+            alert = json.loads(self.s.engine.db.execute(
+                "SELECT payload FROM outbox").fetchone()[0])
+            self.assertEqual(alert['fixed_take_profit'], None)
+            self.assertEqual(alert['actions']['Wave dots only'],
+                             'BUY_NEXT_OPEN')
+            self.assertIn('لا يوجد هدف ربح ثابت 10%', format_alert(alert))
+            self.assertEqual(self.s.enqueue_overkill_v2_alerts(
+                datetime(2026, 10, 27, 15, 0, tzinfo=timezone.utc)), 0)
+        with patch.dict(os.environ, {'OVERKILL_V2_ENABLED': '0'}):
+            self.assertEqual(self.s.enqueue_overkill_v2_alerts(now), 0)
 
     async def test_missing_tape_not_ready(self):
         response=await self.client.get('/health')
