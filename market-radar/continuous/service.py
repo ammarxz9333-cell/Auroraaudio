@@ -293,7 +293,13 @@ class Service:
         # A next-open signal must EXPIRE once the expected NY session opens,
         # even if the daily scan snapshot has not refreshed since premarket.
         ny_now = datetime.now(NY)
+        monitor_enabled = os.getenv('OVERKILL_V2_ENABLED') == '1'
         for item in records:
+            if not monitor_enabled:
+                item['signal_window_open'] = False
+                item['status'] = 'MONITOR_DISABLED'
+                for details in item.get('modes', {}).values():
+                    details['next_open_action'] = 'NONE'
             expected = item.get('next_expected_open_date')
             if expected:
                 target = datetime.fromisoformat(expected).date()
