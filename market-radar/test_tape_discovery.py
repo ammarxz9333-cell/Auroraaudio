@@ -38,6 +38,19 @@ class TapeDiscoveryTests(unittest.TestCase):
         s.update(same_time_volume_ratio=2.3,price=59)
         self.assertFalse(tape_signal(s)["qualifies"])  # already chased >6% from low
 
+    def test_live_freshness_gate_rejects_closed_stale_or_missing_tape(self):
+        from datetime import datetime, timezone, timedelta
+        asof = datetime(2026,10,27,14,35,tzinfo=timezone.utc)
+        snapshot = {"price":55.8,"session_low":53.6,"change_pct":-3.2,
+                    "change_5m_pct":0.9,"change_15m_pct":1.4,
+                    "same_time_volume_ratio":2.3,"market_session":"REGULAR",
+                    "holds_vwap":True,"bar_time_utc":"2026-10-27T14:30:00Z"}
+        self.assertTrue(tape_signal(snapshot,asof)["qualifies"])
+        self.assertFalse(tape_signal(snapshot,asof+timedelta(minutes=20))["qualifies"])
+        self.assertFalse(tape_signal(snapshot,datetime(2026,10,27,21,0,tzinfo=timezone.utc))["qualifies"])
+        self.assertFalse(tape_signal({**snapshot,"bar_time_utc":"2026-10-27T14:36:00Z"},asof)["qualifies"])
+        self.assertFalse(tape_signal({k:v for k,v in snapshot.items() if k!="bar_time_utc"},asof)["qualifies"])
+
     def test_no_rvol_no_alert(self):
         s={"change_pct":7,"change_5m_pct":2,"change_15m_pct":4,
            "change_30m_pct":6,"same_time_volume_ratio":1.1,
