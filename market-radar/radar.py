@@ -794,7 +794,7 @@ def main():
         priority = []
         for name in watch_priorities.split(","):
             name = name.strip().upper()
-            if re.fullmatch(r"[A-Z][A-Z0-9.\\-]{0,8}", name):
+            if re.fullmatch(r"[A-Z][A-Z0-9.-]{0,8}", name):
                 priority.append({"ticker":name,
                                  "source_url":"https://www.nasdaq.com/market-activity/stocks/screener",
                                  "coverage":"user-priority; not evidence of a market signal"})
