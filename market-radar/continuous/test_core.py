@@ -5,14 +5,14 @@ from pathlib import Path
 
 from continuous.core import Engine, timestamp, utc, format_alert
 
-T = timestamp('2026-10-06T20:05:00Z')
+T = timestamp('2026-10-06T19:05:00Z')
 SOURCE = dict(id='penguin-ir', public=True, official=True, confidence=95, origin_group='penguin')
 EVENT = dict(title='Penguin Solutions beat + raise, accelerating AI infrastructure demand', content='Raised fiscal 2027 outlook', url='https://ir.penguinsolutions.com/news/', published_at=utc(T))
 
 
 def bar(price=65, t=T+30, volume=6000, **extra):
     return dict(ticker='PENG', time=utc(t), open=price-.3, high=price+.1, low=price-.4, close=price, volume=volume,
-                vwap=price-.2, spread_pct=.1, baseline_volume=1000, baseline_days=20,
+                vwap=price-.2, spread_pct=.1, market_session='REGULAR', baseline_volume=1000, baseline_days=20,
                 baseline_asof='2026-10-05T20:00:00Z', **extra)
 
 
@@ -53,6 +53,14 @@ class CoreTest(unittest.TestCase):
         b['baseline_volume'] = None
         b['spread_pct'] = None
         self.e.bar(b,T+60)
+        self.assertFalse(self.alerts()[-1]['buyable'])
+
+    def test_extended_market_cannot_be_buyable(self):
+        self.e.bar(bar(64, T, 2000), T)
+        self.e.event(EVENT, SOURCE, T+1)
+        b = bar()
+        b['market_session'] = 'EXTENDED'
+        self.e.bar(b, T+30)
         self.assertFalse(self.alerts()[-1]['buyable'])
 
     def test_stale_and_future_tape_rejected(self):
