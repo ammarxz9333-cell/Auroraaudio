@@ -669,7 +669,9 @@ class Service:
         relative = ((b['c']/previous_close-1) - (json.loads(benchmark['payload'])['close']/benchmark_close-1))*100 if previous_close and benchmark and benchmark_close else None
         bar = dict(ticker=symbol, time=utc(stamp + 60), open=b['o'], high=b['h'], low=b['l'], close=b['c'], volume=b['v'],
                    gap_pct=(opening/previous_close-1)*100 if opening and previous_close else None, relative_strength_pct=relative,
-                   vwap=vwap, spread_pct=spread, baseline_volume=baseline.get('volume'), baseline_days=baseline.get('days', 0), baseline_asof=baseline.get('asof'))
+                   vwap=vwap, spread_pct=spread, baseline_volume=baseline.get('volume'), baseline_days=baseline.get('days', 0), baseline_asof=baseline.get('asof'),
+                   market_session=('REGULAR' if (9,30) <= (local.hour,local.minute) < (16,0) else 'EXTENDED'),
+                   feed='alpaca_' + os.getenv('ALPACA_FEED', 'sip'))
         if seed:
             with self.engine.db:
                 self.engine.db.execute('INSERT OR REPLACE INTO bars VALUES(?,?,?)', (symbol, stamp+60, json.dumps(bar)))
