@@ -490,6 +490,42 @@ def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
     out.update({"decision":decision,"entry_price":quote["ask"] if out["state"]=="BUYABLE_NOW" else None,"entry_time_utc":observed_at.isoformat() if out["state"]=="BUYABLE_NOW" else None,"inputs":{"gap_pct":round(gap,3),"premarket_reprice_pct":float(pre or 0.0),"rvol":gi.rvol,"holds_vwap":gi.holds_vwap,"holds_open":gi.holds_open,"minutes_since_open":mins,"spread_pct":round(gi.spread_pct,4),"quote_time_utc":dt.datetime.fromtimestamp(quote_time,dt.timezone.utc).isoformat()}})
     return out
 
+def normalize_legacy_tape_jsonl(path: Path):
+    """Preserve older evidence written as JSON objects separated by literal \n.
+
+    Use JSONDecoder to find object boundaries instead of blind replacement:
+    an escaped newline within a JSON string is legitimate data. This is an
+    idempotent, one-time migration on the next append to each touched ticker.
+    """
+    if not path.exists():
+        return
+    raw = path.read_text(encoding="utf-8")
+    legacy = r"}\n{" in raw or raw.endswith(r"}\n")
+    if not legacy:
+        return
+    if len(raw) > 5_000_000:
+        raise ValueError("legacy_tape_exceeds_safe_migration_limit")
+    decoder = json.JSONDecoder()
+    pos = 0
+    rows = []
+    while pos < len(raw):
+        while pos < len(raw) and raw[pos] in " \r\n\t":
+            pos += 1
+        if pos >= len(raw):
+            break
+        row, end = decoder.raw_decode(raw, pos)
+        if not isinstance(row, dict):
+            raise ValueError("legacy_tape_contains_non_object")
+        rows.append(raw[pos:end])
+        pos = end
+        if raw.startswith(r"\n", pos):
+            pos += 2
+        elif pos < len(raw) and raw[pos] not in " \r\n\t":
+            raise ValueError("legacy_tape_invalid_delimiter")
+    # Only rewrite after every historical record has been parsed successfully.
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
 def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int, threshold: int):
     """Append the exact point-in-time market snapshot used by the radar.
     Missing fields stay null; never backfill them from later bars.
@@ -530,7 +566,9 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "gate": gate
     }
     track_live_outcome(snapshot, gate, rid)
-    with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
+    tape_path = TAPE_DIR / f"{ticker}.jsonl"
+    normalize_legacy_tape_jsonl(tape_path)
+    with tape_path.open("a", encoding="utf-8") as fh:
         fh.write(json.dumps(row, separators=(",", ":")) + "\n")
 
 def track_live_outcome(snapshot: dict, gate: dict, rid: str):
