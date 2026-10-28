@@ -786,7 +786,19 @@ def main():
     tape_alerts = state.get("tape_alerts", {})
     missed_learning = load_missed_movers(MISSED_MOVERS_FILE)
     try:
-        candidates = discover_candidates(fetch, limit=int(os.getenv("RADAR_TAPE_CANDIDATES", "50")))
+        shortlist_limit = max(1, int(os.getenv("RADAR_TAPE_CANDIDATES", "50")))
+        candidates = discover_candidates(fetch, limit=shortlist_limit)
+        # Track requested symbols every sweep even when broad absolute-move
+        # rankings exclude them. The subsequent dated tape filter still applies.
+        watch_priorities = os.getenv("RADAR_TAPE_PRIORITY_SYMBOLS", "CRWV,APLD,NBIS,IREN")
+        priority = []
+        for name in watch_priorities.split(","):
+            name = name.strip().upper()
+            if re.fullmatch(r"[A-Z][A-Z0-9.-]{0,8}", name):
+                priority.append({"ticker":name,
+                                 "source_url":"https://www.nasdaq.com/market-activity/stocks/screener",
+                                 "coverage":"user-priority; not evidence of a market signal"})
+        candidates = list({x["ticker"]: x for x in priority + candidates}.values())[:shortlist_limit]
         tape_candidate_errors = 0
         for cand in candidates:
             ticker = cand["ticker"]
@@ -798,7 +810,7 @@ def main():
             if not snap or snap.get("error"):
                 tape_candidate_errors += 1
                 continue
-            sig = tape_signal(snap)
+            sig = tape_signal(snap, asof_utc=start)
             update_missed_case(missed_learning, snap, sig["qualifies"], start.isoformat())
             if not sig["qualifies"]:
                 continue
@@ -808,8 +820,16 @@ def main():
                 prior_at = dt.datetime.fromisoformat(prior.get("alerted_utc", ""))
             except Exception:
                 prior_at = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
-            # Re-alert only after cooldown or a meaningful score upgrade.
-            if start - prior_at < dt.timedelta(minutes=45) and sig["score"] <= int(prior.get("score", 0)) + 1:
+            # New notifications must reflect a REAL upgrade, not just another
+            # 45 minutes passing. A new NY trading day starts a new setup.
+            day_ny = start.astimezone(NY).date()
+            same_day = prior_at.astimezone(NY).date() == day_ny
+            first_price = prior.get("first_alert_price")
+            chased = (isinstance(first_price, (int, float))
+                      and first_price > 0 and
+                      (snap["price"] / first_price - 1) * 100 >= 8)
+            if same_day and (sig["score"] <= int(prior.get("score", 0)) + 1
+                             or chased):
                 persist_market_snapshot(snap, key, "TAPE-FIRST", sig["score"], THRESHOLD)
                 continue
             item = {
@@ -823,7 +843,12 @@ def main():
             persist_market_snapshot(snap, rid, source["name"], sig["score"], THRESHOLD)
             url = create_issue(source, item, sig["score"], [ticker], sig["hits"], rid, market_ctx=[snap])
             alerts.append((source["name"], item["title"], sig["score"], [ticker], url))
-            tape_alerts[key] = {"alerted_utc": start.isoformat(), "score": sig["score"], "session": snap.get("market_session")}
+            tape_alerts[key] = {
+                "alerted_utc": start.isoformat(), "score": sig["score"],
+                "session": snap.get("market_session"),
+                "first_alert_price": (first_price if same_day and isinstance(first_price, (int,float))
+                                      else snap["price"])
+            }
             telegram_alert(f"MARKET RADAR TAPE-FIRST {sig['score']} ${ticker}\n{sig['summary']}\nCatalyst not yet confirmed — investigate immediately.\nIssue: {url}")
     except Exception as e:
         errors.append(f"tape-first: {type(e).__name__}: {e}")

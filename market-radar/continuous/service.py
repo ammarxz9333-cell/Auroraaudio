@@ -669,7 +669,9 @@ class Service:
         relative = ((b['c']/previous_close-1) - (json.loads(benchmark['payload'])['close']/benchmark_close-1))*100 if previous_close and benchmark and benchmark_close else None
         bar = dict(ticker=symbol, time=utc(stamp + 60), open=b['o'], high=b['h'], low=b['l'], close=b['c'], volume=b['v'],
                    gap_pct=(opening/previous_close-1)*100 if opening and previous_close else None, relative_strength_pct=relative,
-                   vwap=vwap, spread_pct=spread, baseline_volume=baseline.get('volume'), baseline_days=baseline.get('days', 0), baseline_asof=baseline.get('asof'))
+                   vwap=vwap, spread_pct=spread, baseline_volume=baseline.get('volume'), baseline_days=baseline.get('days', 0), baseline_asof=baseline.get('asof'),
+                   market_session=('REGULAR' if (9,30) <= (local.hour,local.minute) < (16,0) else 'EXTENDED'),
+                   feed='alpaca_' + os.getenv('ALPACA_FEED', 'sip'))
         if seed:
             with self.engine.db:
                 self.engine.db.execute('INSERT OR REPLACE INTO bars VALUES(?,?,?)', (symbol, stamp+60, json.dumps(bar)))
@@ -682,7 +684,15 @@ class Service:
         if feed == 'iex':
             # Basic accounts permit 30 concurrent symbols; never reconnect forever
             # with an oversized subscription. News collection remains independent.
-            priority = [s for s in ('PENG', 'SPY') if s in symbols]
+            # Free IEX streaming covers only 30 symbols. Prioritize the user's
+            # watched stocks and both broad-market benchmarks instead of
+            # silently losing CRWV in the alphabetic/issuer insertion order.
+            configured = os.getenv(
+                'RADAR_TAPE_PRIORITY',
+                'CRWV,SPY,QQQ,APLD,NBIS,IREN,SOFI,PENG')
+            priority = [s for s in dict.fromkeys(
+                n.strip().upper() for n in configured.split(','))
+                if s in symbols]
             symbols = (priority + [s for s in symbols if s not in priority])[:30]
         self.status['tape_coverage'] = {'feed': feed, 'symbols': symbols,
             'excluded': len(self.engine.universe) - len(symbols),
@@ -795,6 +805,7 @@ class Service:
                 except Exception as exc:
                     raise RuntimeError('Full universe requested but directory unavailable') from exc
             self.engine.universe.setdefault('SPY',['SPDR S&P 500 ETF Trust'])
+            self.engine.universe.setdefault('QQQ',['Invesco QQQ Trust'])
             tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain()),asyncio.create_task(self.market_sweep()),asyncio.create_task(self.trend_monitor()),asyncio.create_task(self.analysis_monitor()), asyncio.create_task(self.overkill_v2_monitor())]
             tasks.extend(asyncio.create_task(self.poll(s)) for s in self.sources.values() if s.get('enabled',True) and s.get('type') in ('rss', 'google_news'))
             try:

@@ -27,6 +27,17 @@ class ClassificationTests(unittest.TestCase):
         alert['detected_at']=utc(990)
         self.assertTrue(classify([],{},alert,1000)['buyable'])
 
+    def test_technical_watch_has_5m_rvol_but_cannot_buy(self):
+        signal = dict(strategy='EARLY_TECHNICAL_REVERSAL',
+                      classification='WATCH EARLY', rvol=1.9,
+                      buyable=False, trigger=99, invalidation=97,
+                      detected_at=utc(990), tape_stale=False)
+        result = classify([], {'price': 98, 'change_pct': -2}, signal, 1000)
+        self.assertEqual(result['classification'], 'WATCH EARLY')
+        self.assertFalse(result['buyable'])
+        self.assertIsNone(result['evidence']['rvol_1m'])
+        self.assertEqual(result['evidence']['rvol_5m'], 1.9)
+
     def test_day_move_warning_does_not_claim_source_anchor(self):
         result=classify([],{'change_pct':12},None,1000)
         self.assertEqual(result['classification'],'LATE')

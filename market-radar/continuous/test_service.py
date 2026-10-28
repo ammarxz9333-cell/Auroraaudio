@@ -19,9 +19,11 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
     async def test_free_feed_subscription_limit_and_coverage(self):
         self.s.engine.universe.update({f'T{i}': [f'Issuer {i}'] for i in range(40)})
         self.s.engine.universe['SPY'] = ['SPDR']
+        self.s.engine.universe['QQQ'] = ['Invesco QQQ']
+        self.s.engine.universe['CRWV'] = ['CoreWeave']
         symbols = self.s.tape_symbols('iex')
         self.assertEqual(len(symbols), 30)
-        self.assertEqual(symbols[:2], ['PENG', 'SPY'])
+        self.assertEqual(symbols[:4], ['CRWV', 'SPY', 'QQQ', 'PENG'])
         self.assertGreater(self.s.status['tape_coverage']['excluded'], 0)
         self.assertEqual(len(self.s.tape_symbols('sip')), len(self.s.engine.universe))
 
@@ -89,7 +91,7 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
             'modes': {
                 'Wave dots only': {'next_open_action': 'BUY_NEXT_OPEN'},
                 'Weekly + Fibonacci': {'next_open_action': 'NONE'},
-                'Monthly + Fibonacci': {'next_open_action': 'EXIT_NEXT_OPEN'}
+                'Monthly + Fibonacci': {'next_open_action': 'NONE'}
             }
         }
         with self.s.engine.db:

@@ -7,6 +7,8 @@ never a blind BUYABLE_NOW decision.
 """
 from __future__ import annotations
 import json, math, re, time
+import datetime as dt
+from zoneinfo import ZoneInfo
 
 NASDAQ_URL = (
     "https://api.nasdaq.com/api/screener/stocks"
@@ -94,10 +96,50 @@ def discover_candidates(fetch, limit=50):
                     "dollar_volume":round(dollar_volume,2),"market_cap":cap,
                     "rank":round(rank,3),"source_url":SOURCE_URL,"coverage":coverage})
     out.sort(key=lambda x:x["rank"],reverse=True)
-    return out[:max(1,int(limit))]
+    limit = max(1, int(limit))
+    # The highest absolute daily movers are often already late. Reserve
+    # portions of the SAME shortlist budget for down-day and early-stage
+    # candidates, then backfill with the strongest remaining names.
+    if limit < 4:
+        return out[:limit]
+    chosen = {}
+    def reserve(items, count):
+        for row in items:
+            if len(items) == 0 or count <= 0:
+                break
+            if row["ticker"] not in chosen:
+                chosen[row["ticker"]] = row
+                count -= 1
+    reserve([x for x in out if -12 <= x["pctchange"] <= -0.5], limit // 4)
+    reserve([x for x in out if 0.25 <= x["pctchange"] <= 3], limit // 4)
+    reserve(out, limit - len(chosen))
+    return list(chosen.values())
 
-def tape_signal(s):
-    """Bullish early-warning score from point-in-time tape only."""
+def tape_signal(s, asof_utc=None):
+    """Bullish early-warning score from point-in-time tape only.
+
+    Production callers pass actual capture time, preventing an old completed
+    Yahoo candle from appearing as a fresh intraday opportunity.
+    """
+    if asof_utc is not None:
+        try:
+            observed = (asof_utc if isinstance(asof_utc, dt.datetime)
+                        else dt.datetime.fromisoformat(str(asof_utc).replace('Z', '+00:00')))
+            bar = dt.datetime.fromisoformat(str(s['bar_time_utc']).replace('Z', '+00:00'))
+            if observed.tzinfo is None or bar.tzinfo is None:
+                raise ValueError('naive_timestamp')
+            age = (observed - bar).total_seconds()
+            local = observed.astimezone(ZoneInfo('America/New_York'))
+            minute = local.hour * 60 + local.minute
+            session = s.get('market_session')
+            session_current = ((session == 'REGULAR' and 570 <= minute < 960)
+                               or (session == 'PRE' and 240 <= minute < 570))
+            if not 0 <= age <= 600 or not session_current:
+                return {'qualifies': False, 'score': 0, 'hits': ['stale-or-closed-market'],
+                        'summary': 'No fresh completed-session evidence; do not notify'}
+        except (KeyError, TypeError, ValueError):
+            return {'qualifies': False, 'score': 0, 'hits': ['missing-tape-timestamp'],
+                    'summary': 'No trustworthy dated tape; do not notify'}
     day=float(s.get("change_pct") or 0)
     m5=float(s.get("change_5m_pct") or 0)
     m15=float(s.get("change_15m_pct") or 0)
@@ -131,12 +173,32 @@ def tape_signal(s):
         (m5 >= 0.5 or m15 >= 1.0 or m30 >= 1.5) and
         (sess != "REGULAR" or hv is True)
     )
-    qualifies = (score >= 8 and day > 0 and rvol >= 2) or early_accumulation
+    # A large selloff may reverse while the DAY is still negative.
+    # The same-clock volume comparison is cumulative in the GitHub scanner,
+    # not the 5-minute RVOL of the continuous stream. Never conflate the two.
+    price = s.get("price")
+    low = s.get("session_low")
+    bounce = ((price / low - 1) * 100
+              if isinstance(price, (int,float))
+              and isinstance(low, (int,float)) and low > 0 else None)
+    down_day_reversal = (
+        sess == "REGULAR" and hv is True and
+        -18 <= day < 0 and rvol >= 1.8 and
+        m5 >= 0.5 and m15 >= 0.8 and
+        bounce is not None and 1.5 <= bounce <= 6.0
+    )
+    if down_day_reversal:
+        score += 4
+        hits.append("down-day-reversal-from-session-low")
+        hits.append("cumulative-same-clock-RVOL-not-5m")
+    qualifies = ((score >= 8 and day > 0 and rvol >= 2)
+                 or early_accumulation or down_day_reversal)
     if early_accumulation and "early-accumulation" not in hits:
         hits.append("early-accumulation")
     summary=(
         f"session={sess} day={day:.2f}% 5m={m5:.2f}% 15m={m15:.2f}% "
-        f"30m={m30:.2f}% same-time-RVOL={rvol:.2f}x; "
+        f"30m={m30:.2f}% same-time-cumulative-RVOL={rvol:.2f}x; "
+        + (f"session-low-bounce={bounce:.2f}%; " if bounce is not None else "")
         + (", ".join(hits) if hits else "no qualifying tape features")
     )
     return {"qualifies":qualifies,"score":score,"hits":hits,"summary":summary}

@@ -6,6 +6,10 @@ import math
 import re
 import sqlite3
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+from continuous.reversal import detect_reversal
+
+NY = ZoneInfo('America/New_York')
 from urllib.parse import urlsplit
 
 
@@ -39,6 +43,7 @@ class Engine:
           CREATE TABLE IF NOT EXISTS bars(ticker TEXT,time REAL,payload TEXT,PRIMARY KEY(ticker,time));
           CREATE TABLE IF NOT EXISTS outbox(id TEXT PRIMARY KEY,payload TEXT,sent INTEGER DEFAULT 0,attempts INTEGER DEFAULT 0,next_try REAL DEFAULT 0);
           CREATE TABLE IF NOT EXISTS meta(key TEXT PRIMARY KEY,value TEXT);
+          CREATE TABLE IF NOT EXISTS technical_alerts(ticker TEXT,ny_day TEXT,classification TEXT,PRIMARY KEY(ticker,ny_day));
         ''')
 
     def resolve(self, text):
@@ -103,16 +108,66 @@ class Engine:
                 raise ValueError('baseline lookahead')
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO bars VALUES(?,?,?)', (ticker, t, json.dumps(bar)))
-        prior = self.db.execute('SELECT payload FROM bars WHERE ticker=? AND time<? ORDER BY time DESC LIMIT 1',(ticker,t)).fetchone()
-        baseline = bar.get('baseline_volume')
-        prior_volume = json.loads(prior['payload'])['volume'] if prior else 0
-        known = self.db.execute('SELECT 1 FROM events WHERE ticker=? AND published>? LIMIT 1',(ticker,now-86400)).fetchone()
-        if not known and baseline and bar.get('baseline_days',0)>=5 and bar['volume']/baseline>=4 and prior_volume>0 and bar['volume']/prior_volume>=2:
-            # Tape-first discovery is explicitly unconfirmed, never a fabricated news catalyst.
-            self.event(dict(title=f'Unconfirmed tape anomaly ${ticker}', content='Investigate public catalyst; abnormal volume acceleration',
-                            url='https://docs.alpaca.markets/us/docs/real-time-stock-pricing-data',published_at=utc(t)),
-                       dict(id='tape-derived',public=True,confidence=0,official=False),now)
+        # An abnormal volume minute is not a verified news event.
         self.evaluate(ticker, now)
+        self.evaluate_reversal(ticker, now, t)
+
+    def evaluate_reversal(self, ticker, now, bar_time):
+        """Point-in-time technical watcher, separate from Overkill v2."""
+        local = datetime.fromtimestamp(bar_time, NY)
+        minute = local.hour * 60 + local.minute
+        if not (9 * 60 + 30 < minute <= 16 * 60) or now - bar_time > 90:
+            return
+        session_start = local.replace(hour=9, minute=30, second=0, microsecond=0).timestamp()
+        rows = self.db.execute(
+            'SELECT payload FROM bars WHERE ticker=? AND time>? AND time<=? ORDER BY time',
+            (ticker, session_start, bar_time)).fetchall()
+        bars = [json.loads(r['payload']) for r in rows]
+        signal = detect_reversal(bars)
+        if not signal:
+            return
+        recent_news = self.db.execute(
+            'SELECT payload FROM events WHERE ticker=? AND published BETWEEN ? AND ?',
+            (ticker, now - 86400, now)).fetchall()
+        if any(e.get('negative') or e.get('dilution')
+               for row in recent_news for e in [json.loads(row['payload'])]):
+            return
+        day = local.date().isoformat()
+        prior = self.db.execute(
+            'SELECT classification FROM technical_alerts WHERE ticker=? AND ny_day=?',
+            (ticker, day)).fetchone()
+        strength = {'WATCH EARLY': 1, 'DEVELOPING': 2}
+        if prior and strength.get(prior['classification'], 0) >= strength[signal['classification']]:
+            return
+        alert = dict(
+            ticker=ticker, classification=signal['classification'],
+            strategy='EARLY_TECHNICAL_REVERSAL', score=None,
+            confidence_kind='rules-based, uncalibrated; not an Overkill BUY',
+            first_public_at=None, first_observed_at=utc(bar_time),
+            detected_at=utc(now), source_to_detection_seconds=None,
+            price=signal['price'], price_at_source=None,
+            price_move_since_source_pct=None, bounce_from_low_pct=signal['bounce_from_low_pct'],
+            session_low=signal['session_low'], rvol=signal['rvol_5m'],
+            rvol_basis=signal['rvol_basis'], acceleration=signal['change_5m_pct'],
+            change_15m_pct=signal['change_15m_pct'], gap_pct=None,
+            vwap=signal['vwap'], breakout=signal['compression_breakout'],
+            relative_strength_pct=bars[-1].get('relative_strength_pct'),
+            options='unavailable', catalyst='Technical reversal only; no new public catalyst confirmed',
+            provenance=[{'source': bars[-1].get('feed', 'Alpaca stream; feed unknown'),
+                         'url':'https://docs.alpaca.markets/docs/real-time-stock-pricing-data'}],
+            source_confidence=None, independent_sources=0, novelty=False,
+            dilution_sec_risk='unknown; full SEC issuer filing review required',
+            trigger=signal['trigger'], invalidation=signal['invalidation'],
+            chase_distance_pct=signal['chase_distance_pct'],
+            buyable=False, tape_stale=False,
+            evidence=signal, limitations=signal['limitations'])
+        ident = hashlib.sha256(f'{ticker}:{day}:early:{signal["classification"]}'.encode()).hexdigest()
+        with self.db:
+            self.db.execute('INSERT OR IGNORE INTO outbox(id,payload) VALUES(?,?)',
+                            (ident, json.dumps(alert)))
+            self.db.execute(
+                'INSERT OR REPLACE INTO technical_alerts(ticker,ny_day,classification) VALUES(?,?,?)',
+                (ticker, day, signal['classification']))
 
     def evaluate(self, ticker, now):
         rows = self.db.execute('SELECT * FROM events WHERE ticker=? AND published BETWEEN ? AND ? ORDER BY published', (ticker, now - 86400, now)).fetchall()
@@ -161,7 +216,11 @@ class Engine:
             official = any(e['official'] for e in events)
             catalyst = any(re.search(r'beat|rais\w*.*(?:guidance|outlook)|ai.*(?:demand|infrastructure|factory)|merger|acquisition|contract|approval|partnership|earnings|8-k', e['title']+' '+e.get('content',''), re.I) for e in events)
             risk = any(json.loads(r['payload'])['dilution'] or json.loads(r['payload'])['negative'] for r in rows)
-            tape = rvol is not None and rvol >= 2 and price >= b['vwap'] and breakout
+            ny_bar = datetime.fromtimestamp(latest['time'], NY)
+            bar_minute = ny_bar.hour * 60 + ny_bar.minute
+            tape = (rvol is not None and rvol >= 2 and price >= b['vwap'] and breakout
+                    and b.get('market_session') == 'REGULAR'
+                    and 9 * 60 + 30 < bar_minute <= 16 * 60)
             score = min(100, round(source_conf * .55 + (20 if tape else 0) + (10 if acceleration and acceleration >= 2 else 0) + (10 if independent >= 2 else 0) + (5 if now - first['published'] <= 600 else 0)))
             label = 'DEVELOPING'
             buyable = False
@@ -200,6 +259,24 @@ class Engine:
 
 
 def format_alert(a):
+    if a.get('strategy') == 'EARLY_TECHNICAL_REVERSAL':
+        e = a['evidence']
+        def val(v):
+            return 'غير متاح' if v is None else f'{v:.2f}'
+        return '\n'.join([
+            f"🔎 {a['classification']} — ${a['ticker']} | انعكاس فني مبكر",
+            f"وقت الفحص: {a['detected_at']} UTC | سعر آخر شمعة مكتملة: ${val(a['price'])}",
+            f"من قاع الجلسة ${val(e['session_low'])}: +{val(e['bounce_from_low_pct'])}%",
+            f"5m: +{val(e['change_5m_pct'])}% | 15m: +{val(e['change_15m_pct'])}% | قيعان 5m/15m صاعدة",
+            f"RVOL 5m: {val(e['rvol_5m'])}× (مقابل الدقائق نفسها في جلسات سابقة) | VWAP: ${val(e['vwap'])}",
+            f"كسر نطاق: {'نعم' if e['compression_breakout'] else 'لا'} | استعادة VWAP: {'نعم' if e['vwap_reclaim'] else 'لا'}",
+            f"قوة نسبية مقابل SPY: {val(a.get('relative_strength_pct'))} نقطة مئوية",
+            f"مستوى متابعة: ${val(a['trigger'])} | ضعف/إبطال أولي: ${val(a['invalidation'])}",
+            f"البعد عن VWAP: {val(a['chase_distance_pct'])}% | خطر المطاردة يزداد مع اتساع الحركة",
+            "لا يوجد محفز جديد مؤكد؛ مخاطر التمويل/SEC غير محسومة.",
+            "Overkill v2 اليومية: غير محسوبة بهذه الإشارة؛ WATCH/DEVELOPING ليست توصية شراء.",
+            "BUYABLE_NOW: NO — لا توجد أوامر تداول آلية.",
+        ])[:4000]
     if a.get('strategy') == 'OVERKILL_V2':
         fusion = a.get('fusion') or {}
         components = fusion.get('components') or {}
@@ -255,9 +332,9 @@ def format_alert(a):
         return 'unknown' if v is None else f'{v:.2f}' if isinstance(v, (float, int)) else str(v)
     return '\n'.join([
         f"{a['classification']} — ${a['ticker']} | score {a['score']}/100 (heuristic)",
-        f"Public: {a['first_public_at']} | detected: {a['detected_at']}",
-        f"Price ${fmt(a['price'])} | at source ${fmt(a['price_at_source'])} | move {fmt(a['price_move_since_source_pct'])}%",
-        f"RVOL {fmt(a['rvol'])} | acceleration {fmt(a['acceleration'])} | gap {fmt(a['gap_pct'])}%",
+        f"Public: {a['first_public_at'] or 'unverified (technical only)'} | detected: {a['detected_at']}",
+        f"Price ${fmt(a['price'])} | at source ${fmt(a['price_at_source'])} | move {fmt(a['price_move_since_source_pct'])}% | rebound from low {fmt(a.get('bounce_from_low_pct'))}%",
+        f"RVOL {fmt(a['rvol'])} ({a.get('rvol_basis', 'unspecified')}) | acceleration {fmt(a['acceleration'])} | gap {fmt(a['gap_pct'])}%",
         f"VWAP {fmt(a['vwap'])} | breakout {a['breakout']} | RS {fmt(a['relative_strength_pct'])}",
         a['catalyst'][:600],
         f"Source confidence {a['source_confidence']} | independent {a['independent_sources']} | novelty {a['novelty']}",
