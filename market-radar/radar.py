@@ -820,8 +820,16 @@ def main():
                 prior_at = dt.datetime.fromisoformat(prior.get("alerted_utc", ""))
             except Exception:
                 prior_at = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
-            # Re-alert only after cooldown or a meaningful score upgrade.
-            if start - prior_at < dt.timedelta(minutes=45) and sig["score"] <= int(prior.get("score", 0)) + 1:
+            # New notifications must reflect a REAL upgrade, not just another
+            # 45 minutes passing. A new NY trading day starts a new setup.
+            day_ny = start.astimezone(NY).date()
+            same_day = prior_at.astimezone(NY).date() == day_ny
+            first_price = prior.get("first_alert_price")
+            chased = (isinstance(first_price, (int, float))
+                      and first_price > 0 and
+                      (snap["price"] / first_price - 1) * 100 >= 8)
+            if same_day and (sig["score"] <= int(prior.get("score", 0)) + 1
+                             or chased):
                 persist_market_snapshot(snap, key, "TAPE-FIRST", sig["score"], THRESHOLD)
                 continue
             item = {
@@ -835,7 +843,12 @@ def main():
             persist_market_snapshot(snap, rid, source["name"], sig["score"], THRESHOLD)
             url = create_issue(source, item, sig["score"], [ticker], sig["hits"], rid, market_ctx=[snap])
             alerts.append((source["name"], item["title"], sig["score"], [ticker], url))
-            tape_alerts[key] = {"alerted_utc": start.isoformat(), "score": sig["score"], "session": snap.get("market_session")}
+            tape_alerts[key] = {
+                "alerted_utc": start.isoformat(), "score": sig["score"],
+                "session": snap.get("market_session"),
+                "first_alert_price": (first_price if same_day and isinstance(first_price, (int,float))
+                                      else snap["price"])
+            }
             telegram_alert(f"MARKET RADAR TAPE-FIRST {sig['score']} ${ticker}\n{sig['summary']}\nCatalyst not yet confirmed — investigate immediately.\nIssue: {url}")
     except Exception as e:
         errors.append(f"tape-first: {type(e).__name__}: {e}")
