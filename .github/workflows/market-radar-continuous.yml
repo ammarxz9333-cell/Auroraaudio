@@ -1,7 +1,7 @@
 name: Market Radar Continuous Tests
 on:
   push:
-    paths: ["market-radar/continuous/**", "market-radar/learning/**", "market-radar/compose.yml", ".github/workflows/market-radar-continuous.yml"]
+    paths: ["market-radar/continuous/**", "market-radar/learning/**", "market-radar/tape_discovery.py", "market-radar/test_tape_discovery.py", "market-radar/test_missed_movers.py", "market-radar/compose.yml", ".github/workflows/market-radar-continuous.yml"]
   pull_request:
     paths: ["market-radar/continuous/**", "market-radar/compose.yml", ".github/workflows/market-radar-continuous.yml"]
 permissions:
@@ -18,6 +18,7 @@ jobs:
       - working-directory: market-radar
         run: |
           python -m unittest continuous.test_core continuous.test_service continuous.test_universe continuous.test_classification continuous.test_reversal learning.test_missed_movers -v
+          python -m unittest test_market_snapshot test_entry_gate test_tape_discovery test_missed_movers live.test_outcome_tracker live.test_end_to_end -v
           python -m continuous.peng_acceptance
           cp .env.example .env
           docker compose config --quiet
