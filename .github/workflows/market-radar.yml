@@ -2,6 +2,10 @@ name: Market Radar
 
 on:
   push:
+    # Prevent developing feature branches from sending alerts or writing
+    # live trading state; only the dedicated alert branch is a scanner.
+    branches:
+      - market-radar-live
     paths:
       - "market-radar/**"
       - ".github/workflows/market-radar.yml"
