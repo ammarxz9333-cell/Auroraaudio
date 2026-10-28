@@ -264,14 +264,14 @@ def format_alert(a):
         def val(v):
             return 'غير متاح' if v is None else f'{v:.2f}'
         return '\n'.join([
-            f"🔎 {a['classification']} — \${a['ticker']} | انعكاس فني مبكر",
-            f"وقت الفحص: {a['detected_at']} UTC | سعر آخر شمعة مكتملة: \${val(a['price'])}",
-            f"من قاع الجلسة \${val(e['session_low'])}: +{val(e['bounce_from_low_pct'])}%",
+            f"🔎 {a['classification']} — ${a['ticker']} | انعكاس فني مبكر",
+            f"وقت الفحص: {a['detected_at']} UTC | سعر آخر شمعة مكتملة: ${val(a['price'])}",
+            f"من قاع الجلسة ${val(e['session_low'])}: +{val(e['bounce_from_low_pct'])}%",
             f"5m: +{val(e['change_5m_pct'])}% | 15m: +{val(e['change_15m_pct'])}% | قيعان 5m/15m صاعدة",
-            f"RVOL 5m: {val(e['rvol_5m'])}× (مقابل الدقائق نفسها في جلسات سابقة) | VWAP: \${val(e['vwap'])}",
+            f"RVOL 5m: {val(e['rvol_5m'])}× (مقابل الدقائق نفسها في جلسات سابقة) | VWAP: ${val(e['vwap'])}",
             f"كسر نطاق: {'نعم' if e['compression_breakout'] else 'لا'} | استعادة VWAP: {'نعم' if e['vwap_reclaim'] else 'لا'}",
             f"قوة نسبية مقابل SPY: {val(a.get('relative_strength_pct'))} نقطة مئوية",
-            f"مستوى متابعة: \${val(a['trigger'])} | ضعف/إبطال أولي: \${val(a['invalidation'])}",
+            f"مستوى متابعة: ${val(a['trigger'])} | ضعف/إبطال أولي: ${val(a['invalidation'])}",
             f"البعد عن VWAP: {val(a['chase_distance_pct'])}% | خطر المطاردة يزداد مع اتساع الحركة",
             "لا يوجد محفز جديد مؤكد؛ مخاطر التمويل/SEC غير محسومة.",
             "Overkill v2 اليومية: غير محسوبة بهذه الإشارة؛ WATCH/DEVELOPING ليست توصية شراء.",
