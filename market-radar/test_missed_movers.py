@@ -31,6 +31,9 @@ class MissedMoverLearningTests(unittest.TestCase):
                     {"outcome_known":True,"caught_early":False,"missed":True}]}
         with tempfile.TemporaryDirectory() as td:
             p=Path(td)/"m.json"; save(p,d); x=load(p)
-            self.assertEqual(x["metrics"]["recall_pct"],50.0)
+            # Old rows have no timestamped first-move crossing; scoring them
+            # as a 50% backtested success rate would be unjustified.
+            self.assertIsNone(x["metrics"]["recall_pct"])
+            self.assertEqual(x["metrics"]["legacy_unauditable"], 2)
 
 if __name__=="__main__": unittest.main()
