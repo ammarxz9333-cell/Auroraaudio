@@ -3,6 +3,7 @@ from continuous.core import timestamp
 
 LABELS = {
     'HIGH-CONVICTION EARLY': 'فرصة مبكرة قوية',
+    'WATCH EARLY': 'مراقبة مبكرة — غير مؤكدة',
     'DEVELOPING': 'تتطور — راقب',
     'CONFIRMED': 'مؤكدة',
     'LATE': 'متأخرة — لا تطارد',
@@ -33,6 +34,9 @@ def classify(news, snapshot, alert, now):
     elif day_move is not None and day_move >= 8:
         label = 'LATE'
         reasons.append('ارتفع 8% أو أكثر عن الإغلاق السابق؛ تحذير مطاردة احترازي، وليس قياسًا منذ أول خبر.')
+    elif fresh and alert.get('strategy') == 'EARLY_TECHNICAL_REVERSAL':
+        label = alert['classification'] if alert.get('classification') in ('WATCH EARLY', 'DEVELOPING') else 'DEVELOPING'
+        reasons.append('انعكاس فني على شموع مكتملة مع حجم نسبي معلوم؛ ليس إشارة Overkill ولا شراء مؤكدًا.')
     elif fresh and alert.get('buyable') and alert.get('classification') in ('CONFIRMED','HIGH-CONVICTION EARLY') and alert.get('trigger') is not None and alert.get('invalidation') is not None:
         label = alert['classification']
         buyable = True
@@ -51,7 +55,9 @@ def classify(news, snapshot, alert, now):
         score_kind='درجة قواعد غير معايرة، وليست احتمال ربح',
         source_confidence=confidence,trigger=alert.get('trigger') if fresh else None,
         invalidation=alert.get('invalidation') if fresh else None,
-        evidence={'stream_fresh':fresh,'rvol_1m':alert.get('rvol') if fresh else None,
+        evidence={'stream_fresh':fresh,
+            'rvol_1m':alert.get('rvol') if fresh and alert.get('strategy') != 'EARLY_TECHNICAL_REVERSAL' else None,
+            'rvol_5m':alert.get('rvol') if fresh and alert.get('strategy') == 'EARLY_TECHNICAL_REVERSAL' else None,
             'acceleration':alert.get('acceleration') if fresh else None,
             'breakout':alert.get('breakout') if fresh else None,
             'relative_strength_pct':alert.get('relative_strength_pct') if fresh else None,
