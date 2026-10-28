@@ -325,3 +325,29 @@ rebound before its candle closes; the original tape/news radar handles that.
 
 Test: `python -m unittest continuous.test_overkill_v2_signals -v` from
 `market-radar/`; GitHub Actions also runs the original JS regression suite.
+
+## Intraday technical-reversal early watcher (2026-10-28)
+
+`continuous/reversal.py` runs on **completed regular-session Alpaca 1-minute
+bars** and independently of the saved Overkill Independent Backtest v2. Its
+WATCH EARLY and DEVELOPING alerts require a measured prior selloff, recovery
+from the session low, strengthening 5m/15m price action, higher 5m/15m lows,
+VWAP reclaim or local breakout, same-NY-minute baseline RVOL over the last
+five completed minutes, and dollar turnover. It suppresses late chases, stale
+or gapped tape, missing historical-minute baselines, non-regular sessions,
+and previously captured dilution/negative news. It never makes an entry
+buyable or issues broker instructions. No positive catalyst is fabricated.
+
+The watcher stores a per-ticker/per-NY-day highest-state record in SQLite;
+replays and restarts cannot send the same state twice. Any upgraded state
+can send a second alert. A separate verified live-price/quote and full
+issuer filing review are still needed before considering execution.
+Thresholds are transparent research heuristics, not backtested success rates.
+
+The learning ledger v3 only credits a first qualifying alert when it was
+captured **strictly before** the first observed >=5% move and within the
+90-minute early window. It can learn rebounds from the observed session low,
+not only gains above the first captured price. Previous records lacking the
+first-move timestamp are marked unauditable rather than counted as success.
+Overkill v2 daily cross rules, weekly/monthly closed regimes and Fibonacci
+criteria remain untouched, with no fixed profit target.
