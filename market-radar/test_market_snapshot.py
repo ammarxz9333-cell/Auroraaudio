@@ -57,7 +57,7 @@ class YahooMarketSnapshotTest(unittest.TestCase):
             }]},
         }]}}
         news = dt.datetime(2026, 10, 27, 14, 2, tzinfo=utc)
-        with patch.object(radar, "fetch", return_value=json.dumps(payload).encode()), \\
+        with patch.object(radar, "fetch", return_value=json.dumps(payload).encode()), \
              patch.object(radar, "now_utc", return_value=captured):
             snap = radar.yahoo_market_snapshot(
                 "TEST", event_time=news, include_outcome_bars=True)
@@ -81,7 +81,7 @@ class YahooMarketSnapshotTest(unittest.TestCase):
                 "close":[109],"volume":[100000],
             }]},
         }]}}
-        with patch.object(radar, "fetch", return_value=json.dumps(payload).encode()), \\
+        with patch.object(radar, "fetch", return_value=json.dumps(payload).encode()), \
              patch.object(radar, "now_utc", return_value=captured):
             self.assertIsNone(radar.yahoo_market_snapshot("TEST"))
 
