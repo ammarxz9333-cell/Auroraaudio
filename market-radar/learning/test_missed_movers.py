@@ -45,6 +45,16 @@ class LedgerTest(unittest.TestCase):
         self.assertGreater(case["max_rebound_from_low_pct"], 5)
         self.assertTrue(case["caught_early"])
 
+    def test_same_completed_bar_replayed_at_later_fetch_is_not_new_sample(self):
+        data = {}
+        update_case(data, snap(100, 0), False, BASE.format(0))
+        replay = snap(107, 0)
+        update_case(data, replay, True, BASE.format(1))
+        case = data["cases"][0]
+        self.assertEqual(len(case["observations"]), 1)
+        self.assertIsNone(case["first_qualified_at"])
+        self.assertFalse(case["outcome_known"])
+
     def test_legacy_not_counted_as_verified_recall(self):
         data = {"cases": [{"outcome_known": True, "caught_early": True, "missed": False}]}
         with tempfile.TemporaryDirectory() as folder:
