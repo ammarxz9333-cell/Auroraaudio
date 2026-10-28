@@ -47082,11 +47082,13 @@
   ],
   "metrics": {
     "caught_early": 0,
-    "eligible_cases": 25,
-    "missed": 25,
-    "recall_pct": 0.0,
-    "warning": "Recall uses only timestamped live observations; no future data may populate pre-alert features."
+    "eligible_cases": 0,
+    "legacy_unauditable": 25,
+    "missed": 0,
+    "outcome_known": 25,
+    "recall_pct": null,
+    "warning": "Only captured qualified signals strictly before the first observed 5% move and within 90 minutes of first capture count. Legacy cases without first_material_move_at are excluded."
   },
-  "schema_version": 2,
-  "updated_utc": "2026-10-28T00:06:23.179744+00:00"
+  "schema_version": 3,
+  "updated_utc": "2026-10-28T01:23:44.492343+00:00"
 }
