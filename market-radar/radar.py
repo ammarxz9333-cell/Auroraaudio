@@ -256,6 +256,11 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
         lows = quote.get("low") or []
         closes = quote.get("close") or []
         volumes = quote.get("volume") or []
+        # Yahoo 5-minute timestamps identify BAR STARTS. A candle whose
+        # five-minute interval has not ended is still forming and must never
+        # enter signal, news-anchor, or outcome calculations.
+        captured_at = now_utc()
+        period = dt.timedelta(minutes=5)
         bars = []
         for i, ts in enumerate(stamps):
             opn = opens[i] if i < len(opens) else None
@@ -266,12 +271,17 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
             if close is None:
                 continue
             when_utc = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc)
+            if when_utc + period > captured_at:
+                continue
             when_ny = when_utc.astimezone(NY)
             bars.append({"ts":ts,"utc":when_utc,"ny":when_ny,"open":float(opn) if opn is not None else None,"high":float(high) if high is not None else float(close),"low":float(low) if low is not None else float(close),"close":float(close),"volume":int(vol or 0)})
         if not bars:
             return None
 
         latest = bars[-1]
+
+        def bar_end(b):
+            return b["utc"] + period
 
         def trailing_move(nbars):
             if len(bars) < nbars + 1 or not bars[-nbars-1]["close"]:
@@ -291,13 +301,13 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
         since_event_move = None
         if isinstance(event_time, dt.datetime):
             et = event_time.astimezone(dt.timezone.utc)
-            before = [b for b in bars if b["utc"] <= et]
+            before = [b for b in bars if bar_end(b) <= et]
             if before:
                 event_price = before[-1]["close"]
-                pre30 = [b for b in bars if b["utc"] <= et - dt.timedelta(minutes=30)]
+                pre30 = [b for b in bars if bar_end(b) <= et - dt.timedelta(minutes=30)]
                 if pre30 and pre30[-1]["close"]:
                     pre30_move = ((event_price / pre30[-1]["close"]) - 1.0) * 100.0
-                post30 = [b for b in bars if et <= b["utc"] <= et + dt.timedelta(minutes=30)]
+                post30 = [b for b in bars if et < bar_end(b) <= et + dt.timedelta(minutes=30)]
                 if post30 and event_price:
                     post30_move = ((post30[-1]["close"] / event_price) - 1.0) * 100.0
                 if event_price:
@@ -408,13 +418,15 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
             "pre30m_move_pct": round(pre30_move, 3) if pre30_move is not None else None,
             "post30m_move_pct": round(post30_move, 3) if post30_move is not None else None,
             "since_event_move_pct": round(since_event_move, 3) if since_event_move is not None else None,
-            "bar_time_utc": latest["utc"].isoformat(),
+            # The observed price/volume belong to a FULLY CLOSED candle.
+            "bar_time_utc": bar_end(latest).isoformat(),
+            "bar_start_time_utc": latest["utc"].isoformat(),
             "bar_high": round(latest["high"], 4),
             "bar_low": round(latest["low"], 4),
         }
         if include_outcome_bars:
             snapshot["_outcome_bars"] = [
-                {"time_utc": b["utc"].isoformat(), "high": b["high"], "low": b["low"]}
+                {"time_utc": bar_end(b).isoformat(), "high": b["high"], "low": b["low"]}
                 for day in sorted(by_day) for b in by_day[day]
             ]
         return snapshot
