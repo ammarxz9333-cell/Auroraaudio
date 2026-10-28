@@ -96,8 +96,11 @@ def update_case(data: dict, snapshot: dict, tape_qualified: bool, captured_utc: 
         cases.append(case)
     elif case.get("observations"):
         previous = case["observations"][-1]
-        if captured <= _time(previous["captured_utc"]):
-            return  # ignore duplicate, delayed or reordered samples
+        if (captured <= _time(previous["captured_utc"])
+                or observed_bar <= _time(previous["bar_time_utc"])):
+            # A delayed/replayed candle is NOT a second independent price
+            # observation, even if fetched at a later wall-clock time.
+            return
 
     first = float(case["first_observation"]["price"])
     minimum = min(float(case.get("min_observed_price", first)), float(price))

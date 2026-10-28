@@ -39,6 +39,98 @@ class YahooMarketSnapshotTest(unittest.TestCase):
         self.assertEqual(snapshot["session_low"], 19.0)
         self.assertEqual(snapshot["cum_volume"], 500)
 
+    def test_yahoo_incomplete_five_minute_bar_is_excluded(self):
+        utc = dt.timezone.utc
+        captured = dt.datetime(2026, 10, 27, 14, 7, tzinfo=utc)
+        starts = [
+            dt.datetime(2026, 10, 27, 13, 55, tzinfo=utc),
+            dt.datetime(2026, 10, 27, 14, 0, tzinfo=utc),
+            dt.datetime(2026, 10, 27, 14, 5, tzinfo=utc),
+        ]
+        payload = {"chart":{"result":[{
+            "meta":{"regularMarketPreviousClose":98},
+            "timestamp":[int(t.timestamp()) for t in starts],
+            "indicators":{"quote":[{
+                "open":[98,100,115], "high":[100,101,120],
+                "low":[97,99,90], "close":[99,100,119],
+                "volume":[100,200,100000],
+            }]},
+        }]}}
+        news = dt.datetime(2026, 10, 27, 14, 2, tzinfo=utc)
+        with patch.object(radar, "fetch", return_value=json.dumps(payload).encode()), \
+             patch.object(radar, "now_utc", return_value=captured):
+            snap = radar.yahoo_market_snapshot(
+                "TEST", event_time=news, include_outcome_bars=True)
+        self.assertEqual(snap["price"], 100)  # not 119 from forming bar
+        self.assertEqual(snap["cum_volume"], 300)
+        self.assertEqual(snap["bar_time_utc"], starts[2].isoformat())
+        self.assertEqual(snap["bar_start_time_utc"], starts[1].isoformat())
+        self.assertEqual(snap["event_price"], 99)  # news at 14:02; bar 14:00 must NOT anchor
+        self.assertEqual(snap["_outcome_bars"][-1]["time_utc"], starts[2].isoformat())
+        self.assertEqual(len(snap["_outcome_bars"]), 2)
+
+    def test_only_incomplete_bar_returns_no_price(self):
+        utc = dt.timezone.utc
+        captured = dt.datetime(2026, 10, 27, 14, 7, tzinfo=utc)
+        opening = dt.datetime(2026, 10, 27, 14, 5, tzinfo=utc)
+        payload = {"chart":{"result":[{
+            "meta":{"regularMarketPreviousClose":100},
+            "timestamp":[int(opening.timestamp())],
+            "indicators":{"quote":[{
+                "open":[100],"high":[110],"low":[90],
+                "close":[109],"volume":[100000],
+            }]},
+        }]}}
+        with patch.object(radar, "fetch", return_value=json.dumps(payload).encode()), \
+             patch.object(radar, "now_utc", return_value=captured):
+            self.assertIsNone(radar.yahoo_market_snapshot("TEST"))
+
+    def test_state_roundtrip_and_legacy_escaped_suffix(self):
+        state = {
+            "bootstrapped": True,
+            "seen": ["already-notified"],
+            "tape_alerts": {"tape:CRWV": {"score": 9}},
+        }
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "state.json"
+            with patch.object(radar, "STATE_FILE", path):
+                radar.save_state(state)
+                self.assertEqual(json.loads(path.read_text()), state)
+                self.assertEqual(radar.load_json(path, {}), state)
+                self.assertTrue(path.read_text().endswith("\n"))
+                self.assertFalse(path.read_text().endswith(r"\n"))
+                # The actual legacy production writer emitted literal slash+n.
+                path.write_text(json.dumps(state) + r"\n")
+                self.assertEqual(radar.load_json(path, {}), state)
+                radar.save_state(radar.load_json(path, {}))
+                self.assertEqual(json.loads(path.read_text()), state)
+
+    def test_normalize_legacy_tape_retains_all_rows_and_string_escapes(self):
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "TEST.jsonl"
+            a = {"ticker": "TEST", "note": "first\nline", "price": 100}
+            b = {"ticker": "TEST", "note": "second", "price": 101}
+            path.write_text(json.dumps(a) + r"\n" + json.dumps(b) + r"\n")
+            radar.normalize_legacy_tape_jsonl(path)
+            text = path.read_text()
+            self.assertEqual([json.loads(row) for row in text.splitlines()], [a, b])
+            radar.normalize_legacy_tape_jsonl(path)
+            self.assertEqual([json.loads(row) for row in path.read_text().splitlines()], [a, b])
+
+    def test_issue_body_uses_real_markdown_line_breaks(self):
+        with patch.object(radar, "github_api", return_value={
+            "html_url": "https://github.com/example/test/issues/1"}) as api:
+            radar.create_issue(
+                {"name": "TAPE-FIRST", "class": "market-data"},
+                {"title": "Test", "url": "https://example.org",
+                 "snippet": "No verified catalyst",
+                 "published": dt.datetime(2026, 10, 27, tzinfo=dt.timezone.utc)},
+                9, ["TEST"], ["volume"], "test-rid")
+        body = api.call_args.kwargs["payload"]["body"]
+        self.assertIn("## First-public-source alert\n\n", body)
+        self.assertIn("\n- **Score:** 9\n", body)
+        self.assertNotIn(r"\n", body)
+
     def test_alert_freshness_rejects_old_and_undated_items(self):
         utc = dt.timezone.utc
         monday = dt.datetime(2026, 9, 28, 13, 0, tzinfo=utc)

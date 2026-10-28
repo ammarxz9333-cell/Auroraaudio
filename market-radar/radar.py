@@ -256,6 +256,11 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
         lows = quote.get("low") or []
         closes = quote.get("close") or []
         volumes = quote.get("volume") or []
+        # Yahoo 5-minute timestamps identify BAR STARTS. A candle whose
+        # five-minute interval has not ended is still forming and must never
+        # enter signal, news-anchor, or outcome calculations.
+        captured_at = now_utc()
+        period = dt.timedelta(minutes=5)
         bars = []
         for i, ts in enumerate(stamps):
             opn = opens[i] if i < len(opens) else None
@@ -266,12 +271,17 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
             if close is None:
                 continue
             when_utc = dt.datetime.fromtimestamp(ts, tz=dt.timezone.utc)
+            if when_utc + period > captured_at:
+                continue
             when_ny = when_utc.astimezone(NY)
             bars.append({"ts":ts,"utc":when_utc,"ny":when_ny,"open":float(opn) if opn is not None else None,"high":float(high) if high is not None else float(close),"low":float(low) if low is not None else float(close),"close":float(close),"volume":int(vol or 0)})
         if not bars:
             return None
 
         latest = bars[-1]
+
+        def bar_end(b):
+            return b["utc"] + period
 
         def trailing_move(nbars):
             if len(bars) < nbars + 1 or not bars[-nbars-1]["close"]:
@@ -291,13 +301,13 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
         since_event_move = None
         if isinstance(event_time, dt.datetime):
             et = event_time.astimezone(dt.timezone.utc)
-            before = [b for b in bars if b["utc"] <= et]
+            before = [b for b in bars if bar_end(b) <= et]
             if before:
                 event_price = before[-1]["close"]
-                pre30 = [b for b in bars if b["utc"] <= et - dt.timedelta(minutes=30)]
+                pre30 = [b for b in bars if bar_end(b) <= et - dt.timedelta(minutes=30)]
                 if pre30 and pre30[-1]["close"]:
                     pre30_move = ((event_price / pre30[-1]["close"]) - 1.0) * 100.0
-                post30 = [b for b in bars if et <= b["utc"] <= et + dt.timedelta(minutes=30)]
+                post30 = [b for b in bars if et < bar_end(b) <= et + dt.timedelta(minutes=30)]
                 if post30 and event_price:
                     post30_move = ((post30[-1]["close"] / event_price) - 1.0) * 100.0
                 if event_price:
@@ -408,13 +418,15 @@ def yahoo_market_snapshot(ticker: str, event_time=None, include_outcome_bars=Fal
             "pre30m_move_pct": round(pre30_move, 3) if pre30_move is not None else None,
             "post30m_move_pct": round(post30_move, 3) if post30_move is not None else None,
             "since_event_move_pct": round(since_event_move, 3) if since_event_move is not None else None,
-            "bar_time_utc": latest["utc"].isoformat(),
+            # The observed price/volume belong to a FULLY CLOSED candle.
+            "bar_time_utc": bar_end(latest).isoformat(),
+            "bar_start_time_utc": latest["utc"].isoformat(),
             "bar_high": round(latest["high"], 4),
             "bar_low": round(latest["low"], 4),
         }
         if include_outcome_bars:
             snapshot["_outcome_bars"] = [
-                {"time_utc": b["utc"].isoformat(), "high": b["high"], "low": b["low"]}
+                {"time_utc": bar_end(b).isoformat(), "high": b["high"], "low": b["low"]}
                 for day in sorted(by_day) for b in by_day[day]
             ]
         return snapshot
@@ -478,6 +490,42 @@ def evaluate_entry_gate(snapshot: dict, score: int, threshold: int):
     out.update({"decision":decision,"entry_price":quote["ask"] if out["state"]=="BUYABLE_NOW" else None,"entry_time_utc":observed_at.isoformat() if out["state"]=="BUYABLE_NOW" else None,"inputs":{"gap_pct":round(gap,3),"premarket_reprice_pct":float(pre or 0.0),"rvol":gi.rvol,"holds_vwap":gi.holds_vwap,"holds_open":gi.holds_open,"minutes_since_open":mins,"spread_pct":round(gi.spread_pct,4),"quote_time_utc":dt.datetime.fromtimestamp(quote_time,dt.timezone.utc).isoformat()}})
     return out
 
+def normalize_legacy_tape_jsonl(path: Path):
+    """Preserve older evidence written as JSON objects separated by literal \n.
+
+    Use JSONDecoder to find object boundaries instead of blind replacement:
+    an escaped newline within a JSON string is legitimate data. This is an
+    idempotent, one-time migration on the next append to each touched ticker.
+    """
+    if not path.exists():
+        return
+    raw = path.read_text(encoding="utf-8")
+    legacy = r"}\n{" in raw or raw.endswith(r"}\n")
+    if not legacy:
+        return
+    if len(raw) > 5_000_000:
+        raise ValueError("legacy_tape_exceeds_safe_migration_limit")
+    decoder = json.JSONDecoder()
+    pos = 0
+    rows = []
+    while pos < len(raw):
+        while pos < len(raw) and raw[pos] in " \r\n\t":
+            pos += 1
+        if pos >= len(raw):
+            break
+        row, end = decoder.raw_decode(raw, pos)
+        if not isinstance(row, dict):
+            raise ValueError("legacy_tape_contains_non_object")
+        rows.append(raw[pos:end])
+        pos = end
+        if raw.startswith(r"\n", pos):
+            pos += 2
+        elif pos < len(raw) and raw[pos] not in " \r\n\t":
+            raise ValueError("legacy_tape_invalid_delimiter")
+    # Only rewrite after every historical record has been parsed successfully.
+    path.write_text("\n".join(rows) + "\n", encoding="utf-8")
+
+
 def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: int, threshold: int):
     """Append the exact point-in-time market snapshot used by the radar.
     Missing fields stay null; never backfill them from later bars.
@@ -518,8 +566,10 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
         "gate": gate
     }
     track_live_outcome(snapshot, gate, rid)
-    with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, separators=(",", ":")) + "\\n")
+    tape_path = TAPE_DIR / f"{ticker}.jsonl"
+    normalize_legacy_tape_jsonl(tape_path)
+    with tape_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(row, separators=(",", ":")) + "\n")
 
 def track_live_outcome(snapshot: dict, gate: dict, rid: str):
     if not snapshot or not snapshot.get("ticker") or not snapshot.get("bar_time_utc"):
@@ -562,13 +612,30 @@ def item_id(source_name: str, item: dict) -> str:
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
 
 def load_json(path: Path, fallback):
+    """Read persisted state, including legacy files with literal slash-n suffix.
+
+    The previous writer appended TWO characters (backslash + n), not a
+    newline. Silently returning the bootstrap fallback reset all dedupe state
+    on every run. Recover that exact legacy format without accepting arbitrary
+    malformed JSON.
+    """
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return fallback
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # A legacy terminal literal r'\n' is NOT valid JSON whitespace.
+        if raw.endswith(r'\n'):
+            try:
+                return json.loads(raw[:-2])
+            except json.JSONDecodeError:
+                pass
         return fallback
 
 def save_state(state):
-    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 def match_watchlist(text: str, watchlist: dict):
     low = text.lower()
@@ -683,24 +750,24 @@ def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     published = item.get("published")
     pubtxt = published.isoformat() if isinstance(published, dt.datetime) else "unknown/not supplied by source"
     body = (
-        f"<!-- radar-id:{rid} -->\\n"
-        f"## First-public-source alert\\n\\n"
-        f"- **Score:** {score}\\n"
-        f"- **Source:** {source['name']}\\n"
-        f"- **Source class:** {source.get('class','other')}\\n"
-        f"- **Published timestamp:** {pubtxt}\\n"
-        f"- **Detected UTC:** {now_utc().isoformat()}\\n"
-        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\\n"
-        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\\n"
-        f"- **Original/public URL:** {item.get('url','')}\\n\\n"
-        + ("### Live market reaction\\n" + "\\n".join(
+        f"<!-- radar-id:{rid} -->\n"
+        f"## First-public-source alert\n\n"
+        f"- **Score:** {score}\n"
+        f"- **Source:** {source['name']}\n"
+        f"- **Source class:** {source.get('class','other')}\n"
+        f"- **Published timestamp:** {pubtxt}\n"
+        f"- **Detected UTC:** {now_utc().isoformat()}\n"
+        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\n"
+        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\n"
+        f"- **Original/public URL:** {item.get('url','')}\n\n"
+        + ("### Live market reaction\n" + "\n".join(
             f"- **{m.get('ticker')}**: price {m.get('price','?')} | day {m.get('change_pct','?')}% | last 5m {m.get('change_5m_pct','?')}% | volume vs same-time {m.get('same_time_volume_ratio','?')}x | pre-news 30m {m.get('pre30m_move_pct','?')}% | first 30m after news {m.get('post30m_move_pct','?')}% | since news {m.get('since_event_move_pct','?')}% | session {m.get('market_session','?')} | **{m.get('reaction','?')}** | bar {m.get('bar_time_utc','?')}"
             if not m.get("error") else f"- **{m.get('ticker')}**: market-data error — {m.get('error')}"
             for m in (market_ctx or [])
-        ) + "\\n\\n" if market_ctx else "")
-        + f"### Headline\\n{item.get('title','')}\\n\\n"
-        f"### Public snippet\\n{item.get('snippet','')[:1600] or '(none)'}\\n\\n"
-        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\\n"
+        ) + "\n\n" if market_ctx else "")
+        + f"### Headline\n{item.get('title','')}\n\n"
+        f"### Public snippet\n{item.get('snippet','')[:1600] or '(none)'}\n\n"
+        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\n"
     )
     payload = {"title": title, "body": body}
     if OWNER:
@@ -810,20 +877,27 @@ def main():
             if not snap or snap.get("error"):
                 tape_candidate_errors += 1
                 continue
-            sig = tape_signal(snap, asof_utc=start)
-            update_missed_case(missed_learning, snap, sig["qualifies"], start.isoformat())
+            # Use actual post-fetch capture time, NOT the timestamp when
+            # this potentially long-running scanner began. A bar cannot be
+            # evaluated against an as-of instant before it was observed.
+            observed_at = now_utc()
+            sig = tape_signal(snap, asof_utc=observed_at)
             if not sig["qualifies"]:
+                update_missed_case(missed_learning, snap, False, observed_at.isoformat())
                 continue
             key = f"tape:{ticker}"
             prior = tape_alerts.get(key, {})
             try:
-                prior_at = dt.datetime.fromisoformat(prior.get("alerted_utc", ""))
-            except Exception:
-                prior_at = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
-            # New notifications must reflect a REAL upgrade, not just another
-            # 45 minutes passing. A new NY trading day starts a new setup.
-            day_ny = start.astimezone(NY).date()
-            same_day = prior_at.astimezone(NY).date() == day_ny
+                prior_at = dt.datetime.fromisoformat(prior["alerted_utc"])
+                if prior_at.tzinfo is None:
+                    raise ValueError("naive previous alert timestamp")
+            except (KeyError, ValueError, TypeError):
+                prior_at = None
+            # No previous alert -> no date conversion of datetime.min;
+            # astimezone(NY) on year 0001 overflowed and skipped every
+            # first-ever tape alert for a new ticker.
+            day_ny = observed_at.astimezone(NY).date()
+            same_day = bool(prior_at and prior_at.astimezone(NY).date() == day_ny)
             first_price = prior.get("first_alert_price")
             chased = (isinstance(first_price, (int, float))
                       and first_price > 0 and
@@ -831,24 +905,38 @@ def main():
             if same_day and (sig["score"] <= int(prior.get("score", 0)) + 1
                              or chased):
                 persist_market_snapshot(snap, key, "TAPE-FIRST", sig["score"], THRESHOLD)
+                # Qualifying rules alone are not an emitted/received alert.
+                update_missed_case(missed_learning, snap, False, observed_at.isoformat())
                 continue
             item = {
                 "title": f"{ticker} abnormal tape before/without confirmed fresh catalyst",
                 "url": cand.get("source_url", ""),
                 "snippet": sig["summary"] + f" | Universe coverage: {cand.get('coverage','unknown')} | Catalyst provenance: not yet established; investigate SEC/IR/regulatory/government sources immediately.",
-                "published": start,
+                "published": observed_at,
             }
             source = {"name":"TAPE-FIRST public market screen","class":"market-data","weight":0}
-            rid = hashlib.sha256((key + start.strftime("%Y-%m-%dT%H:%M")).encode()).hexdigest()[:20]
-            persist_market_snapshot(snap, rid, source["name"], sig["score"], THRESHOLD)
-            url = create_issue(source, item, sig["score"], [ticker], sig["hits"], rid, market_ctx=[snap])
+            rid = hashlib.sha256((key + observed_at.strftime("%Y-%m-%dT%H:%M")).encode()).hexdigest()[:20]
+            try:
+                persist_market_snapshot(snap, rid, source["name"], sig["score"], THRESHOLD)
+                url = create_issue(source, item, sig["score"], [ticker], sig["hits"], rid, market_ctx=[snap])
+                if not url:
+                    raise ValueError("github_issue_missing_url")
+            except Exception as e:
+                # A rule match that never reached GitHub is a missed alert,
+                # not a successfully detected opportunity.
+                errors.append(f"tape issue {ticker}: {type(e).__name__}: {e}")
+                update_missed_case(missed_learning, snap, False, observed_at.isoformat())
+                continue
             alerts.append((source["name"], item["title"], sig["score"], [ticker], url))
             tape_alerts[key] = {
-                "alerted_utc": start.isoformat(), "score": sig["score"],
+                "alerted_utc": observed_at.isoformat(), "score": sig["score"],
                 "session": snap.get("market_session"),
                 "first_alert_price": (first_price if same_day and isinstance(first_price, (int,float))
                                       else snap["price"])
             }
+            # Only an actually created GitHub issue earns discovery credit.
+            # Telegram delivery is best-effort and is NOT proven by this metric.
+            update_missed_case(missed_learning, snap, True, observed_at.isoformat())
             telegram_alert(f"MARKET RADAR TAPE-FIRST {sig['score']} ${ticker}\n{sig['summary']}\nCatalyst not yet confirmed — investigate immediately.\nIssue: {url}")
     except Exception as e:
         errors.append(f"tape-first: {type(e).__name__}: {e}")
@@ -917,7 +1005,7 @@ def main():
                 url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
                 alerts.append((source["name"], item.get("title", ""), score, tickers, url))
                 ticker_text = " ".join("$" + x for x in tickers) or "NEW"
-                telegram_alert(f"MARKET RADAR {score} {ticker_text}\\n{item.get('title','')}\\n{source['name']}\\n{item.get('url','')}\\nIssue: {url}")
+                telegram_alert(f"MARKET RADAR {score} {ticker_text}\n{item.get('title','')}\n{source['name']}\n{item.get('url','')}\nIssue: {url}")
             except Exception as e:
                 errors.append(f"issue {rid}: {type(e).__name__}: {e}")
 
