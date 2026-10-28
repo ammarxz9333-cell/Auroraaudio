@@ -798,7 +798,7 @@ def main():
             if not snap or snap.get("error"):
                 tape_candidate_errors += 1
                 continue
-            sig = tape_signal(snap)
+            sig = tape_signal(snap, asof_utc=start)
             update_missed_case(missed_learning, snap, sig["qualifies"], start.isoformat())
             if not sig["qualifies"]:
                 continue
