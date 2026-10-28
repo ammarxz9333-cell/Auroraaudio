@@ -531,7 +531,7 @@ def persist_market_snapshot(snapshot: dict, rid: str, source_name: str, score: i
     }
     track_live_outcome(snapshot, gate, rid)
     with (TAPE_DIR / f"{ticker}.jsonl").open("a", encoding="utf-8") as fh:
-        fh.write(json.dumps(row, separators=(",", ":")) + "\\n")
+        fh.write(json.dumps(row, separators=(",", ":")) + "\n")
 
 def track_live_outcome(snapshot: dict, gate: dict, rid: str):
     if not snapshot or not snapshot.get("ticker") or not snapshot.get("bar_time_utc"):
@@ -574,13 +574,30 @@ def item_id(source_name: str, item: dict) -> str:
     return hashlib.sha256(raw.encode("utf-8", errors="ignore")).hexdigest()[:20]
 
 def load_json(path: Path, fallback):
+    """Read persisted state, including legacy files with literal slash-n suffix.
+
+    The previous writer appended TWO characters (backslash + n), not a
+    newline. Silently returning the bootstrap fallback reset all dedupe state
+    on every run. Recover that exact legacy format without accepting arbitrary
+    malformed JSON.
+    """
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except Exception:
+        raw = path.read_text(encoding="utf-8")
+    except OSError:
+        return fallback
+    try:
+        return json.loads(raw)
+    except json.JSONDecodeError:
+        # A legacy terminal literal r'\n' is NOT valid JSON whitespace.
+        if raw.endswith(r'\n'):
+            try:
+                return json.loads(raw[:-2])
+            except json.JSONDecodeError:
+                pass
         return fallback
 
 def save_state(state):
-    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\\n", encoding="utf-8")
+    STATE_FILE.write_text(json.dumps(state, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 
 def match_watchlist(text: str, watchlist: dict):
     low = text.lower()
@@ -695,24 +712,24 @@ def create_issue(source, item, score, tickers, hits, rid, market_ctx=None):
     published = item.get("published")
     pubtxt = published.isoformat() if isinstance(published, dt.datetime) else "unknown/not supplied by source"
     body = (
-        f"<!-- radar-id:{rid} -->\\n"
-        f"## First-public-source alert\\n\\n"
-        f"- **Score:** {score}\\n"
-        f"- **Source:** {source['name']}\\n"
-        f"- **Source class:** {source.get('class','other')}\\n"
-        f"- **Published timestamp:** {pubtxt}\\n"
-        f"- **Detected UTC:** {now_utc().isoformat()}\\n"
-        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\\n"
-        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\\n"
-        f"- **Original/public URL:** {item.get('url','')}\\n\\n"
-        + ("### Live market reaction\\n" + "\\n".join(
+        f"<!-- radar-id:{rid} -->\n"
+        f"## First-public-source alert\n\n"
+        f"- **Score:** {score}\n"
+        f"- **Source:** {source['name']}\n"
+        f"- **Source class:** {source.get('class','other')}\n"
+        f"- **Published timestamp:** {pubtxt}\n"
+        f"- **Detected UTC:** {now_utc().isoformat()}\n"
+        f"- **Tickers matched:** {', '.join(tickers) if tickers else 'none — investigate candidate'}\n"
+        f"- **Signals:** {', '.join(hits) if hits else 'source weight only'}\n"
+        f"- **Original/public URL:** {item.get('url','')}\n\n"
+        + ("### Live market reaction\n" + "\n".join(
             f"- **{m.get('ticker')}**: price {m.get('price','?')} | day {m.get('change_pct','?')}% | last 5m {m.get('change_5m_pct','?')}% | volume vs same-time {m.get('same_time_volume_ratio','?')}x | pre-news 30m {m.get('pre30m_move_pct','?')}% | first 30m after news {m.get('post30m_move_pct','?')}% | since news {m.get('since_event_move_pct','?')}% | session {m.get('market_session','?')} | **{m.get('reaction','?')}** | bar {m.get('bar_time_utc','?')}"
             if not m.get("error") else f"- **{m.get('ticker')}**: market-data error — {m.get('error')}"
             for m in (market_ctx or [])
-        ) + "\\n\\n" if market_ctx else "")
-        + f"### Headline\\n{item.get('title','')}\\n\\n"
-        f"### Public snippet\\n{item.get('snippet','')[:1600] or '(none)'}\\n\\n"
-        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\\n"
+        ) + "\n\n" if market_ctx else "")
+        + f"### Headline\n{item.get('title','')}\n\n"
+        f"### Public snippet\n{item.get('snippet','')[:1600] or '(none)'}\n\n"
+        f"> Automated first-pass alert. Rumors/leaks remain unverified until corroborated. Review price/volume, SEC/company filings, counterparties, dilution, short interest and options before acting.\n"
     )
     payload = {"title": title, "body": body}
     if OWNER:
@@ -833,13 +850,16 @@ def main():
             key = f"tape:{ticker}"
             prior = tape_alerts.get(key, {})
             try:
-                prior_at = dt.datetime.fromisoformat(prior.get("alerted_utc", ""))
-            except Exception:
-                prior_at = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
-            # New notifications must reflect a REAL upgrade, not just another
-            # 45 minutes passing. A new NY trading day starts a new setup.
+                prior_at = dt.datetime.fromisoformat(prior["alerted_utc"])
+                if prior_at.tzinfo is None:
+                    raise ValueError("naive previous alert timestamp")
+            except (KeyError, ValueError, TypeError):
+                prior_at = None
+            # No previous alert -> no date conversion of datetime.min;
+            # astimezone(NY) on year 0001 overflowed and skipped every
+            # first-ever tape alert for a new ticker.
             day_ny = observed_at.astimezone(NY).date()
-            same_day = prior_at.astimezone(NY).date() == day_ny
+            same_day = bool(prior_at and prior_at.astimezone(NY).date() == day_ny)
             first_price = prior.get("first_alert_price")
             chased = (isinstance(first_price, (int, float))
                       and first_price > 0 and
@@ -947,7 +967,7 @@ def main():
                 url = create_issue(source, item, score, tickers, hits, rid, market_ctx=market_ctx)
                 alerts.append((source["name"], item.get("title", ""), score, tickers, url))
                 ticker_text = " ".join("$" + x for x in tickers) or "NEW"
-                telegram_alert(f"MARKET RADAR {score} {ticker_text}\\n{item.get('title','')}\\n{source['name']}\\n{item.get('url','')}\\nIssue: {url}")
+                telegram_alert(f"MARKET RADAR {score} {ticker_text}\n{item.get('title','')}\n{source['name']}\n{item.get('url','')}\nIssue: {url}")
             except Exception as e:
                 errors.append(f"issue {rid}: {type(e).__name__}: {e}")
 
