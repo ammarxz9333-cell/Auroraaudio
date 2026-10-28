@@ -18,6 +18,26 @@ class TapeDiscoveryTests(unittest.TestCase):
         self.assertTrue(out["qualifies"])
         self.assertIn("early-accumulation",out["hits"])
 
+    def test_down_day_reversal_before_previous_close(self):
+        s={"price":55.8,"session_low":53.6,"change_pct":-3.2,
+           "change_5m_pct":0.9,"change_15m_pct":1.4,
+           "change_30m_pct":1.9,"same_time_volume_ratio":2.3,
+           "market_session":"REGULAR","holds_vwap":True,"holds_open":False}
+        out=tape_signal(s)
+        self.assertTrue(out["qualifies"])
+        self.assertIn("down-day-reversal-from-session-low",out["hits"])
+        self.assertIn("cumulative-same-clock",out["summary"])
+
+    def test_down_day_reversal_rejects_missing_low_or_weak_volume(self):
+        s={"price":55.8,"change_pct":-3.2,"change_5m_pct":0.9,
+           "change_15m_pct":1.4,"same_time_volume_ratio":2.3,
+           "market_session":"REGULAR","holds_vwap":True}
+        self.assertFalse(tape_signal(s)["qualifies"])
+        s.update(session_low=53.6,same_time_volume_ratio=1.0)
+        self.assertFalse(tape_signal(s)["qualifies"])
+        s.update(same_time_volume_ratio=2.3,price=59)
+        self.assertFalse(tape_signal(s)["qualifies"])  # already chased >6% from low
+
     def test_no_rvol_no_alert(self):
         s={"change_pct":7,"change_5m_pct":2,"change_15m_pct":4,
            "change_30m_pct":6,"same_time_volume_ratio":1.1,
