@@ -7,6 +7,8 @@ never a blind BUYABLE_NOW decision.
 """
 from __future__ import annotations
 import json, math, re, time
+import datetime as dt
+from zoneinfo import ZoneInfo
 
 NASDAQ_URL = (
     "https://api.nasdaq.com/api/screener/stocks"
@@ -96,8 +98,31 @@ def discover_candidates(fetch, limit=50):
     out.sort(key=lambda x:x["rank"],reverse=True)
     return out[:max(1,int(limit))]
 
-def tape_signal(s):
-    """Bullish early-warning score from point-in-time tape only."""
+def tape_signal(s, asof_utc=None):
+    """Bullish early-warning score from point-in-time tape only.
+
+    Production callers pass actual capture time, preventing an old completed
+    Yahoo candle from appearing as a fresh intraday opportunity.
+    """
+    if asof_utc is not None:
+        try:
+            observed = (asof_utc if isinstance(asof_utc, dt.datetime)
+                        else dt.datetime.fromisoformat(str(asof_utc).replace('Z', '+00:00')))
+            bar = dt.datetime.fromisoformat(str(s['bar_time_utc']).replace('Z', '+00:00'))
+            if observed.tzinfo is None or bar.tzinfo is None:
+                raise ValueError('naive_timestamp')
+            age = (observed - bar).total_seconds()
+            local = observed.astimezone(ZoneInfo('America/New_York'))
+            minute = local.hour * 60 + local.minute
+            session = s.get('market_session')
+            session_current = ((session == 'REGULAR' and 570 <= minute < 960)
+                               or (session == 'PRE' and 240 <= minute < 570))
+            if not 0 <= age <= 600 or not session_current:
+                return {'qualifies': False, 'score': 0, 'hits': ['stale-or-closed-market'],
+                        'summary': 'No fresh completed-session evidence; do not notify'}
+        except (KeyError, TypeError, ValueError):
+            return {'qualifies': False, 'score': 0, 'hits': ['missing-tape-timestamp'],
+                    'summary': 'No trustworthy dated tape; do not notify'}
     day=float(s.get("change_pct") or 0)
     m5=float(s.get("change_5m_pct") or 0)
     m15=float(s.get("change_15m_pct") or 0)
