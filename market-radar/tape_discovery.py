@@ -96,7 +96,24 @@ def discover_candidates(fetch, limit=50):
                     "dollar_volume":round(dollar_volume,2),"market_cap":cap,
                     "rank":round(rank,3),"source_url":SOURCE_URL,"coverage":coverage})
     out.sort(key=lambda x:x["rank"],reverse=True)
-    return out[:max(1,int(limit))]
+    limit = max(1, int(limit))
+    # The highest absolute daily movers are often already late. Reserve
+    # portions of the SAME shortlist budget for down-day and early-stage
+    # candidates, then backfill with the strongest remaining names.
+    if limit < 4:
+        return out[:limit]
+    chosen = {}
+    def reserve(items, count):
+        for row in items:
+            if len(items) == 0 or count <= 0:
+                break
+            if row["ticker"] not in chosen:
+                chosen[row["ticker"]] = row
+                count -= 1
+    reserve([x for x in out if -12 <= x["pctchange"] <= -0.5], limit // 4)
+    reserve([x for x in out if 0.25 <= x["pctchange"] <= 3], limit // 4)
+    reserve(out, limit - len(chosen))
+    return list(chosen.values())
 
 def tape_signal(s, asof_utc=None):
     """Bullish early-warning score from point-in-time tape only.
