@@ -3,7 +3,7 @@ import tempfile
 import unittest
 from pathlib import Path
 
-from continuous.core import Engine, utc, timestamp
+from continuous.core import Engine, utc, timestamp, format_alert
 from continuous.reversal import detect_reversal
 
 START = timestamp("2026-10-27T13:31:00Z")
@@ -63,6 +63,11 @@ class ReversalTest(unittest.TestCase):
                 self.assertEqual(alerts[0]["classification"], "WATCH EARLY")
                 self.assertFalse(alerts[0]["buyable"])
                 self.assertIsNone(alerts[0]["first_public_at"])
+                message = format_alert(alerts[0])
+                self.assertIn('RVOL 5m', message)
+                self.assertIn('BUYABLE_NOW: NO', message)
+                self.assertIn('$XYZ', message)
+                self.assertNotIn('\\$XYZ', message)
                 b = sample(69)
                 engine.bar(b, timestamp(b["time"]))
                 self.assertEqual(engine.db.execute(
