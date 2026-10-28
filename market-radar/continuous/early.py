@@ -12,7 +12,7 @@ def rank(data, now):
     except (KeyError,TypeError,ValueError):
         fresh=False
     move=s.get('change_pct'); price=s.get('price')
-    if not fresh or data.get('trend_stale') or not price or move is None or not 0<move<8 or rating['classification'] in ('LATE','AVOID'):
+    if not fresh or data.get('trend_stale') or not price or move is None or not -15<move<8 or rating['classification'] in ('LATE','AVOID'):
         return None
     news=[n for n in data['news'] if n.get('confidence',0)>=55 and not n.get('negative') and not n.get('dilution') and re.search(r'beats?|rais\w*.*(?:guidance|outlook)|approval|contract|partnership|\bAI\b.*(?:cloud|demand|infrastructure)',n['title'],re.I)]
     score=0
@@ -34,6 +34,12 @@ def rank(data, now):
         missing.append('تسارع سعر حديث ≥0.2% بين لقطتين')
     if 0<move<=4:
         score+=5; reasons.append('ارتفاع اليوم محدود نسبيًا ≤4%؛ ليس قياسًا منذ الخبر')
+    elif move<=0:
+        # Watch a same-day turnaround BEFORE the stock has recovered its full loss.
+        # This is exploratory only; snapshots cannot prove higher lows or VWAP.
+        if momentum is None or momentum < .2:
+            return None
+        score+=5; reasons.append('تحسّن سعري بين لقطتين رغم بقاء تغير اليوم سالبًا؛ لا يثبت انعكاسًا فنيًا')
     missing.extend(['RVOL دقيقة واحدة موثوق','تأكيد اختراق وVWAP والسيولة المباشرة'])
     if score<30:
         return None
