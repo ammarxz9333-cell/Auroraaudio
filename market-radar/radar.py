@@ -822,9 +822,13 @@ def main():
             if not snap or snap.get("error"):
                 tape_candidate_errors += 1
                 continue
-            sig = tape_signal(snap, asof_utc=start)
-            update_missed_case(missed_learning, snap, sig["qualifies"], start.isoformat())
+            # Use actual post-fetch capture time, NOT the timestamp when
+            # this potentially long-running scanner began. A bar cannot be
+            # evaluated against an as-of instant before it was observed.
+            observed_at = now_utc()
+            sig = tape_signal(snap, asof_utc=observed_at)
             if not sig["qualifies"]:
+                update_missed_case(missed_learning, snap, False, observed_at.isoformat())
                 continue
             key = f"tape:{ticker}"
             prior = tape_alerts.get(key, {})
@@ -834,7 +838,7 @@ def main():
                 prior_at = dt.datetime.min.replace(tzinfo=dt.timezone.utc)
             # New notifications must reflect a REAL upgrade, not just another
             # 45 minutes passing. A new NY trading day starts a new setup.
-            day_ny = start.astimezone(NY).date()
+            day_ny = observed_at.astimezone(NY).date()
             same_day = prior_at.astimezone(NY).date() == day_ny
             first_price = prior.get("first_alert_price")
             chased = (isinstance(first_price, (int, float))
@@ -843,24 +847,38 @@ def main():
             if same_day and (sig["score"] <= int(prior.get("score", 0)) + 1
                              or chased):
                 persist_market_snapshot(snap, key, "TAPE-FIRST", sig["score"], THRESHOLD)
+                # Qualifying rules alone are not an emitted/received alert.
+                update_missed_case(missed_learning, snap, False, observed_at.isoformat())
                 continue
             item = {
                 "title": f"{ticker} abnormal tape before/without confirmed fresh catalyst",
                 "url": cand.get("source_url", ""),
                 "snippet": sig["summary"] + f" | Universe coverage: {cand.get('coverage','unknown')} | Catalyst provenance: not yet established; investigate SEC/IR/regulatory/government sources immediately.",
-                "published": start,
+                "published": observed_at,
             }
             source = {"name":"TAPE-FIRST public market screen","class":"market-data","weight":0}
-            rid = hashlib.sha256((key + start.strftime("%Y-%m-%dT%H:%M")).encode()).hexdigest()[:20]
-            persist_market_snapshot(snap, rid, source["name"], sig["score"], THRESHOLD)
-            url = create_issue(source, item, sig["score"], [ticker], sig["hits"], rid, market_ctx=[snap])
+            rid = hashlib.sha256((key + observed_at.strftime("%Y-%m-%dT%H:%M")).encode()).hexdigest()[:20]
+            try:
+                persist_market_snapshot(snap, rid, source["name"], sig["score"], THRESHOLD)
+                url = create_issue(source, item, sig["score"], [ticker], sig["hits"], rid, market_ctx=[snap])
+                if not url:
+                    raise ValueError("github_issue_missing_url")
+            except Exception as e:
+                # A rule match that never reached GitHub is a missed alert,
+                # not a successfully detected opportunity.
+                errors.append(f"tape issue {ticker}: {type(e).__name__}: {e}")
+                update_missed_case(missed_learning, snap, False, observed_at.isoformat())
+                continue
             alerts.append((source["name"], item["title"], sig["score"], [ticker], url))
             tape_alerts[key] = {
-                "alerted_utc": start.isoformat(), "score": sig["score"],
+                "alerted_utc": observed_at.isoformat(), "score": sig["score"],
                 "session": snap.get("market_session"),
                 "first_alert_price": (first_price if same_day and isinstance(first_price, (int,float))
                                       else snap["price"])
             }
+            # Only an actually created GitHub issue earns discovery credit.
+            # Telegram delivery is best-effort and is NOT proven by this metric.
+            update_missed_case(missed_learning, snap, True, observed_at.isoformat())
             telegram_alert(f"MARKET RADAR TAPE-FIRST {sig['score']} ${ticker}\n{sig['summary']}\nCatalyst not yet confirmed — investigate immediately.\nIssue: {url}")
     except Exception as e:
         errors.append(f"tape-first: {type(e).__name__}: {e}")
