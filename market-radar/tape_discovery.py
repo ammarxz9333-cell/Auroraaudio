@@ -131,12 +131,32 @@ def tape_signal(s):
         (m5 >= 0.5 or m15 >= 1.0 or m30 >= 1.5) and
         (sess != "REGULAR" or hv is True)
     )
-    qualifies = (score >= 8 and day > 0 and rvol >= 2) or early_accumulation
+    # A large selloff may reverse while the DAY is still negative.
+    # The same-clock volume comparison is cumulative in the GitHub scanner,
+    # not the 5-minute RVOL of the continuous stream. Never conflate the two.
+    price = s.get("price")
+    low = s.get("session_low")
+    bounce = ((price / low - 1) * 100
+              if isinstance(price, (int,float))
+              and isinstance(low, (int,float)) and low > 0 else None)
+    down_day_reversal = (
+        sess == "REGULAR" and hv is True and
+        -18 <= day < 0 and rvol >= 1.8 and
+        m5 >= 0.5 and m15 >= 0.8 and
+        bounce is not None and 1.5 <= bounce <= 6.0
+    )
+    if down_day_reversal:
+        score += 4
+        hits.append("down-day-reversal-from-session-low")
+        hits.append("cumulative-same-clock-RVOL-not-5m")
+    qualifies = ((score >= 8 and day > 0 and rvol >= 2)
+                 or early_accumulation or down_day_reversal)
     if early_accumulation and "early-accumulation" not in hits:
         hits.append("early-accumulation")
     summary=(
         f"session={sess} day={day:.2f}% 5m={m5:.2f}% 15m={m15:.2f}% "
-        f"30m={m30:.2f}% same-time-RVOL={rvol:.2f}x; "
+        f"30m={m30:.2f}% same-time-cumulative-RVOL={rvol:.2f}x; "
+        + (f"session-low-bounce={bounce:.2f}%; " if bounce is not None else "")
         + (", ".join(hits) if hits else "no qualifying tape features")
     )
     return {"qualifies":qualifies,"score":score,"hits":hits,"summary":summary}
