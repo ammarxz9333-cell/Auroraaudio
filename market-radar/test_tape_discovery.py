@@ -74,6 +74,26 @@ class TapeDiscoveryTests(unittest.TestCase):
         rows=discover_candidates(fake_fetch,limit=10)
         self.assertEqual([x["ticker"] for x in rows],["AAA"])
 
+    def test_broad_screen_reserves_places_for_reversals_and_small_movers(self):
+        import json
+        rows = [
+            {"symbol":f"UP{i}","lastsale":"$10","pctchange":"18%",
+             "volume":"1000000","marketCap":"900000000"}
+            for i in range(25)
+        ]
+        rows += [
+            {"symbol":"DOWN","lastsale":"$11","pctchange":"-2%",
+             "volume":"250000","marketCap":"900000000"},
+            {"symbol":"EARLY","lastsale":"$11","pctchange":"1%",
+             "volume":"250000","marketCap":"900000000"}
+        ]
+        def fetch(url,headers=None):
+            return json.dumps({"data":{"rows":rows}}).encode()
+        names = [x["ticker"] for x in discover_candidates(fetch,limit=8)]
+        self.assertEqual(len(names),8)
+        self.assertIn("DOWN",names)
+        self.assertIn("EARLY",names)
+
     def test_broad_screen_keeps_early_liquid_mover(self):
         payload={"data":{"rows":[
           {"symbol":"EARLY","lastsale":"$25","pctchange":"0.6%","volume":"50,000","marketCap":"900000000"},
