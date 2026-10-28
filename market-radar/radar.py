@@ -786,7 +786,19 @@ def main():
     tape_alerts = state.get("tape_alerts", {})
     missed_learning = load_missed_movers(MISSED_MOVERS_FILE)
     try:
-        candidates = discover_candidates(fetch, limit=int(os.getenv("RADAR_TAPE_CANDIDATES", "50")))
+        shortlist_limit = max(1, int(os.getenv("RADAR_TAPE_CANDIDATES", "50")))
+        candidates = discover_candidates(fetch, limit=shortlist_limit)
+        # Track requested symbols every sweep even when broad absolute-move
+        # rankings exclude them. The subsequent dated tape filter still applies.
+        watch_priorities = os.getenv("RADAR_TAPE_PRIORITY_SYMBOLS", "CRWV,APLD,NBIS,IREN")
+        priority = []
+        for name in watch_priorities.split(","):
+            name = name.strip().upper()
+            if re.fullmatch(r"[A-Z][A-Z0-9.\\-]{0,8}", name):
+                priority.append({"ticker":name,
+                                 "source_url":"https://www.nasdaq.com/market-activity/stocks/screener",
+                                 "coverage":"user-priority; not evidence of a market signal"})
+        candidates = list({x["ticker"]: x for x in priority + candidates}.values())[:shortlist_limit]
         tape_candidate_errors = 0
         for cand in candidates:
             ticker = cand["ticker"]
