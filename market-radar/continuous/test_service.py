@@ -89,7 +89,7 @@ class ServiceTest(unittest.IsolatedAsyncioTestCase):
             'modes': {
                 'Wave dots only': {'next_open_action': 'BUY_NEXT_OPEN'},
                 'Weekly + Fibonacci': {'next_open_action': 'NONE'},
-                'Monthly + Fibonacci': {'next_open_action': 'EXIT_NEXT_OPEN'}
+                'Monthly + Fibonacci': {'next_open_action': 'NONE'}
             }
         }
         with self.s.engine.db:
