@@ -39,6 +39,52 @@ class YahooMarketSnapshotTest(unittest.TestCase):
         self.assertEqual(snapshot["session_low"], 19.0)
         self.assertEqual(snapshot["cum_volume"], 500)
 
+    def test_yahoo_incomplete_five_minute_bar_is_excluded(self):
+        utc = dt.timezone.utc
+        captured = dt.datetime(2026, 10, 27, 14, 7, tzinfo=utc)
+        starts = [
+            dt.datetime(2026, 10, 27, 13, 55, tzinfo=utc),
+            dt.datetime(2026, 10, 27, 14, 0, tzinfo=utc),
+            dt.datetime(2026, 10, 27, 14, 5, tzinfo=utc),
+        ]
+        payload = {"chart":{"result":[{
+            "meta":{"regularMarketPreviousClose":98},
+            "timestamp":[int(t.timestamp()) for t in starts],
+            "indicators":{"quote":[{
+                "open":[98,100,115], "high":[100,101,120],
+                "low":[97,99,90], "close":[99,100,119],
+                "volume":[100,200,100000],
+            }]},
+        }]}}
+        news = dt.datetime(2026, 10, 27, 14, 2, tzinfo=utc)
+        with patch.object(radar, "fetch", return_value=json.dumps(payload).encode()), \\
+             patch.object(radar, "now_utc", return_value=captured):
+            snap = radar.yahoo_market_snapshot(
+                "TEST", event_time=news, include_outcome_bars=True)
+        self.assertEqual(snap["price"], 100)  # not 119 from forming bar
+        self.assertEqual(snap["cum_volume"], 300)
+        self.assertEqual(snap["bar_time_utc"], starts[2].isoformat())
+        self.assertEqual(snap["bar_start_time_utc"], starts[1].isoformat())
+        self.assertEqual(snap["event_price"], 99)  # news at 14:02; bar 14:00 must NOT anchor
+        self.assertEqual(snap["_outcome_bars"][-1]["time_utc"], starts[2].isoformat())
+        self.assertEqual(len(snap["_outcome_bars"]), 2)
+
+    def test_only_incomplete_bar_returns_no_price(self):
+        utc = dt.timezone.utc
+        captured = dt.datetime(2026, 10, 27, 14, 7, tzinfo=utc)
+        opening = dt.datetime(2026, 10, 27, 14, 5, tzinfo=utc)
+        payload = {"chart":{"result":[{
+            "meta":{"regularMarketPreviousClose":100},
+            "timestamp":[int(opening.timestamp())],
+            "indicators":{"quote":[{
+                "open":[100],"high":[110],"low":[90],
+                "close":[109],"volume":[100000],
+            }]},
+        }]}}
+        with patch.object(radar, "fetch", return_value=json.dumps(payload).encode()), \\
+             patch.object(radar, "now_utc", return_value=captured):
+            self.assertIsNone(radar.yahoo_market_snapshot("TEST"))
+
     def test_alert_freshness_rejects_old_and_undated_items(self):
         utc = dt.timezone.utc
         monday = dt.datetime(2026, 9, 28, 13, 0, tzinfo=utc)
