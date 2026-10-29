@@ -1,0 +1,30 @@
+name: eARC USB Bridge experimental validation
+
+on:
+  pull_request:
+    paths:
+      - 'experiments/earc-usb-bridge/**'
+      - '.github/workflows/earc-usb-bridge-experiment.yml'
+  push:
+    paths:
+      - 'experiments/earc-usb-bridge/**'
+      - '.github/workflows/earc-usb-bridge-experiment.yml'
+  workflow_dispatch:
+
+jobs:
+  software-protocol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Unit tests (synthetic — not eARC hardware)
+        run: python3 -m unittest discover -s experiments/earc-usb-bridge -p 'test_*.py' -v
+      - name: Real E-AC-3 5.1 in IEC61937 byte-exact transport (not Atmos)
+        run: |
+          command -v ffmpeg
+          command -v ffprobe
+          cd experiments/earc-usb-bridge
+          python3 verify_eac3.py
