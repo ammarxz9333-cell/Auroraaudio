@@ -43910,8 +43910,8 @@
       },
       "first_qualified_at": null,
       "key": "XOM:2026-10-30",
-      "max_move_from_first_pct": 0.0,
-      "max_rebound_from_low_pct": 0.0,
+      "max_move_from_first_pct": 0.5585992050703537,
+      "max_rebound_from_low_pct": 0.5585992050703537,
       "min_observed_price": 186.18,
       "missed": false,
       "observations": [
@@ -43927,6 +43927,19 @@
           "price": 186.18,
           "qualified": false,
           "same_time_volume_ratio": 3.2
+        },
+        {
+          "bar_time_utc": "2026-10-30T20:49:20+00:00",
+          "captured_utc": "2026-10-30T20:49:55.823318+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.102,
+          "change_pct": 2.205,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 187.22,
+          "qualified": false,
+          "same_time_volume_ratio": 1.87
         }
       ],
       "outcome_known": false,
@@ -44115,8 +44128,8 @@
       },
       "first_qualified_at": "2026-10-30T15:21:26.841292+00:00",
       "key": "REGN:2026-10-30",
-      "max_move_from_first_pct": 0.0,
-      "max_rebound_from_low_pct": 0.0,
+      "max_move_from_first_pct": 1.1889151149576005,
+      "max_rebound_from_low_pct": 1.1889151149576005,
       "min_observed_price": 915.12,
       "missed": false,
       "observations": [
@@ -44132,6 +44145,19 @@
           "price": 915.12,
           "qualified": true,
           "same_time_volume_ratio": 9.83
+        },
+        {
+          "bar_time_utc": "2026-10-30T20:49:23+00:00",
+          "captured_utc": "2026-10-30T20:49:56.398036+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": null,
+          "change_pct": 13.254,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 926.0,
+          "qualified": false,
+          "same_time_volume_ratio": 5.64
         }
       ],
       "outcome_known": false,
@@ -44968,5 +44994,5 @@
     "warning": "Only captured qualified signals strictly before the first observed 5% move and within 90 minutes of first capture count. Legacy cases without first_material_move_at are excluded."
   },
   "schema_version": 3,
-  "updated_utc": "2026-10-30T16:14:11.233140+00:00"
+  "updated_utc": "2026-10-30T20:50:03.386355+00:00"
 }
