@@ -1,0 +1,78 @@
+{
+  "radar_id": "20261030T152008Z-AMZN-WATCH-EARLY",
+  "stage": "WATCH EARLY",
+  "status": "DEVELOPING",
+  "detected_utc": "2026-10-30T15:20:08Z",
+  "ticker": "AMZN",
+  "market": "US",
+  "price": {
+    "value": 241.055,
+    "currency": "USD",
+    "source": "Longbridge regular-session quote",
+    "as_of_utc": "2026-10-30T15:20:08Z",
+    "session_low": 229.363,
+    "from_session_low_pct": 5.1,
+    "session_high": 241.3,
+    "prior_close": 243.79
+  },
+  "evidence": {
+    "vwap_usd_approx": 237.22,
+    "vwap_basis": "Longbridge intraday regular-session 5m volume/turnover including live partial 15:15 UTC candle",
+    "above_vwap": true,
+    "closed_5m_higher_low_examples": [
+      238.638,
+      238.87,
+      239.695
+    ],
+    "closed_15m_higher_low_examples": [
+      235.63,
+      237.68,
+      238.638,
+      238.87
+    ],
+    "closed_30m_higher_lows": [
+      229.363,
+      235.63,
+      237.68
+    ],
+    "same_clock_15m_rvol": 3.6743,
+    "volume_window_utc": "15:00-15:15",
+    "rvol_reference": "Oct 27,28,29 2026 same 15-minute window, Longbridge 5m bars",
+    "rvol_today_shares": 2673756,
+    "rvol_baseline_shares": [
+      689271,
+      596614,
+      897193
+    ],
+    "relative_strength_qqq_pct_points_approx": 1.77,
+    "relative_strength_spy_pct_points_approx": 0.34,
+    "relative_strength_xly_pct_points_approx": -0.52,
+    "divergence": "not independently verified",
+    "squeeze": "not independently verified"
+  },
+  "confirmation": "5-minute CLOSE above 241.30 USD (current session high) with supportive volume and hold above VWAP",
+  "invalidation": "Loss of 238.87 USD weakens higher-low structure; loss of ~237.22 VWAP invalidates early reclaim",
+  "chase_risk": "MEDIUM-HIGH: already +5.10% from session low; do not treat as entry",
+  "catalyst": {
+    "type": "official earnings release",
+    "date": "2026-10-29",
+    "url": "https://ir.aboutamazon.com/news-release/news-release-details/2026/Amazon-com-Announces-Third-Quarter-Results/default.aspx",
+    "positive": "AWS revenue +39.3% YoY",
+    "risk": "Trailing 12m free cash flow -$42.4bn, AI capex $220bn planned in 2026; earnings and guidance disappointed market",
+    "new_positive_intraday_news_confirmed": false
+  },
+  "overkill_v2": {
+    "reference_date": "2026-10-29",
+    "source": "Longbridge 349 forward-adjusted completed daily OHLC, algorithm consistent with market-radar/continuous/overkill_v2_signals.py",
+    "daily_green_dot": false,
+    "daily_red_dot": false,
+    "weekly_green_regime": false,
+    "monthly_green_regime": false,
+    "fib_retracement": 0.704,
+    "gold_zone": true,
+    "signal_confirmed": false
+  },
+  "trade_order": false,
+  "fixed_profit_target": null,
+  "notes": "Intraday early-reversal research layer only; no BUY_NEXT_OPEN or EXIT_NEXT_OPEN. Prior chat alerts on CRWV/RDDT/RBLX/NOW checked; AMZN not previously alerted in this run."
+}
