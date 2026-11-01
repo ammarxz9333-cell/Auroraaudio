@@ -25,6 +25,7 @@ from continuous.early import rank
 from continuous.dossier import analyze
 from continuous.overkill_v2_monitor import scan_daily as scan_overkill_v2
 from continuous.overkill_fusion import evaluate as evaluate_overkill_fusion
+from continuous.crypto_kucoin import scan_kucoin
 from radar import parse_feed, google_news_url, yahoo_market_snapshot
 
 LOG = logging.getLogger('radar')
@@ -51,6 +52,8 @@ class Service:
         self.stopping = asyncio.Event()
         self.session = None
         self.market_cache = {}
+        self.crypto_watch = {'status': 'DISABLED', 'watch': [], 'scanned': 0,
+                             'reason': 'QUANT_CRYPTO_ENABLED is not 1'}
         self.stock_locks = {}
         self.public_requests = asyncio.Semaphore(2)
         self.engine.db.execute('CREATE TABLE IF NOT EXISTS public_scan(ticker TEXT PRIMARY KEY, attempted REAL, payload TEXT)')
@@ -361,6 +364,54 @@ class Service:
             r['fusion']['tier'] == 'RISK_REVIEW',
             -(r['fusion'].get('score') or 0), r['ticker']))
         return ranked
+
+    async def quant_rankings(self, request):
+        """Read-only, separately ranked stock and crypto research universe."""
+        observed = time.time()
+        stocks = self.active_overkill_rankings(observed)
+        return web.json_response({
+            'generated_at_utc': utc(observed),
+            'stocks': {
+                'strategy': 'Overkill Independent v2: original daily NEXT OPEN only',
+                'coverage': 'saved 207-symbol stock cohort; actual scored coverage may be lower',
+                'monitor_enabled': os.getenv('OVERKILL_V2_ENABLED') == '1',
+                'ranked_signals': stocks, 'count': len(stocks),
+                'data_status': self.status.get('overkill_v2', {'state': 'not_started'}),
+            },
+            'crypto': self.crypto_watch,
+            'constraints': {
+                'separate_scores_not_comparable': True,
+                'crypto_short_is_watch_not_order': True,
+                'broker_orders': False,
+                'calibrated_win_probability': False,
+                'fixed_take_profit_pct': None,
+            },
+        })
+
+    async def crypto_watch_monitor(self):
+        """Opt-in public KuCoin spot-reference watch; no order endpoints."""
+        if os.getenv('QUANT_CRYPTO_ENABLED') != '1':
+            self.status['crypto_quant'] = {'state': 'disabled_by_default'}
+            return
+        try:
+            top_n = min(75, max(1, int(os.getenv('QUANT_CRYPTO_TOP_N', '30'))))
+        except ValueError:
+            top_n = 30
+        while not self.stopping.is_set():
+            now = time.time()
+            try:
+                report = await scan_kucoin(self.session, now, top_n)
+                report['fetched_at_utc'] = utc(time.time())
+                self.crypto_watch = report
+                self.status['crypto_quant'] = {
+                    'state': report['status'], 'scanned': report['scanned'],
+                    'watch_count': len(report['watch']),
+                    'fetched_at_utc': report['fetched_at_utc']}
+            except Exception as exc:
+                self.crypto_watch = {'status': 'UNAVAILABLE', 'watch': [],
+                                     'scanned': 0, 'reason': type(exc).__name__}
+                self.status['crypto_quant'] = {'state': 'error', 'reason': type(exc).__name__}
+            await self.pause(3600)
 
     async def overkill_v2_signals(self, request):
         """Separate historical daily signals; NOT radar intraday buyability."""
@@ -787,7 +838,7 @@ class Service:
 
     async def run(self):
         app = web.Application(client_max_size=128*1024)
-        app.add_routes([web.get('/', self.dashboard),web.get('/analysis/{ticker}',self.deep_analysis),web.get('/early',self.early_candidates),web.get('/trends',self.trends),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/overkill-v2', self.overkill_v2_signals), web.get('/health', self.health), web.post('/events', self.ingest)])
+        app.add_routes([web.get('/', self.dashboard),web.get('/analysis/{ticker}',self.deep_analysis),web.get('/early',self.early_candidates),web.get('/trends',self.trends),web.get('/opportunities',self.opportunities), web.get('/stocks',self.stocks),web.get('/stock/{ticker}',self.stock_details),web.get('/alerts', self.local_alerts), web.get('/overkill-v2', self.overkill_v2_signals), web.get('/quant/rankings', self.quant_rankings), web.get('/health', self.health), web.post('/events', self.ingest)])
         runner = web.AppRunner(app)
         await runner.setup()
         await web.TCPSite(runner, os.getenv('RADAR_BIND', '127.0.0.1'), int(os.getenv('RADAR_PORT', '8787'))).start()
@@ -806,7 +857,7 @@ class Service:
                     raise RuntimeError('Full universe requested but directory unavailable') from exc
             self.engine.universe.setdefault('SPY',['SPDR S&P 500 ETF Trust'])
             self.engine.universe.setdefault('QQQ',['Invesco QQQ Trust'])
-            tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain()),asyncio.create_task(self.market_sweep()),asyncio.create_task(self.trend_monitor()),asyncio.create_task(self.analysis_monitor()), asyncio.create_task(self.overkill_v2_monitor())]
+            tasks = [asyncio.create_task(self.deliver()), asyncio.create_task(self.tape()), asyncio.create_task(self.radar_bridge()),asyncio.create_task(self.maintain()),asyncio.create_task(self.market_sweep()),asyncio.create_task(self.trend_monitor()),asyncio.create_task(self.analysis_monitor()), asyncio.create_task(self.overkill_v2_monitor()), asyncio.create_task(self.crypto_watch_monitor())]
             tasks.extend(asyncio.create_task(self.poll(s)) for s in self.sources.values() if s.get('enabled',True) and s.get('type') in ('rss', 'google_news'))
             try:
                 await asyncio.gather(*tasks)
