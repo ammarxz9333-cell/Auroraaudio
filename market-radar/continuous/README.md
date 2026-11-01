@@ -400,3 +400,55 @@ Test locally:
 cd market-radar
 python -m unittest continuous.test_crypto_kucoin -v
 ```
+
+
+## Preferred early crypto entry — user's WAE 1H Zones + WAE 5m Signals
+
+**Separate from stocks' saved Overkill v2.** This is a reconstruction of
+the user's supplied Pine v5 source with equal priority to **CALL/Long**
+and **PUT/Short**. It uses EMA(20/40) MACD slope *150, 20-bar Bollinger
+width *4 (mult=2), Wilder true-range RMA(100) deadzone *3.7, and the
+original `callStart`/`putStart` plus `gapBars=3` suppression.
+Momentum-colored candles/dots in the script are informational only and
+**are not** extra entry conditions. The scanner assumes 5m charts,
+1h zone TF and the user's supplied default parameters.
+
+- `EARLY_WATCH_CALL` or `EARLY_WATCH_PUT` means a newly developing
+  hourly zone, not a completed CALL/PUT entry.
+- `FRESH_CALL` / `FRESH_PUT` require a completed 5m signal on its
+  actual first entry condition, while the hourly zone is <=15 minutes old
+  and directional movement since that transition is <=1.5%. These
+  freshness filters rank signals **after**, not *inside*, the Pine rules.
+- `LATE_CALL` / `LATE_PUT` are excluded from fresh entry alerting.
+  Thus an asset already down 5% is NOT promoted as an early short merely
+  because the hourly trend is red.
+- `WAE_ZONE_MODE=live` approximates the current intrahour 1h WAE state
+  using exclusively 5m candles completed up to that moment; it can
+  repaint, as the user's Pine's `lookahead_on` live-zone mode does.
+  `confirmed` uses only the previous fully closed hourly WAE state.
+  Historical TradingView screenshots can backpaint signals using
+  `lookahead_on`; only timestamped 5m completed-bar captures count.
+- Source is **KuCoin FUTURES** (KuCoin's public UTA v2 trade-price klines).
+  There is no automatic Bybit-to-KuCoin price substitution or implied
+  contract access. Contract selection is by reported 24h turnover;
+  missing/incomplete candles and unresponsive endpoints fail closed.
+- No financial probability claims, no leverage instructions, no broker
+  orders, no fixed profit target. Live execution, spread, fees, and
+  tradeability in Germany are not verified by the public feed.
+- **Not live by default:** enable `WAE_EARLY_ENABLED=1`,
+  `WAE_EARLY_TOP_N=20` and `WAE_ZONE_MODE=live` on the deployed host,
+  then restart and check `/wae-early` and `/health`.
+  Scans run after new 5m closes with a nominal 12-second buffer;
+  technical/provider lag is possible. Only fresh CALL/PUT signals can
+  queue short-lived, de-duplicated Telegram research alerts.
+- If KuCoin UTA endpoints or contract directory are unavailable, alerts
+  must remain disabled; an error is not evidence of a clean market.
+
+Tests:
+```sh
+cd market-radar
+python -m unittest continuous.test_wae_early continuous.test_wae_kucoin -v
+```
+
+Only a prospective, timestamped out-of-sample strategy test including
+fees/slippage can establish whether the signals outperform chance.
