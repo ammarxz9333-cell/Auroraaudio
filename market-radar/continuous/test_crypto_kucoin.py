@@ -10,7 +10,7 @@ from continuous.crypto_kucoin import (
 def series(up=True, length=300, extra_forming=False):
     out = []
     for i in range(length + int(extra_forming)):
-        p = (100 + i * .25) if up else (200 - i * .25)
+        p = (100 + i * .4) if up else (200 - i * .25)
         v = 250 if i == length - 1 else 100
         out.append([str(i * HOUR), str(p), str(p), str(p * 1.001),
                     str(p * .999), str(v), "100000"])
