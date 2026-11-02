@@ -1,0 +1,33 @@
+{
+  "type": "EARLY_MARKET_RADAR",
+  "ticker": "KRYS",
+  "grade": "WATCH EARLY",
+  "detected_utc": "2026-11-02T20:22:00Z",
+  "market_session": "REGULAR",
+  "source": "Longbridge real-time quotes and regular-session 5m/15m/30m candles",
+  "price_usd": 295.84,
+  "quote_timestamp_utc": "2026-11-02T20:21:49Z",
+  "session_low_usd": 281.404,
+  "rebound_from_low_pct": 5.13,
+  "previous_close_usd": 332.29,
+  "daily_change_pct": -10.97,
+  "regular_vwap_usd_approx": 289.52,
+  "above_vwap_pct": 2.18,
+  "technical_evidence": [
+    "15m completed candle lows climbed from 284.12 (18:30 UTC) through 285.625 (19:00), 287.565 (19:30), 288.72 (19:45), to 291.97 (20:00).",
+    "30m completed lows rose 282.00 (18:00 UTC), 284.12 (18:30), 285.625 (19:00), 287.565 (19:30). 20:00 bar is not yet closed.",
+    "15m volume 19:45 UTC 42,589 shares vs 24,454 average same 15m interval for Oct 28, 29, 30: RVOL 1.74x, based on 3 sessions only.",
+    "From 19:15 UTC to 20:20 UTC KRYS +~2.7% vs XBI +~0.38%, QQQ -~0.20%, SPY -~0.08%.",
+    "Above session VWAP (turnover / volume, 5m candles) near 289.52."
+  ],
+  "divergence": "not independently verified",
+  "confirmation": "15m close above 297.00 USD with volume support and sustained VWAP reclaim",
+  "invalidation": "Loss of 291.97 USD recent 15m swing low weakens the setup; loss of VWAP around 289.52 USD negates reclaim.",
+  "chase_risk": "MODERATE-HIGH: already +5.13% from session low and near 296.95 intraday rebound resistance",
+  "official_catalyst": "Krystal Biotech Nov 2 Q3 earnings and $400m buyback authorization; 3Q VYJUVEK sales $127.3m; cash and investments $1.2b; KB801 enrollment slower than expected, topline moved to 2027. These were announced before session, not a new intraday catalyst.",
+  "official_source": "https://rss.globenewswire.com/news-release/2026/11/02/3392990/0/en/krystal-biotech-announces-third-quarter-2026-financial-and-operating-results.html",
+  "overkill_daily": "NOT COMPUTED: current daily candle unclosed. Overkill v2 is directional context only, no BUY_NEXT_OPEN/EXIT_NEXT_OPEN issued.",
+  "duplicate_check": "No KRYS prior alert in current conversation or 14 existing PR branch alert files reviewed; missed-movers.json exists but could not be parsed by GitHub connector.",
+  "automatic_trading": false,
+  "take_profit_pct": null
+}
