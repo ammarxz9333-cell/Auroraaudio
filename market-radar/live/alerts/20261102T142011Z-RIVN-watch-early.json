@@ -1,0 +1,72 @@
+{
+  "radar_id": "20261102T142011Z-RIVN-WATCH-EARLY",
+  "stage": "WATCH EARLY",
+  "status": "WATCH",
+  "detected_utc": "2026-11-02T14:20:11Z",
+  "ticker": "RIVN",
+  "market": "US",
+  "session": "PRE",
+  "price": {
+    "value": 12.706,
+    "currency": "USD",
+    "source": "Longbridge pre_market quote",
+    "as_of_utc": "2026-11-02T14:20:11Z",
+    "session_low": 12.092,
+    "from_session_low_pct": 5.08,
+    "session_high": 12.77,
+    "prior_close": 12.16,
+    "from_prior_close_pct": 4.49
+  },
+  "evidence": {
+    "premarket_vwap_approx": 12.6017,
+    "vwap_basis": "Longbridge Nov 2 pre-market 5m turnover/volume from 09:00 to 14:15 UTC, last 5m candle may be partial",
+    "above_premarket_vwap": true,
+    "closed_5m_lows_recent": [
+      12.62,
+      12.65,
+      12.66,
+      12.66
+    ],
+    "closed_15m_higher_lows": [
+      12.5,
+      12.55,
+      12.62
+    ],
+    "closed_30m_higher_lows_recent": [
+      12.5,
+      12.55
+    ],
+    "premarket_volume_shares": 1068140,
+    "same_clock_rvol": "unavailable; Longbridge history candles error 301607, no historical quota",
+    "relative_strength_qqq_pct_points_approx": 3.61,
+    "relative_strength_spy_pct_points_approx": 3.88,
+    "relative_strength_sector": "not verified with synchronized timestamp",
+    "divergence": "not independently verified",
+    "squeeze": "not independently verified"
+  },
+  "confirmation": "Closed 5m candle above premarket high 12.77 USD, with supportive volume and hold above 12.60 premarket VWAP after regular-session open",
+  "invalidation": "Loss of 12.62 weakens 15m higher-low sequence; sustained trade below ~12.60 premarket VWAP negates reclaim; 12.50 deeper structural invalidation",
+  "chase_risk": "HIGH: +5.08% above premarket low and close to 12.77 premarket high; do not chase, wait for regular-session validation",
+  "catalyst": {
+    "new_today": "UBS analyst upgrade Neutral to Buy and $17 analyst target, secondary news not company announcement",
+    "news_url": "https://www.tipranks.com/news/rivian-stock-rivn-rises-as-ubs-upgrades-rating-sees-buying-opportunity-after-recent-selloff",
+    "official_company_news": "Q3 2026 earnings released 2026-10-29",
+    "sec_url": "https://www.sec.gov/Archives/edgar/data/1874178/000187417826000066/rivn-20260930.htm",
+    "financing_risk": "SEC 10-Q reports $6.095bn total liquidity as of Sep 30, 2026; negative operating cash flow and possible future dilution as R2 production scales"
+  },
+  "overkill_v2": {
+    "reference_date": "2026-10-30",
+    "source": "Longbridge 350 split-forward-adjusted completed daily OHLC, independent reconstruction of overkill_v2_signals.py",
+    "daily_green_dot": false,
+    "daily_red_dot": false,
+    "weekly_green_regime": false,
+    "monthly_green_regime": true,
+    "fib_retracement": 0.91105,
+    "gold_zone": false,
+    "signal_confirmed": false
+  },
+  "prior_alerts_checked": "GitHub PR #229 alerts directory; prior Nov 2 CRWV and COHR, Oct 30 AMZN; no prior RIVN early reversal alert found",
+  "trade_order": false,
+  "fixed_profit_target": null,
+  "warning": "Premarket WATCH EARLY only; not a confirmed regular-session reversal or Overkill next-open signal"
+}
