@@ -1,0 +1,88 @@
+{
+  "radar_id": "20261102T094739Z-CRWV-WATCH-EARLY",
+  "stage": "WATCH EARLY",
+  "status": "WATCH",
+  "detected_utc": "2026-11-02T09:47:39Z",
+  "ticker": "CRWV",
+  "market": "US",
+  "session": "PRE",
+  "price": {
+    "value": 56.45,
+    "currency": "USD",
+    "source": "Longbridge pre_market quote",
+    "as_of_utc": "2026-11-02T09:47:39Z",
+    "session_low": 55.82,
+    "from_session_low_pct": 1.129,
+    "session_high": 56.55,
+    "prior_close": 54.87,
+    "from_prior_close_pct": 2.88
+  },
+  "evidence": {
+    "pre_market_vwap_approx": 56.1072,
+    "vwap_basis": "Longbridge 5-minute premarket turnover/volume 09:00–09:45 UTC; regular-session VWAP not available yet",
+    "above_premarket_vwap": true,
+    "closed_5m_higher_low_examples": [
+      55.85,
+      56.03,
+      56.05,
+      56.14,
+      56.19,
+      56.295
+    ],
+    "closed_15m_higher_low_examples": [
+      55.82,
+      56.05,
+      56.19
+    ],
+    "closed_30m_higher_lows": "Not yet established; only one completed premarket 30m bar",
+    "same_clock_rvol": 4.272,
+    "volume_window_utc": "09:00–09:45",
+    "rvol_reference": "Oct 28, 29, 30 2026 same 45-minute premarket window, Longbridge 5m candles",
+    "rvol_today_shares": 131886,
+    "rvol_baseline_shares": [
+      26958,
+      49817,
+      15841
+    ],
+    "rvol_ex_first_5m": 1.577,
+    "ex_first_5m_today_shares": 38634,
+    "ex_first_5m_baseline_shares": [
+      25800,
+      35826,
+      11861
+    ],
+    "relative_strength_qqq_pct_points_approx": 1.93,
+    "relative_strength_spy_pct_points_approx": 2.32,
+    "relative_strength_xlk_pct_points_approx": 1.82,
+    "divergence": "Not independently verified",
+    "squeeze": "Not independently verified",
+    "institutional_accumulation": "Not proven by premarket volume alone"
+  },
+  "confirmation": "5-minute CLOSE above premarket high 56.55 USD and sustained above premarket VWAP ~56.11 with volume confirmation after regular open; 56.90 prior regular-session high is next resistance, not a profit target",
+  "invalidation": "Loss of 56.19 USD weakens rising 5m/15m lows; break below ~56.11 premarket VWAP invalidates reclaim; 55.82 premarket low is structural invalidation",
+  "chase_risk": "MEDIUM: +1.13% from premarket low, but near 56.55 high and thin premarket; watch only",
+  "catalyst": {
+    "new_official_positive_news_today_confirmed": false,
+    "last_official_news": "2026-10-27 capacity expansion in Denmark and network backbone",
+    "last_official_news_url": "https://investors.coreweave.com/news/news-details/2026/CoreWeave-Expands-Global-AI-Cloud-Platform-With-New-Capacity-in-Denmark-and-First-Global-AI-Network-Backbone/default.aspx",
+    "earnings_date": "2026-11-10",
+    "earnings_url": "https://investors.coreweave.com/news/news-details/2026/CoreWeave-Announces-Date-of-Third-Quarter-2026-Financial-Results-and-Conference-Call/default.aspx",
+    "financing_risk": "September 2026 convertible notes and 35 million share ATM program; dilution and refinancing risk, not new intraday catalyst",
+    "sec_reference": "https://www.sec.gov/Archives/edgar/data/1769628/000176962826000429/0001769628-26-000429-index.htm"
+  },
+  "overkill_v2": {
+    "reference_date": "2026-10-30",
+    "source": "Longbridge 401 completed split-forward-adjusted daily bars (2025-03-28–2026-10-30), independently replicated logic of market-radar/continuous/overkill_v2_signals.py",
+    "daily_green_dot": false,
+    "daily_red_dot": false,
+    "weekly_green_regime": false,
+    "monthly_green_regime": false,
+    "fib_retracement": 0.9487,
+    "gold_zone": false,
+    "signal_confirmed": false
+  },
+  "prior_alerts_checked": "PR #229 alerts directory, existing Oct 30 CRWV chat alert, prior Nov 2 09:27 no-alert assessment. New Nov 2 premarket higher lows and 4.27x same-time volume, not a repeated Oct 30 alert.",
+  "trade_order": false,
+  "fixed_profit_target": null,
+  "warning": "Pre-market technical watch, not regular-session SIGNAL CONFIRMED; no BUY_NEXT_OPEN or EXIT_NEXT_OPEN"
+}
