@@ -44192,5 +44192,5 @@
     "warning": "Only captured qualified signals strictly before the first observed 5% move and within 90 minutes of first capture count. Legacy cases without first_material_move_at are excluded."
   },
   "schema_version": 3,
-  "updated_utc": "2026-11-03T09:51:23.817282+00:00"
+  "updated_utc": "2026-11-03T17:24:22.386052+00:00"
 }
