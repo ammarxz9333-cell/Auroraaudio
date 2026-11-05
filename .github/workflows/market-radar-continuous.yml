@@ -17,7 +17,7 @@ jobs:
       - run: pip install -r market-radar/continuous/requirements.txt
       - working-directory: market-radar
         run: |
-          python -m unittest continuous.test_core continuous.test_service continuous.test_universe continuous.test_classification continuous.test_reversal learning.test_missed_movers -v
+          python -m unittest continuous.test_core continuous.test_service continuous.test_universe continuous.test_classification continuous.test_reversal continuous.test_crypto_kucoin continuous.test_wae_early continuous.test_wae_kucoin learning.test_missed_movers -v
           python -m unittest test_market_snapshot test_entry_gate test_tape_discovery test_missed_movers test_published_tape_learning live.test_outcome_tracker live.test_end_to_end -v
           python -m continuous.peng_acceptance
           cp .env.example .env

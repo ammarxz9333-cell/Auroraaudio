@@ -351,3 +351,104 @@ not only gains above the first captured price. Previous records lacking the
 first-move timestamp are marked unauditable rather than counted as success.
 Overkill v2 daily cross rules, weekly/monthly closed regimes and Fibonacci
 criteria remain untouched, with no fixed profit target.
+
+
+## Quant ranking extension — crypto reference research (2026-11-01)
+
+The optional `/quant/rankings` endpoint presents **separate** stock and
+crypto rankings. The stock side calls the EXISTING Overkill Independent v2
+daily next-open 207-symbol monitor and its 60/25/15 technical/news/momentum
+fusion without rewriting any entry/exit rule. Its actual scored coverage
+depends on verified Alpaca history and live credential availability.
+
+The crypto side uses KuCoin's documented PUBLIC **spot** `allTickers` and
+`1hour` candle APIs, with no API key or account access. It screens up to 75
+liquid USDT pairs by 24h quote turnover >=1,000,000 USDT and spread <=0.8%.
+Each pair needs >=300 uninterrupted, valid, completed hourly candles, timely
+data and 20 previous hourly volume observations. Forming candles, missing
+hours, malformed rows, duplicates, stale prices and unconfirmed volume reject
+the signal. An EMA20/EMA50/EMA200 trend, six-hour directional momentum of at
+least 1%, and RVOL >=1.25 produce LONG_WATCH or SHORT_WATCH. Rapid extension
+is explicitly held at EXTENDED_WAIT.
+
+**Crucial:** SHORT_WATCH refers only to spot-market *price behavior*, not
+permission to short on KuCoin, eligibility for futures in Germany, a borrow
+locate, a live actionable quote, or a validated profitable setup. WATCH
+scores 50 trend +25 momentum +25 volume are provisional heuristics, *not*
+calibrated confidence or comparable to the stock-side 60/25/15 fusion.
+Neither side sends broker orders; no fixed 10% take profit is reintroduced.
+Derivatives-specific funding, open interest, leverage constraints, spread
+execution and actual short backtesting remain **unimplemented**, so this
+feature must not be presented as a tested short strategy.
+
+Opt-in only, in the deployed `.env`:
+```sh
+QUANT_CRYPTO_ENABLED=1
+QUANT_CRYPTO_TOP_N=30
+```
+The service checks public data at startup and approximately hourly while
+running. A code commit does not turn on any host or prove that KuCoin public
+endpoints are reachable from that host. Results are ephemeral and disappear
+on service restart until the next successful scan; failures are exposed as
+UNAVAILABLE/PARTIAL rather than invented candidates. See
+`/quant/rankings` (or `/health` for adapter state). For production,
+add verified fee/slippage, walk-forward backtests and exchange execution
+eligibility before enabling any executable signal.
+
+Test locally:
+```sh
+cd market-radar
+python -m unittest continuous.test_crypto_kucoin -v
+```
+
+
+## Preferred early crypto entry — user's WAE 1H Zones + WAE 5m Signals
+
+**Separate from stocks' saved Overkill v2.** This is a reconstruction of
+the user's supplied Pine v5 source with equal priority to **CALL/Long**
+and **PUT/Short**. It uses EMA(20/40) MACD slope *150, 20-bar Bollinger
+width *4 (mult=2), Wilder true-range RMA(100) deadzone *3.7, and the
+original `callStart`/`putStart` plus `gapBars=3` suppression.
+Momentum-colored candles/dots in the script are informational only and
+**are not** extra entry conditions. The scanner assumes 5m charts,
+1h zone TF and the user's supplied default parameters.
+
+- `EARLY_WATCH_CALL` or `EARLY_WATCH_PUT` means a newly developing
+  hourly zone, not a completed CALL/PUT entry.
+- `FRESH_CALL` / `FRESH_PUT` require a completed 5m signal on its
+  actual first entry condition, while the hourly zone is <=15 minutes old
+  and directional movement since that transition is <=1.5%. These
+  freshness filters rank signals **after**, not *inside*, the Pine rules.
+- `LATE_CALL` / `LATE_PUT` are excluded from fresh entry alerting.
+  Thus an asset already down 5% is NOT promoted as an early short merely
+  because the hourly trend is red.
+- `WAE_ZONE_MODE=live` approximates the current intrahour 1h WAE state
+  using exclusively 5m candles completed up to that moment; it can
+  repaint, as the user's Pine's `lookahead_on` live-zone mode does.
+  `confirmed` uses only the previous fully closed hourly WAE state.
+  Historical TradingView screenshots can backpaint signals using
+  `lookahead_on`; only timestamped 5m completed-bar captures count.
+- Source is **KuCoin FUTURES** (KuCoin's public UTA v2 trade-price klines).
+  There is no automatic Bybit-to-KuCoin price substitution or implied
+  contract access. Contract selection is by reported 24h turnover;
+  missing/incomplete candles and unresponsive endpoints fail closed.
+- No financial probability claims, no leverage instructions, no broker
+  orders, no fixed profit target. Live execution, spread, fees, and
+  tradeability in Germany are not verified by the public feed.
+- **Not live by default:** enable `WAE_EARLY_ENABLED=1`,
+  `WAE_EARLY_TOP_N=20` and `WAE_ZONE_MODE=live` on the deployed host,
+  then restart and check `/wae-early` and `/health`.
+  Scans run after new 5m closes with a nominal 12-second buffer;
+  technical/provider lag is possible. Only fresh CALL/PUT signals can
+  queue short-lived, de-duplicated Telegram research alerts.
+- If KuCoin UTA endpoints or contract directory are unavailable, alerts
+  must remain disabled; an error is not evidence of a clean market.
+
+Tests:
+```sh
+cd market-radar
+python -m unittest continuous.test_wae_early continuous.test_wae_kucoin -v
+```
+
+Only a prospective, timestamped out-of-sample strategy test including
+fees/slippage can establish whether the signals outperform chance.
