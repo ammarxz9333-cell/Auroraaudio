@@ -23718,8 +23718,8 @@
       },
       "first_qualified_at": null,
       "key": "RIOT:2026-11-10",
-      "max_move_from_first_pct": 0.0,
-      "max_rebound_from_low_pct": 0.0,
+      "max_move_from_first_pct": 1.784718349135539,
+      "max_rebound_from_low_pct": 1.784718349135539,
       "min_observed_price": 17.93,
       "missed": false,
       "observations": [
@@ -23735,6 +23735,19 @@
           "price": 17.93,
           "qualified": false,
           "same_time_volume_ratio": 0.64
+        },
+        {
+          "bar_time_utc": "2026-11-10T23:50:32+00:00",
+          "captured_utc": "2026-11-10T23:52:03.521420+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.165,
+          "change_pct": 3.429,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 18.25,
+          "qualified": false,
+          "same_time_volume_ratio": 0.57
         }
       ],
       "outcome_known": false,
@@ -24694,5 +24707,5 @@
     "warning": "Only captured qualified signals strictly before the first observed 5% move and within 90 minutes of first capture count. Legacy cases without first_material_move_at are excluded."
   },
   "schema_version": 3,
-  "updated_utc": "2026-11-10T18:55:22.314575+00:00"
+  "updated_utc": "2026-11-10T23:52:14.206991+00:00"
 }
