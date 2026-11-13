@@ -21183,7 +21183,7 @@
       "key": "RGTI:2026-11-13",
       "max_move_from_first_pct": 0.0,
       "max_rebound_from_low_pct": 0.0,
-      "min_observed_price": 9.595,
+      "min_observed_price": 9.5888,
       "missed": false,
       "observations": [
         {
@@ -21198,6 +21198,19 @@
           "price": 9.595,
           "qualified": false,
           "same_time_volume_ratio": 0.84
+        },
+        {
+          "bar_time_utc": "2026-11-13T22:53:08+00:00",
+          "captured_utc": "2026-11-13T22:53:15.881208+00:00",
+          "change_15m_pct": 0.3,
+          "change_30m_pct": 0.035,
+          "change_5m_pct": 0.617,
+          "change_pct": -7.265,
+          "holds_vwap": false,
+          "market_session": "AFTER/CLOSED",
+          "price": 9.5888,
+          "qualified": false,
+          "same_time_volume_ratio": 0.78
         }
       ],
       "outcome_known": false,
@@ -21337,5 +21350,5 @@
     "warning": "Only captured qualified signals strictly before the first observed 5% move and within 90 minutes of first capture count. Legacy cases without first_material_move_at are excluded."
   },
   "schema_version": 3,
-  "updated_utc": "2026-11-13T17:41:07.355398+00:00"
+  "updated_utc": "2026-11-13T22:53:26.890191+00:00"
 }
