@@ -4,6 +4,43 @@ import 'package:daviewer/features/multisource/gallery_catalog.dart';
 void main() {
   final catalog = GalleryCatalog();
 
+  test('interleaves all sources instead of hiding later providers', () {
+    GalleryItem item(String id, GallerySource source) => GalleryItem(
+      id: id,
+      source: source,
+      title: id,
+      previewUrl: Uri.parse('https://example.org/$id-thumb.jpg'),
+      fullUrl: Uri.parse('https://example.org/$id.jpg'),
+      pageUrl: Uri.parse('https://example.org/$id'),
+    );
+    final merged = interleaveGalleryItems([
+      [item('d1', GallerySource.danbooru), item('d2', GallerySource.danbooru)],
+      [item('s1', GallerySource.safebooru), item('s2', GallerySource.safebooru)],
+      [item('w1', GallerySource.wallhaven)],
+      [item('o1', GallerySource.openverse)],
+    ]);
+    expect(merged.map((image) => image.id).toList(), [
+      'd1', 's1', 'w1', 'o1', 'd2', 's2',
+    ]);
+  });
+
+  test('full-text providers use readable multi-word tags', () {
+    for (final source in [GallerySource.wallhaven, GallerySource.openverse]) {
+      final uri = catalog.buildSearchUri(source, 'digital_art', 1);
+      expect(uri.queryParameters['q'], 'digital art');
+    }
+  });
+
+  test('provider error payload is surfaced instead of empty images', () {
+    expect(
+      () => catalog.parsePayload(GallerySource.safebooru, {
+        'success': false,
+        'message': 'search down',
+      }, 1),
+      throwsStateError,
+    );
+  });
+
   test('safe catalog excludes adult source and Reddit OAuth source', () {
     expect(safeGallerySources, isNot(contains(GallerySource.rule34)));
     expect(safeGallerySources, isNot(contains(GallerySource.reddit)));

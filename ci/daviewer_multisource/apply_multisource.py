@@ -19,7 +19,7 @@ def replace_once(relative: str, old: str, new: str) -> None:
     target.write_text(source.replace(old, new, 1), encoding="utf-8")
 
 
-replace_once("pubspec.yaml", "version: 0.7.2+702", "version: 0.8.0+800")
+replace_once("pubspec.yaml", "version: 0.7.2+702", "version: 0.8.1+801")
 
 replace_once(
     "lib/app/router.dart",
@@ -79,8 +79,9 @@ for relative in (
     "lib/features/multisource/multisource_screen.dart",
     "test/gallery_catalog_test.dart",
     "test/reddit_gallery_search_test.dart",
+    "test/multisource_screen_test.dart",
 ):
     if not (ROOT / relative).is_file():
         raise SystemExit(f"Missing multisource file {relative}")
 
-print("DAViewer MultiSource v0.8.0: route, providers, tests installed.")
+print("DAViewer MultiSource v0.8.1: startup fixes and providers installed.")
