@@ -1,3 +1,4 @@
+// ignore_for_file: prefer_interpolation_to_compose_strings, prefer_initializing_formals
 import 'dart:convert';
 
 import 'package:dio/dio.dart';
