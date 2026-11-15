@@ -1,0 +1,145 @@
+name: DAViewer Ultra MultiSource v0.8.0
+on:
+  push:
+    branches: [app/daviewer-ultra-multisource-v080-20261115]
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: daviewer-multisource-v080-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  android:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout patches
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Flutter 3.47.1
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          flutter-version: '3.47.1'
+          channel: stable
+          cache: true
+      - name: Clone immutable upstream and apply v0.7.2 fixes
+        shell: bash
+        run: |
+          set -euo pipefail
+          git clone https://github.com/redtidev1918/DAViewer.git DAViewer
+          git -C DAViewer checkout 6ec59f574cb73819ee0e8889c7ad14ccfa55b613
+          test "$(git -C DAViewer rev-parse HEAD)" = "6ec59f574cb73819ee0e8889c7ad14ccfa55b613"
+          grep -q '^version: 0.7.0+239$' DAViewer/pubspec.yaml
+          cp ci/daviewer_ultra_v070/daily_archive_provider.dart DAViewer/lib/features/home/daily_archive_provider.dart
+          cp ci/daviewer_ultra_v070/daily_archive_cursor_test.dart DAViewer/test/daily_archive_cursor_test.dart
+          cp ci/daviewer_ultra_v070/oauth_network_fallback.dart DAViewer/lib/core/network/oauth_network_fallback.dart
+          cp ci/daviewer_ultra_v070/oauth_network_fallback_test.dart DAViewer/test/oauth_network_fallback_test.dart
+          cp ci/daviewer_ultra_v070/oauth_launcher_switch_test.dart DAViewer/test/oauth_launcher_switch_test.dart
+          python3 ci/daviewer_ultra_v070/apply.py
+      - name: Install MultiSource code and review-scoped integration
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p DAViewer/lib/features/multisource
+          cp ci/daviewer_multisource/gallery_catalog.dart DAViewer/lib/features/multisource/
+          cp ci/daviewer_multisource/reddit_gallery_search.dart DAViewer/lib/features/multisource/
+          cp ci/daviewer_multisource/multisource_screen.dart DAViewer/lib/features/multisource/
+          cp ci/daviewer_multisource/gallery_catalog_test.dart DAViewer/test/
+          cp ci/daviewer_multisource/reddit_gallery_search_test.dart DAViewer/test/
+          python3 ci/daviewer_multisource/apply_multisource.py
+          cd DAViewer
+          dart format lib/features/multisource lib/app/router.dart \
+            lib/features/home/home_screen.dart \
+            lib/features/search/search_screen.dart \
+            lib/core/auth/webview_oauth_bridge.dart \
+            lib/core/l10n/app_strings.dart \
+            lib/core/network/oauth_network_fallback.dart \
+            lib/core/runtime/app_runtime.dart \
+            lib/features/web_login/web_login_screen.dart \
+            lib/features/search/search_providers.dart \
+            lib/shared/widgets/artwork_feed_grid.dart \
+            lib/features/home/home_feeds.dart \
+            lib/features/home/daily_archive_provider.dart \
+            test/gallery_catalog_test.dart \
+            test/reddit_gallery_search_test.dart \
+            test/daily_archive_cursor_test.dart \
+            test/oauth_network_fallback_test.dart \
+            test/oauth_launcher_switch_test.dart
+      - name: Assert modified source scope
+        shell: bash
+        run: |
+          set -euo pipefail
+          cd DAViewer
+          python3 - <<'PY'
+          import subprocess
+          allowed = {
+              'pubspec.yaml', 'android/app/build.gradle.kts',
+              'android/app/src/main/AndroidManifest.xml',
+              'lib/app/router.dart', 'lib/features/home/home_screen.dart',
+              'lib/features/search/search_screen.dart',
+              'lib/core/runtime/app_runtime.dart',
+              'lib/core/auth/webview_oauth_bridge.dart',
+              'lib/core/l10n/app_strings.dart',
+              'lib/core/network/oauth_network_fallback.dart',
+              'lib/features/web_login/web_login_screen.dart',
+              'lib/features/search/search_providers.dart',
+              'lib/shared/widgets/artwork_feed_grid.dart',
+              'lib/features/home/home_feeds.dart',
+              'lib/features/home/daily_archive_provider.dart',
+              'lib/features/multisource/gallery_catalog.dart',
+              'lib/features/multisource/reddit_gallery_search.dart',
+              'lib/features/multisource/multisource_screen.dart',
+              'test/gallery_catalog_test.dart',
+              'test/reddit_gallery_search_test.dart',
+              'test/daily_archive_cursor_test.dart',
+              'test/oauth_network_fallback_test.dart',
+              'test/oauth_launcher_switch_test.dart',
+          }
+          out = subprocess.check_output(['git','status','--porcelain'],text=True)
+          changed = {line[3:].strip() for line in out.splitlines() if line.strip()}
+          if changed - allowed:
+              raise SystemExit(f"Unexpected modifications: {sorted(changed - allowed)}")
+          assert 'lib/app/router.dart' in changed
+          assert 'lib/features/multisource/multisource_screen.dart' in changed
+          print('Changes review-scoped:', sorted(changed))
+          PY
+      - name: Install Flutter dependencies
+        working-directory: DAViewer
+        run: flutter pub get
+      - name: Analyze
+        working-directory: DAViewer
+        run: flutter analyze
+      - name: Check Dart format
+        working-directory: DAViewer
+        run: dart format --output=none --set-exit-if-changed lib test
+      - name: Complete regression tests
+        working-directory: DAViewer
+        run: flutter test
+      - name: Build Android release-mode APK
+        working-directory: DAViewer
+        run: flutter build apk --release --dart-define=DAVIEWER_VERSION=0.8.0
+      - name: Package APK and provenance
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          cp DAViewer/build/app/outputs/flutter-apk/app-release.apk out/DAViewer-Ultra-MultiSource-v0.8.0-android.apk
+          cd out
+          sha256sum DAViewer-Ultra-MultiSource-v0.8.0-android.apk > SHA256SUMS.txt
+          printf '%s\n' \
+            'DAViewer Ultra MultiSource v0.8.0+800' \
+            'Upstream v0.7.0 SHA 6ec59f574cb73819ee0e8889c7ad14ccfa55b613' \
+            'Preserves v0.7.2 reliability fixes' \
+            'Public adapters: Danbooru general-only, Safebooru, Wallhaven SFW, Openverse' \
+            'Rule34: separate adult opt-in; never aggregated' \
+            'Reddit: safe still-image and gallery parser; approved OAuth required; no tokens bundled' \
+            'Pixiv/ArtStation/Behance/Zerochan/Gelbooru: external official search' \
+            'Ephemeral debug signing; previous APK update-incompatible' \
+            'CI: flutter analyze, format, full tests, release APK build' \
+            > BUILD-INFO.txt
+      - name: Upload installable APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: DAViewer-Ultra-MultiSource-v0.8.0-android
+          path: out/*
+          if-no-files-found: error
+          retention-days: 14
