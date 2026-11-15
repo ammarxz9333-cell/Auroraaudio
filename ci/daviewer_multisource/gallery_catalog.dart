@@ -6,7 +6,7 @@ import 'package:dio/dio.dart';
 ///
 /// Only publicly documented read endpoints are queried. Providers with no
 /// supported public API are represented by external search links in the UI.
-enum GallerySource { all, danbooru, safebooru, wallhaven, openverse, rule34 }
+enum GallerySource { all, danbooru, safebooru, wallhaven, openverse, reddit, rule34 }
 
 extension GallerySourceDetails on GallerySource {
   String get label => switch (this) {
@@ -15,6 +15,7 @@ extension GallerySourceDetails on GallerySource {
     GallerySource.safebooru => 'Safebooru',
     GallerySource.wallhaven => 'Wallhaven',
     GallerySource.openverse => 'Openverse',
+    GallerySource.reddit => 'Reddit images',
     GallerySource.rule34 => 'Rule34 (18+)',
   };
 
@@ -133,6 +134,8 @@ final class GalleryCatalog {
           'page_size': pageSize.toString(),
           'mature': 'false',
         });
+      case GallerySource.reddit:
+        throw StateError('Reddit requires approved OAuth; use RedditGallerySearch');
       case GallerySource.all:
         throw StateError('Unreachable');
     }
@@ -175,6 +178,7 @@ final class GalleryCatalog {
       GallerySource.openverse => 'results',
       GallerySource.wallhaven => 'data',
       GallerySource.danbooru => null,
+      GallerySource.reddit => null,
       GallerySource.safebooru || GallerySource.rule34 => 'post',
       GallerySource.all => null,
     };
@@ -189,6 +193,7 @@ final class GalleryCatalog {
           _parseBooru(source, row),
         GallerySource.wallhaven => _parseWallhaven(row),
         GallerySource.openverse => _parseOpenverse(row),
+        GallerySource.reddit => null,
         GallerySource.all => null,
       };
       if (item != null) items.add(item);
