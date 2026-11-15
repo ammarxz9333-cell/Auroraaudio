@@ -21,6 +21,13 @@ jobs:
           flutter-version: '3.47.1'
           channel: stable
           cache: true
+      - name: Use Java 21 for Gradle 8.14.2 compatibility
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+      - name: Point Flutter Android toolchain at Java 21
+        run: flutter config --jdk-dir="$JAVA_HOME"
       - name: Clone immutable upstream and apply v0.7.2 fixes
         shell: bash
         run: |
