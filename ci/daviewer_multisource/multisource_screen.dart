@@ -272,12 +272,10 @@ final class _MultiSourceScreenState extends State<MultiSourceScreen> {
       );
       if (confirmed != true) return;
     }
-    setState(() {
-      _adultEnabled = enabled;
-      if (!enabled && _source == GallerySource.rule34) {
-        _source = GallerySource.all;
-      }
-    });
+    if (!enabled && _source == GallerySource.rule34) {
+      _setSource(GallerySource.all);
+    }
+    setState(() => _adultEnabled = enabled);
   }
 
   Future<void> _openExternal(Uri url) async {
@@ -324,12 +322,21 @@ final class _MultiSourceScreenState extends State<MultiSourceScreen> {
                 child: InteractiveViewer(
                   minScale: 0.8,
                   maxScale: 6,
-                  child: CachedNetworkImage(
-                    imageUrl: item.fullUrl.toString(),
-                    fit: BoxFit.contain,
-                    errorWidget: (_, _, _) =>
-                        const Center(child: Icon(Icons.broken_image)),
-                  ),
+                  // Reddit deletion rules: do not create a persistent
+                  // CachedNetworkImage disk entry for third-party content.
+                  child: item.source == GallerySource.reddit
+                      ? Image.network(
+                          item.fullUrl.toString(),
+                          fit: BoxFit.contain,
+                          errorBuilder: (context, error, stack) =>
+                              const Center(child: Icon(Icons.broken_image)),
+                        )
+                      : CachedNetworkImage(
+                          imageUrl: item.fullUrl.toString(),
+                          fit: BoxFit.contain,
+                          errorWidget: (context, url, error) =>
+                              const Center(child: Icon(Icons.broken_image)),
+                        ),
                 ),
               ),
               ListTile(
@@ -482,12 +489,22 @@ final class _MultiSourceScreenState extends State<MultiSourceScreen> {
                           child: Stack(
                             fit: StackFit.expand,
                             children: <Widget>[
-                              CachedNetworkImage(
-                                imageUrl: item.previewUrl.toString(),
-                                fit: BoxFit.cover,
-                                errorWidget: (_, _, _) =>
-                                    const Icon(Icons.broken_image),
-                              ),
+                              // Reddit content is not persisted in the image
+                              // disk cache; only the in-memory image cache.
+                              if (item.source == GallerySource.reddit)
+                                Image.network(
+                                  item.previewUrl.toString(),
+                                  fit: BoxFit.cover,
+                                  errorBuilder: (context, error, stack) =>
+                                      const Icon(Icons.broken_image),
+                                )
+                              else
+                                CachedNetworkImage(
+                                  imageUrl: item.previewUrl.toString(),
+                                  fit: BoxFit.cover,
+                                  errorWidget: (context, url, error) =>
+                                      const Icon(Icons.broken_image),
+                                ),
                               Align(
                                 alignment: Alignment.bottomCenter,
                                 child: ColoredBox(
