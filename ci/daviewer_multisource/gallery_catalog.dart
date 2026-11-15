@@ -59,6 +59,25 @@ final class GalleryPage {
   final bool hasMore;
 }
 
+/// Merge already-fetched batches fairly, keeping each provider's native order.
+/// Results from independent providers are never conflated into DeviantArt IDs.
+List<GalleryItem> interleaveGalleryItems(List<List<GalleryItem>> batches) {
+  final result = <GalleryItem>[];
+  final seen = <String>{};
+  final maxLength = batches.fold<int>(
+    0,
+    (max, batch) => batch.length > max ? batch.length : max,
+  );
+  for (var index = 0; index < maxLength; index++) {
+    for (final batch in batches) {
+      if (index >= batch.length) continue;
+      final item = batch[index];
+      if (seen.add(item.id)) result.add(item);
+    }
+  }
+  return result;
+}
+
 final class GalleryCatalog {
   GalleryCatalog({Dio? dio})
     : _dio =
@@ -95,6 +114,8 @@ final class GalleryCatalog {
     }
 
     final query = rawQuery.trim().replaceAll(RegExp(r'\s+'), ' ');
+    // Booru sites use underscored tags; full-text sources prefer spaces.
+    final fullTextQuery = query.replaceAll('_', ' ');
     if (query.isEmpty) {
       throw ArgumentError.value(rawQuery, 'rawQuery', 'Empty search');
     }
@@ -123,14 +144,14 @@ final class GalleryCatalog {
         });
       case GallerySource.wallhaven:
         return Uri.https('wallhaven.cc', '/api/v1/search', <String, String>{
-          'q': query,
+          'q': fullTextQuery,
           'purity': '100',
           'categories': '111',
           'page': page.toString(),
         });
       case GallerySource.openverse:
         return Uri.https('api.openverse.org', '/v1/images/', <String, String>{
-          'q': query,
+          'q': fullTextQuery,
           'page': page.toString(),
           'page_size': pageSize.toString(),
           'mature': 'false',
@@ -183,6 +204,14 @@ final class GalleryCatalog {
       GallerySource.safebooru || GallerySource.rule34 => 'post',
       GallerySource.all => null,
     };
+    // Different APIs may return a structured error instead of an empty feed.
+    // Surface it instead of pretending the request returned zero pictures.
+    if (data is Map && data['success'] == false) {
+      throw StateError('Provider reports an unavailable search service');
+    }
+    if (data is Map && data['error'] != null) {
+      throw StateError('Provider returned an error response');
+    }
     final rows = _getRows(data, key: listKey);
     final items = <GalleryItem>[];
     for (final rawRow in rows) {
