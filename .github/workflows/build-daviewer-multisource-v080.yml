@@ -94,8 +94,9 @@ jobs:
               'test/oauth_network_fallback_test.dart',
               'test/oauth_launcher_switch_test.dart',
           }
-          out = subprocess.check_output(['git','status','--porcelain'],text=True)
-          changed = {line[3:].strip() for line in out.splitlines() if line.strip()}
+          out = subprocess.check_output(['git','diff','--name-only'],text=True)
+          untracked = subprocess.check_output(['git','ls-files','--others','--exclude-standard'],text=True)
+          changed = set(out.splitlines()) | set(untracked.splitlines())
           if changed - allowed:
               raise SystemExit(f"Unexpected modifications: {sorted(changed - allowed)}")
           assert 'lib/app/router.dart' in changed
