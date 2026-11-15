@@ -15,7 +15,10 @@ import 'reddit_gallery_search.dart';
 /// explicitly configured *approved* OAuth bearer token. Pixiv/other sites
 /// are opened in their own browser until a supported API integration exists.
 final class MultiSourceScreen extends StatefulWidget {
-  const MultiSourceScreen({super.key});
+  const MultiSourceScreen({super.key, this.catalog});
+
+  /// Injectable HTTP-backed catalog for deterministic startup regression tests.
+  final GalleryCatalog? catalog;
 
   @override
   State<MultiSourceScreen> createState() => _MultiSourceScreenState();
@@ -25,19 +28,30 @@ final class _MultiSourceScreenState extends State<MultiSourceScreen> {
   static const _storage = FlutterSecureStorage();
   static const _tokenKey = 'multisource.reddit.oauth_access_token';
   static const _agentKey = 'multisource.reddit.user_agent';
-  final _catalog = GalleryCatalog();
+  late final GalleryCatalog _catalog = widget.catalog ?? GalleryCatalog();
   final _queryField = TextEditingController();
   final List<GalleryItem> _items = <GalleryItem>[];
   final Map<GallerySource, bool> _sourceMore = <GallerySource, bool>{};
 
   GallerySource _source = GallerySource.all;
-  String _query = '';
+  // An empty initial query made the previous APK look as if every API failed.
+  // Start with a common art tag that is valid on all four public sources.
+  String _query = 'landscape';
   String? _nextRedditCursor;
   bool _adultEnabled = false;
   bool _loading = false;
   String? _error;
   int _page = 0;
   int _generation = 0;
+
+  @override
+  void initState() {
+    super.initState();
+    _queryField.text = _query;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) unawaited(_search(reset: true));
+    });
+  }
 
   @override
   void dispose() {
@@ -111,17 +125,20 @@ final class _MultiSourceScreenState extends State<MultiSourceScreen> {
         if (!mounted || generation != _generation) return;
         final errors = <String>[];
         setState(() {
+          // Mix images from active sources instead of letting Danbooru
+          // monopolize the first row while other providers sit below.
+          final batches = <List<GalleryItem>>[];
           for (final result in results) {
             if (result.page != null) {
-              _items.addAll(result.page!.items);
+              batches.add(result.page!.items);
               _sourceMore[result.source] = result.page!.hasMore;
             } else {
               // Retry failures rather than treating them as permanent EOF.
               _sourceMore[result.source] = true;
-              errors.add(result.source.label + ': ' +
-                  result.error.toString());
+              errors.add('${result.source.label}: ${result.error}');
             }
           }
+          _items.addAll(interleaveGalleryItems(batches));
           _page = nextPage;
           if (errors.isNotEmpty) {
             _error = errors.join('\n');
@@ -397,6 +414,26 @@ final class _MultiSourceScreenState extends State<MultiSourceScreen> {
             ),
           ),
           SizedBox(
+            height: 45,
+            child: ListView(
+              scrollDirection: Axis.horizontal,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              children: <Widget>[
+                for (final term in <String>[
+                  'landscape', 'anime', 'fantasy', 'portrait',
+                  'photography', 'digital_art', 'pixel_art',
+                ])
+                  Padding(
+                    padding: const EdgeInsets.only(right: 6),
+                    child: ActionChip(
+                      label: Text(term.replaceAll('_', ' ')),
+                      onPressed: () => _submit(term),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          SizedBox(
             height: 54,
             child: ListView(
               scrollDirection: Axis.horizontal,
@@ -467,8 +504,8 @@ final class _MultiSourceScreenState extends State<MultiSourceScreen> {
                         ? const CircularProgressIndicator()
                         : Text(
                             _query.isEmpty
-                                ? 'Enter a search to discover artwork'
-                                : 'No matching images or source unavailable',
+                                ? 'Choose a topic above to discover images'
+                                : 'No images here yet. Try Landscape, Anime, or another source.',
                           ),
                   )
                 : GridView.builder(
