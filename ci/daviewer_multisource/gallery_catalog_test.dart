@@ -66,6 +66,24 @@ void main() {
     expect(page.items.map((item) => item.id), <String>['danbooru:1']);
   });
 
+  test('Booru image-only filtering excludes video files', () {
+    final page = catalog.parsePayload(GallerySource.safebooru, [
+      {
+        'id': 42,
+        'tags': 'landscape',
+        'file_url': 'https://safebooru.org/images/42.mp4',
+        'preview_url': 'https://safebooru.org/thumbnails/42.jpg',
+      },
+      {
+        'id': 43,
+        'tags': 'landscape',
+        'file_url': 'https://safebooru.org/images/43.png',
+        'preview_url': 'https://safebooru.org/thumbnails/43.jpg',
+      },
+    ], 1);
+    expect(page.items.map((item) => item.id), <String>['safebooru:43']);
+  });
+
   test('Wallhaven excludes unsafe records', () {
     final page = catalog.parsePayload(GallerySource.wallhaven, {
       'meta': {'last_page': 3},
