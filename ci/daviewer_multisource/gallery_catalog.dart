@@ -224,7 +224,7 @@ final class GalleryCatalog {
         _secureUri(row['file_url']) ??
         _secureUri(row['large_file_url']) ??
         preview;
-    if (preview == null || full == null) return null;
+    if (preview == null || full == null || !_isStillImage(full)) return null;
     return GalleryItem(
       id: 'danbooru:' + id,
       source: GallerySource.danbooru,
@@ -247,7 +247,7 @@ final class GalleryCatalog {
         _secureUri(row['file_url']) ??
         _secureUri(row['sample_url']) ??
         preview;
-    if (preview == null || full == null) return null;
+    if (preview == null || full == null || !_isStillImage(full)) return null;
 
     final host = source == GallerySource.rule34
         ? 'rule34.xxx'
@@ -326,6 +326,15 @@ final class GalleryCatalog {
       return null;
     }
     return uri;
+  }
+
+  static bool _isStillImage(Uri url) {
+    final path = url.path.toLowerCase();
+    return path.endsWith('.jpg') ||
+        path.endsWith('.jpeg') ||
+        path.endsWith('.png') ||
+        path.endsWith('.webp') ||
+        path.endsWith('.avif');
   }
 
   static int _asInt(dynamic value) =>
