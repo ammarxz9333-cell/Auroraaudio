@@ -6,47 +6,6 @@
       "first_material_move_at": null,
       "first_observation": {
         "bar_time_utc": "2026-10-28T17:20:00+00:00",
-        "captured_utc": "2026-10-28T17:20:24.887893+00:00",
-        "change_15m_pct": -0.179,
-        "change_30m_pct": -0.391,
-        "change_5m_pct": -0.009,
-        "change_pct": -6.02,
-        "holds_vwap": false,
-        "market_session": "REGULAR",
-        "price": 11.724,
-        "qualified": false,
-        "same_time_volume_ratio": 1.68
-      },
-      "first_qualified_at": null,
-      "key": "SAN:2026-10-28",
-      "max_move_from_first_pct": 0.0,
-      "max_rebound_from_low_pct": 0.0,
-      "min_observed_price": 11.724,
-      "missed": false,
-      "observations": [
-        {
-          "bar_time_utc": "2026-10-28T17:20:00+00:00",
-          "captured_utc": "2026-10-28T17:20:24.887893+00:00",
-          "change_15m_pct": -0.179,
-          "change_30m_pct": -0.391,
-          "change_5m_pct": -0.009,
-          "change_pct": -6.02,
-          "holds_vwap": false,
-          "market_session": "REGULAR",
-          "price": 11.724,
-          "qualified": false,
-          "same_time_volume_ratio": 1.68
-        }
-      ],
-      "outcome_known": false,
-      "ticker": "SAN"
-    },
-    {
-      "caught_early": false,
-      "date": "2026-10-28",
-      "first_material_move_at": null,
-      "first_observation": {
-        "bar_time_utc": "2026-10-28T17:20:00+00:00",
         "captured_utc": "2026-10-28T17:20:24.966619+00:00",
         "change_15m_pct": -0.498,
         "change_30m_pct": -0.746,
@@ -21338,6 +21297,47 @@
       ],
       "outcome_known": false,
       "ticker": "FOUR"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-11-16",
+      "first_material_move_at": null,
+      "first_observation": {
+        "bar_time_utc": "2026-11-16T10:58:18+00:00",
+        "captured_utc": "2026-11-16T10:58:58.615062+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.148,
+        "change_pct": -5.573,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 47.1098,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "first_qualified_at": null,
+      "key": "AAOI:2026-11-16",
+      "max_move_from_first_pct": 0.0,
+      "max_rebound_from_low_pct": 0.0,
+      "min_observed_price": 47.1098,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-11-16T10:58:18+00:00",
+          "captured_utc": "2026-11-16T10:58:58.615062+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.148,
+          "change_pct": -5.573,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 47.1098,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "AAOI"
     }
   ],
   "metrics": {
@@ -21350,5 +21350,5 @@
     "warning": "Only captured qualified signals strictly before the first observed 5% move and within 90 minutes of first capture count. Legacy cases without first_material_move_at are excluded."
   },
   "schema_version": 3,
-  "updated_utc": "2026-11-16T03:02:42.636379+00:00"
+  "updated_utc": "2026-11-16T10:59:04.343850+00:00"
 }
