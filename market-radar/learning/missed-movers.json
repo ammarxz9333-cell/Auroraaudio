@@ -6,60 +6,6 @@
       "first_material_move_at": null,
       "first_observation": {
         "bar_time_utc": "2026-11-10T11:50:00+00:00",
-        "captured_utc": "2026-11-10T11:50:40.745272+00:00",
-        "change_15m_pct": -0.047,
-        "change_30m_pct": -0.26,
-        "change_5m_pct": 0.0,
-        "change_pct": -0.444,
-        "holds_vwap": null,
-        "market_session": "PRE",
-        "price": 21.29,
-        "qualified": false,
-        "same_time_volume_ratio": null
-      },
-      "first_qualified_at": null,
-      "key": "IREN:2026-11-10",
-      "max_move_from_first_pct": 0.0,
-      "max_rebound_from_low_pct": 0.0,
-      "min_observed_price": 19.405,
-      "missed": false,
-      "observations": [
-        {
-          "bar_time_utc": "2026-11-10T11:50:00+00:00",
-          "captured_utc": "2026-11-10T11:50:40.745272+00:00",
-          "change_15m_pct": -0.047,
-          "change_30m_pct": -0.26,
-          "change_5m_pct": 0.0,
-          "change_pct": -0.444,
-          "holds_vwap": null,
-          "market_session": "PRE",
-          "price": 21.29,
-          "qualified": false,
-          "same_time_volume_ratio": null
-        },
-        {
-          "bar_time_utc": "2026-11-10T18:55:00+00:00",
-          "captured_utc": "2026-11-10T18:55:12.592780+00:00",
-          "change_15m_pct": 0.306,
-          "change_30m_pct": 1.01,
-          "change_5m_pct": 0.232,
-          "change_pct": -9.259,
-          "holds_vwap": false,
-          "market_session": "REGULAR",
-          "price": 19.405,
-          "qualified": false,
-          "same_time_volume_ratio": 0.7
-        }
-      ],
-      "outcome_known": false,
-      "ticker": "IREN"
-    },
-    {
-      "caught_early": false,
-      "date": "2026-11-10",
-      "first_material_move_at": null,
-      "first_observation": {
-        "bar_time_utc": "2026-11-10T11:50:00+00:00",
         "captured_utc": "2026-11-10T11:50:40.990339+00:00",
         "change_15m_pct": 0.044,
         "change_30m_pct": -0.133,
@@ -21136,6 +21082,47 @@
       ],
       "outcome_known": false,
       "ticker": "BE"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-11-25",
+      "first_material_move_at": null,
+      "first_observation": {
+        "bar_time_utc": "2026-11-25T13:35:59+00:00",
+        "captured_utc": "2026-11-25T13:37:07.328285+00:00",
+        "change_15m_pct": null,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.006,
+        "change_pct": 0.024,
+        "holds_vwap": null,
+        "market_session": "PRE",
+        "price": 170.21,
+        "qualified": false,
+        "same_time_volume_ratio": null
+      },
+      "first_qualified_at": null,
+      "key": "INSM:2026-11-25",
+      "max_move_from_first_pct": 0.0,
+      "max_rebound_from_low_pct": 0.0,
+      "min_observed_price": 170.21,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-11-25T13:35:59+00:00",
+          "captured_utc": "2026-11-25T13:37:07.328285+00:00",
+          "change_15m_pct": null,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.006,
+          "change_pct": 0.024,
+          "holds_vwap": null,
+          "market_session": "PRE",
+          "price": 170.21,
+          "qualified": false,
+          "same_time_volume_ratio": null
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "INSM"
     }
   ],
   "metrics": {
@@ -21148,5 +21135,5 @@
     "warning": "Only captured qualified signals strictly before the first observed 5% move and within 90 minutes of first capture count. Legacy cases without first_material_move_at are excluded."
   },
   "schema_version": 3,
-  "updated_utc": "2026-11-25T03:47:29.799146+00:00"
+  "updated_utc": "2026-11-25T13:37:10.283364+00:00"
 }
