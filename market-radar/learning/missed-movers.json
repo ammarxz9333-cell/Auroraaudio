@@ -6,114 +6,6 @@
       "first_material_move_at": null,
       "first_observation": {
         "bar_time_utc": "2026-11-10T11:50:00+00:00",
-        "captured_utc": "2026-11-10T11:50:40.990339+00:00",
-        "change_15m_pct": 0.044,
-        "change_30m_pct": -0.133,
-        "change_5m_pct": 0.0,
-        "change_pct": -1.853,
-        "holds_vwap": null,
-        "market_session": "PRE",
-        "price": 22.51,
-        "qualified": false,
-        "same_time_volume_ratio": null
-      },
-      "first_qualified_at": null,
-      "key": "HIMS:2026-11-10",
-      "max_move_from_first_pct": 0.0,
-      "max_rebound_from_low_pct": 0.0,
-      "min_observed_price": 18.8601,
-      "missed": false,
-      "observations": [
-        {
-          "bar_time_utc": "2026-11-10T11:50:00+00:00",
-          "captured_utc": "2026-11-10T11:50:40.990339+00:00",
-          "change_15m_pct": 0.044,
-          "change_30m_pct": -0.133,
-          "change_5m_pct": 0.0,
-          "change_pct": -1.853,
-          "holds_vwap": null,
-          "market_session": "PRE",
-          "price": 22.51,
-          "qualified": false,
-          "same_time_volume_ratio": null
-        },
-        {
-          "bar_time_utc": "2026-11-10T18:55:00+00:00",
-          "captured_utc": "2026-11-10T18:55:17.730224+00:00",
-          "change_15m_pct": 0.802,
-          "change_30m_pct": 1.699,
-          "change_5m_pct": 0.435,
-          "change_pct": -17.767,
-          "holds_vwap": false,
-          "market_session": "REGULAR",
-          "price": 18.8601,
-          "qualified": false,
-          "same_time_volume_ratio": 10.64
-        }
-      ],
-      "outcome_known": false,
-      "ticker": "HIMS"
-    },
-    {
-      "caught_early": false,
-      "date": "2026-11-10",
-      "first_material_move_at": null,
-      "first_observation": {
-        "bar_time_utc": "2026-11-10T11:50:00+00:00",
-        "captured_utc": "2026-11-10T11:50:41.489222+00:00",
-        "change_15m_pct": -0.387,
-        "change_30m_pct": -0.065,
-        "change_5m_pct": -0.026,
-        "change_pct": 0.282,
-        "holds_vwap": null,
-        "market_session": "PRE",
-        "price": 179.1033,
-        "qualified": false,
-        "same_time_volume_ratio": null
-      },
-      "first_qualified_at": null,
-      "key": "NVDA:2026-11-10",
-      "max_move_from_first_pct": 0.0,
-      "max_rebound_from_low_pct": 0.0,
-      "min_observed_price": 168.335,
-      "missed": false,
-      "observations": [
-        {
-          "bar_time_utc": "2026-11-10T11:50:00+00:00",
-          "captured_utc": "2026-11-10T11:50:41.489222+00:00",
-          "change_15m_pct": -0.387,
-          "change_30m_pct": -0.065,
-          "change_5m_pct": -0.026,
-          "change_pct": 0.282,
-          "holds_vwap": null,
-          "market_session": "PRE",
-          "price": 179.1033,
-          "qualified": false,
-          "same_time_volume_ratio": null
-        },
-        {
-          "bar_time_utc": "2026-11-10T18:55:00+00:00",
-          "captured_utc": "2026-11-10T18:55:12.730235+00:00",
-          "change_15m_pct": 0.134,
-          "change_30m_pct": 0.596,
-          "change_5m_pct": 0.015,
-          "change_pct": -5.747,
-          "holds_vwap": false,
-          "market_session": "REGULAR",
-          "price": 168.335,
-          "qualified": false,
-          "same_time_volume_ratio": 16.5
-        }
-      ],
-      "outcome_known": false,
-      "ticker": "NVDA"
-    },
-    {
-      "caught_early": false,
-      "date": "2026-11-10",
-      "first_material_move_at": null,
-      "first_observation": {
-        "bar_time_utc": "2026-11-10T11:50:00+00:00",
         "captured_utc": "2026-11-10T11:50:41.701362+00:00",
         "change_15m_pct": null,
         "change_30m_pct": null,
@@ -21123,6 +21015,88 @@
       ],
       "outcome_known": false,
       "ticker": "INSM"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-11-25",
+      "first_material_move_at": null,
+      "first_observation": {
+        "bar_time_utc": "2026-11-25T22:43:44+00:00",
+        "captured_utc": "2026-11-25T22:44:04.717988+00:00",
+        "change_15m_pct": 0.141,
+        "change_30m_pct": 0.303,
+        "change_5m_pct": -0.021,
+        "change_pct": 0.994,
+        "holds_vwap": true,
+        "market_session": "AFTER/CLOSED",
+        "price": 12.3474,
+        "qualified": false,
+        "same_time_volume_ratio": 0.76
+      },
+      "first_qualified_at": null,
+      "key": "APLD:2026-11-25",
+      "max_move_from_first_pct": 0.0,
+      "max_rebound_from_low_pct": 0.0,
+      "min_observed_price": 12.3474,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-11-25T22:43:44+00:00",
+          "captured_utc": "2026-11-25T22:44:04.717988+00:00",
+          "change_15m_pct": 0.141,
+          "change_30m_pct": 0.303,
+          "change_5m_pct": -0.021,
+          "change_pct": 0.994,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 12.3474,
+          "qualified": false,
+          "same_time_volume_ratio": 0.76
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "APLD"
+    },
+    {
+      "caught_early": false,
+      "date": "2026-11-25",
+      "first_material_move_at": null,
+      "first_observation": {
+        "bar_time_utc": "2026-11-25T22:42:46+00:00",
+        "captured_utc": "2026-11-25T22:44:06.404024+00:00",
+        "change_15m_pct": 0.177,
+        "change_30m_pct": null,
+        "change_5m_pct": 0.354,
+        "change_pct": 3.214,
+        "holds_vwap": true,
+        "market_session": "AFTER/CLOSED",
+        "price": 68.09,
+        "qualified": false,
+        "same_time_volume_ratio": 1.07
+      },
+      "first_qualified_at": null,
+      "key": "CVNA:2026-11-25",
+      "max_move_from_first_pct": 0.0,
+      "max_rebound_from_low_pct": 0.0,
+      "min_observed_price": 68.09,
+      "missed": false,
+      "observations": [
+        {
+          "bar_time_utc": "2026-11-25T22:42:46+00:00",
+          "captured_utc": "2026-11-25T22:44:06.404024+00:00",
+          "change_15m_pct": 0.177,
+          "change_30m_pct": null,
+          "change_5m_pct": 0.354,
+          "change_pct": 3.214,
+          "holds_vwap": true,
+          "market_session": "AFTER/CLOSED",
+          "price": 68.09,
+          "qualified": false,
+          "same_time_volume_ratio": 1.07
+        }
+      ],
+      "outcome_known": false,
+      "ticker": "CVNA"
     }
   ],
   "metrics": {
@@ -21135,5 +21109,5 @@
     "warning": "Only captured qualified signals strictly before the first observed 5% move and within 90 minutes of first capture count. Legacy cases without first_material_move_at are excluded."
   },
   "schema_version": 3,
-  "updated_utc": "2026-11-25T13:37:10.283364+00:00"
+  "updated_utc": "2026-11-25T22:44:10.639685+00:00"
 }
