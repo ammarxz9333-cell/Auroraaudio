@@ -259,6 +259,23 @@ class Engine:
 
 
 def format_alert(a):
+    if a.get('strategy') == 'WAE_1H_5M':
+        side=a.get('side','?')
+        mode=a.get('zone_mode','live')
+        return '\n'.join([
+            ('🟢 CALL (LONG)' if side == 'CALL' else '🔴 PUT (SHORT)') +
+            ' — WAE 1H zone + 5m entry',
+            'KuCoin FUTURES | ' + a['ticker'],
+            'إغلاق شمعة إشارة 5 دقائق: ' + a['bar_end_utc'] + ' UTC',
+            'سعر إغلاق الإشارة: ' + str(a.get('signal_price')) +
+            ' USDT (ليس سعر تنفيذ مضمون)',
+            'عمر بداية منطقة الساعة: ' +
+            str(a.get('zone_age_minutes')) + ' دقيقة',
+            'منطقة الساعة: ' + ('مباشرة، قابلة للتغير' if mode=='live'
+                              else 'آخر ساعة مكتملة'),
+            'لا دخول آلي؛ تحقّق من السعر والسبريد والرسوم وإتاحة العقد.',
+            'الفيوتشر عالي المخاطر؛ الإشارة ليست نسبة نجاح مثبتة.'
+        ])[:4000]
     if a.get('strategy') == 'EARLY_TECHNICAL_REVERSAL':
         e = a['evidence']
         def val(v):
